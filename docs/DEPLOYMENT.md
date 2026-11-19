@@ -1287,7 +1287,12 @@ stalls (a sentence waits 15 s at most, 45 s for the first with a voice or
 into a call, which may load its model): if it still answers a ping within
 2 s, its speaker is stuck, and the sentences that waited are said with
 Kokoro, which reads for five minutes; if it does not, its output is what
-was lost, and they are said again as they were.
+was lost, and they are said again as they were. A sentence its speaker
+fails to make (Qwen3-TTS out of GPU memory), or that comes out of it
+silent in a call, is said again at once by Kokoro, in the sentence's
+language with Kokoro's voice for it (`ff_siwis` for French) unless the
+Kokoro entry names one; Kokoro reads the next sentences for 30 s, then
+the speaker is tried again.
 
 On macOS, `osxprocesstapsrc` (in the helper) plays what one application
 plays, through a Core Audio process tap (macOS 14.2 or later):

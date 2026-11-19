@@ -456,6 +456,11 @@ impl Speaker {
             }
             (None, None) => return Err("--tts-models or --kokoro-model is required".into()),
         };
+        Self::with_synthesizer(synthesizer, name)
+    }
+
+    /// The speaker's pipeline around `synthesizer` (`name` says which).
+    fn with_synthesizer(synthesizer: gst::Element, name: &str) -> Result<Self, String> {
         // 64 kb/s: at 32 the voice came out audibly coarser (half the
         // waveform SNR), for a few more kilobytes a sentence.
         // In a call, the speech goes to the call's mix as raw audio
@@ -643,7 +648,15 @@ impl Speaker {
                 continue;
             }
             if self.sink.is_eos() && self.raw.is_eos() {
-                break Ok(speech);
+                // A failure ends the sentence too: appsrc posts its error,
+                // then sends EOS down. Qwen3-TTS out of GPU memory came
+                // out as a sentence said, silent, and its error was taken
+                // for the next one's.
+                let errors = drain_bus_errors(&self.pipeline);
+                break match errors.into_iter().next() {
+                    Some(error) => Err(error),
+                    None => Ok(speech),
+                };
             }
             if let Some(message) = self
                 .pipeline
@@ -1312,5 +1325,23 @@ mod tests {
             audio.send_event(gst::event::FlushStop::new(true));
         }
         pipeline.set_state(gst::State::Null).unwrap();
+    }
+
+    /// A synthesizer failing (Qwen3-TTS out of GPU memory) fails its
+    /// sentence, though appsrc sends EOS after its error: it came out as a
+    /// sentence said, silent, and the server did not have Kokoro say it.
+    /// The next sentence fails with its own error, not left stuck.
+    #[test]
+    fn a_failed_sentence_is_an_error() {
+        gst::init().unwrap();
+        // identity fails on the text it gets (it makes no audio): appsrc
+        // posts an error and sends EOS, as when the synthesizer fails.
+        let failing = gst::ElementFactory::make("identity").build().unwrap();
+        let speaker = Speaker::with_synthesizer(failing, "failing").unwrap();
+        for _ in 0..2 {
+            let result = speaker.speak("Bonjour.", "fr", 1.0, None, &|| {});
+            let error = result.expect_err("a failed sentence said");
+            assert!(error.contains("streaming stopped"), "{error}");
+        }
     }
 }

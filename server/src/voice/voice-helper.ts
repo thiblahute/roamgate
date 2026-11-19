@@ -990,6 +990,8 @@ type RunningCall = {
   waiting: boolean;
   /** A call_music event came: newer than call_start's answer. */
   told: boolean;
+  /** How many times its voice was hushed: a sentence hushed is silent. */
+  hushes: number;
 };
 
 /** How long a ping may take before the helper's output is taken as unread. */
@@ -1034,8 +1036,11 @@ export class VoiceHelper {
   private warm = new Set<string>();
   /** The speak requests waiting, in order: the helper reads one at a time. */
   private speakQueue: string[] = [];
-  /** When a stuck speaker was last restarted (Date.now()), 0 for never. */
-  private stuckAt = 0;
+  /**
+   * Until when (Date.now()) Kokoro reads: after a stuck speaker was
+   * restarted, or a sentence its speaker failed.
+   */
+  private kokoroUntil = 0;
   /** Restarts of the helper by this side so far, and why the last one. */
   private restarts = 0;
   private restartedFor: "stuck" | "unreadable" = "stuck";
@@ -1203,7 +1208,7 @@ export class VoiceHelper {
     this.restarts += 1;
     this.restartedFor = why;
     if (why === "stuck") {
-      this.stuckAt = Date.now();
+      this.kokoroUntil = Date.now() + KOKORO_AFTER_STUCK_MS;
       void this.sampleStuck(helper).finally(() => helper.kill());
     } else helper.kill();
   }
@@ -1444,6 +1449,7 @@ export class VoiceHelper {
       started: false,
       waiting: false,
       told: false,
+      hushes: 0,
     };
     this.calls.set(id, entry);
     let reply: Record<string, unknown>;
@@ -1484,8 +1490,9 @@ export class VoiceHelper {
         this.calls.get(id)?.waiting === true &&
         this.calls.get(id)?.background.muted !== true,
       hush: () => {
-        if (this.calls.has(id) && this.process)
-          this.send({ op: "call_hush", call: id });
+        const call = this.calls.get(id);
+        if (call) call.hushes += 1;
+        if (call && this.process) this.send({ op: "call_hush", call: id });
       },
       music_level: async (change) => {
         const answer = await this.request({
@@ -1519,9 +1526,10 @@ export class VoiceHelper {
   ): Promise<Record<string, unknown> & { nativeRate: number }> {
     // Started first: its rate is the one this speech is made at.
     const helper = this.start();
-    // A speaker got stuck lately: Kokoro reads meanwhile.
-    const kokoro = this.kokoroModels();
-    if (!models && kokoro && Date.now() - this.stuckAt < KOKORO_AFTER_STUCK_MS)
+    // A speaker got stuck or failed lately: Kokoro reads meanwhile, for a
+    // reader's voice too (the GPU's speaker is what fails).
+    const kokoro = this.kokoroModels(language);
+    if (kokoro && !onlyKokoro(models) && Date.now() < this.kokoroUntil)
       models = kokoro;
     let nativeRate = this.nativeRate;
     let override: VoiceConfig["tts_models"];
@@ -1542,8 +1550,32 @@ export class VoiceHelper {
     this.speakQueue.push(key);
     this.speaking += 1;
     if (this.speaking === 1) this.watchSpeaking();
+    // Once: a sentence said again is queued again under its own key.
+    let queued = true;
+    const dequeue = () => {
+      if (queued) this.dequeue(key);
+      queued = false;
+    };
     const restarts = this.restarts;
+    const hushes = call === undefined ? 0 : this.calls.get(call)?.hushes;
+    // Its speaker failed: Kokoro says it, and the next ones for a short
+    // while, the speaker tried again after it (GPU memory comes back).
+    const byKokoro = (why: string) => {
+      if (retried || this.restarts !== restarts || !kokoro) return null;
+      if (onlyKokoro(models)) return null;
+      const where = call === undefined ? "" : ` in call ${call}`;
+      console.error(
+        `[voice] a sentence ${why}${where}: Kokoro says it again now, and the next ones for ${KOKORO_AFTER_FAILURE_MS / 1000} s`,
+      );
+      this.kokoroUntil = Math.max(
+        this.kokoroUntil,
+        Date.now() + KOKORO_AFTER_FAILURE_MS,
+      );
+      dequeue();
+      return this.speakRequest(text, language, kokoro, rate, call, true);
+    };
     let reply: Record<string, unknown>;
+    let silent = false;
     const timed: SpeakTimes = { sentAt: now() };
     let timedId: number | null = null;
     try {
@@ -1581,18 +1613,21 @@ export class VoiceHelper {
             ? Math.round(reply.duration_ms)
             : undefined,
       });
-      // Queued but with no audio: the call hears nothing of it.
-      if (reply.queued === true && reply.duration_ms === 0)
-        console.error(
-          `[voice] call ${call}: a sentence came out silent (${text.length} chars)`,
-        );
+      // Queued but with no audio, not hushed: its speaker failed without
+      // saying so (an older helper answers Qwen3-TTS out of GPU memory
+      // so), and the call hears nothing of it.
+      silent =
+        reply.queued === true &&
+        reply.duration_ms === 0 &&
+        call !== undefined &&
+        this.calls.get(call)?.hushes === hushes;
     } catch (error) {
       // The helper was restarted under it: said again by the new one, in
       // order, into the call's mix once it is made again. With Kokoro when
       // its speaker got stuck; as it was when its output was unreadable.
       const stuck = this.restartedFor === "stuck";
       if (!retried && this.restarts !== restarts && (!stuck || kokoro)) {
-        this.dequeue(key);
+        dequeue();
         await this.callsBack;
         return this.speakRequest(
           text,
@@ -1606,26 +1641,23 @@ export class VoiceHelper {
       const message = (error as Error).message;
       const where = call === undefined ? "" : ` in call ${call}`;
       // Its speaker failed (Qwen3-TTS out of GPU memory once, every reply
-      // of a call unsaid): Kokoro says it, and the next ones for a while.
-      if (
-        !retried &&
-        this.restarts === restarts &&
-        kokoro &&
-        !models?.every((entry) => entry.model === "kokoro") &&
-        speakerFailed(message)
-      ) {
-        console.error(
-          `[voice] a sentence failed${where}, Kokoro says it and the next ones for ${KOKORO_AFTER_STUCK_MS / 60_000} min: ${message}`,
-        );
-        this.stuckAt = Date.now();
-        this.dequeue(key);
-        return this.speakRequest(text, language, kokoro, rate, call, true);
-      }
+      // of a call unsaid).
+      const again = speakerFailed(message)
+        ? byKokoro(`failed (${message})`)
+        : null;
+      if (again) return await again;
       console.error(`[voice] a sentence was not said${where}: ${message}`);
       throw error;
     } finally {
-      this.dequeue(key);
+      dequeue();
       if (timedId !== null) this.speakTimes.delete(timedId);
+    }
+    if (silent) {
+      const again = byKokoro(`came out silent (${text.length} chars)`);
+      if (again) return again;
+      console.error(
+        `[voice] call ${call}: a sentence came out silent (${text.length} chars)`,
+      );
     }
     const made =
       typeof reply.rate === "number" && reply.rate > 0 ? reply.rate : 1;
@@ -1737,8 +1769,11 @@ export class VoiceHelper {
     }
   }
 
-  /** voice.json's Kokoro entries of `tts_models`, if any. */
-  private kokoroModels(): VoiceConfig["tts_models"] {
+  /**
+   * voice.json's Kokoro entries of `tts_models`, if any, each with the
+   * voice of `language` when it names none.
+   */
+  private kokoroModels(language?: string): VoiceConfig["tts_models"] {
     const config = this.config();
     if ("error" in config) return undefined;
     const kokoro = config.tts_models?.filter(
@@ -1746,7 +1781,13 @@ export class VoiceHelper {
     );
     if (!kokoro?.length || kokoro.length === config.tts_models?.length)
       return undefined;
-    return kokoro;
+    const voice = language ? KOKORO_VOICES[language] : undefined;
+    if (!voice) return kokoro;
+    return kokoro.map((entry) =>
+      entry.voice === undefined && entry.speaker === undefined
+        ? { ...entry, voice }
+        : entry,
+    );
   }
 
   /**
@@ -1868,6 +1909,26 @@ export const SPEAK_STUCK_MS = 15_000;
 export const SPEAK_COLD_MS = 45_000;
 /** How long Kokoro reads after a stuck speaker was restarted. */
 export const KOKORO_AFTER_STUCK_MS = 5 * 60_000;
+/**
+ * How long Kokoro reads after a sentence its speaker failed (Qwen3-TTS out
+ * of GPU memory): short, the user's own voice back once memory is.
+ */
+export const KOKORO_AFTER_FAILURE_MS = 30_000;
+
+/**
+ * Kokoro's voice for each language it speaks (one language a voice): a
+ * Kokoro entry naming none reads a language with its own.
+ */
+export const KOKORO_VOICES: Readonly<Record<string, string>> = {
+  en: "af_heart",
+  es: "ef_dora",
+  fr: "ff_siwis",
+  hi: "hf_alpha",
+  it: "if_sara",
+  ja: "jf_alpha",
+  pt: "pf_dora",
+  zh: "zf_xiaobei",
+};
 
 /**
  * Whether a sentence's error is its speaker's (a model failing to make it),
@@ -1875,4 +1936,9 @@ export const KOKORO_AFTER_STUCK_MS = 5 * 60_000;
  */
 export function speakerFailed(message: string): boolean {
   return !/^(no call|nothing to say|The voice helper stopped)/.test(message);
+}
+
+/** Whether `models` are Kokoro's only (none: the configured ones). */
+function onlyKokoro(models: VoiceConfig["tts_models"]): boolean {
+  return models?.every((entry) => entry.model === "kokoro") === true;
 }

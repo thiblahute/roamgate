@@ -453,46 +453,193 @@ describe("voice helper", () => {
     expect((await helper.speak("Hi.")).nativeRate).toBe(1.3);
   });
 
-  test("a sentence its speaker failed is said by Kokoro, and the next ones", async () => {
+  const OOM =
+    'Qwen3Tts speaking "Oui." failed: Compute error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")';
+  const QWEN_AND_KOKORO: VoiceConfig = {
+    ...CONFIG,
+    tts_models: [
+      { model: "qwen3-tts", path: "/base" },
+      { model: "kokoro", path: "/k" },
+    ],
+  };
+  /** Kokoro's French voice, as the helper is asked for it. */
+  const KOKORO_FR = JSON.stringify([
+    { model: "kokoro", path: "/k", voice: "ff_siwis", speed: 1.2 },
+  ]);
+  const CALL_BACKGROUND = {
+    background: "",
+    volume: 0.6,
+    ducked: 0.15,
+    release_ms: 3000,
+    muted: true,
+    reply_loudness: -16,
+  };
+  const quietErrors = () => {
+    const errors: string[] = [];
+    const saved = console.error;
+    console.error = (line: unknown) => errors.push(String(line));
+    return { errors, restore: () => (console.error = saved) };
+  };
+
+  test("a sentence its speaker failed is said by Kokoro in its language, and the next ones", async () => {
     const fake = fakeHelper((request) =>
       request.op !== "speak"
         ? []
         : request.tts_models
           ? [{ id: request.id, audio: "", language: "fr" }]
-          : [
-              {
-                id: request.id,
-                error:
-                  'Qwen3Tts speaking "Oui." failed: Compute error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")',
-              },
-            ],
+          : [{ id: request.id, error: OOM }],
     );
-    const config: VoiceConfig = {
-      ...CONFIG,
-      tts_models: [
-        { model: "qwen3-tts", path: "/base" },
-        { model: "kokoro", path: "/k" },
-      ],
-    };
-    const helper = new VoiceHelper(() => config, fake.spawn);
-    const errors: string[] = [];
-    const saved = console.error;
-    console.error = (line: unknown) => errors.push(String(line));
+    const helper = new VoiceHelper(() => QWEN_AND_KOKORO, fake.spawn);
+    const log = quietErrors();
     try {
       await helper.speak("Oui.", "fr");
       await helper.speak("Non.", "fr");
       const sent = requests(fake.spawned[0]!.frames);
       expect(sent.map((request) => request.tts_models ?? "own")).toEqual([
         "own",
-        JSON.stringify([{ model: "kokoro", path: "/k", speed: 1.2 }]),
-        JSON.stringify([{ model: "kokoro", path: "/k", speed: 1.2 }]),
+        KOKORO_FR,
+        KOKORO_FR,
       ]);
-      expect(errors.join("\n")).toContain(
-        "a sentence failed, Kokoro says it and the next ones for 5 min",
+      expect(log.errors.join("\n")).toContain(
+        "a sentence failed (Qwen3Tts speaking",
       );
-      expect(errors.join("\n")).toContain("CUDA_ERROR_OUT_OF_MEMORY");
+      expect(log.errors.join("\n")).toContain(
+        "Kokoro says it again now, and the next ones for 30 s",
+      );
     } finally {
-      console.error = saved;
+      log.restore();
+    }
+  });
+
+  test("in a call, a sentence failed or silent is said again by Kokoro into the call", async () => {
+    // An older helper answers a failed sentence as said, with no audio; a
+    // newer one with its error.
+    for (const failure of ["silent", "error"] as const) {
+      const fake = fakeHelper((request) =>
+        request.op === "call_start"
+          ? [{ id: request.id, signalling_port: 4242 }]
+          : request.op !== "speak"
+            ? []
+            : request.tts_models
+              ? [
+                  {
+                    id: request.id,
+                    queued: true,
+                    start_ms: 100,
+                    duration_ms: 900,
+                    now_ms: 50,
+                    language: "fr",
+                  },
+                ]
+              : failure === "error"
+                ? [{ id: request.id, error: OOM }]
+                : [
+                    {
+                      id: request.id,
+                      queued: true,
+                      start_ms: 50,
+                      duration_ms: 0,
+                      now_ms: 50,
+                      language: "fr",
+                    },
+                  ],
+      );
+      const helper = new VoiceHelper(() => QWEN_AND_KOKORO, fake.spawn);
+      const log = quietErrors();
+      try {
+        const call = await helper.startCall(CALL_BACKGROUND, () => {});
+        const said = await helper.speakInCall(call.id, "Oui.", "fr");
+        expect(said.durationMs).toBe(900);
+        await helper.speakInCall(call.id, "Non.", "fr");
+        const sent = requests(fake.spawned[0]!.frames).filter(
+          (request) => request.op === "speak",
+        );
+        expect(sent.map((request) => request.call)).toEqual([
+          call.id,
+          call.id,
+          call.id,
+        ]);
+        expect(sent.map((request) => request.tts_models ?? "own")).toEqual([
+          "own",
+          KOKORO_FR,
+          KOKORO_FR,
+        ]);
+        expect(log.errors.join("\n")).toContain(
+          failure === "silent"
+            ? `a sentence came out silent (4 chars) in call ${call.id}: Kokoro says it again now`
+            : `in call ${call.id}: Kokoro says it again now`,
+        );
+      } finally {
+        log.restore();
+      }
+    }
+  });
+
+  test("Kokoro reads a short while after a failure, then the speaker is tried again", async () => {
+    let fail = true;
+    const fake = fakeHelper((request) =>
+      request.op !== "speak"
+        ? []
+        : request.tts_models || !fail
+          ? [{ id: request.id, audio: "", language: "fr" }]
+          : [{ id: request.id, error: OOM }],
+    );
+    const helper = new VoiceHelper(() => QWEN_AND_KOKORO, fake.spawn);
+    const log = quietErrors();
+    const realNow = Date.now;
+    let clock = realNow();
+    Date.now = () => clock;
+    try {
+      await helper.speak("Oui.", "fr");
+      clock += 29_000;
+      await helper.speak("Encore.", "fr");
+      fail = false;
+      clock += 2_000;
+      await helper.speak("Revenu.", "fr");
+      const sent = requests(fake.spawned[0]!.frames);
+      expect(sent.map((request) => request.tts_models ?? "own")).toEqual([
+        "own",
+        KOKORO_FR,
+        KOKORO_FR,
+        "own",
+      ]);
+    } finally {
+      Date.now = realNow;
+      log.restore();
+    }
+  });
+
+  test("in a call, a sentence hushed is not said again", async () => {
+    const fake = fakeHelper((request) =>
+      request.op === "call_start"
+        ? [{ id: request.id, signalling_port: 4242 }]
+        : request.op === "speak"
+          ? [
+              {
+                id: request.id,
+                queued: true,
+                start_ms: 50,
+                duration_ms: 0,
+                now_ms: 50,
+                language: "fr",
+              },
+            ]
+          : [],
+    );
+    const helper = new VoiceHelper(() => QWEN_AND_KOKORO, fake.spawn);
+    const log = quietErrors();
+    try {
+      const call = await helper.startCall(CALL_BACKGROUND, () => {});
+      const said = helper.speakInCall(call.id, "Oui.", "fr");
+      call.hush();
+      await said;
+      const sent = requests(fake.spawned[0]!.frames).filter(
+        (request) => request.op === "speak",
+      );
+      expect(sent).toHaveLength(1);
+      expect(log.errors.join("\n")).not.toContain("Kokoro");
+    } finally {
+      log.restore();
     }
   });
 
