@@ -33,8 +33,9 @@ export type ReviewAgent = {
    */
   talk: boolean;
   /**
-   * What a new comment is: a discussion with the agent in a local review
-   * that talks, else a draft (for the forge, on a merge request's review).
+   * What a new comment is: a discussion with the agent in a review that
+   * talks (on the forge, with an agent bound to the review), else a draft
+   * (for the forge, on a merge request's review).
    */
   commentKind: ReviewThreadKind;
   /** Comments wait for Send instead of going as they are written. */
@@ -82,7 +83,11 @@ export function reviewAgent(
     agentPaneId,
     agentAllowed,
     talk,
-    commentKind: talk && !session.gitlab ? "discussion" : "draft",
+    // On the forge too, a comment asks the agent bound to the review (C
+    // writes the draft there); one only offered by the workspace leaves
+    // the forge's drafts as they were.
+    commentKind:
+      talk && (!session.gitlab || !!agent.paneId) ? "discussion" : "draft",
     held: talk && session.holdComments === true,
     holdForSend: !agentPaneId && agentAllowed && !!session.workspaceId,
     undeliveredReason: undeliveredReason(session),

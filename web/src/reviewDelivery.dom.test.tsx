@@ -69,12 +69,19 @@ if (
       held: false,
       holdForSend: false,
     });
-    // A merge request's review: your discussions with the agent go as
-    // written; a line comment stays a draft for the forge.
+    // A merge request's review with its agent: a line comment asks it (C
+    // writes the forge's draft); with the workspace's agent only, it stays
+    // a draft for the forge.
     expect(reviewAgent(snapshot({ gitlab: true }), [])).toMatchObject({
       talk: true,
-      commentKind: "draft",
+      commentKind: "discussion",
     });
+    expect(
+      reviewAgent(
+        snapshot({ gitlab: true, agent: {} as Session["agent"] }),
+        panes,
+      ),
+    ).toMatchObject({ talk: true, commentKind: "draft" });
     expect(
       reviewAgent(snapshot({ autoSend: false, gitlab: true }), []).talk,
     ).toBe(false);

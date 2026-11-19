@@ -340,8 +340,13 @@ Inspector button, shortcuts, or workspace/agent menus.
   merge request** (`O`, `:open`) and **Copy the review as Markdown**. An
   agent's comment has **Make it mine**, which makes it your forge draft.
   The agent's Send reads **Send to Claude**: nothing labelled Send reaches
-  the forge. A security merge request (or one not read yet) is kept from
-  agents: no agent group, `C` refused, comments are your drafts. The
+  the forge. A comment written in a review shown this way is that review's,
+  never the checkout's own. With an agent bound to the request's review,
+  `c` asks it (a discussion, sent as written) and `C` writes your draft for
+  the forge; without one, `c` writes that draft. A draft the agent answered
+  in is talked through with it: your replies there reach it too. A security
+  merge request (or one not read yet) is kept from agents: no agent group,
+  `C` refused, comments are your drafts. The
   **Local / GitLab** switch opens the request the PR/MR card shows (its
   remote as chosen there). `gn` / `gN` reach a thread written on a commit
   since rewritten out of the review, shown on that commit, "(no longer in

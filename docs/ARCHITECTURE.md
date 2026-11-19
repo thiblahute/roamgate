@@ -236,12 +236,17 @@ session (`review.diff`, `review.commits`, `review.state` and `review.file`
 with `workspace_id`, `checkout` and `target`: an unstored session,
 `service.preview*`), so an agent's id-less `review_get` keeps finding the
 review last written. The first comment, mark or agent action opens it
-(`review.open` with the scope's target, `scopeOpenTarget`).
+(`review.open` with the scope's target, `scopeOpenTarget`). A comment
+written while a review is shown as a scope (a merge request's, a compare,
+a range opened by name) names that session (the note's `review`) and is
+written in it (`review.get`, then `review.thread.add`), never in a review
+opened for the checkout's branch.
 A checkout's code reviews (its `worktree` review and its ranges, not a
 compare, a step or a merge request) are one review: each scope draws and
 lists the threads of all of them (`checkoutReviews.ts`), and the server
 gives each such review the others' threads as `shared`, so an agent's
-`review_get` reads them too and a reply goes to the thread's own review.
+`review_get` reads them too (each with `from_other_review`) and a reply
+goes to the thread's own review.
 An agent's `review_open` of a range whose two ends name the same commits as
 a kept range of the checkout (`review.equivalentTarget`, with `loadHeads`)
 opens that review. Reading a range's commits (`review.commits`, an agent's

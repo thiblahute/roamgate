@@ -115,8 +115,11 @@ size), the element, the page, the moment of an animation, and the path of
 a snapshot of the region when there is one: read it to see what they saw.
 A file's rendered review and the code reviews of its checkout share their
 threads: \`get\` on either lists the other's on that file too, each with
-its own \`session\`. Write a thread once, in either: never copy it to the
-other; answer it with \`reply --comment ID\`, which finds its review.
+its own \`session\`. So do a checkout's working tree and range reviews
+(not a merge request's or a compare's). A thread listed from another
+review has \`from_other_review\` (that review's id). Write a thread once,
+in either: never copy it to the other; answer it with \`reply --comment
+ID\`, which finds its review.
 
 ## The loop
 

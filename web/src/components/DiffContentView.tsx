@@ -3834,9 +3834,15 @@ function DiffContentViewInner({
     }
     const spot = target.endLine === undefined ? spotAtCursor() : null;
     const here = spot ? threadsAtCursor(readingOrder, spot) : [];
+    // On the forge, where c asks the agent bound to the review, C writes
+    // your draft for the forge.
+    const forgeDraft =
+      mode === "new" &&
+      !!ownSnapshot?.session.gitlab &&
+      commentKind === "discussion";
     // A line being discussed: c, C and :ask answer there, as the review
     // pane's do.
-    if (mode !== "suggest") {
+    if (mode !== "suggest" && !forgeDraft) {
       const open = here.find(
         (each) => !each.thread.resolved && each.thread.kind === "discussion",
       );
@@ -3846,7 +3852,7 @@ function DiffContentViewInner({
       }
     }
     // Your review comment on the line: c rewrites it.
-    if (mode === "comment" && commentKind === "draft") {
+    if ((mode === "comment" && commentKind === "draft") || forgeDraft) {
       const draft = here.find(
         (each) =>
           each.thread.kind === "draft" &&
@@ -3859,13 +3865,15 @@ function DiffContentViewInner({
       }
     }
     setComposerKind(
-      mode === "new" || mode === "ask"
-        ? "discussion"
-        : mode === "suggest"
-          ? "draft"
-          : ownSnapshot
-            ? commentKind
-            : null,
+      forgeDraft
+        ? "draft"
+        : mode === "new" || mode === "ask"
+          ? "discussion"
+          : mode === "suggest"
+            ? "draft"
+            : ownSnapshot
+              ? commentKind
+              : null,
     );
     setComposerSeed(
       mode === "suggest" &&
@@ -6771,6 +6779,12 @@ export function DiffContentView({
                       reviewTarget?.kind === "range" &&
                       !input.target
                         ? { target: reviewTarget }
+                        : {}),
+                      // Any review shown (a merge request's, a compare, an
+                      // agent's range): written in it, never in the
+                      // checkout's own review.
+                      ...(reviewScope.kind === "review" && !input.review
+                        ? { review: reviewScope.sessionId }
                         : {}),
                     }
                   : input,

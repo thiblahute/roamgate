@@ -246,3 +246,62 @@ test("a checkout's code reviews show each other's threads, whatever they compare
   expect(told.has(agents.id)).toBe(true);
   expect(told.has(worktree.id)).toBe(true);
 });
+
+test("a merge request's review of the checkout lists only its own threads, the checkout's others' never", async () => {
+  const { service, open } = setup();
+  const worktree = open({ kind: "worktree" });
+  const branch = open({ kind: "range", base: "origin/main", head: "HEAD" });
+  const mr = open({
+    kind: "mr",
+    url: "https://gitlab.example/group/project/-/merge_requests/4",
+  });
+  const add = async (sessionId: string, text: string) =>
+    (
+      await service.addThread({
+        sessionId,
+        anchor: { path: "play.c", line: 1, side: "new", text: "x" },
+        text,
+      })
+    ).id;
+  await add(worktree.id, "In Files");
+  await add(branch.id, "On the branch");
+  const own = await add(mr.id, "On the request");
+  const snapshot = service.get({ sessionId: mr.id });
+  expect(snapshot.threads.map((thread) => thread.id)).toEqual([own]);
+  expect(snapshot.shared ?? []).toEqual([]);
+  // Nor does the request's thread show in the checkout's own reviews.
+  expect(
+    (service.get({ sessionId: branch.id }).shared ?? []).map(
+      (thread) => thread.id,
+    ),
+  ).not.toContain(own);
+});
+
+test("a draft the agent answered in is talked through: the user's next reply reaches the agent", async () => {
+  const { service, prompts, open } = setup();
+  const branch = open({ kind: "range", base: "origin/main", head: "HEAD" });
+  const draft = await service.addThread({
+    sessionId: branch.id,
+    kind: "draft",
+    anchor: { path: "play.c", line: 1, side: "new", text: "x" },
+    text: "Is a new decoder that expensive?",
+  });
+  await Bun.sleep(60);
+  // A draft alone is the user's review: the agent is not told.
+  expect(prompts).toHaveLength(0);
+  await service.reply({
+    sessionId: branch.id,
+    commentId: draft.id,
+    author: "Claude",
+    text: "Not on this machine",
+  });
+  await service.reply({
+    sessionId: branch.id,
+    commentId: draft.id,
+    text: "Measure it on the prod GPUs then",
+  });
+  await Bun.sleep(60);
+  expect(
+    prompts.filter((p) => p.text.includes("Measure it on the prod GPUs")),
+  ).toHaveLength(1);
+});

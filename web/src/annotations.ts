@@ -37,6 +37,12 @@ export type DiffReviewAnnotation = ReviewAnnotationBase & {
    * or a range or compare Changes shows as a review scope.
    */
   target?: DiffNoteTarget;
+  /**
+   * The review shown in Changes it was written in (its id): it goes there,
+   * whatever that review compares (a merge request's, a compare, a range
+   * an agent opened), never to the checkout's own review.
+   */
+  review?: string;
   /** Written on one commit's diff (the commit bar): that commit. */
   commit?: { sha: string; subject?: string; parent?: string | null };
 };
@@ -165,6 +171,7 @@ function renderOf(candidate: Record<string, unknown>): {
 const REF = /^[^\s-][^\s]{0,255}$/;
 const TREE = /^[0-9a-f]{40,64}$/;
 const SHA = /^[0-9a-f]{7,64}$/;
+const REVIEW_ID = /^[0-9A-Za-z_-]{1,64}$/;
 
 /** A diff comment's review, when it names one: checked field by field. */
 function noteTarget(value: unknown): DiffNoteTarget | null {
@@ -313,6 +320,10 @@ export function parseReviewAnnotation(value: unknown): ReviewAnnotation | null {
         : {}),
       ...(noteTarget(candidate.target)
         ? { target: noteTarget(candidate.target)! }
+        : {}),
+      ...(typeof candidate.review === "string" &&
+      REVIEW_ID.test(candidate.review)
+        ? { review: candidate.review }
         : {}),
       ...(noteCommit(candidate.commit)
         ? { commit: noteCommit(candidate.commit)! }
