@@ -3025,11 +3025,27 @@ function DiffContentViewInner({
   }, [viewed.otherView]);
   const otherFileOf = (thread: ReviewThread) =>
     otherFiles.find((other) => other.threads.includes(thread))?.path;
-  /** Shows an Other file's block (its threads), from the panel or the tree. */
-  const showOtherFile = (path: string) =>
-    sectionRef.current
-      ?.querySelector<HTMLElement>(`[data-other-file="${CSS.escape(path)}"]`)
-      ?.scrollIntoView?.({ block: "start" });
+  /**
+   * Shows an Other file's block (its threads), from the panel or the tree:
+   * its scroll brought to it, the view itself never moved (its head stays).
+   */
+  const showOtherFile = (path: string) => {
+    const block = sectionRef.current?.querySelector<HTMLElement>(
+      `[data-other-file="${CSS.escape(path)}"]`,
+    );
+    const scroll = block?.closest<HTMLElement>(
+      ".pierre-diff-scroll, .diff-other-files-scroll",
+    );
+    if (!block || !scroll) return;
+    // Moved on purpose: the diff's kept place follows it.
+    userScrollUntilRef.current = performance.now() + 150;
+    scroll.scrollTo?.({
+      top:
+        scroll.scrollTop +
+        block.getBoundingClientRect().top -
+        scroll.getBoundingClientRect().top,
+    });
+  };
   const otherFilesRef = useRef(onOtherFiles);
   otherFilesRef.current = onOtherFiles;
   useEffect(() => {
@@ -4842,8 +4858,11 @@ function DiffContentViewInner({
   // Picked in the tree's Other files: shown.
   const showOtherFileRef = useRef(showOtherFile);
   showOtherFileRef.current = showOtherFile;
+  // Only a pick made now: the view shown again (the pane brought back)
+  // keeps its place, not a pick of before.
   useEffect(() => {
-    if (otherFileGoTo) showOtherFileRef.current(otherFileGoTo.path);
+    if (otherFileGoTo && Date.now() - otherFileGoTo.at < GO_TO_FRESH_MS)
+      showOtherFileRef.current(otherFileGoTo.path);
   }, [otherFileGoTo]);
 
   // Back to the diff once the editor is gone: its Vim `:w` / `:q` hand the
@@ -5608,6 +5627,8 @@ function DiffContentViewInner({
             : {})}
         />
       ))}
+      {/* At the end of the diff, scrolled with it: never in place of it. */}
+      {otherFilesBlock}
     </DiffSurfaceScroll>
   ) : null;
 
@@ -6217,6 +6238,15 @@ function DiffContentViewInner({
       data-wide-diffs={wide ? "" : undefined}
       tabIndex={-1}
       data-review-cursor={cursor.active ? "" : undefined}
+      // Its parts scroll, never the view: a part brought into sight (a
+      // thread, an Other file) leaves the head and the scope where they are.
+      onScroll={(event) => {
+        if (
+          event.target === event.currentTarget &&
+          event.currentTarget.scrollTop
+        )
+          event.currentTarget.scrollTop = 0;
+      }}
       onKeyDown={
         cursor.active
           ? (event) => {
@@ -6277,7 +6307,10 @@ function DiffContentViewInner({
           {forgeSection}
           {generalBlock}
           {diffList}
-          {otherFilesBlock}
+          {/* No changed file: the Other files alone, in a scroll of their own. */}
+          {!diffList && otherFilesBlock ? (
+            <div className="diff-other-files-scroll">{otherFilesBlock}</div>
+          ) : null}
         </DiffDrawingContext.Provider>
       </DiffThreadsContext.Provider>
       {/* The review's list opens with none too (`:conversations`), saying so. */}

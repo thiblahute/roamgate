@@ -121,6 +121,68 @@ if (
         await shown.unmount();
       });
 
+      test("Other files end the diff, scrolled with it, the head and the files above them", async () => {
+        const shown = await mount({
+          files: [added("a.ts", 6)],
+          otherReviews: [
+            review("worktree", { kind: "worktree" }),
+            review("branch", { kind: "range", base: "main", head: "HEAD" }),
+          ],
+          shared: [
+            // A file replayed away from the branch: its threads, from the
+            // working tree's review, under Other files.
+            of("worktree", "naming", "NAMING.md", 1, "Belongs in a design doc"),
+            of("worktree", "stale", "NAMING.md", 115, "Not true anymore"),
+          ],
+        });
+        const other = document.querySelector<HTMLElement>(
+          '[data-testid="diff-other-files"]',
+        );
+        expect(other?.textContent).toContain("NAMING.md");
+        // In the diff's scroll, after its last file: never in place of it.
+        const scroll = other?.closest(".pierre-diff-scroll");
+        expect(scroll).not.toBeNull();
+        const files = [
+          ...(scroll?.querySelectorAll("[data-diff-entry-key]") ?? []),
+        ];
+        expect(files.length).toBeGreaterThan(0);
+        expect(
+          files[files.length - 1]!.compareDocumentPosition(other!) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+        await shown.unmount();
+      });
+
+      test("with no changed file, the Other files scroll on their own under the head; the view itself never scrolls", async () => {
+        const shown = await mount({
+          files: [],
+          session: { root: "/repo" },
+          otherReviews: [review("worktree", { kind: "worktree" })],
+          shared: [
+            of("worktree", "naming", "NAMING.md", 1, "Belongs in a design doc"),
+          ],
+        });
+        const view = document.querySelector<HTMLElement>(".diff-content-view");
+        const other = document.querySelector<HTMLElement>(
+          '[data-testid="diff-other-files"]',
+        );
+        const scroll = other?.closest<HTMLElement>(".diff-other-files-scroll");
+        expect(scroll).not.toBeNull();
+        expect(scroll?.parentElement).toBe(view);
+        expect(
+          view?.querySelector(":scope > .diff-content-head"),
+        ).not.toBeNull();
+        // Something brought into sight scrolls the view (overflow hidden):
+        // put back at once, the head and the scope staying in sight.
+        const { act } = await import("react");
+        await act(async () => {
+          view!.scrollTop = 300;
+          view!.dispatchEvent(new Event("scroll"));
+        });
+        expect(view?.scrollTop).toBe(0);
+        await shown.unmount();
+      });
+
       test("with no change in the working tree, the other reviews' threads are under Other files", async () => {
         const shown = await mount({
           files: [],
