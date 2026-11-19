@@ -6,6 +6,7 @@ import {
   replaceDataFile,
 } from "../config/data-paths";
 import { roamgateEnv } from "../config/environment";
+import { type Logger, silentLogger } from "../utils/logger";
 import {
   type Device,
   notificationPreference,
@@ -66,7 +67,12 @@ export type FeedSocket = {
   ping?(): unknown;
 };
 type Client = {
+  /** A number per socket, to follow one in the log. */
+  socketId: number;
   origin: string;
+  /** The peer's address, when the server knows it. */
+  remote?: string;
+  connectedAt: number;
   sessionToken?: string;
   /** Null until its hello: nothing is sent before. */
   client: string | null;
@@ -193,14 +199,18 @@ export function createNotificationFeed(options: {
   /** Answers an agent's permission prompt; false when it is gone. */
   answerPrompt?: (prompt: FeedPrompt, answer: "allow" | "deny") => boolean;
   warn?: (message: string) => void;
+  /** Connections, hellos and closes at info; each event sent at debug. */
+  logger?: Logger;
 }) {
   const path = options.path ?? notificationFeedPath();
   const now = options.now ?? Date.now;
   const warn = options.warn ?? (() => {});
+  const logger = options.logger ?? silentLogger;
   const saved = load(path);
   let last = saved.last;
   let events = saved.events;
   const clients = new Map<FeedSocket, Client>();
+  let socketIds = 0;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   function prune() {
@@ -230,12 +240,37 @@ export function createNotificationFeed(options: {
   }
 
   function deliver(event: Stored) {
+    let to = 0;
     for (const [socket, client] of clients) {
       if (client.client === null) continue;
       if (event.event === "notification" && !client.preferences[event.pref])
         continue;
       send(socket, wire(event, client.origin));
+      to++;
     }
+    logger.debug("notification feed sent", {
+      event: event.event,
+      id: event.id,
+      ...(event.event === "notification" ? { kind: event.kind } : {}),
+      tag: event.tag,
+      clients: to,
+    });
+  }
+
+  /** Forgets a socket's client, logging how long it lived. */
+  function drop(socket: FeedSocket, code?: number, reason?: string) {
+    const client = clients.get(socket);
+    if (!client) return;
+    clients.delete(socket);
+    logger.info("notification client disconnected", {
+      socket: client.socketId,
+      client: client.client ?? "none",
+      code,
+      reason: reason || undefined,
+      lived_ms: now() - client.connectedAt,
+      clients: clients.size,
+    });
+    if (!clients.size) stopHeartbeat();
   }
 
   function append(event: Stored) {
@@ -276,7 +311,7 @@ export function createNotificationFeed(options: {
     const silent = now() - FEED_SILENCE_TIMEOUT_MS;
     for (const [socket, client] of clients) {
       if (client.lastSeen < silent) {
-        clients.delete(socket);
+        drop(socket, 4000, "No heartbeat");
         try {
           socket.close(4000, "No heartbeat");
         } catch {
@@ -319,14 +354,25 @@ export function createNotificationFeed(options: {
     // No id (a new install): no history, only what comes next. An id beyond
     // the last means the server lost its feed: replay all of it.
     const from = since === null ? last : since <= last ? since : null;
+    let replayed = 0;
     for (const event of events) {
       if (from !== null ? event.id <= from : event.event !== "notification")
         continue;
       if (event.event === "notification" && !client.preferences[event.pref])
         continue;
       send(socket, wire(event, client.origin));
+      replayed++;
     }
     send(socket, JSON.stringify({ event: "ready", last }));
+    logger.info("notification client hello", {
+      socket: client.socketId,
+      client: client.client,
+      since: since ?? "none",
+      completed: client.preferences.completed,
+      blocked: client.preferences.blocked,
+      replayed,
+      last,
+    });
   }
 
   function action(socket: FeedSocket, message: Record<string, unknown>) {
@@ -427,15 +473,29 @@ export function createNotificationFeed(options: {
       clearWhere((event) => event.prompt?.promptId === promptId);
     },
     androidConnected,
-    open(socket: FeedSocket, origin: string, sessionToken?: string) {
-      clients.set(socket, {
+    open(
+      socket: FeedSocket,
+      origin: string,
+      sessionToken?: string,
+      remote?: string,
+    ) {
+      const client: Client = {
+        socketId: ++socketIds,
         origin,
+        ...(remote ? { remote } : {}),
+        connectedAt: now(),
         ...(sessionToken ? { sessionToken } : {}),
         client: null,
         preferences: { completed: true, blocked: true },
         lastSeen: now(),
-      });
+      };
+      clients.set(socket, client);
       heartbeat ??= setInterval(heartbeatTick, FEED_PING_INTERVAL_MS);
+      logger.info("notification client connected", {
+        socket: client.socketId,
+        remote: remote || "unknown",
+        clients: clients.size,
+      });
     },
     message(socket: FeedSocket, data: string | Buffer) {
       const client = clients.get(socket);
@@ -461,22 +521,38 @@ export function createNotificationFeed(options: {
       const client = clients.get(socket);
       if (client) client.lastSeen = now();
     },
-    close(socket: FeedSocket) {
-      clients.delete(socket);
-      if (!clients.size) stopHeartbeat();
+    close(socket: FeedSocket, code?: number, reason?: string) {
+      drop(socket, code, reason);
     },
     /** Logging out closes the sockets that login opened. */
     closeSession(sessionToken: string) {
       for (const [socket, client] of clients) {
         if (client.sessionToken !== sessionToken) continue;
-        clients.delete(socket);
+        drop(socket, 4001, "Logged out");
         try {
           socket.close(4001, "Logged out");
         } catch {
           // Already closed.
         }
       }
-      if (!clients.size) stopHeartbeat();
+    },
+    /** The sockets open now, for `bridge.notifications.status`. */
+    status() {
+      const at = now();
+      return {
+        last,
+        events: events.length,
+        android_connected: androidConnected(),
+        clients: [...clients.values()].map((client) => ({
+          socket: client.socketId,
+          client: client.client,
+          remote: client.remote ?? null,
+          connected_at: client.connectedAt,
+          last_seen: client.lastSeen,
+          silent_ms: at - client.lastSeen,
+          preferences: { ...client.preferences },
+        })),
+      };
     },
     stop() {
       stopHeartbeat();

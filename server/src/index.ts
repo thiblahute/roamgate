@@ -443,6 +443,7 @@ const notifications = createNotificationFeed({
   answerPrompt: ({ connectionId, promptId }, answer) =>
     getReviewService().prompts.answer({ connectionId, id: promptId, answer }),
   warn: (message) => logger.warn(message),
+  logger: logger.child("notifications"),
 });
 /** The permission prompts open per connection, to notify each once. */
 const notifiedPrompts = new Map<string, Set<string>>();
@@ -3038,6 +3039,10 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     );
     return;
   }
+  if (method === "bridge.notifications.status") {
+    sendReply({ id, result: notifications.status() }, "notifications-status");
+    return;
+  }
   if (method.startsWith("bridge.assistant.")) {
     try {
       const result =
@@ -4583,6 +4588,7 @@ function main() {
                 ws,
                 ws.data.notifications.origin,
                 ws.data.sessionToken ?? undefined,
+                ws.remoteAddress,
               );
             if (ws.data.signalling) {
               const { call, token } = ws.data.signalling;
@@ -4735,7 +4741,8 @@ function main() {
             if (ws.data.notifications) notifications.pong(ws);
           },
           close(ws, code, reason) {
-            if (ws.data.notifications) return notifications.close(ws);
+            if (ws.data.notifications)
+              return notifications.close(ws, code, reason);
             if (ws.data.signalling) return voiceSocket.closeSignalling(ws);
             if (ws.data.voice) {
               voiceSocketsOpen = Math.max(0, voiceSocketsOpen - 1);

@@ -2724,6 +2724,13 @@ history), then `{"event":"ready","last":<last id>}`, then streams new events:
   login's sockets with 4001. Client messages over 4 KiB are ignored.
 - Storage: `notifications.json` in the data directory
   (`ROAMGATE_NOTIFICATIONS_PATH`), the last 200 events of the last 24 hours.
+- Diagnostics: the `bridge.notifications` log scope records each socket's
+  open (peer address), hello (client, `since`, preferences, events replayed,
+  last id) and close (code, reason, lifetime) at info, and each event sent
+  (id, kind, tag, client count) at debug. The `bridge.notifications.status`
+  RPC returns the last id, the stored event count, whether an `android` client
+  counts as connected, and each open socket's client label (null before its
+  hello), address, `connected_at`, `last_seen`, `silent_ms` and preferences.
 
 Web Push suppression: a native app has no Web Push subscription, and a push
 endpoint (FCM for every Chrome) does not tell which device it is, so the

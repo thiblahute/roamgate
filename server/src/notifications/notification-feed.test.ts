@@ -9,6 +9,7 @@ import {
   type FeedSocket,
 } from "./notification-feed";
 import type { Device, PushTask } from "./web-push";
+import { createLogger } from "../utils/logger";
 
 let root: string;
 let clock: number;
@@ -392,4 +393,93 @@ test("bad messages are ignored", () => {
   f.message(s, JSON.stringify({ op: "action", id: 1, action: "allow" }));
   expect(s.sent).toEqual([]);
   f.stop();
+});
+
+test("status lists the open sockets: kind, address, since and last seen", () => {
+  const f = feed();
+  expect(f.status()).toEqual({
+    last: 0,
+    events: 0,
+    android_connected: false,
+    clients: [],
+  });
+  const s = socket();
+  f.open(s, ORIGIN, "session-1", "192.0.2.7");
+  const pending = socket();
+  f.open(pending, ORIGIN);
+  clock += 5_000;
+  f.message(
+    s,
+    JSON.stringify({
+      op: "hello",
+      since: null,
+      client: "android",
+      preferences: { completed: false },
+    }),
+  );
+  f.publish(blocked);
+  clock += 1_000;
+  expect(f.status()).toEqual({
+    last: 1,
+    events: 1,
+    android_connected: true,
+    clients: [
+      {
+        socket: 1,
+        client: "android",
+        remote: "192.0.2.7",
+        connected_at: 1_000_000,
+        last_seen: 1_005_000,
+        silent_ms: 1_000,
+        preferences: { completed: false, blocked: true },
+      },
+      {
+        socket: 2,
+        client: null,
+        remote: null,
+        connected_at: 1_000_000,
+        last_seen: 1_000_000,
+        silent_ms: 6_000,
+        preferences: { completed: true, blocked: true },
+      },
+    ],
+  });
+  f.close(pending, 1000, "");
+  expect(f.status().clients.map((each) => each.socket)).toEqual([1]);
+  f.stop();
+  expect(f.status().clients).toEqual([]);
+});
+
+test("connections, hellos, sends and closes are logged", () => {
+  const lines: string[] = [];
+  const logger = createLogger({
+    level: "debug",
+    scope: "bridge.notifications",
+    stdout: (line) => lines.push(line),
+    stderr: (line) => lines.push(line),
+  });
+  const f = feed({ logger });
+  f.publish(completed);
+  const s = socket();
+  f.open(s, ORIGIN, "session-1", "192.0.2.7");
+  f.message(s, JSON.stringify({ op: "hello", since: 0, client: "android" }));
+  f.publish(blocked);
+  clock += 2_000;
+  f.close(s, 1001, "Going away");
+  f.close(s, 1001, "Going away");
+  const text = lines.join("\n");
+  expect(lines.filter((line) => line.includes(" INFO "))).toHaveLength(3);
+  expect(text).toContain(
+    "notification client connected socket=1 remote=192.0.2.7 clients=1",
+  );
+  expect(text).toContain(
+    "notification client hello socket=1 client=android since=0 completed=true blocked=true replayed=1 last=1",
+  );
+  expect(text).toContain(
+    "notification feed sent event=notification id=2 kind=blocked tag=",
+  );
+  expect(text).toMatch(/id=2 kind=blocked tag=\S+ clients=1/);
+  expect(text).toContain(
+    'notification client disconnected socket=1 client=android code=1001 reason="Going away" lived_ms=2000 clients=0',
+  );
 });
