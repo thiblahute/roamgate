@@ -7,6 +7,7 @@ import { REVIEW_USER, type ReviewTarget } from "../../../shared/review";
 import { isHostPath, type ReviewRepo } from "../workspace/review-patch";
 import { RENDERED_SVG_MAX_BYTES } from "../http/rendered-pages";
 import { saveReviewImage } from "./images";
+import { listReviewsSince } from "./list-since";
 import { renderedFileTarget } from "./rendered-target";
 import { parseReviewTarget, ReviewError, type ReviewService } from "./service";
 import { reviewDirectory } from "./storage";
@@ -142,9 +143,10 @@ export async function handleReviewRpc(
     case "review.list":
       // The page shows a chat's threads in the chat, from these too: without
       // them a reload would lose them until the next change.
-      return {
-        sessions: service.list({ connectionId: connection.id, chats: true }),
-      };
+      return listReviewsSince(
+        service.list({ connectionId: connection.id, chats: true }),
+        raw.known,
+      );
     case "review.activity":
       return service.activity({ connectionId: connection.id });
     case "review.import":

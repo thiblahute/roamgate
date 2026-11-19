@@ -24,6 +24,7 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
   const calls: string[] = [];
   /** Answers of the other connections, by connection, made by the tests. */
   const answers = new Map<string, () => Promise<unknown>>();
+  const sentParams: unknown[] = [];
   const snapshot = (id: string, connectionId: string) => ({
     session: {
       id,
@@ -40,14 +41,18 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
   });
   mock.module("./api", () => ({
     bridge: {
-      callConnection: (connectionId: string, method: string) =>
-        connectionClient(connectionId).call(method),
+      callConnection: (
+        connectionId: string,
+        method: string,
+        params?: unknown,
+      ) => connectionClient(connectionId).call(method, params),
     },
   }));
   const connectionClient = (connectionId: string) => ({
-    call: async (method: string) => {
+    call: async (method: string, params?: unknown) => {
       if (connectionId !== "desktop") {
         calls.push(`${connectionId}:${method}`);
+        sentParams.push(params);
         return answers.get(connectionId)!();
       }
       calls.push(method);
@@ -60,7 +65,7 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
   mock.module("./store", () => ({
     store: {
       get: () => ({
-        connections: ["desktop", "a", "b", "c"].map((id) => ({
+        connections: ["desktop", "a", "b", "c", "d"].map((id) => ({
           id,
           generation: 1,
         })),
@@ -150,5 +155,26 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
     const { loadedReviewConnections } = await import("./review");
     expect(loadedReviewConnections().has("c")).toBe(true);
     expect(loadedReviewConnections().has("a")).toBe(false);
+  });
+
+  test("a list again sends only the reviews that changed", async () => {
+    const { loadReviews, getReviewSnapshot } = await import("./review");
+    answers.set("d", async () => ({
+      sessions: [snapshot("d1", "d"), snapshot("d2", "d")],
+      stamps: { d1: "x1", d2: "x2" },
+    }));
+    await loadReviews("d");
+    expect(getReviewSnapshot("d2")).toBeTruthy();
+    sentParams.length = 0;
+    // d1 unchanged, d2 gone since.
+    answers.set("d", async () => ({
+      sessions: [],
+      unchanged: ["d1"],
+      stamps: { d1: "x1" },
+    }));
+    await loadReviews("d");
+    expect(sentParams[0]).toEqual({ known: { d1: "x1", d2: "x2" } });
+    expect(getReviewSnapshot("d1")).toBeTruthy();
+    expect(getReviewSnapshot("d2")).toBeUndefined();
   });
 }

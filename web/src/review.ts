@@ -147,11 +147,19 @@ export async function loadReviews(connectionId: string) {
   const load = loadState(connectionId);
   load.pending = true;
   load.triedRuntime = runtimeGeneration(connectionId);
-  let result: { sessions?: unknown };
+  let result: { sessions?: unknown; stamps?: unknown; unchanged?: unknown };
+  // The reviews held from the last list: an unchanged one is not sent again.
+  const held = listStamps.get(connectionId);
+  const known: Record<string, string> = {};
+  if (held)
+    for (const [id, stamp] of Object.entries(held))
+      if (state.sessions.get(id)?.session.connectionId === connectionId)
+        known[id] = stamp;
   try {
-    result = (await reviewClient(connectionId).call("review.list")) as {
-      sessions?: unknown;
-    };
+    result = (await reviewClient(connectionId).call(
+      "review.list",
+      held ? { known } : {},
+    )) as { sessions?: unknown; stamps?: unknown; unchanged?: unknown };
   } catch (error) {
     // A connection not ready yet keeps the same runtime once it is: try
     // again a little later rather than wait for a change that never comes.
@@ -166,6 +174,18 @@ export async function loadReviews(connectionId: string) {
       ([, snapshot]) => snapshot.session.connectionId !== connectionId,
     ),
   );
+  if (Array.isArray(result?.unchanged))
+    for (const id of result.unchanged) {
+      const kept = typeof id === "string" ? state.sessions.get(id) : undefined;
+      if (kept) sessions.set(id, kept);
+    }
+  if (
+    result?.stamps &&
+    typeof result.stamps === "object" &&
+    !Array.isArray(result.stamps)
+  )
+    listStamps.set(connectionId, result.stamps as Record<string, string>);
+  else listStamps.delete(connectionId);
   // A malformed session is dropped rather than break the page.
   for (const snapshot of validReviewSnapshots(result?.sessions))
     sessions.set(snapshot.session.id, snapshot);
@@ -179,6 +199,8 @@ export async function loadReviews(connectionId: string) {
 }
 
 let lastLoadedConnection: string | null = null;
+/** Per connection, the stamps of the reviews its last list gave. */
+const listStamps = new Map<string, Record<string, string>>();
 /**
  * The connections whose list was loaded: their sessions are all known.
  * Set before the list's sessions are published.
