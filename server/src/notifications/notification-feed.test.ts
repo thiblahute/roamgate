@@ -111,21 +111,16 @@ test("a notification is the push payload plus its id, time, kind, group and page
   f.stop();
 });
 
-test("hello replays what came after `since`, clears included", () => {
+test("hello replays what came after a numeric `since`, clears included", () => {
   const f = feed();
   f.publish(blocked);
   f.publish(completed);
   f.clearPane("alpha", "p1");
   f.publish(ranger);
 
+  // A new install (`since: null`) gets no history, only what comes next.
   const fresh = hello(f);
-  // A fresh client gets the notifications still out, not the clears.
-  expect(fresh.sent.map((event) => [event.event, event.id ?? null])).toEqual([
-    ["notification", 2],
-    ["notification", 4],
-    ["ready", null],
-  ]);
-  expect(fresh.sent.at(-1)).toEqual({ event: "ready", last: 4 });
+  expect(fresh.sent).toEqual([{ event: "ready", last: 4 }]);
 
   const behind = hello(f, { since: 1 });
   expect(behind.sent.map((event) => [event.event, event.id ?? null])).toEqual([
@@ -144,6 +139,9 @@ test("hello replays what came after `since`, clears included", () => {
   // Beyond the last id: the server lost its feed, so all of it again.
   const ahead = hello(f, { since: 99 });
   expect(ahead.sent.map((event) => event.id ?? null)).toEqual([2, 4, null]);
+
+  f.publish(blocked);
+  expect(fresh.sent.slice(1)).toMatchObject([{ event: "notification", id: 5 }]);
   f.stop();
 });
 
@@ -178,7 +176,7 @@ test("old events are dropped after a day, and beyond 200", () => {
   clock += 25 * 60 * 60 * 1000;
   for (let n = 0; n < 205; n++)
     f.publish({ ...completed, paneId: `p${n + 10}` });
-  const s = hello(f);
+  const s = hello(f, { since: 0 });
   const ids = s.sent.filter((e) => e.event === "notification").map((e) => e.id);
   expect(ids.length).toBe(200);
   expect(ids[0]).toBe(7);

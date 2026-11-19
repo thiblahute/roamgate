@@ -364,7 +364,8 @@ foreground service and posts the same notifications natively, with Allow and
 Deny on agents' permission prompts; no FCM or Google service is involved. It
 logs in like a browser; the feed needs nothing on the server. The last 200
 events of the last day are kept in `~/.config/roamgate/notifications.json`, so
-the app catches up after a reconnect or a server restart.
+the app catches up after a reconnect or a server restart; a new install (or
+cleared app data) starts with no history, only what comes next.
 
 A phone that also has Roamgate installed from its browser would notify twice:
 enable **Don't send Web Push while the Android app is connected** in that

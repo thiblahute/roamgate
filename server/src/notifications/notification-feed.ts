@@ -316,8 +316,9 @@ export function createNotificationFeed(options: {
       blocked: preferences.blocked !== false,
     };
     prune();
-    // An id beyond the last means the server lost its feed: replay it all.
-    const from = since !== null && since <= last ? since : null;
+    // No id (a new install): no history, only what comes next. An id beyond
+    // the last means the server lost its feed: replay all of it.
+    const from = since === null ? last : since <= last ? since : null;
     for (const event of events) {
       if (from !== null ? event.id <= from : event.event !== "notification")
         continue;

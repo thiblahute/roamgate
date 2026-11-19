@@ -2676,12 +2676,12 @@ Nothing is sent before the client's hello:
 {"op":"hello","since":41,"client":"android","preferences":{"completed":true,"blocked":true}}
 ```
 
-`since` is the last event id the client handled, or `null`; `preferences` is
-optional (both default to true) and filters notifications, never clears.
-`client` is a free label; `"android"` counts for Web Push suppression below.
-The server replies with the stored events after `since` (with `null`: the
-notifications still out, no clears), then `{"event":"ready","last":<last id>}`,
-then streams new events:
+`since` is the last event id the client handled, or `null` for a client with
+none yet (a new install, cleared data); `preferences` is optional (both
+default to true) and filters notifications, never clears. `client` is a free
+label; `"android"` counts for Web Push suppression below. The server replies
+with the stored events after a numeric `since` (with `null`: none, no
+history), then `{"event":"ready","last":<last id>}`, then streams new events:
 
 ```json
 {"event":"notification","id":42,"at":1795000000000,"kind":"blocked",
@@ -2707,8 +2707,8 @@ then streams new events:
   closed, or a browser marked the agent seen (`agent_seen.mark`: the user
   looked at it). It is sent only for a tag still out.
 - Ids are one monotonic sequence for both events, kept across restarts. A
-  `since` above the last id means the server lost its feed: all of it is
-  replayed.
+  `since` above the last id means the server lost its feed: the
+  notifications it still holds are replayed (no clears).
 - Action: `{"op":"action","id":42,"action":"allow"}` answers the agent's
   permission prompt (`allow` or `deny`, the browser card's `prompts.answer`),
   replied `{"event":"action","id":42,"ok":true}` (then the clear) or
