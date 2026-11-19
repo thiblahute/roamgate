@@ -332,7 +332,11 @@ function StartOverButton() {
       }}
     >
       <RotateCcw size={15} aria-hidden="true" />
-      {confirming ? "Forget this conversation?" : "Start over"}
+      {confirming ? (
+        "Forget this conversation?"
+      ) : (
+        <span className="companion-panel-start-over-label">Start over</span>
+      )}
     </button>
   );
 }
