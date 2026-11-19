@@ -62,10 +62,20 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
         : {};
     },
   });
+  /** Lists saved before a reload, by connection, and the ones saved since. */
+  const savedLists = new Map<string, unknown>();
+  const savedSince: Array<[string, unknown]> = [];
+  mock.module("./reviewListCache", () => ({
+    readReviewListCache: async (connectionId: string) =>
+      savedLists.get(connectionId) ?? null,
+    saveReviewListCache: (connectionId: string, value: unknown) => {
+      savedSince.push([connectionId, value]);
+    },
+  }));
   mock.module("./store", () => ({
     store: {
       get: () => ({
-        connections: ["desktop", "a", "b", "c", "d"].map((id) => ({
+        connections: ["desktop", "a", "b", "c", "d", "e"].map((id) => ({
           id,
           generation: 1,
         })),
@@ -75,7 +85,7 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
   }));
 
   const settle = async () => {
-    for (let i = 0; i < 5; i++) await Promise.resolve();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
   };
 
   test("a list refused before the connection is ready is tried again", async () => {
@@ -86,7 +96,7 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
       expect(calls).toEqual(["review.list"]);
       // Still not ready a second later: tried again, then later still.
       jest.advanceTimersByTime(1000);
-      await Promise.resolve();
+      await settle();
       expect(calls).toEqual(["review.list", "review.list"]);
       ready = true;
       jest.advanceTimersByTime(2000);
@@ -192,10 +202,46 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
     calls.length = 0;
     const first = loadReviews("a");
     const second = loadReviews("a");
+    await settle();
     answer({ sessions: [snapshot("a1", "a")], stamps: { a1: "s" } });
     await Promise.all([first, second]);
     expect(calls.filter((call) => call === "a:review.list")).toEqual([
       "a:review.list",
+    ]);
+  });
+
+  test("after a reload, the list saved before sends only what changed", async () => {
+    const { loadReviews, getReviewSnapshot } = await import("./review");
+    savedLists.set("e", {
+      stamps: { e1: "s1", e2: "s2" },
+      sessions: [snapshot("e1", "e"), snapshot("e2", "e")],
+    });
+    sentParams.length = 0;
+    savedSince.length = 0;
+    answers.set("e", async () => ({
+      sessions: [snapshot("e3", "e")],
+      unchanged: ["e1"],
+      stamps: { e1: "s1", e3: "s3" },
+    }));
+    await loadReviews("e");
+    expect(sentParams[0]).toEqual({ known: { e1: "s1", e2: "s2" } });
+    expect(getReviewSnapshot("e1")).toBeTruthy();
+    expect(getReviewSnapshot("e2")).toBeUndefined();
+    expect(getReviewSnapshot("e3")).toBeTruthy();
+    // Saved again for the next reload, with the new stamps.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const [connection, saved] = savedSince[0] as [
+      string,
+      {
+        stamps: Record<string, string>;
+        sessions: { session: { id: string } }[];
+      },
+    ];
+    expect(connection).toBe("e");
+    expect(saved.stamps).toEqual({ e1: "s1", e3: "s3" });
+    expect(saved.sessions.map((each) => each.session.id).sort()).toEqual([
+      "e1",
+      "e3",
     ]);
   });
 }

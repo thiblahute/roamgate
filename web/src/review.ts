@@ -7,6 +7,7 @@ import type {
 } from "../../shared/review";
 import { bridge } from "./api";
 import type { RpcCallOptions } from "./rpcLanes";
+import { readReviewListCache, saveReviewListCache } from "./reviewListCache";
 import { validReviewSnapshots } from "./reviewValidate";
 import { store } from "./store";
 
@@ -169,13 +170,31 @@ async function readReviews(connectionId: string) {
   load.pending = true;
   load.triedRuntime = runtimeGeneration(connectionId);
   let result: { sessions?: unknown; stamps?: unknown; unchanged?: unknown };
-  // The reviews held from the last list: an unchanged one is not sent again.
-  const held = listStamps.get(connectionId);
+  // The reviews held from the last list (this page's, else the one saved
+  // before a reload): an unchanged one is not sent again.
+  let held = listStamps.get(connectionId);
+  let saved: Map<string, ReviewSnapshot> | null = null;
+  if (!held) {
+    const cached = await readReviewListCache(connectionId);
+    if (cached) {
+      held = cached.stamps;
+      saved = new Map(
+        cached.sessions
+          .filter((snapshot) => snapshot.session.connectionId === connectionId)
+          .map((snapshot) => [snapshot.session.id, snapshot]),
+      );
+    }
+  }
+  const heldSnapshot = (id: string) => {
+    const shown = state.sessions.get(id);
+    return shown?.session.connectionId === connectionId
+      ? shown
+      : saved?.get(id);
+  };
   const known: Record<string, string> = {};
   if (held)
     for (const [id, stamp] of Object.entries(held))
-      if (state.sessions.get(id)?.session.connectionId === connectionId)
-        known[id] = stamp;
+      if (heldSnapshot(id)) known[id] = stamp;
   try {
     result = (await reviewClient(connectionId).call(
       "review.list",
@@ -199,7 +218,7 @@ async function readReviews(connectionId: string) {
   );
   if (Array.isArray(result?.unchanged))
     for (const id of result.unchanged) {
-      const kept = typeof id === "string" ? state.sessions.get(id) : undefined;
+      const kept = typeof id === "string" ? heldSnapshot(id) : undefined;
       if (kept) sessions.set(id, kept);
     }
   if (
@@ -214,6 +233,16 @@ async function readReviews(connectionId: string) {
     sessions.set(snapshot.session.id, snapshot);
   if (!loaded.has(connectionId)) loaded = new Set([...loaded, connectionId]);
   publish({ sessions });
+  const stamps = listStamps.get(connectionId);
+  if (stamps)
+    saveReviewListCache(connectionId, {
+      stamps,
+      sessions: [...sessions.values()].filter(
+        (snapshot) =>
+          snapshot.session.connectionId === connectionId &&
+          stamps[snapshot.session.id] !== undefined,
+      ),
+    });
   // Prompts made while this page was away still wait.
   const waiting = (await reviewClient(connectionId)
     .call("review.prompts")
