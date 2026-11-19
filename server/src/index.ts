@@ -479,6 +479,12 @@ function markRpcError(
   rpcOutcomes.set(rpcOutcomeKey(ws, id), { status: "error", detail });
 }
 
+/** The agent sessions summaries each socket was given, newest first. */
+const agentSessionVersions = new WeakMap<
+  object,
+  { version: string; result: Record<string, unknown> }[]
+>();
+
 /** The Ranger state each socket was last given, for its deltas. */
 const assistantBases = new WeakMap<
   object,
@@ -1926,14 +1932,31 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       };
       // Read again on every burst of agent events: an answer that did not
       // change since the one the page holds is only its stamp.
+      // One that did change goes as the changes since the version this
+      // socket was given, when the page holds it.
       const version = Bun.hash(JSON.stringify(result)).toString(36);
+      const kept = agentSessionVersions.get(ws) ?? [];
+      const base = kept.find((each) => each.version === params?.since);
+      agentSessionVersions.set(
+        ws,
+        [
+          { version, result },
+          ...kept.filter((each) => each.version !== version),
+        ].slice(0, 2),
+      );
+      const delta =
+        base && base.version !== version
+          ? diffState(base.result, result as Record<string, unknown>)
+          : null;
       sendReply(
         {
           id,
           result:
             params?.since === version
               ? { unchanged: true, version }
-              : { ...result, version },
+              : delta && base
+                ? { sessions_delta: delta, base: base.version, version }
+                : { ...result, version },
         },
         "connections-agent-sessions",
       );

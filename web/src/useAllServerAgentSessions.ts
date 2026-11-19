@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { applyStateDelta, isStateDelta } from "../../shared/stateDelta";
 import { bridge, type ConnectionSummary } from "./api";
 import { withAgentActivity } from "./agentOrder";
 import { paneHasAgentHistory } from "./components/agentSession";
@@ -168,6 +169,29 @@ export function useAllServerAgentSessions(enabled: boolean) {
         if (disposed) return;
         if (result?.unchanged === true && lastSnapshots) {
           setSnapshots(lastSnapshots);
+          setError(null);
+          return;
+        }
+        if (result?.sessions_delta) {
+          // Changes to the summaries this page holds; against others, the
+          // whole summaries are read again at once.
+          const next =
+            lastSnapshots &&
+            result.base === lastVersion &&
+            isStateDelta(result.sessions_delta)
+              ? applyStateDelta(
+                  { connections: lastSnapshots },
+                  result.sessions_delta,
+                )
+              : null;
+          if (!next || !Array.isArray(next.connections)) {
+            lastVersion = undefined;
+            queued = true;
+            return;
+          }
+          setSnapshots(next.connections as ConnectionAgentSessions[]);
+          lastVersion =
+            typeof result.version === "string" ? result.version : undefined;
           setError(null);
           return;
         }
