@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { marked, type Tokens } from "marked";
+import { Lexer, Marked, type Tokens } from "marked";
 import { diagramMarkdown, endsInOpenFence } from "../diagramSource";
 import { useForgeSlots } from "../forgeSlots";
 import { useDiagramSlots } from "./DiagramSlots";
@@ -72,6 +72,70 @@ const MARKDOWN_DROP_CONTENT_TAGS = new Set([
   "script",
   "style",
 ]);
+/**
+ * The names a project's markdown file may use as HTML (the elements of
+ * HTML, SVG and MathML a README draws with): the sanitizer drops their
+ * tags, or them with their content, as it does any HTML.
+ */
+const HTML_ELEMENT_NAMES = new Set(
+  (
+    "a abbr address area article aside audio b base bdi bdo blockquote body " +
+    "br button canvas caption center cite code col colgroup data datalist dd " +
+    "del details dfn dialog div dl dt em embed fieldset figcaption figure " +
+    "font footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i iframe " +
+    "img input ins kbd label legend li link main map mark menu meta meter " +
+    "nav noscript object ol optgroup option output p param picture pre " +
+    "progress q rp rt ruby s samp script search section select slot small " +
+    "source span strike strong style sub summary sup table tbody td template " +
+    "textarea tfoot th thead time title tr track tt u ul var video wbr " +
+    "svg g path circle ellipse line polygon polyline rect text tspan defs use " +
+    "symbol lineargradient radialgradient stop clippath mask pattern " +
+    "foreignobject math mi mn mo mrow msup msub mfrac msqrt"
+  ).split(" "),
+);
+
+/**
+ * `text` with each `<` that does not start a tag `keep` takes, or an HTML
+ * comment, written `&lt;`: shown as written, not read as a tag the
+ * sanitizer would drop.
+ */
+function escapeUnknownTags(
+  text: string,
+  keep: (name: string) => boolean,
+): string {
+  return text.replace(
+    /<(?:(!--)|\/?([A-Za-z][\w-]*)(?=[\s/>]|$))?/g,
+    (match, comment?: string, name?: string) =>
+      comment || (name && keep(name.toLowerCase()))
+        ? match
+        : `&lt;${match.slice(1)}`,
+  );
+}
+
+/** The raw HTML a chat message or comment draws: the tags allowed only. */
+const messageTag = (name: string) => MARKDOWN_ALLOWED_TAGS.has(name);
+/** The raw HTML a project's markdown file draws: any HTML element. */
+const documentTag = (name: string) =>
+  HTML_ELEMENT_NAMES.has(name) || name.includes("-");
+
+/**
+ * A markdown parser whose raw HTML keeps only the tags `keep` takes; any
+ * other `<` is text. A block of raw HTML with text in it is read again as
+ * markdown, its text shown as written.
+ */
+function markdownParser(keep: (name: string) => boolean) {
+  return new Marked({
+    renderer: {
+      html(token) {
+        const text = escapeUnknownTags(token.text, keep);
+        if (text === token.text || !token.block) return text;
+        return this.parser.parse(Lexer.lex(text, this.options));
+      },
+    },
+  });
+}
+const messageMarkdown = markdownParser(messageTag);
+const documentMarkdown = markdownParser(documentTag);
 
 export function isSafeMarkdownUrl(value: string) {
   // Browsers drop tabs and line breaks anywhere in a URL, and spaces and
@@ -98,6 +162,13 @@ type MarkdownRenderOptions = {
   sourceBlocks?: boolean;
   /** Raw HTML blocks left out, for a frame to draw (scripts on). */
   htmlFrames?: boolean;
+  /**
+   * A project's markdown file, whose raw HTML is meant as HTML: any HTML
+   * element's tags are read as tags. Otherwise (a chat message, a comment)
+   * only the tags the sanitizer keeps are, and any other `<` is text, so
+   * `"peer":"<id>"` reads as written.
+   */
+  htmlDocument?: boolean;
 };
 
 export type MarkdownSelectionTarget = {
@@ -324,13 +395,14 @@ export function renderMarkdown(
   // rendering conversation text should opt into breaks to keep intentional
   // single newlines instead of collapsing them into one paragraph.
   const breaks = options.breaks ?? false;
+  const parser = options.htmlDocument ? documentMarkdown : messageMarkdown;
   const html = options.sourceBlocks
     ? markdownBlocks(text)
         .map((block, index) => {
           const body =
             options.htmlFrames && framedHtml(block)
               ? `<div class="md-html-slot" data-html-index="${index}"></div>`
-              : marked.parser(block.tokens, {
+              : parser.parser(block.tokens, {
                   async: false,
                   breaks,
                   gfm: true,
@@ -338,9 +410,20 @@ export function renderMarkdown(
           return `<div class="md-source-block" data-line="${block.start}" data-end="${block.end}" data-stop="b:${block.start}">${body}</div><div class="md-thread-slot" data-line="${block.start}" data-end="${block.end}" data-stops="b:${block.start}"></div>`;
         })
         .join("")
-    : marked.parse(text, { async: false, breaks, gfm: true });
+    : parser.parse(text, { async: false, breaks, gfm: true });
   const clean = sanitizeMarkdownHtml(String(html), options);
   return options.sourceBlocks ? withSourceItems(clean, text) : clean;
+}
+
+/** A line of a chat message or comment (a table's cell), sanitized. */
+export function renderInlineMarkdown(
+  text: string,
+  options: MarkdownRenderOptions = {},
+) {
+  return sanitizeMarkdownHtml(
+    String(messageMarkdown.parseInline(text, { async: false, gfm: true })),
+    options,
+  );
 }
 
 /** An element made in `doc`, with these attributes. */
@@ -522,6 +605,7 @@ export function MarkdownPreview({
   onSelectionChange,
   threadsFor,
   htmlBlock,
+  htmlDocument = false,
 }: {
   text: string;
   className?: string;
@@ -545,6 +629,8 @@ export function MarkdownPreview({
   ) => ReactNode;
   /** With scripts on: draws a raw HTML block itself. */
   htmlBlock?: (html: string) => ReactNode;
+  /** A project's markdown file: its raw HTML is meant as HTML. */
+  htmlDocument?: boolean;
 }) {
   // SVG markup alone is drawn as an ```svg block.
   const source = useMemo(() => diagramMarkdown(text), [text]);
@@ -559,8 +645,10 @@ export function MarkdownPreview({
         linkUrlResolver,
         sourceBlocks,
         htmlFrames,
+        htmlDocument,
       }),
     [
+      htmlDocument,
       htmlFrames,
       source,
       breaks,

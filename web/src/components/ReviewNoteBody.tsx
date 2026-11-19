@@ -8,7 +8,6 @@ import {
 } from "react";
 import { endsInOpenFence } from "../diagramSource";
 import { useForgeSlots } from "../forgeSlots";
-import { marked } from "marked";
 import {
   looseText,
   type MessageBlock,
@@ -16,7 +15,7 @@ import {
   tableCells,
 } from "../reviewMessageParts";
 import { Diagram, useDiagramSlots } from "./DiagramSlots";
-import { renderMarkdown, sanitizeMarkdownHtml } from "./markdown";
+import { renderInlineMarkdown, renderMarkdown } from "./markdown";
 import { highlightSnippetTokens } from "./syntaxHighlighting";
 import "./ReviewNoteBody.css";
 
@@ -441,10 +440,7 @@ export function messageLayout(text: string): MessageLayout {
   const cells = blocks.map((block) =>
     block.kind === "table"
       ? tableCells(block).map((cell) =>
-          sanitizeMarkdownHtml(
-            String(marked.parseInline(cell, { async: false, gfm: true })),
-            { imageUrlResolver: reviewImageUrl },
-          ),
+          renderInlineMarkdown(cell, { imageUrlResolver: reviewImageUrl }),
         )
       : null,
   );
@@ -537,7 +533,7 @@ function NoteTable({
           >
             <PartButton quote={quotes[at] ?? ""} parts={parts} />
             <span
-              // sanitizeMarkdownHtml cleans what marked produces.
+              // renderInlineMarkdown sanitises what it produces.
               // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised
               dangerouslySetInnerHTML={{ __html: cells[at - first] ?? "" }}
             />

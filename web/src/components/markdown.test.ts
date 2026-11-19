@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Window as BrowserWindow } from "happy-dom";
-import { isSafeMarkdownUrl, renderMarkdown } from "./markdown";
+import {
+  isSafeMarkdownUrl,
+  renderInlineMarkdown,
+  renderMarkdown,
+} from "./markdown";
 
 const browser = new BrowserWindow({ url: "http://localhost:8787/" });
 const globalsUsed = {
@@ -111,4 +115,68 @@ test("with HTML frames, a raw HTML block is left for its frame", () => {
   expect(html).not.toContain("raw");
   // A comment has nothing to frame.
   expect((html.match(/md-html-slot/g) ?? []).length).toBe(1);
+});
+
+/** The words a browser would show for the rendered HTML. */
+function shown(html: string): string {
+  const doc = new browser.DOMParser().parseFromString(html, "text/html");
+  return doc.body.textContent ?? "";
+}
+
+test("a message's angle-bracket placeholders are shown as written", () => {
+  const message =
+    '{"event":"call_carry","call":7,"ok":true,"replies_peer":"<id>"}\n' +
+    '{"event":"call_replies_peer","call":7,"peer":"<peer id>"}\n' +
+    "Checkout <sha> on <name>.";
+  const html = renderMarkdown(message, { breaks: true });
+  expect(shown(html)).toContain('"replies_peer":"<id>"');
+  expect(shown(html)).toContain('"peer":"<peer id>"');
+  expect(shown(html)).toContain("Checkout <sha> on <name>.");
+  // A line of its own is read as a raw HTML block: still shown, as markdown.
+  const block = renderMarkdown("<id>\n**bold** after", { breaks: true });
+  expect(shown(block)).toContain("<id>");
+  expect(block).toContain("<strong>bold</strong>");
+  // A table's cell in a review comment too.
+  expect(shown(renderInlineMarkdown("peer <id>, call 7"))).toBe(
+    "peer <id>, call 7",
+  );
+});
+
+test("a message shows tags it does not draw as text, and draws the others", () => {
+  const html = renderMarkdown("a <b>bold</b> and a<br>break", { breaks: true });
+  expect(shown(html)).toContain("a <b>bold</b> and a");
+  expect(html).toContain("<br>");
+  expect(html).not.toContain("<b>");
+});
+
+test("a project's markdown file keeps HTML, and shows other brackets", () => {
+  const html = renderMarkdown(
+    '<div align="center"><b>Title</b></div>\n\nSet <id> to `x`, a <b>bold</b> word.',
+    { htmlDocument: true },
+  );
+  expect(shown(html)).toContain("Title");
+  expect(shown(html)).toContain("Set <id> to x, a bold word.");
+  expect(html).not.toContain("<div");
+});
+
+test("a script never runs, in a message or a file", () => {
+  for (const options of [{ breaks: true }, { htmlDocument: true }]) {
+    for (const source of [
+      "x <script>alert(1)</script> y",
+      "<script>\nalert(1)\n</script>",
+      '<img src=x onerror="alert(1)">',
+      "<details><summary>s</summary><script>alert(1)</script></details>",
+    ]) {
+      const doc = new browser.DOMParser().parseFromString(
+        renderMarkdown(source, options),
+        "text/html",
+      );
+      expect(doc.querySelector("script")).toBeNull();
+      expect(
+        [...doc.querySelectorAll("*")].some((element) =>
+          element.getAttributeNames().some((name) => name.startsWith("on")),
+        ),
+      ).toBe(false);
+    }
+  }
 });

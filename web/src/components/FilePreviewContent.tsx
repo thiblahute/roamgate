@@ -1657,6 +1657,7 @@ export function FilePreviewContent({
               <DiagramFrameContext.Provider value={diagramFrames}>
                 <MarkdownPreview
                   className="file-preview-reading"
+                  htmlDocument
                   threadsFor={onCreateAnnotation ? threadsUnder : undefined}
                   htmlBlock={scripts.on ? renderHtmlBlock : undefined}
                   text={previewText}
