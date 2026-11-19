@@ -4040,7 +4040,7 @@ function main() {
                 );
               });
           },
-          close(ws) {
+          close(ws, code, reason) {
             if (ws.data.signalling) return voiceSocket.closeSignalling(ws);
             if (ws.data.voice) {
               voiceSocketsOpen = Math.max(0, voiceSocketsOpen - 1);
@@ -4052,6 +4052,10 @@ function main() {
             logger.debug("client disconnected", {
               client,
               clients: clients.size,
+              // 4000 with a reason: the page gave up on the socket (its
+              // heartbeat, a full send buffer); 1006: the link dropped.
+              code,
+              reason: reason || undefined,
               sent: flow.sent,
               unacked: flow.enabled ? flow.sent - flow.acked : "n/a",
               queued: flow.queued,
