@@ -643,7 +643,24 @@ function getReviewService(): ReviewService {
       // Machine-wide like forwards: each browser keeps the reviews of the
       // connections it shows and can raise a review opened on another one.
       const payload = JSON.stringify({ review: push });
-      for (const ws of clients) safeSend(ws, payload, "review");
+      // A session's snapshot replaces the one before: a browser behind on a
+      // slow link gets only the newest instead of every one in turn.
+      const coalesceKey =
+        push.type === "session"
+          ? `review:${push.snapshot.session.id}`
+          : undefined;
+      if (payload.length > 1024 * 1024)
+        logger.debug("large review push", {
+          type: push.type,
+          ...(push.type === "session"
+            ? {
+                session: push.snapshot.session.id,
+                threads: push.snapshot.threads.length,
+              }
+            : {}),
+          chars: payload.length,
+        });
+      for (const ws of clients) safeSend(ws, payload, "review", coalesceKey);
     },
     loadCommits: async (session) => {
       const { runtime } = resolveReadyConnection(
