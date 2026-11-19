@@ -626,7 +626,11 @@ describe("configuredTools", () => {
 
 describe("the call's music device", () => {
   /** The request the job started for `task` was given. */
-  function request(device: string | undefined, onCall: boolean): string {
+  function request(
+    device: string | undefined,
+    onCall: boolean,
+    fullVolume?: boolean,
+  ): string {
     const spawned: Fake[] = [];
     const using = configuredTools(
       () => ({
@@ -634,6 +638,9 @@ describe("the call's music device", () => {
         front_model: "opus",
         companion_mcp: POLICY,
         ...(device === undefined ? {} : { call_music_device: device }),
+        ...(fullVolume === undefined
+          ? {}
+          : { call_music_full_volume: fullVolume }),
       }),
       () => {
         const process = fakeProcess();
@@ -652,6 +659,21 @@ describe("the call's music device", () => {
     const asked = request("amd-desktop", true);
     expect(asked).toContain("Request: Mets du Miles Davis");
     expect(asked).toContain('Spotify Connect device "amd-desktop"');
+  });
+
+  test("music on call_music_device is set to full volume, and why", () => {
+    const asked = request("amd-desktop", true);
+    expect(asked).toContain(
+      "set that device's volume to 100: the call sets the music's level",
+    );
+    expect(request("amd-desktop", true, true)).toContain("volume to 100");
+  });
+
+  test("call_music_full_volume false leaves the device's volume", () => {
+    const asked = request("amd-desktop", true, false);
+    expect(asked).toContain('Spotify Connect device "amd-desktop"');
+    expect(asked).not.toContain("volume to 100");
+    expect(request("amd-desktop", false)).not.toContain("volume to 100");
   });
 
   test("off a call, or without a device, the default device stays", () => {

@@ -192,6 +192,12 @@ export type VoiceConfig = {
    */
   call_music_device?: string;
   /**
+   * Whether the companion also sets call_music_device's volume to 100
+   * when it starts, resumes or moves music there (true by default): the
+   * call sets the music's level, so the device's own volume stays full.
+   */
+  call_music_full_volume?: boolean;
+  /**
    * The loudness a call's replies are brought to, in LUFS, -40 to -6
    * (-16 by default), their peaks kept under -1 dBTP; false leaves them as
    * the models make them (-20 to -24 LUFS). A phone's own loudspeaker
@@ -367,6 +373,11 @@ export function readVoiceConfig(
     typeof config.call_music_device !== "string"
   )
     return { error: `${path}: call_music_device must be a string` };
+  if (
+    config.call_music_full_volume !== undefined &&
+    typeof config.call_music_full_volume !== "boolean"
+  )
+    return { error: `${path}: call_music_full_volume must be true or false` };
   if (
     config.call_reply_loudness !== undefined &&
     config.call_reply_loudness !== false &&

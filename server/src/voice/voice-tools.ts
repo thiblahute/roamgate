@@ -394,6 +394,17 @@ export function saysYes(said: string): boolean {
   return yes && !no;
 }
 
+/** The Spotify Connect device a call's music comes from. */
+export type CallMusicDevice = {
+  name: string;
+  /**
+   * Whether music started, resumed or moved there also sets its volume
+   * to 100: the call sets the level, and a lower one there (Spotify can
+   * fall back to 0 after a pause) only makes the call's music quieter.
+   */
+  fullVolume: boolean;
+};
+
 /**
  * The request a job is given: the date, then what to do, and on a call
  * whose music comes from a Spotify Connect device (call_music_device),
@@ -402,15 +413,18 @@ export function saysYes(said: string): boolean {
 export function toolPrompt(
   task: string,
   now = new Date(),
-  musicDevice?: string,
+  musicDevice?: CallMusicDevice,
 ): string {
   const prompt = researchPrompt(task, now).replace(
     "\n\nQuestion: ",
     "\n\nRequest: ",
   );
-  return musicDevice
-    ? `${prompt}\n\nThe user is on a call whose music comes from the Spotify Connect device ${JSON.stringify(musicDevice)}: music played, resumed or moved goes to that device (name it as the device), unless the request names another.`
-    : prompt;
+  if (!musicDevice) return prompt;
+  const device = JSON.stringify(musicDevice.name);
+  const volume = musicDevice.fullVolume
+    ? ` Whenever music starts, resumes or moves to ${device}, also set that device's volume to 100: the call sets the music's level itself, so any lower volume there (Spotify can fall back to 0 after a pause) only makes the call's music quieter or silent.`
+    : "";
+  return `${prompt}\n\nThe user is on a call whose music comes from the Spotify Connect device ${device}: music played, resumed or moved goes to that device (name it as the device), unless the request names another.${volume}`;
 }
 
 /** The request of a job that makes a confirmed call. */
@@ -435,8 +449,9 @@ export class VoiceTools {
     private readonly policy: () => CompanionMcpConfig,
     private readonly timing = { limit: LIMIT_MS, kept: KEPT_MS, held: HELD_MS },
     private readonly now: () => Date = () => new Date(),
-    /** voice.json's call_music_device, read when a job starts. */
-    private readonly musicDevice: () => string | undefined = () => undefined,
+    /** voice.json's call music device, read when a job starts. */
+    private readonly musicDevice: () => CallMusicDevice | undefined = () =>
+      undefined,
   ) {}
 
   /**
@@ -446,8 +461,17 @@ export class VoiceTools {
   start(task: string, onCall = false): ToolJob | null {
     const asked = task.trim().slice(0, MAX_TASK_CHARS);
     if (!asked || this.running.size >= MAX_RUNNING) return null;
-    const device = onCall ? this.musicDevice()?.trim() : undefined;
-    return this.run(asked, toolPrompt(asked, this.now(), device), null);
+    const device = onCall ? this.musicDevice() : undefined;
+    const name = device?.name.trim();
+    return this.run(
+      asked,
+      toolPrompt(
+        asked,
+        this.now(),
+        device && name ? { name, fullVolume: device.fullVolume } : undefined,
+      ),
+      null,
+    );
   }
 
   /**
@@ -774,7 +798,12 @@ export function configuredTools(
     undefined,
     () => {
       const read = config();
-      return "error" in read ? undefined : read.call_music_device;
+      if ("error" in read || read.call_music_device === undefined)
+        return undefined;
+      return {
+        name: read.call_music_device,
+        fullVolume: read.call_music_full_volume ?? true,
+      };
     },
   );
   return () => {
