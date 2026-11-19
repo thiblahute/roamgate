@@ -675,7 +675,12 @@ export function createVoiceRoutes(
           route.to === "tool_confirm" ||
           route.to === "tool_cancel"
         )
-          route = toolRoute(route, asSaid, fronting ? tools() : null);
+          route = toolRoute(
+            route,
+            asSaid,
+            fronting ? tools() : null,
+            Boolean(currentCall()?.music),
+          );
         if (route.to === "music")
           route = await musicRoute(route, currentCall());
         // After the turn: its session answered this request before it goes.
@@ -1198,6 +1203,8 @@ export function toolRoute(
   route: Extract<FrontReply, { to: "tool" | "tool_confirm" | "tool_cancel" }>,
   said: string,
   tools: VoiceTools | null,
+  /** Asked on a call with music: music plays on call_music_device. */
+  onCall = false,
 ): FrontReply {
   const french = looksFrench(said);
   if (!tools)
@@ -1215,6 +1222,7 @@ export function toolRoute(
         { to: "tool", task: route.task, reply: route.reply },
         said,
         tools,
+        onCall,
       );
     return {
       to: "self",
@@ -1252,7 +1260,7 @@ export function toolRoute(
     };
   }
   const task = route.task.trim() || said;
-  const job = tools.start(task);
+  const job = tools.start(task, onCall);
   if (!job || job.status !== "searching")
     return {
       to: "self",

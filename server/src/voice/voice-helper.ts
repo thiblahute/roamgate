@@ -185,6 +185,13 @@ export type VoiceConfig = {
   /** Whether a call starts with its music on; off, it waits to be asked. */
   call_music_at_start?: boolean;
   /**
+   * The Spotify Connect device whose sound call_background records here
+   * ("amd-desktop" for the desktop's Spotify app): the companion's tools
+   * play the music asked for on a call there. Unset, they use the
+   * connector's default device.
+   */
+  call_music_device?: string;
+  /**
    * The loudness a call's replies are brought to, in LUFS, -40 to -6
    * (-16 by default), their peaks kept under -1 dBTP; false leaves them as
    * the models make them (-20 to -24 LUFS). A phone's own loudspeaker
@@ -355,6 +362,11 @@ export function readVoiceConfig(
     typeof config.call_music_at_start !== "boolean"
   )
     return { error: `${path}: call_music_at_start must be true or false` };
+  if (
+    config.call_music_device !== undefined &&
+    typeof config.call_music_device !== "string"
+  )
+    return { error: `${path}: call_music_device must be a string` };
   if (
     config.call_reply_loudness !== undefined &&
     config.call_reply_loudness !== false &&

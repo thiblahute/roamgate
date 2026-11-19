@@ -1109,6 +1109,19 @@ describe("call background settings", () => {
     ).toMatchObject({ error: expect.stringContaining("call_music_at_start") });
   });
 
+  test("voice.json takes call_music_device as a string only", () => {
+    expect(
+      readVoiceConfig(
+        write({ whisper_model: "/bin/sh", call_music_device: 3 }),
+      ),
+    ).toMatchObject({ error: expect.stringContaining("call_music_device") });
+    expect(
+      readVoiceConfig(
+        write({ whisper_model: "/bin/sh", call_music_device: "amd-desktop" }),
+      ),
+    ).toMatchObject({ call_music_device: "amd-desktop" });
+  });
+
   test("voice.json refuses levels out of range", () => {
     const config = readVoiceConfig(
       write({ whisper_model: "/bin/sh", call_background_ducked: 2 }),

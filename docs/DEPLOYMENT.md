@@ -1236,6 +1236,7 @@ companion to put it on, unless `call_music_at_start` is `true`.
 | `call_background_ducked`     | `0.15`  | The factor applied while someone talks (0 to 1)                     |
 | `call_background_release_ms` | `3000`  | Quiet time before the music comes back up                           |
 | `call_music_at_start`        | `false` | Whether a call starts with the music on                             |
+| `call_music_device`          | unset   | The Spotify Connect device music asked for on a call plays on       |
 
 The music ducks while the companion's speech is being made or plays, and
 while you talk (from the start of your speech to its final words): down in
@@ -1289,7 +1290,29 @@ Screen & System Audio Recording) for the process responsible for the
 helper: the program the launchd service starts (`bun`, by its Homebrew
 path, `/opt/homebrew/Cellar/bun/<version>/bin/bun`). Without it, the tap
 gives only silence; after a Homebrew upgrade of Bun, allow the new path
-again. Descriptions use gst-launch syntax with full paths (no `~`); set
+again. On Linux, `pulsesrc` (in the helper, through the host's libpulse, which
+PipeWire's `pipewire-pulse` serves) records a sound server's device. To
+play the Spotify app under calls without hearing it in the room, give it a
+null sink of its own and record that sink's monitor:
+
+- a PipeWire null sink, for example `roamgate-music`, in
+  `~/.config/pipewire/pipewire.conf.d/` (`factory.name = support.null-audio-sink`,
+  `media.class = Audio/Sink`);
+- a WirePlumber rule in `~/.config/wireplumber/wireplumber.conf.d/` moving
+  the stream whose `node.name` is `spotify` to that sink
+  (`target.object = roamgate-music`);
+- `"call_background": "pulsesrc device=roamgate-music.monitor ! audioconvert"`,
+  and `"call_music_device"` set to the name this machine's Spotify app
+  shows in Spotify Connect.
+
+With `call_music_device`, the companion's tools, asked for music during a
+call with music, play it on that device (unless the request names another),
+so a call whose helper runs on the desktop takes the desktop's Spotify app,
+not the connector's default device. `pulsesrc` is live and clocked; raw
+audio from a FIFO (`filesrc ! rawaudioparse`) is neither, and arrives late
+in the running mix.
+
+Descriptions use gst-launch syntax with full paths (no `~`); set
 caps with `capsfilter caps=...`, and end a source with dynamic pads (a
 `decodebin`) with `! audioconvert`. `call_background` is read from
 `voice.json` only: it builds a pipeline in the helper, so no page edits it.
