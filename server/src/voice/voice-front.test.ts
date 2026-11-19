@@ -189,6 +189,11 @@ describe("parseFrontReply", () => {
     expect(FRONT_SYSTEM_PROMPT).toContain(
       "say what you saw: its status and for how long",
     );
+    // The events say what the session does, never that it looks stuck.
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      "An EVENT that a session is still working says only that",
+    );
+    expect(FRONT_SYSTEM_PROMPT).not.toContain("has not moved");
   });
 
   test("the prompt knows the words said reach the sessions marked [Voice]", () => {

@@ -134,6 +134,7 @@ import {
   parseVoiceSessionId,
   RANGER_VOICE_SESSION,
   REVIEWS_VOICE_SESSION,
+  errandNoticeText,
   followErrand,
   forwardFailedLine,
   forwardWork,
@@ -903,9 +904,9 @@ export function useVoiceChat({
             note(`${label}: ${given}`, companionName(), target ?? undefined);
             working.set(action.pane, (working.get(action.pane) ?? 0) + 1);
             void followErrand(job, (state) => {
-              if (state.stalled)
+              if (state.notice)
                 tellFront({
-                  text: `${label} has not moved for a while, perhaps waiting for an OK on its screen, on: ${given}`,
+                  text: errandNoticeText(label, state.notice),
                   at: Date.now(),
                   kind: "event",
                 });
@@ -994,8 +995,8 @@ export function useVoiceChat({
             // Its answer comes when it comes: voice chat goes on meanwhile.
             void followErrand(route.job, (state) =>
               note(
-                state.stalled
-                  ? `${name} waits on its screen, perhaps for your OK.`
+                state.notice
+                  ? `${errandNoticeText(name, state.notice)}.`
                   : `Asked ${name}: ${words}`,
               ),
             ).then((answer) => {

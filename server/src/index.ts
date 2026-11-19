@@ -31,6 +31,7 @@ import {
 } from "../../shared/rangerChat";
 import { isHtmlPath } from "../../shared/filePreview";
 import { EFFORT_SESSION_PREFIX } from "../../shared/review";
+import { agentAddress } from "../../shared/agentMessage";
 import { DOWNLOAD_TIMEOUT_MS } from "./workspace/file-constants";
 import { canRevealFiles } from "./workspace/file-manager";
 import { createWebPushService } from "./notifications/web-push";
@@ -390,6 +391,37 @@ const voiceErrands = new VoiceErrands({
     if (!runtime) throw new Error(`${connectionId} is not connected`);
     if (await runtime.conversation.prompt(paneId, text)) return;
     await runtime.herdr.call("agent.prompt", { target: paneId, text }, 5000);
+  },
+  // What it does now: what it asks the user (a permission or question
+  // card), its status, and the messages queued for it.
+  status: async (connectionId, paneId) => {
+    const runtime = connectionManager.readyRuntime(connectionId);
+    if (!runtime) return null;
+    const asked = getReviewService()
+      .prompts.list(connectionId)
+      .find((prompt) => prompt.paneId === paneId);
+    const chat = runtime.conversation.lease(paneId)
+      ? runtime.conversation.state(paneId)
+      : null;
+    let status: string | null = chat?.status ?? null;
+    if (!status) {
+      const info = await runtime.herdr
+        .call("agent.get", { target: paneId }, 5000)
+        .catch(() => null);
+      const agent = (info as { agent?: { agent_status?: unknown } } | null)
+        ?.agent;
+      status =
+        typeof agent?.agent_status === "string" ? agent.agent_status : null;
+    }
+    return {
+      status,
+      waiting: asked
+        ? asked.questions?.[0]?.question || asked.summary || asked.tool
+        : null,
+      queued:
+        (chat?.queue.length ?? 0) +
+        getAgentMessenger().waitingFor(agentAddress(connectionId, paneId)),
+    };
   },
 });
 // Voice sockets open, and when one was last used: a call keeps the

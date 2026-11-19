@@ -1023,9 +1023,7 @@ describe("errands", () => {
         return "job-1";
       },
       state: (job: string) =>
-        job === "job-1"
-          ? { done: true, answer: "Sunny.", stalled: false }
-          : null,
+        job === "job-1" ? { done: true, answer: "Sunny.", notice: null } : null,
     } as unknown as VoiceErrands;
     const routes = createVoiceRoutes(
       helper,
@@ -1076,7 +1074,7 @@ describe("errands", () => {
     expect(await state!.json()).toEqual({
       done: true,
       answer: "Sunny.",
-      stalled: false,
+      notice: null,
     });
   });
 });
