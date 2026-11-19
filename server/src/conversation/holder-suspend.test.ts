@@ -147,7 +147,7 @@ describe.skipIf(!hasBash)("roamgate-hold as a shell job", () => {
     ]);
     const [typed, jobs, back] = out.split("<<").slice(1);
     expect(typed).toContain(
-      "Stopped: claude (conversation: Fix the build). fg brings it back.",
+      "Suspended: claude (conversation: Fix the build). fg brings it back.",
     );
     // The shell has its prompt, the holder as a stopped job.
     expect(jobs).toMatch(/\[1\]\+\s+Stopped/);

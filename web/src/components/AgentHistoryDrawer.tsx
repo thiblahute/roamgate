@@ -253,8 +253,8 @@ export function AgentHistoryDrawer({
     permission?: AgentPermissionPrompt;
     onShowTerminal: () => void;
     /**
-     * Ctrl+Z, `:suspend` and the menu's Stop to the shell: the conversation
-     * stops as a job of the pane's shell (`fg` there brings it back), with
+     * Ctrl+Z, `:suspend` and the header's Suspend: the conversation is
+     * suspended as a job of the pane's shell (`fg` there brings it back), with
      * its title for the stopped job's line. Conversation mode only.
      */
     onSuspend?: (title: string | null) => void;
@@ -2388,7 +2388,7 @@ export function AgentHistoryDrawer({
     ? conversationAgentStatus(conversationState!.status)
     : pane.agent_status;
   const chatWorking = chatAgentStatus.toLowerCase() === "working";
-  // Ctrl+Z, `:suspend` and the menu's Stop to the shell (below).
+  // Ctrl+Z, `:suspend` and the header's Suspend (below).
   const suspendHere =
     paneChat?.onSuspend && inConversation && !conversation?.handing
       ? () => paneChat.onSuspend?.(sessionTitle)
@@ -3252,14 +3252,14 @@ export function AgentHistoryDrawer({
                 >
                   <Search size={14} />
                 </button>
-                {/* Ctrl+Z: stopped as a job of the pane's shell; fg there
+                {/* Ctrl+Z: suspended as a job of the pane's shell; fg there
                     brings it back. Also on a phone, which has no Ctrl+Z. */}
                 {paneChat.onSuspend && paneChat.modeBound ? (
                   <button
                     type="button"
                     className="agent-history-icon"
-                    aria-label="Stop to the shell"
-                    title="Stop to the shell (Ctrl+Z): the pane's shell gets its prompt back, and fg there brings the conversation back"
+                    aria-label="Suspend"
+                    title="Suspend to the shell (Ctrl+Z): fg brings it back"
                     disabled={!suspendHere}
                     onClick={() => suspendHere?.()}
                   >

@@ -720,7 +720,7 @@ export function TerminalView({
     void requestAgentChatHandover(connectionClient, pane.pane_id, "terminal");
   };
   /**
-   * Ctrl+Z (or the chat menu's Stop to the shell): the conversation stops
+   * Ctrl+Z (or the chat header's Suspend): the conversation is suspended
    * as a job of the pane's shell; `fg` there brings it back.
    */
   const [suspending, setSuspending] = useState(false);
@@ -4272,7 +4272,7 @@ export function TerminalView({
               <div className="terminal-conversation-notice" role="status">
                 <strong>
                   {suspending
-                    ? "Stopping the conversation\u2026"
+                    ? "Suspending the conversation\u2026"
                     : chatState?.phase === "to_terminal" ||
                         conversation?.handing === "terminal"
                       ? "Opening Claude in the terminal\u2026"
@@ -4283,7 +4283,7 @@ export function TerminalView({
                 </strong>
                 <p>
                   {suspending
-                    ? "The shell's prompt comes back, and fg there brings the conversation back."
+                    ? "The shell's prompt comes back; fg there brings the conversation back."
                     : chatState?.phase === "to_terminal" ||
                         conversation?.handing === "terminal"
                       ? "Claude resumes here in a moment."

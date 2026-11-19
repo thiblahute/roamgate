@@ -214,10 +214,11 @@ if (process.env.ROAMGATE_SUSPEND_DOM_TEST !== "1") {
       expect(suspended.length).toBe(2);
       // The chat's menu says it, for phones (no Ctrl+Z there).
       const button = container.querySelector<HTMLButtonElement>(
-        'button[aria-label="Stop to the shell"]',
+        'button[aria-label="Suspend"]',
       )!;
-      expect(button.title).toContain("Ctrl+Z");
-      expect(button.title).toContain("fg");
+      expect(button.title).toBe(
+        "Suspend to the shell (Ctrl+Z): fg brings it back",
+      );
       await React.act(async () => {
         button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
       });

@@ -337,7 +337,7 @@ def stopped_job(spec, why=None):
     if why:
         say(why)
         say("To leave it instead: kill this job, then claude --resume " + session)
-    say("Stopped: claude (conversation: " + title + "). fg brings it back.")
+    say("Suspended: claude (conversation: " + title + "). fg brings it back.")
     signal.signal(signal.SIGTSTP, signal.SIG_DFL)
     while True:
         os.kill(os.getpid(), signal.SIGTSTP)

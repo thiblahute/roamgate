@@ -28,8 +28,8 @@ export function SuspendedConversationStrip({
           <>Not brought back: {refusal}</>
         ) : (
           <>
-            Claude{title ? <> ({title})</> : null} is stopped in this shell;
-            type <kbd>fg</kbd> to bring the conversation back.
+            Claude{title ? <> ({title})</> : null} is suspended in this shell;
+            type <kbd>fg</kbd> or press the fg button to bring it back.
           </>
         )}
       </span>
