@@ -1,14 +1,15 @@
 # What builds the voice helper for Linux with CUDA (build.sh): the CUDA
 # toolkit, Rust, libclang for whisper-rs's bindings, CMake for whisper.cpp,
-# espeak-ng for Kokoro, and OpenSSL for the build scripts' downloads (ONNX
-# Runtime). GStreamer comes from its prebuilt bundle, whose static
-# libraries need glibc 2.38 and GCC 13's libstdc++ or newer.
+# espeak-ng for Kokoro, libpulse for the bundle's pulseaudio plugin, and
+# OpenSSL for the build scripts' downloads (ONNX Runtime). GStreamer
+# comes from its prebuilt bundle, whose static libraries need glibc 2.38
+# and GCC 13's libstdc++ or newer.
 FROM docker.io/nvidia/cuda:12.6.3-devel-ubuntu24.04
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates curl git pkg-config cmake clang libclang-dev xz-utils \
-        libespeak-ng-dev libssl-dev \
+        libespeak-ng-dev libpulse-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 ENV RUSTUP_HOME=/opt/rustup \
