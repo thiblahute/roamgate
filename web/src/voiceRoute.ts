@@ -400,21 +400,39 @@ export function forwardFailedLine(label: string, french: boolean): string {
     : `I could not start that on ${label}.`;
 }
 
+/** What is worth telling of a job that runs (server voice-errands.ts). */
+export type ErrandNotice =
+  | { seq: number; kind: "waiting"; what: string | null }
+  | { seq: number; kind: "working"; minutes: number };
+
 export type ErrandState = {
   done: boolean;
   answer: string | null;
-  stalled: boolean;
+  notice: ErrandNotice | null;
 };
 
 /**
- * Follows an errand until its answer is in, telling each change of state;
- * the answer, or null without one.
+ * What a notice says of `label`, plainly: still working and for how long,
+ * or waiting for the user's OK and on what.
+ */
+export function errandNoticeText(label: string, notice: ErrandNotice): string {
+  if (notice.kind === "waiting")
+    return notice.what
+      ? `${label} is waiting for your OK: ${notice.what}`
+      : `${label} is waiting for your OK`;
+  const minutes = Math.max(1, notice.minutes);
+  return `${label} is still working (${minutes} min since its last message)`;
+}
+
+/**
+ * Follows an errand until its answer is in, telling each new notice, and
+ * when one no longer holds (null); the answer, or null without one.
  */
 export async function followErrand(
   job: string,
   onState: (state: ErrandState) => void,
 ): Promise<string | null> {
-  let stalled = false;
+  let told: number | null = null;
   for (;;) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
     let state: ErrandState;
@@ -428,8 +446,9 @@ export async function followErrand(
       continue;
     }
     if (state.done) return state.answer;
-    if (state.stalled !== stalled) {
-      stalled = state.stalled;
+    const seq = state.notice?.seq ?? null;
+    if (seq !== told) {
+      told = seq;
       onState(state);
     }
   }

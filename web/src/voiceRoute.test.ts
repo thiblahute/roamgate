@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { parseVoiceMessage } from "./voiceChat";
 import {
+  errandNoticeText,
   forwardWork,
   handOffVoice,
   routeSpeech,
@@ -22,6 +23,22 @@ test("a pane shown again goes on awaiting the answer it awaited", () => {
   });
   // Taken once.
   expect(takeVoiceHandoff("local", "w2:p2")).toBeNull();
+});
+
+test("a job's notice says what the session does, never that it looks stuck", () => {
+  expect(
+    errandNoticeText("roamgate", { seq: 1, kind: "working", minutes: 7 }),
+  ).toBe("roamgate is still working (7 min since its last message)");
+  expect(
+    errandNoticeText("roamgate", {
+      seq: 2,
+      kind: "waiting",
+      what: "git push origin main",
+    }),
+  ).toBe("roamgate is waiting for your OK: git push origin main");
+  expect(
+    errandNoticeText("roamgate", { seq: 3, kind: "waiting", what: null }),
+  ).toBe("roamgate is waiting for your OK");
 });
 
 describe("the companion's jobs", () => {
