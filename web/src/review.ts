@@ -139,8 +139,29 @@ export function rememberReviewSnapshot(snapshot: ReviewSnapshot) {
   publish({ sessions });
 }
 
-/** Loads the connection's sessions; pushes keep them current afterwards. */
-export async function loadReviews(connectionId: string) {
+/** Each connection's list being read: a second load waits for it. */
+const runningLoads = new Map<string, Promise<void>>();
+
+/**
+ * Loads the connection's sessions; pushes keep them current afterwards.
+ * A load asked while one runs joins it: on a slow link a list takes long
+ * enough to be asked again, and each ask would queue the whole list again.
+ */
+export function loadReviews(connectionId: string): Promise<void> {
+  const running = runningLoads.get(connectionId);
+  if (running) {
+    lastLoadedConnection = connectionId;
+    return running;
+  }
+  const load = readReviews(connectionId).finally(() => {
+    if (runningLoads.get(connectionId) === load)
+      runningLoads.delete(connectionId);
+  });
+  runningLoads.set(connectionId, load);
+  return load;
+}
+
+async function readReviews(connectionId: string) {
   lastLoadedConnection = connectionId;
   // Until it succeeds: a load made before the connection is ready (on a
   // page load or a reconnect) is tried again once it is.
@@ -163,6 +184,8 @@ export async function loadReviews(connectionId: string) {
   } catch (error) {
     // A connection not ready yet keeps the same runtime once it is: try
     // again a little later rather than wait for a change that never comes.
+    // The retry starts a load of its own.
+    runningLoads.delete(connectionId);
     retryLater(connectionId);
     throw error;
   }

@@ -177,4 +177,25 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
     expect(getReviewSnapshot("d1")).toBeTruthy();
     expect(getReviewSnapshot("d2")).toBeUndefined();
   });
+
+  test("a load asked while one runs joins it", async () => {
+    const { loadReviews } = await import("./review");
+    let answer!: (value: unknown) => void;
+    let asked = 0;
+    answers.set("a", () =>
+      asked++ === 0
+        ? new Promise((resolve) => {
+            answer = resolve;
+          })
+        : Promise.resolve({}),
+    );
+    calls.length = 0;
+    const first = loadReviews("a");
+    const second = loadReviews("a");
+    answer({ sessions: [snapshot("a1", "a")], stamps: { a1: "s" } });
+    await Promise.all([first, second]);
+    expect(calls.filter((call) => call === "a:review.list")).toEqual([
+      "a:review.list",
+    ]);
+  });
 }
