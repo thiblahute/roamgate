@@ -420,6 +420,21 @@ fn bus_error(pipeline: &gst::Pipeline) -> Option<String> {
         })
 }
 
+/// The errors waiting on `pipeline`'s bus, taken off it.
+fn drain_bus_errors(pipeline: &gst::Pipeline) -> Vec<String> {
+    let Some(bus) = pipeline.bus() else {
+        return Vec::new();
+    };
+    std::iter::from_fn(|| bus.pop_filtered(&[gst::MessageType::Error]))
+        .filter_map(|message| match message.view() {
+            gst::MessageView::Error(e) => {
+                Some(format!("{} ({})", e.error(), e.debug().unwrap_or_default()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 impl Speaker {
     fn new(config: &Config) -> Result<Self, String> {
         let (synthesizer, name) = match (&config.tts_models, &config.kokoro_model) {
@@ -566,6 +581,12 @@ impl Speaker {
         mut call: Option<&mut call::Sentence>,
         on_audio: &dyn Fn(),
     ) -> Result<(Vec<u8>, f64), String> {
+        // An error left from a sentence before (a failure posts several:
+        // the synthesizer's, then appsrc's) is not this one's: popped
+        // first, it failed every sentence after it with an old error.
+        for stale in drain_bus_errors(&self.pipeline) {
+            eprintln!("[voice] an earlier sentence's error dropped: {stale}");
+        }
         self.to_call
             .store(call.is_some(), std::sync::atomic::Ordering::SeqCst);
         let rate = match &self.tempo {
@@ -636,8 +657,21 @@ impl Speaker {
         };
         // Negotiated by now: the graph shows the caps.
         dump_dot(&self.pipeline, "roamgate-voice-speak");
-        self.src.send_event(gst::event::FlushStart::new());
-        self.src.send_event(gst::event::FlushStop::new(true));
+        if result.is_err() {
+            // Failed: a flush does not restart what stopped on the error
+            // (appsrc's task, the synthesizer's stream). Back to READY and
+            // on, which keeps anyttssynthesizer's models loaded, the next
+            // sentence starts afresh.
+            let _ = self.pipeline.set_state(gst::State::Ready);
+            drain_bus_errors(&self.pipeline);
+            if let Err(err) = self.pipeline.set_state(gst::State::Playing) {
+                let detail = bus_error(&self.pipeline).unwrap_or_else(|| err.to_string());
+                eprintln!("[voice] the speaker did not start again: {detail}");
+            }
+        } else {
+            self.src.send_event(gst::event::FlushStart::new());
+            self.src.send_event(gst::event::FlushStop::new(true));
+        }
         result.map(|speech| (speech, rate))
     }
 }
