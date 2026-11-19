@@ -1,6 +1,6 @@
 /// <reference types="bun-types" />
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 import {
   applyWorkspaceTreeOp,
   type WorkspaceTree,
@@ -11,8 +11,11 @@ import {
   agentGroupPaths,
   agentGroupPlacementOps,
   applyWorkspaceTreeOps,
+  closedWorkspaceOfEvent,
+  createWorkspaceTreePruner,
   onWorkspaceTreeChanged,
   placeCreatedWorkspace,
+  pruneGoneWorkspaces,
   readWorkspaceTree,
   WORKSPACE_TREE_MAX_BYTES,
 } from "./workspace-tree";
@@ -347,5 +350,182 @@ describe("an agent's --group", () => {
       yours: "gst",
     });
     expect(agentGroupPaths(tree).yours).toBeNull();
+  });
+});
+
+describe("workspaces that no longer exist leave the arrangement", () => {
+  const ges = {
+    connection_id: "desktop",
+    path: "/src/gstreamer.worktrees/ges-child-names",
+    label: "upstream-ges-child-names",
+    workspace_id: "w3",
+  };
+  const colour = {
+    connection_id: "desktop",
+    path: "/src/gstreamer.worktrees/colour",
+    label: "up-colour",
+    workspace_id: "w2",
+  };
+  const remote = {
+    connection_id: "mac",
+    path: "/Users/me/src/notes",
+    label: "notes",
+    workspace_id: "w1",
+  };
+  const liveDesktop = [
+    { workspace_id: "w2", label: "up-colour", path: colour.path },
+  ];
+
+  async function arranged() {
+    const store = memorySettings();
+    await applyWorkspaceTreeOps(
+      [
+        { op: "create_group", id: "up", label: "upstream", parent: null },
+        { op: "move", subject: { workspace: colour }, parent: { node: "up" } },
+        { op: "move", subject: { workspace: ges }, parent: { node: "up" } },
+        { op: "move", subject: { workspace: remote }, parent: { node: "up" } },
+      ],
+      { update: store.update },
+    );
+    return store;
+  }
+  const labels = (tree: WorkspaceTree) =>
+    tree.nodes.map((node) =>
+      node.kind === "group" ? `[${node.label}]` : node.ref.label,
+    );
+
+  function pruner(
+    store: Awaited<ReturnType<typeof arranged>>,
+    lists: Map<
+      string,
+      { workspace_id: string; label: string; path?: string }[]
+    >,
+  ) {
+    const reads: string[] = [];
+    const pruner = createWorkspaceTreePruner({
+      list: async (connectionId) => {
+        reads.push(connectionId);
+        return lists.get(connectionId) ?? null;
+      },
+      read: () => readWorkspaceTree(store.read),
+      prune: (connectionId, live, options) =>
+        pruneGoneWorkspaces(connectionId, live, {
+          ...options,
+          update: store.update,
+        }),
+      settleMs: 1000,
+      confirmMs: 5000,
+    });
+    return Object.assign(pruner, { reads });
+  }
+  const flush = async () => {
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+  };
+
+  test("reads the workspace Herdr reports closed or removed", () => {
+    expect(
+      closedWorkspaceOfEvent({
+        event: "worktree.removed",
+        data: {
+          workspace_id: "w3",
+          workspace: { workspace_id: "w3", label: "upstream-ges-child-names" },
+          worktree: { path: ges.path },
+        },
+      }),
+    ).toEqual({
+      workspace_id: "w3",
+      label: "upstream-ges-child-names",
+      path: ges.path,
+    });
+    expect(
+      closedWorkspaceOfEvent({
+        data: { type: "workspace_closed", workspace_id: "w3" },
+      }),
+    ).toEqual({ workspace_id: "w3" });
+    expect(
+      closedWorkspaceOfEvent({
+        event: "tab.closed",
+        data: { workspace_id: "w3" },
+      }),
+    ).toBeNull();
+  });
+
+  test("a closed workspace leaves at once, its group and siblings kept", async () => {
+    const store = await arranged();
+    const seen: WorkspaceTree[] = [];
+    const stop = onWorkspaceTreeChanged((tree) => seen.push(tree));
+    const prune = pruner(store, new Map([["desktop", liveDesktop]]));
+    try {
+      await prune.event("desktop", {
+        event: "workspace.closed",
+        data: { workspace_id: "w3" },
+      });
+      await prune.idle();
+    } finally {
+      stop();
+      prune.dispose();
+    }
+    const tree = await readWorkspaceTree(store.read);
+    expect(labels(tree)).toEqual(["[upstream]", "up-colour", "notes"]);
+    expect(
+      tree.nodes.every((node) => node.parent === null || node.parent === "up"),
+    ).toBe(true);
+    expect(seen.length).toBe(1);
+  });
+
+  test("a ready connection's vanished workspaces leave once two reads agree", async () => {
+    jest.useFakeTimers();
+    const store = await arranged();
+    const lists = new Map([["desktop", liveDesktop]]);
+    const prune = pruner(store, lists);
+    try {
+      prune.ready("desktop");
+      // The connection that is down keeps its workspaces.
+      prune.ready("mac");
+      expect(prune.reads).toEqual([]);
+      jest.advanceTimersByTime(1000);
+      await flush();
+      expect(prune.reads).toEqual(["desktop", "mac"]);
+      // Waiting for the second read: nothing gone yet.
+      expect(labels(await readWorkspaceTree(store.read))).toContain(
+        "upstream-ges-child-names",
+      );
+      jest.advanceTimersByTime(5000);
+      await prune.idle();
+      expect(labels(await readWorkspaceTree(store.read))).toEqual([
+        "[upstream]",
+        "up-colour",
+        "notes",
+      ]);
+    } finally {
+      prune.dispose();
+      jest.useRealTimers();
+    }
+  });
+
+  test("a workspace back by the second read stays", async () => {
+    jest.useFakeTimers();
+    const store = await arranged();
+    const lists = new Map([["desktop", liveDesktop]]);
+    const prune = pruner(store, lists);
+    try {
+      prune.ready("desktop");
+      jest.advanceTimersByTime(1000);
+      await flush();
+      expect(prune.reads).toEqual(["desktop"]);
+      lists.set("desktop", [
+        ...liveDesktop,
+        { workspace_id: "w8", label: ges.label, path: ges.path },
+      ]);
+      jest.advanceTimersByTime(5000);
+      await prune.idle();
+      expect(prune.reads).toEqual(["desktop", "desktop"]);
+      expect(labels(await readWorkspaceTree(store.read))).toContain(
+        "upstream-ges-child-names",
+      );
+    } finally {
+      prune.dispose();
+      jest.useRealTimers();
+    }
   });
 });

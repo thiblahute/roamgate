@@ -4,9 +4,11 @@ import {
   autoPlaceWorkspace,
   emptyWorkspaceTree,
   findWorkspaceNode,
+  goneWorkspaceTreeNodes,
   parseWorkspaceTree,
   parseWorkspaceTreeOp,
   parseWorkspaceTreePath,
+  removeWorkspaceTreeNodes,
   resolveWorkspaceTree,
   resolveWorkspaceTreePath,
   type WorkspaceRef,
@@ -534,6 +536,109 @@ describe("recognising workspaces again", () => {
           { "[upstreaming]": ["up-colorspace", "up-ocio", "notes"] },
         ],
       },
+    ]);
+  });
+});
+
+describe("workspaces that no longer exist", () => {
+  const ges: WorkspaceRef = {
+    connection_id: "local",
+    path: "/src/gstreamer.worktrees/ges-child-names",
+    label: "upstream-ges-child-names",
+    workspace_id: "w3",
+  };
+  // ocio > [upstream] > up-colorspace, ges-child-names, up-ocio (desktop)
+  const arranged = apply(
+    emptyWorkspaceTree(),
+    {
+      op: "create_group",
+      id: "g",
+      label: "upstream",
+      parent: { workspace: ocio },
+    },
+    { op: "move", subject: { workspace: upColor }, parent: { node: "g" } },
+    { op: "move", subject: { workspace: ges }, parent: { node: "g" } },
+    { op: "move", subject: { workspace: upRs }, parent: { node: "g" } },
+  );
+  const gesNode = findWorkspaceNode(arranged, ges)!.id;
+  const local = [
+    { workspace_id: "w1", label: "gstreamer-ocio", path: ocio.path },
+    { workspace_id: "w2", label: "up-colorspace", path: upColor.path },
+  ];
+
+  test("are the ones a ready connection no longer lists", () => {
+    expect(goneWorkspaceTreeNodes(arranged, "local", local)).toEqual([gesNode]);
+    // Each connection's nodes are judged by its own list only.
+    expect(
+      goneWorkspaceTreeNodes(arranged, "desktop", [
+        { workspace_id: "w7", label: "up-ocio", path: upRs.path },
+      ]),
+    ).toEqual([]);
+  });
+
+  test("leave their group, the rest in order", () => {
+    const tree = removeWorkspaceTreeNodes(
+      arranged,
+      goneWorkspaceTreeNodes(arranged, "local", local),
+    );
+    expect(shape(tree)).toEqual([
+      { "gstreamer-ocio": [{ "[upstream]": ["up-colorspace", "up-ocio"] }] },
+    ]);
+  });
+
+  test("an empty list confirms nothing: Herdr may still be restoring", () => {
+    expect(goneWorkspaceTreeNodes(arranged, "local", [])).toEqual([]);
+  });
+
+  test("one whose name is still listed is not gone, only moved", () => {
+    expect(
+      goneWorkspaceTreeNodes(arranged, "local", [
+        ...local,
+        { workspace_id: "w8", label: ges.label!, path: "/tmp" },
+      ]),
+    ).toEqual([]);
+    // A restarted Herdr gives its id to another workspace: still gone.
+    expect(
+      goneWorkspaceTreeNodes(arranged, "local", [
+        ...local,
+        { workspace_id: "w3", label: "scratch", path: "/tmp" },
+      ]),
+    ).toEqual([gesNode]);
+  });
+
+  test("a closed workspace takes only its own node", () => {
+    const withNotes = apply(arranged, {
+      op: "move",
+      subject: {
+        workspace: {
+          connection_id: "local",
+          label: "notes",
+          workspace_id: "w9",
+        },
+      },
+      parent: { node: "g" },
+    });
+    expect(
+      goneWorkspaceTreeNodes(withNotes, "local", local, {
+        workspace_id: "w3",
+      }),
+    ).toEqual([gesNode]);
+    // By its checkout, when its last seen id is stale.
+    expect(
+      goneWorkspaceTreeNodes(withNotes, "local", local, {
+        workspace_id: "w40",
+        path: ges.path,
+      }),
+    ).toEqual([gesNode]);
+    // Even the last workspace of a connection.
+    expect(
+      goneWorkspaceTreeNodes(withNotes, "local", [], {
+        workspace_id: "w9",
+        label: "notes",
+      }),
+    ).toEqual([
+      findWorkspaceNode(withNotes, { connection_id: "local", label: "notes" })!
+        .id,
     ]);
   });
 });

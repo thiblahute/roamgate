@@ -778,6 +778,71 @@ export function resolveWorkspaceTree(
   return { nodes, nodeByWorkspace, refreshes };
 }
 
+/** What Herdr says of a workspace it just closed or removed the worktree of. */
+export type ClosedWorkspace = {
+  workspace_id: string;
+  label?: string;
+  path?: string;
+};
+
+/**
+ * The workspace nodes of `connectionId` that Herdr confirms gone. `live` is
+ * that connection's list, read just now: it matches none of them. Without
+ * `closed`, a node is kept while a workspace no other node holds still has
+ * its name (one that lost its checkout is not gone; ids prove nothing, a
+ * restarted Herdr numbers its workspaces again), and an empty list confirms
+ * nothing (a Herdr still restoring its session). With
+ * `closed`, only the nodes naming that workspace count: Herdr reported it
+ * closed.
+ */
+export function goneWorkspaceTreeNodes(
+  tree: WorkspaceTree,
+  connectionId: string,
+  live: readonly LiveWorkspaceIdentity[],
+  closed?: ClosedWorkspace,
+): string[] {
+  if (!closed && live.length === 0) return [];
+  const resolved = resolveWorkspaceTree(tree, new Map([[connectionId, live]]));
+  const freeLabels = new Set(
+    live
+      .filter(
+        (each) =>
+          !resolved.nodeByWorkspace.has(
+            liveWorkspaceKey(connectionId, each.workspace_id),
+          ),
+      )
+      .map((each) => each.label),
+  );
+  return tree.nodes.flatMap((node) => {
+    if (node.kind !== "workspace" || node.ref.connection_id !== connectionId)
+      return [];
+    if (resolved.nodes.get(node.id)?.state !== "gone") return [];
+    if (closed) {
+      const named =
+        node.ref.workspace_id === closed.workspace_id ||
+        (!!closed.path && node.ref.path === closed.path) ||
+        (!node.ref.path && !!closed.label && node.ref.label === closed.label);
+      return named ? [node.id] : [];
+    }
+    if (node.ref.label && freeLabels.has(node.ref.label)) return [];
+    return [node.id];
+  });
+}
+
+/** Takes workspace nodes out; their children take their place. */
+export function removeWorkspaceTreeNodes(
+  tree: WorkspaceTree,
+  ids: Iterable<string>,
+): WorkspaceTree {
+  let next = tree;
+  for (const id of ids) {
+    const node = next.nodes.find((each) => each.id === id);
+    if (node?.kind === "workspace")
+      next = applyWorkspaceTreeOp(next, { op: "remove", node: id });
+  }
+  return next;
+}
+
 /**
  * Where an automatically placed workspace goes: under the workspace that
  * asked for it, unless the usual list already shows it right there (a

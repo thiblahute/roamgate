@@ -114,6 +114,8 @@ import {
   agentGroupPaths,
   agentGroupPlacementOps,
   applyWorkspaceTreeOps,
+  createWorkspaceTreePruner,
+  listWorkspaceIdentities,
   onWorkspaceTreeChanged,
   placeCreatedWorkspace,
   readWorkspaceTree,
@@ -644,6 +646,19 @@ try {
   };
 }
 
+// A workspace closed or removed leaves the Workspaces arrangement, and a
+// ready connection's vanished workspaces too; a down one keeps its own.
+const workspaceTreePruner = createWorkspaceTreePruner({
+  list: (connectionId) =>
+    listWorkspaceIdentities(connectionManager, connectionId),
+  read: () => readWorkspaceTree(),
+  onError: (error, connectionId) =>
+    logger.warn("could not tidy the workspace arrangement", {
+      connection: connectionId,
+      error: sanitizeConnectionError(error),
+    }),
+});
+
 const connectionFailureReporters = new Map<string, RecoveryReporter>();
 const readyConnectionGenerations = new Map<string, number>();
 
@@ -682,6 +697,7 @@ const connectionManager = new ConnectionManager<LegacyConnectionRuntime>(
     }
     if (status.state !== "ready") return;
     resumeAssistantIfLoaded();
+    workspaceTreePruner.ready(status.id);
     if (reporter.recovered(fields)) {
       readyConnectionGenerations.set(status.id, status.generation);
     } else if (
@@ -1482,6 +1498,7 @@ function runtimeFactoryForProfile(
               error: sanitizeConnectionError(error),
             });
           }
+          void workspaceTreePruner.event(eventIdentity.id, event);
         },
         forwards: sshForwards,
         onSshMasterReady: profileConfig.sshHost
