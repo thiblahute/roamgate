@@ -624,6 +624,29 @@ describe("flow control", () => {
     expect(sent.includes("frame 1")).toBe(false);
   });
 
+  test("replaces a queued large snapshot with a newer one that has the same key", () => {
+    const { ackAll, send, sent } = flowSocket();
+    ackAll();
+    send("x".repeat(WS_FLOW_INITIAL_WINDOW_CHARS * 2), "terminal-output");
+    const first = `{"review":"${"1".repeat(WS_FLOW_CHUNK_CHARS * 2)}"}`;
+    const second = `{"review":"${"2".repeat(WS_FLOW_CHUNK_CHARS * 2)}"}`;
+    // The window is full: held, then replaced, never sent twice.
+    send(first, "review", "review:s1");
+    send(second, "review", "review:s1");
+    while (reassemble(sent).length < 2) ackAll();
+    expect(reassemble(sent).slice(1)).toEqual([second]);
+  });
+
+  test("a large snapshot sent while the window has room still leaves in chunks", () => {
+    const { ackAll, send, sent } = flowSocket();
+    ackAll();
+    const snapshot = `{"review":"${"s".repeat(WS_FLOW_CHUNK_CHARS * 3)}"}`;
+    send(snapshot, "review", "review:s1");
+    expect(sent[sent.length - 1]?.startsWith(WS_CHUNK_MARKER)).toBe(true);
+    while (reassemble(sent).length < 1) ackAll();
+    expect(reassemble(sent)).toEqual([snapshot]);
+  });
+
   test("closes a browser that stops reading past the queue limit", () => {
     const { ackAll, closes, send } = flowSocket();
     ackAll();

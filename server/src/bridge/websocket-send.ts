@@ -35,8 +35,10 @@ const heldPayloads = new WeakMap<WebSocketSendTarget, Map<string, string>>();
 //
 // Counts are UTF-16 code units of the text frames on both ends, so neither
 // side encodes anything to count.
-export const WS_FLOW_INITIAL_WINDOW_CHARS = 512 * 1024;
-export const WS_FLOW_MIN_WINDOW_CHARS = 256 * 1024;
+export const WS_FLOW_INITIAL_WINDOW_CHARS = 256 * 1024;
+// Small enough that a pong waits behind under two seconds of data on a
+// 40 KB/s link; a faster link grows the window from its measured rate.
+export const WS_FLOW_MIN_WINDOW_CHARS = 64 * 1024;
 export const WS_FLOW_MAX_WINDOW_CHARS = 8 * 1024 * 1024;
 /** How long the data in flight may take to arrive, at the measured rate. */
 export const WS_FLOW_TARGET_DELAY_MS = 1000;
@@ -55,6 +57,8 @@ const ACK_PREFIX = '{"ack":';
 interface FlowItem {
   /** Set when the payload leaves in chunks. */
   chunkId: number | null;
+  /** A newer payload with this key replaces this one until it starts. */
+  coalesceKey?: string;
   offset: number;
   payload: string;
 }
@@ -269,6 +273,9 @@ export function sendWebSocketMessage(
       return true;
     }
     held?.delete(coalesceKey);
+    // A large replacement (a review's snapshot) still leaves in chunks.
+    if (flow.enabled && payload.length > WS_FLOW_CHUNK_CHARS)
+      return enqueue(ws, flow, payload, sendContext, coalesceKey);
     return writeFrame(ws, flow, payload, sendContext);
   }
   if (
@@ -285,13 +292,28 @@ function enqueue(
   flow: SocketFlow,
   payload: string,
   sendContext: WebSocketSendContext,
+  coalesceKey?: string,
 ): boolean {
+  const queue = flow.queues.get(sendContext.context);
+  const waiting =
+    coalesceKey === undefined
+      ? undefined
+      : queue?.find(
+          (item) => item.coalesceKey === coalesceKey && item.offset === 0,
+        );
+  if (waiting) {
+    flow.queuedChars += payload.length - waiting.payload.length;
+    waiting.payload = payload;
+    if (waiting.chunkId === null && payload.length > WS_FLOW_CHUNK_CHARS)
+      waiting.chunkId = flow.nextChunkId++;
+    return pumpFlow(ws, flow, sendContext);
+  }
   const item: FlowItem = {
     chunkId: payload.length > WS_FLOW_CHUNK_CHARS ? flow.nextChunkId++ : null,
     offset: 0,
     payload,
+    ...(coalesceKey === undefined ? {} : { coalesceKey }),
   };
-  const queue = flow.queues.get(sendContext.context);
   if (queue) queue.push(item);
   else flow.queues.set(sendContext.context, [item]);
   flow.queuedChars += payload.length;
