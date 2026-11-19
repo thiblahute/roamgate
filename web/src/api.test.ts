@@ -1774,6 +1774,27 @@ describe("bridge connection lifecycle", () => {
       expect(bridge.connection().viewEpoch).toBe(before + 1);
     });
 
+    test("waits on a call whose reply is behind data still arriving", async () => {
+      const { bridge, socket } = await connectedBridge();
+      socket.deliver({ id: socket.pings()[0].id, result: { ok: true } });
+      await flushMicrotasks();
+      let failed: Error | null = null;
+      const reply = bridge.call("review.list", {}, 1_000).catch((error) => {
+        failed = error;
+      });
+      // Past its timeout, but frames keep coming: still waiting.
+      for (let i = 0; i < 4; i++) {
+        await advance(500);
+        socket.deliver({ event: "x", data: {} });
+      }
+      await flushMicrotasks();
+      expect(failed).toBeNull();
+      // Nothing at all for a while: it fails then.
+      await advance(6_000);
+      await reply;
+      expect(String(failed)).toContain("timeout: review.list");
+    });
+
     test("sends no acknowledgements to a bridge without flow control", async () => {
       const { socket } = await connectedBridge();
       socket.deliver({ event: "x", data: {} });

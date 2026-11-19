@@ -331,6 +331,10 @@ export interface ConnectionClient {
 
 const LEGACY_DEFAULT_CONNECTION_ID = "legacy-default";
 const RPC_TIMEOUT_MS = 30000;
+/** A call times out only after this long with nothing at all arriving... */
+const RPC_PROGRESS_GRACE_MS = 5000;
+/** ...or once it waited this many times its timeout. */
+const RPC_TIMEOUT_STRETCH = 6;
 const CONNECT_TIMEOUT_MS = 8000;
 const HEARTBEAT_INTERVAL_MS = 10000;
 /**
@@ -487,6 +491,8 @@ export class Bridge {
   private heartbeatDeadline: ReturnType<typeof setTimeout> | null = null;
   /** Frames received so far; a heartbeat window compares two readings. */
   private inboundCount = 0;
+  /** When the last frame arrived (Date.now()). */
+  private lastInboundAt = 0;
   /** Smoothed heartbeat round trip, 0 until the first pong. */
   private heartbeatRttMs = 0;
   private flowControl = false;
@@ -691,6 +697,7 @@ export class Bridge {
       // Every frame counts, a chunk of a large message included: data still
       // arriving keeps the heartbeat from calling the socket dead.
       this.inboundCount++;
+      this.lastInboundAt = Date.now();
       const message =
         typeof ev.data === "string" ? this.receiveFrame(ev.data) : ev.data;
       if (message !== null) this.onMessage(message);
@@ -1275,14 +1282,26 @@ export class Bridge {
     }
     const id = `c${++this.seq}_${Date.now().toString(36)}`;
     return new Promise((resolve, reject) => {
-      const timer =
-        timeoutMs === null
-          ? null
-          : setTimeout(() => {
-              if (this.pending.delete(id)) {
-                reject(new Error(`timeout: ${method}`));
-              }
-            }, timeoutMs);
+      const startedAt = Date.now();
+      // A reply on a slow link arrives behind whatever was sent before it:
+      // while frames keep arriving the call waits on, up to a few times its
+      // timeout, instead of failing and being asked (and sent) again.
+      const arm = (delayMs: number): ReturnType<typeof setTimeout> =>
+        setTimeout(() => {
+          const entry = this.pending.get(id);
+          if (!entry || timeoutMs === null) return;
+          const now = Date.now();
+          if (
+            now - this.lastInboundAt < RPC_PROGRESS_GRACE_MS &&
+            now - startedAt < timeoutMs * RPC_TIMEOUT_STRETCH
+          ) {
+            entry.timer = arm(RPC_PROGRESS_GRACE_MS);
+            return;
+          }
+          this.pending.delete(id);
+          reject(new Error(`timeout: ${method}`));
+        }, delayMs);
+      const timer = timeoutMs === null ? null : arm(timeoutMs);
       this.pending.set(id, {
         resolve,
         reject,
