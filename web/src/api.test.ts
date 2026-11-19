@@ -1652,7 +1652,7 @@ describe("bridge connection lifecycle", () => {
     test("tears down a socket that stays silent for a whole window", async () => {
       const { bridge, socket } = await connectedBridge();
 
-      await advance(10_000);
+      await advance(20_000);
 
       expect(socket.closeReasons).toEqual(["bridge heartbeat timed out"]);
       expect(bridge.status).toBe("disconnected");
@@ -1663,9 +1663,9 @@ describe("bridge connection lifecycle", () => {
 
       // The page is busy rendering what earlier messages brought; the pong
       // waits behind them, but every handled message proves the socket alive.
-      await advance(5_000);
+      await advance(10_000);
       socket.deliver({ event: "pane.output", data: {} });
-      await advance(5_000);
+      await advance(10_000);
 
       expect(socket.closeReasons).toEqual([]);
       expect(bridge.status).toBe("connected");
@@ -1682,12 +1682,12 @@ describe("bridge connection lifecycle", () => {
 
       // A long task held the main thread: the deadline runs 9 s late.
       pageStall = 9_000;
-      await advance(10_000);
+      await advance(20_000);
       expect(socket.closeReasons).toEqual([]);
       expect(bridge.status).toBe("connected");
 
       // Still nothing in a window the page could watch: the socket is dead.
-      await advance(10_000);
+      await advance(20_000);
       expect(socket.closeReasons).toEqual(["bridge heartbeat timed out"]);
       expect(bridge.status).toBe("disconnected");
     });
@@ -1699,24 +1699,24 @@ describe("bridge connection lifecycle", () => {
 
       bridge.probeConnectionNow();
       expect(socket.pings().length).toBe(2);
-      await advance(10_000);
+      await advance(20_000);
 
       expect(socket.closeReasons).toEqual(["bridge heartbeat timed out"]);
     });
 
     test("stretches the silence window to several measured round trips", async () => {
       const { bridge, socket } = await connectedBridge();
-      // A loaded link: the pong takes 4 s.
-      pageStall = 4_000;
+      // A loaded link: the pong takes 6 s.
+      pageStall = 6_000;
       socket.deliver({ id: socket.pings()[0].id, result: { ok: true } });
       await flushMicrotasks();
-      expect(bridge.heartbeatWindowMs()).toBe(16_000);
+      expect(bridge.heartbeatWindowMs()).toBe(24_000);
 
       await advance(10_000);
       expect(socket.pings().length).toBe(2);
-      await advance(10_000);
+      await advance(20_000);
       expect(socket.closeReasons).toEqual([]);
-      await advance(6_000);
+      await advance(4_000);
       expect(socket.closeReasons).toEqual(["bridge heartbeat timed out"]);
     });
 
@@ -1730,9 +1730,9 @@ describe("bridge connection lifecycle", () => {
           data: `\u0001${index}:${last ? 1 : 0}:${text}`,
         } as MessageEvent);
 
-      await advance(8_000);
+      await advance(15_000);
       chunk(7, false, big.slice(0, 10));
-      await advance(8_000);
+      await advance(15_000);
       chunk(7, true, big.slice(10));
       await flushMicrotasks();
 
@@ -1767,7 +1767,7 @@ describe("bridge connection lifecycle", () => {
       const { bridge } = await connectedBridge();
       const before = bridge.connection().viewEpoch ?? -1;
       const generation = bridge.clientGeneration;
-      await advance(10_000);
+      await advance(20_000);
       expect(bridge.clientGeneration).toBeGreaterThan(generation);
       expect(bridge.connection().viewEpoch).toBe(before);
       bridge.setActiveConnection("other");

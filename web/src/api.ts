@@ -334,11 +334,12 @@ const RPC_TIMEOUT_MS = 30000;
 const CONNECT_TIMEOUT_MS = 8000;
 const HEARTBEAT_INTERVAL_MS = 10000;
 /**
- * The shortest silence that may end a connection. A loaded mobile link
- * queues for whole seconds, so the window also stretches to several measured
+ * The shortest silence that may end a connection. A mobile link stalls for
+ * tens of seconds and then delivers again over the same socket, which a new
+ * one would not do sooner; the window also stretches to several measured
  * round trips (see heartbeatWindowMs).
  */
-const HEARTBEAT_TIMEOUT_MS = 10000;
+const HEARTBEAT_TIMEOUT_MS = 20000;
 const HEARTBEAT_RTT_FACTOR = 4;
 /** Acknowledge received data at least this often while it arrives... */
 const FLOW_ACK_DELAY_MS = 100;
