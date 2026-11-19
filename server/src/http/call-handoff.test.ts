@@ -379,6 +379,11 @@ describe("a call handed to the Android app", () => {
         outputs: [
           { id: "speaker", kind: "speaker", label: "Loudspeaker" },
           { id: "bt:AA", kind: "bluetooth", label: "Car" },
+          {
+            id: "music:AA",
+            kind: "bluetooth-music",
+            label: "Car (music)",
+          },
           { id: "x", kind: "teleport", label: "Nope" },
         ],
       }),
@@ -390,6 +395,7 @@ describe("a call handed to the Android app", () => {
       outputs: [
         { id: "speaker", kind: "speaker", label: "Loudspeaker" },
         { id: "bt:AA", kind: "bluetooth", label: "Car" },
+        { id: "music:AA", kind: "bluetooth-music", label: "Car (music)" },
       ],
     });
     socket.message(

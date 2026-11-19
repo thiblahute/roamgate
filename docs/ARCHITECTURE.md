@@ -1918,7 +1918,12 @@ that has the app is carried by the app (`web/src/androidApp.ts`,
    page "Hung up in the Roamgate app". The app tells its outputs with
    `{"op": "call_output_state", "current": "speaker", "outputs": [{"id":
    "speaker", "kind": "speaker", "label": "Loudspeaker"}]}` (`kind` one
-   of `speaker`, `earpiece`, `bluetooth`, `wired`, `usb`; 16 at most);
+   of `speaker`, `earpiece`, `bluetooth`, `bluetooth-music`, `wired`,
+   `usb`; 16 at most; `bluetooth-music`, `{"id": "music:<device>",
+   "label": "<headset> (music)"}`, only while an A2DP or LE audio device
+   is connected, plays the replies and the music on that headset's media
+   profile at full quality, with the phone's microphone, the helper
+   cancelling the echo as on the loudspeaker);
    the page shows them on its output button and sends a choice as
    `{"op": "call_output", "call": 7, "output": "<id>"}`, which the app
    gets as `{"event": "call_output", ...}`.

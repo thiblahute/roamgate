@@ -2037,6 +2037,7 @@ describe("a call handed to the Android app", () => {
       outputs: [
         { id: "speaker", kind: "speaker", label: "Loudspeaker" },
         { id: "bt:AA", kind: "bluetooth", label: "Car" },
+        { id: "music:AA", kind: "bluetooth-music", label: "Car (music)" },
       ],
     });
     const outputs = await call.outputs();
@@ -2049,6 +2050,31 @@ describe("a call handed to the Android app", () => {
       call: 7,
       output: "bt:AA",
     });
+    // The headset's media profile is one more output, cycled to and from.
+    const music = nextCallOutput({ ...outputs, current: "bluetooth" })!;
+    expect(music).toMatchObject({
+      kind: "bluetooth-music",
+      deviceId: "music:AA",
+    });
+    expect(await call.useOutput(music)).toBe(true);
+    expect(sent.slice(-1)[0]).toEqual({
+      op: "call_output",
+      call: 7,
+      output: "music:AA",
+    });
+    tell({
+      event: "call_output_state",
+      call: 7,
+      current: "music:AA",
+      outputs: [
+        { id: "speaker", kind: "speaker", label: "Loudspeaker" },
+        { id: "bt:AA", kind: "bluetooth", label: "Car" },
+        { id: "music:AA", kind: "bluetooth-music", label: "Car (music)" },
+      ],
+    });
+    const onMusic = await call.outputs();
+    expect(onMusic.current).toBe("bluetooth-music");
+    expect(nextCallOutput(onMusic)).toMatchObject({ kind: "speaker" });
     call.stop();
   });
 

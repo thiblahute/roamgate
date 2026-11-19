@@ -206,11 +206,18 @@ export function rewriteCandidates(text: string, address: string | null) {
 /** What of a call the Android app may carry instead of the page. */
 export type CarriedLeg = "microphone" | "replies";
 const CARRIED_LEGS: readonly CarriedLeg[] = ["microphone", "replies"];
-/** What an output may be, as the page draws it (CallOutputKind). */
+/**
+ * What an output may be, as the page draws it (CallOutputKind). Only a
+ * kind is checked here: the app picks the echo for each (`"echo":
+ * "here"` on the loudspeaker and on "bluetooth-music", a headset's media
+ * profile with the phone's own microphone), and the music goes with the
+ * replies wherever they play.
+ */
 const OUTPUT_KINDS = new Set([
   "speaker",
   "earpiece",
   "bluetooth",
+  "bluetooth-music",
   "wired",
   "usb",
 ]);

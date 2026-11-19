@@ -2,6 +2,7 @@ import {
   Bluetooth,
   Ear,
   Headphones,
+  Music,
   Smartphone,
   Usb,
   Volume2,
@@ -22,6 +23,7 @@ const OUTPUTS: Record<CallOutputKind, { label: string; icon: typeof Volume2 }> =
     speaker: { label: "Speaker", icon: Volume2 },
     earpiece: { label: "Earpiece", icon: Ear },
     bluetooth: { label: "Bluetooth", icon: Bluetooth },
+    "bluetooth-music": { label: "Bluetooth music", icon: Music },
     wired: { label: "Headset", icon: Headphones },
     usb: { label: "USB", icon: Usb },
   };

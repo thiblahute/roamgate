@@ -286,6 +286,7 @@ export type CallOutputKind =
   | "speaker"
   | "earpiece"
   | "bluetooth"
+  | "bluetooth-music"
   | "wired"
   | "usb";
 /**
@@ -316,6 +317,7 @@ const OUTPUT_WORDS: Record<CallOutputKind, string> = {
   speaker: "loudspeaker",
   earpiece: "earpiece",
   bluetooth: "Bluetooth headset",
+  "bluetooth-music": "Bluetooth headset's music profile",
   wired: "wired headset",
   usb: "USB headset",
 };
@@ -404,6 +406,7 @@ const OUTPUT_ORDER: CallOutputKind[] = [
   "speaker",
   "earpiece",
   "bluetooth",
+  "bluetooth-music",
   "wired",
   "usb",
 ];
