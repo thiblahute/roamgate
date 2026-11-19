@@ -414,7 +414,7 @@ describe("a link's call", () => {
     };
     const lines: string[] = [];
     let opened = 0;
-    let result: Promise<unknown> | null = null;
+    let result = null as Promise<unknown> | null;
     const app = {
       known: () => true,
       embedded: () => true,
