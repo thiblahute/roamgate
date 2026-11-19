@@ -137,6 +137,7 @@ import {
   type MoveQuestion,
 } from "../voiceFollow";
 import { installVoiceFollow } from "../voiceFollowGuard";
+import { useAllServerAgentSessions } from "../useAllServerAgentSessions";
 
 /** A reply cut short by speaking up, and where. */
 type CutReply = ReadingCut & { text: string; ids: string[] };
@@ -278,6 +279,9 @@ export function useVoiceChat({
   const speechRate = useSpeechRate(onError);
   const surprise = useVoiceSurprise(onError);
   const [state, setState] = useState<VoiceState>("off");
+  // Every connection's sessions, for the router and the front to name
+  // (voiceSessions): read while voice is on, whatever the page shows.
+  useAllServerAgentSessions(state !== "off");
   const [level, setLevel] = useState(0);
   // What is being said, as the helper hears it.
   const [heard, setHeard] = useState("");

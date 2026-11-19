@@ -1,7 +1,12 @@
 import { useSyncExternalStore } from "react";
 import { voiceMessage } from "../../shared/voiceMessage";
+import { withAgentActivity } from "./agentOrder";
 import type { State } from "./store";
 import type { Pane, Workspace } from "./types";
+import {
+  type ConnectionAgentSessions,
+  latestServerAgentSessions,
+} from "./useAllServerAgentSessions";
 
 /** Sent with voice requests; the server refuses them without it. */
 const VOICE_HEADERS = { "x-roamgate-voice": "1" };
@@ -106,8 +111,20 @@ function sessionsOf(
     }));
 }
 
-/** Every agent session the page knows, on every connection it reads. */
-export function voiceSessions(state: State): VoiceSessionInfo[] {
+/**
+ * Every agent session on every connection, as `agent_sessions` lists them:
+ * the displayed connection from the page's state, another one from the
+ * topology the page read for it, else from the server's summary of all
+ * connections (`connections.agent_sessions`, `others`). The page reads
+ * another connection's topology only while "show all connections" is on,
+ * so without the summary a call heard only the displayed connection's.
+ */
+export function voiceSessions(
+  state: State,
+  others:
+    | readonly ConnectionAgentSessions[]
+    | null = latestServerAgentSessions(),
+): VoiceSessionInfo[] {
   const machine = (id: string) =>
     state.connections.find((connection) => connection.id === id)?.label || id;
   const sessions = sessionsOf(
@@ -116,11 +133,39 @@ export function voiceSessions(state: State): VoiceSessionInfo[] {
     state.workspaces,
     state.panes,
   );
-  for (const [id, session] of Object.entries(state.sessionsByConnectionId)) {
+  const ids = new Set([
+    ...Object.keys(state.sessionsByConnectionId),
+    ...state.connections.map((connection) => connection.id),
+  ]);
+  for (const id of ids) {
     if (id === state.activeConnectionId) continue;
-    sessions.push(
-      ...sessionsOf(id, machine(id), session.workspaces, session.panes),
+    const session = state.sessionsByConnectionId[id];
+    if (session && session.lastRefresh > 0 && !session.error) {
+      sessions.push(
+        ...sessionsOf(id, machine(id), session.workspaces, session.panes),
+      );
+      continue;
+    }
+    const connection = state.connections.find((each) => each.id === id);
+    const summary = others?.find(
+      (each) =>
+        each.connection_id === id &&
+        each.connection_generation === connection?.generation,
     );
+    if (connection?.state === "ready" && summary && !summary.error) {
+      sessions.push(
+        ...sessionsOf(
+          id,
+          machine(id),
+          summary.workspaces,
+          withAgentActivity(summary.panes, summary.agents),
+        ),
+      );
+    } else if (session) {
+      sessions.push(
+        ...sessionsOf(id, machine(id), session.workspaces, session.panes),
+      );
+    }
   }
   return sessions;
 }

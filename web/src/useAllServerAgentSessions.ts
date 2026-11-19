@@ -119,6 +119,17 @@ let lastVersion: string | undefined;
  */
 export const SESSIONS_REFRESH_GAP_MS = 2_000;
 
+/**
+ * The summaries last read, for code outside a view: the voice companion
+ * lists every connection's sessions from them (voiceRoute voiceSessions).
+ * Fresh while a view or voice reads them with the hook below.
+ */
+export function latestServerAgentSessions():
+  | readonly ConnectionAgentSessions[]
+  | null {
+  return lastSnapshots;
+}
+
 export function useAllServerAgentSessions(enabled: boolean) {
   const state = useStoreSelector(
     (snapshot) => ({
