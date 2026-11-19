@@ -24,3 +24,19 @@ test("a review list sends again only the reviews the page does not hold", () => 
   expect(next.stamps.a).toBe(first.stamps.a);
   expect(next.stamps.b).not.toBe(first.stamps.b);
 });
+
+test("a list read in pages sends the most recent reviews first, then the rest", () => {
+  const snapshot = (id: string) =>
+    ({ session: { id, title: id }, threads: [] }) as unknown as Parameters<
+      typeof listReviewsSince
+    >[0][number];
+  const all = ["a", "b", "c"].map(snapshot);
+  const first = listReviewsSince(all, {}, 2);
+  expect(first.sessions.map((each) => each.session.id)).toEqual(["a", "b"]);
+  expect(first.remaining).toBe(1);
+  expect(Object.keys(first.stamps)).toEqual(["a", "b"]);
+  const last = listReviewsSince(all, first.stamps, 2);
+  expect(last.unchanged).toEqual(["a", "b"]);
+  expect(last.sessions.map((each) => each.session.id)).toEqual(["c"]);
+  expect(last.remaining).toBe(0);
+});

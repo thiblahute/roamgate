@@ -146,6 +146,7 @@ export async function handleReviewRpc(
       return listReviewsSince(
         service.list({ connectionId: connection.id, chats: true }),
         raw.known,
+        raw.limit,
       );
     case "review.activity":
       return service.activity({ connectionId: connection.id });

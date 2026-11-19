@@ -75,7 +75,7 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
   mock.module("./store", () => ({
     store: {
       get: () => ({
-        connections: ["desktop", "a", "b", "c", "d", "e"].map((id) => ({
+        connections: ["desktop", "a", "b", "c", "d", "e", "f"].map((id) => ({
           id,
           generation: 1,
         })),
@@ -183,7 +183,10 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
       stamps: { d1: "x1" },
     }));
     await loadReviews("d");
-    expect(sentParams[0]).toEqual({ known: { d1: "x1", d2: "x2" } });
+    expect(sentParams[0]).toEqual({
+      known: { d1: "x1", d2: "x2" },
+      limit: 30,
+    });
     expect(getReviewSnapshot("d1")).toBeTruthy();
     expect(getReviewSnapshot("d2")).toBeUndefined();
   });
@@ -224,7 +227,10 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
       stamps: { e1: "s1", e3: "s3" },
     }));
     await loadReviews("e");
-    expect(sentParams[0]).toEqual({ known: { e1: "s1", e2: "s2" } });
+    expect(sentParams[0]).toEqual({
+      known: { e1: "s1", e2: "s2" },
+      limit: 30,
+    });
     expect(getReviewSnapshot("e1")).toBeTruthy();
     expect(getReviewSnapshot("e2")).toBeUndefined();
     expect(getReviewSnapshot("e3")).toBeTruthy();
@@ -243,5 +249,32 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
       "e1",
       "e3",
     ]);
+  });
+
+  test("a device with no reviews yet reads the list in pages", async () => {
+    const { loadReviews, getReviewSnapshot } = await import("./review");
+    const pages = [
+      {
+        sessions: [snapshot("f1", "f")],
+        unchanged: [],
+        stamps: { f1: "s1" },
+        remaining: 1,
+      },
+      {
+        sessions: [snapshot("f2", "f")],
+        unchanged: ["f1"],
+        stamps: { f1: "s1", f2: "s2" },
+        remaining: 0,
+      },
+    ];
+    sentParams.length = 0;
+    answers.set("f", async () => pages.shift() ?? {});
+    await loadReviews("f");
+    expect(sentParams.slice(0, 2)).toEqual([
+      { known: {}, limit: 30 },
+      { known: { f1: "s1" }, limit: 30 },
+    ]);
+    expect(getReviewSnapshot("f1")).toBeTruthy();
+    expect(getReviewSnapshot("f2")).toBeTruthy();
   });
 }

@@ -169,7 +169,6 @@ async function readReviews(connectionId: string) {
   const load = loadState(connectionId);
   load.pending = true;
   load.triedRuntime = runtimeGeneration(connectionId);
-  let result: { sessions?: unknown; stamps?: unknown; unchanged?: unknown };
   // The reviews held from the last list (this page's, else the one saved
   // before a reload): an unchanged one is not sent again.
   let held = listStamps.get(connectionId);
@@ -195,18 +194,64 @@ async function readReviews(connectionId: string) {
   if (held)
     for (const [id, stamp] of Object.entries(held))
       if (heldSnapshot(id)) known[id] = stamp;
-  try {
-    result = (await reviewClient(connectionId).call(
-      "review.list",
-      held ? { known } : {},
-    )) as { sessions?: unknown; stamps?: unknown; unchanged?: unknown };
-  } catch (error) {
-    // A connection not ready yet keeps the same runtime once it is: try
-    // again a little later rather than wait for a change that never comes.
-    // The retry starts a load of its own.
-    runningLoads.delete(connectionId);
-    retryLater(connectionId);
-    throw error;
+  // The list comes in pages, most recently updated first, each page shown
+  // as it comes: a device with nothing yet never gets megabytes at once.
+  // The last page names every review there is (unchanged or sent).
+  const got = new Map<string, ReviewSnapshot>();
+  const gotStamps: Record<string, string> = {};
+  let final: Set<string>;
+  for (;;) {
+    let result: {
+      sessions?: unknown;
+      stamps?: unknown;
+      unchanged?: unknown;
+      remaining?: unknown;
+    };
+    try {
+      result = (await reviewClient(connectionId).call("review.list", {
+        known: { ...known },
+        limit: REVIEW_LIST_PAGE,
+      })) as typeof result;
+    } catch (error) {
+      // A connection not ready yet keeps the same runtime once it is: try
+      // again a little later rather than wait for a change that never comes.
+      // The retry starts a load of its own.
+      runningLoads.delete(connectionId);
+      retryLater(connectionId);
+      throw error;
+    }
+    const pageIds = new Set<string>();
+    if (Array.isArray(result?.unchanged))
+      for (const id of result.unchanged) {
+        if (typeof id !== "string") continue;
+        const kept = got.get(id) ?? heldSnapshot(id);
+        if (kept) got.set(id, kept);
+        pageIds.add(id);
+      }
+    // A malformed session is dropped rather than break the page.
+    for (const snapshot of validReviewSnapshots(result?.sessions)) {
+      got.set(snapshot.session.id, snapshot);
+      pageIds.add(snapshot.session.id);
+    }
+    if (
+      result?.stamps &&
+      typeof result.stamps === "object" &&
+      !Array.isArray(result.stamps)
+    )
+      for (const [id, stamp] of Object.entries(result.stamps))
+        if (typeof stamp === "string") {
+          known[id] = stamp;
+          gotStamps[id] = stamp;
+        }
+    const remaining =
+      typeof result?.remaining === "number" ? result.remaining : 0;
+    if (remaining <= 0) {
+      final = pageIds;
+      break;
+    }
+    const shown = new Map(state.sessions);
+    for (const [id, snapshot] of got) shown.set(id, snapshot);
+    publish({ sessions: shown });
   }
   load.pending = false;
   load.retryDelay = RETRY_FIRST_MS;
@@ -216,21 +261,14 @@ async function readReviews(connectionId: string) {
       ([, snapshot]) => snapshot.session.connectionId !== connectionId,
     ),
   );
-  if (Array.isArray(result?.unchanged))
-    for (const id of result.unchanged) {
-      const kept = typeof id === "string" ? heldSnapshot(id) : undefined;
-      if (kept) sessions.set(id, kept);
-    }
-  if (
-    result?.stamps &&
-    typeof result.stamps === "object" &&
-    !Array.isArray(result.stamps)
-  )
-    listStamps.set(connectionId, result.stamps as Record<string, string>);
+  for (const id of final) {
+    const snapshot = got.get(id);
+    if (snapshot) sessions.set(id, snapshot);
+  }
+  const listed: Record<string, string> = {};
+  for (const id of final) if (gotStamps[id]) listed[id] = gotStamps[id];
+  if (Object.keys(listed).length) listStamps.set(connectionId, listed);
   else listStamps.delete(connectionId);
-  // A malformed session is dropped rather than break the page.
-  for (const snapshot of validReviewSnapshots(result?.sessions))
-    sessions.set(snapshot.session.id, snapshot);
   if (!loaded.has(connectionId)) loaded = new Set([...loaded, connectionId]);
   publish({ sessions });
   const stamps = listStamps.get(connectionId);
@@ -251,6 +289,8 @@ async function readReviews(connectionId: string) {
 }
 
 let lastLoadedConnection: string | null = null;
+/** Reviews per list page (see readReviews). */
+const REVIEW_LIST_PAGE = 30;
 /** Per connection, the stamps of the reviews its last list gave. */
 const listStamps = new Map<string, Record<string, string>>();
 /**
