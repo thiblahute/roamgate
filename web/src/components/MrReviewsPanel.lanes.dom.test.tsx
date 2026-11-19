@@ -206,7 +206,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_LANES_DOM_TEST !== "1") {
     await wait(80);
     // Lanes with counts; the blocked ones drawn under their parent.
     expect(lanes()).toEqual([
-      "Your move2",
+      "Needs you2",
       "Waiting1",
       "Blocked2",
       "Merged or closed1",

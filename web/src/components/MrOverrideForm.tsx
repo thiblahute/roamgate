@@ -175,7 +175,7 @@ export function MrOverrideForm({
         />
       </label>
       <label>
-        <span>Whose move</span>
+        <span>Who it is on</span>
         <span className="mr-override-whose">
           <select
             value={whose}
@@ -313,7 +313,7 @@ export function MrOverrideSummary({
           <dd
             className={`mr-override-fields${entry.inferredOutdated ? " is-outdated" : ""}`}
           >
-            <span>whose move: {mrWhoseLabel(entry.inferred.whose)}</span>
+            <span>on: {mrWhoseLabel(entry.inferred.whose)}</span>
             <span>{entry.inferred.next}</span>
             {entry.inferred.stale ? <span>stale</span> : null}
             <small>
@@ -350,7 +350,7 @@ export function MrOverrideSummary({
           <dd className="mr-override-fields">
             {override.whose ? (
               <span className={outdated ? "is-outdated" : ""}>
-                whose move: {mrWhoseLabel(override.whose)}
+                on: {mrWhoseLabel(override.whose)}
               </span>
             ) : null}
             {override.labels?.map((label) => (

@@ -1036,17 +1036,17 @@ have pending on the forge. On a phone it fills the screen. **All**, **To
 review** and **Mine** above the list (`f`, `:all`, `:review`, `:mine`) show
 everything or one side only; the choice is kept in the browser.
 
-**Mine is a status board of your own work**, in lanes saying whose move it
-is: **Your move**, **Waiting**, **Merging**, **Blocked**, **Not proposed
+**Mine is a status board of your own work**, in lanes saying who it is on
+is: **Needs you**, **Waiting**, **Merging**, **Blocked**, **Not proposed
 upstream yet**, **Stale** and **Merged or closed**, each with its count; `za` (or a click on
 its title) folds a lane, kept in the browser. Each row is one line
 (reference, title, chips) and a second line saying the **next step**.
 Before anything is set by hand, the lane and the next step come from what
 the forge says: a failed pipeline, conflicts, changes requested, unresolved
-threads, a needed rebase or a draft make it your move ("Fix the failed
+threads, a needed rebase or a draft put it in Needs you ("Fix the failed
 pipeline", "Answer 2 unresolved threads"); otherwise it waits for review
 (or, approved, to be merged); no activity for 90 days (the `stale_days`
-setting) makes it Stale. Claude then **infers** whose move it is and the
+setting) makes it Stale. Claude then **infers** who it is on and the
 next step from the request's threads (the last note of each, who wrote
 it, resolved or not), its description and status, and your branches' local
 state ("Answer bob on the locking question", "Waiting for bob to
@@ -1104,7 +1104,7 @@ requests: a card per planned request in columns, side by side on a wide
 screen, one list under the columns' titles on a phone. A plan without a
 part is **Planned** ("proposed" or "accepted"), one whose part has no
 request yet **Not proposed yet** (its branch's row when the inbox has
-one), one whose request is open in that request's lane (**Your move**,
+one), one whose request is open in that request's lane (**Needs you**,
 **Waiting**, **Merging**, **Blocked**, **Stale**) drawn with the inbox's
 card (number, title, pipeline, approvals, next step, merge-after, home
 button), and merged ones in **Done**, folded until you open it. A part's
@@ -1115,7 +1115,7 @@ commits and its part's state (ported, conflict). The inbox's keys work on
 it: `j`/`k` from card to card in a column (through every column on a
 phone), `h`/`l` between columns, Enter the request's review in its home
 (a part with no request: its workspace; a plan with no part: its place in
-Plans), `o` on the forge, `e` its next step and whose move, `w` its
+Plans), `o` on the forge, `e` its next step and who it is on, `w` its
 workspace, `za` folds a column, and `c` comments on the card for the
 leader. **Progress**
 (counts, a burndown, a breakdown by directory, overlaps), **Ledger** (every
@@ -1207,7 +1207,7 @@ secrets; an import shows what it would change before you apply it
 ([deployment](docs/DEPLOYMENT.md#export-and-import-of-the-reviews-state)).
 
 **Set it by hand** when you know better: `e` (or **Set by hand** in its
-details) edits whose move it is (yours, the reviewer's, external, or a
+details) edits who it is on (you, the reviewer's, external, or a
 person's), the next step, the requests it waits for, labels, a link (a URL,
 or a file opened in its workspace's Files preview with `gx`) and stale.
 What you set wins and says "set by you" (or "set by Claude" when an agent
@@ -1257,14 +1257,14 @@ that schedules the merge after a delay ("Merge after: 2 days",
 "merge-after: 1 week", "merge after 3d") gives a chip "merge after 2 days ·
 mergeable Thu 14:00", counted from when the label was added (else the last
 approval, else the last update; the chip's tooltip and the details say
-which): the request waits on time in **Waiting**, then becomes your move
+which): the request waits on time in **Waiting**, then goes to Needs you
 ("Mergeable: the merge-after delay passed") the moment the time passes. A
 request a merge bot is merging (Marge-bot, bors, Mergify, Kodiak, assigned
 or as a reviewer), with a queue label, in GitHub's merge queue (with its
 position) or with auto-merge set goes to **Merging** ("queued to merge by
 marge-bot"). A failed attempt (the bot's note "I couldn't merge this
 branch: CI failed!", the bot unassigning itself, a removal from the merge
-queue) makes it your move with the bot's reason as the next step. These
+queue) puts it in Needs you with the bot's reason as the next step. These
 facts win over what Claude infers; what you set by hand still wins over
 them. The patterns, bot names, failure notes and queue labels are settings
 (**Scheduled merges and merge bots** in the Reviews settings, one per line,
@@ -1283,7 +1283,8 @@ box (`/`) narrows the list to the requests whose title, project, author,
 number (`!123`, `#45`), branches, labels or next step hold every word typed,
 and reads GitLab-style tokens: `project:group/name` (or `group/*`),
 `label:x` (the forge's labels and yours), `waiting:me|reviewer|external|NAME`,
-`lane:your-move|waiting|merging|blocked|not-sent|stale|done`,
+`lane:needs-you|waiting|merging|blocked|not-sent|stale|done`
+(`lane:your-move` still works),
 `state:open|draft|merging|merged|closed`, `merge-after:yes|no|waiting|ready`,
 `bot:NAME|any|queued|failed`, `waiting:time`, `stale:yes`, `draft:yes|no`, `author:NAME`,
 `pipeline:failed|running|success`, `is:mine|review|pinned|suggested|unread`;
@@ -1332,7 +1333,7 @@ does the shortcut cheat sheet):
 | `o`                      | Open it on GitLab or GitHub                                                                                                           |
 | `w`                      | Go to its workspace (`2w`: the second), on its connection                                                                             |
 | `P`                      | Pin it on top, or unpin it                                                                                                            |
-| `e` / `E`                | Set by hand (whose move, next step, waits for, labels, link) / clear it                                                               |
+| `e` / `E`                | Set by hand (who it is on, next step, waits for, labels, link) / clear it                                                             |
 | `b`                      | A branch headed upstream will be a request (not proposed yet), or back                                                                |
 | `za`                     | Fold the requests under it, or its lane                                                                                               |
 | `gx`                     | Open its link (a URL, or a file in its workspace)                                                                                     |

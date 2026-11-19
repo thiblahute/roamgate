@@ -505,7 +505,7 @@ export const boardToolSchemas = {
         Type.String({
           maxLength: 500,
           description:
-            "The panel's search: key:value tokens (project:group/name or group/*, label:x, waiting:me|reviewer|external|NAME, lane:your-move|waiting|merging|blocked|not-sent|stale|done, state:open|draft|merging|merged|closed|branch|unsent, merge-after:yes|no|waiting|ready, bot:NAME|any|queued|failed, waiting:time|BOT, stale:yes, draft:yes|no, author:NAME, pipeline:failed|running|success|manual, effort:NAME, is:mine|review|pinned|suggested|unread; any negated with -; several of one key: any) and words; or view:NAME for a saved view.",
+            "The panel's search: key:value tokens (project:group/name or group/*, label:x, waiting:me|reviewer|external|NAME, lane:needs-you|waiting|merging|blocked|not-sent|stale|done, state:open|draft|merging|merged|closed|branch|unsent, merge-after:yes|no|waiting|ready, bot:NAME|any|queued|failed, waiting:time|BOT, stale:yes, draft:yes|no, author:NAME, pipeline:failed|running|success|manual, effort:NAME, is:mine|review|pinned|suggested|unread; any negated with -; several of one key: any) and words; or view:NAME for a saved view.",
         }),
       ),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 120 })),
@@ -656,7 +656,7 @@ export const boardToolSchemas = {
 };
 
 const OVERRIDE_WORDS: Record<string, string> = {
-  whose: "whose move",
+  whose: "who it is on",
   next: "the next step",
   dependsOn: "what it waits for",
   labels: "labels",
@@ -694,7 +694,7 @@ export const BOARD_DESCRIPTIONS: Record<BoardToolName, string> = {
   reviews_view:
     "Create (or change the query of) a saved view of the user's Reviews list, a chip after All / To review / Mine on every device, or delete one. The query is reviews_list's filter (tokens and words). Only when the user asked for it.",
   reviews_list:
-    "The inbox exactly as the user sees it, in their order: for each request its position (# overall, n in its section), section (pinned, for_you: to review, authored: their own, suggested), key, reference, title, author, state, pipeline, updated, what is new (unread: new commits and comments, or new when never opened), the suggestion's score and reason, the pinned flag, and for the user's own requests their lane (your_move, waiting, merging, blocked, not_sent, stale, done), why, the next step, a merge scheduled by a label or a bot merging it (merge: after {label, delay, from, mergeable_at, ready}, bot {name, via, queued, position, failed {reason, at}}) and where it comes from, what was set by hand (override, maybe outdated) and the requests each waits for (under: drawn below that one); plus the removed (hidden) requests. Paged: limit (at most 120) and cursor (next_cursor of the last page). Use it before reordering, and to answer \"what is on my list\". No forge call.",
+    "The inbox exactly as the user sees it, in their order: for each request its position (# overall, n in its section), section (pinned, for_you: to review, authored: their own, suggested), key, reference, title, author, state, pipeline, updated, what is new (unread: new commits and comments, or new when never opened), the suggestion's score and reason, the pinned flag, and for the user's own requests their lane (needs you (your_move), waiting, merging, blocked, not_sent, stale, done), why, the next step, a merge scheduled by a label or a bot merging it (merge: after {label, delay, from, mergeable_at, ready}, bot {name, via, queued, position, failed {reason, at}}) and where it comes from, what was set by hand (override, maybe outdated) and the requests each waits for (under: drawn below that one); plus the removed (hidden) requests. Paged: limit (at most 120) and cursor (next_cursor of the last page). Use it before reordering, and to answer \"what is on my list\". No forge call.",
   reviews_order:
     "Reorder the user's list. The order is the user's own and shared live by all their devices (desktop, phone, app), so move only what they asked and leave the rest. Moves apply to the latest order, so a change the user just made is kept. place top / bottom puts the requests at the top / bottom of their own section (Pinned, For you, Suggested are separate lists: to put one above all of them, pin it with reviews_pin); before / after place them beside target (in its section); exact puts the listed ones first, in the order given. keys and target are keys from a tool result, references (project!123, owner/repo#123) or URLs of requests in the list. Returns what moved, keys not in the list (unknown) and keys in another section than the target (elsewhere), and the new top of each section changed. The user is told and can undo it. Only when the user asked for an order.",
   reviews_pin:

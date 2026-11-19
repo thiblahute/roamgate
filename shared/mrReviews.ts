@@ -306,7 +306,7 @@ export const MR_LANES: MrLane[] = [
 ];
 
 export const MR_LANE_TITLE: Record<MrLane, string> = {
-  your_move: "Your move",
+  your_move: "Needs you",
   waiting: "Waiting",
   merging: "Merging",
   blocked: "Blocked",

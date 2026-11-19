@@ -13,7 +13,7 @@ export const EFFORT_KEYS: [string, string][] = [
   ],
   [
     "Enter o e w za",
-    "on the Board: the card's review in its home (a part's workspace, a plan's place in Plans), its request on the forge, set its next step and whose move, its workspace, fold or unfold its column (Done starts folded)",
+    "on the Board: the card's review in its home (a part's workspace, a plan's place in Plans), its request on the forge, set its next step and who it is on, its workspace, fold or unfold its column (Done starts folded)",
   ],
   [
     "j k / Down Up",
@@ -67,7 +67,10 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
   ["o", "open it on GitLab or GitHub"],
   ["w", "go to its workspace (2w: the second)"],
   ["P", "pin it on top, or unpin it (:pin, :unpin)"],
-  ["e", "set by hand: whose move, next step, what it waits for, labels, link"],
+  [
+    "e",
+    "set by hand: who it is on, next step, what it waits for, labels, link",
+  ],
   ["E", "clear what was set by hand (:clear [FIELD])"],
   ["za", "fold the requests after it, or its lane"],
   ["gx", "open its link (a URL, or a file in its workspace)"],
@@ -87,7 +90,7 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
   ],
   [
     ":",
-    "a command: note TEXT, whose me|reviewer|external|NAME, after REF, label X, unlabel X, link URL, stale, clear [FIELD], save NAME (the search as a view), view NAME, delview NAME, infer (whose move, read again now), pin, unpin, add URL (or pin URL: adds a request), all, review, mine, refresh",
+    "a command: note TEXT, whose me|reviewer|external|NAME, after REF, label X, unlabel X, link URL, stale, clear [FIELD], save NAME (the search as a view), view NAME, delview NAME, infer (who it is on, read again now), pin, unpin, add URL (or pin URL: adds a request), all, review, mine, refresh",
   ],
   [
     "p",

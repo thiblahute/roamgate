@@ -222,7 +222,7 @@ session of an effort, in its head workspace, keeps the ledger, confirms or
 rejects fuzzy matches with \`ledger_match\`, proposes planned requests
 from \`ledger_list {"cluster": true}\` with \`ledger_plans\`, and once the
 user accepted one makes its worktree with \`part_create\`). \`reviews_list\`'s \`filter\` takes the
-panel's search: \`project:group/*\`, \`label:x\`, \`lane:your-move\`,
+panel's search: \`project:group/*\`, \`label:x\`, \`lane:needs-you\`,
 \`waiting:NAME\`, \`state:draft\`, \`-key:value\`, words, or \`view:NAME\`.
 \`roamgate-review reviews help\` lists each tool's parameters. Change the board when
 your user asks, or to record what you found about your own work; the user

@@ -455,7 +455,7 @@ export function MrReviewsSettingsView({ onSaved }: { onSaved: () => void }) {
             disabled={busy}
             onChange={(event) => void save({ inference: event.target.checked })}
           />
-          Claude infers whose move it is and the next step of your requests and
+          Claude infers who it is on and the next step of your requests and
           branches, from their threads and status (what you set by hand wins)
         </label>
         <label className="form-field">

@@ -392,7 +392,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_HOME_DOM_TEST !== "1") {
       [...board.querySelectorAll(".mr-reviews-lane-title")].map(
         (node) => node.textContent,
       ),
-    ).toEqual(["Your move2", "Waiting3", "Merged or closed1"]);
+    ).toEqual(["Needs you2", "Waiting3", "Merged or closed1"]);
     // j / k stay in the column; h / l and Tab go across, at the same height.
     await keys("j");
     expect(selected()).toBe(key(1));
