@@ -30,7 +30,7 @@ export const MR_EFFORT_COLUMNS: MrEffortColumn[] = [
 export const MR_EFFORT_COLUMN_TITLE: Record<MrEffortColumn, string> = {
   planned: "Planned",
   not_sent: "Not proposed yet",
-  your_move: "Your move",
+  your_move: "Needs you",
   waiting: "Waiting",
   merging: "Merging",
   blocked: "Blocked",

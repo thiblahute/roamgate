@@ -783,14 +783,15 @@ stored as keys), answering `{changed, override, version}`; setting
 `whose`, `next` or `stale` records the request's `mrActivityMarker` as
 `marker`, and an entry whose marker moved since carries `overrideOutdated`.
 `entries()` then gives every own request (`reasons` has `authored`) a
-`lane` (`your_move|waiting|merging|blocked|not_sent|stale|done`), `laneWhy`, `next`
+`lane` (`your_move|waiting|merging|blocked|not_sent|stale|done`;
+`your_move` shows as Needs you), `laneWhy`, `next`
 (`{text, from: "override"|"rule"|"inferred", by?}`), `dependsOn` and
 `parent` (`mr-reviews/lanes.ts`): an override's `stale` or `whose` when not
 outdated, else the inference (below) while it holds, else rules from the
 forge's status (merged or closed: done; an
 open dependency: blocked; quiet `stale_days`, default 90: stale; failed
 pipeline, conflicts, changes requested, unresolved threads, needs rebase
-or draft: your move; else waiting). `parent` is the first open listed
+or draft: `your_move`; else waiting). `parent` is the first open listed
 request it waits for, unless that makes a cycle; the panel draws it under
 its parent (`web/src/mrReviewsLanes.ts`).
 
@@ -845,8 +846,8 @@ ready}, bot?: {name, via: assignee|reviewer|label|queue|auto_merge,
 queued, position?, by?, failed?: {reason, at}}}`); a failure is the bot's
 latest note matching a pattern, the bot unassigning itself, a merge-queue
 removal or auto-merge turned off by someone else, newer than the bot's
-latest assignment or queueing. Rules: a failure is your move, queued is
-`merging`, a delay not over is waiting, over is your move; these rules are
+latest assignment or queueing. Rules: a failure is `your_move`, queued is
+`merging`, a delay not over is waiting, over is `your_move`; these rules are
 `exact` and win over a model inference, overrides still win. The merge
 state is part of a row's version and facts (`scheduled|ready|queued|
 failed:AT`), so the time passing, a queueing and a failure are meaningful

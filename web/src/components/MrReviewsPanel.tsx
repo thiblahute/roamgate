@@ -2800,7 +2800,7 @@ export function MrReviewsPanel({
         void setOverride(
           current,
           argument ? { set: { whose: argument } } : { clear: ["whose"] },
-          argument ? `Whose move: ${argument}` : "Whose move cleared",
+          argument ? `On: ${argument}` : "Who it is on cleared",
         );
       else if (name === "label")
         void setOverride(
@@ -3752,7 +3752,7 @@ export function MrReviewsPanel({
                       <button
                         type="button"
                         className="ghost"
-                        title="Set whose move, the next step, what it waits for, labels, a link (e)"
+                        title="Set who it is on, the next step, what it waits for, labels, a link (e)"
                         onClick={() => edit(detailEntry)}
                       >
                         Set by hand
@@ -3765,7 +3765,7 @@ export function MrReviewsPanel({
                       <button
                         type="button"
                         className="ghost"
-                        title="Set whose move, the next step, what it waits for, labels, a link (e)"
+                        title="Set who it is on, the next step, what it waits for, labels, a link (e)"
                         onClick={() => edit(detailEntry)}
                       >
                         Set by hand
@@ -4157,10 +4157,10 @@ export function MrReviewsPanel({
               {!mobile ? (
                 <p className="assistant-hint mr-reviews-keys">
                   j/k move · Enter its review in its home, else review · gH a
-                  home · i details · e set next step, whose move · w workspace ·
-                  P pin · f all, to review, mine · za fold · c Claude · o on the
-                  forge · J/K reorder · / search · : command · p add by URL · dd
-                  remove · ? all keys
+                  home · i details · e set next step, who is it on · w workspace
+                  · P pin · f all, to review, mine · za fold · c Claude · o on
+                  the forge · J/K reorder · / search · : command · p add by URL
+                  · dd remove · ? all keys
                 </p>
               ) : null}
               {toast}

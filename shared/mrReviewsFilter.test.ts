@@ -77,6 +77,8 @@ test("tokens and words, negation, several values of one key", () => {
   expect(keys(list, "label:audio")).toEqual([1]);
   expect(keys(list, "label:infra")).toEqual([2]);
   expect(keys(list, "-label:infra")).toEqual([1, 3, 4]);
+  expect(keys(list, "lane:needs-you")).toEqual([3]);
+  // The old name still reads.
   expect(keys(list, "lane:your-move")).toEqual([3]);
   expect(keys(list, "waiting:me")).toEqual([3]);
   expect(keys(list, "pipeline:failed")).toEqual([3]);
@@ -130,7 +132,7 @@ test("own-work filters and completions", () => {
   );
   expect(
     mrFilterCompletions("lane:", list).map((each) => each.label),
-  ).toContain("lane:your-move");
+  ).toContain("lane:needs-you");
   expect(mrFilterCompletions("pool", list)).toEqual([]);
 });
 

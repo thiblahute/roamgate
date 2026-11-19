@@ -35,6 +35,8 @@ export type MrFilter = {
 };
 
 const LANE_NAMES: Record<string, MrLane> = {
+  "needs-you": "your_move",
+  needs_you: "your_move",
   "your-move": "your_move",
   your_move: "your_move",
   mine: "your_move",
@@ -254,7 +256,7 @@ export function mrFilterIsOwn(filter: MrFilter | string): boolean {
 const VALUES: Partial<Record<MrFilterKey, string[]>> = {
   waiting: ["me", "reviewer", "external", "time", "bot"],
   lane: [
-    "your-move",
+    "needs-you",
     "waiting",
     "merging",
     "blocked",

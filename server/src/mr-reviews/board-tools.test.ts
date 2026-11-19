@@ -138,7 +138,7 @@ test("reviews_override sets and clears, said with Undo, never on others' names",
     changed: ["overrides"],
     by: "agent",
     summary:
-      "Claude in sequence-head set whose move, the next step, what it waits for, labels on !2",
+      "Claude in sequence-head set who it is on, the next step, what it waits for, labels on !2",
   });
   await reviews.handle("bridge.mr_reviews.order", {
     op: "undo",

@@ -243,7 +243,7 @@ export function assignLanes(
         lane = inferred.whose === "me" ? "your_move" : "waiting";
         why =
           inferred.whose === "me"
-            ? "inferred: your move"
+            ? "inferred: needs you"
             : `inferred: waiting on ${mrWhoseLabel(inferred.whose)}`;
       }
     }

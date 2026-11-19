@@ -223,14 +223,14 @@ if (process.env.ROAMGATE_MR_REVIEWS_MERGE_DOM_TEST !== "1") {
     await act(async () => showMrReviews());
     await wait(80);
     // Merging is a lane of its own, after Waiting.
-    expect(lanes()).toEqual(["Your move1", "Waiting2", "Merging1"]);
+    expect(lanes()).toEqual(["Needs you1", "Waiting2", "Merging1"]);
     expect(
       document
         .querySelector(".mr-reviews-lane.is-merging")!
         .querySelector("[data-mr-key]")!
         .getAttribute("data-mr-key"),
     ).toBe(key(3));
-    // A failed attempt: Your move with the bot's reason.
+    // A failed attempt: Needs you with the bot's reason.
     expect(item(1).querySelector(".mr-reviews-next-text")?.textContent).toBe(
       "marge-bot could not merge: CI failed!",
     );
