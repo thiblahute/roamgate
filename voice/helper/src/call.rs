@@ -48,7 +48,11 @@
 //! The music is ducked while the companion has speech queued or playing,
 //! or while the user talks (between speech_start and final): down in
 //! DUCK_DOWN, back up over DUCK_UP once `release` passed with nobody
-//! talking, sample by sample (`Duck`), so there are no clicks.
+//! talking, sample by sample (`Duck`), so there are no clicks. Every way
+//! a sentence ends (said, failed, silent, hushed, its request gone) lets
+//! go of its hold, and none holds longer than its audio queued, or
+//! MAKING_HOLD_MAX while it gives none; the user's talking at most
+//! USER_TALKING_MAX.
 //!
 //! The music waits, silent, while the listener learns a new speaker's
 //! voice from what it hears (`wait_for_voice`): the speaker check would
@@ -77,6 +81,10 @@ const LEVEL_PER_SECOND: f64 = 2.0;
 /// The longest the user's talking ducks the music: past it, an utterance
 /// whose end never came (a lost final) no longer keeps it down.
 const USER_TALKING_MAX: gst::ClockTime = gst::ClockTime::from_seconds(60);
+/// The longest a sentence being made ducks the music without any of it
+/// coming: past it, one whose synthesis is stuck (or that never ends) no
+/// longer keeps the music down. Its audio, once it comes, ducks it again.
+const MAKING_HOLD_MAX: gst::ClockTime = gst::ClockTime::from_seconds(10);
 /// How long the music fades out before its source is stopped.
 const MUTE_FADE: std::time::Duration = std::time::Duration::from_millis(600);
 /// Music louder than this (mean square, -50 dBFS) goes to the page: the
@@ -203,8 +211,13 @@ impl Duck {
 struct Mix {
     /// Where the next voice block goes, in running time.
     voice_next: Option<gst::ClockTime>,
-    /// Sentences being made: the music ducks from the request on.
+    /// Sentences being made: the music ducks from the request on. Only
+    /// those of `pending_generation` count: a hush lets go of the others.
     pending: u32,
+    pending_generation: u64,
+    /// When a sentence being made last started or gave audio (running
+    /// time): one that gives nothing for MAKING_HOLD_MAX stops ducking.
+    made_at: Option<gst::ClockTime>,
     /// Since when the user talks (running time), if they do.
     user_talking: Option<gst::ClockTime>,
     volume: f64,
@@ -229,7 +242,7 @@ impl Mix {
     }
 
     fn active(&self, at: gst::ClockTime) -> bool {
-        self.pending > 0
+        (self.pending > 0 && self.made_at.is_some_and(|made| at < made + MAKING_HOLD_MAX))
             || self
                 .user_talking
                 .is_some_and(|since| at < since + USER_TALKING_MAX)
@@ -749,6 +762,8 @@ impl Call {
         let mix = Arc::new(Mutex::new(Mix {
             voice_next: None,
             pending: 0,
+            pending_generation: 0,
+            made_at: None,
             user_talking: None,
             volume: settings.volume.clamp(0.0, 1.0),
             muted: false,
@@ -1023,14 +1038,25 @@ impl Call {
     /// A sentence read by `voice` (its models and language): brought to
     /// the replies' loudness from what that voice made before.
     pub fn sentence_of(&self, voice: &str) -> Sentence<'_> {
-        self.mix.lock().unwrap().pending += 1;
+        let now = self.now();
+        let generation = {
+            let mut mix = self.mix.lock().unwrap();
+            let generation = self.generation.load(Ordering::SeqCst);
+            if mix.pending_generation != generation {
+                mix.pending_generation = generation;
+                mix.pending = 0;
+            }
+            mix.pending += 1;
+            mix.made_at = Some(now);
+            generation
+        };
         let level = self.voices.as_ref().map(|voices| {
             let voices = voices.lock().unwrap();
             crate::loudness::Level::new(CHANNELS as usize, voices.gain_db(voice), voices.peak)
         });
         Sentence {
             call: self,
-            generation: self.generation.load(Ordering::SeqCst),
+            generation,
             leftover: Vec::new(),
             start: None,
             frames: 0,
@@ -1042,8 +1068,12 @@ impl Call {
 
     /// The user talks over the voice: everything queued goes.
     pub fn hush(&self) {
-        self.generation.fetch_add(1, Ordering::SeqCst);
-        self.mix.lock().unwrap().voice_next = None;
+        let mut mix = self.mix.lock().unwrap();
+        // The sentences still being made are dropped as they come: they
+        // no longer hold the music down.
+        mix.pending_generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        mix.pending = 0;
+        mix.voice_next = None;
     }
 
     /// The user talks (speech_start) or stopped (final, or cancelled).
@@ -1116,7 +1146,10 @@ impl Call {
             if waiting {
                 eprintln!("call {}: the call's music waits for a voice", self.id);
             } else {
-                eprintln!("call {}: a voice was taken: the call's music plays", self.id);
+                eprintln!(
+                    "call {}: a voice was taken: the call's music plays",
+                    self.id
+                );
             }
         }
         self.music.then_some(waiting)
@@ -1214,6 +1247,7 @@ impl Sentence<'_> {
         );
         let pts = {
             let mut mix = self.call.mix.lock().unwrap();
+            mix.made_at = Some(self.call.now());
             let earliest = self.call.now() + VOICE_LEAD;
             let pts = match (self.start, mix.voice_next) {
                 // Within a sentence: right after the block before, unless
@@ -1265,7 +1299,7 @@ impl Sentence<'_> {
             self.push_block(&last);
         }
         self.done = true;
-        self.call.mix.lock().unwrap().pending -= 1;
+        self.release();
         let start = self
             .start
             .map_or(self.call.now().mseconds(), |s| s.mseconds());
@@ -1273,10 +1307,21 @@ impl Sentence<'_> {
     }
 }
 
+impl Sentence<'_> {
+    /// Its hold on the music: let go once, said or not (failed, silent,
+    /// hushed, its request gone).
+    fn release(&self) {
+        let mut mix = self.call.mix.lock().unwrap();
+        if mix.pending_generation == self.generation {
+            mix.pending = mix.pending.saturating_sub(1);
+        }
+    }
+}
+
 impl Drop for Sentence<'_> {
     fn drop(&mut self) {
         if !self.done {
-            self.call.mix.lock().unwrap().pending -= 1;
+            self.release();
         }
     }
 }
@@ -1802,6 +1847,73 @@ mod tests {
                 .unwrap()
                 .active(now + gst::ClockTime::from_seconds(5))
         );
+    }
+
+    /// A sentence whose synthesis is stuck (nothing comes, it never ends)
+    /// ducks the music only for MAKING_HOLD_MAX; its audio, once it comes,
+    /// ducks it again.
+    #[test]
+    fn a_stuck_sentence_lets_the_music_back_up() {
+        let (call, _, _) = start("");
+        let now = call.now();
+        let mut sentence = call.sentence();
+        {
+            let mix = call.mix.lock().unwrap();
+            assert!(mix.active(now + gst::ClockTime::from_seconds(5)));
+            assert!(!mix.active(now + gst::ClockTime::from_seconds(11)));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+        sentence.push(&vec![0.1f32; 4_800 * 2]);
+        let pushed = call.now();
+        {
+            let mix = call.mix.lock().unwrap();
+            assert!(mix.active(pushed + gst::ClockTime::from_seconds(9)));
+            assert!(!mix.active(pushed + gst::ClockTime::from_seconds(11)));
+        }
+        drop(sentence);
+    }
+
+    /// Every way a sentence ends lets go of the music: said, failed
+    /// (dropped unfinished), hushed while being made, and one made after a
+    /// hush; a hushed one ending after newer ones does not let go of theirs.
+    #[test]
+    fn every_end_of_a_sentence_releases_the_duck() {
+        let (call, _, _) = start("");
+        let pending = |call: &Call| call.mix.lock().unwrap().pending;
+        let later = |call: &Call| {
+            let at = call.now() + gst::ClockTime::from_seconds(1);
+            call.mix.lock().unwrap().active(at)
+        };
+        // Said.
+        let mut said = call.sentence();
+        said.push(&vec![0.1f32; 480 * 2]);
+        said.finish();
+        assert_eq!(pending(&call), 0);
+        // Failed: the speaker gave up on it.
+        let failed = call.sentence();
+        assert!(later(&call));
+        drop(failed);
+        assert_eq!(pending(&call), 0);
+        assert!(!later(&call));
+        // Hushed while being made, ending after a newer one started.
+        let hushed = call.sentence();
+        call.hush();
+        assert_eq!(pending(&call), 0);
+        assert!(!later(&call));
+        let newer = call.sentence();
+        assert_eq!(pending(&call), 1);
+        drop(hushed);
+        assert_eq!(pending(&call), 1, "the hushed one let go of the newer one");
+        assert!(later(&call));
+        drop(newer);
+        assert_eq!(pending(&call), 0);
+        assert!(!later(&call));
+        // Never below nothing: no wrap that would hold it for good.
+        call.mix.lock().unwrap().pending = 0;
+        let extra = call.sentence();
+        call.mix.lock().unwrap().pending = 0;
+        drop(extra);
+        assert_eq!(pending(&call), 0);
     }
 
     fn write_wav(path: &std::path::Path, stereo: &[f32]) {
