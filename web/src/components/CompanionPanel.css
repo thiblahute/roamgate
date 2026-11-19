@@ -20,14 +20,17 @@
 
 .companion-panel-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
+/* A label stays on one line: on a narrow screen the buttons go to another row instead. */
 .companion-panel-actions .secondary-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .companion-panel-log {
