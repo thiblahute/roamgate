@@ -127,6 +127,12 @@ export function createTaskWatcher(
   };
 }
 const TASK_ENTRY_CHARS = 4000;
+/**
+ * A foreground command still without its answer this long after it started
+ * is no longer taken as running: Claude Code ends or moves a command to the
+ * background long before (its longest timeout is 10 minutes by default).
+ */
+const FOREGROUND_RUNNING_MS = 2 * 60 * 60 * 1000;
 
 /** The session Herdr reports for an agent. */
 function agentSessionValue(agent: unknown): string | null {
@@ -566,9 +572,21 @@ export function createAgentSessionHandlers(args: {
       );
       if (!resolved.file) return { tasks: [] };
       const projection = await cache.aggregates(resolved);
+      const now = Date.now();
+      // The foreground commands it waits on, apart: a call left with no
+      // answer by a session that died is not taken as running for ever.
+      const runningNow = projection.tasks.filter(
+        (task) =>
+          task.foreground &&
+          now - Date.parse(task.startedAt ?? "") < FOREGROUND_RUNNING_MS,
+      );
       // The session they belong to: its transcript's name, its id for Claude.
       return {
-        tasks: await taskActivity(resolved.file.path, projection.tasks),
+        tasks: await taskActivity(
+          resolved.file.path,
+          projection.tasks.filter((task) => !task.foreground),
+        ),
+        running_now: runningNow,
         session: basename(resolved.file.path).replace(/\.jsonl$/, ""),
         ...(isPartial(projection) ? { partial: true } : {}),
       };

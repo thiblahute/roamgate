@@ -224,7 +224,8 @@ function scrollKeys(
  */
 export function AgentTasksSheet({
   pane,
-  tasks,
+  tasks: backgroundTasks,
+  runningNow = [],
   session,
   initialTaskId = null,
   onStop,
@@ -232,6 +233,8 @@ export function AgentTasksSheet({
 }: {
   pane: Pane;
   tasks: AgentTask[];
+  /** The foreground commands the session runs now: listed first. */
+  runningNow?: AgentTask[];
   /** The session the tasks are of: where it was left is kept per session. */
   session: string | null;
   /** A task to open on (a chat's link to it), else the place left. */
@@ -252,6 +255,11 @@ export function AgentTasksSheet({
   const place = useMemo(
     () => sheetPlace(placeKey(client.connectionId, pane.pane_id, session)),
     [client.connectionId, pane.pane_id, session],
+  );
+  const tasks = useMemo(
+    () =>
+      runningNow.length ? [...runningNow, ...backgroundTasks] : backgroundTasks,
+    [runningNow, backgroundTasks],
   );
   const taskIds = useMemo(() => tasks.map((task) => task.id), [tasks]);
   const [opening, setOpening] = useState(() =>
@@ -436,7 +444,7 @@ export function AgentTasksSheet({
           />
         ) : (
           <p className="agent-tasks-empty">
-            Nothing ran in the background yet.
+            Nothing runs now, and nothing ran in the background lately.
           </p>
         )}
         {helpOpen ? (
@@ -453,6 +461,36 @@ export function AgentTasksSheet({
   );
 }
 
+/**
+ * The foreground command the turn runs now, under the chat: its description
+ * and how long it has run, opening its entry in the tasks sheet.
+ */
+export function RunningNowLink({
+  task,
+  onOpen,
+}: {
+  task: AgentTask;
+  onOpen: (id: string) => void;
+}) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const elapsed = taskElapsed(task, now);
+  return (
+    <button
+      type="button"
+      className="agent-chat-activity-task"
+      title={task.detail ?? task.title}
+      onClick={() => onOpen(task.id)}
+    >
+      {task.title}
+      {elapsed ? <span className="agent-tasks-time">{elapsed}</span> : null}
+    </button>
+  );
+}
+
 /** The sheet over a pane's terminal, which reads the tasks itself. */
 export function PaneAgentTasksSheet({
   pane,
@@ -463,13 +501,15 @@ export function PaneAgentTasksSheet({
   initialTaskId?: string | null;
   onClose: () => void;
 }) {
-  const { tasks, session, loaded } = useAgentTasks(pane, true);
+  const { tasks, runningNow, session, loaded } = useAgentTasks(pane, true);
   // Opened where it was left, once it is known which session that is.
   if (!loaded) return null;
   return (
     <AgentTasksSheet
       pane={pane}
       tasks={tasks}
+      // Only while the agent works: what it waits on ends with its turn.
+      runningNow={pane.agent_status === "idle" ? [] : runningNow}
       session={session}
       initialTaskId={initialTaskId}
       onClose={onClose}
@@ -560,12 +600,17 @@ function TaskList({
         place.listScroll = event.currentTarget.scrollTop;
       }}
     >
-      {tasks.map((task) => (
+      {tasks.map((task, index) => (
         <li key={task.id}>
+          {index === 0 && task.foreground ? (
+            <p className="agent-tasks-section">Running now</p>
+          ) : !task.foreground && tasks[index - 1]?.foreground ? (
+            <p className="agent-tasks-section">Background</p>
+          ) : null}
           <button
             type="button"
             data-nav-key={task.id}
-            className={`agent-tasks-row is-${task.status}${task.id === cursor ? " is-cursor" : ""}`}
+            className={`agent-tasks-row is-${task.status}${task.foreground ? " is-foreground" : ""}${task.id === cursor ? " is-cursor" : ""}`}
             onFocus={() => setCursor(task.id)}
             onClick={() => onOpen(task.id)}
           >
@@ -887,9 +932,11 @@ function TaskDetail({
             saveContentScroll(pre);
           }}
         >
-          {detail
-            ? detail.output || (running ? "No output yet." : "No output.")
-            : "Loading..."}
+          {task.foreground && running
+            ? "Runs in the foreground: its output shows in the chat once it ends."
+            : detail
+              ? detail.output || (running ? "No output yet." : "No output.")
+              : "Loading..."}
         </pre>
       )}
     </div>

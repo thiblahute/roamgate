@@ -15,20 +15,69 @@ const POLL_MS = 3000;
 /** A session's tasks, and the session (null when none is readable). */
 export type AgentTasksState = {
   tasks: AgentTask[];
+  /** The foreground commands the session waits on now, apart from tasks. */
+  runningNow: AgentTask[];
   session: string | null;
   /** Read at least once since enabled, or failed to be. */
   loaded: boolean;
 };
 
-const NO_TASKS: AgentTasksState = { tasks: [], session: null, loaded: false };
+const NO_TASKS: AgentTasksState = {
+  tasks: [],
+  runningNow: [],
+  session: null,
+  loaded: false,
+};
+
+type TasksReply = {
+  tasks?: AgentTask[];
+  running_now?: AgentTask[];
+  session?: string;
+  partial?: boolean;
+};
+
+/**
+ * The state a read gives: a read of part of a session keeps the tasks shown
+ * of that same session, never another's (the pane's next session, or the
+ * pane the chat showed before).
+ */
+export function nextAgentTasksState(
+  current: AgentTasksState,
+  result: TasksReply,
+): AgentTasksState {
+  const session = result.session ?? null;
+  if (
+    isPartialRead(result) &&
+    current.loaded &&
+    current.tasks.length &&
+    current.session === session
+  )
+    return { ...current, runningNow: result.running_now ?? [] };
+  return {
+    tasks: result.tasks ?? [],
+    runningNow: result.running_now ?? [],
+    session,
+    loaded: true,
+  };
+}
 
 /** What the session's background commands and subagents are doing. */
 export function useAgentTasks(pane: Pane, enabled: boolean): AgentTasksState {
   const client = useConnectionClient();
-  const [state, setState] = useState<AgentTasksState>(NO_TASKS);
+  // Kept with whose tasks they are: another pane's or agent's never show.
+  const key = `${client.connectionId}\u0000${pane.pane_id}\u0000${pane.agent ?? ""}`;
+  const [held, setHeld] = useState<{ key: string; state: AgentTasksState }>(
+    () => ({ key, state: NO_TASKS }),
+  );
+  const state = held.key === key ? held.state : NO_TASKS;
   useEffect(() => {
+    const setState = (next: (current: AgentTasksState) => AgentTasksState) =>
+      setHeld((current) => ({
+        key,
+        state: next(current.key === key ? current.state : NO_TASKS),
+      }));
     if (!enabled || !pane.agent) {
-      setState(NO_TASKS);
+      setState(() => NO_TASKS);
       return;
     }
     let live = true;
@@ -51,18 +100,8 @@ export function useAgentTasks(pane: Pane, enabled: boolean): AgentTasksState {
           },
           undefined,
           { lane: "background" },
-        )) as { tasks?: AgentTask[]; session?: string; partial?: boolean };
-        // Read from part of the session: the tasks shown already stay.
-        if (live)
-          setState((current) =>
-            isPartialRead(result) && current.loaded && current.tasks.length
-              ? current
-              : {
-                  tasks: result.tasks ?? [],
-                  session: result.session ?? null,
-                  loaded: true,
-                },
-          );
+        )) as TasksReply;
+        if (live) setState((current) => nextAgentTasksState(current, result));
       } catch {
         // Not readable now (a reconnect): the next poll tries again.
         if (live)
@@ -80,6 +119,7 @@ export function useAgentTasks(pane: Pane, enabled: boolean): AgentTasksState {
   }, [
     client,
     enabled,
+    key,
     pane.agent,
     pane.pane_id,
     pane.tab_id,

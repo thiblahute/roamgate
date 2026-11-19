@@ -44,6 +44,11 @@ export type AgentTask = {
    * from the conversation, not the work it goes on doing.
    */
   rewound?: boolean;
+  /**
+   * A command run in the foreground that has not answered yet: what the
+   * turn waits on now. Never a background task.
+   */
+  foreground?: boolean;
 };
 
 export type WorkflowAgentView = {
@@ -63,7 +68,13 @@ export type WorkflowView = {
   result?: string;
 };
 
-const MAX_TASKS = 50;
+/** Ended tasks listed, at most: the latest ones. */
+const MAX_ENDED_TASKS = 30;
+/**
+ * Ended tasks listed only while this recent: a long session's older work
+ * is history, not what runs beside it now.
+ */
+const ENDED_KEPT_MS = 24 * 60 * 60 * 1000;
 /**
  * The background id a command's result names: started there, or moved
  * there by the user (Ctrl+B) or by its timeout.
@@ -120,6 +131,10 @@ export function parseSessionTasks(
   // Commands run in the foreground: a task once moved to the background
   // (Ctrl+B, the chat's Background, or their timeout), as their result says.
   const foreground = new Map<string, AgentTask>();
+  // The assistant message each foreground command was called in, and the
+  // conversation's latest one: only a call of that one can still be running.
+  const calledIn = new Map<string, string>();
+  let lastMessage: string | null = null;
   const byTaskId = new Map<string, AgentTask>();
   // Teammates idle since their last message: still there to be woken.
   const idle = new Set<AgentTask>();
@@ -188,7 +203,7 @@ export function parseSessionTasks(
     }
   };
 
-  for (const record of records) {
+  for (const [index, record] of records.entries()) {
     if (
       typeof record.type === "string" &&
       REQUEST_RECORD_TYPES.has(record.type)
@@ -203,6 +218,11 @@ export function parseSessionTasks(
       notified(contentText(attachment.prompt), at);
     const message = isRecord(record.message) ? record.message : null;
     if (!message) continue;
+    const messageId =
+      record.type === "assistant" && record.isSidechain !== true
+        ? stringValue(message.id) || stringValue(record.uuid) || `#${index}`
+        : "";
+    if (messageId) lastMessage = messageId;
     if (typeof message.content === "string") {
       notified(message.content, at);
       continue;
@@ -270,7 +290,7 @@ export function parseSessionTasks(
             status: "running",
             startedAt: at,
           });
-        else if (name === "Bash")
+        else if (name === "Bash") {
           foreground.set(id, {
             id,
             kind: "command",
@@ -280,7 +300,8 @@ export function parseSessionTasks(
             startedAt: at,
             ...(rewound ? { rewound: true } : {}),
           });
-        else if (name === "Monitor")
+          calledIn.set(id, messageId);
+        } else if (name === "Monitor")
           tasks.set(id, {
             id,
             kind: "monitor",
@@ -392,10 +413,14 @@ export function parseSessionTasks(
     }
   }
   // No end notice a day on: it went with its session (a kill leaves none).
-  const latest = records.length
-    ? Date.parse(stringValue(records[records.length - 1]!.timestamp))
-    : Number.NaN;
-  const listed: AgentTask[] = [];
+  // The session's latest time: its last record that has one.
+  let latest = Number.NaN;
+  for (let at = records.length - 1; at >= 0 && !Number.isFinite(latest); at--)
+    latest = Date.parse(stringValue(records[at]!.timestamp));
+  const running: AgentTask[] = [];
+  const done: AgentTask[] = [];
+  // When a task with no end notice was taken as lost: a day after it started.
+  const lostAt = new Map<AgentTask, number>();
   for (const task of tasks.values()) {
     const since = task.resumedAt ?? task.startedAt;
     const started = since ? Date.parse(since) : Number.NaN;
@@ -404,6 +429,7 @@ export function parseSessionTasks(
       Number.isFinite(latest) &&
       latest - started > LOST_AFTER_MS;
     if (task.status === "running" && old) {
+      lostAt.set(task, started + LOST_AFTER_MS);
       task.status = "lost";
       task.summary =
         "No end notice a day later: it probably ended with its session.";
@@ -411,9 +437,31 @@ export function parseSessionTasks(
     // Rewound history stays hidden once its task is done.
     if (task.rewound && task.status !== "running" && !(idle.has(task) && !old))
       continue;
-    listed.push(task);
+    // A teammate idle but there to be woken is kept as a running one.
+    if (task.status === "running" || idle.has(task)) running.push(task);
+    else done.push(task);
   }
-  return listed.reverse().slice(0, MAX_TASKS);
+  // Ended ones: the latest few of the last day the session worked.
+  const recent = done
+    .filter((task) => {
+      const at =
+        lostAt.get(task) ?? Date.parse(task.endedAt ?? task.startedAt ?? "");
+      return (
+        !Number.isFinite(at) ||
+        !Number.isFinite(latest) ||
+        latest - at <= ENDED_KEPT_MS
+      );
+    })
+    .slice(-MAX_ENDED_TASKS);
+  const kept = new Set([...running, ...recent]);
+  const listed = [...tasks.values()].filter((task) => kept.has(task));
+  // The foreground commands the latest message called that have not
+  // answered: what the turn runs now, listed first.
+  const now: AgentTask[] = [];
+  for (const [id, task] of foreground)
+    if (!task.rewound && lastMessage && calledIn.get(id) === lastMessage)
+      now.push({ ...task, foreground: true });
+  return [...now, ...listed.reverse()];
 }
 
 /**

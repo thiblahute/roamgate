@@ -139,6 +139,40 @@
   font-variant-numeric: tabular-nums;
 }
 
+.agent-tasks-section {
+  margin: 8px 8px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.agent-tasks-list > li:first-child > .agent-tasks-section {
+  margin-top: 2px;
+}
+
+/* The command the turn runs now, under the chat's activity word. */
+.agent-chat-activity-task {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.agent-chat-activity-task:hover,
+.agent-chat-activity-task:focus-visible {
+  text-decoration: underline;
+}
+
 .agent-tasks-empty {
   margin: 12px;
   color: var(--muted);

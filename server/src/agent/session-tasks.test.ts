@@ -677,3 +677,118 @@ describe("tasks started in a rewound part", () => {
     ).toEqual([]);
   });
 });
+
+describe("what a session lists", () => {
+  const at = (minutes: number) =>
+    new Date(
+      Date.parse("2026-11-10T00:00:00.000Z") + minutes * 60_000,
+    ).toISOString();
+  const call = (
+    id: string,
+    minutes: number,
+    input: Record<string, unknown>,
+    message = `m-${id}`,
+  ) => ({
+    type: "assistant",
+    timestamp: at(minutes),
+    message: {
+      role: "assistant",
+      id: message,
+      content: [{ type: "tool_use", id, name: "Bash", input }],
+    },
+  });
+  const answered = (id: string, minutes: number, taskId?: string) => ({
+    type: "user",
+    timestamp: at(minutes),
+    toolUseResult: taskId ? { backgroundTaskId: taskId } : {},
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: id, content: "ok" }],
+    },
+  });
+  const background = (id: string, minutes: number, ended: number) => [
+    call(id, minutes, {
+      command: `job ${id}`,
+      description: `Job ${id}`,
+      run_in_background: true,
+    }),
+    answered(id, minutes, `b${id}`),
+    notification(
+      `<task-id>b${id}</task-id>\n<status>completed</status>`,
+      at(ended),
+    ),
+  ];
+
+  test("ended tasks: the latest 30 of its last day, running ones all", () => {
+    const records = [
+      // Started and ended days before the session's latest record.
+      ...background("old", 0, 5),
+      // Running for two days: lost, a day after it started.
+      call("forgotten", 10, {
+        command: "sleep inf",
+        description: "Forgotten",
+        run_in_background: true,
+      }),
+      answered("forgotten", 10, "bforgotten"),
+      ...Array.from({ length: 35 }, (_, n) =>
+        background(`r${n}`, 3 * 24 * 60 + n, 3 * 24 * 60 + n + 1),
+      ).flat(),
+      call("live", 3 * 24 * 60 + 50, {
+        command: "watch",
+        description: "Still running",
+        run_in_background: true,
+      }),
+      answered("live", 3 * 24 * 60 + 50, "blive"),
+    ];
+    const tasks = parseSessionTasks(records);
+    const ids = tasks.map((task) => task.id);
+    expect(ids[0]).toBe("live");
+    expect(ids).not.toContain("old");
+    expect(ids).not.toContain("forgotten");
+    expect(ids).not.toContain("r4");
+    expect(ids).toContain("r5");
+    expect(tasks.length).toBe(31);
+  });
+
+  test("the foreground command its latest message runs comes first", () => {
+    const tasks = parseSessionTasks([
+      ...background("bg", 0, 1),
+      call("fg", 2, { command: "cargo build", description: "Build it" }),
+    ]);
+    expect(tasks.map((task) => [task.id, task.foreground ?? false])).toEqual([
+      ["fg", true],
+      ["bg", false],
+    ]);
+    expect(tasks[0]).toMatchObject({
+      title: "Build it",
+      detail: "cargo build",
+      status: "running",
+    });
+  });
+
+  test("a foreground command answered, or left behind, is not running now", () => {
+    const done = parseSessionTasks([
+      call("fg", 2, { command: "cargo build" }),
+      answered("fg", 3),
+    ]);
+    expect(done).toEqual([]);
+    // A later message: the call was left with no answer (an interrupt).
+    const left = parseSessionTasks([
+      call("fg", 2, { command: "cargo build" }),
+      {
+        type: "assistant",
+        timestamp: at(4),
+        message: { role: "assistant", id: "m-next", content: [] },
+      },
+    ]);
+    expect(left).toEqual([]);
+  });
+
+  test("calls of one message in several records run now together", () => {
+    const tasks = parseSessionTasks([
+      call("one", 2, { command: "a" }, "m-same"),
+      call("two", 2, { command: "b" }, "m-same"),
+    ]);
+    expect(tasks.map((task) => task.id)).toEqual(["one", "two"]);
+  });
+});

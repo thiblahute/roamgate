@@ -117,7 +117,7 @@ import { AgentArtifactsMenu } from "./AgentArtifactsMenu";
 import { useAgentArtifacts } from "../agentArtifacts";
 import type { AgentPermissionPrompt } from "../../../shared/review";
 import { AgentPermissionCard } from "./AgentPermissionCard";
-import { AgentTasksSheet } from "./AgentTasksSheet";
+import { AgentTasksSheet, RunningNowLink } from "./AgentTasksSheet";
 import { AgentStatusChip } from "./AgentStatusChip";
 import { ModelChip } from "./ModelChip";
 import { refreshSessionProfile } from "../sessionProfiles";
@@ -455,6 +455,7 @@ export function AgentHistoryDrawer({
   // What the session runs on the side, followed while the chat shows.
   const {
     tasks,
+    runningNow: readRunningNow,
     session: tasksSession,
     loaded: tasksLoaded,
   } = useAgentTasks(pane, !!paneChat && open);
@@ -2917,6 +2918,17 @@ export function AgentHistoryDrawer({
     ? conversationAgentStatus(conversationState!.status)
     : pane.agent_status;
   const chatWorking = chatAgentStatus.toLowerCase() === "working";
+  // The foreground commands the turn waits on: in conversation mode those
+  // its stream says run, else while the agent works.
+  const conversationRunning = conversationState?.running_tools;
+  const runningNow = useMemo(() => {
+    if (!readRunningNow.length) return readRunningNow;
+    if (inConversation) {
+      const ids = new Set(conversationRunning ?? []);
+      return readRunningNow.filter((task) => ids.has(task.id));
+    }
+    return pane.agent_status.toLowerCase() === "idle" ? [] : readRunningNow;
+  }, [readRunningNow, inConversation, conversationRunning, pane.agent_status]);
   // Ctrl+Z, `:suspend` and the header's Suspend (below).
   const suspendHere =
     paneChat?.onSuspend && inConversation && !conversation?.handing
@@ -3245,6 +3257,9 @@ export function AgentHistoryDrawer({
         <div className="agent-chat-activity" role="status">
           <span className="agent-chat-activity-mark" aria-hidden="true" />
           <strong>{conversationActivity(conversationState!.activity)}</strong>
+          {runningNow[0] ? (
+            <RunningNowLink task={runningNow[0]} onOpen={openTask} />
+          ) : null}
         </div>
       ) : paneChat &&
         !owns &&
@@ -3253,7 +3268,9 @@ export function AgentHistoryDrawer({
         <div className="agent-chat-activity" role="status">
           <span className="agent-chat-activity-mark" aria-hidden="true" />
           <strong>{paneChat.activity?.word ?? "Working..."}</strong>
-          {paneChat.activity?.detail ? (
+          {runningNow[0] ? (
+            <RunningNowLink task={runningNow[0]} onOpen={openTask} />
+          ) : paneChat.activity?.detail ? (
             <span>{paneChat.activity.detail}</span>
           ) : null}
         </div>
@@ -3701,6 +3718,7 @@ export function AgentHistoryDrawer({
           key={openTaskId ?? ""}
           pane={pane}
           tasks={tasks}
+          runningNow={runningNow}
           session={tasksSession}
           initialTaskId={openTaskId}
           onStop={canBackground ? stopTask : undefined}
