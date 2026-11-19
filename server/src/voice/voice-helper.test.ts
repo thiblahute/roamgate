@@ -19,6 +19,7 @@ import {
   nativeSpeechRate,
   readVoiceConfig,
   spawnVoiceHelper,
+  speakerFailed,
   transcriberArgs,
   type VoiceConfig,
   VoiceHelper,
@@ -450,6 +451,56 @@ describe("voice helper", () => {
       id: 3,
     });
     expect((await helper.speak("Hi.")).nativeRate).toBe(1.3);
+  });
+
+  test("a sentence its speaker failed is said by Kokoro, and the next ones", async () => {
+    const fake = fakeHelper((request) =>
+      request.op !== "speak"
+        ? []
+        : request.tts_models
+          ? [{ id: request.id, audio: "", language: "fr" }]
+          : [
+              {
+                id: request.id,
+                error:
+                  'Qwen3Tts speaking "Oui." failed: Compute error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")',
+              },
+            ],
+    );
+    const config: VoiceConfig = {
+      ...CONFIG,
+      tts_models: [
+        { model: "qwen3-tts", path: "/base" },
+        { model: "kokoro", path: "/k" },
+      ],
+    };
+    const helper = new VoiceHelper(() => config, fake.spawn);
+    const errors: string[] = [];
+    const saved = console.error;
+    console.error = (line: unknown) => errors.push(String(line));
+    try {
+      await helper.speak("Oui.", "fr");
+      await helper.speak("Non.", "fr");
+      const sent = requests(fake.spawned[0]!.frames);
+      expect(sent.map((request) => request.tts_models ?? "own")).toEqual([
+        "own",
+        JSON.stringify([{ model: "kokoro", path: "/k", speed: 1.2 }]),
+        JSON.stringify([{ model: "kokoro", path: "/k", speed: 1.2 }]),
+      ]);
+      expect(errors.join("\n")).toContain(
+        "a sentence failed, Kokoro says it and the next ones for 5 min",
+      );
+      expect(errors.join("\n")).toContain("CUDA_ERROR_OUT_OF_MEMORY");
+    } finally {
+      console.error = saved;
+    }
+  });
+
+  test("only a speaker's own failure has Kokoro say a sentence", () => {
+    expect(speakerFailed("Qwen3Tts speaking failed: Compute error")).toBe(true);
+    expect(speakerFailed("no call 3")).toBe(false);
+    expect(speakerFailed("nothing to say")).toBe(false);
+    expect(speakerFailed("The voice helper stopped: exit 1")).toBe(false);
   });
 
   test("clones a voice from a recording", async () => {

@@ -1581,6 +1581,11 @@ export class VoiceHelper {
             ? Math.round(reply.duration_ms)
             : undefined,
       });
+      // Queued but with no audio: the call hears nothing of it.
+      if (reply.queued === true && reply.duration_ms === 0)
+        console.error(
+          `[voice] call ${call}: a sentence came out silent (${text.length} chars)`,
+        );
     } catch (error) {
       // The helper was restarted under it: said again by the new one, in
       // order, into the call's mix once it is made again. With Kokoro when
@@ -1598,6 +1603,25 @@ export class VoiceHelper {
           true,
         );
       }
+      const message = (error as Error).message;
+      const where = call === undefined ? "" : ` in call ${call}`;
+      // Its speaker failed (Qwen3-TTS out of GPU memory once, every reply
+      // of a call unsaid): Kokoro says it, and the next ones for a while.
+      if (
+        !retried &&
+        this.restarts === restarts &&
+        kokoro &&
+        !models?.every((entry) => entry.model === "kokoro") &&
+        speakerFailed(message)
+      ) {
+        console.error(
+          `[voice] a sentence failed${where}, Kokoro says it and the next ones for ${KOKORO_AFTER_STUCK_MS / 60_000} min: ${message}`,
+        );
+        this.stuckAt = Date.now();
+        this.dequeue(key);
+        return this.speakRequest(text, language, kokoro, rate, call, true);
+      }
+      console.error(`[voice] a sentence was not said${where}: ${message}`);
       throw error;
     } finally {
       this.dequeue(key);
@@ -1844,3 +1868,11 @@ export const SPEAK_STUCK_MS = 15_000;
 export const SPEAK_COLD_MS = 45_000;
 /** How long Kokoro reads after a stuck speaker was restarted. */
 export const KOKORO_AFTER_STUCK_MS = 5 * 60_000;
+
+/**
+ * Whether a sentence's error is its speaker's (a model failing to make it),
+ * not a call over, nothing to say, or the helper gone.
+ */
+export function speakerFailed(message: string): boolean {
+  return !/^(no call|nothing to say|The voice helper stopped)/.test(message);
+}
