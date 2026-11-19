@@ -193,6 +193,8 @@ export interface BridgeHello {
     /** Task notifications follow Herdr's semantic notifications, not pane status. */
     herdr_task_notifications?: boolean;
     embedded_assistant?: boolean;
+    /** The bridge paces its sends by the acknowledgements this page sends. */
+    flow_control?: boolean;
     [key: string]: unknown;
   };
 }
@@ -326,7 +328,19 @@ const LEGACY_DEFAULT_CONNECTION_ID = "legacy-default";
 const RPC_TIMEOUT_MS = 30000;
 const CONNECT_TIMEOUT_MS = 8000;
 const HEARTBEAT_INTERVAL_MS = 10000;
-const HEARTBEAT_TIMEOUT_MS = 6000;
+/**
+ * The shortest silence that may end a connection. A loaded mobile link
+ * queues for whole seconds, so the window also stretches to several measured
+ * round trips (see heartbeatWindowMs).
+ */
+const HEARTBEAT_TIMEOUT_MS = 10000;
+const HEARTBEAT_RTT_FACTOR = 4;
+/** Acknowledge received data at least this often while it arrives... */
+const FLOW_ACK_DELAY_MS = 100;
+/** ...or as soon as this many characters arrived since the last one. */
+const FLOW_ACK_CHARS = 32 * 1024;
+/** First character of a chunk of a large message (see websocket-send). */
+const CHUNK_MARKER = 1;
 /**
  * How late a heartbeat deadline may fire before it says more about the page
  * than about the socket: a timer that ran this much past its deadline was
@@ -421,6 +435,7 @@ function isBridgeHello(value: unknown): value is BridgeHello {
     "herdr_task_notifications",
     "file_reveal",
     "embedded_assistant",
+    "flow_control",
   ]) {
     const value = capabilities[capability];
     if (value !== undefined && typeof value !== "boolean") return false;
@@ -464,8 +479,16 @@ export class Bridge {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatInFlight = false;
   private heartbeatDeadline: ReturnType<typeof setTimeout> | null = null;
-  /** Messages handled so far; a heartbeat window compares two readings. */
+  /** Frames received so far; a heartbeat window compares two readings. */
   private inboundCount = 0;
+  /** Smoothed heartbeat round trip, 0 until the first pong. */
+  private heartbeatRttMs = 0;
+  private flowControl = false;
+  private flowReceived = 0;
+  private flowReported = 0;
+  private flowAckTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Chunks of large messages still arriving, by message. */
+  private chunkParts = new Map<string, string[]>();
   private reconnectEnabled = true;
   private _status: ConnectionStatus = "disconnected";
   private _activeConnectionId = LEGACY_DEFAULT_CONNECTION_ID;
@@ -638,6 +661,7 @@ export class Bridge {
     }
     this.ws = ws;
     this.helloAcceptedForSocket = false;
+    this.resetFlow();
     this.connectTimer = setTimeout(() => {
       if (this.ws !== ws || this.helloAcceptedForSocket) return;
       this.forceReconnect(
@@ -654,8 +678,12 @@ export class Bridge {
     };
     ws.onmessage = (ev) => {
       if (this.ws !== ws) return;
+      // Every frame counts, a chunk of a large message included: data still
+      // arriving keeps the heartbeat from calling the socket dead.
       this.inboundCount++;
-      this.onMessage(ev.data);
+      const message =
+        typeof ev.data === "string" ? this.receiveFrame(ev.data) : ev.data;
+      if (message !== null) this.onMessage(message);
     };
     ws.onerror = () => {
       // onclose will handle reconnect.
@@ -709,11 +737,16 @@ export class Bridge {
   private runHeartbeatProbe() {
     if (this.heartbeatInFlight) return;
     this.heartbeatInFlight = true;
+    const sentAt = performance.now();
     // The ping has no RPC timeout of its own: the deadline below decides
     // when silence means a dead socket, and only a real teardown (which
     // rejects every pending call) or the pong ends the probe.
     this.call("bridge.ping", {}, null).then(
       () => {
+        const rtt = performance.now() - sentAt;
+        this.heartbeatRttMs = this.heartbeatRttMs
+          ? this.heartbeatRttMs * 0.75 + rtt * 0.25
+          : rtt;
         this.endHeartbeatProbe();
       },
       () => {
@@ -736,12 +769,12 @@ export class Bridge {
     if (this.heartbeatDeadline) clearTimeout(this.heartbeatDeadline);
     const windowStart = performance.now();
     const inboundAtStart = this.inboundCount;
+    const windowMs = this.heartbeatWindowMs();
     this.heartbeatDeadline = setTimeout(() => {
       this.heartbeatDeadline = null;
       if (!this.heartbeatInFlight) return;
       const firedLate =
-        performance.now() - windowStart >
-        HEARTBEAT_TIMEOUT_MS + HEARTBEAT_TIMER_SLACK_MS;
+        performance.now() - windowStart > windowMs + HEARTBEAT_TIMER_SLACK_MS;
       if (firedLate || this.inboundCount !== inboundAtStart) {
         this.armHeartbeatDeadline();
         return;
@@ -755,7 +788,77 @@ export class Bridge {
       if (this._status === "connected") {
         this.forceReconnect("bridge heartbeat timed out");
       }
-    }, HEARTBEAT_TIMEOUT_MS);
+    }, windowMs);
+  }
+
+  /** A silence window several round trips long, never under the minimum. */
+  heartbeatWindowMs(): number {
+    return Math.max(
+      HEARTBEAT_TIMEOUT_MS,
+      Math.round(HEARTBEAT_RTT_FACTOR * this.heartbeatRttMs),
+    );
+  }
+
+  private resetFlow() {
+    this.flowControl = false;
+    this.flowReceived = 0;
+    this.flowReported = 0;
+    this.chunkParts.clear();
+    if (this.flowAckTimer) clearTimeout(this.flowAckTimer);
+    this.flowAckTimer = null;
+  }
+
+  /**
+   * Counts a frame for flow control and reassembles chunked messages.
+   * Returns the message to handle, or null while a message is incomplete.
+   */
+  private receiveFrame(data: string): string | null {
+    this.flowReceived += data.length;
+    this.scheduleFlowAck();
+    if (data.charCodeAt(0) !== CHUNK_MARKER) return data;
+    // "\u0001<id>:<last>:<text>"
+    const idEnd = data.indexOf(":", 1);
+    if (idEnd < 0 || data[idEnd + 2] !== ":") return null;
+    const id = data.slice(1, idEnd);
+    const last = data[idEnd + 1] === "1";
+    const text = data.slice(idEnd + 3);
+    const parts = this.chunkParts.get(id);
+    if (!last) {
+      if (parts) parts.push(text);
+      else this.chunkParts.set(id, [text]);
+      return null;
+    }
+    this.chunkParts.delete(id);
+    return parts ? parts.join("") + text : text;
+  }
+
+  private scheduleFlowAck() {
+    if (!this.flowControl) return;
+    if (this.flowReceived - this.flowReported >= FLOW_ACK_CHARS) {
+      this.sendFlowAck();
+      return;
+    }
+    if (this.flowAckTimer) return;
+    this.flowAckTimer = setTimeout(() => {
+      this.flowAckTimer = null;
+      this.sendFlowAck();
+    }, FLOW_ACK_DELAY_MS);
+  }
+
+  private sendFlowAck() {
+    if (this.flowAckTimer) {
+      clearTimeout(this.flowAckTimer);
+      this.flowAckTimer = null;
+    }
+    const ws = this.ws;
+    if (!this.flowControl || !ws || ws.readyState !== WebSocket.OPEN) return;
+    if (this.flowReported === this.flowReceived) return;
+    this.flowReported = this.flowReceived;
+    try {
+      ws.send(`{"ack":${this.flowReceived}}`);
+    } catch {
+      // The close event reconnects.
+    }
   }
 
   private endHeartbeatProbe() {
@@ -889,6 +992,10 @@ export class Bridge {
       this.helloAcceptedForSocket = true;
       this._hello = msg;
       this.clearConnectTimer();
+      // The first acknowledgement turns pacing on: send it before anything
+      // the hello handlers request.
+      this.flowControl = msg.capabilities.flow_control === true;
+      this.sendFlowAck();
       if (this._activeConnectionId === LEGACY_DEFAULT_CONNECTION_ID) {
         this.setActiveConnection(msg.default_connection_id);
       }
