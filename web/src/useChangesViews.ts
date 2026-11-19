@@ -289,11 +289,19 @@ export function useChangesViews({
             list,
             result.patchIds,
           );
-          next = found?.sha ?? start;
           const label = found
             ? `${found.index + 1}/${list.length} ${found.sha.slice(0, 8)}`
             : "";
-          if (found?.how === "nearest")
+          // Gone, with nothing it became: all the changes (a branch's
+          // history has no such view: the nearest commit).
+          const lost = !found || found.how === "nearest";
+          next =
+            lost && list[0]?.history !== true ? null : (found?.sha ?? start);
+          if (lost && next === null)
+            say(
+              `The commit you were on (${was.subject ?? was.commit.slice(0, 8)}) is gone; showing all the changes.`,
+            );
+          else if (lost)
             say(`The commit you were on is gone; showing ${label}.`);
           else if (found && found.how !== "same")
             say(`Following the rewritten commit: ${label}.`);
@@ -304,13 +312,16 @@ export function useChangesViews({
       },
       (error: unknown) => {
         if (cancelled) return;
-        placeRead.current = placeKey;
         // Read before: the review stays on the view it shows; not another
-        // review's (the scope shown before), which it is not.
+        // review's (the scope shown before), which it is not. Never read
+        // (a reload while the server restarts): its remembered place is
+        // kept, not written over, and read again with the next try.
         if (commitsRef.current === null || readForRef.current !== placeKey) {
           setCommits([]);
           setSha(null);
         }
+        if (first) setReadFor("");
+        else placeRead.current = placeKey;
         failWith(error);
       },
     );

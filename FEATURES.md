@@ -198,8 +198,10 @@ Inspector button, shortcuts, or workspace/agent menus.
   Markdown, a page or an SVG), which opens it in the Files preview at the
   cursor's line when the cursor is in that file, as `gf` does.
 - The review in Changes keeps your place: the
-  cursor's file and line per review (the last 50 reviews), back after a
-  page reload or when the review opens again. With no side by side or
+  cursor's file and line, and how far down the view it stood, per review
+  (the last 50 reviews), back after a page reload, a server restart or
+  when the review opens again; a read that fails meanwhile (the server
+  restarting) keeps the place for the next try. With no side by side or
   unified chosen yet, it opens side by side when Changes is 1100 px wide or
   more, unified below. A review of commits that could not be read says why
   with Retry, and reads itself again once a lost connection is back (once:
@@ -299,7 +301,8 @@ Inspector button, shortcuts, or workspace/agent menus.
   commit goes to another commit's file by its path. A comment written on a
   commit stays on that commit. A branch with nothing beyond its base shows
   its history, latest first. After a rebase or an amend the commit shown is
-  followed (by its patch, else its subject), and the view shown is kept per
+  followed (by its patch, else its subject; a commit gone with nothing it
+  became shows all the changes, said so), and the view shown is kept per
   review. When the code changes, the bar offers to reload (R, gr, `:e`).
   Every way a review opens lands in Changes: the review toggle, the tab
   bar's and the phone's Review, the reviews list (Option+Shift+R), the

@@ -2828,11 +2828,15 @@ function DiffContentViewInner({
   });
   const cursorHandle = useRef<DiffCursor>(cursor);
   cursorHandle.current = cursor;
-  // The review's place: the cursor's file and line, kept in the browser
-  // per review and back after a reload or when the review shows again.
-  // Read once the review's rows are drawn, before any is written.
+  // The review's place: the cursor's file and line, and how far down the
+  // view it stood, kept in the browser per review and back after a reload
+  // or when the review shows again. Read once the review's rows are drawn,
+  // before any is written. The Branch scope's is kept with its commit
+  // shown (its views' place), whether its review was opened yet or not.
   const placeId = reviewEditor
-    ? (ownSnapshot?.session.id ?? placeKey ?? null)
+    ? reviewScope.kind === "branch" && placeKey
+      ? placeKey
+      : (ownSnapshot?.session.id ?? placeKey ?? null)
     : null;
   const placeRead = useRef<string | null>(null);
   const here = cursor.active ? cursor.where() : null;
@@ -2860,6 +2864,7 @@ function DiffContentViewInner({
           section.key,
           line,
           place?.new != null ? "new" : "old",
+          ...(typeof place?.offset === "number" ? [place.offset] : []),
         )
       )
         // Its file not drawn yet: tried again as it is.
@@ -2873,13 +2878,54 @@ function DiffContentViewInner({
       if (section && line !== null) return;
     }
     if (!here) return;
+    const offset = cursorHandle.current.lineOffset();
     writeReviewPlace(placeId, {
       ...(readReviewPlace(placeId) ?? { commit: null }),
       path: here.path,
       old: here.old,
       new: here.new,
+      ...(offset !== null ? { offset } : {}),
     });
   }, [placeId, placeRows, placeSettled, here?.path, here?.old, here?.new]);
+  // The view scrolled since the cursor moved: how far down its line stands
+  // is written as the page goes (a reload, a restart's new build) or hides.
+  const placeLeft = useRef<() => void>(() => {});
+  placeLeft.current = () => {
+    if (!placeId || placeRead.current !== placeId || !cursor.active) return;
+    const place = readReviewPlace(placeId);
+    const offset = cursorHandle.current.lineOffset();
+    if (!place || offset === null || place.offset === offset) return;
+    const now = cursorHandle.current.where();
+    if (!now || now.path !== place.path) return;
+    writeReviewPlace(placeId, { ...place, offset });
+  };
+  // Also a moment after it scrolls, and as the view goes (its lines still
+  // drawn: a lost connection takes it away before the page reloads).
+  useLayoutEffect(() => {
+    const left = () => placeLeft.current();
+    const hidden = () => {
+      if (document.visibilityState === "hidden") left();
+    };
+    let timer = 0;
+    const scrolled = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(left, 400);
+    };
+    const section = sectionRef.current;
+    window.addEventListener("pagehide", left);
+    document.addEventListener("visibilitychange", hidden);
+    section?.addEventListener("scroll", scrolled, {
+      capture: true,
+      passive: true,
+    });
+    return () => {
+      window.clearTimeout(timer);
+      left();
+      window.removeEventListener("pagehide", left);
+      document.removeEventListener("visibilitychange", hidden);
+      section?.removeEventListener("scroll", scrolled, { capture: true });
+    };
+  }, []);
   // The review's reviewed marks on the rows shown.
   const reviewLayout = useMemo(
     () => reviewedLayout(cursor.model),
@@ -6755,7 +6801,9 @@ export function DiffContentView({
         !views.active ||
         (views.ready &&
           !views.placePending &&
-          (!!views.shown ||
+          // The view shown is the one picked: not the one read before
+          // while it is (a read that failed, tried again).
+          ((!!views.shown && views.shownSha === views.sha) ||
             (views.current === null && reviewScope.kind === "branch")))
       }
       {...(onCreateAnnotation

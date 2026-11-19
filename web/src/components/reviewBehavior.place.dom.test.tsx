@@ -378,6 +378,74 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("a page reloaded while the server restarts (its first reads failing) keeps commit 2 of 3, its file and line, back once the server answers", async () => {
+        const commits = ["a", "b", "c"].map((letter, index) => ({
+          sha: letter.repeat(40),
+          subject: `Commit ${index + 1}`,
+          files: [added(`${letter}.ts`, 6)],
+        }));
+        const files = [added("all.ts", 2)];
+        const first = await mount({ files, commits });
+        await first.stepCommitBar(1);
+        expect(first.view()).toBe("2/3 bbbbbbbb Commit 2");
+        await first.click({ path: "b.ts", text: "b.ts line 5" });
+        await first.unmount();
+        const review = await mount({ files, commits, storage: "keep" });
+        await review.setConnected(false);
+        await review.reload();
+        expect(review.status()).toContain("bridge hello is unavailable");
+        await review.setConnected(true);
+        expect(review.view()).toBe("2/3 bbbbbbbb Commit 2");
+        expect(review.cursorLine()).toMatchObject({
+          path: "b.ts",
+          text: "b.ts line 5",
+        });
+        // And again after another reload: nothing was written over.
+        await review.reload();
+        expect(review.view()).toBe("2/3 bbbbbbbb Commit 2");
+        expect(review.cursorLine()).toMatchObject({ path: "b.ts", new: 5 });
+        await review.unmount();
+      });
+
+      test("a reload whose commit is gone, rewritten into nothing like it, shows all the changes and says so", async () => {
+        const commit = (sha: string, subject: string) => ({
+          sha: sha.repeat(40),
+          parent: null,
+          author: "T",
+          date: "2026-11-05",
+          subject,
+          body: "",
+        });
+        let answer = {
+          commits: [
+            commit("a", "First"),
+            commit("b", "Second"),
+            commit("c", "Third"),
+          ],
+        };
+        const files = [added("a.ts", 6)];
+        const first = await mount({
+          files,
+          commits: answer.commits,
+          answers: { "review.commits": () => answer },
+        });
+        await first.press(">");
+        expect(first.commitBar()?.head).toBe("2/3 bbbbbbbb");
+        await first.unmount();
+        answer = { commits: [commit("d", "Other"), commit("e", "More")] };
+        const review = await mount({
+          files,
+          commits: answer.commits,
+          answers: { "review.commits": () => answer },
+          storage: "keep",
+        });
+        expect(review.commitBar()?.head).toBe("All changes");
+        expect(review.notices()).toContain(
+          "The commit you were on (Second) is gone; showing all the changes.",
+        );
+        await review.unmount();
+      });
+
       test("a review opened while the connection is down loads once it is back, where it was left", async () => {
         const files = [added("a.ts", 6)];
         const first = await mount({ files, ...ownLoad });
@@ -596,15 +664,17 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.press("gr");
         expect(head()).toBe("2/3 22222222");
 
-        // Gone: the nearest commit by place.
-        answer = { commits: [commit("4", "Other")] };
+        // Gone, with nothing it became: all the changes, said so.
+        answer = { commits: [commit("4", "Other"), commit("6", "Another")] };
         await review.press("gr");
-        expect(head()).toBe("1/1 44444444");
+        expect(head()).toBe("All changes");
+        expect(review.notices().slice(-1)[0]).toBe(
+          "The commit you were on (Second, reworded) is gone; showing all the changes.",
+        );
 
         // All changes stays all changes.
         answer = { commits: [commit("4", "Other"), commit("5", "More")] };
         await review.press("gr");
-        await review.press("<");
         expect(head()).toBe("All changes");
         await review.press("gr");
         expect(follows()[follows().length - 1]).toBeUndefined();

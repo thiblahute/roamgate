@@ -131,8 +131,19 @@ export type DiffCursor = {
   where: () => CursorWhere | null;
   /** The files the cursor's line, or the Visual selection, touches. */
   selectedPaths: () => string[];
-  /** Puts the cursor on a file's line (a thread's, say), scrolling to it. */
-  goTo: (key: string, line: number, side: "old" | "new") => boolean;
+  /**
+   * Puts the cursor on a file's line (a thread's, say), scrolling to it:
+   * centred, or `offset` pixels below the top of the view (a reload going
+   * back where the line stood).
+   */
+  goTo: (
+    key: string,
+    line: number,
+    side: "old" | "new",
+    offset?: number,
+  ) => boolean;
+  /** How far below the top of the view the cursor's line stands, in px. */
+  lineOffset: () => number | null;
   /** The cursor's row of the model, and the Visual selection's other end. */
   rowIndex: () => number;
   selection: () => number | null;
@@ -634,19 +645,40 @@ export function useDiffCursor({
     },
     [rootRef, scroller],
   );
+  /** Where a go-to puts its line: this far below the view's top. */
+  const pinnedOffset = useRef<{ offset: number; at: number } | null>(null);
   const scrollToRow = useCallback(
     (index: number, mode: ScrollTo) => {
       if (mode === "none") return;
       const box = scroller();
       const place = rowBox(index);
+      // Asked just now: a go-to that moved nothing leaves no stale one.
+      const pinned =
+        pinnedOffset.current &&
+        performance.now() - pinnedOffset.current.at < 1000
+          ? pinnedOffset.current.offset
+          : null;
+      pinnedOffset.current = null;
       if (!box || !place) return;
-      const next = scrollTarget(
-        place,
-        { top: box.scrollTop, height: box.clientHeight },
-        mode,
-        insetFor(index),
-        SEARCH_MARGIN_LINES * place.height,
-      );
+      const wanted =
+        pinned === null
+          ? null
+          : Math.max(
+              insetFor(index),
+              Math.min(pinned, box.clientHeight - place.height),
+            );
+      const next =
+        wanted !== null
+          ? Math.abs(place.top - wanted - box.scrollTop) < 1
+            ? null
+            : Math.max(0, place.top - wanted)
+          : scrollTarget(
+              place,
+              { top: box.scrollTop, height: box.clientHeight },
+              mode,
+              insetFor(index),
+              SEARCH_MARGIN_LINES * place.height,
+            );
       if (next === null) return;
       onScrollToRef.current?.();
       box.scrollTo({ top: next });
@@ -1221,7 +1253,12 @@ export function useDiffCursor({
     return [...new Set(rows.slice(lo, hi + 1).map((each) => each.path))];
   };
 
-  const goTo = (key: string, line: number, side: "old" | "new"): boolean => {
+  const goTo = (
+    key: string,
+    line: number,
+    side: "old" | "new",
+    offset?: number,
+  ): boolean => {
     const target = rowAt(
       modelRef.current,
       key,
@@ -1230,8 +1267,17 @@ export function useDiffCursor({
     );
     if (target < 0) return false;
     setAnchor(null);
+    pinnedOffset.current =
+      offset !== undefined && Number.isFinite(offset)
+        ? { offset, at: performance.now() }
+        : null;
     jumpTo(target, 0, "center");
     return true;
+  };
+  const lineOffset = (): number | null => {
+    const box = scroller();
+    const place = rowBox(at);
+    return box && place ? Math.round(place.top - box.scrollTop) : null;
   };
 
   const selectionIn = (key: string): SelectedLineRange | null | undefined => {
@@ -1292,6 +1338,7 @@ export function useDiffCursor({
     where,
     selectedPaths,
     goTo,
+    lineOffset,
     rowIndex: () => at,
     selection: () => anchor,
     clearSelection: () => setAnchor(null),
