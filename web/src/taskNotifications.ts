@@ -181,7 +181,11 @@ export async function showTaskNotification(
   }
 }
 
-/** Route worker clicks and newly opened notification windows through the same UI. */
+/**
+ * Route worker clicks, newly opened notification windows and notification
+ * links followed by a page already open (the Android app changes the hash of
+ * the page it shows) through the same UI.
+ */
 export function listenForTaskNotificationActivation(
   activate: (target: NotificationTarget) => void,
 ): () => void {
@@ -194,8 +198,11 @@ export function listenForTaskNotificationActivation(
       return;
     activate(event.data.target);
   };
-  navigator.serviceWorker?.addEventListener("message", receive);
-  if (window.location.hash.startsWith(NOTIFICATION_HASH)) {
+  // Dropping the fragment lets the same link change the hash, and so
+  // activate, again; replaceState fires no hashchange, and any other hash is
+  // left alone.
+  const consumeFragment = () => {
+    if (!window.location.hash.startsWith(NOTIFICATION_HASH)) return;
     const encoded = window.location.hash.slice(NOTIFICATION_HASH.length);
     window.history.replaceState(
       window.history.state,
@@ -206,8 +213,14 @@ export function listenForTaskNotificationActivation(
       const target: unknown = JSON.parse(decodeURIComponent(encoded));
       if (isNotificationTarget(target)) activate(target);
     } catch {
-      // A malformed or stale deep link must not interrupt app startup.
+      // A malformed or stale deep link must not interrupt the app.
     }
-  }
-  return () => navigator.serviceWorker?.removeEventListener("message", receive);
+  };
+  navigator.serviceWorker?.addEventListener("message", receive);
+  window.addEventListener("hashchange", consumeFragment);
+  consumeFragment();
+  return () => {
+    navigator.serviceWorker?.removeEventListener("message", receive);
+    window.removeEventListener("hashchange", consumeFragment);
+  };
 }

@@ -547,10 +547,10 @@ describe("task notification transport", () => {
       await withBrowser(
         {
           navigator: { serviceWorker },
-          window: {
+          window: Object.assign(new EventTarget(), {
             location,
             history: { replaceState, state: { scroll: 10 } },
-          },
+          }),
         },
         async () => {
           const stop = listenForTaskNotificationActivation(activate);
@@ -583,6 +583,50 @@ describe("task notification transport", () => {
       );
     },
   );
+  test("activates a notification link followed by the page already open, each time", async () => {
+    const activate = mock();
+    const location = new URL(origin + "/app?x=1#pane");
+    const fragment =
+      "#roamgate-task=" + encodeURIComponent(JSON.stringify(target));
+    const page = Object.assign(new EventTarget(), {
+      location,
+      history: {
+        state: null,
+        // Like the browser: the URL changes and no hashchange fires.
+        replaceState: mock((_state: unknown, _title: string, url: string) => {
+          location.href = new URL(url, location.href).href;
+        }),
+      },
+    });
+    const follow = (hash: string) => {
+      location.hash = hash;
+      page.dispatchEvent(new Event("hashchange"));
+    };
+    await withBrowser({ navigator: {}, window: page }, async () => {
+      const stop = listenForTaskNotificationActivation(activate);
+      // An unrelated hash is neither consumed nor activated.
+      expect(activate).not.toHaveBeenCalled();
+      expect(page.history.replaceState).not.toHaveBeenCalled();
+      follow(fragment);
+      expect(activate).toHaveBeenCalledTimes(1);
+      expect(activate).toHaveBeenLastCalledWith(target);
+      expect(location.hash).toBe("");
+      expect(location.pathname + location.search).toBe("/app?x=1");
+      // A stray hashchange after the fragment is gone activates nothing.
+      page.dispatchEvent(new Event("hashchange"));
+      expect(activate).toHaveBeenCalledTimes(1);
+      // The same notification tapped again activates again.
+      follow(fragment);
+      expect(activate).toHaveBeenCalledTimes(2);
+      follow("#roamgate-task=not-json");
+      follow("#elsewhere");
+      expect(activate).toHaveBeenCalledTimes(2);
+      expect(location.hash).toBe("#elsewhere");
+      stop();
+      follow(fragment);
+      expect(activate).toHaveBeenCalledTimes(2);
+    });
+  });
 });
 
 describe("notification service worker clicks", () => {
