@@ -93,7 +93,7 @@ if (process.env.ROAMGATE_CALL_APP_DOM_TEST !== "1") {
     expect(button()?.getAttribute("aria-pressed")).toBe("true");
   });
 
-  test("in the app's WebView, offers no button while the app takes the call", async () => {
+  test("in the app's WebView, offers no button, before or once the app has the call", async () => {
     await act(async () => {
       call.webView = true;
       call.place = "can";
@@ -109,7 +109,7 @@ if (process.env.ROAMGATE_CALL_APP_DOM_TEST !== "1") {
       call.place = "app";
       changed();
     });
-    expect(button()?.textContent).toBe("In the Roamgate app");
+    expect(button()).toBeNull();
     await act(async () => {
       call.webView = false;
       changed();

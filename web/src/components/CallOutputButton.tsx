@@ -120,7 +120,8 @@ export type CallPlace = "app" | "opening" | "can" | null;
 
 /**
  * Where `call` is, for its button. In the app's own WebView the call goes
- * to the app by itself: only "In the Roamgate app" is shown there.
+ * to the app by itself, and saying it is in the app tells nothing: no
+ * button there.
  */
 export function callPlace(
   call: Pick<
@@ -128,9 +129,8 @@ export function callPlace(
     "inApp" | "inAppWebView" | "handingOff" | "canHandOff"
   > | null,
 ): CallPlace {
-  if (!call) return null;
+  if (!call || call.inAppWebView()) return null;
   if (call.inApp()) return "app";
-  if (call.inAppWebView()) return null;
   if (call.handingOff()) return "opening";
   return call.canHandOff() ? "can" : null;
 }
