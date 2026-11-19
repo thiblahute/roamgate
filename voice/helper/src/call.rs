@@ -1618,6 +1618,20 @@ mod tests {
         assert!(!off.music_audible());
     }
 
+    /// A Linux background can record a sound server's device (pulsesrc,
+    /// such as a music sink's monitor) or raw audio from a FIFO.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_linux_background_can_record_a_sound_server() {
+        init();
+        for name in ["pulsesrc", "rawaudioparse"] {
+            assert!(
+                gst::ElementFactory::find(name).is_some(),
+                "no {name} element"
+            );
+        }
+    }
+
     /// The loudest sample mixed after `since_us`.
     fn loudest_since(mixed: &Mixed, since_us: u64) -> f32 {
         mixed

@@ -84,6 +84,10 @@ include = [
     # rawaudioparse: a call_background reading raw audio from a file or a
     # FIFO, such as a sound server's recording of a music player.
     "rawparse",
+    # pulsesrc: on Linux, a call_background recording a sound server's
+    # device, such as the monitor of a sink a music player plays to. It
+    # links the host's libpulse (PipeWire's pipewire-pulse serves it).
+    "pulseaudio",
     # webrtcdsp and webrtcechoprobe (echo.rs): a call's microphone has the
     # replies' echo taken out here when the page plays them on a phone's
     # loudspeaker without its own echo canceller.
