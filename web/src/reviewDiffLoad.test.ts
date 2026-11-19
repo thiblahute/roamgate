@@ -197,3 +197,18 @@ test("a binary file is drawn from its summary, never read", () => {
   pump();
   expect(reads[0]!.paths).toEqual(["f0"]);
 });
+
+test("an answer cut short leaves the files it lacks in error, not given another file's diff", async () => {
+  const view = new ViewLoad(summary(2));
+  view.pump(
+    async (files) => [
+      { ...files[1]!, hunks: [{ header: "@@ -1 +1 @@", lines: [] }] },
+    ],
+    () => true,
+    () => {},
+  );
+  await tick();
+  expect(view.files.get("f1")).toBeTruthy();
+  expect(view.files.has("f0")).toBe(false);
+  expect(view.errors.get("f0")).toBe("the bridge answered no file");
+});

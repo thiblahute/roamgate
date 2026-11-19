@@ -186,8 +186,11 @@ export class ViewLoad {
         .then(
           (files) => {
             batch.forEach((asked, index) => {
+              // By position only when every file asked came back: an answer
+              // cut at the size limit leaves the files after the cut out.
               const file =
-                files.find((each) => each.path === asked.path) ?? files[index];
+                files.find((each) => each.path === asked.path) ??
+                (files.length === batch.length ? files[index] : undefined);
               if (file)
                 this.files.set(asked.path, {
                   ...asked,

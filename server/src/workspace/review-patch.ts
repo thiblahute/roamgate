@@ -240,20 +240,30 @@ export function parseReviewPatchOutput(
     text = end === -1 ? "" : text.slice(end + 1);
   }
   const truncated = Buffer.byteLength(output) > maxBytes;
+  let cutFile = false;
   if (truncated) {
-    // Drop the partial file at the cut so no hunk ends mid-line.
+    // Drop the partial file at the cut so no hunk ends mid-line; a file cut
+    // on its own keeps its whole lines, marked cut.
     const lastFile = text.lastIndexOf("\ndiff --git ");
     if (lastFile > 0) text = text.slice(0, lastFile + 1);
+    else {
+      text = text.slice(0, text.lastIndexOf("\n") + 1);
+      cutFile = true;
+    }
   }
-  return { files: parseUnifiedDiff(text), baseSha, headSha, truncated };
+  const files = parseUnifiedDiff(text);
+  if (cutFile && files.length === 1)
+    files[0] = { ...files[0]!, truncated: true };
+  return { files, baseSha, headSha, truncated };
 }
 
 /**
  * The most one file's patch is read to place a thread (anchorDiff, the
  * Changes anchors' migration): the review's 4 MiB cap is for the whole
- * patch, not for one file.
+ * patch, not for one file. A larger file is cut at its last whole line
+ * and marked cut: a thread past the cut is not placed.
  */
-export const REVIEW_FILE_PATCH_MAX_BYTES = 64 * 1024 * 1024;
+export const REVIEW_FILE_PATCH_MAX_BYTES = 16 * 1024 * 1024;
 
 export async function readReviewPatch(args: {
   root: string;

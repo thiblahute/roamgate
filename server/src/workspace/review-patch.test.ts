@@ -259,6 +259,29 @@ test("a cut patch drops its partial last file", () => {
   expect(diff.baseSha).toBe("b");
 });
 
+test("a single file cut at the size limit keeps its whole lines, marked cut", () => {
+  const output = [
+    "ROAMGATE-REVIEW-SHAS b h",
+    "diff --git a/x b/x",
+    "--- a/x",
+    "+++ b/x",
+    "@@ -0,0 +1,4 @@",
+    "+first line",
+    "+second line",
+    "+third line",
+    "+fourth line",
+  ].join("\n");
+  const cut = output.indexOf("+third") + 4;
+  const diff = parseReviewPatchOutput(output.slice(0, cut), cut - 1);
+  expect(diff.truncated).toBe(true);
+  expect(diff.files).toHaveLength(1);
+  expect(diff.files[0]!.truncated).toBe(true);
+  expect(diff.files[0]!.hunks[0]!.lines.map((line) => line.text)).toEqual([
+    "first line",
+    "second line",
+  ]);
+});
+
 test("files are read at a commit or from the working tree, inside the checkout", async () => {
   const root = repository();
   writeFileSync(join(root, "a.txt"), "one\n2\nthree\nlocal\n");
