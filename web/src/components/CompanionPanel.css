@@ -432,6 +432,12 @@
     min-height: 40px;
   }
 
+  /* Start over as its icon alone, so the close button stays on the call's
+     row; its confirmation still says what it does. */
+  .companion-panel-start-over-label {
+    display: none;
+  }
+
   .companion-panel-line,
   .companion-panel-job {
     font-size: 15px;
