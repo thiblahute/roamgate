@@ -84,6 +84,11 @@ import {
   FilePreviewContent,
 } from "./FilePreviewContent";
 import { FilePreviewTabs } from "./FilePreviewTabs";
+import {
+  focusContentOnArrival,
+  inspectorViewContent,
+  watchTabSteps,
+} from "./contentFocus";
 import { workspaceInspectorLayout } from "./workspaceInspectorLayout";
 import { PullRequestCard } from "./PullRequestCard";
 import { InspectorSplitResizer } from "./InspectorSplitResizer";
@@ -364,6 +369,62 @@ export function WorkspaceInspectorHost({
   useLayoutEffect(() => {
     onReady?.();
   }, [onReady]);
+  /*
+   * Arriving in a view gives the keys to its content (contentFocus): a view
+   * shown (a tab, a phone's view switcher, the view restored), a file
+   * opened in Files, the inspector's tab focused by a shortcut or a command.
+   */
+  const arrivalViewRef = useRef(state.view);
+  arrivalViewRef.current = state.view;
+  const fileShownRef = useRef(false);
+  fileShownRef.current = !!fileSelection.entry || !!fileTabs.activePath;
+  const arrivalRef = useRef<(() => void) | null>(null);
+  const arriveInView = () => {
+    arrivalRef.current?.();
+    arrivalRef.current = focusContentOnArrival({
+      document,
+      scope: () => hostRef.current,
+      target: () =>
+        hostRef.current
+          ? inspectorViewContent(hostRef.current, arrivalViewRef.current, {
+              file: fileShownRef.current,
+            })
+          : null,
+      requestFrame: (callback) => requestAnimationFrame(callback),
+      cancelFrame: (id) => cancelAnimationFrame(id),
+      now: () => performance.now(),
+    });
+  };
+  /** A file picked in Changes' tree: the keys go on to its diff. */
+  const arriveFromChangesTree = () => {
+    const active = document.activeElement;
+    if (
+      !active ||
+      active === document.body ||
+      active.closest(
+        ".inspector-changes-resource .workspace-inspector-navigation",
+      )
+    )
+      arriveInView();
+  };
+  const arriveInViewRef = useRef(arriveInView);
+  arriveInViewRef.current = arriveInView;
+  useEffect(() => {
+    watchTabSteps(document);
+    return () => arrivalRef.current?.();
+  }, []);
+  const fileArrival =
+    state.view === "files"
+      ? [
+          fileSelection.entry?.path,
+          fileSelection.fragment,
+          fileSelection.line,
+          fileSelection.rendered,
+        ].join("\n")
+      : "";
+  useEffect(() => {
+    if (visible && state.open) arriveInViewRef.current();
+  }, [visible, state.open, state.view, fileArrival]);
   const filesTabRef = useRef<HTMLButtonElement | null>(null);
   const changesTabRef = useRef<HTMLButtonElement | null>(null);
   const commitsTabRef = useRef<HTMLButtonElement | null>(null);
@@ -1312,7 +1373,13 @@ export function WorkspaceInspectorHost({
               </span>
             ) : null}
           </div>
-          <div className="workspace-inspector-tabs" role="tablist">
+          <div
+            className="workspace-inspector-tabs"
+            role="tablist"
+            // A tab picked, or focused by a shortcut (gt, the inspector's
+            // own) or a command (:view): the keys go on to its view.
+            onFocus={arriveInView}
+          >
             <button
               ref={filesTabRef}
               type="button"
@@ -1664,6 +1731,7 @@ export function WorkspaceInspectorHost({
                     onScopeChange={() => setShownReview(null)}
                     onPickViewFile={(path) => {
                       setViewGoTo({ path, at: Date.now() });
+                      arriveFromChangesTree();
                       // A phone shows the file's diff, as Working's pick.
                       setDrillInByView((current) => ({
                         ...current,
@@ -1672,6 +1740,7 @@ export function WorkspaceInspectorHost({
                     }}
                     onPickOtherFile={(path) => {
                       setOtherFileGoTo({ path, at: Date.now() });
+                      arriveFromChangesTree();
                       setDrillInByView((current) => ({
                         ...current,
                         changes: true,
@@ -1684,6 +1753,7 @@ export function WorkspaceInspectorHost({
                           ...current,
                           changes: true,
                         }));
+                        arriveFromChangesTree();
                       }
                       onDiffSelectionChange?.(selection, meta);
                     }}
