@@ -13,6 +13,7 @@ import {
   Option,
   Palette,
   Plus,
+  Smartphone,
   SquareTerminal,
   Sun,
   SunMoon,
@@ -27,6 +28,7 @@ import {
   UI_SCALE_MIN,
   UI_SCALE_STEP,
 } from "../appearance";
+import { appSettingsOpener } from "../androidAppSettings";
 import { lazyWithReload } from "../lazyWithReload";
 import { setPaneJumpScope, usePaneJumpScope } from "../paneJumpScope";
 import { setDefaultPaneView, useDefaultPaneView } from "../paneView";
@@ -164,6 +166,7 @@ export function ConfigurationDialog({
   const defaultPaneView = useDefaultPaneView();
   const vim = useVimKeys();
   const [detail, setDetail] = useState<Detail | null>(null);
+  const openAppSettings = appSettingsOpener();
   const dialogRef = useRef<HTMLDivElement>(null);
   const detailTrigger = useRef<HTMLButtonElement | null>(null);
   const openDetail = (event: MouseEvent<HTMLButtonElement>, next: Detail) => {
@@ -756,6 +759,24 @@ export function ConfigurationDialog({
               <p className="configuration-scope">
                 Connection: <strong>{s.connectionLabel}</strong>
               </p>
+              {openAppSettings ? (
+                <button
+                  type="button"
+                  className="config-menu-item"
+                  onClick={openAppSettings}
+                >
+                  <span className="config-item-icon">
+                    <Smartphone size={15} />
+                  </span>
+                  <span className="config-item-copy">
+                    <strong>Android app settings</strong>
+                    <span>
+                      Server, password, language and the dictation bubble
+                    </span>
+                  </span>
+                  <ChevronRight size={15} />
+                </button>
+              ) : null}
               {tab === "Connection" ? (
                 <TerminalTransportSettings
                   key={connectionClientScopeKey(
