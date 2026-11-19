@@ -337,6 +337,21 @@ function markRpcError(
   rpcOutcomes.set(rpcOutcomeKey(ws, id), { status: "error", detail });
 }
 
+/** Characters of each RPC's reply, for the log: what a slow link carried. */
+const rpcReplyChars = new Map<string, number>();
+const LARGE_RPC_REPLY_CHARS = 256 * 1024;
+
+function takeRpcReplyChars(
+  ws: ServerWebSocket<unknown>,
+  id: string | null,
+): number | undefined {
+  if (!id) return undefined;
+  const key = rpcOutcomeKey(ws, id);
+  const chars = rpcReplyChars.get(key);
+  rpcReplyChars.delete(key);
+  return chars;
+}
+
 function takeRpcOutcome(ws: ServerWebSocket<unknown>, id: string | null) {
   if (!id) return null;
   const key = rpcOutcomeKey(ws, id);
@@ -365,10 +380,12 @@ function logRpc(
   status: "ok" | "error",
   connectionId: string | null,
   detail?: string,
+  replyChars?: number,
 ) {
   const elapsedMs = Date.now() - startedAt;
   const failed = status === "error";
-  if (!shouldLogRpc(method, elapsedMs, failed)) return;
+  const large = (replyChars ?? 0) >= LARGE_RPC_REPLY_CHARS;
+  if (!large && !shouldLogRpc(method, elapsedMs, failed)) return;
   const level = rpcLogLevel({ method, status, detail });
   logger[level]("rpc completed", {
     status,
@@ -376,6 +393,7 @@ function logRpc(
     method: method ? logDetail(method) : "unknown",
     connection: connectionId ? logDetail(connectionId) : undefined,
     duration_ms: elapsedMs,
+    reply_chars: large ? replyChars : undefined,
     detail: detail ? logDetail(detail) : undefined,
   });
 }
@@ -866,10 +884,12 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   const sendReply = (
     message: Record<string, unknown>,
     context: string,
-  ): boolean =>
-    replyPublisher
-      ? replyPublisher.send(message, context)
-      : safeSend(ws, encode(message), context);
+  ): boolean => {
+    if (replyPublisher) return replyPublisher.send(message, context);
+    const payload = encode(message);
+    if (id) rpcReplyChars.set(rpcOutcomeKey(ws, id), payload.length);
+    return safeSend(ws, payload, context);
+  };
   const sendError = (context: string, error: unknown) => {
     const message = (error as Error).message;
     markRpcError(ws, id, message);
@@ -1962,6 +1982,7 @@ function main() {
                   outcome?.status ?? "ok",
                   logConnectionId,
                   outcome?.detail,
+                  takeRpcReplyChars(ws, id),
                 );
               })
               .catch((e) => {
@@ -1972,6 +1993,7 @@ function main() {
                   "error",
                   logConnectionId,
                   (e as Error).message,
+                  takeRpcReplyChars(ws, id),
                 );
                 const errorMessage: Record<string, unknown> = {
                   error: { message: (e as Error).message },
