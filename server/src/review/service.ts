@@ -46,6 +46,7 @@ import {
 import { ReviewGoneError } from "../workspace/review-patch";
 import { createAgentPrompts } from "./prompts";
 import type { ReviewStorage } from "./storage";
+import { type TurnCauses, turnCauses } from "../voice/turn-causes";
 
 export class ReviewError extends Error {
   constructor(
@@ -449,8 +450,23 @@ export function createReviewService(args: {
     path: string,
   ) => Promise<string>;
   now?: () => Date;
+  /** Where the turns its prompts start are noted as the user's. */
+  causes?: Pick<TurnCauses, "note">;
 }) {
   const { storage } = args;
+  // All an agent is sent here is the user's doing: their comments, their
+  // word that they answered, their ask for a review (voice/turn-causes.ts).
+  const sendToAgent = args.promptAgent;
+  if (sendToAgent) {
+    const causes = args.causes ?? turnCauses;
+    args = {
+      ...args,
+      promptAgent: (connectionId, paneId, text) => {
+        causes.note(connectionId, paneId, { by: "user", via: "review" });
+        return sendToAgent(connectionId, paneId, text);
+      },
+    };
+  }
   const now = () => (args.now?.() ?? new Date()).toISOString();
   const clock = () => (args.now?.() ?? new Date()).getTime();
   const prompts = createAgentPrompts({ publish: args.publish });

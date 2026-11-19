@@ -594,6 +594,10 @@ export function useVoiceChat({
         agent?: string;
         /** Said as written (an agent's question), not told by the front. */
         verbatim?: boolean;
+        /** An event's session (`<connection>/<pane>`) and its turn. */
+        pane?: string;
+        turnMs?: number;
+        looking?: boolean;
       };
       let tellFront: (item: Telling) => void = () => {};
       /** An agent's answer: kept, and given to the companion to tell. */
@@ -1263,6 +1267,15 @@ export function useVoiceChat({
                 {
                   kind: item.kind,
                   ...(item.agent ? { agent: item.agent } : {}),
+                  ...(item.pane
+                    ? {
+                        pane: item.pane,
+                        ...(item.turnMs !== undefined
+                          ? { turn_ms: item.turnMs }
+                          : {}),
+                        looking: item.looking === true,
+                      }
+                    : {}),
                 },
               );
               voiceTrace(
@@ -1319,7 +1332,20 @@ export function useVoiceChat({
             )
           )
             return;
-          tellFront({ text: event.text, at: event.at, kind: "event" });
+          tellFront({
+            text: event.text,
+            at: event.at,
+            kind: "event",
+            ...(event.connectionId && event.paneId
+              ? {
+                  pane: `${event.connectionId}/${event.paneId}`,
+                  ...(event.turnMs !== undefined
+                    ? { turnMs: event.turnMs }
+                    : {}),
+                  looking: event.looking === true,
+                }
+              : {}),
+          });
         });
         signal.addEventListener("abort", stopTelling, { once: true });
         // The agent's questions, relayed as written as soon as they come;

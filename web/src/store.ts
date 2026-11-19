@@ -948,7 +948,14 @@ let rangerJumpSeq = 0;
 type PaneStatusTracker = {
   ready: boolean;
   byId: Map<string, string>;
+  /** When each pane's turn started, while it works. */
+  workingSince: Map<string, number>;
+  /** Each pane's last turn: when it started and ended. */
+  lastTurn: Map<string, { started: number; ended: number }>;
 };
+
+/** A turn that ended longer ago than this is not the one an event tells. */
+const LAST_TURN_KEPT_MS = 2 * 60_000;
 
 export class TaskCompletionTracker {
   private readonly byConnection = new Map<string, PaneStatusTracker>();
@@ -961,10 +968,29 @@ export class TaskCompletionTracker {
     this.byConnection.delete(connectionId);
   }
 
-  update(connectionId: string, panes: Pane[]): Pane[] {
+  /**
+   * How long the pane's turn ran (still runs), when this page saw it
+   * start; undefined when it did not.
+   */
+  turnMs(
+    connectionId: string,
+    paneId: string,
+    now = Date.now(),
+  ): number | undefined {
+    const tracker = this.byConnection.get(connectionId);
+    const since = tracker?.workingSince.get(paneId);
+    if (since !== undefined) return now - since;
+    const last = tracker?.lastTurn.get(paneId);
+    if (!last || now - last.ended > LAST_TURN_KEPT_MS) return undefined;
+    return last.ended - last.started;
+  }
+
+  update(connectionId: string, panes: Pane[], now = Date.now()): Pane[] {
     const tracker = this.byConnection.get(connectionId) ?? {
       ready: false,
       byId: new Map<string, string>(),
+      workingSince: new Map<string, number>(),
+      lastTurn: new Map<string, { started: number; ended: number }>(),
     };
     this.byConnection.set(connectionId, tracker);
     const livePaneIds = new Set<string>();
@@ -982,10 +1008,22 @@ export class TaskCompletionTracker {
       ) {
         completed.push(pane);
       }
+      const since = tracker.workingSince.get(pane.pane_id);
+      if (nextStatus === "working") {
+        // Seen working on the first update: its start is not known.
+        if (since === undefined && tracker.ready)
+          tracker.workingSince.set(pane.pane_id, now);
+      } else if (since !== undefined) {
+        tracker.workingSince.delete(pane.pane_id);
+        tracker.lastTurn.set(pane.pane_id, { started: since, ended: now });
+      }
       tracker.byId.set(pane.pane_id, nextStatus);
     }
     for (const paneId of tracker.byId.keys()) {
-      if (!livePaneIds.has(paneId)) tracker.byId.delete(paneId);
+      if (livePaneIds.has(paneId)) continue;
+      tracker.byId.delete(paneId);
+      tracker.workingSince.delete(paneId);
+      tracker.lastTurn.delete(paneId);
     }
     tracker.ready = true;
     return completed;
@@ -1127,7 +1165,7 @@ function notifyTaskCompleted(pane: Pane, workspaces: Workspace[], tabs: Tab[]) {
   noteVoiceEvent({
     text: `${[pane.terminal_title_stripped, taskNotificationBody(pane, workspaces, tabs)].filter(Boolean).join(", ")}: ${blocked ? "needs input" : "finished its turn"}`,
     connectionId: state.activeConnectionId,
-    paneId: pane.pane_id,
+    ...voiceEventSession(state.activeConnectionId, pane.pane_id),
   });
   if (
     !state.taskNotificationsEnabled ||
@@ -1202,6 +1240,22 @@ export function herdrTaskNotificationsActive(hello = bridge.hello): boolean {
   return hello?.capabilities?.herdr_task_notifications === true;
 }
 
+/**
+ * What a voice event about a pane says of its turn: how long it ran and
+ * whether the user looks at that pane now.
+ */
+function voiceEventSession(connectionId: string, paneId: string) {
+  const turnMs = taskCompletionTracker.turnMs(connectionId, paneId);
+  return {
+    paneId,
+    ...(turnMs !== undefined ? { turnMs } : {}),
+    looking:
+      connectionId === state.activeConnectionId &&
+      paneId === activePaneIdForTaskNotifications(state) &&
+      documentIsVisible(),
+  };
+}
+
 function documentIsVisible() {
   return (
     typeof document === "undefined" || document.visibilityState === "visible"
@@ -1215,7 +1269,9 @@ function notifyHerdrTask(
   noteVoiceEvent({
     text: `${notification.agent}: ${notification.title}${notification.body ? `: ${notification.body}` : ""}`,
     connectionId,
-    ...(notification.paneId ? { paneId: notification.paneId } : {}),
+    ...(notification.paneId
+      ? voiceEventSession(connectionId, notification.paneId)
+      : {}),
   });
   if (
     !state.taskNotificationsEnabled ||

@@ -13,6 +13,10 @@ export type VoiceEvent = {
   /** The session it is about, when it is one. */
   connectionId?: string;
   paneId?: string;
+  /** How long the session's turn ran, when the page saw it start. */
+  turnMs?: number;
+  /** The user was looking at that session when it happened. */
+  looking?: boolean;
 };
 
 /** Events kept for the front's state, at most. */

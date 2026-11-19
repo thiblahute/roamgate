@@ -6,6 +6,7 @@ import {
   frameAgentMessage,
   parseAgentAddress,
 } from "../../../shared/agentMessage";
+import { type TurnCauses, turnCauses } from "../voice/turn-causes";
 
 /**
  * Agent sessions messaging each other through Roamgate (`roamgate-review
@@ -77,6 +78,8 @@ type Pending = {
   id: number;
   text: string;
   from: string;
+  /** The sender's name, for the turn it starts (voice/turn-causes.ts). */
+  fromName: string;
   queuedAt: number;
 };
 
@@ -122,6 +125,8 @@ export function createAgentMessenger(args: {
   pairLimit?: number;
   /** Messages that may wait for one terminal session. */
   waitingLimit?: number;
+  /** Where the turns a message starts are noted as another agent's. */
+  causes?: Pick<TurnCauses, "note">;
 }) {
   const log = args.log ?? (() => {});
   const now = args.now ?? Date.now;
@@ -130,6 +135,9 @@ export function createAgentMessenger(args: {
   const senderLimit = args.senderLimit ?? 20;
   const pairLimit = args.pairLimit ?? 8;
   const waitingLimit = args.waitingLimit ?? 5;
+  const causes = args.causes ?? turnCauses;
+  const noteCause = (connectionId: string, paneId: string, name: string) =>
+    causes.note(connectionId, paneId, { by: "agent", name });
   const sent = new Map<string, number[]>();
   const pairs = new Map<string, number[]>();
   const waiting = new Map<string, Pending[]>();
@@ -294,6 +302,7 @@ export function createAgentMessenger(args: {
           const next = left[0]!;
           if (!(await runtime.conversation.prompt(target.paneId, next.text)))
             break;
+          noteCause(target.connectionId, target.paneId, next.fromName);
           left.shift();
         }
       } else {
@@ -305,6 +314,7 @@ export function createAgentMessenger(args: {
         const state = text(info?.agent?.agent_status);
         if (state === "idle" || state === "done") {
           const next = left.shift()!;
+          noteCause(target.connectionId, target.paneId, next.fromName);
           await runtime.herdr.call(
             "agent.prompt",
             { target: target.paneId, text: next.text },
@@ -381,6 +391,7 @@ export function createAgentMessenger(args: {
       receiver.mode === "conversation" &&
       (await runtime.conversation.prompt(target.paneId, framed))
     ) {
+      noteCause(target.connectionId, target.paneId, sender.name);
       delivery = "conversation";
     } else {
       const queue = waiting.get(address) ?? [];
@@ -393,6 +404,7 @@ export function createAgentMessenger(args: {
         id: nextId++,
         text: framed,
         from: fromAddress,
+        fromName: sender.name,
         queuedAt: now(),
       };
       waiting.set(address, [...queue, item]);

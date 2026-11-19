@@ -217,6 +217,7 @@ import {
 } from "./conversation/rpc";
 import { defaultLeaseFile } from "./conversation/lease";
 import { promptPaneAgent } from "./conversation/prompt-pane";
+import { turnCauses } from "./voice/turn-causes";
 import {
   type AgentMessenger,
   createAgentMessenger,
@@ -2206,6 +2207,24 @@ const PANE_INPUT_METHODS = new Set([
   "pane.send_keys",
 ]);
 
+/**
+ * The user's input through the pane API (the composer, a paste, words
+ * said to the session on screen): a turn they start when it submits.
+ */
+function notePaneInput(
+  connectionId: string,
+  paneId: string,
+  params: Record<string, unknown>,
+) {
+  const keys = Array.isArray(params.keys) ? params.keys : [params.keys];
+  const submits =
+    (typeof params.text === "string" && /[\r\n]$/.test(params.text)) ||
+    keys.some((key) => typeof key === "string" && /^enter$/i.test(key));
+  if (submits)
+    turnCauses.note(connectionId, paneId, { by: "user", via: "terminal" });
+  else turnCauses.noteUser(connectionId, paneId);
+}
+
 const handleUiSettingsRpc = createUiSettingsRpcHandler();
 
 async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
@@ -2918,6 +2937,15 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   }
   if (isAgentChatMethod(method)) {
     try {
+      if (
+        (method === "agent_chat.send" || method === "agent_chat.voice") &&
+        typeof params?.pane_id === "string" &&
+        params.stop !== true
+      )
+        turnCauses.note(connection.identity.id, params.pane_id, {
+          by: "user",
+          via: "chat",
+        });
       const result = await handleAgentChatRpc(
         connection.conversation,
         connection.historyWatcher,
@@ -3342,6 +3370,8 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
         throw new Error(CONNECTION_CHANGED_DURING_REQUEST);
       if (inputTerminalId)
         terminalBridge.noteTerminalInput(ws, inputTerminalId);
+      if (isPaneInput && typeof params?.pane_id === "string")
+        notePaneInput(connection.identity.id, params.pane_id, params);
     })) as Awaited<ReturnType<typeof herdr.call>>;
     // The conversations stopped as shell jobs (Ctrl+Z), on their panes.
     result = overlaySuspendedPanes(

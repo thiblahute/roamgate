@@ -36,6 +36,7 @@ import { researchContext, type VoiceResearch } from "../voice/voice-research";
 import type { VoiceRouter, VoiceSessionInfo } from "../voice/voice-router";
 import { SurprisePicker } from "../voice/voice-surprise";
 import { toolsContext, type VoiceTools } from "../voice/voice-tools";
+import { turnCauses, turnContext } from "../voice/turn-causes";
 
 /** Sent with voice requests: a page from elsewhere cannot add it. */
 export const VOICE_REQUEST_HEADER = "x-roamgate-voice";
@@ -47,6 +48,38 @@ const MAX_EVENT_CHARS = 1000;
 const MAX_ANSWER_CHARS = 12000;
 /** What the page gives of the call lately, for the front (companionRecent). */
 const MAX_RECENT_CHARS = 4000;
+
+/**
+ * An event about a session (`pane`: `<connection>/<pane>`) with what
+ * started its turn, how long it ran (`turn_ms`, as the page saw it), the
+ * user's last input there and whether they look at it (`looking`): the
+ * front stays quiet on a turn the user just asked for themselves.
+ */
+export function withTurnContext(
+  event: string,
+  body: Record<string, unknown> | null,
+  causes = turnCauses,
+  now = Date.now(),
+): string {
+  const pane = typeof body?.pane === "string" ? body.pane : "";
+  const slash = pane.indexOf("/");
+  if (slash <= 0 || slash === pane.length - 1) return event;
+  const turnMs =
+    typeof body?.turn_ms === "number" &&
+    Number.isFinite(body.turn_ms) &&
+    body.turn_ms >= 0
+      ? body.turn_ms
+      : undefined;
+  const turn = causes.turn(pane.slice(0, slash), pane.slice(slash + 1), turnMs);
+  return `${event} ${turnContext(
+    {
+      ...turn,
+      ...(turnMs !== undefined ? { turnMs } : {}),
+      looking: body?.looking === true,
+    },
+    now,
+  )}`;
+}
 
 /**
  * GET /api/voice: whether voice chat is set up, and how fast replies are
@@ -87,9 +120,11 @@ const MAX_RECENT_CHARS = 4000;
  * companion's call gives the words, as said, to that session, and follows
  * its answer as an errand's (GET /api/voice/errand?job=).
  * POST /api/voice/event: `{current, sessions, context, event, kind?,
- * agent?}` in, `{reply}` out: what the front tells of it now ("" to stay
- * quiet); `kind` "answer" gives it an agent's whole answer, "progress"
- * what one wrote while it works, `agent` who. GET /api/voice reports
+ * agent?, pane?, turn_ms?, looking?}` in, `{reply}` out: what the front
+ * tells of it now ("" to stay quiet); an event about a session (`pane`)
+ * says what started its turn (withTurnContext); `kind` "answer" gives it
+ * an agent's whole answer, "progress" what one wrote while it works,
+ * `agent` who. GET /api/voice reports
  * `front_mode`: "companion" (answers told by the front, the default) or
  * "relay" (every answer read), which POST /api/voice/settings
  * `{front_mode}` keeps in voice.json.
@@ -517,10 +552,11 @@ export function createVoiceRoutes(
         typeof body?.agent === "string" ? body.agent.trim().slice(0, 80) : "";
       const current = typeof body?.current === "string" ? body.current : "";
       if (!event) return Response.json({ reply: "" });
+      const told = kind === "event" ? withTurnContext(event, body) : event;
       const started = performance.now();
       const reply = await fronting.event({
         current,
-        event: { text: event, kind, ...(agent ? { agent } : {}) },
+        event: { text: told, kind, ...(agent ? { agent } : {}) },
         sessions: routeSessions(body?.sessions),
         context: withSearches(contextOf(body?.context), research(), tools()),
       });
@@ -533,7 +569,7 @@ export function createVoiceRoutes(
       if (reply) memory?.record({ kind: "said", text: reply });
       if (debug)
         console.error(
-          `[voice] front told ${kind} in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(reply)} <- ${event.slice(0, 200)}`,
+          `[voice] front told ${kind} in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(reply)} <- ${told.slice(0, 300)}`,
         );
       voiceLog.debug("voice front told", {
         kind,

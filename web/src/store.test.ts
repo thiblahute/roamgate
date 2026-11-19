@@ -1121,6 +1121,22 @@ describe("connection-partitioned store state", () => {
     expect(tracker.update("alpha", [pane("alpha", "done")])).toEqual([]);
   });
 
+  test("tells how long a pane's turn ran, once it saw it start", () => {
+    const tracker = new TaskCompletionTracker();
+    // Working when first seen: its start is unknown.
+    tracker.update("alpha", [pane("alpha", "working")], 1_000);
+    expect(tracker.turnMs("alpha", "same-pane", 2_000)).toBeUndefined();
+    tracker.update("alpha", [pane("alpha", "idle")], 3_000);
+    tracker.update("alpha", [pane("alpha", "working")], 10_000);
+    expect(tracker.turnMs("alpha", "same-pane", 25_000)).toBe(15_000);
+    tracker.update("alpha", [pane("alpha", "done")], 50_000);
+    expect(tracker.turnMs("alpha", "same-pane", 51_000)).toBe(40_000);
+    // Long after it ended, that turn is not the one told.
+    expect(tracker.turnMs("alpha", "same-pane", 50_000 + 3 * 60_000)).toBe(
+      undefined,
+    );
+  });
+
   test("carries runtime identity in browser and toast activation targets", () => {
     const target = {
       connectionId: "alpha",
