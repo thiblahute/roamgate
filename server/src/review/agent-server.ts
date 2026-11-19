@@ -29,6 +29,10 @@ import {
   type HolderStatus,
   parseHolderStatus,
 } from "../conversation/pane-child";
+import {
+  parseHolderShell,
+  parseSuspendedSpec,
+} from "../conversation/suspended";
 import { REVIEW_CLIENT_CHECKSUM, REVIEW_CLIENT_SCRIPT } from "./agent-client";
 import { REVIEW_SKILL } from "./agent-skill";
 import { describeTarget, ReviewError, type ReviewService } from "./service";
@@ -285,6 +289,8 @@ export function createReviewAgentServer(args: {
       signal: AbortSignal;
       /** What a holder running the headless claude says of it. */
       status: HolderStatus | null;
+      /** What it says of itself and its shell (job control, pid). */
+      shell?: ReturnType<typeof parseHolderShell>;
     }) => Promise<Record<string, unknown>>;
     /** A holder sending its log from `offset` to `end`. */
     output: (input: {
@@ -299,6 +305,17 @@ export function createReviewAgentServer(args: {
       connectionId: string;
       paneId: string;
       sessionId: string;
+    }) => Promise<Record<string, unknown>>;
+    /**
+     * `fg` brought back a holder stopped as a shell job: it asks for the
+     * session it kept, in conversation mode again.
+     */
+    fg?: (input: {
+      connectionId: string;
+      paneId: string;
+      spec: NonNullable<ReturnType<typeof parseSuspendedSpec>>;
+      status: HolderStatus | null;
+      shell: ReturnType<typeof parseHolderShell>;
     }) => Promise<Record<string, unknown>>;
   };
 }) {
@@ -494,7 +511,8 @@ export function createReviewAgentServer(args: {
     if (
       command === "hold" ||
       command === "handback" ||
-      command === "hold_output"
+      command === "hold_output" ||
+      command === "fg"
     ) {
       const paneId = form.get("pane");
       const sessionId = form.get("session") ?? "";
@@ -521,6 +539,19 @@ export function createReviewAgentServer(args: {
           data: form.get("data") ?? "",
         });
       }
+      if (command === "fg") {
+        const spec = parseSuspendedSpec(form);
+        if (!spec) throw new ReviewError("invalid stopped session");
+        if (!args.holder.fg)
+          return { action: "refused", reason: "fg is unavailable here" };
+        return args.holder.fg({
+          connectionId: connection.id,
+          paneId,
+          spec,
+          status: parseHolderStatus(form),
+          shell: parseHolderShell(form),
+        });
+      }
       return command === "hold"
         ? args.holder.hold({
             connectionId: connection.id,
@@ -528,6 +559,7 @@ export function createReviewAgentServer(args: {
             sessionId,
             signal,
             status: parseHolderStatus(form),
+            shell: parseHolderShell(form),
           })
         : args.holder.handback({
             connectionId: connection.id,

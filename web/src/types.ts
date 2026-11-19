@@ -93,6 +93,15 @@ export interface Pane {
   attention_note?: string;
   /** Session file modification time in epoch milliseconds, from the bridge. */
   last_activity_at?: number;
+  /**
+   * An agent conversation stopped as a job of the pane's shell (the chat's
+   * Ctrl+Z): `fg` there brings it back.
+   */
+  suspended_conversation?: {
+    session_id: string;
+    title?: string;
+    suspended_at: string;
+  };
   revision: number;
 }
 

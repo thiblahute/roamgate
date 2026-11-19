@@ -30,7 +30,7 @@ import {
 } from "../conversation/herdr";
 import type { SpawnHeadless } from "../conversation/headless";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { holderCommand, resumeCommand } from "../conversation/holder-script";
 import { REVIEW_HOME_DIR } from "../review/agent-server";
 import { exitSentAsMessage } from "../conversation/handover";
@@ -300,6 +300,10 @@ export function createLegacyConnectionRuntime(args: {
       connectionId: identity.id,
       file: args.conversationLeaseFile ?? null,
     }),
+    // Kept beside the leases: the conversations stopped as shell jobs.
+    suspendedFile: args.conversationLeaseFile
+      ? join(dirname(args.conversationLeaseFile), "conversation-suspended.json")
+      : null,
     ...(args.spawnHeadless ? { spawn: args.spawnHeadless } : {}),
     ask: (paneId, prompt) =>
       args.askAgentPrompt

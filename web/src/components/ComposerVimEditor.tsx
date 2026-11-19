@@ -81,6 +81,7 @@ export function ComposerVimEditor({
   onPasteImages,
   onComposingChange,
   onUpWhenEmpty,
+  onSuspend,
   handleRef,
 }: {
   /** The box's text; a change from outside (an upload, the terminal's box)
@@ -97,6 +98,8 @@ export function ComposerVimEditor({
   onComposingChange: (composing: boolean) => void;
   /** Up in the empty box; true when it did something. */
   onUpWhenEmpty?: () => boolean;
+  /** `:suspend` / `:stop`: the conversation stops as a shell job. */
+  onSuspend?: () => void;
   handleRef?: RefObject<ComposerVimHandle | null>;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -118,6 +121,7 @@ export function ComposerVimEditor({
     onComposingChange,
     onUpWhenEmpty,
     enterSends,
+    onSuspend,
   });
   handlers.current = {
     onChange,
@@ -127,6 +131,7 @@ export function ComposerVimEditor({
     onComposingChange,
     onUpWhenEmpty,
     enterSends,
+    onSuspend,
   };
   const initial = useRef({ value, placeholder, label, handleRef });
 
@@ -255,6 +260,7 @@ export function ComposerVimEditor({
       vimExEditors.set(cm, {
         commit: () => handlers.current.onSubmit(),
         cancel: () => view.contentDOM.blur(),
+        suspend: () => handlers.current.onSuspend?.(),
       });
       // Writing first: insert mode, as a message box is for typing.
       const enterInsert = () => {

@@ -215,6 +215,11 @@ import {
 } from "../paneView";
 import { paneAgentPrompt, useReviewState } from "../review";
 import { requestAgentChatHandover, useAgentChat } from "../agentChat";
+import {
+  foregroundConversation,
+  suspendConversation,
+} from "../conversationSuspend";
+import { SuspendedConversationStrip } from "./SuspendedConversationStrip";
 import { isConversationAgent } from "../../../shared/agentChat";
 import {
   conversationOwns,
@@ -694,12 +699,37 @@ export function TerminalView({
   /** The user's own switch, from wherever it is asked. */
   const switchToConversation = () => {
     setRefusalShown(null);
+    // Stopped in the pane's shell (Ctrl+Z): its job is brought back (fg).
+    if (pane?.suspended_conversation) {
+      const paneId = pane.pane_id;
+      void foregroundConversation(connectionClient, paneId).then((result) => {
+        if (!result.ok)
+          store.notify({
+            kind: "error",
+            message: "The conversation was not brought back",
+            detail: result.reason,
+          });
+      });
+      return;
+    }
     conversationSwitch.request();
   };
   /** "Open in terminal": the user hands the session back. */
   const openInTerminal = () => {
     if (!pane) return;
     void requestAgentChatHandover(connectionClient, pane.pane_id, "terminal");
+  };
+  /**
+   * Ctrl+Z (or the chat menu's Stop to the shell): the conversation stops
+   * as a job of the pane's shell; `fg` there brings it back.
+   */
+  const [suspending, setSuspending] = useState(false);
+  const suspendToShell = (title: string | null) => {
+    if (!pane) return;
+    setSuspending(true);
+    void suspendConversation(connectionClient, pane.pane_id, title).finally(
+      () => setSuspending(false),
+    );
   };
   // A voice chat handed to this pane (the router switched to it) has no
   // chat to go on in terminal mode: it ends here, and says why.
@@ -4241,19 +4271,23 @@ export function TerminalView({
             <div className="terminal-conversation-layer">
               <div className="terminal-conversation-notice" role="status">
                 <strong>
-                  {chatState?.phase === "to_terminal" ||
-                  conversation?.handing === "terminal"
-                    ? "Opening Claude in the terminal\u2026"
-                    : chatState?.phase === "to_conversation" ||
-                        conversation?.handing === "conversation"
-                      ? "Switching to conversation mode\u2026"
-                      : "This session is in conversation mode"}
+                  {suspending
+                    ? "Stopping the conversation\u2026"
+                    : chatState?.phase === "to_terminal" ||
+                        conversation?.handing === "terminal"
+                      ? "Opening Claude in the terminal\u2026"
+                      : chatState?.phase === "to_conversation" ||
+                          conversation?.handing === "conversation"
+                        ? "Switching to conversation mode\u2026"
+                        : "This session is in conversation mode"}
                 </strong>
                 <p>
-                  {chatState?.phase === "to_terminal" ||
-                  conversation?.handing === "terminal"
-                    ? "Claude resumes here in a moment."
-                    : "Claude in the terminal closes, and its chat shows once conversation mode has the session."}
+                  {suspending
+                    ? "The shell's prompt comes back, and fg there brings the conversation back."
+                    : chatState?.phase === "to_terminal" ||
+                        conversation?.handing === "terminal"
+                      ? "Claude resumes here in a moment."
+                      : "Claude in the terminal closes, and its chat shows once conversation mode has the session."}
                 </p>
               </div>
             </div>
@@ -4287,6 +4321,15 @@ export function TerminalView({
               }}
             />
           ) : null}
+          {pane.suspended_conversation && !chatShown ? (
+            <SuspendedConversationStrip
+              key={pane.suspended_conversation.suspended_at}
+              title={pane.suspended_conversation.title}
+              onForeground={() =>
+                foregroundConversation(connectionClient, pane.pane_id)
+              }
+            />
+          ) : null}
           {permissionPrompt && !chatShown && !conversationOwnsPane ? (
             <div className="terminal-permission-layer">
               <AgentPermissionCard prompt={permissionPrompt} compact />
@@ -4304,6 +4347,7 @@ export function TerminalView({
                   permission: permissionPrompt,
                   // A Claude chat is its conversation mode: the terminal
                   // comes back by handing the session back.
+                  ...(modeBound ? { onSuspend: suspendToShell } : {}),
                   onShowTerminal: modeBound
                     ? openInTerminal
                     : () => {

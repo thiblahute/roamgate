@@ -14,7 +14,7 @@ import type {
   PaneProcessInfo,
   WriterElsewhere,
 } from "./herdr";
-import { type HolderRegistry, resumeReply } from "./holder";
+import { type HolderRegistry, resumeReply, suspendReply } from "./holder";
 import type { LeaseStore } from "./lease";
 
 /** What a handover needs of the session's headless side. */
@@ -881,12 +881,19 @@ export function createHandover(deps: HandoverDeps) {
 
   /**
    * Conversation -> terminal: only between turns, with nothing queued; the
-   * headless process exits first, then the holder resumes claude.
+   * headless process exits first, then the holder resumes claude. With
+   * `suspend` (the chat's Ctrl+Z) the holder stops as a shell job instead:
+   * the shell's prompt is back, no claude runs, and `fg` there brings the
+   * conversation back (fromSuspended).
    */
   function toTerminal(
     paneId: string,
     headless: HeadlessSide | null,
-    options: { interrupt?: boolean; confirm?: boolean } = {},
+    options: {
+      interrupt?: boolean;
+      confirm?: boolean;
+      suspend?: { title?: string };
+    } = {},
   ): Promise<AgentChatHandoverResult> {
     return exclusive(paneId, async () => {
       const lease = deps.leases.get(paneId);
@@ -899,6 +906,12 @@ export function createHandover(deps: HandoverDeps) {
       if (lease.phase !== "conversation")
         return refuse("This session is being handed over; try again shortly");
       const terminal = leaseTerminal(lease);
+      // Only a holder that runs as a job of an interactive shell can stop
+      // as one (an older holder, or a shell without job control, cannot).
+      if (options.suspend && !suspendable(paneId))
+        return refuse(
+          "The pane's holder cannot stop as a shell job (it is from an older Roamgate, or its shell has no job control); open it in the terminal instead",
+        );
       if (headless?.busy()) {
         if (!options.interrupt)
           return refuse(
@@ -969,6 +982,16 @@ export function createHandover(deps: HandoverDeps) {
         .catch(() => undefined);
       const holder = deps.holders.connected(paneId);
       deleteLease(paneId);
+      if (options.suspend && holder) {
+        deps.holders.send(paneId, suspendReply(lease, options.suspend.title));
+        return {
+          ok: true,
+          owner: "terminal",
+          session_id: lease.session_id,
+          suspended: true,
+        };
+      }
+      // A holder gone meanwhile resumes claude when it polls again.
       deps.holders.send(paneId, resumeReply(lease));
       if (!holder)
         return {
@@ -994,6 +1017,69 @@ export function createHandover(deps: HandoverDeps) {
     });
   }
 
+  /** Whether the pane's holder polls and can stop as a shell job. */
+  function suspendable(paneId: string): boolean {
+    return deps.holders.connected(paneId) && deps.holders.jobControl(paneId);
+  }
+
+  /**
+   * A holder stopped as a shell job (the chat's Ctrl+Z) was brought back
+   * with `fg`: it holds the pane again, and conversation mode takes the
+   * session once nothing else writes it (a claude resumed meanwhile, in
+   * this pane's shell or elsewhere, keeps it).
+   */
+  function fromSuspended(
+    paneId: string,
+    spec: Pick<
+      AgentChatLease,
+      "session_id" | "cwd" | "agent" | "terminal_args"
+    >,
+  ): Promise<AgentChatHandoverResult & { lease?: AgentChatLease }> {
+    return exclusive(paneId, async () => {
+      const current = deps.leases.get(paneId);
+      if (current)
+        return current.phase === "conversation" &&
+          current.session_id === spec.session_id
+          ? { ok: true, owner: "conversation", session_id: spec.session_id }
+          : refuse("Conversation mode holds another session in this pane");
+      if (await liveOwnerElsewhere(paneId, spec.session_id))
+        return refuse(
+          "Conversation mode already owns this session in another pane",
+        );
+      let elsewhere: WriterElsewhere | null;
+      try {
+        elsewhere = await deps.herdr.writerElsewhere(
+          paneId,
+          [spec.session_id],
+          [],
+        );
+      } catch (error) {
+        return refuse(
+          `Could not check for other writers on the session: ${errorText(error)}`,
+        );
+      }
+      if (elsewhere) return refuse(`${elsewhere.text}; close it there first`);
+      if (await deps.herdr.headlessRunning([spec.session_id]).catch(() => true))
+        return refuse("A conversation process still runs on the session");
+      const lease = setLease({
+        pane_id: paneId,
+        session_id: spec.session_id,
+        cwd: spec.cwd,
+        phase: "conversation",
+        ...(spec.agent ? { agent: spec.agent } : {}),
+        ...(spec.terminal_args?.length
+          ? { terminal_args: spec.terminal_args }
+          : {}),
+      });
+      return {
+        ok: true,
+        owner: "conversation",
+        session_id: spec.session_id,
+        lease,
+      };
+    });
+  }
+
   /** Waits a while for a holder in the pane. */
   function waitForHolder(paneId: string) {
     return until(async () => deps.holders.connected(paneId), holderTimeoutMs);
@@ -1002,6 +1088,7 @@ export function createHandover(deps: HandoverDeps) {
   return {
     toConversation,
     toTerminal,
+    fromSuspended,
     confirmMapping,
     waitForHolder,
     running: (paneId: string) => running.has(paneId),

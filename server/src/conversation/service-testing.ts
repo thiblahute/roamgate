@@ -1,6 +1,7 @@
 import type { AgentChatEventEnvelope } from "../../../shared/agentChat";
 import { createLeaseStore, type LeaseStore } from "./lease";
 import type { HolderStatus } from "./pane-child";
+import type { HolderShell } from "./service-holders";
 import {
   type ConversationServiceOptions,
   createConversationService,
@@ -31,7 +32,7 @@ export function setupService(
   leases?: LeaseStore,
   extra: Partial<ConversationServiceOptions<Ws>> = {},
   /** What the holder typed into the pane says of itself as it polls. */
-  holder: { status?: HolderStatus } = {},
+  holder: { status?: HolderStatus; shell?: HolderShell } = {},
 ) {
   const clock = virtualClock();
   const sent: [Ws, AgentChatEventEnvelope][] = [];
@@ -50,6 +51,7 @@ export function setupService(
         sessionId: fake.sessionId,
         signal: controller.signal,
         ...(holder.status ? { status: holder.status } : {}),
+        ...(holder.shell ? { shell: holder.shell } : {}),
       }),
     );
   };

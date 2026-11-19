@@ -18,6 +18,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { boxSuspends, isSuspendKey } from "../conversationSuspend";
 import { workspaceFileUrl } from "../workspaceFileUrl";
 import {
   Check,
@@ -27,6 +28,7 @@ import {
   Eye,
   Info,
   MessagesSquare,
+  Pause,
   RefreshCw,
   ListChecks,
   Search,
@@ -250,6 +252,12 @@ export function AgentHistoryDrawer({
     /** What its permission hook waits on, answered here. */
     permission?: AgentPermissionPrompt;
     onShowTerminal: () => void;
+    /**
+     * Ctrl+Z, `:suspend` and the menu's Stop to the shell: the conversation
+     * stops as a job of the pane's shell (`fg` there brings it back), with
+     * its title for the stopped job's line. Conversation mode only.
+     */
+    onSuspend?: (title: string | null) => void;
     /**
      * The pane is the active one: only its question takes keys typed with
      * nothing focused, or moves the focus.
@@ -2380,6 +2388,13 @@ export function AgentHistoryDrawer({
     ? conversationAgentStatus(conversationState!.status)
     : pane.agent_status;
   const chatWorking = chatAgentStatus.toLowerCase() === "working";
+  // Ctrl+Z, `:suspend` and the menu's Stop to the shell (below).
+  const suspendHere =
+    paneChat?.onSuspend && inConversation && !conversation?.handing
+      ? () => paneChat.onSuspend?.(sessionTitle)
+      : null;
+  const suspendRef = useRef(suspendHere);
+  suspendRef.current = suspendHere;
   const historyComposer = (
     <AgentHistoryComposer
       // A pane or connection switch must never render, or send, the
@@ -2416,6 +2431,7 @@ export function AgentHistoryDrawer({
             : undefined
       }
       onSend={sendFromChatBox}
+      onSuspend={suspendHere ?? undefined}
       shell={
         inConversation && capabilities.shellLines
           ? { host: connectionLabel, cwd: conversationState?.cwd }
@@ -2464,6 +2480,62 @@ export function AgentHistoryDrawer({
   );
   // An agent's question takes the keys in its card, as in the terminal.
   const paneActive = paneChat?.active !== false;
+  // Ctrl+Z, as in a shell: the conversation stops as a job of the pane's
+  // shell, and `fg` there brings it back. Never where Ctrl+Z undoes: in a
+  // message box with text (outside Vim's normal mode; Cmd+Z undoes on a
+  // Mac), or another field. Caught ahead of the box's own keys.
+  useEffect(() => {
+    if (!paneChat?.onSuspend || !paneActive) return;
+    const onKey = (event: KeyboardEvent) => {
+      const suspend = suspendRef.current;
+      if (
+        !suspend ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        !isSuspendKey(event) ||
+        document.querySelector(
+          ".modal-backdrop, .agent-tasks-backdrop, .command-popover",
+        )
+      )
+        return;
+      const target = event.target instanceof Element ? event.target : null;
+      const box = target?.closest(".agent-history-composer");
+      const here =
+        !target ||
+        target === document.body ||
+        !!drawerRef.current?.contains(target) ||
+        (!!box && !!paneChat.composerTarget?.contains(box));
+      if (!here) return;
+      if (box) {
+        const vimNormal = !!target
+          ?.closest(".cm-editor")
+          ?.querySelector(".cm-scroller.cm-vimMode");
+        if (
+          !boxSuspends({
+            text: readTerminalComposerDraft(composerDraftKey),
+            vimNormal,
+          })
+        )
+          return;
+      } else if (
+        target &&
+        target !== document.body &&
+        (target.closest("input, textarea, select, [contenteditable='true']") ||
+          (target as HTMLElement).isContentEditable)
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      suspend();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [
+    paneChat?.onSuspend,
+    paneChat?.composerTarget,
+    paneActive,
+    composerDraftKey,
+  ]);
   const promptRef = useRef<HTMLDivElement | null>(null);
   // Blocked, or a menu on its screen though it still counts as working.
   const promptShown =
@@ -3180,6 +3252,20 @@ export function AgentHistoryDrawer({
                 >
                   <Search size={14} />
                 </button>
+                {/* Ctrl+Z: stopped as a job of the pane's shell; fg there
+                    brings it back. Also on a phone, which has no Ctrl+Z. */}
+                {paneChat.onSuspend && paneChat.modeBound ? (
+                  <button
+                    type="button"
+                    className="agent-history-icon"
+                    aria-label="Stop to the shell"
+                    title="Stop to the shell (Ctrl+Z): the pane's shell gets its prompt back, and fg there brings the conversation back"
+                    disabled={!suspendHere}
+                    onClick={() => suspendHere?.()}
+                  >
+                    <Pause size={14} />
+                  </button>
+                ) : null}
                 {/* A phone's way to the terminal is its bottom bar's. */}
                 {!mobile ? (
                   <button

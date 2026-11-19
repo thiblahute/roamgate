@@ -19,6 +19,7 @@ export const AGENT_CHAT_METHODS = [
   "agent_chat.api_key.answer",
   "agent_chat.handover",
   "agent_chat.handover.cancel",
+  "agent_chat.fg",
   "agent_history.subscribe",
   "agent_history.unsubscribe",
 ] as const;
@@ -42,6 +43,17 @@ function textOf(params: Record<string, unknown>, field = "text"): string {
   if (typeof text !== "string" || text.length > 200_000)
     throw new Error(`invalid ${field}`);
   return text;
+}
+
+/**
+ * A stopped conversation's title, as its job's line in the terminal says
+ * it: one line, printable, short; undefined when none is left.
+ */
+function suspendTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: they are what is removed
+  const line = value.replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ").trim();
+  return line ? line.slice(0, 120) : undefined;
 }
 
 function idOf(
@@ -167,15 +179,19 @@ export async function handleAgentChatRpc<Ws>(
           quitWriter.length > 200)
       )
         throw new Error("invalid quit_writer");
+      const suspend = params.suspend === true && to === "terminal";
       return service.handover(paneId, to, {
         interrupt: params.interrupt === true,
         auto: params.auto === true,
         ...(sessionId ? { session_id: sessionId } : {}),
         ...(quitWriter ? { quit_writer: quitWriter } : {}),
+        ...(suspend ? { suspend: { title: suspendTitle(params.title) } } : {}),
       });
     }
     case "agent_chat.handover.cancel":
       return service.cancelHandover(paneId);
+    case "agent_chat.fg":
+      return service.foreground(paneId);
     case "agent_history.subscribe":
       if (!history) throw new Error("History push is unavailable here");
       return history.subscribe(ws, params);

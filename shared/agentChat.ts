@@ -387,6 +387,11 @@ export type AgentChatHandoverResult =
       session_id: string;
       confirmed?: boolean;
       detail?: string;
+      /**
+       * Handed back stopped (the chat's Ctrl+Z): the pane's shell has its
+       * prompt, and `fg` there brings the conversation back.
+       */
+      suspended?: boolean;
     }
   | {
       ok: false;

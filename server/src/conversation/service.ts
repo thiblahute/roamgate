@@ -33,6 +33,12 @@ import {
   createConversationSession,
 } from "./session";
 import { isSpokenStop } from "./session-voice";
+import {
+  createSuspendedStore,
+  foregroundCommand,
+  shellName,
+  type SuspendedConversation,
+} from "./suspended";
 import type { ShellRunner } from "./shell";
 
 export { createSlots } from "./service-recover";
@@ -113,6 +119,16 @@ export type ConversationServiceOptions<Ws> = {
   holderSaveMs?: number;
   /** A pane's lease changed (owner, or the session after /clear). */
   onLeaseChanged?: (paneId: string) => void;
+  /**
+   * Where the conversations stopped as shell jobs (Ctrl+Z) are kept, so a
+   * restart still shows them; none keeps them in memory.
+   */
+  suspendedFile?: string | null;
+  /**
+   * How often the stopped conversations are checked for a holder gone
+   * (the job killed, the pane closed). 0: never.
+   */
+  suspendedWatchMs?: number;
   /**
    * How long a recover waits, past a holder's poll, for the holder to say
    * its child ended.
@@ -199,6 +215,44 @@ export function createConversationService<Ws>(
   const subscribers = new Map<string, Set<Ws>>();
   const holdPollMs = options.holdPollMs ?? 25_000;
 
+  // The conversations stopped as shell jobs (Ctrl+Z): their holders wait
+  // in the panes' shells, and `fg` there brings them back.
+  const suspended = createSuspendedStore({
+    connectionId: options.connectionId,
+    file: options.suspendedFile ?? null,
+  });
+  /** One gone (its job killed, its pane closed): the browsers are told. */
+  function dropSuspended(paneId: string, why: string) {
+    if (!suspended.delete(paneId)) return;
+    log("stopped conversation gone", { pane: paneId, why });
+    options.onLeaseChanged?.(paneId);
+  }
+  const suspendedWatchMs = options.suspendedWatchMs ?? 30_000;
+  const suspendedWatch =
+    suspendedWatchMs > 0
+      ? setInterval(() => {
+          for (const entry of suspended.all())
+            void checkSuspended(entry).catch(() => undefined);
+        }, suspendedWatchMs)
+      : null;
+  if (
+    suspendedWatch &&
+    typeof suspendedWatch === "object" &&
+    "unref" in suspendedWatch
+  )
+    suspendedWatch.unref();
+  async function checkSuspended(entry: SuspendedConversation) {
+    if (disposed) return;
+    if ((await options.herdr.paneExists(entry.pane_id)) === false)
+      return dropSuspended(entry.pane_id, "pane closed");
+    if (
+      entry.holder_pid &&
+      !(await options.herdr.pidAlive(entry.holder_pid)) &&
+      suspended.get(entry.pane_id) === entry
+    )
+      dropSuspended(entry.pane_id, "holder gone");
+  }
+
   const apiKeys = createApiKeyQuestions({ emit, log });
   const { ask: askApiKey, settle: settleApiKey } = apiKeys;
   const holderSide = createHolderSide({
@@ -218,6 +272,8 @@ export function createConversationService<Ws>(
     reattach: (paneId) => recovery.reattach(paneId),
     toTerminal: (paneId, handoverOptions) =>
       toTerminal(paneId, handoverOptions),
+    fromSuspended: (paneId, spec, attach) =>
+      fromSuspended(paneId, spec, attach),
     confirmMapping: (paneId, sessionId) =>
       handover.confirmMapping(paneId, sessionId),
   });
@@ -318,13 +374,14 @@ export function createConversationService<Ws>(
     closed,
     log,
   };
-  const { toConversation, toTerminal } = createSwitches({
+  const { toConversation, toTerminal, fromSuspended } = createSwitches({
     handover,
     leases,
     sessions,
     holders,
     channel: holderSide.channel,
     sessionFor: (paneId) => sessionFor(paneId),
+    suspended,
     emitLease: (paneId) => emitLease(paneId),
     carryParked: recovery.carryParked,
     report: (paneId, status) => report(paneId, status),
@@ -586,6 +643,7 @@ export function createConversationService<Ws>(
     holders.forget(paneId);
     dropChannel(paneId);
     clearStuck(paneId);
+    dropSuspended(paneId, "pane closed");
     if (!leases.get(paneId)) return;
     log("the pane of a conversation closed; its lease goes", { pane: paneId });
     leases.delete(paneId);
@@ -748,6 +806,11 @@ export function createConversationService<Ws>(
          * the user chose to quit before the switch.
          */
         quit_writer?: string;
+        /**
+         * To the terminal stopped as a shell job (the chat's Ctrl+Z), with
+         * the conversation's title for its line there.
+         */
+        suspend?: { title?: string };
       } = {},
     ): Promise<AgentChatHandoverResult> {
       if (disposed)
@@ -766,7 +829,66 @@ export function createConversationService<Ws>(
         ? toConversation(paneId, handoverOptions.session_id, {
             quitWriter: handoverOptions.quit_writer,
           })
-        : toTerminal(paneId, { interrupt: handoverOptions.interrupt });
+        : toTerminal(paneId, {
+            interrupt: handoverOptions.interrupt,
+            ...(handoverOptions.suspend
+              ? { suspend: handoverOptions.suspend }
+              : {}),
+          });
+    },
+
+    /**
+     * The user's fg from the page (the terminal's banner, a phone): the
+     * pane's shell is asked to bring the stopped holder back, as typing
+     * `fg` there would; the holder then asks for its session itself. Only
+     * while the shell is at its prompt, and only for the stopped
+     * conversation's own job (named, never the shell's current job).
+     */
+    async foreground(
+      paneId: string,
+    ): Promise<{ ok: true } | { ok: false; reason: string }> {
+      const entry = suspended.get(paneId);
+      if (!entry)
+        return { ok: false, reason: "No conversation is stopped in this pane" };
+      let info: Awaited<ReturnType<ConversationHerdr["processInfo"]>>;
+      try {
+        info = await options.herdr.processInfo(paneId);
+      } catch (error) {
+        return {
+          ok: false,
+          reason: `Herdr did not list the pane's processes: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+      if (
+        info.shell_pid === undefined ||
+        info.foreground_process_group_id !== info.shell_pid
+      )
+        return {
+          ok: false,
+          reason:
+            "Something runs in the pane's terminal; once its shell is back at the prompt, type fg there",
+        };
+      const shell = info.foreground_processes.find(
+        (process) => process.pid === info.shell_pid,
+      );
+      try {
+        await options.herdr.sendText(
+          paneId,
+          foregroundCommand(entry, shellName(shell)),
+        );
+      } catch (error) {
+        return {
+          ok: false,
+          reason: `Could not type fg into the pane: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+      log("fg typed for a stopped conversation", { pane: paneId });
+      return { ok: true };
+    },
+
+    /** The panes whose conversation is stopped as a shell job (Ctrl+Z). */
+    suspendedPanes(): SuspendedConversation[] {
+      return suspended.all();
     },
 
     /**
@@ -853,6 +975,7 @@ export function createConversationService<Ws>(
      * what was queued, for the runtime after this one.
      */
     dispose() {
+      if (suspendedWatch) clearInterval(suspendedWatch);
       recovery.dispose();
       stuck.dispose();
       idle.dispose();

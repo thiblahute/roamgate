@@ -114,6 +114,7 @@ export function AgentHistoryComposer({
   voice,
   onRecallQueued,
   onStop,
+  onSuspend,
   shell,
   nextPrompt,
 }: {
@@ -136,6 +137,11 @@ export function AgentHistoryComposer({
   onRecallQueued?: () => void;
   /** While the agent works: stop it, beside Send. */
   onStop?: () => void;
+  /**
+   * `:suspend` / `:stop` in the Vim box: the conversation stops as a job
+   * of the pane's shell (the chat catches Ctrl+Z itself).
+   */
+  onSuspend?: () => void;
   /**
    * A line starting with `!` runs as a shell command (Claude Code's bash
    * mode): where. Without it, `!` is plain text.
@@ -714,6 +720,7 @@ export function AgentHistoryComposer({
                 onSubmit={() => void send(false)}
                 onPasteImages={(files) => void uploadImages(files)}
                 handleRef={vimHandleRef}
+                onSuspend={onSuspend}
                 onComposingChange={(composing) => {
                   composingRef.current = composing;
                   setComposing(composing);
