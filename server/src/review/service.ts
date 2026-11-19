@@ -30,6 +30,7 @@ import {
   REVIEW_EFFORT_ITEMS,
   REVIEW_EFFORT_TABS,
   threadNeedsAnswer,
+  agentJoined,
   unheardComments,
 } from "../../../shared/review";
 import {
@@ -3596,7 +3597,9 @@ export function createReviewService(args: {
   /** A thread the agent hears about: see needsAnswer. */
   function forAgent(thread: ReviewThread, target: ReviewSession): boolean {
     return (
-      thread.kind === "discussion" || (!target.gitlab && isSuggestion(thread))
+      thread.kind === "discussion" ||
+      (!target.gitlab && isSuggestion(thread)) ||
+      agentJoined(thread)
     );
   }
 

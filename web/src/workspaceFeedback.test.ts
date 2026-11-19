@@ -694,6 +694,61 @@ describe("writeFeedback", () => {
       writeFeedback(call, diffNote("unstaged"), place, 1),
     ).rejects.toThrow("offline");
   });
+
+  test("a comment naming the review shown is written in it, never in a review opened for the branch; that review gone, it is refused", async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = [];
+    let gone = false;
+    const call = async <T>(method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params });
+      if (method === "review.get" && gone) throw new Error("no such review");
+      return (
+        method === "review.get"
+          ? {
+              session: {
+                ...session({
+                  kind: "mr",
+                  url: "https://gitlab.example/x/-/merge_requests/4",
+                } as never),
+                id: "mr1",
+                gitlab: true,
+                agent: { name: "Claude", paneId: "w29:p1" },
+              },
+              threads: [],
+            }
+          : {}
+      ) as T;
+    };
+    // Written under a base picked in Compare against, as the Branch
+    // scope's notes are: the review shown still takes it.
+    const note = diffNote("branch", {
+      base: "thiblahute/sequence",
+      review: "mr1",
+    });
+    expect(
+      parseReviewAnnotation(JSON.parse(JSON.stringify(note))),
+    ).toMatchObject({ review: "mr1" });
+    await writeFeedback(
+      call,
+      note,
+      { ...place, agent: { paneId: "w29:p1", name: "Claude" } },
+      1,
+      { kind: "discussion" },
+    );
+    expect(calls.map((each) => each.method)).toEqual([
+      "review.get",
+      "review.thread.add",
+    ]);
+    expect(calls[1]!.params).toMatchObject({
+      session_id: "mr1",
+      kind: "discussion",
+    });
+    calls.length = 0;
+    gone = true;
+    await expect(writeFeedback(call, note, place, 1)).rejects.toThrow(
+      "no such review",
+    );
+    expect(calls.map((each) => each.method)).toEqual(["review.get"]);
+  });
 });
 
 describe("workspaceFeedback", () => {

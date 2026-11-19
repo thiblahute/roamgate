@@ -453,6 +453,20 @@ export function createReviewAgentServer(args: {
         return false;
       }
     });
+  /**
+   * A review's threads for its agent, then those it shows from the
+   * checkout's other reviews, each saying so (`from_other_review`, that
+   * review's id): written there, not in this one.
+   */
+  const threadsForAgent = (snapshot: ReviewSnapshot) => [
+    ...snapshot.threads.filter(notHeld).map(threadOutput),
+    ...sharedForAgent(snapshot)
+      .filter(notHeld)
+      .map((thread) => ({
+        ...threadOutput(thread),
+        from_other_review: thread.sessionId,
+      })),
+  ];
   const home = args.home ?? homedir();
   const socketDirectory = join(args.directory, "agent");
   const servers = new Map<string, { path: string; server: Server }>();
@@ -1035,11 +1049,7 @@ export function createReviewAgentServer(args: {
       return {
         session: sessionOutput(opened.session),
         // A security merge request's discussions are not shared with agents.
-        threads: opened.mergeRequest?.security
-          ? []
-          : [...opened.threads, ...sharedForAgent(opened)]
-              .filter(notHeld)
-              .map(threadOutput),
+        threads: opened.mergeRequest?.security ? [] : threadsForAgent(opened),
         ...(repos.length > 1 ? { repos } : {}),
       };
     }
@@ -1067,9 +1077,7 @@ export function createReviewAgentServer(args: {
         const snapshot = args.service.get({ sessionId });
         return {
           session: sessionOutput(snapshot.session),
-          threads: [...snapshot.threads, ...sharedForAgent(snapshot)]
-            .filter(notHeld)
-            .map(threadOutput),
+          threads: threadsForAgent(snapshot),
         };
       }
       case "add": {

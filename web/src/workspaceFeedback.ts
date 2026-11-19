@@ -84,6 +84,12 @@ export type FeedbackCapture = {
 
 type Route = {
   open: Record<string, unknown>;
+  /**
+   * The review it goes to as it is (one shown in Changes): read, not
+   * opened; `open` only when that review is gone and the note names its
+   * target (a range shown, a step).
+   */
+  session?: string;
   anchor: (session: ReviewSession) => ReviewAnchor;
   /** A terminal comment: held until the user's Send. */
   held: boolean;
@@ -145,6 +151,8 @@ export function feedbackRoute(
   if (note.source === "diff")
     return {
       held: false,
+      // The review shown as it was written: that one, whatever it is.
+      ...(note.review ? { session: note.review } : {}),
       open: {
         path: place.root,
         // A review it names: its Last step's, a range shown as a
@@ -340,7 +348,16 @@ export async function writeFeedback(
     });
   let opened: ReviewSnapshot;
   try {
-    opened = await open(route);
+    opened = route.session
+      ? await call<ReviewSnapshot>("review.get", { session_id: route.session })
+          // Gone since: the review its target names, else not written
+          // (never the checkout's own review in place of a merge
+          // request's).
+          .catch((error: unknown) => {
+            if (note.source !== "diff" || !note.target) throw error;
+            return open(route);
+          })
+      : await open(route);
   } catch (error) {
     if (!route.fallback || !isNoRepositoryError(error)) throw error;
     route = route.fallback;

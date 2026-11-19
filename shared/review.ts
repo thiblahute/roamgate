@@ -649,6 +649,17 @@ export function isSuggestion(thread: ReviewThread): boolean {
   );
 }
 
+/**
+ * A review comment (a draft for the forge) the agent wrote in: talked
+ * through with it from then on, as a discussion is.
+ */
+export function agentJoined(thread: ReviewThread): boolean {
+  return (
+    thread.kind === "draft" &&
+    thread.comments.some((comment) => comment.author !== REVIEW_USER)
+  );
+}
+
 export function threadNeedsAnswer(
   thread: ReviewThread,
   agent: string,
@@ -658,7 +669,8 @@ export function threadNeedsAnswer(
   if (thread.resolved || thread.held !== undefined) return false;
   if (
     thread.kind !== "discussion" &&
-    !(options.suggestions && isSuggestion(thread))
+    !(options.suggestions && isSuggestion(thread)) &&
+    !agentJoined(thread)
   )
     return false;
   const last = thread.comments[thread.comments.length - 1];
