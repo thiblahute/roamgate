@@ -394,9 +394,23 @@ export function saysYes(said: string): boolean {
   return yes && !no;
 }
 
-/** The request a job is given: the date, then what to do. */
-export function toolPrompt(task: string, now = new Date()): string {
-  return researchPrompt(task, now).replace("\n\nQuestion: ", "\n\nRequest: ");
+/**
+ * The request a job is given: the date, then what to do, and on a call
+ * whose music comes from a Spotify Connect device (call_music_device),
+ * that device, where music asked for must play to be heard on the call.
+ */
+export function toolPrompt(
+  task: string,
+  now = new Date(),
+  musicDevice?: string,
+): string {
+  const prompt = researchPrompt(task, now).replace(
+    "\n\nQuestion: ",
+    "\n\nRequest: ",
+  );
+  return musicDevice
+    ? `${prompt}\n\nThe user is on a call whose music comes from the Spotify Connect device ${JSON.stringify(musicDevice)}: music played, resumed or moved goes to that device (name it as the device), unless the request names another.`
+    : prompt;
 }
 
 /** The request of a job that makes a confirmed call. */
@@ -421,13 +435,19 @@ export class VoiceTools {
     private readonly policy: () => CompanionMcpConfig,
     private readonly timing = { limit: LIMIT_MS, kept: KEPT_MS, held: HELD_MS },
     private readonly now: () => Date = () => new Date(),
+    /** voice.json's call_music_device, read when a job starts. */
+    private readonly musicDevice: () => string | undefined = () => undefined,
   ) {}
 
-  /** Starts carrying out `task`; null when empty or too many run. */
-  start(task: string): ToolJob | null {
+  /**
+   * Starts carrying out `task`; null when empty or too many run. Asked
+   * on a call with music (`onCall`), music plays on call_music_device.
+   */
+  start(task: string, onCall = false): ToolJob | null {
     const asked = task.trim().slice(0, MAX_TASK_CHARS);
     if (!asked || this.running.size >= MAX_RUNNING) return null;
-    return this.run(asked, toolPrompt(asked, this.now()), null);
+    const device = onCall ? this.musicDevice()?.trim() : undefined;
+    return this.run(asked, toolPrompt(asked, this.now(), device), null);
   }
 
   /**
@@ -738,16 +758,25 @@ export function configuredTools(
     const read = config();
     return "error" in read ? {} : (read.companion_mcp ?? {});
   };
-  const tools = new VoiceTools(() => {
-    const read = config();
-    if ("error" in read) throw new Error(read.error);
-    const mcp = read.companion_mcp ?? {};
-    return spawn(
-      mcp.model ?? DEFAULT_TOOLS_MODEL,
-      helperCommand(read.claude_command),
-      mcp,
-    );
-  }, policy);
+  const tools = new VoiceTools(
+    () => {
+      const read = config();
+      if ("error" in read) throw new Error(read.error);
+      const mcp = read.companion_mcp ?? {};
+      return spawn(
+        mcp.model ?? DEFAULT_TOOLS_MODEL,
+        helperCommand(read.claude_command),
+        mcp,
+      );
+    },
+    policy,
+    undefined,
+    undefined,
+    () => {
+      const read = config();
+      return "error" in read ? undefined : read.call_music_device;
+    },
+  );
   return () => {
     const read = config();
     return !("error" in read) && read.front_model && read.companion_mcp

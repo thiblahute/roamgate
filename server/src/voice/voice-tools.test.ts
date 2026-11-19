@@ -624,6 +624,43 @@ describe("configuredTools", () => {
   });
 });
 
+describe("the call's music device", () => {
+  /** The request the job started for `task` was given. */
+  function request(device: string | undefined, onCall: boolean): string {
+    const spawned: Fake[] = [];
+    const using = configuredTools(
+      () => ({
+        helper: "h",
+        front_model: "opus",
+        companion_mcp: POLICY,
+        ...(device === undefined ? {} : { call_music_device: device }),
+      }),
+      () => {
+        const process = fakeProcess();
+        spawned.push(process);
+        return process as ToolProcess;
+      },
+    )()!;
+    using.start("Mets du Miles Davis", onCall);
+    const user = spawned[0]!.written.find((each) => each.type === "user") as {
+      message: { content: string };
+    };
+    return user.message.content;
+  }
+
+  test("music asked on a call plays on call_music_device", () => {
+    const asked = request("amd-desktop", true);
+    expect(asked).toContain("Request: Mets du Miles Davis");
+    expect(asked).toContain('Spotify Connect device "amd-desktop"');
+  });
+
+  test("off a call, or without a device, the default device stays", () => {
+    expect(request("amd-desktop", false)).not.toContain("Spotify Connect");
+    expect(request(undefined, true)).not.toContain("Spotify Connect");
+    expect(request("  ", true)).not.toContain("Spotify Connect");
+  });
+});
+
 describe("a click on a held call", () => {
   /** A job holding a send, its read-back done. */
   async function holding() {
