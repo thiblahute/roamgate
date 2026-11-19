@@ -19,7 +19,11 @@ import {
   PREVIEW_TIMEOUT_MS,
   UPLOAD_TIMEOUT_MS,
 } from "./file-constants";
-import { entrySort, relativeExplorerPath } from "./file-paths";
+import {
+  entrySort,
+  missingFileMessage,
+  relativeExplorerPath,
+} from "./file-paths";
 import type {
   FileDeleteResult,
   FileDownloadResult,
@@ -240,6 +244,9 @@ export function parseRemoteFilePreview(
   };
 }
 
+/** file.read's exit when the file asked for is not there. */
+const MISSING_FILE_EXIT = 15;
+
 export async function readRemoteFile({
   host,
   rootPath,
@@ -264,6 +271,7 @@ case "$request" in
   /*) target="$request"; requested_absolute=1 ;;
   *) target="$root_real/$request"; requested_absolute=0 ;;
 esac
+if [ ! -e "$target" ]; then exit ${MISSING_FILE_EXIT}; fi
 target_real="$(realpath "$target")"
 if [ "$requested_absolute" != "1" ]; then
   case "$target_real/" in "$root_real"/*) ;; *) exit 13 ;; esac
@@ -298,6 +306,8 @@ printf '\\n'
     sshReadCommandArgv(host, `bash -lc ${shQuote(command)}`, [], "files.read"),
     PREVIEW_TIMEOUT_MS,
   );
+  if (result.code === MISSING_FILE_EXIT)
+    throw new Error(missingFileMessage(requestedPath, rootPath));
   if (result.code !== 0) {
     throw new Error(
       (result.stderr || result.stdout || `file read exited ${result.code}`)

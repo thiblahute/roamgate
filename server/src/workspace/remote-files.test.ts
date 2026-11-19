@@ -375,6 +375,31 @@ test("a file's stat on the host compares with what its read gave, and stays in t
   }
 });
 
+test("a file not on the host is said plainly, not as realpath's error", async () => {
+  const root = await mkdtemp(join(tmpdir(), "roamgate-remote-missing-"));
+  try {
+    const missing = join(root, "..", `gone-${Date.now()}`, "rfcs", "a.md");
+    const message = await readRemoteFile({
+      host: "example.invalid",
+      rootPath: root,
+      requestedPath: missing,
+      shQuote: (value: string) => "'" + value.replace(/'/g, "'\"'\"'") + "'",
+      runProcessWithCodeTimeout: async (argv: string[], timeout: number) => {
+        const result = await runBinaryProcessWithTimeout(
+          ["bash", "-c", argv[argv.length - 1]!],
+          timeout,
+        );
+        return { ...result, stdout: result.stdout.toString("utf8") };
+      },
+    }).catch((error: Error) => error.message);
+    expect(message).toBe(
+      `${missing} is not here: its repository is not checked out at this path, or its checkout does not have this file.`,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("parses a remote stat, and refuses anything else", () => {
   expect(parseRemoteFileStat("STAT\t12\t1700000000\tfile\n")).toEqual({
     type: "file",

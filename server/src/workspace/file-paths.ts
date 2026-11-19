@@ -83,6 +83,17 @@ export function assertInsideRoot(rootReal: string, targetReal: string) {
   }
 }
 
+/**
+ * A file Files cannot read because it is not there, said plainly instead
+ * of the system's ENOENT: an absolute path is another repository's (its
+ * review shown in the workspace) not checked out here, or without it.
+ */
+export function missingFileMessage(requestedPath: string, rootReal: string) {
+  return isAbsolute(requestedPath)
+    ? `${requestedPath} is not here: its repository is not checked out at this path, or its checkout does not have this file.`
+    : `${requestedPath} is not in this checkout (${rootReal}).`;
+}
+
 export function relativePreviewPath(rootReal: string, targetReal: string) {
   return relative(rootReal, targetReal).split(sep).join("/");
 }

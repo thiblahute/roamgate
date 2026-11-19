@@ -22,6 +22,7 @@ import {
   INSPECTOR_SEPARATOR_SIZE,
   readInspectorPreferences,
   readResourceFileSelection,
+  pathInRepository,
   relativePathWithinCheckout,
   resourceOwnerKey,
   resourceScopeForWorkspace,
@@ -410,6 +411,30 @@ describe("workspace resource scope", () => {
     );
     expect(relativePathWithinCheckout("/repo/wt", "/tmp/outside")).toBe(
       undefined,
+    );
+  });
+
+  test("a changed file of another repository opens in Files by its absolute path, one of the checkout by its path there", () => {
+    // The review of the parent repository shown in a worktree's workspace.
+    const checkout = "/src/2.0/gst2-transactions";
+    expect(pathInRepository("rfcs/0052.md", "/src/2.0", checkout)).toBe(
+      "/src/2.0/rfcs/0052.md",
+    );
+    // The checkout's own repository, or a subproject inside it.
+    expect(pathInRepository("src/a.ts", `${checkout}/`, checkout)).toBe(
+      "src/a.ts",
+    );
+    expect(pathInRepository("a.ts", `${checkout}/sub`, checkout)).toBe(
+      "sub/a.ts",
+    );
+    // No repository named, or a path already absolute: as given.
+    expect(pathInRepository("src/a.ts", undefined, checkout)).toBe("src/a.ts");
+    expect(pathInRepository("/tmp/x.md", "/src/2.0", checkout)).toBe(
+      "/tmp/x.md",
+    );
+    // A workspace without a checkout: the absolute path.
+    expect(pathInRepository("./rfcs/a.md", "/src/2.0")).toBe(
+      "/src/2.0/rfcs/a.md",
     );
   });
 

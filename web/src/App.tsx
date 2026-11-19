@@ -343,6 +343,7 @@ import {
   readResourceFileTabs,
   renameResourceFileTab,
   writeResourceFileTabs,
+  pathInRepository,
   relativePathWithinCheckout,
   resolveWorkspaceForScope,
   resourceOwnerKey,
@@ -4253,7 +4254,7 @@ export default function App() {
   const openDiffFileInExplorer = useCallback(
     (
       entry: ActiveDiffSelection["entry"],
-      at?: { line?: number; rendered?: boolean },
+      at?: { line?: number; rendered?: boolean; root?: string },
     ) => {
       const current = inspectorStateRef.current;
       if (!entry || !current) return;
@@ -4267,20 +4268,24 @@ export default function App() {
       void import("./mrReviewFlow").then(({ checkoutForBrowsing }) =>
         checkoutForBrowsing(workspace.workspace_id),
       );
+      // The file of the repository Changes shows, which may not be the
+      // workspace's checkout (another repository's review shown here).
+      const path = pathInRepository(
+        entry.path,
+        at?.root,
+        workspace.worktree?.checkout_path,
+      );
       // At the review's line, rendered, as the review's Open.
       if (at?.line !== undefined || at?.rendered)
         openInspector("files", workspace.workspace_id, {
-          entry: inspectorFileEntry(entry.path),
-          path: entry.path,
+          entry: inspectorFileEntry(path),
+          path,
           ...(at.line !== undefined ? { line: at.line } : {}),
           ...(at.rendered ? { rendered: true } : {}),
           focusInspector: true,
         });
       else
-        openFileExplorerFile(
-          workspace.workspace_id,
-          inspectorFileEntry(entry.path),
-        );
+        openFileExplorerFile(workspace.workspace_id, inspectorFileEntry(path));
     },
     [openFileExplorerFile, openInspector],
   );

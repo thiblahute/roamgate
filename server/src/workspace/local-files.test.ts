@@ -65,6 +65,24 @@ describe("local workspace file operations", () => {
     });
   });
 
+  test("a file that is not there is said plainly, not as the system's ENOENT", async () => {
+    await withTempDir(async (root) => {
+      // Another repository's file, its checkout gone: by its absolute path.
+      const elsewhere = join(root, "..", `gone-${Date.now()}`, "rfcs", "a.md");
+      const absolute = await readLocalFile(root, elsewhere).catch(
+        (error: Error) => error.message,
+      );
+      expect(absolute).toBe(
+        `${elsewhere} is not here: its repository is not checked out at this path, or its checkout does not have this file.`,
+      );
+      expect(absolute).not.toContain("ENOENT");
+      const relative = await readLocalFile(root, "rfcs/a.md").catch(
+        (error: Error) => error.message,
+      );
+      expect(relative).toMatch(/^rfcs\/a\.md is not in this checkout \(/);
+    });
+  });
+
   test("reads directory previews instead of rejecting them", async () => {
     await withTempDir(async (root) => {
       await mkdir(join(root, "src", "app"), { recursive: true });

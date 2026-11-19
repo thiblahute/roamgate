@@ -270,10 +270,14 @@ export function WorkspaceInspectorHost({
   onDiffSelectionChange: DiffViewerPanelProps["onSelectionChange"];
   onOpenDocument: (path: string, fragment?: string) => void;
   onRefreshFile: () => void;
-  /** A changed file in Files: at a line, rendered (the review's Open). */
+  /**
+   * A changed file in Files: at a line, rendered (the review's Open);
+   * `root`, the repository its path is in when Changes shows another one
+   * than the checkout's.
+   */
   onOpenDiffFile: (
     entry: ActiveDiffSelection["entry"],
-    at?: { line?: number; rendered?: boolean },
+    at?: { line?: number; rendered?: boolean; root?: string },
   ) => void;
   annotations: readonly ReviewAnnotation[];
   /** The threads the annotations written as comments are, by their id. */
@@ -536,6 +540,25 @@ export function WorkspaceInspectorHost({
   const shownReviewSnapshot = shownReview
     ? reviewSessions.get(shownReview)
     : undefined;
+  /*
+   * A changed file opens in Files from its own repository: the shown
+   * review's, or the one picked in the scope line, which need not be the
+   * workspace's checkout (a review of another repository shown here).
+   */
+  const shownFilesRoot = shownReviewSnapshot?.session.root ?? changesRoot;
+  const diffFileRoot =
+    shownFilesRoot &&
+    !sameRoot(shownFilesRoot, workspace?.worktree?.checkout_path ?? "")
+      ? shownFilesRoot
+      : undefined;
+  const openDiffFile = useCallback(
+    (
+      entry: ActiveDiffSelection["entry"],
+      at?: { line?: number; rendered?: boolean },
+    ) =>
+      onOpenDiffFile(entry, diffFileRoot ? { ...at, root: diffFileRoot } : at),
+    [onOpenDiffFile, diffFileRoot],
+  );
   /** The review's view Changes shows when not the scope's own files. */
   const [viewTree, setViewTree] = useState<{
     label: string;
@@ -1654,7 +1677,7 @@ export function WorkspaceInspectorHost({
                         changes: true,
                       }));
                     }}
-                    onOpenFile={onOpenDiffFile}
+                    onOpenFile={openDiffFile}
                     onSelectionChange={(selection, meta) => {
                       if (selection.entry && meta?.userInitiated) {
                         setDrillInByView((current) => ({
@@ -1784,7 +1807,7 @@ export function WorkspaceInspectorHost({
                         onVisibleFileChange={(target) =>
                           diffViewerRef.current?.highlightEntry(target)
                         }
-                        onOpenFile={onOpenDiffFile}
+                        onOpenFile={openDiffFile}
                         reviewCursor
                         reviewScope={changesScope}
                         scopeControls={changesScopeBar()}

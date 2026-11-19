@@ -226,6 +226,30 @@ export function relativePathWithinCheckout(
 }
 
 /**
+ * A file of repository `root` (its path there) as Files opens it: its path
+ * in the workspace's checkout when it is in it, else its absolute path, so
+ * a file of another repository (its review shown in Changes) is read from
+ * that repository rather than from the checkout. Without a root, the path
+ * as given (the checkout's).
+ */
+export function pathInRepository(
+  path: string,
+  root?: string,
+  checkoutPath?: string,
+): string {
+  if (!root || isAbsoluteFilePath(path)) return path;
+  const absolute = `${root.replace(/[\\/]+$/, "")}/${path.replace(/^\.?\//, "")}`;
+  return (
+    (checkoutPath && relativePathWithinCheckout(checkoutPath, absolute)) ||
+    absolute
+  );
+}
+
+function isAbsoluteFilePath(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
+}
+
+/**
  * The path a Files tab keeps a file by. A checkout's files keep their path
  * in it. A workspace without a checkout has its Files root follow its
  * focused pane, so a path relative to that root would name another file once

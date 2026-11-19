@@ -475,6 +475,65 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       }
     });
 
+    test("Open and Rendered in a review of another repository name that repository, so Files reads the file from it", async () => {
+      // The review shown and its repository stay this test's own.
+      const saved = Object.entries(localStorage);
+      const { rememberReviewSnapshot } = await import("../review");
+      // The parent repository's range review, shown in a worktree's workspace.
+      rememberReviewSnapshot({
+        session: {
+          id: "rparent",
+          connectionId: "local",
+          workspaceId: "w1",
+          root: "/parent",
+          title: "RFC",
+          target: { kind: "range", base: "rfc-base", head: "main" },
+          gitlab: false,
+          summary: "",
+          agent: {},
+          createdAt: "2026-11-19T10:00:00Z",
+          updatedAt: "2026-11-19T10:00:00Z",
+        },
+        threads: [],
+      } as unknown as import("../../../shared/review").ReviewSnapshot);
+      const opened: unknown[][] = [];
+      const inspector = await mountInspector({
+        root: "/repo",
+        entries: [{ path: "rfcs/0052.md", kind: "unstaged" }],
+        reviewGoTo: { review: "rparent", root: "/parent", at: Date.now() },
+        onOpenDiffFile: (...args) => opened.push(args),
+      });
+      try {
+        await act(async () => {});
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "rparent",
+        });
+        await act(async () =>
+          diffSeen.onOpenFile?.({ path: "rfcs/0052.md" }, { rendered: true }),
+        );
+        await act(async () => diffSeen.onOpenFile?.({ path: "rfcs/0052.md" }));
+        expect(opened).toEqual([
+          [{ path: "rfcs/0052.md" }, { rendered: true, root: "/parent" }],
+          [{ path: "rfcs/0052.md" }, { root: "/parent" }],
+        ]);
+      } finally {
+        await inspector.unmount();
+        localStorage.clear();
+        for (const [key, value] of saved) localStorage.setItem(key, value);
+        const { rememberChangesRepo } = await import("../changesRepo");
+        const { resourceOwnerKey } = await import("../workspaceResource");
+        rememberChangesRepo(
+          resourceOwnerKey({
+            kind: "workspace",
+            connectionId: "local",
+            workspaceId: "w1",
+          } as Parameters<typeof resourceOwnerKey>[0]),
+          undefined,
+        );
+      }
+    });
+
     test("in Changes, the scope line is the host's controls: the repository picker, what is compared and the counts", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
       localStorage.setItem(PREFS_KEY, "{}");

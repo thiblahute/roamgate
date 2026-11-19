@@ -12,6 +12,7 @@ import { DOWNLOAD_TIMEOUT_MS, LIST_LIMIT } from "./file-constants";
 import {
   assertInsideRoot,
   entrySort,
+  missingFileMessage,
   relativeExplorerPath,
   relativePreviewPath,
 } from "./file-paths";
@@ -99,7 +100,10 @@ export async function readLocalFile(
   const requestedAbsolute = isAbsolute(requestedPath);
   const targetReal = await realpath(
     requestedAbsolute ? requestedPath : resolve(rootReal, requestedPath),
-  );
+  ).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+    throw new Error(missingFileMessage(requestedPath, rootReal));
+  });
   if (!requestedAbsolute) assertInsideRoot(rootReal, targetReal);
   const info = await stat(targetReal);
   const displayPath = requestedAbsolute
@@ -168,7 +172,10 @@ export async function downloadLocalFile(
   const requestedAbsolute = isAbsolute(requestedPath);
   const targetReal = await realpath(
     requestedAbsolute ? requestedPath : resolve(rootReal, requestedPath),
-  );
+  ).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+    throw new Error(missingFileMessage(requestedPath, rootReal));
+  });
   if (!requestedAbsolute) assertInsideRoot(rootReal, targetReal);
   const info = await stat(targetReal);
   const displayPath = requestedAbsolute

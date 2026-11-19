@@ -235,6 +235,51 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
+  test("Rendered and gf on another repository's file open it from that repository, not from the workspace's checkout", async () => {
+    const app = await mountAppWithReviews({
+      reviews: [reviewOf("r1", "w1")],
+    });
+    try {
+      app.setNextOpened("r1");
+      await app.toggleReview();
+      await app.settle(50);
+      // w1's checkout is /repo/r1; the review shown is /other's.
+      await app.run(() =>
+        app
+          .inspectorProps()
+          .onOpenDiffFile(
+            { path: "rfcs/0052.md" },
+            { rendered: true, root: "/other" },
+          ),
+      );
+      expect(app.inspector()).toMatchObject({ open: true, view: "files" });
+      expect(app.inspectorFile()).toMatchObject({
+        entry: { path: "/other/rfcs/0052.md", type: "file" },
+        rendered: true,
+      });
+      await app.run(() =>
+        app
+          .inspectorProps()
+          .onOpenDiffFile({ path: "rfcs/a.md" }, { line: 3, root: "/other/" }),
+      );
+      expect(app.inspectorFile()).toMatchObject({
+        entry: { path: "/other/rfcs/a.md" },
+        line: 3,
+      });
+      // The checkout's own repository: its path there, as before.
+      await app.run(() =>
+        app
+          .inspectorProps()
+          .onOpenDiffFile({ path: "src/a.ts" }, { root: "/repo/r1" }),
+      );
+      expect(app.inspectorFile()).toMatchObject({
+        entry: { path: "src/a.ts" },
+      });
+    } finally {
+      await app.unmount();
+    }
+  });
+
   test("gf in Changes opens the file at its line in Files; Option+R brings the review back in Changes", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],

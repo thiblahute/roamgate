@@ -69,7 +69,7 @@ type InspectorProps = {
   /** Changes' gf: a changed file in Files, at a line. */
   onOpenDiffFile: (
     entry: { path: string } | null,
-    at?: { line?: number; rendered?: boolean },
+    at?: { line?: number; rendered?: boolean; root?: string },
   ) => void;
   reviewGoTo?: {
     path?: string;
