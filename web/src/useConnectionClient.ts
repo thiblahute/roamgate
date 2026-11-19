@@ -22,9 +22,21 @@ export function useConnectionClient(): ConnectionClient {
   }, [activeConnectionId, connectionGeneration, runtimeGeneration]);
 }
 
+/**
+ * Keys what a view holds for a connection: views and their caches stay
+ * across a reconnect of the same connection runtime (they read again what
+ * changed), and start anew for another connection or a replaced runtime.
+ */
 export function connectionClientScopeKey(
-  client: Pick<ConnectionClient, "connectionId" | "generation">,
+  client: Pick<ConnectionClient, "connectionId" | "generation"> &
+    Partial<Pick<ConnectionClient, "serverRuntimeGeneration" | "viewEpoch">>,
   ...parts: unknown[]
 ): string {
-  return JSON.stringify([client.connectionId, client.generation, ...parts]);
+  return JSON.stringify([
+    client.connectionId,
+    client.viewEpoch === undefined
+      ? client.generation
+      : `v${client.viewEpoch}:${client.serverRuntimeGeneration ?? ""}`,
+    ...parts,
+  ]);
 }

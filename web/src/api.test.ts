@@ -1763,6 +1763,17 @@ describe("bridge connection lifecycle", () => {
       expect(acks().slice(-1)[0]).toBe(helloAck + frame.length + large.length);
     });
 
+    test("keeps the view epoch across a reconnect and advances it on a switch", async () => {
+      const { bridge } = await connectedBridge();
+      const before = bridge.connection().viewEpoch ?? -1;
+      const generation = bridge.clientGeneration;
+      await advance(10_000);
+      expect(bridge.clientGeneration).toBeGreaterThan(generation);
+      expect(bridge.connection().viewEpoch).toBe(before);
+      bridge.setActiveConnection("other");
+      expect(bridge.connection().viewEpoch).toBe(before + 1);
+    });
+
     test("sends no acknowledgements to a bridge without flow control", async () => {
       const { socket } = await connectedBridge();
       socket.deliver({ event: "x", data: {} });

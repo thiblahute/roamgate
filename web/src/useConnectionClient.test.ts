@@ -16,4 +16,24 @@ describe("connection client scope keys", () => {
       ),
     );
   });
+
+  test("keeps a view's key across a reconnect of the same runtime", () => {
+    const before = {
+      connectionId: "alpha",
+      generation: 3,
+      serverRuntimeGeneration: 1,
+      viewEpoch: 2,
+    };
+    // A reconnect advances the client generation only.
+    expect(connectionClientScopeKey({ ...before, generation: 4 }, "ui")).toBe(
+      connectionClientScopeKey(before, "ui"),
+    );
+    // Another connection, a switch back, or a replaced runtime start anew.
+    expect(
+      connectionClientScopeKey({ ...before, viewEpoch: 3 }, "ui"),
+    ).not.toBe(connectionClientScopeKey(before, "ui"));
+    expect(
+      connectionClientScopeKey({ ...before, serverRuntimeGeneration: 2 }, "ui"),
+    ).not.toBe(connectionClientScopeKey(before, "ui"));
+  });
 });

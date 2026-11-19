@@ -313,6 +313,11 @@ export interface ConnectionClient {
   readonly connectionId: string;
   readonly generation: number;
   readonly serverRuntimeGeneration: number | null;
+  /**
+   * Advances when the browser switches connection, not when its socket
+   * reconnects: what the page shows for a connection outlives a reconnect.
+   */
+  readonly viewEpoch?: number;
   /** `options.lane` "background" keeps the call out of the user's way. */
   call(
     method: string,
@@ -493,6 +498,7 @@ export class Bridge {
   private _status: ConnectionStatus = "disconnected";
   private _activeConnectionId = LEGACY_DEFAULT_CONNECTION_ID;
   private _clientGeneration = 0;
+  private _viewEpoch = 0;
   private _hello: BridgeHello | null = null;
   private helloAcceptedForSocket = false;
   private readonly runtimeGenerations = new Map<string, number>();
@@ -550,6 +556,7 @@ export class Bridge {
     if (connectionId === this._activeConnectionId)
       return this._clientGeneration;
     this._activeConnectionId = connectionId;
+    this._viewEpoch += 1;
     return this.advanceActiveConnectionGeneration();
   }
 
@@ -568,6 +575,7 @@ export class Bridge {
     serverRuntimeGeneration: number | null = null,
   ): ConnectionClient {
     const generation = this._clientGeneration;
+    const viewEpoch = this._viewEpoch;
     const requiresRuntimeGeneration = () =>
       this._hello?.capabilities?.connection_runtime_generation === true;
     const acceptsServerGeneration = (value: unknown) =>
@@ -611,6 +619,7 @@ export class Bridge {
       connectionId,
       generation,
       serverRuntimeGeneration,
+      viewEpoch,
       call: (method, params = {}, timeoutMs = RPC_TIMEOUT_MS, options = {}) => {
         if (options.lane !== "background")
           return send(method, params, timeoutMs, "interactive");
