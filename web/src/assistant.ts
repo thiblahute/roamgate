@@ -13,7 +13,8 @@ import {
   type AssistantWorkspaceRef,
   type AssistantTaskDetail,
 } from "../../shared/assistant";
-import { bridge, type ConnectionStatus } from "./api";
+import { applyStateDelta, isStateDelta } from "../../shared/stateDelta";
+import { type AssistantDeltaPush, bridge, type ConnectionStatus } from "./api";
 import { assistantChatSelection } from "./assistantModels";
 import { adjustAssistantMentions } from "./assistantMentions";
 
@@ -444,8 +445,45 @@ export async function getAssistantTask(
   return value;
 }
 
-/** The stamp of the state the last read gave. */
+/** The stamp of the state this page holds, from a read or a delta. */
 let getStamp: string | null = null;
+let deltaRefresh: Promise<void> | null = null;
+
+/**
+ * Applies a change pushed against the state this page holds. One against
+ * another state (a change missed, a read still on its way) makes the page
+ * read the whole state once.
+ */
+function acceptDelta(push: AssistantDeltaPush) {
+  const current = state.snapshot;
+  const next =
+    current &&
+    getStamp !== null &&
+    push.base === getStamp &&
+    typeof push.stamp === "string" &&
+    isStateDelta(push.state_delta)
+      ? applyStateDelta(
+          current as unknown as Record<string, unknown>,
+          push.state_delta,
+        )
+      : null;
+  if (next && typeof push.stamp === "string") {
+    try {
+      acceptSnapshot(next);
+      getStamp = push.stamp;
+      return;
+    } catch {
+      // Not a valid state: read it whole below.
+    }
+  }
+  if (deltaRefresh) return;
+  getStamp = null;
+  deltaRefresh = refreshAssistant()
+    .catch(() => {})
+    .finally(() => {
+      deltaRefresh = null;
+    });
+}
 
 export async function refreshAssistant() {
   if (state.connectionStatus !== "connected" || !state.supported) return;
@@ -466,6 +504,7 @@ export function startAssistantClient() {
     const offAssistant = bridge.onAssistant((snapshot) => {
       acceptSnapshot(snapshot);
     });
+    const offDelta = bridge.onAssistantDelta(acceptDelta);
     const offStatus = bridge.onStatus((connectionStatus) => {
       socketEpoch++;
       publish({ connectionStatus, loading: false });
@@ -481,6 +520,7 @@ export function startAssistantClient() {
     });
     disconnect = () => {
       offAssistant();
+      offDelta();
       offStatus();
     };
   }
@@ -592,6 +632,7 @@ export function __resetAssistantForTests() {
   socketEpoch++;
   snapshotVersion = 0;
   getStamp = null;
+  deltaRefresh = null;
   retiredInstances.clear();
   submission = null;
   sending = false;

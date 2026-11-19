@@ -19,6 +19,7 @@ import { canRevealFiles } from "./workspace/file-manager";
 import { createWebPushService } from "./notifications/web-push";
 import { rmSync } from "node:fs";
 import packageJson from "../../package.json";
+import { diffState } from "../../shared/stateDelta";
 import { createListDeltas, LIST_DELTA_SHAPES } from "./bridge/list-delta";
 import type { SshTunnelConfig } from "./bridge/ssh-tunnel";
 import {
@@ -338,6 +339,12 @@ function markRpcError(
   rpcOutcomes.set(rpcOutcomeKey(ws, id), { status: "error", detail });
 }
 
+/** The Ranger state each socket was last given, for its deltas. */
+const assistantBases = new WeakMap<
+  object,
+  { stamp: string; snapshot: unknown }
+>();
+
 /** Topology lists answered as changes to what each socket holds. */
 const listReply = createListDeltas();
 
@@ -559,9 +566,42 @@ function getAssistantService() {
       createAssistantService({
         context: assistantContext,
         publish: (snapshot) => {
-          const payload = JSON.stringify({ assistant: snapshot });
-          for (const ws of clients)
-            safeSend(ws, payload, "assistant", "assistant");
+          let payload: string | null = null;
+          // A page that read the state with a stamp gets each change as a
+          // delta from what this socket was last given, in order.
+          let stamp: string | null = null;
+          const deltas = new Map<string, string | null>();
+          for (const ws of clients) {
+            const base = assistantBases.get(ws);
+            if (!base) {
+              payload ??= JSON.stringify({ assistant: snapshot });
+              safeSend(ws, payload, "assistant", "assistant");
+              continue;
+            }
+            stamp ??= Bun.hash(JSON.stringify(snapshot)).toString(36);
+            if (base.stamp === stamp) continue;
+            if (!deltas.has(base.stamp)) {
+              const delta = diffState(
+                base.snapshot as Record<string, unknown>,
+                snapshot as unknown as Record<string, unknown>,
+              );
+              deltas.set(
+                base.stamp,
+                delta
+                  ? JSON.stringify({
+                      assistant: {
+                        state_delta: delta,
+                        base: base.stamp,
+                        stamp,
+                      },
+                    })
+                  : null,
+              );
+            }
+            assistantBases.set(ws, { stamp, snapshot });
+            const line = deltas.get(base.stamp);
+            if (line) safeSend(ws, line, "assistant");
+          }
         },
         notify: (notification) => {
           const payload = JSON.stringify({
@@ -958,6 +998,9 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       // (`since`): an unchanged state is the stamp alone, not a megabyte.
       if (method === "bridge.assistant.get" && params && "since" in params) {
         const stamp = Bun.hash(JSON.stringify(result)).toString(36);
+        // Pushes to this socket go as deltas from this state from now on,
+        // in the same order as this reply.
+        assistantBases.set(ws, { stamp, snapshot: result });
         sendReply(
           {
             id,
@@ -966,7 +1009,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
                 ? { unchanged: true, stamp }
                 : { snapshot: result, stamp },
           },
-          "assistant-rpc",
+          "assistant",
         );
         return;
       }

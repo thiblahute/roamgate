@@ -180,6 +180,13 @@ export function parseConnectionSummary(
   };
 }
 
+/** A change to the Ranger state, from the state stamped `base`. */
+export type AssistantDeltaPush = {
+  state_delta: unknown;
+  base: unknown;
+  stamp: unknown;
+};
+
 export interface BridgeHello {
   hello: true;
   socket?: string;
@@ -478,6 +485,9 @@ export class Bridge {
   private backgroundLanes = new Map<string, BackgroundLane>();
   private eventHandlers = new Set<(e: HerdrEventMsg) => void>();
   private assistantHandlers = new Set<(snapshot: AssistantSnapshot) => void>();
+  private assistantDeltaHandlers = new Set<
+    (push: AssistantDeltaPush) => void
+  >();
   private assistantNotificationHandlers = new Set<
     (notification: AssistantTaskNotification) => void
   >();
@@ -1105,10 +1115,21 @@ export class Bridge {
       if (
         this._hello?.capabilities.embedded_assistant !== true ||
         owns("connection_id") ||
-        owns("connection_generation") ||
-        !isAssistantSnapshot(msg.assistant)
+        owns("connection_generation")
       )
         return;
+      // A change to the state this socket was given (see assistant.ts).
+      if (
+        msg.assistant &&
+        typeof msg.assistant === "object" &&
+        "state_delta" in msg.assistant
+      ) {
+        this.assistantDeltaHandlers.forEach((handler) =>
+          handler(msg.assistant as AssistantDeltaPush),
+        );
+        return;
+      }
+      if (!isAssistantSnapshot(msg.assistant)) return;
       this.assistantHandlers.forEach((handler) => handler(msg.assistant));
       return;
     }
@@ -1540,6 +1561,11 @@ export class Bridge {
   onAssistant(cb: (snapshot: AssistantSnapshot) => void): () => void {
     this.assistantHandlers.add(cb);
     return () => this.assistantHandlers.delete(cb);
+  }
+
+  onAssistantDelta(cb: (push: AssistantDeltaPush) => void): () => void {
+    this.assistantDeltaHandlers.add(cb);
+    return () => this.assistantDeltaHandlers.delete(cb);
   }
 
   onAssistantNotification(

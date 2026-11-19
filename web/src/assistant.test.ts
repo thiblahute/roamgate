@@ -6,7 +6,8 @@ import {
   type AssistantTaskDetail,
   isAssistantSnapshot,
 } from "../../shared/assistant";
-import { bridge, type ConnectionStatus } from "./api";
+import { diffState } from "../../shared/stateDelta";
+import { type AssistantDeltaPush, bridge, type ConnectionStatus } from "./api";
 import {
   __resetAssistantForTests,
   assistantActionExecuting,
@@ -469,6 +470,42 @@ test("a state read the bridge stamps sends the state again only when it changed"
   server.call.mockResolvedValue({ snapshot: snapshot(4), stamp: "s4" });
   await refreshAssistant();
   expect(readAssistantState().snapshot?.revision).toBe(4);
+});
+
+test("pushed changes apply to the state held, and a missed one reads it whole once", async () => {
+  const server = installBridge();
+  let pushDelta: (push: AssistantDeltaPush) => void = () => {};
+  const deltaSpy = spyOn(bridge, "onAssistantDelta").mockImplementation(
+    (callback) => {
+      pushDelta = callback;
+      return () => {};
+    },
+  );
+  restores.push(() => deltaSpy.mockRestore());
+  server.call.mockResolvedValue({ snapshot: snapshot(3), stamp: "s3" });
+  startAssistantClient();
+  await refreshAssistant();
+  const base = snapshot(3) as unknown as Record<string, unknown>;
+  const next = { ...snapshot(4), running: true } as unknown as Record<
+    string,
+    unknown
+  >;
+  pushDelta({ state_delta: diffState(base, next), base: "s3", stamp: "s4" });
+  expect(readAssistantState().snapshot?.revision).toBe(4);
+  expect(readAssistantState().snapshot?.running).toBe(true);
+
+  // A change against a state this page does not hold: one whole read.
+  const gets = () =>
+    server.call.mock.calls.filter(
+      ([method]) => method === "bridge.assistant.get",
+    ).length;
+  const before = gets();
+  server.call.mockResolvedValue({ snapshot: snapshot(6), stamp: "s6" });
+  pushDelta({ state_delta: diffState(next, base), base: "s5", stamp: "s6" });
+  pushDelta({ state_delta: diffState(next, base), base: "s5", stamp: "s6" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(gets()).toBe(before + 1);
+  expect(readAssistantState().snapshot?.revision).toBe(6);
 });
 
 test("old bridges make no assistant requests and malformed state is surfaced", async () => {
