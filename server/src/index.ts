@@ -950,6 +950,22 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
                   method,
                   params ?? {},
                 );
+      // A page that holds the state sends the stamp of its last read
+      // (`since`): an unchanged state is the stamp alone, not a megabyte.
+      if (method === "bridge.assistant.get" && params && "since" in params) {
+        const stamp = Bun.hash(JSON.stringify(result)).toString(36);
+        sendReply(
+          {
+            id,
+            result:
+              params.since === stamp
+                ? { unchanged: true, stamp }
+                : { snapshot: result, stamp },
+          },
+          "assistant-rpc",
+        );
+        return;
+      }
       sendReply({ id, result }, "assistant-rpc");
     } catch (error) {
       sendError("assistant-rpc-error", error);

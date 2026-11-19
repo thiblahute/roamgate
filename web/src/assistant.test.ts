@@ -1075,3 +1075,24 @@ test("after a reload, a reply to a question sent before it does not move the bro
     stop();
   }
 });
+
+test("a state read the bridge stamps sends the state again only when it changed", async () => {
+  const server = installBridge();
+  server.call.mockResolvedValue({ snapshot: snapshot(3), stamp: "s3" });
+  startAssistantClient();
+  await refreshAssistant();
+  expect(readAssistantState().snapshot?.revision).toBe(3);
+  const gets = () =>
+    server.call.mock.calls.filter(
+      ([method]) => method === "bridge.assistant.get",
+    );
+
+  server.call.mockResolvedValue({ unchanged: true, stamp: "s3" });
+  await refreshAssistant();
+  expect(gets().slice(-1)[0]?.[1]).toEqual({ since: "s3" });
+  expect(readAssistantState().snapshot?.revision).toBe(3);
+
+  server.call.mockResolvedValue({ snapshot: snapshot(4), stamp: "s4" });
+  await refreshAssistant();
+  expect(readAssistantState().snapshot?.revision).toBe(4);
+});

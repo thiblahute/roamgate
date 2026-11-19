@@ -385,11 +385,29 @@ export async function callAssistant(
   const epoch = socketEpoch;
   const version = snapshotVersion;
   try {
-    const value: unknown = await bridge.call(
+    const answer: unknown = await bridge.call(
       `bridge.assistant.${action}`,
-      params,
+      action === "get" && state.snapshot && getStamp
+        ? { ...params, since: getStamp }
+        : action === "get"
+          ? { ...params, since: null }
+          : params,
     );
-    if (epoch === socketEpoch) acceptSnapshot(value, version);
+    // A state read answers with a stamp: the state itself only when it
+    // changed since the stamp this page sent (it is a megabyte or so).
+    const stamped =
+      action === "get" &&
+      answer !== null &&
+      typeof answer === "object" &&
+      typeof (answer as { stamp?: unknown }).stamp === "string"
+        ? (answer as { stamp: string; unchanged?: true; snapshot?: unknown })
+        : null;
+    if (stamped?.unchanged) return state.snapshot;
+    const value = stamped ? stamped.snapshot : answer;
+    if (epoch === socketEpoch) {
+      acceptSnapshot(value, version);
+      if (stamped) getStamp = stamped.stamp;
+    }
     return value;
   } catch (error) {
     if (
@@ -425,6 +443,9 @@ export async function getAssistantTask(
     throw new Error("Invalid Ranger task received from the bridge.");
   return value;
 }
+
+/** The stamp of the state the last read gave. */
+let getStamp: string | null = null;
 
 export async function refreshAssistant() {
   if (state.connectionStatus !== "connected" || !state.supported) return;
@@ -570,6 +591,7 @@ export function __resetAssistantForTests() {
   users = 0;
   socketEpoch++;
   snapshotVersion = 0;
+  getStamp = null;
   retiredInstances.clear();
   submission = null;
   sending = false;
