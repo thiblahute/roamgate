@@ -110,6 +110,13 @@ export function allServerAgentPanes(
 }
 
 let lastSnapshots: ConnectionAgentSessions[] | null = null;
+/** The bridge's stamp of `lastSnapshots`: an unchanged answer sends none. */
+let lastVersion: string | undefined;
+/**
+ * Agents' events come in bursts; the sessions are read again at most this
+ * often, which also bounds what a slow link carries.
+ */
+const SESSIONS_REFRESH_GAP_MS = 2_000;
 
 export function useAllServerAgentSessions(enabled: boolean) {
   const state = useStoreSelector(
@@ -146,6 +153,7 @@ export function useAllServerAgentSessions(enabled: boolean) {
     let running = false;
     let queued = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let finishedAt = 0;
     const refresh = async () => {
       if (running) {
         queued = true;
@@ -153,19 +161,31 @@ export function useAllServerAgentSessions(enabled: boolean) {
       }
       running = true;
       try {
-        const result = await bridge.call("connections.agent_sessions");
+        const result = await bridge.call(
+          "connections.agent_sessions",
+          lastVersion && lastSnapshots ? { since: lastVersion } : {},
+        );
         if (disposed) return;
+        if (result?.unchanged === true && lastSnapshots) {
+          setSnapshots(lastSnapshots);
+          setError(null);
+          return;
+        }
         if (!Array.isArray(result?.connections)) {
           throw new Error("Invalid session summary");
         }
         setSnapshots(result.connections);
+        lastVersion =
+          typeof result.version === "string" ? result.version : undefined;
         setError(null);
       } catch (error) {
         if (disposed) return;
+        lastVersion = undefined;
         setSnapshots([]);
         setError(error instanceof Error ? error.message : String(error));
       } finally {
         running = false;
+        finishedAt = Date.now();
         if (!disposed) {
           if (queued) {
             queued = false;
@@ -176,10 +196,13 @@ export function useAllServerAgentSessions(enabled: boolean) {
     };
     const schedule = () => {
       if (timer !== undefined) return;
-      timer = setTimeout(() => {
-        timer = undefined;
-        void refresh();
-      }, 150);
+      timer = setTimeout(
+        () => {
+          timer = undefined;
+          void refresh();
+        },
+        Math.max(150, finishedAt + SESSIONS_REFRESH_GAP_MS - Date.now()),
+      );
     };
     const unsubscribe = bridge.onEvent(schedule);
     const interval = setInterval(schedule, 15_000);

@@ -1924,7 +1924,19 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
           }),
         ),
       };
-      sendReply({ id, result }, "connections-agent-sessions");
+      // Read again on every burst of agent events: an answer that did not
+      // change since the one the page holds is only its stamp.
+      const version = Bun.hash(JSON.stringify(result)).toString(36);
+      sendReply(
+        {
+          id,
+          result:
+            params?.since === version
+              ? { unchanged: true, version }
+              : { ...result, version },
+        },
+        "connections-agent-sessions",
+      );
     } catch (error) {
       sendError("connections-agent-sessions-error", error);
     }
