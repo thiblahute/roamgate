@@ -162,6 +162,7 @@ import {
   createCallHandoffRedeem,
 } from "./http/call-handoff";
 import { serveStatic } from "./http/static-files";
+import { publicOrigin } from "./http/public-origin";
 import { handleInstanceSettings } from "./http/instance-settings";
 import {
   connectionFileReader,
@@ -4474,7 +4475,9 @@ function main() {
               server.upgrade(req, {
                 data: {
                   sessionToken: sessionToken(req),
-                  notifications: { origin: url.origin },
+                  notifications: {
+                    origin: publicOrigin(url, req.headers, clientIp),
+                  },
                 },
               })
             )

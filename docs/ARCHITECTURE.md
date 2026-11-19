@@ -2699,7 +2699,11 @@ history), then `{"event":"ready","last":<last id>}`, then streams new events:
 
 - `title`, `body` and `tag` are the Web Push payload's; `url` is the page the
   service worker's `notificationclick` opens (`/#roamgate-task=<target>`, or
-  `/` without a target), absolute on the origin the socket was opened on.
+  `/` without a target), absolute on the origin the client opened the
+  socket on: behind a reverse proxy on the same machine (`tailscale serve`),
+  its `X-Forwarded-Proto` and `X-Forwarded-Host`, trusted from loopback
+  peers only; a `*.ts.net` name on the default port is `https`. Events keep
+  only the path, so a replay gets the same origin.
   `group` is the workspace label (or id, or connection), `Ranger` for Ranger
   runs. `kind` is `blocked`, `completed`, `review` (an agent's `notify`) or
   `ranger_task`; the client switch it obeys is `completed` for completed

@@ -922,3 +922,80 @@ test("the notification socket needs the login cookie, then replays and logs out"
     expect(await closed).toBe(4001);
   });
 }, 20_000);
+
+test("the notification socket's links use the origin tailscale serve forwards", async () => {
+  // A notification stored before the socket opens: it keeps only its path,
+  // so the replay builds its link on this socket's origin.
+  const dir = await mkdtemp(join(tmpdir(), "roamgate-feed-origin-"));
+  const feed = join(dir, "notifications.json");
+  const path = "/#roamgate-task=%7B%7D";
+  await writeFile(
+    feed,
+    JSON.stringify({
+      version: 1,
+      last: 1,
+      events: [
+        {
+          event: "notification",
+          id: 1,
+          at: Date.now(),
+          kind: "completed",
+          title: "Done",
+          body: "Agent finished",
+          tag: "t",
+          group: "g",
+          path,
+          pref: "completed",
+        },
+      ],
+    }),
+  );
+  try {
+    await withAuthServer(
+      async (base, sockets) => {
+        const loggedIn = await fetch(`${base}/api/login`, {
+          signal: AbortSignal.timeout(5000),
+          method: "POST",
+          body: JSON.stringify({ password }),
+        });
+        const cookie = (loggedIn.headers.get("set-cookie") ?? "").split(
+          ";",
+        )[0]!;
+        const Socket = WebSocket as unknown as new (
+          url: string,
+          options: Bun.WebSocketOptions,
+        ) => WebSocket;
+        // What tailscale serve adds in front of a loopback listener.
+        const ws = new Socket(
+          base.replace("http:", "ws:") + "/api/notifications/ws",
+          {
+            headers: {
+              cookie,
+              "x-forwarded-proto": "https",
+              "x-forwarded-host": "roamgate.example.ts.net",
+              "x-forwarded-for": "100.64.0.7",
+            },
+          },
+        );
+        sockets.push(ws);
+        const replayed = new Promise<unknown>((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error("no event")), 5000);
+          ws.onmessage = (event) => {
+            clearTimeout(timeout);
+            resolve(JSON.parse(String(event.data)));
+          };
+        });
+        ws.onopen = () =>
+          ws.send(JSON.stringify({ op: "hello", since: 0, client: "android" }));
+        expect(await replayed).toMatchObject({
+          event: "notification",
+          id: 1,
+          url: `https://roamgate.example.ts.net${path}`,
+        });
+      },
+      { ROAMGATE_NOTIFICATIONS_PATH: feed },
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 20_000);
