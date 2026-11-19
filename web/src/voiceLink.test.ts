@@ -240,7 +240,11 @@ describe("a listening whose helper stopped", () => {
  * A link whose call carries the microphone (call 7): the socket, the
  * microphone leg's connection, and the trace.
  */
-async function linkInCall(lines: string[] = []) {
+async function linkInCall(
+  lines: string[] = [],
+  extra: Partial<CallOptions> = {},
+  early: (link: VoiceLink) => void = () => {},
+) {
   const held = new AbortController();
   holdVoiceContext(held.signal, () => {});
   const connection = Object.assign(new EventTarget(), {
@@ -279,9 +283,11 @@ async function linkInCall(lines: string[] = []) {
       ]),
     player: () =>
       ({ play: async () => {}, pause() {} }) as unknown as HTMLAudioElement,
+    ...extra,
   };
   const link = await VoiceLink.open({ call });
   const socket = FakeWebSocket.last!;
+  early(link);
   await settle();
   socket.tell({
     event: "call_audio",
@@ -292,17 +298,21 @@ async function linkInCall(lines: string[] = []) {
   });
   await settle();
   listeners.connected!("page-peer");
-  listeners.producer!.state = 2;
-  listeners.producer!.dispatchEvent(new Event("stateChanged"));
-  listeners.producer!.dispatchEvent(
-    new CustomEvent("clientConsumerAdded", {
-      detail: Object.assign(new EventTarget(), {
-        rtcPeerConnection: connection,
-        close() {},
+  // The page's microphone, when it opens one (not in the app's WebView).
+  const producer = listeners.producer;
+  if (producer) {
+    producer.state = 2;
+    producer.dispatchEvent(new Event("stateChanged"));
+    producer.dispatchEvent(
+      new CustomEvent("clientConsumerAdded", {
+        detail: Object.assign(new EventTarget(), {
+          rtcPeerConnection: connection,
+          close() {},
+        }),
       }),
-    }),
-  );
-  socket.tell({ event: "call_microphone", call: 7, ok: true });
+    );
+    socket.tell({ event: "call_microphone", call: 7, ok: true });
+  }
   return { link, socket, held };
 }
 
@@ -387,6 +397,66 @@ describe("a link's call", () => {
       activeCall()?.stop();
       link.close();
       held.abort();
+    }
+  });
+
+  test("in the app's WebView, a listening as the call starts waits for it and opens no capture", async () => {
+    activeCall()?.stop();
+    const navigator = globals.navigator;
+    let captures = 0;
+    globals.navigator = {
+      mediaDevices: {
+        getUserMedia: async () => {
+          captures += 1;
+          return { getTracks: () => [{ stop() {} }] };
+        },
+      },
+    };
+    const lines: string[] = [];
+    let opened = 0;
+    let result: Promise<unknown> | null = null;
+    const app = {
+      known: () => true,
+      embedded: () => true,
+      open() {},
+      handOff() {},
+      took() {},
+      missed: () => false,
+    };
+    try {
+      const { link, socket, held } = await linkInCall(
+        lines,
+        {
+          app,
+          microphone: async () => {
+            opened += 1;
+            return new (globals.MediaStream as typeof MediaStream)([]);
+          },
+        },
+        (link) => {
+          result = link.listen(new AbortController().signal);
+        },
+      );
+      await settle();
+      const listen = socket.sent.find(
+        (each) => (each as { op?: string }).op === "listen",
+      );
+      expect(listen).toMatchObject({ op: "listen", call: 7 });
+      expect(lines).toContain(
+        "call 7: in the Roamgate app: the app's microphone is the call's, none opened here",
+      );
+      socket.tell({ event: "listening", session: 3 });
+      socket.tell({ event: "final", session: 3, text: "Hi", speech_ms: 400 });
+      expect(await result).toEqual({ text: "Hi", speechMs: 400 });
+      expect(captures).toBe(0);
+      expect(opened).toBe(0);
+      expect(socket.audio).toBe(0);
+      activeCall()?.stop();
+      link.close();
+      held.abort();
+    } finally {
+      globals.navigator = navigator;
+      activeCall()?.stop();
     }
   });
 

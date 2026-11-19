@@ -1825,17 +1825,113 @@ describe("a call handed to the Android app", () => {
     call.stop();
   });
 
+  test("in the app's WebView, the page opens no microphone: the app's is the call's from the start", async () => {
+    const { options } = fakeApp(true, () => {});
+    let opened = 0;
+    const notices: string[] = [];
+    const paused: boolean[] = [];
+    const { call, made, tell, lines } = await started(
+      {
+        app: options,
+        microphone: async () => {
+          opened += 1;
+          return new FakeStream([new FakeTrack()]) as unknown as MediaStream;
+        },
+        notice: (text) => notices.push(text),
+        microphonePaused: (on) => paused.push(on),
+      },
+      handing,
+    );
+    await settle();
+    const api = made[0]!;
+    api.connection.connected("page-peer");
+    expect(opened).toBe(0);
+    expect(api.producers).toHaveLength(0);
+    expect(call.liveMicrophone()).toBeNull();
+    // Listenings ask for the call's microphone while the app joins.
+    expect(call.handingOff()).toBe(true);
+    expect(call.carriesMicrophone()).toBe(true);
+    expect(call.microphoneInApp()).toBe(true);
+    expect(lines).toContain(
+      "call 7: in the Roamgate app: the app's microphone is the call's, none opened here",
+    );
+    tell({
+      event: "call_carrier",
+      call: 7,
+      state: "joined",
+      legs: ["microphone", "replies"],
+      heard: true,
+    });
+    await settle();
+    expect(opened).toBe(0);
+    expect(call.microphoneInApp()).toBe(true);
+    // The app giving the call back: the page's microphone opens then.
+    tell({
+      event: "call_carrier",
+      call: 7,
+      state: "left",
+      why: "The Roamgate app gave the call back",
+    });
+    await settle();
+    expect(opened).toBe(1);
+    expect(api.producers).toHaveLength(1);
+    expect(call.microphoneInApp()).toBe(false);
+    expect(notices).toEqual([]);
+    expect(paused).toEqual([]);
+    call.stop();
+  });
+
+  test("in the app's WebView, a handoff the app never takes opens the page's microphone", async () => {
+    jest.useFakeTimers();
+    try {
+      const { options } = fakeApp(true, () => {});
+      let opened = 0;
+      const { call, made } = await started(
+        {
+          app: options,
+          microphone: async () => {
+            opened += 1;
+            return new FakeStream([new FakeTrack()]) as unknown as MediaStream;
+          },
+        },
+        handing,
+      );
+      await settle();
+      made[0]!.connection.connected("page-peer");
+      expect(opened).toBe(0);
+      jest.advanceTimersByTime(HANDOFF_WAIT_MS);
+      await settle();
+      expect(opened).toBe(1);
+      expect(made[0]!.producers).toHaveLength(1);
+      expect(call.carriesMicrophone()).toBe(false);
+      call.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test("in the app's WebView, a bridge that throws leaves the call here and says so", async () => {
     const { app, options } = fakeApp(true, () => {
       throw new Error("no service");
     });
     const notices: string[] = [];
-    const { call, sent, lines } = await started(
-      { app: options, notice: (text) => notices.push(text) },
+    const paused: boolean[] = [];
+    const { call, sent, lines, microphone, made } = await started(
+      {
+        app: options,
+        notice: (text) => notices.push(text),
+        microphonePaused: (on) => paused.push(on),
+      },
       handing,
     );
     await settle();
     expect(app.handedOff).toEqual([["7", "one-use"]]);
+    // The call goes on here: the page's microphone opens now, and the
+    // phone pausing it is never said in the app.
+    expect(call.liveMicrophone()).not.toBeNull();
+    expect(made[0]!.producers).toHaveLength(1);
+    microphone.phone("mute");
+    expect(paused).toEqual([]);
     expect(app.opened).toEqual([]);
     expect(call.handingOff()).toBe(false);
     expect(call.inApp()).toBe(false);

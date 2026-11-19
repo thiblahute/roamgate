@@ -16,6 +16,7 @@ import {
   activeCall,
   activeMicrophoneConstraints,
   type CallOptions,
+  callInApp,
   isQueuedSpeech,
   type QueuedSpeech,
   WebRtcCall,
@@ -375,6 +376,8 @@ export class VoiceLink {
   private call: Promise<WebRtcCall | null> | null = null;
   /** Whether that call is made (or failed) already. */
   private callSettled = false;
+  /** Whether that call goes to the Roamgate app, this page in its WebView. */
+  private callInApp = false;
 
   private constructor(private readonly channel: VoiceChannel) {}
 
@@ -406,6 +409,7 @@ export class VoiceLink {
         return null;
       });
     this.callSettled = false;
+    this.callInApp = callInApp(options);
     const call = this.call;
     void call.then(() => {
       if (this.call === call) this.callSettled = true;
@@ -590,10 +594,13 @@ export class VoiceLink {
     // level is shown, and nothing goes on the socket.
     // A call still being made is not waited for (its answer took 3.4 s
     // once): the user may be talking already, and this listening goes on
-    // the socket; the next ones take the call.
-    if (this.call && !this.callSettled)
+    // the socket; the next ones take the call. In the Roamgate app's
+    // WebView it is waited for: the app's microphone is the call's, and a
+    // capture here meanwhile would be a second recorder on the phone.
+    const waits = this.callSettled || (this.call !== null && this.callInApp);
+    if (this.call && !waits)
       voiceTrace("listening on the socket while the call starts");
-    const started = this.callSettled ? await this.call : null;
+    const started = waits ? await this.call : null;
     const call = started?.carriesMicrophone() ? started : null;
     if (started && !call)
       started.traceFallback(
@@ -610,7 +617,7 @@ export class VoiceLink {
     // for each listening started and stopped a second recorder on the
     // phone, a Bluetooth headset saying "microphone muted" at each turn's
     // end.
-    const appMicrophone = call?.appCarries("microphone") === true;
+    const appMicrophone = call?.microphoneInApp() === true;
     const stream = appMicrophone
       ? null
       : (callMicrophone ??
@@ -764,7 +771,11 @@ export class VoiceLink {
       });
       call?.listening(true);
       if (call)
-        voiceTrace(`listening to the call's microphone (call ${call.id})`);
+        voiceTrace(
+          appMicrophone
+            ? `listening to the app's microphone (call ${call.id}): no capture here`
+            : `listening to the call's microphone (call ${call.id})`,
+        );
       this.channel.send({
         op: "listen",
         new_speaker: !this.listened,

@@ -517,6 +517,14 @@ const browserApp: AndroidApp = {
   missed: () => androidAppMissedCall(),
 };
 
+/**
+ * Whether a call made with `options` goes to the Roamgate app at once:
+ * this page runs in its WebView.
+ */
+export function callInApp(options: CallOptions = {}): boolean {
+  return (options.app ?? browserApp).embedded();
+}
+
 /** A held screen wake lock (WakeLockSentinel). */
 export type ScreenLock = {
   release(): Promise<void>;
@@ -689,6 +697,8 @@ export class WebRtcCall {
   private microphoneTimer: ReturnType<typeof setInterval> | null = null;
   private reopenTimer: ReturnType<typeof setTimeout> | null = null;
   private reopening = false;
+  /** The page's microphone being opened (takeMicrophoneBack). */
+  private takingBack = false;
   /** Tries to open the paused microphone again, since it was paused. */
   private reopenTries = 0;
   /** Stops watching the microphone's track (mute, unmute, ended). */
@@ -788,12 +798,20 @@ export class WebRtcCall {
     trace(
       `call ${answer.call}: ${chosen.mode === "speaker" ? "loudspeaker mode" : "call mode"}: ${chosen.why}`,
     );
-    const microphone = await openMicrophone({ mode: chosen.mode })
-      .catch((error) => {
-        trace(`call ${answer.call}: no microphone for the call (${error})`);
-        return null;
-      })
-      .finally(early);
+    // In the Roamgate app's WebView, the app takes the call at once, its
+    // microphone the call's: the page opens none. A second recorder,
+    // started and stopped next to the app's, had the phone silence the
+    // app's (heard at -120 dBFS) and a headset say "microphone muted". It
+    // opens only if the call stays here (takeMicrophoneBack).
+    const inApp = (options.app ?? browserApp).embedded();
+    const microphone = inApp
+      ? (early(), new MediaStream([]))
+      : await openMicrophone({ mode: chosen.mode })
+          .catch((error) => {
+            trace(`call ${answer.call}: no microphone for the call (${error})`);
+            return null;
+          })
+          .finally(early);
     // Whether its music waits for a voice: the answer says it, and the
     // helper may say it again around the answer, while this call is set up.
     const musicWaiting = waits.get(answer.call) ?? answer.waiting === true;
@@ -829,10 +847,15 @@ export class WebRtcCall {
     void call.holdScreen();
     call.watchMicrophone();
     trace(`call ${call.id}: started, its signalling opens`);
+    if (inApp)
+      call.trace(
+        "in the Roamgate app: the app's microphone is the call's, none opened here",
+      );
     await call.connect();
     // The Android app keeps the microphone with the screen off: it takes
     // the call on a phone that has it.
     if (call.canHandOff()) call.handOff();
+    else void call.takeMicrophoneBack();
     return call;
   }
 
@@ -1057,8 +1080,13 @@ export class WebRtcCall {
    * page shows.
    */
   private pauseMicrophone(why: string) {
-    if (this.stopped || this.microphonePause || this.appCarries("microphone"))
+    if (this.stopped || this.microphonePause || this.microphoneInApp()) return;
+    // The Roamgate app keeps the microphone with the screen off: in its
+    // WebView, "turn the screen on" is never said.
+    if (this.options.app.embedded()) {
+      this.trace(`the page's microphone is silenced by the phone: ${why}`);
       return;
+    }
     this.microphonePause = why;
     this.reopenTries = 0;
     const hidden = this.options.screen.hidden();
@@ -1656,7 +1684,7 @@ export class WebRtcCall {
    */
   carriesMicrophone(): boolean {
     // The app's microphone: listenings ask for it, the page opens none.
-    if (this.appCarries("microphone")) return !this.stopped;
+    if (this.microphoneInApp()) return true;
     const state = this.microphoneLeg.connection?.iceConnectionState;
     return (
       !this.stopped &&
@@ -2004,6 +2032,21 @@ export class WebRtcCall {
     }, RELEASE_MS);
   }
 
+  /**
+   * Whether the call's microphone is the Android app's: it carries it, or
+   * this page in its WebView, with no microphone of its own, hands it the
+   * call. The page opens no capture meanwhile.
+   */
+  microphoneInApp(): boolean {
+    if (this.stopped) return false;
+    if (this.appCarries("microphone")) return true;
+    return (
+      this.options.app.embedded() &&
+      this.handingOff() &&
+      !this.microphone?.getAudioTracks().length
+    );
+  }
+
   /** Whether the Android app carries `leg` of the call now. */
   appCarries(leg: CarriedLeg): boolean {
     return this.carrier?.legs.has(leg) === true;
@@ -2045,6 +2088,7 @@ export class WebRtcCall {
       this.options.notice(
         "The Roamgate app did not take the call: it goes on here.",
       );
+      void this.takeMicrophoneBack();
       callChanged();
     }, HANDOFF_WAIT_MS);
     callChanged();
@@ -2055,6 +2099,13 @@ export class WebRtcCall {
     const handoff = event.handoff;
     if (typeof handoff !== "string" || !handoff) {
       this.trace(`no handoff to the Roamgate app: ${String(event.error)}`);
+      if (this.options.app.embedded()) {
+        // The call goes on here, with the page's microphone.
+        if (this.handoffTimer) clearTimeout(this.handoffTimer);
+        this.handoffTimer = null;
+        void this.takeMicrophoneBack();
+        callChanged();
+      }
       return;
     }
     if (this.stopped || this.carrier) return;
@@ -2074,6 +2125,7 @@ export class WebRtcCall {
       this.options.notice(
         "The Roamgate app could not take the call: it goes on here.",
       );
+      void this.takeMicrophoneBack();
       callChanged();
     }
   }
@@ -2174,10 +2226,21 @@ export class WebRtcCall {
     callChanged();
   }
 
-  /** Opens the page's microphone again, and publishes it. */
+  /**
+   * Opens the page's microphone (again), and publishes it: the app gave
+   * the call back, or never took it. Nothing when it is open already.
+   */
   private async takeMicrophoneBack() {
     const stream = this.microphone;
-    if (!stream || this.stopped) return;
+    if (
+      !stream ||
+      this.stopped ||
+      this.takingBack ||
+      this.appCarries("microphone") ||
+      stream.getAudioTracks().some((track) => track.readyState !== "ended")
+    )
+      return;
+    this.takingBack = true;
     try {
       const opened = await this.options.microphone({ mode: this.mode });
       const track = opened.getAudioTracks()[0];
@@ -2190,6 +2253,8 @@ export class WebRtcCall {
       this.publish();
     } catch (error) {
       this.trace(`the microphone did not open again: ${error}`);
+    } finally {
+      this.takingBack = false;
     }
   }
 
