@@ -109,7 +109,12 @@ import {
  * /api/voice/call/handoff (redeemHandoff) for the call's carrier token and
  * a login. On its own socket the app then sends `{"op": "call_carry",
  * "call": 7, "carrier": "<token>", "legs": ["microphone"]}` (answered
- * `call_carry`), signals with `call_token=<carrier token>`, and may send
+ * `call_carry`, with `"replies_peer"`: the peer id of the helper's replies
+ * producer, null until it registered; a later or changed one is told
+ * `{"event": "call_replies_peer", "call": 7, "peer": "<id>"}`, learned by
+ * a listener on the call's signalling server from the handoff on), signals
+ * with `call_token=<carrier token>` (as many sockets as it needs: one for
+ * its webrtcsink, one for its webrtcsrc), and may send
  * `call_microphone`, `call_ice`, `call_output_state` and `call_audio` off
  * (hang-up). The page, still the call's owner, is told `{"event":
  * "call_carrier", "call": 7, "state": "joined", "legs": [...], "heard":
@@ -223,6 +228,8 @@ type Carrier = {
   heard: boolean;
   /** Its last call_output_state, as relayed to the page. */
   outputs: Record<string, unknown> | null;
+  /** The replies producer it was last told (call_carry, call_replies_peer). */
+  toldPeer?: string | null;
   /** Never joined, or its socket gone: it lets the call go. */
   timer: ReturnType<typeof setTimeout> | null;
 };
@@ -240,7 +247,26 @@ type CallState = {
   restarts: number;
   /** The page's ICE lines logged for it (`call_ice`). */
   iceLines?: number;
+  /** Who the replies' producer is, watched while the app carries it. */
+  replies?: RepliesWatch | null;
+  /** Watches the replies again after the helper's server closed. */
+  repliesRetry?: ReturnType<typeof setTimeout> | null;
 };
+
+/**
+ * A listener on the call's signalling server (a peer with the `listener`
+ * role): it learns the peer id of the helper's replies producer (meta
+ * `{"call": 7, "role": "replies"}`) from `list` and `peerStatusChanged`,
+ * for the Android app's webrtcsrc to consume it by id.
+ */
+type RepliesWatch = {
+  upstream: UpstreamSocket;
+  /** The replies producer's peer id, once registered. */
+  peer: string | null;
+};
+
+/** How long after the helper's server closed its replies are watched again. */
+export const REPLIES_WATCH_RETRY_MS = 1000;
 
 /** A page's signalling socket and its way to the helper. */
 type Signalling = {
@@ -620,11 +646,119 @@ export function createVoiceSocket(
         error: why,
       });
     closeCarrierSignalling(carrier, why);
+    unwatchReplies(of);
   };
 
   /** The call `ws` carries for the app, if it does. */
   const carried = (ws: VoiceSocket): CallState | null =>
     call?.carrier?.ws === ws && call.carrier.joined ? call : null;
+
+  /** Stops watching who the replies' producer of `of` is. */
+  const unwatchReplies = (of: CallState) => {
+    if (of.repliesRetry) clearTimeout(of.repliesRetry);
+    of.repliesRetry = null;
+    const watch = of.replies;
+    of.replies = null;
+    if (!watch) return;
+    watch.upstream.onclose = null;
+    watch.upstream.onerror = null;
+    watch.upstream.onmessage = null;
+    watch.upstream.close();
+  };
+
+  /** Tells the joined app a replies producer it was not told yet. */
+  const tellRepliesPeer = (of: CallState) => {
+    const carrier = of.carrier;
+    const peer = of.replies?.peer ?? null;
+    if (!of.handle || !carrier?.joined || !carrier.ws || !peer) return;
+    if (carrier.toldPeer === peer) return;
+    carrier.toldPeer = peer;
+    send(carrier.ws, { event: "call_replies_peer", call: of.handle.id, peer });
+  };
+
+  /**
+   * Watches who the replies' producer of `of` is, as a listener on its
+   * signalling server (RepliesWatch): from a handoff on, and again on a
+   * restarted helper's new server.
+   */
+  const watchReplies = (of: CallState) => {
+    unwatchReplies(of);
+    const handle = of.handle;
+    if (!handle || of.stopped || call !== of) return;
+    const id = handle.id;
+    const port = handle.signallingPort();
+    if (!port) return;
+    let upstream: UpstreamSocket;
+    try {
+      upstream = connectUpstream(`ws://127.0.0.1:${port}`);
+    } catch (error) {
+      debug(`call ${id}: cannot watch the replies on port ${port}: ${error}`);
+      return;
+    }
+    const watch: RepliesWatch = { upstream, peer: null };
+    of.replies = watch;
+    const isReplies = (meta: unknown) =>
+      !!meta &&
+      typeof meta === "object" &&
+      (meta as { call?: unknown }).call === id &&
+      (meta as { role?: unknown }).role === "replies";
+    const found = (peer: string) => {
+      if (watch.peer === peer) return;
+      watch.peer = peer;
+      debug(`call ${id}: the replies' producer is ${peer}`);
+      tellRepliesPeer(of);
+    };
+    upstream.onmessage = (event) => {
+      if (of.replies !== watch || typeof event.data !== "string") return;
+      let message: Record<string, unknown>;
+      try {
+        message = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (message.type === "welcome") {
+        upstream.send(
+          JSON.stringify({
+            type: "setPeerStatus",
+            roles: ["listener"],
+            meta: { call: id, role: "roamgate" },
+          }),
+        );
+        upstream.send(JSON.stringify({ type: "list" }));
+      } else if (message.type === "list") {
+        const producers = Array.isArray(message.producers)
+          ? (message.producers as { id?: unknown; meta?: unknown }[])
+          : [];
+        const replies = producers.find(
+          (each) =>
+            !!each &&
+            typeof each.id === "string" &&
+            each.id.length > 0 &&
+            isReplies(each.meta),
+        );
+        if (replies) found(replies.id as string);
+      } else if (message.type === "peerStatusChanged") {
+        const peer = message.peerId;
+        if (typeof peer !== "string" || !peer) return;
+        const producing =
+          Array.isArray(message.roles) && message.roles.includes("producer");
+        if (producing && isReplies(message.meta)) found(peer);
+        else if (watch.peer === peer) watch.peer = null;
+      }
+    };
+    const gone = () => {
+      if (of.replies !== watch) return;
+      of.replies = null;
+      debug(`call ${id}: the replies' watch on port ${port} closed`);
+      // A restarted helper's new server is watched on call_restarted.
+      of.repliesRetry = setTimeout(() => {
+        of.repliesRetry = null;
+        if (of.carrier && !of.replies) watchReplies(of);
+      }, REPLIES_WATCH_RETRY_MS);
+    };
+    upstream.onclose = gone;
+    upstream.onerror = gone;
+  };
 
   /** Closes the signalling sockets of `of`: the page opens them again. */
   const closeSignalling = (of: CallState, why: string) => {
@@ -669,6 +803,7 @@ export function createVoiceSocket(
       );
     ending.ws = null;
     closeSignalling(ending, why);
+    unwatchReplies(ending);
     if (call === ending) call = null;
     // Told after the call is gone: hanging up never waits for what follows.
     if (ending.handle && why !== REPLACED_CALL) onCallEnded();
@@ -708,6 +843,8 @@ export function createVoiceSocket(
             call: event.call,
             restarts: starting.restarts,
           });
+          // The app learns the new server's replies producer once known.
+          if (starting.carrier) watchReplies(starting);
           return;
         }
         if (event.event === "call_ended") {
@@ -1480,6 +1617,11 @@ export function createVoiceSocket(
           debug(
             `call ${found.handle.id}: the app carries ${legs.join(" and ")}`,
           );
+          // Null until the helper's replies producer registered: a
+          // call_replies_peer follows then.
+          const repliesPeer = found.replies?.peer ?? null;
+          carrier.toldPeer = repliesPeer;
+          if (!found.replies && !found.repliesRetry) watchReplies(found);
           send(ws, {
             event: "call_carry",
             call: found.handle.id,
@@ -1487,6 +1629,7 @@ export function createVoiceSocket(
             legs,
             restarts: found.restarts,
             waiting: found.handle.musicWaiting(),
+            replies_peer: repliesPeer,
           });
           send(found.ws, carrierState(found, carrier));
           if (carrier.outputs) send(found.ws, carrier.outputs);
@@ -1733,6 +1876,8 @@ export function createVoiceSocket(
           carrierLeft(of, "The Roamgate app never joined");
       }, DETACHED_MS);
       of.carrier = carrier;
+      // Who the replies' producer is, known by the time the app joins.
+      watchReplies(of);
       debug(`call ${of.handle.id}: the handoff was taken`);
       return { call: of.handle.id, carrier: carrier.token };
     },

@@ -17,6 +17,7 @@ import {
   createVoiceSocket,
   DETACHED_MS,
   HANDOFF_MS,
+  REPLIES_WATCH_RETRY_MS,
   type SignallingSocket,
   type UpstreamSocket,
 } from "./voice-socket";
@@ -99,17 +100,42 @@ function fakeSocket() {
   };
 }
 
-function fakeUpstream(): (url: string) => UpstreamSocket {
-  return () => ({
-    readyState: 0,
-    send: () => {},
-    close: () => {},
-    onopen: null,
-    onmessage: null,
-    onclose: null,
-    onerror: null,
-  });
+/** The helper's signalling server's sockets, and what each was told. */
+type MadeUpstream = {
+  url: string;
+  socket: UpstreamSocket;
+  told: Record<string, unknown>[];
+  closed: boolean;
+};
+
+function fakeUpstream(
+  made: MadeUpstream[] = [],
+): (url: string) => UpstreamSocket {
+  return (url) => {
+    const entry: MadeUpstream = {
+      url,
+      told: [],
+      closed: false,
+      socket: {
+        readyState: 0,
+        send: (message: string) => entry.told.push(JSON.parse(message)),
+        close: () => {
+          entry.closed = true;
+        },
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        onerror: null,
+      },
+    };
+    made.push(entry);
+    return entry.socket;
+  };
 }
+
+/** What the helper's signalling server says to `upstream`. */
+const say = (upstream: MadeUpstream, message: object) =>
+  upstream.socket.onmessage?.({ data: JSON.stringify(message) });
 
 function fakeSignalling() {
   const closed: { code?: number; reason?: string }[] = [];
@@ -124,13 +150,14 @@ function fakeSignalling() {
 async function started() {
   const fake = fakeHelper();
   const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+  const upstreams: MadeUpstream[] = [];
   const socket = createVoiceSocket(
     helper,
     () => null,
     () => undefined,
     () => null,
     () => null,
-    fakeUpstream(),
+    fakeUpstream(upstreams),
   );
   const page = fakeSocket();
   socket.message(page.ws, JSON.stringify({ op: "call_audio", on: true }));
@@ -155,7 +182,7 @@ async function started() {
     );
     return { app, carrier: taken.carrier };
   };
-  return { fake, socket, page, token, handoff, carry };
+  return { fake, socket, page, token, handoff, carry, upstreams };
 }
 
 describe("a call handed to the Android app", () => {
@@ -213,6 +240,7 @@ describe("a call handed to the Android app", () => {
         legs: ["microphone"],
         restarts: 0,
         waiting: false,
+        replies_peer: null,
       },
     ]);
     expect(page.sent.at(-1)).toEqual({
@@ -445,6 +473,251 @@ describe("a call handed to the Android app", () => {
     });
     expect(socket.ownsCall(1, first.carrier)).toBe(false);
     expect(socket.ownsCall(1, second.carrier)).toBe(true);
+  });
+});
+
+describe("the replies' producer, for the Android app", () => {
+  const REPLIES = { call: 1, role: "replies" };
+
+  /** The app joins after redeeming; the bridge's watch is upstreams[0]. */
+  const joined = (
+    ready: Awaited<ReturnType<typeof started>>,
+    before: (watch: MadeUpstream) => void = () => {},
+  ) => {
+    const { socket, handoff, upstreams } = ready;
+    const taken = socket.redeemHandoff(handoff())!;
+    expect(upstreams.map((each) => each.url)).toEqual(["ws://127.0.0.1:41234"]);
+    const watch = upstreams[0]!;
+    before(watch);
+    const app = fakeSocket();
+    socket.message(
+      app.ws,
+      JSON.stringify({
+        op: "call_carry",
+        call: taken.call,
+        carrier: taken.carrier,
+        legs: ["microphone", "replies"],
+      }),
+    );
+    return { app, watch, carrier: taken.carrier };
+  };
+
+  test("call_carry carries the helper's replies producer", async () => {
+    const ready = await started();
+    const { app, watch } = joined(ready, (watch) => {
+      say(watch, { type: "welcome", peerId: "bridge" });
+      expect(watch.told).toEqual([
+        {
+          type: "setPeerStatus",
+          roles: ["listener"],
+          meta: { call: 1, role: "roamgate" },
+        },
+        { type: "list" },
+      ]);
+      say(watch, {
+        type: "list",
+        producers: [
+          { id: "page-mic", meta: { call: 1, role: "microphone" } },
+          { id: "old-replies", meta: { call: 0, role: "replies" } },
+          { id: "replies-1", meta: REPLIES },
+        ],
+      });
+    });
+    expect(app.sent).toEqual([
+      {
+        event: "call_carry",
+        call: 1,
+        ok: true,
+        legs: ["microphone", "replies"],
+        restarts: 0,
+        waiting: false,
+        replies_peer: "replies-1",
+      },
+    ]);
+    // The same producer registering again tells nothing new.
+    say(watch, {
+      type: "peerStatusChanged",
+      peerId: "replies-1",
+      roles: ["producer"],
+      meta: REPLIES,
+    });
+    expect(app.sent).toHaveLength(1);
+  });
+
+  test("a producer known later, or a new one, is told as call_replies_peer", async () => {
+    const ready = await started();
+    const { app, watch } = joined(ready);
+    expect(app.sent.at(-1)).toMatchObject({
+      event: "call_carry",
+      ok: true,
+      replies_peer: null,
+    });
+    say(watch, { type: "welcome", peerId: "bridge" });
+    say(watch, { type: "list", producers: [] });
+    say(watch, {
+      type: "peerStatusChanged",
+      peerId: "replies-1",
+      roles: ["producer"],
+      meta: REPLIES,
+    });
+    expect(app.sent.at(-1)).toEqual({
+      event: "call_replies_peer",
+      call: 1,
+      peer: "replies-1",
+    });
+    // Its leaving, other calls' producers and microphones tell nothing.
+    const told = app.sent.length;
+    say(watch, {
+      type: "peerStatusChanged",
+      peerId: "replies-1",
+      roles: [],
+      meta: REPLIES,
+    });
+    say(watch, {
+      type: "peerStatusChanged",
+      peerId: "app-mic",
+      roles: ["producer"],
+      meta: { call: 1, role: "microphone" },
+    });
+    say(watch, {
+      type: "peerStatusChanged",
+      peerId: "elsewhere",
+      roles: ["producer"],
+      meta: { call: 2, role: "replies" },
+    });
+    expect(app.sent).toHaveLength(told);
+    say(watch, {
+      type: "peerStatusChanged",
+      peerId: "replies-2",
+      roles: ["producer"],
+      meta: REPLIES,
+    });
+    expect(app.sent.at(-1)).toEqual({
+      event: "call_replies_peer",
+      call: 1,
+      peer: "replies-2",
+    });
+  });
+
+  test("a restarted helper's new server is watched again", async () => {
+    const ready = await started();
+    const { app, watch } = joined(ready, (watch) => {
+      say(watch, { type: "welcome", peerId: "bridge" });
+      say(watch, {
+        type: "list",
+        producers: [{ id: "replies-1", meta: REPLIES }],
+      });
+    });
+    ready.fake.push(json({ event: "call_restarted", call: 1 }));
+    await settle();
+    expect(watch.closed).toBe(true);
+    expect(app.sent.at(-1)).toEqual({
+      event: "call_restarted",
+      call: 1,
+      restarts: 1,
+    });
+    const again = ready.upstreams.at(-1)!;
+    expect(again).not.toBe(watch);
+    // The old server's late words are not taken.
+    say(watch, {
+      type: "peerStatusChanged",
+      peerId: "stale",
+      roles: ["producer"],
+      meta: REPLIES,
+    });
+    say(again, { type: "welcome", peerId: "bridge" });
+    say(again, {
+      type: "list",
+      producers: [{ id: "replies-2", meta: REPLIES }],
+    });
+    expect(app.sent.at(-1)).toEqual({
+      event: "call_replies_peer",
+      call: 1,
+      peer: "replies-2",
+    });
+  });
+
+  test("a watch whose server closed is opened again; the call's end closes it", async () => {
+    jest.useFakeTimers();
+    try {
+      const ready = await started();
+      const { watch } = joined(ready);
+      watch.socket.onclose?.({});
+      expect(ready.upstreams).toHaveLength(1);
+      jest.advanceTimersByTime(REPLIES_WATCH_RETRY_MS);
+      expect(ready.upstreams).toHaveLength(2);
+      ready.socket.message(
+        ready.page.ws,
+        JSON.stringify({ op: "call_audio", on: false }),
+      );
+      expect(ready.upstreams[1]!.closed).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("the app's two signalling sockets are each proxied on their own", async () => {
+    const ready = await started();
+    const { carrier } = joined(ready);
+    const opened = (index: number) => {
+      const upstream = ready.upstreams[index]!;
+      (upstream.socket as { readyState: number }).readyState = 1;
+      upstream.socket.onopen?.({});
+      return upstream;
+    };
+    const signalling = () => {
+      const got: Record<string, unknown>[] = [];
+      const closed: { code?: number; reason?: string }[] = [];
+      const ws: SignallingSocket = {
+        send: (message: string) => got.push(JSON.parse(message)),
+        close: (code?: number, reason?: string) =>
+          closed.push({ code, reason }),
+      };
+      return { ws, got, closed };
+    };
+    // The app's webrtcsink (its microphone) and webrtcsrc (the replies).
+    const sink = signalling();
+    const source = signalling();
+    ready.socket.openSignalling(sink.ws, 1, carrier);
+    ready.socket.openSignalling(source.ws, 1, carrier);
+    expect(sink.closed).toEqual([]);
+    expect(source.closed).toEqual([]);
+    expect(ready.upstreams.map((each) => each.url)).toEqual([
+      "ws://127.0.0.1:41234",
+      "ws://127.0.0.1:41234",
+      "ws://127.0.0.1:41234",
+    ]);
+    const sinkUp = opened(1);
+    const sourceUp = opened(2);
+    const producer = {
+      type: "setPeerStatus",
+      roles: ["producer"],
+      meta: { call: 1, role: "microphone" },
+    };
+    const consumer = { type: "startSession", peerId: "replies-1" };
+    ready.socket.signallingMessage(sink.ws, JSON.stringify(producer));
+    ready.socket.signallingMessage(source.ws, JSON.stringify(consumer));
+    expect(sinkUp.told).toEqual([producer]);
+    expect(sourceUp.told).toEqual([consumer]);
+    say(sinkUp, { type: "welcome", peerId: "app-mic" });
+    say(sourceUp, {
+      type: "sessionStarted",
+      peerId: "replies-1",
+      sessionId: "s1",
+    });
+    expect(sink.got).toEqual([{ type: "welcome", peerId: "app-mic" }]);
+    expect(source.got).toEqual([
+      { type: "sessionStarted", peerId: "replies-1", sessionId: "s1" },
+    ]);
+    // One closing leaves the other, and the app leaving closes both.
+    ready.socket.closeSignalling(source.ws);
+    expect(sourceUp.closed).toBe(true);
+    expect(sinkUp.closed).toBe(false);
+    ready.socket.message(
+      ready.page.ws,
+      JSON.stringify({ op: "call_audio", on: false }),
+    );
+    expect(sink.closed).toEqual([{ code: 4000, reason: "The call ended" }]);
   });
 });
 

@@ -1877,12 +1877,28 @@ that has the app is carried by the app (`web/src/androidApp.ts`,
    "call_carry", "call": 7, "carrier": "<carrier token>", "legs":
    ["microphone"]}` (legs: `microphone`, `replies`), answered `{"event":
    "call_carry", "call": 7, "ok": true, "legs": [...], "restarts": 0,
-   "waiting": false}`. The carrier token opens the call's signalling
-   (`call_token`) as the page's does; the app consumes the producer
-   `{"call": 7, "role": "replies"}` when it carries the replies, and
-   publishes its microphone as `{"call": 7, "role": "microphone"}`,
-   telling its peer id with `call_microphone` on the carrying socket
-   (`"echo": "here"` when it plays nothing itself or cancels no echo).
+   "waiting": false, "replies_peer": "<peer id>"}`. `replies_peer` is the
+   peer id of the helper's replies producer (meta `{"call": 7, "role":
+   "replies"}`), null while it has not registered; a producer learned
+   later, or a new one (a restarted helper's), is told on the carrying
+   socket as `{"event": "call_replies_peer", "call": 7, "peer": "<peer
+   id>"}`. The bridge learns it from the handoff on with a peer of its own
+   on the call's signalling server: `setPeerStatus` with the `listener`
+   role (meta `{"call": 7, "role": "roamgate"}`), `list`, then
+   `peerStatusChanged`; it is opened again on a restarted helper's new
+   server, or 1 s after its server closed. The carrier token opens the
+   call's signalling (`call_token`) as the page's does, as many times as
+   the app needs: its `webrtcsink` (microphone producer) and its
+   `webrtcsrc` (replies consumer, `startSession` with `replies_peer`) each
+   open their own socket, with the login cookie. Each signalling socket is
+   proxied to its own connection to the helper's server, which implements
+   the whole protocol (`setPeerStatus` with roles and meta, `list`,
+   `startSession`, `endSession`, `peer` messages), so producer and consumer
+   messages reach the right peer whichever socket they come on. The app
+   publishes its microphone as `{"call": 7, "role": "microphone"}`, telling
+   its peer id with `call_microphone` on the carrying socket (`"echo":
+   "here"` when it plays nothing itself or cancels no echo); the helper's
+   `webrtcsrc` consumes that producer by id.
    The page's own `call_microphone` is refused meanwhile. The carrying
    socket also gets `call_restarted`, `call_music` and the call's end, and
    may send `call_ice` (logged as the app's).
