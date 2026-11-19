@@ -201,7 +201,15 @@ Inspector button, shortcuts, or workspace/agent menus.
   cursor's file and line, and how far down the view it stood, per review
   (the last 50 reviews), back after a page reload, a server restart or
   when the review opens again; a read that fails meanwhile (the server
-  restarting) keeps the place for the next try. With no side by side or
+  restarting) keeps the place for the next try. Each workspace remembers
+  in the browser the review its Changes shows (a commit's, a range, a
+  compare, a merge request) and shows it again after a reload; the scope
+  picker lists the other reviews opened there lately, the latest first,
+  named as what they show (`commit d2726424 Fix it`, `range a..b`,
+  `branch topic vs main`, `MR !12 ...`). Obsolete ones drop out of the list:
+  a discarded review, one whose code is gone from the checkout, one whose
+  merge request is merged or closed, one with no thread not shown for two
+  weeks; one with open threads stays, marked outdated. With no side by side or
   unified chosen yet, it opens side by side when Changes is 1100 px wide or
   more, unified below. A review of commits that could not be read says why
   with Retry, and reads itself again once a lost connection is back (once:

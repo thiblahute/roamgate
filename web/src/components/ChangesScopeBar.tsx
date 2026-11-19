@@ -198,6 +198,52 @@ export function changesReviewShortLabel(
   return [number, title].filter(Boolean).join(" ") || undefined;
 }
 
+/** A sha as a short name: its first 8 characters; a ref as it is. */
+function shortRef(ref: string): string {
+  return /^[0-9a-f]{12,40}$/i.test(ref) ? ref.slice(0, 8) : ref;
+}
+
+/**
+ * A review the scope picker offers, named as what it shows: "commit
+ * d2726424 Fix it" (its subject as last shown, `remembered`), "range
+ * a..b", "branch topic vs main", "topic-old vs topic" for a compare, "MR
+ * !12 Title", "Last step".
+ */
+export function workspaceReviewLabel(
+  snapshot: ReviewSnapshot | undefined,
+  remembered?: string,
+): string {
+  if (!snapshot) return remembered ?? "A review";
+  const { target, title } = snapshot.session;
+  if (target.kind === "mr") {
+    const short = changesReviewShortLabel(snapshot.mergeRequest);
+    const gitlab = /\/-\/merge_requests\/(\d+)/.exec(target.url);
+    const github = /\/pull\/(\d+)/.exec(target.url);
+    return short
+      ? `${gitlab ? "MR" : github ? "PR" : "MR"} ${short}`
+      : gitlab
+        ? `MR !${gitlab[1]}`
+        : github
+          ? `PR #${github[1]}`
+          : `MR ${title}`;
+  }
+  if (target.kind === "step") return "Last step";
+  if (target.kind !== "range") return remembered ?? title;
+  const { base, head } = target;
+  if (!target.compare && [`${head}^`, `${head}~1`, `${head}~`].includes(base)) {
+    // Its subject as last shown ("d2726424 Fix it"), else its sha.
+    const named =
+      remembered && remembered.startsWith(head.slice(0, 8))
+        ? remembered
+        : shortRef(head);
+    return `commit ${named}`;
+  }
+  if (target.compare) return `${shortRef(base)} vs ${shortRef(head)}`;
+  if (/^[0-9a-f]{7,40}$/i.test(head) || head === "HEAD")
+    return `range ${shortRef(base)}..${shortRef(head)}`;
+  return `branch ${head} vs ${shortRef(base)}`;
+}
+
 /** The scope's choice, as the line says it. */
 export function changesScopeChoice(
   mode: GitDiffSummaryMode,
@@ -211,6 +257,26 @@ export function changesScopeChoice(
   return "Working tree: uncommitted changes";
 }
 
+/** How long ago `at` was, said plainly: "now", "5 min ago", "3 h ago". */
+export function shownAgo(at: number, now: number): string {
+  const minutes = Math.floor((now - at) / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} d ago`;
+}
+
+/** A review opened lately in the workspace, as the scope picker lists it. */
+export type ChangesRecentReview = {
+  id: string;
+  label: string;
+  /** When it was last shown, said plainly ("2 h ago"). */
+  when: string;
+  /** Its code is gone (or its request merged) but it has open threads. */
+  outdated?: boolean;
+};
+
 /**
  * What the scope picker offers: the review shown, the working changes, the
  * branch against its automatic base and each other base, and Last step,
@@ -219,6 +285,7 @@ export function changesScopeChoice(
  */
 export function changesScopeOptions({
   review,
+  reviews = [],
   branch,
   base,
   baseBranch,
@@ -226,6 +293,8 @@ export function changesScopeOptions({
   elsewhere,
 }: {
   review?: { label: string } | undefined;
+  /** The workspace's other reviews opened lately, the latest first. */
+  reviews?: readonly ChangesRecentReview[];
   branch?: string | undefined;
   base?: string | undefined;
   baseBranch: string;
@@ -237,6 +306,13 @@ export function changesScopeOptions({
     ...(review
       ? [{ value: "review", label: review.label, detail: "the review shown" }]
       : []),
+    ...reviews.map((each) => ({
+      value: `review:${each.id}`,
+      label: each.label,
+      detail: each.outdated
+        ? `outdated: its code is gone, its open threads kept · ${each.when}`
+        : `opened here ${each.when}`,
+    })),
     {
       value: "working",
       label: changesScopeChoice("working", branch, base),
@@ -289,6 +365,8 @@ export function ChangesScopeBar({
   onBase,
   onDone,
   review,
+  reviews,
+  onReview,
   elsewhere = false,
   request,
 }: {
@@ -330,11 +408,16 @@ export function ChangesScopeBar({
   elsewhere?: boolean;
   /** The shown review's own pull or merge request, as a chip. */
   request?: ReactNode;
+  /** The workspace's other reviews opened lately, offered as scopes. */
+  reviews?: readonly ChangesRecentReview[];
+  /** One of `reviews` picked. */
+  onReview?: (sessionId: string) => void;
 }) {
   const name = repoName || root?.split("/").pop() || "Repository";
   const branchValue = (each: string) => `branch:${each}`;
   const scopeOptions = changesScopeOptions({
     review,
+    ...(reviews ? { reviews } : {}),
     branch,
     base,
     baseBranch,
@@ -428,6 +511,10 @@ export function ChangesScopeBar({
         options={scopeOptions}
         onChange={(value) => {
           if (value === "review") return;
+          if (value.startsWith("review:")) {
+            onReview?.(value.slice("review:".length));
+            return;
+          }
           if (value.startsWith("branch:")) {
             onBase(value.slice("branch:".length));
             onScope("branch-main");

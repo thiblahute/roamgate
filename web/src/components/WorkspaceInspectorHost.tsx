@@ -99,7 +99,10 @@ import { useLiveClient } from "../useReloadOnReconnect";
 import { ZenDock } from "./ZenIsland";
 import {
   ChangesScopeBar,
+  type ChangesRecentReview,
   changesReviewShortLabel,
+  shownAgo,
+  workspaceReviewLabel,
   useChangesRepos,
   useChangesSeries,
   useWorkspaceRepoDirs,
@@ -112,7 +115,16 @@ import {
 } from "../changesRepo";
 import { type ChangesScope, stepTarget, WORKING_SCOPE } from "../changesReview";
 import type { GitDiffSummaryMode } from "../gitDiffSummaryStore";
-import { useReviewState } from "../review";
+import { loadedReviewConnections, reviewCall, useReviewState } from "../review";
+import {
+  liveWorkspaceReviews,
+  readWorkspaceReviews,
+  reviewPinKey,
+  withoutReview,
+  withShownReview,
+  writeWorkspaceReviews,
+} from "../reviewPins";
+import type { ReviewActivity } from "../../../shared/review";
 import "./WorkspaceInspectorHost.css";
 
 const DiffContentView = lazyWithReload("diff-content-view", () =>
@@ -191,6 +203,19 @@ export function sameDiffPath(entryPath: string, path: string): boolean {
   return (
     path === entryPath || path === relative || path.endsWith(`/${relative}`)
   );
+}
+
+/**
+ * A review shown as the scope, named by its title; one titled by its range
+ * of shas (an agent's, Review this commit) as what it shows instead.
+ */
+function shownReviewName(snapshot: ReviewSnapshot): string {
+  const { title, target } = snapshot.session;
+  return target.kind === "range" &&
+    !target.compare &&
+    title === `${target.base}..${target.head}`
+    ? workspaceReviewLabel(snapshot)
+    : title;
 }
 
 export function WorkspaceInspectorHost({
@@ -485,10 +510,21 @@ export function WorkspaceInspectorHost({
   const repoPickerOpen = series.pickerOpen;
   const setRepoPickerOpen = series.setPickerOpen;
   /**
+   * The workspace's reviews in this browser (reviewPins.ts): the one
+   * shown, back after a reload or a server restart, and those opened here
+   * lately, offered by the scope picker.
+   */
+  const reviewsKey = reviewPinKey(connectionClient.connectionId, resourceKey);
+  const [workspaceReviews, setWorkspaceReviews] = useState(() =>
+    readWorkspaceReviews(reviewsKey),
+  );
+  /**
    * A review shown as Changes' scope (a range or compare opened by name,
    * an older step), until a scope is picked.
    */
-  const [shownReview, setShownReview] = useState<string | null>(null);
+  const [shownReview, setShownReview] = useState<string | null>(
+    () => workspaceReviews.shown,
+  );
   /** The review last shown as the scope: a scope that fails offers it back. */
   const [leftReview, setLeftReview] = useState<string | null>(null);
   useEffect(() => {
@@ -506,6 +542,82 @@ export function WorkspaceInspectorHost({
     entries: readonly GitDiffEntry[];
     title?: string;
   } | null>(null);
+  // The review shown is remembered first of the workspace's, named as its
+  // commit once read; the workspace's own scope, as none.
+  const shownTitle = shownReview ? viewTree?.title : undefined;
+  useEffect(() => {
+    setWorkspaceReviews((value) => {
+      const next = withShownReview(value, shownReview, Date.now(), shownTitle);
+      writeWorkspaceReviews(reviewsKey, next);
+      return next;
+    });
+  }, [reviewsKey, shownReview, shownTitle]);
+  /**
+   * Reviews whose code is gone from their checkout (review.activity, read
+   * once Changes shows with reviews remembered; a review shown found gone).
+   */
+  const [goneReviews, setGoneReviews] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const rememberedCount = workspaceReviews.reviews.length;
+  const activityRead = useRef(false);
+  const changesInView = visible && state.open && state.view === "changes";
+  useEffect(() => {
+    if (!changesInView || !rememberedCount || activityRead.current) return;
+    activityRead.current = true;
+    void reviewCall<{ activity: ReviewActivity[] }>(
+      connectionClient.connectionId,
+      "review.activity",
+    ).then(
+      ({ activity }) => {
+        const gone = activity.filter((each) => each.gone);
+        if (gone.length)
+          setGoneReviews(
+            (known) =>
+              new Set([...known, ...gone.map((each) => each.sessionId)]),
+          );
+      },
+      () => {},
+    );
+  }, [changesInView, rememberedCount, connectionClient.connectionId]);
+  // Obsolete reviews forgotten as they are found: discarded, gone, their
+  // request merged or closed, idle with no thread. One with open threads
+  // stays, outdated; the one shown, gone, gives Changes its own scope back.
+  const recentStanding = useMemo(
+    () =>
+      liveWorkspaceReviews(workspaceReviews, reviewSessions, {
+        loaded: loadedReviewConnections().has(connectionClient.connectionId),
+        gone: goneReviews,
+        now: Date.now(),
+      }),
+    [workspaceReviews, reviewSessions, goneReviews, connectionClient],
+  );
+  useEffect(() => {
+    const { value } = recentStanding;
+    if (value === workspaceReviews) return;
+    if (workspaceReviews.shown && !value.shown) {
+      setShownReview(null);
+      store.notify({
+        kind: "info",
+        message: "The review Changes showed is gone: back on its own scope",
+        autoDismissMs: 4000,
+      });
+    }
+    setWorkspaceReviews(value);
+    writeWorkspaceReviews(reviewsKey, value);
+  }, [recentStanding, workspaceReviews, reviewsKey]);
+  /** The scope picker's other reviews: the latest first. */
+  const recentReviews = useMemo<ChangesRecentReview[]>(() => {
+    const now = Date.now();
+    return recentStanding.value.reviews
+      .filter((each) => each.id !== shownReview)
+      .map((each) => ({
+        id: each.id,
+        label: workspaceReviewLabel(reviewSessions.get(each.id), each.label),
+        when: shownAgo(each.at, now),
+        ...(recentStanding.outdated.has(each.id) ? { outdated: true } : {}),
+      }));
+  }, [recentStanding, shownReview, reviewSessions]);
   const [viewGoTo, setViewGoTo] = useState<{
     path: string;
     at: number;
@@ -570,12 +682,16 @@ export function WorkspaceInspectorHost({
         ? {
             review: {
               // A review of one commit: named as its commit, not SHA^..SHA.
-              label: viewTree?.title ?? shownReviewSnapshot.session.title,
+              label: viewTree?.title ?? shownReviewName(shownReviewSnapshot),
               files: viewTree?.entries.length,
               short: changesReviewShortLabel(shownReviewSnapshot.mergeRequest),
             },
           }
         : {})}
+      reviews={recentReviews}
+      onReview={(sessionId) =>
+        setPendingGoTo({ review: sessionId, at: Date.now() })
+      }
       onScope={(mode) => {
         setShownReview(null);
         diffViewerRef.current?.showScope(mode);
@@ -705,7 +821,15 @@ export function WorkspaceInspectorHost({
     (sessionId: string, message: string) => {
       onReviewGone?.(sessionId);
       const snapshot = reviewSessions.get(sessionId);
+      setGoneReviews((known) =>
+        known.has(sessionId) ? known : new Set([...known, sessionId]),
+      );
       if (snapshot?.threads.length) return;
+      setWorkspaceReviews((value) => {
+        const next = withoutReview(value, sessionId);
+        writeWorkspaceReviews(reviewsKey, next);
+        return next;
+      });
       setShownReview((shown) => (shown === sessionId ? null : shown));
       setLeftReview((left) => (left === sessionId ? null : left));
       store.notify({
@@ -714,7 +838,7 @@ export function WorkspaceInspectorHost({
         detail: `${message.replace(/^Cannot load the diff: /, "")}. It stays in Reviews.`,
       });
     },
-    [onReviewGone, reviewSessions],
+    [onReviewGone, reviewSessions, reviewsKey],
   );
   /** The review the scope shown is: a read-only binding. */
   const changesScope = useMemo<ChangesScope>(

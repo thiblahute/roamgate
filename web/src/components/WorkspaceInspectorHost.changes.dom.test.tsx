@@ -617,6 +617,143 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       }
     });
 
+    test("the review shown is the workspace's again after a page reload; the others opened there are listed in the scope picker, the latest first, named as what they show", async () => {
+      // None remembered from the suite's other reviews.
+      localStorage.removeItem("roamgate:reviewChangesRecent");
+      const { PREFS_KEY } = await import("../reviewPrefs");
+      localStorage.setItem(PREFS_KEY, "{}");
+      localStorage.setItem("vimKeys", "true");
+      const { rememberReviewSnapshot } = await import("../review");
+      const sha = "d272642486c9f06335ef462e866f0798d7a3a4ad";
+      const review = (
+        id: string,
+        title: string,
+        target: Record<string, unknown>,
+      ) =>
+        rememberReviewSnapshot({
+          session: {
+            id,
+            connectionId: "local",
+            workspaceId: "w1",
+            root: "/repo",
+            title,
+            target,
+            gitlab: false,
+            summary: "",
+            agent: {},
+            createdAt: "2026-11-16T10:00:00Z",
+            updatedAt: "2026-11-16T10:00:00Z",
+          },
+          threads: [],
+        } as unknown as import("../../../shared/review").ReviewSnapshot);
+      review("rc", `${sha}^..${sha}`, {
+        kind: "range",
+        base: `${sha}^`,
+        head: sha,
+      });
+      review("rb", "topic vs main", {
+        kind: "range",
+        base: "main",
+        head: "topic",
+      });
+      const first = await mountInspector({
+        root: "/repo",
+        entries: [{ path: "a.ts", kind: "unstaged" }],
+        reviewGoTo: { review: "rc", at: Date.now() },
+      });
+      try {
+        await act(async () => {});
+        // Its commit read: named by it, as it is remembered.
+        await act(async () =>
+          diffSeen.onViewEntries?.({
+            label: "1/1 d2726424 Fix the pads",
+            title: "d2726424 Fix the pads",
+            entries: [{ path: "a.ts", kind: "branch", status: "M" }],
+          } as Parameters<NonNullable<typeof diffSeen.onViewEntries>>[0]),
+        );
+        await first.set({ reviewGoTo: { review: "rb", at: Date.now() + 1 } });
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "rb",
+        });
+      } finally {
+        await first.unmount();
+      }
+      // The page reloaded (a restart's new build): no review asked for,
+      // the one shown is back, the other one offered.
+      const again = await mountInspector({
+        root: "/repo",
+        entries: [{ path: "a.ts", kind: "unstaged" }],
+      });
+      try {
+        await act(async () => {});
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "rb",
+        });
+        const trigger = again.host.querySelector<HTMLElement>(
+          '[data-stub=scope] [aria-label="What Changes compares"]',
+        );
+        await act(async () => {
+          trigger?.dispatchEvent(
+            new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+          );
+          trigger?.click();
+        });
+        const options = () =>
+          [...document.querySelectorAll<HTMLElement>("[cmdk-item]")].map(
+            (each) => ({
+              element: each,
+              title: each.querySelector(".command-item-title")?.textContent,
+              detail: each.querySelector(".command-item-detail")?.textContent,
+            }),
+          );
+        // The review shown (by its title), then the others.
+        expect(options().map((each) => each.title)).toEqual([
+          "topic vs main",
+          "commit d2726424 Fix the pads",
+          "Working tree: uncommitted changes",
+          expect.stringContaining("vs its base") as unknown as string,
+          "Last step: what the agent's last step changed",
+        ]);
+        expect(options()[1]?.detail).toBe("opened here now");
+        // Picked: that review is the scope, and the one remembered.
+        await act(async () => {
+          options()[1]?.element.click();
+        });
+        await act(async () => {});
+        expect(diffSeen.reviewScope).toEqual({
+          kind: "review",
+          sessionId: "rc",
+        });
+        // Its own scope picked: none shown after the next reload.
+        await act(async () => {
+          trigger?.click();
+        });
+        await act(async () => {
+          options()
+            .find((each) => each.title?.startsWith("Working tree"))
+            ?.element.click();
+        });
+      } finally {
+        await again.unmount();
+      }
+      const own = await mountInspector({
+        root: "/repo",
+        entries: [{ path: "a.ts", kind: "unstaged" }],
+      });
+      try {
+        await act(async () => {});
+        expect(diffSeen.reviewScope).not.toEqual(
+          expect.objectContaining({ kind: "review" }),
+        );
+      } finally {
+        await own.unmount();
+        localStorage.removeItem(PREFS_KEY);
+        localStorage.removeItem("roamgate:reviewChangesRecent");
+      }
+    });
+
     test("a review of one commit is named in the scope line by its short sha and subject (a root commit too), not SHA^..SHA", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
       localStorage.setItem(PREFS_KEY, "{}");
@@ -650,8 +787,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
           ?.getAttribute("aria-label");
       try {
         await act(async () => {});
-        // Its commit not read yet: the review's own title.
-        expect(label()).toBe(`repo \u00b7 ${sha}^..${sha}`);
+        // Its commit not read yet: by its sha, not SHA^..SHA.
+        expect(label()).toBe("repo \u00b7 commit d2726424");
         await act(async () =>
           diffSeen.onViewEntries?.({
             label: "1/1 d2726424 base",

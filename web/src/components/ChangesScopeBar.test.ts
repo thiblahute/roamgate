@@ -4,6 +4,8 @@ import {
   changesScopeChoice,
   changesScopeFacts,
   changesScopeOptions,
+  shownAgo,
+  workspaceReviewLabel,
 } from "./ChangesScopeBar";
 import { plainDiffError } from "./diffErrors";
 
@@ -92,3 +94,91 @@ test("a merge or pull request's review is named on a phone by its number and tit
   ).toBe("#12 Add a thing");
   expect(changesReviewShortLabel(undefined)).toBeUndefined();
 });
+
+describe("the reviews a workspace's Changes offers", () => {
+  const snapshot = (
+    target: Record<string, unknown>,
+    title = "t",
+    mergeRequest?: { url: string; title: string },
+  ) =>
+    ({
+      session: { id: "s", title, target },
+      threads: [],
+      ...(mergeRequest ? { mergeRequest } : {}),
+    }) as unknown as Parameters<typeof workspaceReviewLabel>[0];
+  const sha = "d272642486c9f06335ef462e866f0798d7a3a4ad";
+
+  test("each is named as what it shows", () => {
+    expect(
+      workspaceReviewLabel(
+        snapshot({ kind: "range", base: `${sha}^`, head: sha }),
+        "d2726424 Fix the pads",
+      ),
+    ).toBe("commit d2726424 Fix the pads");
+    expect(
+      workspaceReviewLabel(
+        snapshot({ kind: "range", base: `${sha}^`, head: sha }),
+      ),
+    ).toBe("commit d2726424");
+    expect(
+      workspaceReviewLabel(
+        snapshot({ kind: "range", base: "a".repeat(40), head: sha }),
+      ),
+    ).toBe("range aaaaaaaa..d2726424");
+    expect(
+      workspaceReviewLabel(
+        snapshot({ kind: "range", base: "main", head: "topic" }),
+      ),
+    ).toBe("branch topic vs main");
+    expect(
+      workspaceReviewLabel(
+        snapshot({
+          kind: "range",
+          base: "topic-old",
+          head: "topic",
+          compare: true,
+        }),
+      ),
+    ).toBe("topic-old vs topic");
+    const url = "https://gitlab.example/g/p/-/merge_requests/12";
+    expect(
+      workspaceReviewLabel(
+        snapshot({ kind: "mr", url }, "x", { url, title: "Fix the pads" }),
+      ),
+    ).toBe("MR !12 Fix the pads");
+    expect(workspaceReviewLabel(snapshot({ kind: "mr", url }))).toBe("MR !12");
+    expect(workspaceReviewLabel(undefined, "kept name")).toBe("kept name");
+  });
+
+  test("the picker lists them after the review shown, the latest first, an outdated one said so", () => {
+    const options = changesScopeOptions({
+      review: { label: "topic vs main" },
+      reviews: [
+        { id: "a", label: "commit d2726424 Fix", when: "5 min ago" },
+        { id: "b", label: "MR !12 Fix", when: "2 d ago", outdated: true },
+      ],
+      baseBranch: "",
+      baseBranches: [],
+      elsewhere: false,
+    });
+    expect(options.slice(0, 3)).toEqual([
+      { value: "review", label: "topic vs main", detail: "the review shown" },
+      {
+        value: "review:a",
+        label: "commit d2726424 Fix",
+        detail: "opened here 5 min ago",
+      },
+      {
+        value: "review:b",
+        label: "MR !12 Fix",
+        detail: "outdated: its code is gone, its open threads kept · 2 d ago",
+      },
+    ]);
+    expect(shownAgo(NOW_AGO - 30_000, NOW_AGO)).toBe("now");
+    expect(shownAgo(NOW_AGO - 5 * 60_000, NOW_AGO)).toBe("5 min ago");
+    expect(shownAgo(NOW_AGO - 3 * 3_600_000, NOW_AGO)).toBe("3 h ago");
+    expect(shownAgo(NOW_AGO - 3 * 86_400_000, NOW_AGO)).toBe("3 d ago");
+  });
+});
+
+const NOW_AGO = Date.parse("2026-11-19T12:00:00Z");
