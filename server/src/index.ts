@@ -2002,6 +2002,7 @@ function main() {
               unacked: flow.enabled ? flow.sent - flow.acked : "n/a",
               queued: flow.queued,
               rate: flow.rate,
+              heaviest: flow.heaviest,
               terminals: viewedTerminals.length
                 ? viewedTerminals.join(",")
                 : "none",

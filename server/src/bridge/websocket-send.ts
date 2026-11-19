@@ -65,6 +65,8 @@ interface FlowItem {
 
 interface SocketFlow {
   acked: number;
+  /** Characters the bridge asked to send, by context, for close logs. */
+  asked: Map<string, number>;
   /** In flight was at least half the window at the last acknowledgement. */
   busy: boolean;
   enabled: boolean;
@@ -91,6 +93,7 @@ function flowOf(ws: WebSocketSendTarget): SocketFlow {
     const now = Date.now();
     flow = {
       acked: 0,
+      asked: new Map(),
       busy: false,
       enabled: false,
       lastBuffered: 0,
@@ -121,6 +124,8 @@ function congested(flow: SocketFlow): boolean {
 export interface WebSocketFlowStats {
   acked: number;
   enabled: boolean;
+  /** The three contexts the bridge asked to send the most for, with sizes. */
+  heaviest: string;
   queued: number;
   rate: number;
   sent: number;
@@ -135,6 +140,11 @@ export function webSocketFlowStats(
   return {
     acked: flow.acked,
     enabled: flow.enabled,
+    heaviest: [...flow.asked]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([context, chars]) => `${context}:${chars}`)
+      .join(","),
     queued: flow.queuedChars,
     rate: Math.round(flow.rate),
     sent: flow.sent,
@@ -265,6 +275,7 @@ export function sendWebSocketMessage(
 ): boolean {
   const sendContext = { cleanup, context, warn };
   const flow = flowOf(ws);
+  flow.asked.set(context, (flow.asked.get(context) ?? 0) + payload.length);
   if (coalesceKey !== undefined) {
     const held = heldPayloads.get(ws);
     if (ws.getBufferedAmount() > WS_COALESCE_LIMIT_BYTES || congested(flow)) {

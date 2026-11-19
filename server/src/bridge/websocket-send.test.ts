@@ -540,6 +540,17 @@ describe("flow control", () => {
     expect(sent).toEqual([large]);
   });
 
+  test("tells which contexts a socket was sent the most for", () => {
+    const { send, ws } = flowSocket();
+    send("a".repeat(30), "review");
+    send("b".repeat(10), "agent-list");
+    send("c".repeat(20), "terminal-frame", "t1");
+    send("d".repeat(5), "bridge-ping");
+    expect(webSocketFlowStats(ws).heaviest).toBe(
+      "review:30,terminal-frame:20,agent-list:10",
+    );
+  });
+
   test("treats only acknowledgements as acknowledgements", () => {
     const { ws } = flowSocket();
     expect(
