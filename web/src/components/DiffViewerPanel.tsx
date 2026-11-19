@@ -1256,6 +1256,8 @@ export function DiffViewerPanel({
   const [scopePreference, setScopePreference] = useState<{
     key: string;
     value: DiffScope;
+    /** Shown in place of the scope remembered, which stays remembered. */
+    instead?: true;
   } | null>(null);
   const diffScope =
     scopePreference?.key === preferenceKey
@@ -1263,8 +1265,22 @@ export function DiffViewerPanel({
       : loadDiffScope(connectionClient.connectionId, repositoryResourceKey);
   const scopeChangeRef = useRef(onScopeChange);
   scopeChangeRef.current = onScopeChange;
+  /**
+   * The review's Working scope remembered and shown again (a reload, the
+   * pane brought back) with nothing uncommitted: the branch's review shown
+   * instead when it has changes, Working staying the scope remembered.
+   * Settled by the first summaries read, or a scope picked.
+   */
+  const cleanWorking = useRef<{
+    key: string;
+    phase: "working" | "branch" | "done";
+    /** A summary read since: one kept from before is not taken. */
+    read: boolean;
+    revision: number;
+  } | null>(null);
   const setDiffScope = useCallback(
     (value: DiffScope) => {
+      if (cleanWorking.current) cleanWorking.current.phase = "done";
       setScopePreference({ key: preferenceKey, value });
       scopeChangeRef.current?.(value);
     },
@@ -1331,6 +1347,51 @@ export function DiffViewerPanel({
     repositoryResourceKey,
     baseBranch || undefined,
   );
+  if (cleanWorking.current?.key !== preferenceKey)
+    cleanWorking.current = {
+      key: preferenceKey,
+      phase:
+        review &&
+        diffScope === "working" &&
+        scopePreference?.key !== preferenceKey
+          ? "working"
+          : "done",
+      read: sharedSummaryState.loading,
+      revision: sharedSummaryState.revision,
+    };
+  useEffect(() => {
+    const check = cleanWorking.current;
+    if (!check || check.key !== preferenceKey || check.phase === "done") return;
+    const { summary, loading, error, revision } = sharedSummaryState;
+    if (check.phase === "working") {
+      if (diffScope !== "working") {
+        check.phase = "done";
+        return;
+      }
+      // Read now, not a summary kept from before (the tree may have changed).
+      if (loading || revision > check.revision) check.read = true;
+      if (loading || error || !summary || !check.read) return;
+      if (summary.entries.length) {
+        check.phase = "done";
+        return;
+      }
+      check.phase = "branch";
+      setScopePreference({
+        key: preferenceKey,
+        value: "branch-main",
+        instead: true,
+      });
+      return;
+    }
+    if (diffScope !== "branch-main") {
+      check.phase = "done";
+      return;
+    }
+    if (loading || (!summary && !error)) return;
+    check.phase = "done";
+    // Nothing on the branch either: Working, as remembered.
+    if (!summary?.entries.length) setScopePreference(null);
+  }, [diffScope, preferenceKey, sharedSummaryState]);
   /**
    * The review in Changes reads the working changes as one combined diff
    * per file: the summary its diff and selection use. The tree keeps
@@ -2056,12 +2117,20 @@ export function DiffViewerPanel({
     ? cache.files[selectedDiffEntryKey]
     : undefined;
 
+  const scopeInstead =
+    scopePreference?.key === preferenceKey && !!scopePreference.instead;
   useEffect(() => {
+    if (scopeInstead) return;
     roamgateLocalStorage.setItem(
       diffScopeStorageKey(connectionClient.connectionId, repositoryResourceKey),
       diffScope,
     );
-  }, [repositoryResourceKey, connectionClient.connectionId, diffScope]);
+  }, [
+    repositoryResourceKey,
+    connectionClient.connectionId,
+    diffScope,
+    scopeInstead,
+  ]);
 
   useEffect(() => {
     const cached = readDiffCache(

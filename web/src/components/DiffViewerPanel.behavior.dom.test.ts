@@ -201,6 +201,84 @@ if (process.env.ROAMGATE_CHANGES_TREE_DOM_TEST !== "1") {
       }
     });
 
+    test("the review shown again on Working with nothing uncommitted shows the branch's changes, Working staying remembered", async () => {
+      const { roamgateLocalStorage } = await import("../browserStorage");
+      const { connectionStorageKey } = await import("../connectionStorage");
+      const remembered = () =>
+        roamgateLocalStorage.getItem(
+          connectionStorageKey("clean-working", "diffViewerScope:workspace"),
+        );
+      const changes = await mountChangesTree({
+        connectionId: "clean-working",
+        review: true,
+        scope: "working",
+        entries: { working: [], "branch-main": [entry("branch.ts", "branch")] },
+      });
+      try {
+        expect(changes.summaryModes()).toEqual(["working", "branch-main"]);
+        expect(changes.scope()).toBe("branch-main");
+        expect(changes.rows().map((row) => row.name)).toEqual(["branch.ts"]);
+        expect(remembered()).toBe("working");
+        // Working picked: shown as it is, empty.
+        await changes.pickScope("working");
+        expect(changes.scope()).toBe("working");
+        expect(changes.rows()).toEqual([]);
+        expect(remembered()).toBe("working");
+        // Shown again (a reload, the pane brought back): the branch's.
+        await changes.remount();
+        expect(changes.scope()).toBe("branch-main");
+        // The branch picked is remembered as any pick.
+        await changes.pickScope("branch-main");
+        expect(remembered()).toBe("branch-main");
+      } finally {
+        await changes.unmount();
+      }
+    });
+
+    test("Working shown again stays Working with changes, or with none on the branch either", async () => {
+      const dirty = await mountChangesTree({
+        review: true,
+        scope: "working",
+        entries: {
+          working: [entry("work.ts")],
+          "branch-main": [entry("branch.ts", "branch")],
+        },
+      });
+      try {
+        expect(dirty.scope()).toBe("working");
+        expect(dirty.summaryModes()).toEqual(["working"]);
+      } finally {
+        await dirty.unmount();
+      }
+      const nothing = await mountChangesTree({
+        review: true,
+        scope: "working",
+        entries: { working: [], "branch-main": [] },
+      });
+      try {
+        // The branch read, then Working again (read anew, as any switch).
+        expect(nothing.summaryModes()).toEqual([
+          "working",
+          "branch-main",
+          "working",
+        ]);
+        expect(nothing.scope()).toBe("working");
+      } finally {
+        await nothing.unmount();
+      }
+      // Not the review: Changes' Working as it was.
+      const plain = await mountChangesTree({
+        scope: "working",
+        entries: { working: [], "branch-main": [entry("branch.ts", "branch")] },
+      });
+      try {
+        expect(plain.scope()).toBe("working");
+        expect(plain.summaryModes()).toEqual(["working"]);
+      } finally {
+        await plain.unmount();
+      }
+    });
+
     test("Files' embedded changes (selectWorkingEntries) switch Changes to Working and load those files", async () => {
       const { act } = await import("react");
       const working = [entry("a.ts"), entry("b.ts")];
