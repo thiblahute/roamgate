@@ -304,6 +304,63 @@ def say(text):
     sys.stdout.flush()
 
 
+def job_control():
+    # Whether this holder can stop as a job of the pane's shell (the chat's
+    # Ctrl+Z): an interactive shell with job control runs it as its own
+    # process group, in the terminal's foreground.
+    if termios is None or not hasattr(signal, "SIGTSTP"):
+        return False
+    try:
+        fd = sys.stdin.fileno()
+        group = os.getpgrp()
+        return (
+            os.isatty(fd)
+            and group == os.getpid()
+            and os.tcgetpgrp(fd) == group
+            and os.getpgid(os.getppid()) != group
+        )
+    except (OSError, ValueError):
+        return False
+
+
+# This holder's arguments without --fg: what it runs again with after fg.
+RELAUNCH = []
+
+
+def stopped_job(spec, why=None):
+    # Stops this holder as a job of the pane's shell: the shell's prompt is
+    # back, no claude runs, and the session is saved (its transcript).
+    # Brought back with fg, this holder starts again and asks Roamgate for
+    # the session (which it keeps here meanwhile) in conversation mode.
+    session = spec.get("session_id") or ""
+    title = spec.get("title") or session
+    if why:
+        say(why)
+        say("To leave it instead: kill this job, then claude --resume " + session)
+    say("Stopped: claude (conversation: " + title + "). fg brings it back.")
+    signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+    while True:
+        os.kill(os.getpid(), signal.SIGTSTP)
+        # Continued: by fg, in the foreground, or by bg (it stops again:
+        # it only holds the pane from the foreground).
+        try:
+            if os.tcgetpgrp(sys.stdin.fileno()) == os.getpgrp():
+                break
+        except (OSError, ValueError):
+            break
+    keep = {
+        name: spec[name]
+        for name in ("session_id", "cwd", "title", "terminal_args")
+        if spec.get(name)
+    }
+    os.execv(
+        sys.executable,
+        [sys.executable, os.path.realpath(sys.argv[0])]
+        + RELAUNCH
+        + ["--fg", json.dumps(keep)],
+    )
+
+
 def compact(value):
     return json.dumps(value, separators=(",", ":")).encode("utf-8")
 
@@ -731,6 +788,22 @@ def main():
         if at + 1 < len(args):
             SOCKET = args[at + 1]
         del args[at : at + 2]
+    # Brought back with fg after stopping as a shell job: what it kept.
+    fg_spec = None
+    if "--fg" in args:
+        at = args.index("--fg")
+        if at + 1 < len(args):
+            try:
+                fg_spec = json.loads(args[at + 1])
+            except ValueError:
+                fg_spec = None
+        del args[at : at + 2]
+        if not isinstance(fg_spec, dict):
+            fg_spec = None
+    RELAUNCH[:] = [each for each in sys.argv[1:]]
+    if "--fg" in RELAUNCH:
+        at = RELAUNCH.index("--fg")
+        del RELAUNCH[at : at + 2]
     session = args[0] if args else ""
     pane = os.environ.get("HERDR_PANE_ID", "")
     if not pane or not session or "/" in session or session.startswith("."):
@@ -775,6 +848,10 @@ def main():
         "cwd": os.path.realpath(os.getcwd()),
         "agent": "claude",
         "session": session,
+        # Whether it can stop as a shell job, and how its job is named.
+        "job_control": 1 if job_control() else 0,
+        "holder_pid": os.getpid(),
+        "job": session,
     }
     target = {}
     # Every session this pane held: a headless claude may name any of them.
@@ -802,7 +879,8 @@ def main():
             if status != 200:
                 time.sleep(2)
                 continue
-            if reply.get("action") == "resume":
+            # Handed back, or stopped as a shell job (the chat's Ctrl+Z).
+            if reply.get("action") in ("resume", "suspend"):
                 resume(reply)
                 return
             child.apply(reply.get("commands"))
@@ -816,6 +894,38 @@ def main():
                 if reply["session_id"] not in seen:
                     seen.append(reply["session_id"])
 
+    if fg_spec is not None:
+        # Back from a stopped job: the session it kept, in conversation
+        # mode again, or stopped again with the reason.
+        if fg_spec.get("session_id"):
+            body["session"] = fg_spec["session_id"]
+            if fg_spec["session_id"] not in seen:
+                seen.append(fg_spec["session_id"])
+        if fg_spec.get("cwd"):
+            body["cwd"] = fg_spec["cwd"]
+        say("Bringing the conversation back...")
+        request = dict(body, **child.status())
+        request["terminal_args"] = json.dumps(fg_spec.get("terminal_args") or [])
+        try:
+            status, reply = post("fg", request, 60)
+        except OSError as error:
+            status, reply = 0, {"error": "Roamgate is unreachable: " + str(error)}
+        if status != 200 or reply.get("action") != "hold":
+            child.stop()
+            shutil.rmtree(child.directory, ignore_errors=True)
+            for name in ("SIGINT", "SIGQUIT", "SIGHUP", "SIGTERM"):
+                if hasattr(signal, name):
+                    signal.signal(getattr(signal, name), signal.SIG_DFL)
+            if saved_tty is not None:
+                try:
+                    termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, saved_tty)
+                except (termios.error, OSError):
+                    pass
+            stopped_job(
+                fg_spec,
+                "Not brought back: "
+                + (reply.get("reason") or reply.get("error") or "Roamgate said no"),
+            )
     threading.Thread(target=poll, daemon=True).start()
     threading.Thread(target=child.send_loop, args=(pane,), daemon=True).start()
     say(NOTICE)
@@ -890,6 +1000,9 @@ def main():
             termios.tcsetattr(sys.stdin.fileno(), termios.TCSANOW, saved_tty)
         except (termios.error, OSError):
             pass
+    if target.get("action") == "suspend":
+        # The chat's Ctrl+Z: a stopped job, not claude in the terminal.
+        stopped_job(dict(target, session_id=session, cwd=cwd))
     try:
         os.chdir(cwd)
     except OSError:

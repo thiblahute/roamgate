@@ -718,3 +718,30 @@
   gap: 8px;
   justify-content: center;
 }
+
+/* An agent conversation stopped as a job of the pane's shell (Ctrl+Z):
+   at the top, clear of the shell's prompt where fg is typed. */
+.terminal-suspended-strip {
+  top: 10px;
+  right: 12px;
+  bottom: auto;
+  left: 12px;
+  width: fit-content;
+  max-width: none;
+  margin: 0 auto;
+  transform: none;
+}
+
+.terminal-suspended-strip kbd {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font-mono, monospace);
+}
+
+@media (max-width: 700px) {
+  /* Clear of the phone's keyboard button at the terminal's top right. */
+  .terminal-suspended-strip {
+    right: 64px;
+  }
+}

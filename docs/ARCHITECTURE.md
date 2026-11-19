@@ -521,6 +521,36 @@ holder missed that reply). Any other holder (another Roamgate bound to the
 same host socket, say) is held, so a bridge with other leases never ends
 another's process.
 
+A hand-back can also stop the conversation as a job of the pane's shell
+(the chat's Ctrl+Z: `agent_chat.handover` with `suspend` and the
+conversation's title). It takes the usual checks, and a holder that said
+with its polls that it can stop (`job_control`: it is its own process group
+in the terminal's foreground, under a shell with job control; never on
+Windows, never an older holder); the headless process ends as for a
+hand-back, Herdr's agent is released, the lease goes, and the holder's
+answer is `suspend` with the session's id, directory, flags and title. The
+holder ends its child, restores the terminal, says what stopped, and stops
+itself with SIGTSTP: the shell reports a stopped job and prints its prompt,
+and no Claude runs. The bridge keeps only what the browsers are shown
+(`conversation-suspended.json` beside the lease file: pane, session,
+title, the holder's pid and the session id its job's command line names),
+laid over Herdr's panes as `suspended_conversation`, dropped once the pane
+closes or the holder's pid is gone (`kill %1`). The holder keeps the rest
+itself. `fg` continues it (a `bg` stops it again: it only holds the pane
+from the foreground), and it runs itself again with that state (`--fg`):
+a new log, then a `fg` request with the session's id, directory, flags and
+its poll status. The bridge takes the session back into conversation mode
+only if nothing else writes it (no lease, no other writer in Herdr's panes
+or on the host, no headless process on it), sets the lease, reads the new
+holder's channel and starts a process resuming the same session; refused,
+the holder says why and stops again, so `fg` can retry. Since the stopped
+job is an ordinary one, the shell's own jobs keep their order: plain `fg`
+takes the shell's current job, which is the conversation only when it was
+stopped last. The page's fg (`agent_chat.fg`: the terminal's banner, the
+toolbar's switch) types `fg '%?<session id>'` (by pid in fish) into the
+pane, and only while its shell is at the prompt, so it never takes another
+job.
+
 A headless process starts only while the lease says `conversation`, a holder
 that holds the session polls from the pane, no claude runs in the pane, no
 earlier headless process runs on the session, and no other writer does:

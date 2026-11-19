@@ -14,6 +14,20 @@ import {
   type HolderStatus,
 } from "./pane-child";
 
+/** What a holder stopped as a shell job kept of its session (fg). */
+export type SuspendedSpec = Pick<
+  AgentChatLease,
+  "session_id" | "cwd" | "agent" | "terminal_args"
+>;
+
+/** What a holder says of itself and its shell as it polls. */
+export type HolderShell = {
+  jobControl: boolean;
+  pid?: number;
+  /** The session id it was started with (its job's command line has it). */
+  job?: string;
+};
+
 /** A lease this runtime dropped, lately: its holder may have missed it. */
 export type ReleasedLease = { session_id: string; cwd: string; at: number };
 
@@ -82,6 +96,15 @@ export type HolderSideDeps = {
   toTerminal: (
     paneId: string,
     options: { confirm?: boolean },
+  ) => Promise<AgentChatHandoverResult>;
+  /**
+   * `fg` brought a holder stopped as a shell job back: the session goes
+   * back to conversation mode; `attach` runs once the lease is set.
+   */
+  fromSuspended: (
+    paneId: string,
+    spec: SuspendedSpec,
+    attach: () => void,
   ) => Promise<AgentChatHandoverResult>;
   /** Whether Herdr maps the pane to the session again (Handover). */
   confirmMapping: (paneId: string, sessionId: string) => Promise<boolean>;
@@ -219,7 +242,10 @@ export function createHolderSide(deps: HolderSideDeps) {
       signal: AbortSignal;
       /** What a holder that runs the headless claude says of it. */
       status?: HolderStatus | null;
+      /** What it says of itself and its shell (an older one: nothing). */
+      shell?: HolderShell | null;
     }): Promise<HolderReply> {
+      if (input.shell) holders.noteShell(input.paneId, input.shell);
       const lease = leases.get(input.paneId);
       if (lease?.phase === "terminal")
         // Nothing headless runs on the session: claude may resume.
@@ -303,6 +329,28 @@ export function createHolderSide(deps: HolderSideDeps) {
     }): { offset?: number } {
       const channel = channels.get(input.paneId);
       return channel ? channel.receive(input) : {};
+    },
+    /**
+     * `fg` in the pane's shell: the holder stopped as a shell job is back
+     * and asks for its session (which it kept) in conversation mode again.
+     * Refused, it stops again; the reason is said in the terminal.
+     */
+    async fg(input: {
+      paneId: string;
+      spec: SuspendedSpec;
+      status?: HolderStatus | null;
+      shell?: HolderShell | null;
+    }): Promise<HolderReply> {
+      const result = await deps.fromSuspended(input.paneId, input.spec, () => {
+        // The holder polls from now on: it counts as there, and its new
+        // channel (a new log) is read before its process starts.
+        holders.touch(input.paneId, input.spec.session_id);
+        if (input.shell) holders.noteShell(input.paneId, input.shell);
+        if (input.status) channelFor(input.paneId).update(input.status);
+      });
+      return result.ok
+        ? { action: "hold", session_id: input.spec.session_id }
+        : { action: "refused", reason: result.reason };
     },
     async handback(input: { paneId: string }): Promise<HolderReply> {
       const lease = leases.get(input.paneId);

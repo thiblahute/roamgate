@@ -384,7 +384,18 @@ Inspector state is scoped to each checkout; see
   pane shows the chat only,
   with no mode label in its header, and **Open in terminal** in that header
   (on a phone, **Terminal** in More options) hands the session back; when it
-  cannot go, the header says why until you put it away. Nothing switches by
+  cannot go, the header says why until you put it away. **Ctrl+Z** in the
+  chat stops the conversation as a job of the pane's shell, as Ctrl+Z
+  stops a program there: the pane shows its terminal with the shell's
+  prompt (no Claude runs; the session is saved), a line over it says what
+  stopped, and `fg` typed there (or the line's **fg** button) brings the
+  conversation back as it was, in the chat. Ctrl+Z never takes undo from a
+  message box: it stops the conversation only with the box empty, in Vim's
+  normal mode, or on a Mac (where undo is Cmd+Z); `:suspend` (`:sus`,
+  `:stop`) in the Vim box and **Stop to the shell** in the chat's header (on
+  a phone too) do the same. The shell's own jobs keep their order: `fg`
+  alone takes its current job, and `fg %?roamgate-hold` (or the **fg**
+  button, which names it) picks the conversation's. Nothing switches by
   itself: which view a device shows never moves the session. A
   terminal-mode Claude's History is read only, with the switch in its
   header. When the pane's environment has an
@@ -908,6 +919,7 @@ and is skipped, with a note, on a browser that does not match.
 | Split right / down                                                    | `Cmd+D` / `Cmd+Shift+D` | `Ctrl+Alt+D` / `Ctrl+Alt+Shift+D`       |
 | Zoom / restore pane                                                   | `Cmd+Shift+Enter`       | `Ctrl+Alt+Enter`                        |
 | Claude pane's background tasks                                        | `Cmd+Ctrl+T`            | `Ctrl+Alt+Shift+M`                      |
+| Stop a conversation to its pane's shell (chat; `fg` there resumes it) | `Ctrl+Z`                | `Ctrl+Z` (box empty or Vim normal mode) |
 | Numbered tab                                                          | `Ctrl+1…9`              | `Ctrl+Alt+1…9`                          |
 | Numbered command menu action                                          | `Option+1…9`            | `Alt+1…9`                               |
 | Workspaces                                                            | `Ctrl+Shift+W`          | `Ctrl+Alt+O`                            |

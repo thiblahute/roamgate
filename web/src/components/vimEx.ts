@@ -1,13 +1,15 @@
 import { Vim } from "@replit/codemirror-vim";
 
 /**
- * What an editor does on `:w` (and `:wq`, `:x`), on `:q`, and on `:sugg`
- * (a review comment's GitLab suggestion).
+ * What an editor does on `:w` (and `:wq`, `:x`), on `:q`, on `:sugg`
+ * (a review comment's GitLab suggestion), and on `:suspend` / `:stop`
+ * (an agent conversation stopped as a shell job, as Vim's own).
  */
 export type VimExHandlers = {
   commit: (explicit: boolean) => void;
   cancel: () => void;
   suggest?: () => void;
+  suspend?: () => void;
 };
 
 /** An editor with its own command line runs each ex line itself. */
@@ -28,6 +30,8 @@ const ACTIONS: Record<string, (editor: VimExHandlers) => void> = {
   quit: (editor) => editor.cancel(),
   q: (editor) => editor.cancel(),
   suggest: (editor) => editor.suggest?.(),
+  suspend: (editor) => editor.suspend?.(),
+  stop: (editor) => editor.suspend?.(),
 };
 const defined = new Set<string>();
 
@@ -42,12 +46,17 @@ function define(name: string, prefix: string) {
   });
 }
 
-/** Defines `:w`, `:q` and `:sugg`, and `words` for the editors' runners. */
+/**
+ * Defines `:w`, `:q`, `:sugg` and `:suspend` (`:sus`, `:stop`), and
+ * `words` for the editors' runners.
+ */
 export function defineExCommands(words: Iterable<string> = []) {
   define("write", "w");
   define("wq", "wq");
   define("xit", "x");
   define("quit", "q");
   define("suggest", "sugg");
+  define("suspend", "sus");
+  define("stop", "stop");
   for (const word of words) define(word, word);
 }

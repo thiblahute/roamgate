@@ -692,6 +692,12 @@ export async function requestAgentChatHandover(
      * chose to have it quit first.
      */
     quitWriter?: string | null;
+    /**
+     * To the terminal stopped as a shell job (Ctrl+Z): the shell's prompt
+     * is back, and `fg` there brings the conversation back. The title is
+     * what the stopped job's line says.
+     */
+    suspend?: { title?: string | null };
   } = {},
 ): Promise<AgentChatHandoverResult> {
   const entry = entryFor(client.connectionId, paneId);
@@ -706,6 +712,14 @@ export async function requestAgentChatHandover(
         ...(options.interrupt ? { interrupt: true } : {}),
         ...(options.sessionId ? { session_id: options.sessionId } : {}),
         ...(options.quitWriter ? { quit_writer: options.quitWriter } : {}),
+        ...(options.suspend
+          ? {
+              suspend: true,
+              ...(options.suspend.title
+                ? { title: options.suspend.title }
+                : {}),
+            }
+          : {}),
       },
       // Taking over waits for Claude to exit and the holder to start.
       90_000,

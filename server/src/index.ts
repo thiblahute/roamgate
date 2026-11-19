@@ -7,7 +7,10 @@ import {
   markAgentSeen,
 } from "./agent/agent-seen";
 import { historyFilePath } from "./agent/history-watch";
-import { withOwnedSessions } from "./agent/agent-sessions";
+import {
+  overlaySuspendedPanes,
+  withOwnedSessions,
+} from "./agent/agent-sessions";
 import {
   authTokenPrintCommand,
   isShortAuthPassword,
@@ -1008,7 +1011,7 @@ function getReviewAgent(): ReviewAgentServer {
     notify: notifyFromAgent,
     // Conversation mode's pane holders (roamgate-hold).
     holder: {
-      hold: ({ connectionId, paneId, sessionId, signal, status }) => {
+      hold: ({ connectionId, paneId, sessionId, signal, status, shell }) => {
         const runtime = connectionManager.readyRuntime(connectionId);
         if (!runtime)
           throw new ReviewError("this connection is not ready", 503);
@@ -1017,7 +1020,14 @@ function getReviewAgent(): ReviewAgentServer {
           sessionId,
           signal,
           status,
+          shell,
         });
+      },
+      fg: ({ connectionId, paneId, spec, status, shell }) => {
+        const runtime = connectionManager.readyRuntime(connectionId);
+        if (!runtime)
+          throw new ReviewError("this connection is not ready", 503);
+        return runtime.conversation.holder.fg({ paneId, spec, status, shell });
       },
       output: ({ connectionId, ...input }) => {
         const runtime = connectionManager.readyRuntime(connectionId);
@@ -2372,6 +2382,12 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       if (inputTerminalId)
         terminalBridge.noteTerminalInput(ws, inputTerminalId);
     })) as Awaited<ReturnType<typeof herdr.call>>;
+    // The conversations stopped as shell jobs (Ctrl+Z), on their panes.
+    result = overlaySuspendedPanes(
+      method,
+      result,
+      connection.conversation.suspendedPanes(),
+    ) as Awaited<ReturnType<typeof herdr.call>>;
     if (
       method === "integration.list" &&
       connection.remotePlatform !== "windows"

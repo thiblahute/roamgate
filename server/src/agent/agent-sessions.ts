@@ -152,6 +152,51 @@ export function overlayOwnedPanes(
   }
 }
 
+/** A conversation stopped as a shell job in a pane (the chat's Ctrl+Z). */
+export type SuspendedPane = {
+  pane_id: string;
+  session_id: string;
+  title?: string;
+  suspended_at: string;
+};
+
+/**
+ * Herdr's panes with the conversations stopped as shell jobs in them: the
+ * pane says so (`suspended_conversation`), for its terminal's banner and
+ * fg button. Its agent is left as Herdr sees it (a shell).
+ */
+export function overlaySuspendedPanes(
+  method: string,
+  result: unknown,
+  suspended: readonly SuspendedPane[],
+): unknown {
+  if (!suspended.length || (method !== "pane.list" && method !== "pane.get"))
+    return result;
+  const byPane = new Map(suspended.map((each) => [each.pane_id, each]));
+  const over = (item: unknown) => {
+    if (!isRecord(item) || typeof item.pane_id !== "string") return item;
+    const mine = byPane.get(item.pane_id);
+    return mine
+      ? {
+          ...item,
+          suspended_conversation: {
+            session_id: mine.session_id,
+            ...(mine.title ? { title: mine.title } : {}),
+            suspended_at: mine.suspended_at,
+          },
+        }
+      : item;
+  };
+  const record = isRecord(result) ? result : {};
+  if (method === "pane.list")
+    return Array.isArray(record.panes)
+      ? { ...record, panes: record.panes.map(over) }
+      : result;
+  return isRecord(record.pane)
+    ? { ...record, pane: over(record.pane) }
+    : result;
+}
+
 /**
  * Herdr's calls, with the session conversation mode owns in a pane: while
  * its holder runs, the pane's claude is headless and Herdr does not know
