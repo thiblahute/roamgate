@@ -45,23 +45,34 @@ export function notForMeSpoken(fronted: boolean): boolean {
  * each turn (server voice-front.ts skippedWords): the front may route it
  * after all when the user says it was for it.
  */
-export type SkippedWords = { text: string; at: number };
+export type SkippedWords = {
+  text: string;
+  at: number;
+  /** Who said them (the server's voice label), when voices are told apart. */
+  voice?: string;
+};
 
 /** Skipped words kept, at most, and for how long. */
 export const SKIPPED_KEPT = 5;
 export const SKIPPED_MAX_AGE_MS = 15 * 60_000;
 
-/** `list` with `text` skipped now, recent ones only, oldest first. */
+/**
+ * `list` with `text` skipped now, with who said it (`voice`, its label),
+ * recent ones only, oldest first.
+ */
 export function withSkipped(
   list: readonly SkippedWords[],
   text: string,
   now = Date.now(),
+  voice?: string,
 ): SkippedWords[] {
   const said = text.trim();
   const kept = list.filter((each) => now - each.at <= SKIPPED_MAX_AGE_MS);
-  return (said ? [...kept, { text: said, at: now }] : kept).slice(
-    -SKIPPED_KEPT,
-  );
+  return (
+    said
+      ? [...kept, { text: said, at: now, ...(voice ? { voice } : {}) }]
+      : kept
+  ).slice(-SKIPPED_KEPT);
 }
 
 /**
@@ -72,12 +83,12 @@ export function withSkipped(
  */
 export function withNotForAgent(
   list: readonly SkippedWords[],
-  heard: { text: string; forAgent?: boolean },
+  heard: { text: string; forAgent?: boolean; voiceLabel?: string },
   fronted: boolean,
   now = Date.now(),
 ): SkippedWords[] {
   return fronted && heard.forAgent === false
-    ? withSkipped(list, heard.text, now)
+    ? withSkipped(list, heard.text, now, heard.voiceLabel)
     : [...list];
 }
 

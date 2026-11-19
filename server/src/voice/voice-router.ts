@@ -19,9 +19,19 @@ Each request gives the session on screen ("current") and what was just said; the
 - {"to": "ask", "panes": ["<id>", "<id>"], "question": "<short question>"}: only when two or three sessions fit equally and nothing said tells them apart, such as the same title on two machines. Otherwise pick the best match: a session whose own workspace or title carries the name said ("IGA-184") beats one that only mentions it among others. The question is a few words naming them, so the user can answer by voice.
 - {"to": "nobody"}: not said to an agent: talk with someone nearby, on the phone, or a fragment of it.
 
+"Said" may carry who spoke, in brackets, from the voices the microphone tells apart: [you 0.58] is the user's voice; [voice B, 0.07 like you] another voice (a radio, a TV, someone else in the room), with how close it is to the user's; [mixed: you + B] the user over another voice; [voice A] or [voice unclear] while the user's voice is not known yet. Words of another voice are "nobody" unless they clearly speak to an agent; for mixed ones, go by what the user says.
+
 Talk about Roamgate itself (its voice chat, this routing, a feature idea or a bug for it) is for the session working on Roamgate's code when one is listed: "send" it there, whichever session is on screen.
 
 Match sessions on what they are about: title, workspace, folder, branch, machine, all as the user may describe them loosely or misheard. Only use ids from the list. When unsure whether something is for the current agent, it is. Reply with the JSON object alone, never a tool call.`;
+
+/**
+ * The words said, as a request gives them: with who spoke, in brackets,
+ * when the voices are told apart (voice-speakers.ts label).
+ */
+export function saidLine(said: string, voice?: string): string {
+  return `Said${voice ? ` [${voice}]` : ""}: ${JSON.stringify(said)}`;
+}
 
 /** An agent session the user may name, as the page lists them. */
 export type VoiceSessionInfo = {
@@ -165,6 +175,8 @@ export class VoiceRouter {
     current: string;
     said: string;
     sessions: VoiceSessionInfo[];
+    /** Who spoke (voice-speakers.ts label), when told apart. */
+    voice?: string;
     timeoutMs?: number;
   }): Promise<VoiceRoute> {
     const routed = this.chain.then(() => this.ask(request));
@@ -179,14 +191,16 @@ export class VoiceRouter {
     current,
     said,
     sessions,
+    voice,
   }: {
     current: string;
     said: string;
     sessions: VoiceSessionInfo[];
+    voice?: string;
   }): Promise<VoiceRoute> {
     const ids = new Set(sessions.map((session) => session.id));
     const list = sessions.map(voiceSessionLine).join("\n");
-    const request = `Current: ${current}\nSaid: ${JSON.stringify(said)}`;
+    const request = `Current: ${current}\n${saidLine(said, voice)}`;
     const send = async (withList: boolean) => {
       const generation = this.worker.generation;
       const answer = await this.worker.ask(

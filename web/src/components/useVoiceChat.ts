@@ -822,7 +822,7 @@ export function useVoiceChat({
           context.current,
           context.sessions,
           front ? stateForFront() : undefined,
-          { interruptedAt },
+          { interruptedAt, ...(heard.voice ? { voice: heard.voice } : {}) },
           recent || undefined,
           onEarly,
           front && skipped.length ? skipped : undefined,
@@ -973,7 +973,13 @@ export function useVoiceChat({
             setHeard("");
             // With a front, silence: the card shows it, and the front keeps
             // it in mind should the user say it was for it.
-            if (front) skipped = withSkipped(skipped, heard.text);
+            if (front)
+              skipped = withSkipped(
+                skipped,
+                heard.text,
+                undefined,
+                heard.voiceLabel,
+              );
             // Said briefly by the router alone, so it does not look like the
             // voice went unheard.
             const line = notForMeSpoken(front !== null)

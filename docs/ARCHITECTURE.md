@@ -1604,7 +1604,22 @@ session is not this listening's.
 The page streams its microphone on the voice socket as 16 kHz mono
 S16LE, through a windowed-sinc low-pass from the browser's rate, so what
 lies above 8 kHz does not fold back into the speech band. With a speaker
-model, the helper's listener keeps one voice: from the speaker's reference
+model, the helper tells the voices apart (voice/helper/src/voices.rs): what
+the transcriber is fed is cut into stretches of voice (1.5 s at most),
+each embedded by WeSpeaker on a thread of its own and placed among the
+call's voices by cosine similarity (a new voice under 0.22, a voice's print
+moved only by sure stretches, two voices whose prints reach 0.5 merged
+under the older name). Each final carries `voice`: the set of voices
+(`voices`, new with each `new_speaker` listening), the voice most heard
+(`id`), its `share`, `mixed`, each voice's share (`mix`), the utterance's
+`similarity` to each voice, and the voices `merged` since. The server
+(voice-speakers.ts) learns which voice is the user's from the routes of
+the turns (taken up or left to nobody) and the front's `voice` verdict,
+labels each utterance for the front and the router (`Said [you 0.58]:
+"..."`), and sends `user_voice` with each listen_start: while the gate
+holds, an utterance then says nothing (no `speech_start`, no partial
+words) until a stretch sounds like the user's. With `drop_other_voices`,
+the helper's listener also keeps one voice in speechgate: from the speaker's reference
 recordings (`speaker_reference`), heard first in a session of their own
 that is stopped at once, or else from the first 2 s of voice it hears
 after a `new_speaker` listening (or after its first listening, when it

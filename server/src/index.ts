@@ -509,6 +509,7 @@ const voiceSocket = createVoiceSocket(
   undefined,
   () => companionMemory.callEnded(),
   configuredDictation(() => readVoiceConfig(), companionMemoryFiles),
+  () => voiceFront() !== null,
 );
 const VOICE_HTTP_IDLE_TIMEOUT_SECONDS = 120;
 const downstreamConnectionConfig = {

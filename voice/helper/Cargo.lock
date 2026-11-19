@@ -5565,6 +5565,7 @@ dependencies = [
  "lingua",
  "objc2",
  "objc2-foundation",
+ "ort",
  "realfft",
  "serde",
  "serde_json",

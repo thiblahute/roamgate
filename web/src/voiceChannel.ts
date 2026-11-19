@@ -30,6 +30,10 @@ export type ChannelEvent = {
   error?: string;
   raw?: string;
   for_agent?: boolean;
+  /** On a final: whose voice (the helper's voices), passed on to the route. */
+  voice?: unknown;
+  /** On a final: that voice's label, as the companion reads it. */
+  voice_label?: string;
   /** On a session's error: the helper stopped under it, nothing else. */
   recoverable?: boolean;
   resume?: string;

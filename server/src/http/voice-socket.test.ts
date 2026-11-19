@@ -1,5 +1,6 @@
 import { describe, expect, jest, test } from "bun:test";
 import { VoiceCleaner } from "../voice/voice-cleaner";
+import { SpeakerTracker, type VoiceTag } from "../voice/voice-speakers";
 import {
   LONGEST_PAUSE_MS,
   MAX_PAUSE_MS,
@@ -24,6 +25,7 @@ function fakeHelper() {
   const calls: string[] = [];
   let audioBytes = 0;
   const helper = {
+    speakers: new SpeakerTracker(),
     listen(onEvent: (event: VoiceEvent) => void) {
       emit = onEvent;
       return {
@@ -168,6 +170,61 @@ describe("voice socket", () => {
       for_agent: false,
       speech_ms: 680,
     });
+  });
+
+  test("a final carries its voice's label; clearly another voice is not for the agent without a companion", async () => {
+    const tag = (id: string, similarity: Record<string, number>): VoiceTag => ({
+      voices: 3,
+      id,
+      share: 1,
+      mixed: false,
+      mix: [{ id, share: 1 }],
+      similarity,
+    });
+    for (const fronted of [false, true]) {
+      const { helper, emit } = fakeHelper();
+      helper.speakers.learn(tag("A", { A: 0.6 }), "self");
+      const { cleaner } = fakeCleaner();
+      const socket = createVoiceSocket(
+        helper,
+        () => cleaner,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => fronted,
+      );
+      const { sent, ws } = fakeSocket();
+      socket.message(
+        ws,
+        JSON.stringify({ op: "listen", context: "Agent: Ready?" }),
+      );
+      emit({
+        event: "final",
+        session: 1,
+        text: "Bonjour à tous.",
+        speech_ms: 900,
+        voice: tag("B", { A: 0.04, B: 0.7 }),
+      });
+      emit({
+        event: "final",
+        session: 1,
+        text: "Do it.",
+        speech_ms: 900,
+        voice: tag("A", { A: 0.58, B: 0.1 }),
+      });
+      await settle();
+      const finals = sent.filter((event) => event.event === "final");
+      expect(
+        finals.map((event) => [event.voice_label, event.for_agent]),
+      ).toEqual([
+        // A companion judges another voice by its label.
+        ["voice B, 0.04 like you", fronted],
+        ["you 0.58", true],
+      ]);
+    }
   });
 
   test("a session outlives its socket: a new one resumes it, missing nothing", () => {

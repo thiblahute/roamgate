@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ClaudeProcess } from "./voice-cleaner";
 import {
   parseVoiceRoute,
+  ROUTER_SYSTEM_PROMPT,
   type VoiceSessionInfo,
   VoiceRouter,
 } from "./voice-router";
@@ -129,6 +130,23 @@ describe("VoiceRouter", () => {
     expect(written[0]).toEndWith('Current: local/w2:p2\nSaid: "Push it."');
     expect(written[1]).toBe('Current: local/w2:p2\nSaid: "Run the tests."');
     expect(written[2]).toStartWith("Sessions:\nlocal/w2:p2 | Mac |");
+  });
+
+  test("the words come with who said them, when the voices are told apart", async () => {
+    const claude = fakeClaude(() => '{"to": "nobody"}');
+    const router = new VoiceRouter(claude.spawn);
+    await router.route({
+      current: "local/w2:p2",
+      said: "Et maintenant la météo.",
+      sessions,
+      voice: "voice B, 0.05 like you",
+    });
+    expect(claude.started[0]!.written[0]).toEndWith(
+      'Said [voice B, 0.05 like you]: "Et maintenant la météo."',
+    );
+    expect(ROUTER_SYSTEM_PROMPT).toContain(
+      'Words of another voice are "nobody" unless they clearly speak to an agent',
+    );
   });
 
   test("a new background session gets the list again", async () => {

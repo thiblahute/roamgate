@@ -14,6 +14,7 @@ import {
 } from "../../../shared/speechRate";
 import { dataRoot } from "../config/data-paths";
 import { serverLogger } from "../utils/logger";
+import { parseVoiceTag, SpeakerTracker, type VoiceTag } from "./voice-speakers";
 import type { CompanionMcpConfig } from "./voice-tools";
 
 /**
@@ -69,8 +70,17 @@ export type VoiceConfig = {
    * its `voice_embedding`.
    */
   tts_models?: Array<{ model: string } & Record<string, string | number>>;
-  /** Speaker embeddings: only the first voice of a voice chat counts. */
+  /**
+   * Speaker embeddings (WeSpeaker ResNet34 ONNX): the voices heard on a
+   * call are told apart, each utterance told to the companion with whose
+   * voice it is (voice-speakers.ts).
+   */
   speaker_model?: string;
+  /**
+   * With speaker_model, for noisy places: only the first voice of a voice
+   * chat counts, other voices dropped before they are transcribed.
+   */
+  drop_other_voices?: boolean;
   /**
    * Recordings of the user's voice (any audio file, a few seconds each,
    * say one per language they speak): with speaker_model, the voice kept
@@ -340,6 +350,11 @@ export function readVoiceConfig(
     typeof config.voice_surprise !== "boolean"
   )
     return { error: `${path}: voice_surprise must be true or false` };
+  if (
+    config.drop_other_voices !== undefined &&
+    typeof config.drop_other_voices !== "boolean"
+  )
+    return { error: `${path}: drop_other_voices must be true or false` };
   if (
     config.call_background !== undefined &&
     typeof config.call_background !== "string"
@@ -818,7 +833,12 @@ export function helperCommand(config: VoiceConfig): string[] {
           config.kokoro_voices ?? "",
         ]),
     ...(config.speaker_model ? ["--speaker-model", config.speaker_model] : []),
-    ...(config.speaker_model && config.speaker_reference?.length
+    ...(config.speaker_model && config.drop_other_voices === true
+      ? ["--drop-other-voices"]
+      : []),
+    ...(config.speaker_model &&
+    config.drop_other_voices === true &&
+    config.speaker_reference?.length
       ? ["--speaker-reference", JSON.stringify(config.speaker_reference)]
       : []),
     ...(config.turn_model ? ["--turn-model", config.turn_model] : []),
@@ -922,6 +942,10 @@ export type VoiceEvent = {
   /** On a cleaned final: the words as heard, and whether to the agent. */
   raw?: string;
   for_agent?: boolean;
+  /** On a final, with a speaker model: whose voice (voice-speakers.ts). */
+  voice?: VoiceTag;
+  /** On a final relayed to a page: the voice's label for the companion. */
+  voice_label?: string;
   /**
    * On a session's `error`: the helper stopped under it, and runs again
    * from the next request. The session is over, nothing else is.
@@ -1004,6 +1028,8 @@ export class VoiceHelper {
   private progress = { reports: false, ready: false, loading: false };
   /** Whether a stuck helper is sampled before it stops (off in tests). */
   sampleHangs = true;
+  /** Which voice is the user's on the call, learnt as it goes. */
+  readonly speakers = new SpeakerTracker();
   /** What the running helper has spoken with (voice and call): warm. */
   private warm = new Set<string>();
   /** The speak requests waiting, in order: the helper reads one at a time. */
@@ -1184,6 +1210,12 @@ export class VoiceHelper {
 
   /** An event goes to its session; one without (the helper failing) to all. */
   private dispatch(event: VoiceEvent) {
+    if (event.event === "final" && event.voice !== undefined) {
+      const voice = parseVoiceTag(event.voice);
+      this.speakers.observe(voice);
+      if (voice) event.voice = voice;
+      else delete event.voice;
+    }
     if (typeof event.session === "number") {
       this.listeners.get(event.session)?.onEvent(event);
       return;
@@ -1297,6 +1329,7 @@ export class VoiceHelper {
   ): VoiceSession {
     const id = this.nextSession++;
     this.listeners.set(id, { helper: this.start(), onEvent });
+    const user = options.newSpeaker ? null : this.speakers.user();
     this.send({
       op: "listen_start",
       session: id,
@@ -1305,6 +1338,8 @@ export class VoiceHelper {
       ...(options.endSilenceMs ? { end_silence_ms: options.endSilenceMs } : {}),
       ...(options.newSpeaker ? { new_speaker: true } : {}),
       ...(options.call !== undefined ? { call: options.call } : {}),
+      // So another voice does not cut a reply (voice-speakers.ts).
+      ...(user ? { user_voice: user } : {}),
     });
     const header = new Uint8Array(4);
     new DataView(header.buffer).setUint32(0, id, true);

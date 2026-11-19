@@ -237,7 +237,13 @@ export async function routeSpeech(
    * when the user cut in, or "typed". An errand gets words said marked
    * `[Voice]` as voice chat sends them, words typed as typed.
    */
-  how: { interruptedAt?: string | null } | "typed" = {},
+  how:
+    | {
+        interruptedAt?: string | null;
+        /** Whose voice said it (Heard's `voice`), labelled by the server. */
+        voice?: unknown;
+      }
+    | "typed" = {},
   /** On a companion call: what was heard and said on it lately. */
   recent?: string,
   /**
@@ -270,6 +276,7 @@ export async function routeSpeech(
           : how.interruptedAt
             ? { interrupted_at: how.interruptedAt }
             : {}),
+        ...(how !== "typed" && how.voice ? { voice: how.voice } : {}),
       }),
     });
     if (!response.ok) return { to: "current" };

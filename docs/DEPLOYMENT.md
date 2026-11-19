@@ -776,11 +776,29 @@ about a second more, and the log says `said in fr, not English`. Speech
 really in English is kept as Parakeet wrote it, and so is French with
 English words in it.
 With `"speaker_model"` (sherpa-onnx's `wespeaker_en_voxceleb_resnet34.onnx`),
-only the voice of whoever speaks first in a voice chat counts (learnt from
-its first two seconds of speech): other people talking nearby are left out.
+the voices heard in a voice chat are told apart (A, B, C...) and every
+utterance is transcribed and given to the companion with who said it:
+`[you 0.58]`, `[voice B, 0.07 like you]`, `[mixed: you + B]`, or
+`[voice A]` while your voice is not known yet. Which voice is yours is
+learnt from the conversation, never from the first sound heard: the voice
+whose words the companion takes up (answers, passes on, looks up) is
+yours, one whose words it leaves is not, and the companion can say so
+itself (as after asking "c'était pour moi ?"). Nothing is kept across
+calls. The companion answers you and leaves background voices (a radio, a
+TV, people nearby) unless they clearly speak to it; while a reply or the
+call's music plays, only your voice cuts it. Without a companion, words of
+a voice clearly not yours are held, not sent. The log has one line per
+utterance (`voice B (92%) in 3.1 s of voice [...], similarity: A 0.05,
+B 0.71`), each stretch's scores with `ROAMGATE_VOICE_DEBUG`, and the
+label and route of each turn in the voice debug log.
+
+In noisy places, `"drop_other_voices": true` goes back to keeping one
+voice: only the voice of whoever speaks first in a voice chat counts (learnt from
+its first two seconds of speech), and other voices are dropped before they
+are transcribed.
 That first voice may not be yours: music, a reply played aloud, a TV or
 someone else talking when the voice chat starts is then kept, and your
-own words are left out instead. With `"speaker_reference"`, a list of
+own words are left out instead. With it, `"speaker_reference"`, a list of
 recordings of your voice (any audio file the helper decodes, a few seconds
 each), your voice is learnt from them instead, whatever is heard first; give
 one per language you speak, since a voice scores lower against itself in
@@ -1244,7 +1262,8 @@ while you talk (from the start of your speech to its final words): down in
 250 ms, back up over 1.5 s once the release passed. While it plays (on,
 and not silent), the listener holds as it does during a reply: only a
 louder voice, held longer, starts what you say, so the music's singing is
-not taken for your words. Without `speaker_reference`, while the speaker
+not taken for your words. With `drop_other_voices` and without
+`speaker_reference`, while the speaker
 model learns a new speaker's voice from what it hears (at a voice chat's
 start, or after the voice helper restarted), the music waits, silent: it
 fades in once your first two seconds of speech are heard, so a singer's

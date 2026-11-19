@@ -410,6 +410,21 @@ describe("with a front, only its own words are said", () => {
       withNotForAgent([], { text: "Pour toi.", forAgent: true }, true, 1000),
     ).toEqual([]);
     expect(withNotForAgent([], doubted, false, 1000)).toEqual([]);
+    // Who said them goes with them, for the front to read.
+    expect(
+      withNotForAgent(
+        [],
+        { ...doubted, voiceLabel: "voice B, 0.07 like you" },
+        true,
+        1000,
+      ),
+    ).toEqual([
+      {
+        text: "Et puis je disais ça.",
+        at: 1000,
+        voice: "voice B, 0.07 like you",
+      },
+    ]);
   });
 
   test("words not for it are kept for the front, recent ones only", () => {

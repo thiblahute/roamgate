@@ -138,6 +138,15 @@ describe("the companion's jobs", () => {
     expect(bodies[2]).toMatchObject({ typed: true });
     expect(bodies[2]).not.toHaveProperty("interrupted_at");
   });
+
+  test("routing passes on whose voice said it, for the server to label", async () => {
+    const bodies = recordBodies();
+    const voice = { voices: 3, id: "B", share: 1, mixed: false };
+    await routeSpeech("Bonjour à tous.", "local/p1", [], undefined, { voice });
+    expect(bodies[0]).toMatchObject({ said: "Bonjour à tous.", voice });
+    await routeSpeech("Bonjour.", "local/p1", [], undefined, {});
+    expect(bodies[1]).not.toHaveProperty("voice");
+  });
 });
 
 test("a route without a session is no session", async () => {

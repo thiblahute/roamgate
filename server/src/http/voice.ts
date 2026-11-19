@@ -34,6 +34,7 @@ import type { CompanionMemory } from "../voice/voice-memory";
 import type { CompanionMemoryFiles } from "../voice/voice-memory-files";
 import { researchContext, type VoiceResearch } from "../voice/voice-research";
 import type { VoiceRouter, VoiceSessionInfo } from "../voice/voice-router";
+import { parseVoiceTag } from "../voice/voice-speakers";
 import { SurprisePicker } from "../voice/voice-surprise";
 import { toolsContext, type VoiceTools } from "../voice/voice-tools";
 import { turnCauses, turnContext } from "../voice/turn-causes";
@@ -597,8 +598,15 @@ export function createVoiceRoutes(
         recent?: unknown;
         stream?: unknown;
         skipped?: unknown;
+        voice?: unknown;
       } | null;
       const said = typeof body?.said === "string" ? body.said.trim() : "";
+      // Who said it (the helper's voices), labelled with what the call
+      // taught of the user's voice (voice-speakers.ts).
+      const voiceTag = body?.typed === true ? null : parseVoiceTag(body?.voice);
+      const voice = voiceTag
+        ? helper.speakers.label(voiceTag) || undefined
+        : undefined;
       // What was heard and said lately on the call (companionRecent).
       const recent =
         typeof body?.recent === "string"
@@ -634,6 +642,7 @@ export function createVoiceRoutes(
               current,
               said,
               sessions,
+              voice,
               context: withSearches(
                 [contextOf(body?.context), skippedContext(skipped)]
                   .filter(Boolean)
@@ -650,7 +659,7 @@ export function createVoiceRoutes(
               ),
             })
           : routing
-            ? await routing.route({ current, said, sessions })
+            ? await routing.route({ current, said, sessions, voice })
             : { to: "current" };
         // Words skipped earlier, routed now: only words the user said and
         // were listed; they are what is handled, not the complaint.
@@ -714,6 +723,29 @@ export function createVoiceRoutes(
             `[voice] routed in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(route)} <- ${said.slice(0, 200)}`,
           );
         if (fronting && !forgetting) remember(asSaid, route);
+        // Which voice is the user's: the one whose words were taken up, or
+        // what the front said of it; a turn that timed out tells nothing.
+        if (voiceTag && timing.timedOut !== true) {
+          helper.speakers.learn(voiceTag, route.to, route.voice);
+          const learnt = helper.speakers.label(voiceTag);
+          voiceLog.debug("voice turn speaker", {
+            label: voice ?? "",
+            to: route.to,
+            verdict: route.voice ?? "",
+            now: learnt,
+            share: voiceTag.share,
+            mixed: voiceTag.mixed,
+            similarity: JSON.stringify(voiceTag.similarity),
+          });
+          if (debug)
+            console.error(
+              `[voice] speaker: [${voice ?? ""}] routed ${route.to}${route.voice ? `, the front says ${route.voice}` : ""}; now [${learnt}]`,
+            );
+        }
+        if (route.voice) {
+          route = { ...route };
+          delete route.voice;
+        }
         // Each turn's times (debug): where the companion's first words wait.
         voiceLog.debug("voice turn routed", {
           to: route.to,

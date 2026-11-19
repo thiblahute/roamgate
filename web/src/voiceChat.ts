@@ -304,6 +304,13 @@ export type Heard = {
   speechMs: number;
   raw?: string;
   forAgent?: boolean;
+  /**
+   * Whose voice it was (the helper's voices, as the server checks them):
+   * passed on with the words to the route, which labels them.
+   */
+  voice?: unknown;
+  /** That voice's label ("you 0.58", "voice B, 0.07 like you"). */
+  voiceLabel?: string;
 };
 
 /** What a listening tells its owner, as it goes. */
@@ -704,6 +711,10 @@ export class VoiceLink {
                     speechMs: event.speech_ms ?? 0,
                     ...(raw !== undefined ? { raw } : {}),
                     ...(event.for_agent === false ? { forAgent: false } : {}),
+                    ...(event.voice ? { voice: event.voice } : {}),
+                    ...(event.voice_label
+                      ? { voiceLabel: event.voice_label }
+                      : {}),
                   }
                 : null,
             );

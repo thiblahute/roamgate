@@ -531,6 +531,12 @@ export function createVoiceSocket(
   onCallEnded: () => void = () => {},
   /** The dictation cleaner (voice-dictation.ts), null to type raw words. */
   dictation: () => VoiceCleaner | null = () => null,
+  /**
+   * Whether a companion (voice-front.ts) hears what is said: it judges
+   * other voices by their label; without one, a voice that is clearly not
+   * the user's is not for the agent.
+   */
+  fronted: () => boolean = () => false,
 ) {
   const bySocket = new Map<VoiceSocket, Listening>();
   const byId = new Map<number, Listening>();
@@ -1156,8 +1162,14 @@ export function createVoiceSocket(
     context: string | null,
   ) => {
     const using = context === null ? null : cleaner();
+    // A final's voice, labelled for the page to pass on (voice-speakers.ts).
+    const labelled = (event: VoiceEvent): VoiceEvent => {
+      if (event.event !== "final" || !event.voice) return event;
+      const label = helper.speakers.label(event.voice);
+      return label ? { ...event, voice_label: label } : event;
+    };
     const send = (event: VoiceEvent) => {
-      if (holder.listening) deliver(holder.listening, event);
+      if (holder.listening) deliver(holder.listening, labelled(event));
     };
     const observe = (event: VoiceEvent) => holder.listening?.cap.event(event);
     if (!using)
@@ -1185,10 +1197,19 @@ export function createVoiceSocket(
               // Not surely the speaker's voice (the helper): not for the
               // agent, whatever the cleaner made of it.
               if (event.for_agent === false) cleaned.forAgent = false;
+              // Clearly another voice, and no companion to judge it.
+              const other =
+                event.voice !== undefined &&
+                !fronted() &&
+                helper.speakers.isOther(event.voice);
+              if (other) cleaned.forAgent = false;
+              const label = event.voice
+                ? helper.speakers.label(event.voice)
+                : "";
               // Held words are shown as they were heard when nothing is left.
               if (!cleaned.forAgent && !cleaned.text) cleaned.text = event.text;
               debug(
-                `cleaned in ${Math.round(performance.now() - started)} ms${cleaned.forAgent ? "" : ", not for the agent"}: ${cleaned.text}\n[voice]   heard: ${event.text}`,
+                `cleaned in ${Math.round(performance.now() - started)} ms${cleaned.forAgent ? "" : other ? ", not for the agent (another voice)" : ", not for the agent"}${label ? ` [${label}]` : ""}: ${cleaned.text}\n[voice]   heard: ${event.text}`,
               );
               session = using.session(context ?? "");
               event = {

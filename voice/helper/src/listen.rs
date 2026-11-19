@@ -16,7 +16,19 @@
 //! goes in sessions, started, finished and stopped through speechgate's
 //! action signals; what it decides comes back as its element messages.
 //!
-//! With a speaker model, speechgate keeps one voice: the first 2 s of
+//! With a speaker model, every utterance is told with who said it
+//! (voices.rs): the voices heard on the call are told apart as it goes
+//! (A, B, C...), and each final carries its `voice`: the voice most heard
+//! in it, its share, whether two voices were in it (`mixed`), and how close
+//! it is to each voice known. Nothing is silenced for its voice: the server
+//! learns which voice is the user's from the conversation and says it with
+//! each start (`user_voice`); while a reply or the call's music plays, an
+//! utterance then says nothing as it goes (no `speech_start`, no partial
+//! words: it must not cut the reply) until a stretch of it sounds like the
+//! user, its final coming as any other.
+//!
+//! With `drop_other_voices` (voice.json, for noisy places) speechgate keeps
+//! one voice too, as it did alone before: the first 2 s of
 //! voice it hears after a session with `new_speaker` (or the first session,
 //! the gate knowing none) become the speaker's, whatever they are (music, a
 //! reply, someone else). The gate says when it took that voice
@@ -83,6 +95,8 @@ pub enum Command {
         new_speaker: bool,
         /// The call whose microphone it hears (call.rs), not the socket's.
         call: Option<u32>,
+        /// The user's voice, as the server learnt it: (set, name).
+        user_voice: Option<(u64, String)>,
     },
     Audio {
         id: u32,
@@ -228,6 +242,20 @@ struct Pending {
     /// it goes, and its text comes as not for the agent (`for_agent`
     /// false), to be kept among what was skipped, never dropped.
     doubtful: bool,
+    /// Started while a reply or music plays, by a voice not (yet) heard to
+    /// be the user's: nothing of it is told as it goes, so it does not cut
+    /// the reply, until a stretch of it sounds like theirs. Its final comes
+    /// as any other, with its voice.
+    unconfirmed: bool,
+    /// Who said it (voices.rs), once the transcriber is done with it.
+    voice: Option<Value>,
+}
+
+impl Pending {
+    /// Nothing of it is told before its final.
+    fn quiet(&self) -> bool {
+        self.doubtful || self.unconfirmed
+    }
 }
 
 /// The final event of an utterance with its `text`: a doubtful one's is
@@ -240,6 +268,9 @@ fn final_event(pending: &Pending, text: String) -> Value {
         "text": text,
         "speech_ms": pending.speech_ms,
     });
+    if let Some(voice) = &pending.voice {
+        event["voice"] = voice.clone();
+    }
     if pending.doubtful {
         eprintln!(
             "[voice] session {}: not surely the speaker's voice, kept as not for the agent: {}",
@@ -267,6 +298,13 @@ struct State {
     language: Option<String>,
     /// whispertranscriber, which takes the language as a property.
     whisper: Option<gst::Element>,
+    /// The user's voice as the server learnt it: (set of voices, name).
+    user_voice: Option<(u64, String)>,
+    /// A reply or the call's music plays (the gate holds).
+    held: bool,
+    /// Voices are told apart here, and none dropped by the gate: an
+    /// utterance during a hold waits for the user's voice to say anything.
+    waits_for_user: bool,
 }
 
 impl State {
@@ -276,7 +314,7 @@ impl State {
         if self
             .pending
             .back()
-            .is_some_and(|pending| pending.id == id && !pending.cancelled && !pending.doubtful)
+            .is_some_and(|pending| pending.id == id && !pending.cancelled && !pending.quiet())
         {
             let mut event = json!({"event": "partial", "session": id, "text": text.trim()});
             if let Some(words) = pause {
@@ -302,7 +340,7 @@ impl State {
     fn text(&mut self, text: String) {
         if let Some(pending) = self.pending.front_mut() {
             pending.text.push_str(&text);
-            if !pending.cancelled && !pending.doubtful {
+            if !pending.cancelled && !pending.quiet() {
                 (self.emit)(json!({
                     "event": "text",
                     "session": pending.id,
@@ -339,6 +377,25 @@ impl State {
         }
     }
 
+    /// A stretch of the utterance being heard was placed among the voices
+    /// (voices.rs): one waiting for the user's voice is told from now on
+    /// when it sounds like theirs.
+    fn voice_heard(&mut self, set: u64, stretch: &crate::voices::Stretch) {
+        let Some(user) = &self.user_voice else { return };
+        if let Some(pending) = self.pending.back_mut()
+            && pending.unconfirmed
+            && !pending.cancelled
+            && crate::voices::sounds_like(stretch, set, user)
+        {
+            pending.unconfirmed = false;
+            eprintln!(
+                "[voice] session {}: the user's voice ({}) came: the utterance is told",
+                pending.id, user.1
+            );
+            (self.emit)(json!({"event": "speech_start", "session": pending.id}));
+        }
+    }
+
     /// One of speechgate's messages, or parakeettranscriber's partial
     /// reading; false for any other message.
     fn message(&mut self, structure: &gst::StructureRef) -> bool {
@@ -350,12 +407,18 @@ impl State {
                 // whole, but says nothing until theirs comes: it must not
                 // cut a reply short.
                 let doubtful = structure.get::<bool>("speaker") == Ok(false);
+                // Another voice than the user's must not cut a reply
+                // either: while one plays, the utterance waits for theirs.
+                let unconfirmed =
+                    !doubtful && self.waits_for_user && self.held && self.user_voice.is_some();
                 self.pending.push_back(Pending {
                     id,
                     cancelled: false,
                     text: String::new(),
                     speech_ms: 0,
                     doubtful,
+                    unconfirmed,
+                    voice: None,
                 });
                 // The guess applies to long speech; a hint, if any, is set
                 // at the end for short speech.
@@ -365,6 +428,11 @@ impl State {
                 if doubtful {
                     eprintln!(
                         "[voice] session {id}: a voice the speaker check doubts is theirs: transcribed, kept as not for the agent unless theirs comes"
+                    );
+                } else if unconfirmed {
+                    eprintln!(
+                        "[voice] session {id}: a voice while something plays: transcribed, told as it goes once it sounds like the user's ({})",
+                        self.user_voice.as_ref().map_or("", |user| user.1.as_str())
                     );
                 } else {
                     (self.emit)(json!({"event": "speech_start", "session": id}));
@@ -408,8 +476,9 @@ impl State {
                     if structure.get::<bool>("speaker") == Ok(false) {
                         pending.doubtful = true;
                     }
-                    if pending.doubtful && !pending.cancelled {
-                        // Its final comes as not for the agent.
+                    if pending.quiet() && !pending.cancelled {
+                        // Its final comes, as not for the agent when
+                        // doubtful.
                     } else if !pending.cancelled {
                         (self.emit)(json!({"event": "speech_end", "session": pending.id}));
                     } else {
@@ -480,6 +549,8 @@ pub struct Listener {
     speaker_check: bool,
     /// No session started yet: the gate knows no voice.
     fresh: bool,
+    /// Tells the voices heard apart (a speaker model).
+    voices: Option<Arc<crate::voices::Tracker>>,
 }
 
 /// Why the gate holds: a reply plays (the session's `hold`, until
@@ -550,12 +621,16 @@ impl CallRouting {
 }
 
 impl Listener {
-    /// With `speaker_model`, only the voice of whoever speaks first counts.
-    /// With a turn model, a pause of `give_up_ms` ends the utterance
-    /// whatever the models say (speechgate's own 5 s without it).
+    /// With `speaker_model`, the voices heard are told apart (voices.rs);
+    /// with `drop_other_voices` too, only the voice of whoever speaks first
+    /// counts, the gate silencing others. With a turn model, a pause of
+    /// `give_up_ms` ends the utterance whatever the models say
+    /// (speechgate's own 5 s without it).
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         model: Model,
         speaker_model: Option<&str>,
+        drop_other_voices: bool,
         turn_model: Option<&str>,
         text_turn_model: Option<&str>,
         give_up_ms: Option<u64>,
@@ -584,7 +659,7 @@ impl Listener {
         }
         let mut gate = String::from("speechgate name=gate");
         for (property, path) in [
-            ("speaker-model", speaker_model),
+            ("speaker-model", speaker_model.filter(|_| drop_other_voices)),
             ("turn-model", turn_model),
             // Reading the words needs them before the end: Parakeet only.
             (
@@ -663,7 +738,58 @@ impl Listener {
             language: None,
             whisper: matches!(model, Model::Whisper(_))
                 .then(|| pipeline.by_name("transcriber").unwrap()),
+            user_voice: None,
+            held: false,
+            waits_for_user: speaker_model.is_some() && !drop_other_voices,
         }));
+
+        // Who speaks: what the transcriber is fed, placed among the voices
+        // heard as it comes, each utterance's voice ready when it ends.
+        let voices = speaker_model.and_then(|model| {
+            let heard = Arc::downgrade(&state);
+            crate::voices::Tracker::start(
+                model,
+                Box::new(move |set, stretch| {
+                    if let Some(state) = heard.upgrade() {
+                        state.lock().unwrap().voice_heard(set, stretch);
+                    }
+                }),
+            )
+            .inspect_err(|error| eprintln!("[voice] voices are not told apart: {error}"))
+            .ok()
+            .map(Arc::new)
+        });
+        if let Some(tracker) = voices.clone() {
+            pipeline
+                .by_name("transcriber")
+                .unwrap()
+                .static_pad("sink")
+                .unwrap()
+                .add_probe(
+                    gst::PadProbeType::BUFFER | gst::PadProbeType::EVENT_DOWNSTREAM,
+                    move |_, info| {
+                        match &info.data {
+                            // 16 kHz mono F32, as the transcriber takes it.
+                            Some(gst::PadProbeData::Buffer(buffer)) => {
+                                if let Ok(map) = buffer.map_readable() {
+                                    tracker.audio(
+                                        map.chunks_exact(4)
+                                            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                                            .collect(),
+                                    );
+                                }
+                            }
+                            Some(gst::PadProbeData::Event(event))
+                                if event.type_() == gst::EventType::SegmentDone =>
+                            {
+                                tracker.end();
+                            }
+                            _ => {}
+                        }
+                        gst::PadProbeReturn::Ok
+                    },
+                );
+        }
 
         let heard: Option<Arc<Mutex<Heard>>> = reread.as_ref().map(|_| Arc::default());
         if let Some(heard) = heard.clone() {
@@ -699,6 +825,7 @@ impl Listener {
                 );
         }
         let said = state.clone();
+        let told = voices.clone();
         pipeline
             .by_name("sink")
             .unwrap()
@@ -721,9 +848,15 @@ impl Listener {
                                 .as_ref()
                                 .and_then(|heard| heard.lock().unwrap().ended.pop_front());
                             let ended = said.lock().unwrap().utterance_ended();
+                            // Taken for every utterance, in order.
+                            let voice = told.as_ref().and_then(|tracker| tracker.take());
                             let Some(mut pending) = ended else {
                                 return gst::PadProbeReturn::Ok;
                             };
+                            if let Some(voice) = voice {
+                                eprintln!("[voice] session {}: {}", pending.id, voice.describe());
+                                pending.voice = Some(voice.to_json());
+                            }
                             // Without the state: Whisper takes a second.
                             if let (false, Some(reread), Some(audio)) =
                                 (pending.cancelled, &reread, audio)
@@ -771,10 +904,11 @@ impl Listener {
             position: gst::ClockTime::ZERO,
             calls: CallRouting::default(),
             holds: Holds::default(),
-            reference: reference.filter(|_| speaker_model.is_some()),
+            reference: reference.filter(|_| speaker_model.is_some() && drop_other_voices),
             gate_heard,
-            speaker_check: speaker_model.is_some(),
+            speaker_check: speaker_model.is_some() && drop_other_voices,
             fresh: true,
+            voices,
         })
     }
 
@@ -821,7 +955,7 @@ impl Listener {
             return;
         }
         self.holds.music = audible;
-        self.gate.set_property("hold", self.holds.held());
+        self.apply_hold();
         if std::env::var_os("ROAMGATE_VOICE_DEBUG").is_some() {
             eprintln!(
                 "[voice] {}",
@@ -832,6 +966,13 @@ impl Listener {
                 }
             );
         }
+    }
+
+    /// The gate holds while a reply or the call's music plays.
+    fn apply_hold(&self) {
+        let held = self.holds.held();
+        self.gate.set_property("hold", held);
+        self.state.lock().unwrap().held = held;
     }
 
     /// An error the pipeline posted, if any.
@@ -857,10 +998,17 @@ impl Listener {
                 language,
                 new_speaker,
                 call,
+                user_voice,
             } => {
                 // Audio has gone through by the next session: the caps are
                 // known.
                 crate::dump_dot(&self.pipeline, "roamgate-voice-listen");
+                // A new call: the voices heard are forgotten.
+                if (new_speaker || self.fresh)
+                    && let Some(voices) = &self.voices
+                {
+                    voices.reset();
+                }
                 // A gate that knows no voice yet (a helper made again)
                 // takes one as for a new speaker.
                 let new_speaker = self.speaker_check && (new_speaker || self.fresh);
@@ -880,6 +1028,7 @@ impl Listener {
                     state.done = false;
                     state.language = language.filter(|l| l.len() == 2);
                     state.enrolling = new_speaker.then_some(id);
+                    state.user_voice = user_voice;
                 }
                 if new_speaker {
                     // speechgate takes the first 2 s of voice it hears as
@@ -890,7 +1039,7 @@ impl Listener {
                     );
                 }
                 self.holds.reply = hold;
-                self.gate.set_property("hold", self.holds.held());
+                self.apply_hold();
                 self.gate.set_property(
                     "end-silence",
                     end_silence_ms.unwrap_or(DEFAULT_END_SILENCE_MS),
@@ -935,7 +1084,7 @@ impl Listener {
             Command::Release { id } => {
                 if self.state.lock().unwrap().session == Some(id) {
                     self.holds.reply = false;
-                    self.gate.set_property("hold", self.holds.held());
+                    self.apply_hold();
                 }
             }
             Command::Finish { id } => {
@@ -1119,6 +1268,9 @@ mod tests {
             done: false,
             language: None,
             whisper: None,
+            user_voice: None,
+            held: false,
+            waits_for_user: false,
         };
         let taken = gst::Structure::builder("speechgate-speaker-taken")
             .field("session", 1u32)
@@ -1182,6 +1334,9 @@ mod tests {
                 done: false,
                 language: None,
                 whisper: None,
+                user_voice: None,
+                held: false,
+                waits_for_user: false,
             }
         };
         state.message(
@@ -1220,8 +1375,68 @@ mod tests {
             done: false,
             language: None,
             whisper: None,
+            user_voice: None,
+            held: false,
+            waits_for_user: false,
         };
         (state, events)
+    }
+
+    /// While a reply plays, an utterance says nothing as it goes until a
+    /// stretch of it sounds like the user's voice: another voice (a radio)
+    /// does not cut the reply. Its final comes with its voice either way,
+    /// for the agent: the companion judges it by its label.
+    #[test]
+    fn another_voice_waits_for_the_users_during_a_reply() {
+        use crate::voices::Stretch;
+        gst::init().unwrap();
+        let (mut state, events) = recording();
+        state.waits_for_user = true;
+        state.held = true;
+        state.user_voice = Some((5, "A".into()));
+        let start = |id: u32| {
+            gst::Structure::builder("speechgate-speech-start")
+                .field("session", id)
+                .build()
+        };
+        let end = |id: u32| {
+            gst::Structure::builder("speechgate-speech-end")
+                .field("session", id)
+                .field("speech-ms", 2100u64)
+                .field("cancelled", false)
+                .build()
+        };
+        // The radio: voice B, far from the user's.
+        state.message(&start(1));
+        state.partial(1, "Les informations", None);
+        state.voice_heard(5, &Stretch::heard("B", &[("A", 0.05), ("B", 0.7)], 1.0));
+        state.message(&end(1));
+        let mut ended = state.utterance_ended().unwrap();
+        ended.voice = Some(serde_json::json!({"voices": 5, "id": "B"}));
+        state.deliver(ended);
+        let told = std::mem::take(&mut *events.lock().unwrap());
+        assert_eq!(told.len(), 1, "{told:?}");
+        assert_eq!(told[0]["event"], "final");
+        assert_eq!(told[0]["voice"]["id"], "B");
+        assert!(told[0].get("for_agent").is_none());
+
+        // The user over it: told from their first stretch on.
+        state.message(&start(2));
+        state.voice_heard(5, &Stretch::heard("A", &[("A", 0.6), ("B", 0.1)], 1.0));
+        state.partial(2, "Attends", None);
+        let told: Vec<String> = events
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| e["event"].as_str().unwrap_or_default().to_string())
+            .collect();
+        assert_eq!(told, ["speech_start", "partial"]);
+
+        // No reply playing: told at once.
+        events.lock().unwrap().clear();
+        state.held = false;
+        state.message(&start(3));
+        assert_eq!(events.lock().unwrap()[0]["event"], "speech_start");
     }
 
     /// A voice the speaker check doubts is the speaker's is transcribed,

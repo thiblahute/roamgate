@@ -440,14 +440,20 @@ Inspector state is scoped to each checkout; see
   Its mute button, on the call bar, stops listening without
   ending it: replies are still read, and what was being said when it was
   pressed is sent, as a tap would.
-  With a speaker model set up, the first voice heard in a voice chat (its
-  first two seconds of speech) is the one listened to; other people talking
-  nearby are left out. With recordings of your voice set up
-  (`speaker_reference`), yours is the one listened to from the start, even
-  when music, a reply or someone else is heard first, and in each language
-  you recorded. While a call's music plays, it is not taken for your words;
-  without recordings of your voice, the music waits, silent, until you have
-  spoken a little, so that its singer is not taken for you.
+  With a speaker model set up, the voices heard are told apart, and the
+  companion hears each thing said with who said it: you, another voice
+  (a radio, a TV, someone nearby), or both. It learns which voice is yours
+  from the conversation (the voice it answers, or that tells it "c'est
+  moi"), answers you, leaves background voices unless they clearly speak
+  to it, and asks briefly when unsure. Only your voice cuts a reply. For
+  noisy places, `drop_other_voices` keeps only the first voice heard in a
+  voice chat (its first two seconds of speech), other voices left out;
+  with recordings of your voice (`speaker_reference`), yours is the one
+  listened to from the start, in each language you recorded. While a
+  call's music plays, it is not taken for your words; with
+  `drop_other_voices` and without recordings of your voice, the music
+  waits, silent, until you have spoken a little, so that its singer is not
+  taken for you.
   With a turn model set up, a pause sends what was said only when it sounds
   finished, and the words read as finished too when a text turn model is
   set up: a pause after "I think we should", or after an "um", "euh", "and"

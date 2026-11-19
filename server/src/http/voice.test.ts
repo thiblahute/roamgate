@@ -536,6 +536,72 @@ describe("the voice front", () => {
     expect(routed).toBe(0);
   });
 
+  test("the front hears who spoke, and its routes teach which voice is the user's", async () => {
+    const { SpeakerTracker } = await import("../voice/voice-speakers");
+    const speakers = new SpeakerTracker();
+    const voiced = { ...helper, speakers } as unknown as VoiceHelper;
+    const heard: { said: string; voice?: string }[] = [];
+    let reply: Record<string, unknown> = { to: "nobody", reply: "" };
+    const front = {
+      warm: () => {},
+      turn: async (request: { said: string; voice?: string }) => {
+        heard.push({ said: request.said, voice: request.voice });
+        return reply;
+      },
+    } as unknown as VoiceFront;
+    const routes = createVoiceRoutes(
+      voiced,
+      () => unused,
+      null,
+      () => undefined,
+      null,
+      () => front,
+    );
+    const tag = (id: string, similarity: Record<string, number>) => ({
+      voices: 9,
+      id,
+      share: 1,
+      mixed: false,
+      mix: [{ id, share: 1 }],
+      similarity,
+    });
+    const ask = async (said: string, voice: unknown) =>
+      (await (await routes(
+        post(
+          {
+            current: "local/w2:p2",
+            said,
+            sessions: [],
+            voice,
+            routes: ["current", "send", "self", "nobody"],
+          },
+          { "x-roamgate-voice": "1" },
+        ),
+        "/api/voice/route",
+      ))!.json()) as Record<string, unknown>;
+    // The radio first: left to nobody.
+    await ask("Et maintenant, la météo.", tag("A", { A: 0.8 }));
+    reply = { to: "self", reply: "Il est midi.", voice: "user" };
+    // The front says it is the user, whose voice is new: its verdict is
+    // not passed on to the page.
+    expect(
+      await ask("Quelle heure il est ?", tag("B", { A: 0.1, B: 0.2 })),
+    ).toEqual({
+      to: "self",
+      reply: "Il est midi.",
+    });
+    reply = { to: "nobody", reply: "" };
+    await ask("Les marchés reculent.", tag("A", { A: 0.75, B: 0.04 }));
+    await ask("Merci.", tag("B", { A: 0.05, B: 0.61 }));
+    expect(heard.map((each) => each.voice)).toEqual([
+      "voice A",
+      "voice B",
+      "voice A, 0.04 like you",
+      "you 0.61",
+    ]);
+    expect(speakers.user()).toEqual({ voices: 9, id: "B" });
+  });
+
   test("lists what was routed to nobody, and routes a skipped sentence when the front recovers it", async () => {
     const contexts: string[] = [];
     let reply: unknown = null;

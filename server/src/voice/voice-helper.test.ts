@@ -283,6 +283,56 @@ describe("voice helper", () => {
     });
   });
 
+  test("finals say whose voice they are, and the helper is told the user's", async () => {
+    const fake = fakeHelper();
+    const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+    const heard: Record<string, unknown>[] = [];
+    const first = helper.listen((event) => heard.push(event), {
+      newSpeaker: true,
+    });
+    const child = fake.spawned[0]!;
+    const voice = {
+      voices: 1763550000000,
+      id: "B",
+      share: 0.9,
+      mixed: false,
+      mix: [{ id: "B", share: 0.9 }],
+      similarity: { A: 0.05, B: 0.61, "<b>": 9 },
+      seconds: 2.2,
+    };
+    child.say({ event: "final", session: first.id, text: "Salut", voice });
+    child.say({ event: "final", session: first.id, text: "?", voice: "B" });
+    await Bun.sleep(1);
+    // Checked on the way: only names and numbers.
+    expect(heard[0]!.voice).toEqual({
+      voices: 1763550000000,
+      id: "B",
+      share: 0.9,
+      mixed: false,
+      mix: [{ id: "B", share: 0.9 }],
+      similarity: { A: 0.05, B: 0.61 },
+    });
+    expect(heard[1]).not.toHaveProperty("voice");
+    expect(helper.speakers.label(heard[0]!.voice as never)).toBe("voice B");
+    // The companion took B's words up: B is the user's voice, told to the
+    // helper with the next start of the same call, not with a new call's.
+    helper.speakers.learn(heard[0]!.voice as never, "self");
+    const next = helper.listen(() => {});
+    expect(requests(child.frames).at(-1)).toEqual({
+      op: "listen_start",
+      session: next.id,
+      hold: false,
+      user_voice: { voices: 1763550000000, id: "B" },
+    });
+    const call = helper.listen(() => {}, { newSpeaker: true });
+    expect(requests(child.frames).at(-1)).toEqual({
+      op: "listen_start",
+      session: call.id,
+      hold: false,
+      new_speaker: true,
+    });
+  });
+
   test("a helper that stops ends each session on its own, and starts again", async () => {
     const fake = fakeHelper();
     const helper = new VoiceHelper(() => CONFIG, fake.spawn);
@@ -501,6 +551,15 @@ describe("speech rate", () => {
     ]);
   });
 
+  test("voice.json's drop_other_voices is true or false", () => {
+    expect(
+      readVoiceConfig(configFile({ ...real, drop_other_voices: true })),
+    ).toEqual({ ...real, drop_other_voices: true });
+    expect(
+      readVoiceConfig(configFile({ ...real, drop_other_voices: "yes" })),
+    ).toHaveProperty("error");
+  });
+
   test("voice.json takes the speaker's reference recordings as a list of files", () => {
     const listed = { ...real, speaker_reference: ["/bin/sh", "/bin/ls"] };
     expect(readVoiceConfig(configFile(listed))).toEqual(listed);
@@ -643,6 +702,26 @@ describe("helper launch", () => {
     ];
     expect(helperCommand(CONFIG)).toEqual(own);
     expect(helperCommand({ ...CONFIG, helper_wrapper: [] })).toEqual(own);
+    // Other voices are told apart, dropped only when voice.json asks for
+    // it (with the reference recordings, then only).
+    const speakers = {
+      ...CONFIG,
+      speaker_model: "s.onnx",
+      speaker_reference: ["me.wav"],
+    };
+    expect(helperCommand(speakers)).toEqual([
+      ...own,
+      "--speaker-model",
+      "s.onnx",
+    ]);
+    expect(helperCommand({ ...speakers, drop_other_voices: true })).toEqual([
+      ...own,
+      "--speaker-model",
+      "s.onnx",
+      "--drop-other-voices",
+      "--speaker-reference",
+      '["me.wav"]',
+    ]);
     expect(
       helperCommand({
         ...CONFIG,

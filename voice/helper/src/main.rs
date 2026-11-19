@@ -4,9 +4,15 @@
 //!
 //! Listening (see `listen`), for one session at a time:
 //! - `{"op": "listen_start", "session": 3, "hold": true, "language": "es",
-//!   "end_silence_ms": 2500, "new_speaker": true}`, then AUDIO frames for
-//!   session 3 (or, with `"call": 7`, call 7's microphone); with `--speaker-model`, only the voice of whoever spoke
-//!   first since a `new_speaker` start counts;
+//!   "end_silence_ms": 2500, "new_speaker": true, "user_voice": {"voices":
+//!   1763550000000, "id": "A"}}`, then AUDIO frames for session 3 (or, with
+//!   `"call": 7`, call 7's microphone); with `--speaker-model`, the voices
+//!   heard since a `new_speaker` start are told apart (`voices`), each
+//!   final saying whose it is (`"voice": {"voices": ..., "id": "A",
+//!   "share": 0.9, "mixed": false, "mix": [...], "similarity": {"A": 0.6}}`),
+//!   and `user_voice` (the server's guess) keeps other voices from cutting
+//!   a reply; with `--drop-other-voices` too, only the voice of whoever
+//!   spoke first since a `new_speaker` start counts, others silenced;
 //! - `{"op": "listen_release", "session": 3}` once a reply stops playing;
 //! - `{"op": "listen_finish", "session": 3}` ends the utterance now,
 //!   `{"op": "listen_stop", "session": 3}` drops it.
@@ -105,6 +111,7 @@ mod loudness;
 mod processtap;
 mod reference;
 mod reread;
+mod voices;
 
 /// With GStreamer's `GST_DEBUG_DUMP_DOT_DIR` set, writes `pipeline`'s graph
 /// there as `<name>.dot`, replacing the previous one.
@@ -129,6 +136,9 @@ struct Request {
     end_silence_ms: Option<u64>,
     #[serde(default)]
     new_speaker: bool,
+    /// listen_start: the user's voice, among the voices told apart.
+    #[serde(default)]
+    user_voice: Option<UserVoice>,
     /// The models to read with (`--tts-models`' JSON).
     #[serde(default)]
     tts_models: Option<String>,
@@ -171,6 +181,13 @@ struct Request {
     reply_loudness: Option<Value>,
     #[serde(default)]
     reply_peak: Option<f64>,
+}
+
+/// The user's voice: its name in a set of voices told apart (voices.rs).
+#[derive(Deserialize)]
+struct UserVoice {
+    voices: u64,
+    id: String,
 }
 
 /// The call playing now, if any.
@@ -276,8 +293,12 @@ struct Config {
     whisper_model: Option<String>,
     /// Parakeet TDT, in place of Whisper.
     parakeet_model: Option<String>,
-    /// Speaker embeddings (WeSpeaker ResNet34 ONNX): keep the first voice.
+    /// Speaker embeddings (WeSpeaker ResNet34 ONNX): the voices heard are
+    /// told apart.
     speaker_model: Option<String>,
+    /// Only the first voice counts, the gate silencing others (noisy
+    /// places).
+    drop_other_voices: bool,
     /// Smart Turn v3: whether a pause ends the speaker's turn.
     turn_model: Option<String>,
     /// A small language model reading whether the words are finished.
@@ -758,6 +779,7 @@ fn main() {
         whisper_model: arg("--whisper-model"),
         parakeet_model: arg("--parakeet-model"),
         speaker_model: arg("--speaker-model"),
+        drop_other_voices: std::env::args().any(|arg| arg == "--drop-other-voices"),
         turn_model: arg("--turn-model"),
         text_turn_model: arg("--text-turn-model"),
         turn_give_up_ms: arg("--turn-give-up-ms").and_then(|ms| ms.parse().ok()),
@@ -782,7 +804,9 @@ fn main() {
     // Whether a new speaker's voice is learnt from what is heard: no music
     // meanwhile. Before any listening, a speaker check without the
     // speaker's recordings has no voice yet.
-    let learns = config.speaker_model.is_some() && config.speaker_reference.is_none();
+    let learns = config.speaker_model.is_some()
+        && config.drop_other_voices
+        && config.speaker_reference.is_none();
     let learning = Arc::new(AtomicBool::new(learns));
     // The language of the last reply read or thing said, for Whisper to
     // read again what Parakeet wrote in English (reread.rs).
@@ -902,6 +926,7 @@ fn main() {
                     match listen::Listener::new(
                         model,
                         config.speaker_model.as_deref(),
+                        config.drop_other_voices,
                         config.turn_model.as_deref(),
                         config.text_turn_model.as_deref(),
                         config.turn_give_up_ms,
@@ -1104,6 +1129,7 @@ fn main() {
                     language: request.language,
                     new_speaker: request.new_speaker,
                     call: request.call,
+                    user_voice: request.user_voice.map(|user| (user.voices, user.id)),
                 });
                 Ok(())
             }
