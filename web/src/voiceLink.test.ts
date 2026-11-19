@@ -97,6 +97,9 @@ beforeAll(() => {
     getTracks() {
       return this.tracks;
     }
+    removeTrack(track: unknown) {
+      this.tracks.splice(this.tracks.indexOf(track), 1);
+    }
   };
   globals.AudioWorkletNode = class {
     static last: { port: { onmessage: ((e: unknown) => void) | null } };
@@ -327,6 +330,64 @@ describe("a link's call", () => {
     activeCall()?.stop();
     link.close();
     held.abort();
+  });
+
+  test("a listening opens no capture of its own while the app carries the microphone", async () => {
+    activeCall()?.stop();
+    const { link, socket, held } = await linkInCall();
+    const navigator = globals.navigator;
+    let captures = 0;
+    globals.navigator = {
+      mediaDevices: {
+        getUserMedia: async () => {
+          captures += 1;
+          return { getTracks: () => [{ stop() {} }] };
+        },
+      },
+    };
+    try {
+      socket.tell({
+        event: "call_carrier",
+        call: 7,
+        state: "joined",
+        legs: ["microphone", "replies"],
+        heard: true,
+      });
+      await settle();
+      let replying = true;
+      for (const words of ["Hi", "Again"]) {
+        const result = link.listen(new AbortController().signal, {
+          holding: () => replying,
+        });
+        await settle();
+        expect(last(socket.sent)).toMatchObject({
+          op: "listen",
+          call: 7,
+          hold: true,
+        });
+        socket.tell({ event: "listening", session: 3 });
+        // The hold lets go with no audio coming here to notice it.
+        replying = false;
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        expect(last(socket.sent)).toEqual({ op: "release" });
+        replying = true;
+        socket.tell({
+          event: "final",
+          session: 3,
+          text: words,
+          speech_ms: 400,
+        });
+        expect(await result).toEqual({ text: words, speechMs: 400 });
+      }
+      // No second recorder started and stopped on the phone at each turn.
+      expect(captures).toBe(0);
+      expect(socket.audio).toBe(0);
+    } finally {
+      globals.navigator = navigator;
+      activeCall()?.stop();
+      link.close();
+      held.abort();
+    }
   });
 
   test("closing a link with a call that nobody adopts ends the call on the server", async () => {

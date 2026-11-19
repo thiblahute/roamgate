@@ -605,49 +605,66 @@ export class VoiceLink {
     // A call over, or whose capture went, has nothing left to hear: a
     // capture of its own then.
     const callMicrophone = started?.liveMicrophone() ?? null;
-    const stream =
-      callMicrophone ??
-      // In a call, as the call's own: in its loudspeaker mode, an echo
-      // canceller here would put the phone on its earpiece.
-      (await navigator.mediaDevices.getUserMedia({
-        audio: activeMicrophoneConstraints(),
-      }));
+    // The Android app carries the microphone: the helper hears the app's,
+    // and the page opens no capture at all, its level not shown. One opened
+    // for each listening started and stopped a second recorder on the
+    // phone, a Bluetooth headset saying "microphone muted" at each turn's
+    // end.
+    const appMicrophone = call?.appCarries("microphone") === true;
+    const stream = appMicrophone
+      ? null
+      : (callMicrophone ??
+        // In a call, as the call's own: in its loudspeaker mode, an echo
+        // canceller here would put the phone on its earpiece.
+        (await navigator.mediaDevices.getUserMedia({
+          audio: activeMicrophoneConstraints(),
+        })));
     // The call's context: the replies play through it too (voiceOutput.ts).
-    const context = voiceContext();
-    if (!this.routeTraced) {
+    const context = stream ? voiceContext() : null;
+    if (stream && context && !this.routeTraced) {
       this.routeTraced = true;
       void traceAudioRoute(stream, context);
     }
     let unlisten: (() => void) | null = null;
+    let holdCheck: ReturnType<typeof setInterval> | null = null;
     const nodes: AudioNode[] = [];
     try {
       if (stopped) return null;
-      // A context made after the tap's await may start suspended, hearing
-      // nothing.
-      await context.resume();
-      tapUrl ??= URL.createObjectURL(
-        new Blob([TAP_WORKLET], { type: "text/javascript" }),
-      );
-      if (!tapsLoaded.has(context)) {
-        await context.audioWorklet.addModule(tapUrl);
-        tapsLoaded.add(context);
+      let tap: AudioWorkletNode | null = null;
+      if (stream && context) {
+        // A context made after the tap's await may start suspended,
+        // hearing nothing.
+        await context.resume();
+        tapUrl ??= URL.createObjectURL(
+          new Blob([TAP_WORKLET], { type: "text/javascript" }),
+        );
+        if (!tapsLoaded.has(context)) {
+          await context.audioWorklet.addModule(tapUrl);
+          tapsLoaded.add(context);
+        }
+        if (stopped) return null;
+        tap = new AudioWorkletNode(context, "roamgate-tap");
+        const mute = context.createGain();
+        mute.gain.value = 0;
+        const microphone = context.createMediaStreamSource(stream);
+        nodes.push(microphone, tap, mute);
+        microphone.connect(tap);
+        tap.connect(mute).connect(context.destination);
       }
-      if (stopped) return null;
-      const tap = new AudioWorkletNode(context, "roamgate-tap");
-      const mute = context.createGain();
-      mute.gain.value = 0;
-      const microphone = context.createMediaStreamSource(stream);
-      nodes.push(microphone, tap, mute);
-      microphone.connect(tap);
-      tap.connect(mute).connect(context.destination);
 
       const holds = () =>
         (live.hooks.holding?.() ?? false) || this.alsoHolding();
       let held = holds();
+      const checkHold = () => {
+        if (held && !holds()) {
+          held = false;
+          this.channel.send({ op: "release" });
+        }
+      };
       let session: number | null = null;
       let heard = false;
       let level = 0;
-      const downsampler = new Downsampler(context.sampleRate);
+      const downsampler = context ? new Downsampler(context.sampleRate) : null;
       let chunk: number[] = [];
       const chunkSamples = (STREAM_RATE * CHUNK_MS) / 1000;
 
@@ -720,6 +737,12 @@ export class VoiceLink {
             );
           }
         });
+        // Without a capture here, nothing comes to notice the hold's end:
+        // it is looked at as often as audio would come.
+        if (!tap || !context || !downsampler) {
+          holdCheck = setInterval(checkHold, CHUNK_MS);
+          return;
+        }
         tap.port.onmessage = (event: MessageEvent<Float32Array>) => {
           const block = event.data;
           let sum = 0;
@@ -736,10 +759,7 @@ export class VoiceLink {
               chunk = [];
             }
           }
-          if (held && !holds()) {
-            held = false;
-            this.channel.send({ op: "release" });
-          }
+          checkHold();
         };
       });
       call?.listening(true);
@@ -755,8 +775,9 @@ export class VoiceLink {
         ...(call ? { call: call.id } : {}),
       });
       this.listened = true;
-      // The level is for the eye: once a frame is plenty.
-      let shown = true;
+      // The level is for the eye: once a frame is plenty. Without a
+      // capture here, there is none to show.
+      let shown = tap !== null;
       const show = () => {
         if (!shown) return;
         live.hooks.onLevel?.(level);
@@ -767,14 +788,15 @@ export class VoiceLink {
         return await result;
       } finally {
         shown = false;
-        tap.port.onmessage = null;
+        if (tap) tap.port.onmessage = null;
       }
     } finally {
       (unlisten as (() => void) | null)?.();
+      if (holdCheck) clearInterval(holdCheck);
       // The call's microphone stays open for the call; only its sending
       // stops.
       if (call) call.listening(false);
-      if (stream !== callMicrophone)
+      if (stream && stream !== callMicrophone)
         for (const track of stream.getTracks()) track.stop();
       for (const node of nodes) node.disconnect();
     }
