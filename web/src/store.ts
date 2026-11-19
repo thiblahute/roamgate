@@ -403,6 +403,9 @@ function storedTaskNotificationPreferences(): TaskNotificationPreferences {
     return {
       completed: stored.completed !== false,
       blocked: stored.blocked !== false,
+      ...(stored.quietWithAndroidApp === true
+        ? { quietWithAndroidApp: true }
+        : {}),
     };
   } catch {
     return { completed: true, blocked: true };

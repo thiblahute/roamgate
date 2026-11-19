@@ -748,3 +748,42 @@ test("Ranger success uses completion preferences; failures and waiting use atten
     f.cleanup();
   }
 });
+
+test("a device can stay quiet while the Android app is connected; the feed's payload and skip apply", async () => {
+  const f = fixture();
+  try {
+    const quiet = {
+      ...device("quiet"),
+      preferences: {
+        completed: true,
+        blocked: true,
+        quietWithAndroidApp: true,
+      },
+    };
+    expect(validatePushDevice(quiet).preferences).toEqual(quiet.preferences);
+    expect(
+      validatePushDevice({
+        ...device(),
+        preferences: {
+          completed: true,
+          blocked: true,
+          quietWithAndroidApp: "yes",
+        },
+      }).preferences,
+    ).toEqual({ completed: true, blocked: true });
+    for (const each of [quiet, device("loud")])
+      expect((await f.service.handle(request("POST", each))).status).toBe(200);
+    const payload = { ...taskPushPayload(task), title: "Built once" };
+    f.service.notify(task, () => true, {
+      payload,
+      skip: (each) => each.preferences.quietWithAndroidApp === true,
+    });
+    await Bun.sleep(0);
+    const send = f.options.send as ReturnType<typeof mock>;
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].endpoint).toEndWith("/loud");
+    expect(JSON.parse(send.mock.calls[0]![1])).toEqual(payload);
+  } finally {
+    f.cleanup();
+  }
+});

@@ -651,6 +651,10 @@ export function ConfigurationDialog({
                   [
                     ["blocked", "Task needs attention"],
                     ["completed", "Task completed"],
+                    [
+                      "quietWithAndroidApp",
+                      "Don't send Web Push while the Android app is connected",
+                    ],
                   ] as const
                 ).map(([kind, label]) => (
                   <div className="config-preference-row" key={kind}>
@@ -661,7 +665,7 @@ export function ConfigurationDialog({
                       type="button"
                       role="switch"
                       aria-label={label}
-                      aria-checked={s.taskNotificationPreferences[kind]}
+                      aria-checked={!!s.taskNotificationPreferences[kind]}
                       aria-disabled={s.taskNotificationBusy}
                       className={
                         "settings-switch" +

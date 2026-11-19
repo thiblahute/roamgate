@@ -228,6 +228,7 @@ environment file. `roamgate --help` lists everything.
 | `ROAMGATE_ASSISTANT_DIR`                               | Ranger data directory                                                                           |
 | `ROAMGATE_REVIEW_DIR`                                  | Review sessions and agent sockets                                                               |
 | `ROAMGATE_WEB_PUSH_PATH` / `ROAMGATE_WEB_PUSH_SUBJECT` | [Web Push](#web-push-notifications)                                                             |
+| `ROAMGATE_NOTIFICATIONS_PATH`                          | [Notification feed](#android-notification-feed) (default `notifications.json`)                  |
 
 Legacy `HERDR_GUI_*` names still work; the `ROAMGATE_*` name wins, even when
 empty.
@@ -355,6 +356,21 @@ blocked/done. Delivery is best-effort; messages expire after five minutes.
 Turning notifications off revokes the subscription on the server first. Changing
 the password does not revoke devices. Notification text can appear on lock
 screens.
+
+### Android notification feed
+
+The Android app keeps one WebSocket, `/api/notifications/ws`, open from a
+foreground service and posts the same notifications natively, with Allow and
+Deny on agents' permission prompts; no FCM or Google service is involved. It
+logs in like a browser; the feed needs nothing on the server. The last 200
+events of the last day are kept in `~/.config/roamgate/notifications.json`, so
+the app catches up after a reconnect or a server restart.
+
+A phone that also has Roamgate installed from its browser would notify twice:
+enable **Don't send Web Push while the Android app is connected** in that
+browser's **Task notifications** settings. Push to that browser then pauses
+while the app is connected (heard from within 70 s) and resumes when it is not.
+The contract is in [Notification feed](./ARCHITECTURE.md#notification-feed).
 
 ### Local notification testing
 

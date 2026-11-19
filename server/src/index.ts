@@ -31,10 +31,15 @@ import {
   rangerChatSession,
 } from "../../shared/rangerChat";
 import { isHtmlPath } from "../../shared/filePreview";
-import { EFFORT_SESSION_PREFIX } from "../../shared/review";
+import {
+  type AgentPermissionPrompt,
+  EFFORT_SESSION_PREFIX,
+} from "../../shared/review";
 import { agentAddress } from "../../shared/agentMessage";
 import { DOWNLOAD_TIMEOUT_MS } from "./workspace/file-constants";
 import { canRevealFiles } from "./workspace/file-manager";
+import { createNotificationFeed } from "./notifications/notification-feed";
+import { herdrEventName } from "./utils/herdr-events";
 import { createWebPushService } from "./notifications/web-push";
 import { rmSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -429,6 +434,18 @@ const timeReport = createTimeReport({
 const webPush = createWebPushService({
   warn: (message) => logger.warn(message),
 });
+/**
+ * Every notification goes through the feed: it builds the message once for
+ * Web Push and for the notification socket (the Android app).
+ */
+const notifications = createNotificationFeed({
+  webPush,
+  answerPrompt: ({ connectionId, promptId }, answer) =>
+    getReviewService().prompts.answer({ connectionId, id: promptId, answer }),
+  warn: (message) => logger.warn(message),
+});
+/** The permission prompts open per connection, to notify each once. */
+const notifiedPrompts = new Map<string, Set<string>>();
 // Voice chat's helper starts on the first voice request.
 const voiceHelper = new VoiceHelper(() => readVoiceConfig());
 // The people whose voices calls know again (voice-profiles.ts).
@@ -1287,7 +1304,7 @@ function getAssistantService() {
           });
           for (const ws of clients)
             safeSend(ws, payload, "assistant_notification");
-          webPush.notify(notification, () => true);
+          notifications.publish(notification);
         },
       }),
     )
@@ -1683,6 +1700,8 @@ function getReviewService(): ReviewService {
           chars: payload.length,
         });
       for (const ws of clients) safeSend(ws, payload, "review", coalesceKey);
+      if (push.type === "prompts")
+        notifyPrompts(push.connectionId, push.prompts);
     },
     loadCommits: async (session) => {
       const runtime = runtimeOf(session.connectionId);
@@ -2212,6 +2231,106 @@ async function workspaceFromAgent(input: {
 }
 
 /**
+ * Withdraws a pane's notifications when their reason is gone: its agent
+ * stopped waiting on the user, or the pane went away.
+ */
+function withdrawPaneNotifications(connectionId: string, event: unknown) {
+  const name = herdrEventName(event)?.replaceAll("_", ".");
+  const data = (event as { data?: Record<string, unknown> } | null)?.data;
+  const paneId = data?.pane_id;
+  if (typeof paneId !== "string" || !paneId) return;
+  if (name === "pane.agent.status.changed") {
+    if (data?.agent_status !== "blocked")
+      notifications.clearBlockedPane(connectionId, paneId);
+  } else if (name === "pane.closed" || name === "pane.exited")
+    notifications.clearPane(connectionId, paneId);
+}
+
+/**
+ * An agent's permission prompt or question waits on the user: one
+ * notification each, with Allow and Deny on a permission; withdrawn once
+ * it is answered or back in the terminal.
+ */
+function notifyPrompts(connectionId: string, prompts: AgentPermissionPrompt[]) {
+  const before = notifiedPrompts.get(connectionId) ?? new Set<string>();
+  const open = new Set(prompts.map((prompt) => prompt.id));
+  for (const id of before) if (!open.has(id)) notifications.clearPrompt(id);
+  if (open.size) notifiedPrompts.set(connectionId, open);
+  else notifiedPrompts.delete(connectionId);
+  for (const prompt of prompts) {
+    if (before.has(prompt.id)) continue;
+    void notifyPrompt(prompt);
+  }
+}
+
+async function notifyPrompt(prompt: AgentPermissionPrompt) {
+  const { connectionId, paneId } = prompt;
+  const status = connectionManager
+    .list()
+    .find((each) => each.id === connectionId);
+  if (!status) return;
+  const { pane, workspaceLabel } = await paneWorkspace(connectionId, paneId);
+  // Answered while its workspace was looked up: nothing to say any more.
+  if (!notifiedPrompts.get(connectionId)?.has(prompt.id)) return;
+  const question = prompt.questions?.[0]?.question;
+  notifications.publish(
+    {
+      kind: "blocked",
+      connectionId,
+      runtimeGeneration: status.generation,
+      paneId,
+      ...(pane?.workspace_id ? { workspaceId: pane.workspace_id } : {}),
+      ...(pane?.tab_id ? { tabId: pane.tab_id } : {}),
+      ...(workspaceLabel ? { workspaceLabel } : {}),
+      agent: prompt.agent,
+      title: `${workspaceLabel ?? prompt.agent}: ${
+        question
+          ? `${prompt.agent} asks`
+          : `${prompt.agent} wants ${prompt.tool}`
+      }`,
+      body: (question ?? prompt.summary).slice(0, 300),
+    },
+    prompt.questions
+      ? {}
+      : {
+          actions: [
+            { id: "allow", label: "Allow" },
+            { id: "deny", label: "Deny" },
+          ],
+          prompt: { connectionId, promptId: prompt.id },
+        },
+  );
+}
+
+/** A pane's workspace and its label, for a notification; empty on errors. */
+async function paneWorkspace(
+  connectionId: string,
+  paneId: string,
+): Promise<{
+  pane?: { workspace_id?: string; tab_id?: string };
+  workspaceLabel?: string;
+}> {
+  const runtime = connectionManager.readyRuntime(connectionId);
+  try {
+    const [panes, workspaces] = (await Promise.all([
+      runtime?.herdr.call("pane.list", {}),
+      runtime?.herdr.call("workspace.list", {}),
+    ])) as [
+      { panes?: { pane_id: string; workspace_id?: string; tab_id?: string }[] },
+      { workspaces?: { workspace_id: string; label?: string }[] },
+    ];
+    const pane = panes?.panes?.find((each) => each.pane_id === paneId);
+    const workspaceLabel = workspaces?.workspaces?.find(
+      (each) => each.workspace_id === pane?.workspace_id,
+    )?.label;
+    return { pane, ...(workspaceLabel ? { workspaceLabel } : {}) };
+  } catch {
+    // The notification still goes, without its workspace.
+    return {};
+  }
+}
+
+/**
  * An agent saying the user needs to act (`roamgate-review notify`): kept with
  * the agent until the user looks at it, pushed to their devices, and the open
  * pages told to read their agents again.
@@ -2228,26 +2347,9 @@ async function notifyFromAgent(input: {
   const status = connectionManager
     .list()
     .find((each) => each.id === connectionId);
-  const runtime = connectionManager.readyRuntime(connectionId);
-  let pane: { workspace_id?: string; tab_id?: string } | undefined;
-  let workspaceLabel: string | undefined;
-  try {
-    const [panes, workspaces] = (await Promise.all([
-      runtime?.herdr.call("pane.list", {}),
-      runtime?.herdr.call("workspace.list", {}),
-    ])) as [
-      { panes?: { pane_id: string; workspace_id?: string; tab_id?: string }[] },
-      { workspaces?: { workspace_id: string; label?: string }[] },
-    ];
-    pane = panes?.panes?.find((each) => each.pane_id === paneId);
-    workspaceLabel = workspaces?.workspaces?.find(
-      (each) => each.workspace_id === pane?.workspace_id,
-    )?.label;
-  } catch {
-    // The push still goes, without its workspace.
-  }
+  const { pane, workspaceLabel } = await paneWorkspace(connectionId, paneId);
   if (status)
-    webPush.notify(
+    notifications.publish(
       {
         kind: "blocked",
         connectionId,
@@ -2260,7 +2362,7 @@ async function notifyFromAgent(input: {
         title: `${workspaceLabel ?? agent}: ${title ?? "needs you"}`,
         body: text,
       },
-      () => true,
+      { kind: "review" },
     );
   try {
     const line = serializeHerdrEventEnvelope(
@@ -2436,7 +2538,7 @@ function runtimeFactoryForProfile(
           }),
         onTaskEvent: (event) => {
           const connections = connectionProfiles.list();
-          webPush.notify(
+          notifications.publish(
             {
               ...event,
               connectionId: identity.id,
@@ -2448,7 +2550,7 @@ function runtimeFactoryForProfile(
                   : undefined,
               runtimeGeneration: context.generation,
             },
-            context.isCurrent,
+            { isCurrent: context.isCurrent },
           );
         },
         onPaneList: (result, startedAt) => {
@@ -2463,6 +2565,7 @@ function runtimeFactoryForProfile(
         },
         onEvent: (event, eventIdentity) => {
           if (!context.isCurrent()) return;
+          withdrawPaneNotifications(eventIdentity.id, event);
           pokeLimitResumer(eventIdentity.id, event);
           activity.herdrEvent(eventIdentity.id, event);
           logger.debug("Herdr event", {
@@ -3349,6 +3452,11 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
         connection.identity.id,
         params,
         () => connection.recoveryIdentity(AbortSignal.timeout(3_000)),
+      );
+      // The user looks at the agent: what it notified about is seen.
+      notifications.clearPane(
+        connection.identity.id,
+        String((params as { pane_id: string }).pane_id),
       );
       sendReply({ id, result }, method);
     } catch (e) {
@@ -4243,6 +4351,8 @@ function main() {
       Bun.serve<{
         sessionToken: string | null;
         voice?: true;
+        /** The notification socket: the origin its links open on. */
+        notifications?: { origin: string };
         /** A page's signalling for a call (voice-socket.ts). */
         signalling?: { call: number; token: string };
       }>({
@@ -4315,6 +4425,7 @@ function main() {
                 webSocketCleanup.cleanup(client);
                 client.close(4001, "Logged out");
               }
+              notifications.closeSession(token);
             }
             return response;
           }
@@ -4344,6 +4455,26 @@ function main() {
           }
           if (url.pathname === "/api/notifications/push") {
             return webPush.handle(req);
+          }
+          if (url.pathname === "/api/notifications/ws") {
+            // The Android app's notification feed: never from another site,
+            // nor from a sandboxed page.
+            const origin = req.headers.get("origin");
+            if (
+              req.headers.get("sec-fetch-site") === "cross-site" ||
+              origin === "null"
+            )
+              return new Response("forbidden", { status: 403 });
+            if (
+              server.upgrade(req, {
+                data: {
+                  sessionToken: sessionToken(req),
+                  notifications: { origin: url.origin },
+                },
+              })
+            )
+              return undefined;
+            return new Response("websocket upgrade failed", { status: 400 });
           }
           if (url.pathname === "/api/instance-settings") {
             return handleInstanceSettings(req);
@@ -4447,6 +4578,12 @@ function main() {
           // websocket-send decides when a socket is too far behind.
           backpressureLimit: WS_BACKPRESSURE_HARD_LIMIT_BYTES,
           open(ws) {
+            if (ws.data.notifications)
+              return notifications.open(
+                ws,
+                ws.data.notifications.origin,
+                ws.data.sessionToken ?? undefined,
+              );
             if (ws.data.signalling) {
               const { call, token } = ws.data.signalling;
               return voiceSocket.openSignalling(ws, call, token);
@@ -4497,7 +4634,8 @@ function main() {
             );
           },
           drain(ws) {
-            if (ws.data.voice || ws.data.signalling) return;
+            if (ws.data.voice || ws.data.signalling || ws.data.notifications)
+              return;
             // The viewer caught up: send the newest repaint we held back.
             flushCoalescedMessages(ws, {
               cleanup: () => {
@@ -4510,6 +4648,8 @@ function main() {
             });
           },
           message(ws, message) {
+            if (ws.data.notifications)
+              return notifications.message(ws, message);
             if (ws.data.signalling)
               return voiceSocket.signallingMessage(ws, message);
             if (ws.data.voice) {
@@ -4591,7 +4731,11 @@ function main() {
                 );
               });
           },
+          pong(ws) {
+            if (ws.data.notifications) notifications.pong(ws);
+          },
           close(ws, code, reason) {
+            if (ws.data.notifications) return notifications.close(ws);
             if (ws.data.signalling) return voiceSocket.closeSignalling(ws);
             if (ws.data.voice) {
               voiceSocketsOpen = Math.max(0, voiceSocketsOpen - 1);
@@ -4755,6 +4899,7 @@ function stopManagerOnce(): Promise<void> {
   // Seen marks are written in batches: keep the last ones.
   agentSeen.flush();
   webPush.stop();
+  notifications.stop();
   stopNetworkWatch();
   connectionProfiles.stopSupervision();
   managerStopTask ??= (async () => {

@@ -22,6 +22,11 @@ import type { TaskEvent } from "./task-events";
 export interface PushPreferences {
   completed: boolean;
   blocked: boolean;
+  /**
+   * Skip this device while the Android app holds its notification socket
+   * (the app notifies natively; a phone with both would ring twice).
+   */
+  quietWithAndroidApp?: boolean;
 }
 export interface Device {
   subscription: webpush.PushSubscription;
@@ -38,7 +43,7 @@ export interface PushTask extends TaskEvent {
   connectionLabel?: string;
   runtimeGeneration: number;
 }
-type PushNotification = PushTask | AssistantTaskNotification;
+export type PushNotification = PushTask | AssistantTaskNotification;
 const MAX_DEVICES = 128;
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -95,7 +100,10 @@ export function taskPushPayload(task: PushNotification) {
   };
 }
 
-function notificationPreference(task: PushNotification): keyof PushPreferences {
+/** Which of a device's switches lets this notification through. */
+export function notificationPreference(
+  task: PushNotification,
+): "completed" | "blocked" {
   return "task_id" in task
     ? task.status === "succeeded"
       ? "completed"
@@ -160,6 +168,9 @@ export function validatePushDevice(value: unknown): Device {
     preferences: {
       completed: preferences.completed,
       blocked: preferences.blocked,
+      ...(preferences.quietWithAndroidApp === true
+        ? { quietWithAndroidApp: true }
+        : {}),
     },
   };
 }
@@ -257,6 +268,7 @@ export function createWebPushService(
   const queue: Array<{
     device: Device;
     task: PushNotification;
+    payload: string;
     isCurrent: () => boolean;
   }> = [];
   let active = 0;
@@ -306,7 +318,7 @@ export function createWebPushService(
   }
 
   async function deliver(item: (typeof queue)[number]) {
-    const { device, task, isCurrent } = item;
+    const { device, task, payload, isCurrent } = item;
     if (
       stopped ||
       !registry?.devices.includes(device) ||
@@ -315,7 +327,7 @@ export function createWebPushService(
     )
       return;
     try {
-      await send(device.subscription, JSON.stringify(taskPushPayload(task)), {
+      await send(device.subscription, payload, {
         TTL: 300,
         urgency: "high",
         timeout: 10_000,
@@ -420,15 +432,29 @@ export function createWebPushService(
       }
       return Response.json({ ok: true }, { headers });
     },
-    notify(task: PushNotification, isCurrent: () => boolean) {
+    /**
+     * Queues one notification for every device that wants it. `payload` is
+     * the message already built (the notification feed builds it once for
+     * every sink); `skip` leaves out devices another channel covers.
+     */
+    notify(
+      task: PushNotification,
+      isCurrent: () => boolean,
+      options: {
+        payload?: ReturnType<typeof taskPushPayload>;
+        skip?: (device: Device) => boolean;
+      } = {},
+    ) {
       if (!registry || stopped || !isCurrent()) return;
+      const payload = JSON.stringify(options.payload ?? taskPushPayload(task));
       for (const device of registry.devices) {
         if (!device.preferences[notificationPreference(task)]) continue;
+        if (options.skip?.(device)) continue;
         if (queue.length >= 256) {
           warn("Web Push queue is full; notification dropped.");
           break;
         }
-        queue.push({ device, task, isCurrent });
+        queue.push({ device, task, payload, isCurrent });
       }
       drain();
     },

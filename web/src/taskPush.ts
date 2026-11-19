@@ -3,6 +3,8 @@ import { prepareTaskNotifications } from "./taskNotifications";
 export interface TaskNotificationPreferences {
   completed: boolean;
   blocked: boolean;
+  /** No Web Push to this browser while the Android app is connected. */
+  quietWithAndroidApp?: boolean;
 }
 
 async function pushRequest(method: "GET" | "POST" | "DELETE", body?: unknown) {

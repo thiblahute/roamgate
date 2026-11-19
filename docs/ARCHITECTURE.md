@@ -2658,6 +2658,76 @@ push providers with a 10-second deadline, 4 concurrent requests, and a
 256-message memory queue. Failures are logged, not replayed. See
 [delivery limits](./DEPLOYMENT.md#web-push-notifications).
 
+### Notification feed
+
+Every notification goes through one source
+(`server/src/notifications/notification-feed.ts`): it builds the message once
+(`taskPushPayload`) and hands it to two sinks, Web Push and the notification
+socket. The sources are the task notifications above, Ranger task runs, an
+agent's own `roamgate-review notify`, and agents' permission prompts and
+questions (a prompt is notified once, when it opens).
+
+The socket, `GET /api/notifications/ws`, is for the Android app's foreground
+service (no FCM). It takes the login cookie like every other route (401
+without), and refuses `Sec-Fetch-Site: cross-site` and `Origin: null` (403).
+Nothing is sent before the client's hello:
+
+```json
+{"op":"hello","since":41,"client":"android","preferences":{"completed":true,"blocked":true}}
+```
+
+`since` is the last event id the client handled, or `null`; `preferences` is
+optional (both default to true) and filters notifications, never clears.
+`client` is a free label; `"android"` counts for Web Push suppression below.
+The server replies with the stored events after `since` (with `null`: the
+notifications still out, no clears), then `{"event":"ready","last":<last id>}`,
+then streams new events:
+
+```json
+{"event":"notification","id":42,"at":1795000000000,"kind":"blocked",
+ "title":"roamgate: Claude wants Bash","body":"bun run test",
+ "tag":"[\"roamgate-task\",\"local\",3,\"p_12\"]","group":"roamgate",
+ "url":"https://host/#roamgate-task=%7B...%7D",
+ "actions":[{"id":"allow","label":"Allow"},{"id":"deny","label":"Deny"}]}
+{"event":"notification_clear","id":43,"at":1795000004000,"tag":"[\"roamgate-task\",\"local\",3,\"p_12\"]"}
+```
+
+- `title`, `body` and `tag` are the Web Push payload's; `url` is the page the
+  service worker's `notificationclick` opens (`/#roamgate-task=<target>`, or
+  `/` without a target), absolute on the origin the socket was opened on.
+  `group` is the workspace label (or id, or connection), `Ranger` for Ranger
+  runs. `kind` is `blocked`, `completed`, `review` (an agent's `notify`) or
+  `ranger_task`; the client switch it obeys is `completed` for completed
+  agents and succeeded Ranger runs, `blocked` for the others. `actions` is
+  present only on an agent's permission prompt.
+- A notification replaces an earlier one with its tag, as on the device.
+- `notification_clear` withdraws a tag when its reason is gone: the agent left
+  `blocked` (a permission prompt's notification waits for the prompt
+  instead), the prompt was answered or went back to the terminal, the pane
+  closed, or a browser marked the agent seen (`agent_seen.mark`: the user
+  looked at it). It is sent only for a tag still out.
+- Ids are one monotonic sequence for both events, kept across restarts. A
+  `since` above the last id means the server lost its feed: all of it is
+  replayed.
+- Action: `{"op":"action","id":42,"action":"allow"}` answers the agent's
+  permission prompt (`allow` or `deny`, the browser card's `prompts.answer`),
+  replied `{"event":"action","id":42,"ok":true}` (then the clear) or
+  `{"event":"action","id":42,"error":"gone"|"unknown"}`.
+- Liveness: the server sends a WebSocket ping every 25 s and closes a client
+  silent (no pong, no message) for 70 s with 4000; the client may also send
+  `{"op":"ping"}`, answered `{"event":"pong"}`. Logging out closes the
+  login's sockets with 4001. Client messages over 4 KiB are ignored.
+- Storage: `notifications.json` in the data directory
+  (`ROAMGATE_NOTIFICATIONS_PATH`), the last 200 events of the last 24 hours.
+
+Web Push suppression: a native app has no Web Push subscription, and a push
+endpoint (FCM for every Chrome) does not tell which device it is, so the
+server cannot match the app to its phone's browser. Each browser chooses
+instead: the device preference `quietWithAndroidApp` (**Don't send Web Push
+while the Android app is connected** in the settings) skips that browser while
+any `android` client of the feed is connected and heard from within 70 s.
+There is one login, so any such client counts.
+
 ## SSH transport
 
 Unix SSH runtimes run one OpenSSH process forwarding both sockets into a private

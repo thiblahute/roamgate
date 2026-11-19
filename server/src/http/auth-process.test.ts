@@ -862,3 +862,63 @@ test("a call handoff is redeemed without login, its token the only credential", 
     expect(other.status).toBe(401);
   });
 }, 20_000);
+
+test("the notification socket needs the login cookie, then replays and logs out", async () => {
+  await withAuthServer(async (base, sockets) => {
+    const upgrade = (cookie = "") =>
+      fetch(`${base}/api/notifications/ws`, {
+        signal: AbortSignal.timeout(5000),
+        headers: {
+          cookie,
+          connection: "Upgrade",
+          upgrade: "websocket",
+          "sec-websocket-version": "13",
+          "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+        },
+      });
+    expect((await upgrade()).status).toBe(401);
+    const loggedIn = await fetch(`${base}/api/login`, {
+      signal: AbortSignal.timeout(5000),
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
+    expect(loggedIn.status).toBe(200);
+    const cookie = (loggedIn.headers.get("set-cookie") ?? "").split(";")[0]!;
+    // Never from another site.
+    const crossSite = await fetch(`${base}/api/notifications/ws`, {
+      signal: AbortSignal.timeout(5000),
+      headers: { cookie, "sec-fetch-site": "cross-site" },
+    });
+    expect(crossSite.status).toBe(403);
+
+    const Socket = WebSocket as unknown as new (
+      url: string,
+      options: Bun.WebSocketOptions,
+    ) => WebSocket;
+    const ws = new Socket(
+      base.replace("http:", "ws:") + "/api/notifications/ws",
+      { headers: { cookie } },
+    );
+    sockets.push(ws);
+    const ready = new Promise<unknown>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("no ready")), 5000);
+      ws.onmessage = (event) => {
+        clearTimeout(timeout);
+        resolve(JSON.parse(String(event.data)));
+      };
+    });
+    ws.onopen = () =>
+      ws.send(JSON.stringify({ op: "hello", since: null, client: "android" }));
+    expect(await ready).toEqual({ event: "ready", last: 0 });
+
+    const closed = new Promise<number>((resolve) => {
+      ws.onclose = (event) => resolve(event.code);
+    });
+    await fetch(`${base}/api/logout`, {
+      signal: AbortSignal.timeout(5000),
+      method: "POST",
+      headers: { cookie, "x-roamgate-logout": "1" },
+    });
+    expect(await closed).toBe(4001);
+  });
+}, 20_000);
