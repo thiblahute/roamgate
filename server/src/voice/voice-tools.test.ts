@@ -11,6 +11,7 @@ import {
   HELD_MESSAGE,
   matchesTool,
   saysYes,
+  startsSpotify,
   toolArgs,
   toolCallLog,
   toolDecision,
@@ -18,7 +19,10 @@ import {
   type ToolProcess,
   VoiceTools,
   writesByName,
+  YOUTUBE_PROMPT,
+  type YoutubeControls,
 } from "./voice-tools";
+import { YoutubeError, type YoutubeStatus } from "./voice-youtube";
 
 const SEND = "mcp__claude_ai_WhatsApp__send_message";
 const LIST = "mcp__claude_ai_WhatsApp__list_chats";
@@ -832,5 +836,240 @@ describe("a click on a held call", () => {
       "/api/voice/tools/answer",
     );
     expect(answered!.status).toBe(409);
+  });
+});
+
+describe("YouTube for the call's music", () => {
+  const MUSIC = {
+    helper: "h",
+    front_model: "opus",
+    companion_mcp: POLICY,
+    call_background: "pulsesrc device=roamgate-music.monitor ! audioconvert",
+  };
+  const PLAYING: YoutubeStatus = {
+    state: "playing",
+    position: 3,
+    duration: 242,
+    volume: 100,
+    track: {
+      title: "Around the World",
+      url: "https://www.youtube.com/watch?v=K0HSD_i2DvA",
+      channel: "Daft Punk",
+    },
+    spotifyPaused: true,
+  };
+
+  /** A player recording what it is asked. */
+  function fakeYoutube(play?: () => Promise<YoutubeStatus>) {
+    const calls: string[] = [];
+    const answer = (name: string) => async (arg?: unknown) => {
+      calls.push(arg === undefined ? name : `${name} ${JSON.stringify(arg)}`);
+      return PLAYING;
+    };
+    const player: YoutubeControls = {
+      play: async (query) => {
+        calls.push(`play ${query}`);
+        return play ? play() : PLAYING;
+      },
+      pause: answer("pause"),
+      resume: answer("resume"),
+      stop: answer("stop"),
+      volume: answer("volume"),
+      seek: answer("seek"),
+      nowPlaying: answer("nowPlaying"),
+      spotifyStarted: async () => {
+        calls.push("spotifyStarted");
+      },
+    };
+    return { player, calls };
+  }
+
+  function configured(
+    config: Record<string, unknown>,
+    player = fakeYoutube().player,
+  ) {
+    const spawned: {
+      process: Fake;
+      policy: CompanionMcpConfig;
+      mcpConfig?: string;
+    }[] = [];
+    const using = configuredTools(
+      () => ({ ...MUSIC, ...config }),
+      (_model, _command, policy, mcpConfig) => {
+        const process = fakeProcess();
+        spawned.push({ process, policy, mcpConfig });
+        return process as ToolProcess;
+      },
+      player,
+    )()!;
+    return { using, spawned };
+  }
+
+  /** A JSON-RPC call to the job's YouTube server. */
+  async function rpc(mcpConfig: string, body: Record<string, unknown>) {
+    const server = JSON.parse(mcpConfig).mcpServers.roamgate_youtube;
+    const response = await fetch(server.url, {
+      method: "POST",
+      headers: { ...server.headers, "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, ...body }),
+    });
+    return response.status === 200 ? response.json() : response.status;
+  }
+
+  test("a job gets the player's tools, allowed, and when to use them", async () => {
+    const { player, calls } = fakeYoutube();
+    const { using, spawned } = configured({}, player);
+    using.start("Mets Around the World de Daft Punk sur YouTube", true);
+    const { process, policy, mcpConfig } = spawned[0]!;
+    expect(askRules(policy)).toContain("mcp__roamgate_youtube");
+    expect(
+      toolDecision("mcp__roamgate_youtube__play", { query: "x" }, policy)
+        .behavior,
+    ).toBe("allow");
+    expect(toolsContext(using.configured(), [], null)).toContain(
+      "mcp__roamgate_youtube",
+    );
+    const user = process.written.find((each) => each.type === "user") as {
+      message: { content: string };
+    };
+    expect(user.message.content).toContain(YOUTUBE_PROMPT);
+    expect(YOUTUBE_PROMPT).toContain("says YouTube");
+    expect(YOUTUBE_PROMPT).toContain("Spotify does not have");
+
+    const listed = await rpc(mcpConfig!, { method: "tools/list" });
+    expect(
+      listed.result.tools.map((tool: { name: string }) => tool.name),
+    ).toEqual([
+      "play",
+      "pause",
+      "resume",
+      "stop",
+      "volume",
+      "seek",
+      "now_playing",
+    ]);
+    const played = await rpc(mcpConfig!, {
+      method: "tools/call",
+      params: { name: "play", arguments: { query: "around the world" } },
+    });
+    expect(calls).toEqual(["play around the world"]);
+    expect(played.result.isError).toBeUndefined();
+    expect(played.result.content[0].text).toContain(
+      'Playing on YouTube: "Around the World" (Daft Punk), 0:03 of 4:02',
+    );
+    expect(played.result.content[0].text).toContain("Spotify was paused");
+    await rpc(mcpConfig!, {
+      method: "tools/call",
+      params: { name: "seek", arguments: { by: 30 } },
+    });
+    expect(calls.at(-1)).toBe('seek {"by":30}');
+
+    // The job's server ends with the job.
+    process.push(result("C'est parti sur YouTube."));
+    await settle();
+    await settle();
+    expect(await rpc(mcpConfig!, { method: "tools/list" })).toBe(401);
+  });
+
+  test("a video that cannot play is told with its reason", async () => {
+    const { player } = fakeYoutube(async () => {
+      throw new YoutubeError("Video unavailable");
+    });
+    const { using, spawned } = configured({}, player);
+    using.start("Mets la vidéo sur YouTube");
+    const failed = await rpc(spawned[0]!.mcpConfig!, {
+      method: "tools/call",
+      params: { name: "play", arguments: { query: "x" } },
+    });
+    expect(failed.result.isError).toBe(true);
+    expect(failed.result.content[0].text).toBe(
+      "The video could not be played: Video unavailable",
+    );
+  });
+
+  test("off without call_background, or with youtube_sink false", () => {
+    for (const config of [
+      { call_background: undefined },
+      { youtube_sink: false },
+    ]) {
+      const { using, spawned } = configured(config);
+      using.start("Mets du Daft Punk", true);
+      expect(spawned[0]!.mcpConfig).toBeUndefined();
+      expect(askRules(spawned[0]!.policy)).not.toContain(
+        "mcp__roamgate_youtube",
+      );
+      const user = spawned[0]!.process.written.find(
+        (each) => each.type === "user",
+      ) as { message: { content: string } };
+      expect(user.message.content).not.toContain("roamgate_youtube");
+    }
+  });
+
+  test("Spotify starting stops YouTube; anything else leaves it", async () => {
+    const spawned: { process: Fake; mcpConfig?: string }[] = [];
+    let stopped = 0;
+    let closed = 0;
+    const using = new VoiceTools(
+      (mcpConfig) => {
+        const process = fakeProcess();
+        spawned.push({ process, mcpConfig });
+        return process as ToolProcess;
+      },
+      () => ({ allow: [...POLICY.allow!, "mcp__claude_ai_Spotify*__play"] }),
+      { limit: 60_000, kept: 60_000, held: 60_000 },
+      undefined,
+      undefined,
+      () => ({
+        open: () => ({
+          config: '{"mcpServers":{}}',
+          close: () => {
+            closed += 1;
+          },
+        }),
+        spotifyStarted: () => {
+          stopped += 1;
+        },
+      }),
+    );
+    using.start("Remets Spotify");
+    const { process, mcpConfig } = spawned[0]!;
+    expect(mcpConfig).toBe('{"mcpServers":{}}');
+    process.push(asks("r1", "mcp__spotify__pause", {}));
+    process.push(asks("r2", "mcp__claude_ai_Youtube__x", {}));
+    await settle();
+    expect(stopped).toBe(0);
+    process.push(asks("r3", "mcp__spotify__play", { query: "x" }));
+    await settle();
+    expect(stopped).toBe(1);
+    process.push(asks("r4", "mcp__claude_ai_Spotify__play", {}));
+    process.push(asks("r5", "mcp__spotify__resume", {}));
+    await settle();
+    expect(stopped).toBe(3);
+    // A refused Spotify call starts nothing.
+    process.push(asks("r6", "mcp__claude_ai_Spotify__resume", {}));
+    await settle();
+    expect(process.answer("r6")?.behavior).toBe("deny");
+    expect(stopped).toBe(3);
+    process.push(result("C'est reparti."));
+    await settle();
+    await settle();
+    expect(closed).toBe(1);
+  });
+
+  test("which calls start Spotify", () => {
+    expect(startsSpotify("mcp__spotify__play")).toBe(true);
+    expect(startsSpotify("mcp__claude_ai_Spotify__resume")).toBe(true);
+    expect(startsSpotify("mcp__spotify__transfer")).toBe(true);
+    expect(startsSpotify("mcp__spotify__pause")).toBe(false);
+    expect(startsSpotify("mcp__spotify__now_playing")).toBe(false);
+    expect(startsSpotify("mcp__roamgate_youtube__play")).toBe(false);
+    expect(startsSpotify("mcp__spotify")).toBe(false);
+  });
+
+  test("Roamgate's servers go to the job's Claude Code", () => {
+    const args = toolArgs("sonnet", "claude", POLICY, '{"mcpServers":{}}');
+    expect(args[args.indexOf("--mcp-config") + 1]).toBe('{"mcpServers":{}}');
+    expect(args).not.toContain("--strict-mcp-config");
+    expect(toolArgs("sonnet", "claude", POLICY)).not.toContain("--mcp-config");
   });
 });

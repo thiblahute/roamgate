@@ -208,6 +208,21 @@ export type VoiceConfig = {
    */
   call_music_full_volume?: boolean;
   /**
+   * The sound server's sink YouTube videos asked for play into, whose
+   * monitor call_background records ("roamgate-music" by default); false
+   * takes YouTube from the companion's tools (voice-youtube.ts). Only
+   * with call_background.
+   */
+  youtube_sink?: string | false;
+  /**
+   * Arguments put before the YouTube player's command (Python with
+   * GStreamer), as helper_wrapper's: a program that runs it where the
+   * sound server is, passing its standard input and output through.
+   */
+  youtube_player_wrapper?: string[];
+  /** yt-dlp's command, a program first; ["yt-dlp"] by default. */
+  yt_dlp?: string[];
+  /**
    * The loudness a call's replies are brought to, in LUFS, -40 to -6
    * (-16 by default), their peaks kept under -1 dBTP; false leaves them as
    * the models make them (-20 to -24 LUFS). A phone's own loudspeaker
@@ -424,6 +439,28 @@ export function readVoiceConfig(
     return {
       error: `${path}: helper_wrapper must be a list of arguments, a program first`,
     };
+  for (const key of ["youtube_player_wrapper", "yt_dlp"] as const) {
+    const value = config[key];
+    if (
+      value !== undefined &&
+      !(
+        Array.isArray(value) &&
+        value.every((arg) => typeof arg === "string") &&
+        (key === "youtube_player_wrapper"
+          ? value.length === 0 || value[0]
+          : value[0])
+      )
+    )
+      return {
+        error: `${path}: ${key} must be a list of arguments, a program first`,
+      };
+  }
+  if (
+    config.youtube_sink !== undefined &&
+    config.youtube_sink !== false &&
+    !(typeof config.youtube_sink === "string" && config.youtube_sink.trim())
+  )
+    return { error: `${path}: youtube_sink must be a sink's name or false` };
   if (
     config.helper_idle_exit_minutes !== undefined &&
     !(

@@ -5,6 +5,10 @@ import {
   helperCommand,
 } from "../profiles/profiles";
 import { tmpdir } from "node:os";
+import { Type } from "typebox";
+import { createRangerMcp } from "../assistant/claude-mcp";
+import { AssistantUserError } from "../assistant/errors";
+import type { RangerTool } from "../assistant/ranger-tools";
 import { backgroundClaudeEnv } from "./voice-cleaner";
 import type { VoiceConfig } from "./voice-helper";
 import {
@@ -13,6 +17,13 @@ import {
   type ResearchStatus,
   researchPrompt,
 } from "./voice-research";
+import {
+  resolveYoutube,
+  spawnYoutubePlayer,
+  youtubeConfig,
+  YoutubePlayer,
+  type YoutubeStatus,
+} from "./voice-youtube";
 
 /**
  * The voice companion's tools: the MCP servers Claude Code has on this
@@ -282,6 +293,8 @@ export function toolArgs(
   model: string,
   command: string | AgentCommand = "claude",
   policy: CompanionMcpConfig = {},
+  /** Roamgate's own servers for the job (the YouTube player's). */
+  mcpConfig?: string,
 ): string[] {
   return [
     asCommand(command).program,
@@ -314,6 +327,7 @@ export function toolArgs(
     "--permission-prompt-tool",
     "stdio",
     "--no-session-persistence",
+    ...(mcpConfig ? ["--mcp-config", mcpConfig] : []),
     "--system-prompt",
     TOOLS_SYSTEM_PROMPT,
   ];
@@ -361,8 +375,9 @@ export function spawnTools(
   model: string,
   command: string | AgentCommand | undefined,
   policy: CompanionMcpConfig,
+  mcpConfig?: string,
 ): ToolProcess {
-  const child = Bun.spawn(toolArgs(model, command, policy), {
+  const child = Bun.spawn(toolArgs(model, command, policy, mcpConfig), {
     cwd: tmpdir(),
     env: commandEnv(asCommand(command), backgroundClaudeEnv()),
     stdin: "pipe",
@@ -452,11 +467,13 @@ export function toolPrompt(
   task: string,
   now = new Date(),
   musicDevice?: CallMusicDevice,
+  /** Whether the job has the YouTube player (YOUTUBE_MCP_SERVER). */
+  youtube = false,
 ): string {
-  const prompt = researchPrompt(task, now).replace(
+  const prompt = `${researchPrompt(task, now).replace(
     "\n\nQuestion: ",
     "\n\nRequest: ",
-  );
+  )}${youtube ? `\n\n${YOUTUBE_PROMPT}` : ""}`;
   if (!musicDevice) return prompt;
   const device = JSON.stringify(musicDevice.name);
   const volume = musicDevice.fullVolume
@@ -464,6 +481,156 @@ export function toolPrompt(
     : "";
   return `${prompt}\n\nThe user is on a call whose music comes from the Spotify Connect device ${device}: music played, resumed or moved goes to that device (name it as the device), unless the request names another.${volume}`;
 }
+
+/** The YouTube player's MCP server: its tools are mcp__roamgate_youtube__*. */
+export const YOUTUBE_MCP_SERVER = "roamgate_youtube";
+
+/** What a job with the YouTube player is told of it. */
+export const YOUTUBE_PROMPT = `Music can also come from YouTube, with Roamgate's YouTube player (the ${YOUTUBE_MCP_SERVER} tools: play, pause, resume, stop, volume, seek, now_playing; load them with ToolSearch "select:mcp__${YOUTUBE_MCP_SERVER}__play" and the others you need). Play on YouTube when the request says YouTube ("mets sur YouTube ..."), gives a YouTube link, or asks for something Spotify does not have (a Spotify search found nothing fitting: then say it plays from YouTube); otherwise music is Spotify's. The other YouTube tools (search, transcripts) only find videos: playing one is ${YOUTUBE_MCP_SERVER}'s play. Starting YouTube pauses Spotify by itself, and starting Spotify stops YouTube by itself: never pause one to start the other. To pause, resume, skip in or tell what plays, ask ${YOUTUBE_MCP_SERVER}'s now_playing first when unsure whether YouTube or Spotify plays. When a video cannot be played, say so with the reason it gives.`;
+
+/** What the YouTube player's tools act on (voice-youtube.ts's YoutubePlayer). */
+export type YoutubeControls = Pick<
+  YoutubePlayer,
+  | "play"
+  | "pause"
+  | "resume"
+  | "stop"
+  | "volume"
+  | "seek"
+  | "nowPlaying"
+  | "spotifyStarted"
+>;
+
+/** A player's state, as a tool returns it to the job. */
+export function youtubeResult(status: YoutubeStatus): string {
+  const at = (seconds?: number) =>
+    seconds === undefined
+      ? "?"
+      : `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+  const playing = status.track
+    ? `${status.state === "playing" ? "Playing" : "Paused"} on YouTube: ${JSON.stringify(status.track.title)}${status.track.channel ? ` (${status.track.channel})` : ""}, ${at(status.position)} of ${status.duration ? at(status.duration) : "a live stream"}, player volume ${status.volume}.${status.spotifyPaused ? " Spotify was paused for it." : ""}`
+    : `Nothing plays on YouTube${status.ended ? ` (${status.ended})` : ""}.`;
+  return `${playing}\n${JSON.stringify(status)}`;
+}
+
+/**
+ * The YouTube player's tools for a job, served by YOUTUBE_MCP_SERVER.
+ * Titles and channels are written by others: data, as any tool's result.
+ */
+export function youtubeTools(player: YoutubeControls): RangerTool[] {
+  const tool = (
+    name: string,
+    description: string,
+    parameters: RangerTool["parameters"],
+    act: (params: Record<string, unknown>) => Promise<YoutubeStatus>,
+    failure = "YouTube",
+  ): RangerTool => ({
+    name,
+    description,
+    parameters,
+    replay: "unsafe",
+    sequential: true,
+    async call(params) {
+      try {
+        return {
+          text: youtubeResult(
+            await act((params ?? {}) as Record<string, unknown>),
+          ),
+        };
+      } catch (error) {
+        throw new AssistantUserError(`${failure}: ${(error as Error).message}`);
+      }
+    },
+  });
+  const none = Type.Object({}, { additionalProperties: false });
+  return [
+    tool(
+      "play",
+      "Plays a YouTube video's sound as the music under the user's voice call (into the call's music, not on speakers): `query` is words to search YouTube with (the first video found plays) or a YouTube link. Use it when the user asks for YouTube, gives a YouTube link, or wants music Spotify does not have. It pauses Spotify by itself and replaces what YouTube played. Returns what plays.",
+      Type.Object(
+        {
+          query: Type.String({
+            description:
+              'What to play: search words (artist, title, "live"...) or a youtube.com / youtu.be link',
+          }),
+        },
+        { additionalProperties: false },
+      ),
+      (params) => player.play(String(params.query ?? "")),
+      "The video could not be played",
+    ),
+    tool(
+      "pause",
+      "Pauses the YouTube video playing as the call's music.",
+      none,
+      () => player.pause(),
+    ),
+    tool(
+      "resume",
+      "Plays again the paused YouTube video (pausing Spotify by itself).",
+      none,
+      () => player.resume(),
+    ),
+    tool("stop", "Stops YouTube's music altogether.", none, () =>
+      player.stop(),
+    ),
+    tool(
+      "volume",
+      "Sets the YouTube player's own volume, 0 to 100 (100 by default). The music's level under the call is set by the call itself: change this only when asked for YouTube's volume.",
+      Type.Object(
+        { percent: Type.Number({ minimum: 0, maximum: 100 }) },
+        { additionalProperties: false },
+      ),
+      (params) => player.volume(Number(params.percent ?? 100)),
+    ),
+    tool(
+      "seek",
+      "Moves in the YouTube video playing: `position` in seconds from its start, or `by` seconds from where it is (30 skips ahead, -15 goes back).",
+      Type.Object(
+        {
+          position: Type.Optional(Type.Number({ minimum: 0 })),
+          by: Type.Optional(Type.Number()),
+        },
+        { additionalProperties: false },
+      ),
+      (params) =>
+        player.seek({
+          ...(typeof params.position === "number"
+            ? { position: params.position }
+            : {}),
+          ...(typeof params.by === "number" ? { by: params.by } : {}),
+        }),
+    ),
+    tool(
+      "now_playing",
+      "What YouTube plays as the call's music: the video's title, link and channel, where it is, its length, playing or paused; or that nothing plays, and why it stopped.",
+      none,
+      () => player.nowPlaying(),
+    ),
+  ];
+}
+
+/**
+ * Whether an allowed call starts Spotify's music (play, resume, or moving
+ * playback to a device): YouTube's then stops.
+ */
+export function startsSpotify(tool: string): boolean {
+  if (!tool.startsWith("mcp__")) return false;
+  const split = tool.indexOf("__", 5);
+  if (split < 0) return false;
+  return (
+    /spotify/i.test(tool.slice(5, split)) &&
+    /^(play|resume|transfer)$/i.test(tool.slice(split + 2))
+  );
+}
+
+/** A job's YouTube player: its MCP server, and Spotify's start. */
+export type JobYoutube = {
+  /** Serves the player's tools to one job until closed. */
+  open(): { config: string; close(): void };
+  /** A job started Spotify: YouTube stops. */
+  spotifyStarted(): void;
+};
 
 /** The request of a job that makes a confirmed call. */
 export function confirmedPrompt(held: HeldCall, now = new Date()): string {
@@ -483,13 +650,16 @@ export class VoiceTools {
   private count = 0;
 
   constructor(
-    private readonly spawn: () => ToolProcess,
+    /** Starts a job's Claude Code, given Roamgate's own MCP servers. */
+    private readonly spawn: (mcpConfig?: string) => ToolProcess,
     private readonly policy: () => CompanionMcpConfig,
     private readonly timing = { limit: LIMIT_MS, kept: KEPT_MS, held: HELD_MS },
     private readonly now: () => Date = () => new Date(),
     /** voice.json's call music device, read when a job starts. */
     private readonly musicDevice: () => CallMusicDevice | undefined = () =>
       undefined,
+    /** The YouTube player, when voice.json gives one (read per job). */
+    private readonly youtube: () => JobYoutube | null = () => null,
   ) {}
 
   /**
@@ -507,6 +677,7 @@ export class VoiceTools {
         asked,
         this.now(),
         device && name ? { name, fullVolume: device.fullVolume } : undefined,
+        this.youtube() !== null,
       ),
       null,
     );
@@ -580,10 +751,14 @@ export class VoiceTools {
     };
     this.jobs.set(job.id, job);
     this.forgetOld();
+    const youtube = this.youtube();
+    let lease: { config: string; close(): void } | undefined;
     let process: ToolProcess;
     try {
-      process = this.spawn();
+      lease = youtube?.open();
+      process = this.spawn(lease?.config);
     } catch (error) {
+      lease?.close();
       this.end(job, { status: "failed", error: (error as Error).message });
       return { ...job };
     }
@@ -593,7 +768,8 @@ export class VoiceTools {
       this.end(job, { status: "failed", error: "It took too long." });
       process.kill();
     }, this.timing.limit);
-    void this.follow(job, process, prompt, approved).finally(() => {
+    void this.follow(job, process, prompt, approved, youtube).finally(() => {
+      lease?.close();
       clearTimeout(limit);
       this.running.delete(job.id);
       process.kill();
@@ -606,6 +782,7 @@ export class VoiceTools {
     process: ToolProcess,
     prompt: string,
     approved: (HeldCall & { used?: boolean }) | null,
+    youtube: JobYoutube | null = null,
   ) {
     const send = (message: unknown) =>
       process.write(`${JSON.stringify(message)}\n`);
@@ -658,6 +835,8 @@ export class VoiceTools {
             };
           if (decision.behavior === "allow") {
             if (approved && approved.tool === tool) approved.used = true;
+            // Spotify and YouTube never play together.
+            if (startsSpotify(tool)) youtube?.spotifyStarted();
             step(`Using ${toolLabel(tool)}`);
           } else if (decision.behavior === "hold") {
             job.held = { tool, input };
@@ -807,7 +986,9 @@ export function toolsContext(
 /**
  * The companion's tools voice.json sets up: with a front and
  * `companion_mcp`, jobs on its `model` (DEFAULT_TOOLS_MODEL by default),
- * read when each starts; null otherwise.
+ * read when each starts; null otherwise. With a call's music
+ * (call_background) and youtube_sink not false, the jobs also have the
+ * YouTube player (YOUTUBE_MCP_SERVER), always allowed.
  */
 export function configuredTools(
   config: () => VoiceConfig | { error: string },
@@ -815,21 +996,44 @@ export function configuredTools(
     model: string,
     command: string | AgentCommand | undefined,
     policy: CompanionMcpConfig,
+    mcpConfig?: string,
   ) => ToolProcess = spawnTools,
+  player?: YoutubeControls,
 ): () => VoiceTools | null {
+  const youtubeOn = () => {
+    const read = config();
+    return "error" in read ? null : youtubeConfig(read);
+  };
+  let youtubePlayer = player;
+  const controls = (): YoutubeControls => {
+    youtubePlayer ??= new YoutubePlayer(
+      () => {
+        const on = youtubeOn();
+        if (!on) throw new Error("YouTube is off in voice.json");
+        return spawnYoutubePlayer(on);
+      },
+      (asked) => resolveYoutube(asked, youtubeOn()?.ytDlp),
+    );
+    return youtubePlayer;
+  };
+  let server: ReturnType<typeof createRangerMcp> | null = null;
   const policy = (): CompanionMcpConfig => {
     const read = config();
-    return "error" in read ? {} : (read.companion_mcp ?? {});
+    const mcp = "error" in read ? {} : (read.companion_mcp ?? {});
+    return youtubeOn()
+      ? { ...mcp, allow: [...(mcp.allow ?? []), `mcp__${YOUTUBE_MCP_SERVER}`] }
+      : mcp;
   };
   const tools = new VoiceTools(
-    () => {
+    (mcpConfig) => {
       const read = config();
       if ("error" in read) throw new Error(read.error);
-      const mcp = read.companion_mcp ?? {};
+      const mcp = policy();
       return spawn(
         mcp.model ?? DEFAULT_TOOLS_MODEL,
         helperCommand(read.claude_command),
         mcp,
+        mcpConfig,
       );
     },
     policy,
@@ -844,6 +1048,19 @@ export function configuredTools(
         fullVolume: read.call_music_full_volume ?? true,
       };
     },
+    () =>
+      youtubeOn()
+        ? {
+            open: () => {
+              server ??= createRangerMcp(undefined, YOUTUBE_MCP_SERVER);
+              return server.open({
+                tools: youtubeTools(controls()),
+                signal: new AbortController().signal,
+              });
+            },
+            spotifyStarted: () => void controls().spotifyStarted(),
+          }
+        : null,
   );
   return () => {
     const read = config();
