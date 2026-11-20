@@ -612,16 +612,31 @@ export function youtubeTools(player: YoutubeControls): RangerTool[] {
 
 /**
  * Whether an allowed call starts Spotify's music (play, resume, or moving
- * playback to a device): YouTube's then stops.
+ * playback to a device) on the call's music device `device`: YouTube's
+ * then stops. Music on another device (someone else using the account)
+ * leaves it, as does a call naming no device, which may act on whatever
+ * device plays: the player stops by itself when the Spotify app starts
+ * playing into the call (voice-youtube.ts).
  */
-export function startsSpotify(tool: string): boolean {
+export function startsSpotify(
+  tool: string,
+  input: Record<string, unknown> = {},
+  device?: string,
+): boolean {
   if (!tool.startsWith("mcp__")) return false;
   const split = tool.indexOf("__", 5);
   if (split < 0) return false;
-  return (
-    /spotify/i.test(tool.slice(5, split)) &&
-    /^(play|resume|transfer)$/i.test(tool.slice(split + 2))
+  if (
+    !/spotify/i.test(tool.slice(5, split)) ||
+    !/^(play|resume|transfer)$/i.test(tool.slice(split + 2)) ||
+    input.play === false
+  )
+    return false;
+  const named = [input.device, input.device_name].find(
+    (each): each is string => typeof each === "string" && !!each.trim(),
   );
+  const music = device?.trim().toLowerCase();
+  return !!music && named?.trim().toLowerCase() === music;
 }
 
 /** A job's YouTube player: its MCP server, and Spotify's start. */
@@ -836,7 +851,8 @@ export class VoiceTools {
           if (decision.behavior === "allow") {
             if (approved && approved.tool === tool) approved.used = true;
             // Spotify and YouTube never play together.
-            if (startsSpotify(tool)) youtube?.spotifyStarted();
+            if (youtube && startsSpotify(tool, input, this.musicDevice()?.name))
+              youtube.spotifyStarted();
             step(`Using ${toolLabel(tool)}`);
           } else if (decision.behavior === "hold") {
             job.held = { tool, input };

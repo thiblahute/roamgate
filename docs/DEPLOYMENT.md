@@ -1405,8 +1405,15 @@ Roamgate runs in a toolbox:
 
 Spotify and YouTube never play together: starting or resuming a video
 pauses the Spotify app (its MPRIS player, `org.mpris.MediaPlayer2.spotify`,
-on the session bus) when it plays, and the video stops when the Spotify app
-starts playing or a tool job starts, resumes or moves Spotify's music.
+on the session bus) when it plays here, and the video stops when the
+Spotify app starts playing into `youtube_sink` or a tool job starts,
+resumes or moves Spotify's music on `call_music_device`. Only the app's own
+sound counts: with Spotify Connect the app also says it plays when the
+account plays on another device (someone else's phone), and pausing it then
+would pause that device. The player looks for the app's uncorked stream in
+`pactl -f json list sink-inputs` (where the player runs, so `pactl` 16 or
+newer is needed there), giving it 5 seconds to appear; without one, the
+video goes on.
 
 YouTube changes often break yt-dlp: a video that cannot be played is told
 with yt-dlp's reason ("the video could not be played: ..."), and one that

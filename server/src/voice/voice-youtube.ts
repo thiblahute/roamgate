@@ -19,7 +19,12 @@ import type { VoiceConfig } from "./voice-helper";
  * Spotify and YouTube never play together: the player pauses the Spotify
  * app (its MPRIS player on the session bus) when it starts or resumes, and
  * stops when that app starts playing; the companion's tools stop it, too,
- * when they start Spotify (voice-tools.ts).
+ * when they start Spotify on the call's music device (voice-tools.ts).
+ * Only the Spotify app's own sound counts: with Spotify Connect, the app
+ * also says Playing when the account plays on another device (someone
+ * else's phone), and pausing it then pauses that device. So the player
+ * checks that the app has a stream playing here (pactl's sink inputs),
+ * into the sink for a stop.
  */
 
 const log = serverLogger.child("voice-youtube");
@@ -34,15 +39,17 @@ const RESOLVE_MS = 45_000;
 const COMMAND_MS = 40_000;
 
 /**
- * The player: argv[1] the sink, argv[2] the MPRIS name prefix to pause.
- * Commands, one JSON object a line: {"id", "cmd": "play", "uri",
+ * The player: argv[1] the sink, argv[2] the MPRIS name prefix to pause,
+ * argv[3] (optional) the pactl command as a JSON list. Commands, one JSON object a line: {"id", "cmd": "play", "uri",
  * "headers"}, "pause", "resume", "stop", "volume" ("volume" 0 to 1),
  * "seek" ("position" in seconds), "status". Each is answered on its id
  * with {"ok": true, "state", "position", "duration", "volume"} or {"ok":
  * false, "error"}; a start is answered once sound plays. Events: "ready",
- * "ended", "error", "stopped" (Spotify started), "spotify_paused".
+ * "ended", "error", "stopped" (Spotify started), "spotify_paused",
+ * "spotify_elsewhere" (Spotify said Playing, but not here: it goes on).
  */
 export const PLAYER_SCRIPT = String.raw`import json
+import subprocess
 import sys
 
 import gi
@@ -52,9 +59,13 @@ from gi.repository import Gio, GLib, Gst
 
 SINK = sys.argv[1]
 MPRIS = sys.argv[2]
+PACTL = json.loads(sys.argv[3]) if len(sys.argv) > 3 else ["pactl"]
 PLAYER_PATH = "/org/mpris/MediaPlayer2"
 PLAYER_IFACE = "org.mpris.MediaPlayer2.Player"
 START_S = 30
+# How long the Spotify app has to open its stream once it says Playing.
+GRACE_S = 5
+POLL_MS = 250
 
 Gst.init(None)
 loop = GLib.MainLoop()
@@ -65,6 +76,7 @@ except GLib.Error:
 pipeline = None
 pending = None
 volume = 1.0
+watching = None
 
 
 def say(message):
@@ -117,15 +129,57 @@ def spotify_names():
     return [n for n in names if n == MPRIS or n.startswith(MPRIS + ".")]
 
 
+def pactl_json(*args):
+    done = subprocess.run(
+        PACTL + ["-f", "json", *args], capture_output=True, timeout=3, check=True
+    )
+    return json.loads(done.stdout or b"[]")
+
+
+def is_spotify(stream):
+    props = stream.get("properties") or {}
+    return any(
+        "spotify" in str(props.get(key, "")).lower()
+        for key in ("node.name", "application.name", "application.process.binary")
+    )
+
+
+def spotify_here(into_sink):
+    # Whether the Spotify app plays sound here (into SINK when into_sink):
+    # an uncorked stream of its. Connect mirrors another device's playing
+    # in the app's MPRIS without a stream. None when pactl cannot tell.
+    try:
+        inputs = pactl_json("list", "sink-inputs")
+        sinks = (
+            {each.get("index"): each.get("name")
+             for each in pactl_json("list", "short", "sinks")}
+            if into_sink else {}
+        )
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        sys.stderr.write("roamgate youtube: pactl failed: %s\n" % error)
+        return None
+    return any(
+        is_spotify(each) and not each.get("corked")
+        and (not into_sink or sinks.get(each.get("sink")) == SINK)
+        for each in inputs
+    )
+
+
 def pause_spotify():
     paused = False
+    here = None
     for name in spotify_names():
         try:
             status = dbus(
                 name, PLAYER_PATH, "org.freedesktop.DBus.Properties", "Get",
                 GLib.Variant("(ss)", (PLAYER_IFACE, "PlaybackStatus")),
             )[0]
-            if status == "Playing":
+            if status != "Playing":
+                continue
+            # Pausing an app that mirrors another device pauses that device.
+            if here is None:
+                here = spotify_here(False) is not False
+            if here:
                 dbus(name, PLAYER_PATH, PLAYER_IFACE, "Pause")
                 paused = True
         except GLib.Error:
@@ -148,23 +202,48 @@ def owners():
     return found
 
 
+def video_playing():
+    return (
+        pipeline is not None and pending is None
+        and Gst.State.PLAYING in pipeline.get_state(0)[1:]
+    )
+
+
 def on_properties(_bus, sender, _path, _iface, _signal, params, _data):
     iface, changed, _ = params.unpack()
     if iface != PLAYER_IFACE or changed.get("PlaybackStatus") != "Playing":
         return
-    if pipeline is None or pending is not None or sender not in owners():
+    if not video_playing() or sender not in owners():
         return
-    if Gst.State.PLAYING not in pipeline.get_state(0)[1:]:
-        return
-    stop()
-    say({"event": "stopped", "reason": "Spotify started playing"})
+    watch_spotify()
 
 
-if bus is not None:
-    bus.signal_subscribe(
-        None, "org.freedesktop.DBus.Properties", "PropertiesChanged",
-        PLAYER_PATH, None, Gio.DBusSignalFlags.NONE, on_properties, None,
-    )
+def watch_spotify():
+    # The video stops once the Spotify app plays into SINK, within GRACE_S;
+    # an app saying Playing for another device leaves it.
+    global watching
+    if watching is not None:
+        return
+    deadline = GLib.get_monotonic_time() + GRACE_S * 1000000
+
+    def check():
+        global watching
+        if not video_playing():
+            watching = None
+            return False
+        if spotify_here(True) is not False:
+            watching = None
+            stop()
+            say({"event": "stopped", "reason": "Spotify started playing"})
+            return False
+        if GLib.get_monotonic_time() >= deadline:
+            watching = None
+            say({"event": "spotify_elsewhere"})
+            return False
+        return True
+
+    if check():
+        watching = GLib.timeout_add(POLL_MS, check)
 
 
 def stop():
@@ -309,13 +388,19 @@ def on_input(channel, condition):
     return False
 
 
-GLib.io_add_watch(
-    GLib.IOChannel.unix_new(sys.stdin.fileno()), GLib.PRIORITY_DEFAULT,
-    GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR,
-    on_input,
-)
-say({"event": "ready", "sink": SINK})
-loop.run()
+if __name__ == "__main__":
+    if bus is not None:
+        bus.signal_subscribe(
+            None, "org.freedesktop.DBus.Properties", "PropertiesChanged",
+            PLAYER_PATH, None, Gio.DBusSignalFlags.NONE, on_properties, None,
+        )
+    GLib.io_add_watch(
+        GLib.IOChannel.unix_new(sys.stdin.fileno()), GLib.PRIORITY_DEFAULT,
+        GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR,
+        on_input,
+    )
+    say({"event": "ready", "sink": SINK})
+    loop.run()
 `;
 
 /** A video found: what plays, and the stream the player reads. */
@@ -729,6 +814,8 @@ export class YoutubePlayer {
         }
         if (this.process !== process) continue;
         if (reply.event === "spotify_paused") this.pausedSpotify = true;
+        if (reply.event === "spotify_elsewhere")
+          log.info("youtube goes on: Spotify plays on another device");
         if (
           reply.event === "ended" ||
           reply.event === "error" ||

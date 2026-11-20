@@ -1005,7 +1005,7 @@ describe("YouTube for the call's music", () => {
     }
   });
 
-  test("Spotify starting stops YouTube; anything else leaves it", async () => {
+  test("Spotify starting on the call's device stops YouTube; anything else leaves it", async () => {
     const spawned: { process: Fake; mcpConfig?: string }[] = [];
     let stopped = 0;
     let closed = 0;
@@ -1018,7 +1018,7 @@ describe("YouTube for the call's music", () => {
       () => ({ allow: [...POLICY.allow!, "mcp__claude_ai_Spotify*__play"] }),
       { limit: 60_000, kept: 60_000, held: 60_000 },
       undefined,
-      undefined,
+      () => ({ name: "amd-desktop", fullVolume: true }),
       () => ({
         open: () => ({
           config: '{"mcpServers":{}}',
@@ -1038,15 +1038,29 @@ describe("YouTube for the call's music", () => {
     process.push(asks("r2", "mcp__claude_ai_Youtube__x", {}));
     await settle();
     expect(stopped).toBe(0);
-    process.push(asks("r3", "mcp__spotify__play", { query: "x" }));
+    // Someone else's phone on the same account, or no device named (the
+    // player itself stops if the desktop's Spotify app starts playing).
+    process.push(
+      asks("r3", "mcp__spotify__play", { query: "x", device: "Simon's phone" }),
+    );
+    process.push(asks("r3b", "mcp__spotify__resume", {}));
+    await settle();
+    expect(stopped).toBe(0);
+    process.push(
+      asks("r3c", "mcp__spotify__play", { query: "x", device: "amd-desktop" }),
+    );
     await settle();
     expect(stopped).toBe(1);
-    process.push(asks("r4", "mcp__claude_ai_Spotify__play", {}));
-    process.push(asks("r5", "mcp__spotify__resume", {}));
+    process.push(
+      asks("r4", "mcp__claude_ai_Spotify__play", { device: "AMD-Desktop" }),
+    );
+    process.push(asks("r5", "mcp__spotify__resume", { device: "amd-desktop" }));
     await settle();
     expect(stopped).toBe(3);
     // A refused Spotify call starts nothing.
-    process.push(asks("r6", "mcp__claude_ai_Spotify__resume", {}));
+    process.push(
+      asks("r6", "mcp__claude_ai_Spotify__resume", { device: "amd-desktop" }),
+    );
     await settle();
     expect(process.answer("r6")?.behavior).toBe("deny");
     expect(stopped).toBe(3);
@@ -1056,14 +1070,42 @@ describe("YouTube for the call's music", () => {
     expect(closed).toBe(1);
   });
 
-  test("which calls start Spotify", () => {
-    expect(startsSpotify("mcp__spotify__play")).toBe(true);
-    expect(startsSpotify("mcp__claude_ai_Spotify__resume")).toBe(true);
-    expect(startsSpotify("mcp__spotify__transfer")).toBe(true);
-    expect(startsSpotify("mcp__spotify__pause")).toBe(false);
-    expect(startsSpotify("mcp__spotify__now_playing")).toBe(false);
-    expect(startsSpotify("mcp__roamgate_youtube__play")).toBe(false);
-    expect(startsSpotify("mcp__spotify")).toBe(false);
+  test("which calls start Spotify on the call's music device", () => {
+    const here = { device: "amd-desktop" };
+    const device = "amd-desktop";
+    expect(startsSpotify("mcp__spotify__play", here, device)).toBe(true);
+    expect(startsSpotify("mcp__claude_ai_Spotify__resume", here, device)).toBe(
+      true,
+    );
+    expect(startsSpotify("mcp__spotify__transfer", here, device)).toBe(true);
+    expect(
+      startsSpotify(
+        "mcp__spotify__play",
+        { device_name: "AMD-desktop" },
+        device,
+      ),
+    ).toBe(true);
+    expect(startsSpotify("mcp__spotify__pause", here, device)).toBe(false);
+    expect(startsSpotify("mcp__spotify__now_playing", here, device)).toBe(
+      false,
+    );
+    expect(startsSpotify("mcp__roamgate_youtube__play", here, device)).toBe(
+      false,
+    );
+    expect(startsSpotify("mcp__spotify", here, device)).toBe(false);
+    // Another device, none named, no call device known, or not playing.
+    expect(
+      startsSpotify("mcp__spotify__play", { device: "Simon's phone" }, device),
+    ).toBe(false);
+    expect(startsSpotify("mcp__spotify__resume", {}, device)).toBe(false);
+    expect(startsSpotify("mcp__spotify__play", here)).toBe(false);
+    expect(
+      startsSpotify(
+        "mcp__spotify__transfer",
+        { device: "amd-desktop", play: false },
+        device,
+      ),
+    ).toBe(false);
   });
 
   test("Roamgate's servers go to the job's Claude Code", () => {

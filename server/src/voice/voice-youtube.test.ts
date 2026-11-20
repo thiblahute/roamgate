@@ -382,3 +382,202 @@ describe("the player script", () => {
     expect(await child.exited).toBe(0);
   });
 });
+
+/** Whether Python has GStreamer's bindings, to run the player's code. */
+const PLAYER_PYTHON =
+  !!Bun.which("python3") &&
+  Bun.spawnSync([
+    "python3",
+    "-I",
+    "-c",
+    "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst",
+  ]).exitCode === 0;
+
+/**
+ * Runs the player's code on a scenario, with a fake playing pipeline, a
+ * fake pactl answering `streams` (the Spotify app's sink inputs, one list
+ * a poll, the last one repeated; null: pactl fails) and a fake Spotify
+ * MPRIS saying Playing: "signal" sends its PropertiesChanged, "pause"
+ * starts a video (pause_spotify), "pactl" runs PACTL itself.
+ */
+const PLAYER_DRIVER = String.raw`import json
+import sys
+
+scenario = json.loads(sys.argv[1])
+sys.argv = ["player", "test-sink", "org.mpris.MediaPlayer2.fake"]
+player = {"__name__": "player_test"}
+exec(compile(sys.stdin.read(), "player", "exec"), player)
+from gi.repository import GLib, Gst
+
+said = []
+calls = []
+polls = []
+player["say"] = said.append
+player["GRACE_S"] = 0.3
+player["POLL_MS"] = 20
+streams = scenario.get("streams")
+
+
+def pactl_json(*args):
+    if streams is None:
+        raise OSError("no pactl")
+    if args[-1] == "sinks":
+        return [{"index": 1, "name": "test-sink"}, {"index": 2, "name": "speakers"}]
+    polls.append(args)
+    return streams[min(len(polls), len(streams)) - 1]
+
+
+class Pipeline:
+    state = Gst.State.PLAYING
+
+    def get_state(self, _timeout):
+        return (Gst.StateChangeReturn.SUCCESS, self.state, Gst.State.VOID_PENDING)
+
+    def set_state(self, state):
+        self.state = state
+        calls.append("set_state")
+
+    def get_bus(self):
+        return self
+
+    def remove_signal_watch(self):
+        pass
+
+
+def dbus(_name, _path, _iface, method, _args=None):
+    calls.append(method)
+    return ("Playing",) if method == "Get" else ()
+
+
+if scenario["run"] == "pactl":
+    player["PACTL"] = [sys.executable, "-c", "import json, sys; print(json.dumps(sys.argv[1:]))"]
+    print(json.dumps(player["pactl_json"]("list", "sink-inputs")))
+    sys.exit(0)
+player["pactl_json"] = pactl_json
+player["pipeline"] = Pipeline()
+player["owners"] = lambda: {":1.5"}
+player["spotify_names"] = lambda: ["org.mpris.MediaPlayer2.fake"]
+player["dbus"] = dbus
+if scenario["run"] == "signal":
+    player["on_properties"](
+        None, ":1.5", "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties",
+        "PropertiesChanged",
+        GLib.Variant("(sa{sv}as)", (
+            "org.mpris.MediaPlayer2.Player",
+            {"PlaybackStatus": GLib.Variant("s", "Playing")}, [],
+        )),
+        None,
+    )
+    loop = GLib.MainLoop()
+    GLib.timeout_add(600, loop.quit)
+    loop.run()
+else:
+    player["pause_spotify"]()
+print(json.dumps({
+    "said": said,
+    "playing": player["pipeline"] is not None,
+    "paused": "Pause" in calls,
+    "polls": len(polls),
+}))
+`;
+
+async function runPlayer(scenario: {
+  run: "signal" | "pause" | "pactl";
+  streams?: unknown[][] | null;
+}): Promise<{
+  said: Record<string, unknown>[];
+  playing: boolean;
+  paused: boolean;
+  polls: number;
+}> {
+  const child = Bun.spawn(
+    ["python3", "-I", "-c", PLAYER_DRIVER, JSON.stringify(scenario)],
+    {
+      stdin: new TextEncoder().encode(PLAYER_SCRIPT),
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  const [out, err, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  if (code !== 0) throw new Error(`the player's code failed: ${err}`);
+  return JSON.parse(out.trim().split("\n").at(-1)!);
+}
+
+/** A sink input of the Spotify app's, into `sink` (1: the player's). */
+function spotifyStream(sink = 1, corked = false) {
+  return {
+    index: 9,
+    sink,
+    corked,
+    properties: { "node.name": "spotify", "application.name": "spotify" },
+  };
+}
+
+const YOUTUBE_STREAM = {
+  index: 8,
+  sink: 1,
+  corked: false,
+  properties: { "application.name": "Roamgate YouTube" },
+};
+
+describe.skipIf(!PLAYER_PYTHON)("the player and the Spotify app", () => {
+  test("Spotify playing on another device leaves the video", async () => {
+    // Spotify Connect: the desktop app mirrors the account's playing on
+    // someone else's phone, saying Playing with no sound of its own.
+    const done = await runPlayer({
+      run: "signal",
+      streams: [[YOUTUBE_STREAM]],
+    });
+    expect(done.playing).toBe(true);
+    expect(done.said).toEqual([{ event: "spotify_elsewhere" }]);
+    expect(done.polls).toBeGreaterThan(1);
+  });
+
+  test("the Spotify app playing into the sink stops it, once its stream comes", async () => {
+    const done = await runPlayer({
+      run: "signal",
+      streams: [[YOUTUBE_STREAM], [YOUTUBE_STREAM], [spotifyStream()]],
+    });
+    expect(done.playing).toBe(false);
+    expect(done.said).toEqual([
+      { event: "stopped", reason: "Spotify started playing" },
+    ]);
+  });
+
+  test("a corked Spotify stream, or one on another sink, leaves it", async () => {
+    for (const stream of [spotifyStream(1, true), spotifyStream(2)]) {
+      const done = await runPlayer({ run: "signal", streams: [[stream]] });
+      expect(done.playing).toBe(true);
+    }
+  });
+
+  test("when pactl cannot tell, Spotify's Playing stops it as before", async () => {
+    const done = await runPlayer({ run: "signal", streams: null });
+    expect(done.playing).toBe(false);
+  });
+
+  test("starting a video pauses the Spotify app only when it plays here", async () => {
+    const elsewhere = await runPlayer({ run: "pause", streams: [[]] });
+    expect(elsewhere.paused).toBe(false);
+    expect(elsewhere.said).toEqual([]);
+    const here = await runPlayer({
+      run: "pause",
+      streams: [[spotifyStream()]],
+    });
+    expect(here.paused).toBe(true);
+    expect(here.said).toEqual([{ event: "spotify_paused" }]);
+  });
+
+  test("pactl is asked for JSON", async () => {
+    const child = Bun.spawn(
+      ["python3", "-I", "-c", PLAYER_DRIVER, '{"run":"pactl"}'],
+      { stdin: new TextEncoder().encode(PLAYER_SCRIPT), stdout: "pipe" },
+    );
+    const out = await new Response(child.stdout).text();
+    expect(JSON.parse(out)).toEqual(["-f", "json", "list", "sink-inputs"]);
+  });
+});
