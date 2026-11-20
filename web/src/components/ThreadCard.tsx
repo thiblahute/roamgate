@@ -5,6 +5,7 @@ import {
   type ReviewThread,
 } from "../../../shared/review";
 import "./ChatThreads.css";
+import { summaryLine } from "./reviewImageUpload";
 
 /**
  * Reply on a message of a thread: a thread on the whole of it, drawn under
@@ -86,7 +87,7 @@ export function ThreadCard({
           {thread.resolved ? "✓ Resolved" : "▸ Folded"}
         </span>
         <span className="chat-thread-summary">
-          {(first?.body ?? "").split("\n")[0]}
+          {summaryLine(first?.body ?? "")}
         </span>
         <span className="chat-thread-count">
           {thread.comments.length} message

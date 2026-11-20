@@ -11,6 +11,11 @@ import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { type RefObject, useLayoutEffect, useRef } from "react";
 import { useSpeechEngine } from "../speechEngine";
 import { DictationButton, DictationStatus, useDictation } from "./Dictation";
+import {
+  IMAGE_UPLOADING,
+  imageUploadPending,
+  imageUploadToken,
+} from "./reviewImageUpload";
 import { keepAboveKeyboard } from "./keepAboveKeyboard";
 import { defineExCommands, vimExEditors } from "./vimEx";
 import "./ReviewCard.css";
@@ -24,6 +29,8 @@ export type CommentEditorHandle = {
    * normal mode closes the editor as the key does.
    */
   escape: () => void;
+  /** Puts images picked from a file chooser in, at the cursor, as a paste does. */
+  addImages: (files: readonly File[]) => void;
 };
 
 export const reviewEditorTheme = EditorView.theme({
@@ -80,46 +87,54 @@ export const reviewEditorTheme = EditorView.theme({
  */
 let uploads = 0;
 
-/** What stands in for a pasted image until it is stored. */
-export function imageUploadToken(n: number): string {
-  return `![Adding image ${n}...]()`;
+export { IMAGE_UPLOADING, imageUploadPending, imageUploadToken };
+
+/**
+ * Pasted, dropped or picked images go in as Markdown once stored, each
+ * where the cursor was; false when there is none or nowhere to store it.
+ */
+function addImages(
+  view: EditorView,
+  files: readonly File[],
+  store?: (file: File) => Promise<string>,
+  failed?: (message: string) => void,
+): boolean {
+  const images = files.filter((f) => f.type.startsWith("image/"));
+  if (!images.length || !store) return false;
+  for (const file of images) {
+    const token = imageUploadToken(++uploads);
+    const { from, to } = view.state.selection.main;
+    view.dispatch({
+      changes: { from, to, insert: token },
+      selection: EditorSelection.cursor(from + token.length),
+    });
+    const replace = (text: string) => {
+      const at = view.state.doc.toString().indexOf(token);
+      if (at >= 0)
+        view.dispatch({
+          changes: { from: at, to: at + token.length, insert: text },
+        });
+    };
+    store(file).then(replace, (error: unknown) => {
+      replace("");
+      failed?.(
+        `Image not added: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+  }
+  return true;
 }
 
-/** Whether a text still waits for one of its images to be stored. */
-export function imageUploadPending(text: string): boolean {
-  return /!\[Adding image \d+\.\.\.\]\(\)/.test(text);
-}
-
-/** Said when a save waits for an image. */
-export const IMAGE_UPLOADING =
-  "An image is still uploading: save once it is in.";
-
-/** A pasted or dropped image goes in as Markdown once stored. */
-function addImage(
+/** A paste or drop with images: they go in, and the event is taken. */
+function addTransferImages(
   view: EditorView,
   data: DataTransfer | null,
   event: Event,
   store?: (file: File) => Promise<string>,
+  failed?: (message: string) => void,
 ): boolean {
-  const file = [...(data?.files ?? [])].find((f) =>
-    f.type.startsWith("image/"),
-  );
-  if (!file || !store) return false;
+  if (!addImages(view, [...(data?.files ?? [])], store, failed)) return false;
   event.preventDefault();
-  const token = imageUploadToken(++uploads);
-  const { from, to } = view.state.selection.main;
-  view.dispatch({
-    changes: { from, to, insert: token },
-    selection: EditorSelection.cursor(from + token.length),
-  });
-  const replace = (text: string) => {
-    const at = view.state.doc.toString().indexOf(token);
-    if (at >= 0)
-      view.dispatch({
-        changes: { from: at, to: at + token.length, insert: text },
-      });
-  };
-  store(file).then(replace, () => replace(""));
   return true;
 }
 
@@ -200,7 +215,7 @@ export function ReviewCommentEditor({
   onSuggest: () => void;
   /** Stores a pasted or dropped image; resolves to the Markdown for it. */
   onPasteImage?: (file: File) => Promise<string>;
-  /** Says why the text cannot be saved or closed yet. */
+  /** Says why the text cannot be saved or closed yet, or an image was not added. */
   onBlocked?: (message: string) => void;
   /** The editor's accessible name. */
   label?: string;
@@ -214,6 +229,7 @@ export function ReviewCommentEditor({
     onCancel,
     onSuggest,
     onPasteImage,
+    onBlocked,
   });
   const viewRef = useRef<EditorView | null>(null);
   handlers.current = {
@@ -228,6 +244,7 @@ export function ReviewCommentEditor({
     onCancel,
     onSuggest,
     onPasteImage,
+    onBlocked,
   };
   // Created once per mount (the parent remounts per comment) from the props
   // it was opened with.
@@ -315,18 +332,20 @@ export function ReviewCommentEditor({
               return false;
             },
             paste: (event, view) =>
-              addImage(
+              addTransferImages(
                 view,
                 event.clipboardData,
                 event,
                 handlers.current.onPasteImage,
+                handlers.current.onBlocked,
               ),
             drop: (event, view) =>
-              addImage(
+              addTransferImages(
                 view,
                 event.dataTransfer,
                 event,
                 handlers.current.onPasteImage,
+                handlers.current.onBlocked,
               ),
           }),
         ],
@@ -371,6 +390,15 @@ export function ReviewCommentEditor({
             Vim.handleKey(cm, "<Esc>", "user");
             view.focus();
           } else handlers.current.onCommit(false);
+        },
+        addImages: (files) => {
+          addImages(
+            view,
+            files,
+            handlers.current.onPasteImage,
+            handlers.current.onBlocked,
+          );
+          view.focus();
         },
       };
     const typeOnFocus = () => {

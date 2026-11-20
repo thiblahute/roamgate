@@ -13,7 +13,8 @@ import {
   type ReviewEditor,
 } from "../reviewSave";
 import type { CommentEditorHandle } from "./ReviewCommentEditor";
-import { imageUploadPending, IMAGE_UPLOADING } from "./ReviewCommentEditor";
+import { imageUploadPending, IMAGE_UPLOADING } from "./reviewImageUpload";
+import { ImagePickButton } from "./ImagePickButton";
 import "./ChatThreads.css";
 
 /*
@@ -305,6 +306,12 @@ export function ReviewDiffComposer({
           >
             Suggest
           </button>
+        ) : null}
+        {onAddImage ? (
+          <ImagePickButton
+            className="btn ghost"
+            onPick={(files) => handle.current?.addImages(files)}
+          />
         ) : null}
         <span className="spacer" />
         {vim && coarse ? (

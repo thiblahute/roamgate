@@ -256,7 +256,11 @@ import {
   ReviewError,
   type ReviewService,
 } from "./review/service";
-import { pruneReviewImages, reviewImageFile } from "./review/images";
+import {
+  localImageFile,
+  pruneReviewImages,
+  reviewImageFile,
+} from "./review/images";
 import { openReviewStorage, reviewDirectory } from "./review/storage";
 import { isHostPath, ReviewGoneError } from "./workspace/review-patch";
 import { createForgeCache, parseForgeRefParam } from "./review/forge";
@@ -1491,18 +1495,26 @@ function reviewGlabContext(
 
 /** An image pasted into a review comment, to the signed-in browser. */
 async function serveReviewImage(url: URL): Promise<Response> {
-  const image = reviewImageFile(
-    reviewDirectory(),
-    url.searchParams.get("session") ?? "",
-    url.searchParams.get("name") ?? "",
-  );
+  // An agent's image named by its path: it may change, so not kept.
+  const named = url.searchParams.get("path");
+  const image =
+    named !== null
+      ? await localImageFile(named)
+      : reviewImageFile(
+          reviewDirectory(),
+          url.searchParams.get("session") ?? "",
+          url.searchParams.get("name") ?? "",
+        );
   const file = image ? Bun.file(image.path) : null;
   if (!image || !file || !(await file.exists()))
     return new Response("not found", { status: 404 });
   return new Response(file, {
     headers: {
       "content-type": image.type,
-      "cache-control": "private, max-age=31536000, immutable",
+      "cache-control":
+        named !== null
+          ? "private, no-cache"
+          : "private, max-age=31536000, immutable",
       "x-content-type-options": "nosniff",
       "content-security-policy": "default-src 'none'",
     },

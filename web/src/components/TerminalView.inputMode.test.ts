@@ -191,6 +191,7 @@ async function registerDomTests() {
   mock.module("../terminalImageUpload", () => ({
     uploadTerminalImage: upload,
     uploadTerminalFile: upload,
+    uploadedImageMarkdown: upload,
   }));
   let scrollDisabledReason: string | null = null;
   const scrollReason = mock(() => scrollDisabledReason);

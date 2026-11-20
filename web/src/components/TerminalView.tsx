@@ -117,6 +117,7 @@ import {
   watchTerminalOverlayPointer,
 } from "../terminalFocus";
 import {
+  uploadedImageMarkdown,
   uploadTerminalFile,
   uploadTerminalImage,
 } from "../terminalImageUpload";
@@ -4235,6 +4236,8 @@ export function TerminalView({
         : null}
       <AnnotationComposerPopover
         draft={reviewSelection?.composing ? reviewSelection : null}
+        // The pane's agent reads it on the pane's host.
+        onAddImage={(file) => uploadedImageMarkdown(connectionClient, file)}
         onClose={() => {
           touchSelectionRef.current?.reset();
           setReviewSelection(null);

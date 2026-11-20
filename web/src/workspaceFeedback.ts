@@ -311,8 +311,23 @@ export async function addFeedbackImage(
       ? { agent_pane: place.agent.paneId, agent: place.agent.name }
       : {}),
   });
+  return reviewImageMarkdown(call, opened.session.id, file);
+}
+
+/**
+ * An image stored with a review (pasted, dropped or picked in one of its
+ * comment boxes); Markdown linking its file, which agents read and the
+ * review shows.
+ */
+export async function reviewImageMarkdown(
+  call: FeedbackCall,
+  sessionId: string,
+  file: File,
+): Promise<string> {
+  if (file.size > FEEDBACK_IMAGE_MAX_BYTES)
+    throw new Error("an image is at most 10 MiB");
   const { path } = await call<{ path: string }>("review.image.add", {
-    session_id: opened.session.id,
+    session_id: sessionId,
     type: file.type,
     data: await blobBase64(file),
   });

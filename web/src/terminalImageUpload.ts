@@ -19,6 +19,23 @@ export async function uploadTerminalImage(
   });
 }
 
+/**
+ * An image uploaded to the connection's host, as Markdown linking its path
+ * there: for a comment an agent on that host reads.
+ */
+export async function uploadedImageMarkdown(
+  client: ConnectionClient,
+  file: File,
+): Promise<string> {
+  const text = (await uploadTerminalImage(client, file)).trim();
+  // The path as a prompt takes it, quoted when it has to be.
+  const path = text
+    .replace(/^'(.*)'$/s, "$1")
+    .split("'\\''")
+    .join("'");
+  return `![screenshot](<${path}>)`;
+}
+
 export function uploadTerminalFile(
   client: ConnectionClient,
   file: File,

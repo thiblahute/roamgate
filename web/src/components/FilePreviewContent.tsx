@@ -399,6 +399,7 @@ export function FilePreviewContent({
   treeHidden = false,
   onClosePreview,
   onCreateAnnotation,
+  onAddReviewImage,
   onShowInReview,
   reviewFiles,
   onReanchorAnnotations,
@@ -427,6 +428,8 @@ export function FilePreviewContent({
     annotation: NewReviewAnnotation,
     capture?: FeedbackCapture & { root?: string },
   ) => void;
+  /** Stores an image put in a comment; the Markdown for it. */
+  onAddReviewImage?: (file: File) => Promise<string>;
   onReanchorAnnotations?: (path: string, text: string) => void;
   /**
    * Show in code review: the file (absolute path) in the code review of
@@ -2700,6 +2703,7 @@ export function FilePreviewContent({
         commentValue={fileDrafts[draftPath]?.comment ?? ""}
         onCommentChange={setDraftComment}
         suspendOnFileTabNavigation
+        {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
         onSave={saveAnnotation}
         onClose={closeAnnotationComposer}
       />

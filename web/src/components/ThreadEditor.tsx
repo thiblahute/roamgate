@@ -1,6 +1,9 @@
 import { Suspense, useRef, useState } from "react";
 import { vimKeys } from "../vimKeys";
+import { ImagePickButton } from "./ImagePickButton";
+import type { CommentEditorHandle } from "./ReviewCommentEditor";
 import { ReviewCommentEditorLazy } from "./ReviewCommentEditorLazy";
+import { IMAGE_UPLOADING, imageUploadPending } from "./reviewImageUpload";
 import { newClientId } from "../reviewPending";
 import "./ChatThreads.css";
 
@@ -23,6 +26,7 @@ export function ThreadEditor({
   autoFocus = true,
   onChange,
   sendLabel = "Send",
+  onAddImage,
 }: {
   placeholder: string;
   /** Sends the text with its id; settles once it is saved or failed. */
@@ -41,16 +45,26 @@ export function ThreadEditor({
   onChange?: (text: string) => void;
   /** What its button says. */
   sendLabel?: string;
+  /**
+   * Stores an image pasted, dropped or picked; resolves to the Markdown
+   * for it. Without it, the box takes no images.
+   */
+  onAddImage?: (file: File) => Promise<string>;
 }) {
   const text = useRef(kept?.text ?? "");
   const [initial] = useState(() => kept?.text ?? "");
   const [vim] = useState(vimKeys);
   const sending = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [waiting, setWaiting] = useState("");
   const sent = useRef<{ text: string; id: string } | null>(kept?.sent ?? null);
+  const handle = useRef<CommentEditorHandle | null>(null);
   const close = () => onClose(sent.current?.id);
   const save = () => {
     if (sending.current || !text.current.trim()) return;
+    // Sent now, it would keep the placeholder and lose the image.
+    if (imageUploadPending(text.current)) return setWaiting(IMAGE_UPLOADING);
+    setWaiting("");
     sending.current = true;
     setBusy(true);
     const value = text.current;
@@ -71,6 +85,9 @@ export function ThreadEditor({
           vimMode={vim}
           autoFocus={autoFocus}
           placeholder={placeholder}
+          handleRef={handle}
+          {...(onAddImage ? { onPasteImage: onAddImage } : {})}
+          onBlocked={setWaiting}
           onChange={(value) => {
             text.current = value;
             if (kept) kept.text = value;
@@ -87,7 +104,18 @@ export function ThreadEditor({
         />
       </Suspense>
       <div className="chat-thread-bar">
-        <span className="chat-thread-hint">Cmd+Enter sends</span>
+        <span
+          className="chat-thread-hint"
+          role={waiting ? "status" : undefined}
+        >
+          {waiting || "Cmd+Enter sends"}
+        </span>
+        {onAddImage ? (
+          <ImagePickButton
+            className="chat-thread-image"
+            onPick={(files) => handle.current?.addImages(files)}
+          />
+        ) : null}
         <button type="button" onClick={close}>
           Cancel
         </button>

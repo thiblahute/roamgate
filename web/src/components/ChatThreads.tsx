@@ -67,6 +67,7 @@ import {
   useSelectedWords,
 } from "./MessageThreads";
 import { ThreadEditor, type ThreadBox } from "./ThreadEditor";
+import { reviewImageMarkdown } from "../workspaceFeedback";
 import { useThreadKeys } from "./useThreadKeys";
 export { ThreadEditor };
 import "./ChatThreads.css";
@@ -532,7 +533,11 @@ function ChatThreadsScope({
       box = { text: "" };
       keep.boxes.set(key, box);
     }
-    return { kept: box, autoFocus: !restored.has(key) };
+    return {
+      kept: box,
+      autoFocus: !restored.has(key),
+      onAddImage: (file: File) => addImage(file),
+    };
   };
   const reviews = useReviewState();
   const snapshot = useMemo(
@@ -647,28 +652,41 @@ function ChatThreadsScope({
 
   const sessionId = useRef<string | null>(null);
   sessionId.current = snapshot?.session.id ?? null;
+  /** The chat's review, opened by its first comment (or image). */
+  const openSession = useCallback(async () => {
+    if (sessionId.current) return sessionId.current;
+    const opened = await reviewCall<ReviewSnapshot>(
+      connectionId,
+      "review.open",
+      {
+        workspace_id: workspaceId,
+        path,
+        target: { kind: "chat", chat },
+        title: `Chat with ${agent}`,
+        agent,
+        agent_pane: paneId,
+      },
+    );
+    rememberReviewSnapshot(opened);
+    sessionId.current = opened.session.id;
+    return opened.session.id;
+  }, [connectionId, workspaceId, path, chat, agent, paneId]);
+  /** An image for a comment, kept with the chat's review: its Markdown. */
+  const addImage = useCallback(
+    async (file: File) =>
+      reviewImageMarkdown(
+        (method, params) => reviewCall(connectionId, method, params),
+        await openSession(),
+        file,
+      ),
+    [connectionId, openSession],
+  );
   /** Writes, then reads the review back so what you wrote shows at once. */
   const write = useCallback(
     async (method: string, params: Record<string, unknown>) => {
       setError("");
       try {
-        let id = sessionId.current;
-        if (!id) {
-          const opened = await reviewCall<ReviewSnapshot>(
-            connectionId,
-            "review.open",
-            {
-              workspace_id: workspaceId,
-              path,
-              target: { kind: "chat", chat },
-              title: `Chat with ${agent}`,
-              agent,
-              agent_pane: paneId,
-            },
-          );
-          rememberReviewSnapshot(opened);
-          id = opened.session.id;
-        }
+        const id = await openSession();
         await writeThenReadBack(
           (name, args) => reviewCall(connectionId, name, args),
           id,
@@ -682,7 +700,7 @@ function ChatThreadsScope({
         return false;
       }
     },
-    [connectionId, workspaceId, path, chat, agent, paneId],
+    [connectionId, openSession],
   );
 
   /** Sends a comment with its id, shown at once as pending. */

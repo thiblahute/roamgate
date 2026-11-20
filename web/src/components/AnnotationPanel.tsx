@@ -51,10 +51,13 @@ function HeldCommentEditor({
   label,
   onChange,
   onKeys,
+  onAddImage,
 }: {
   comment: string;
   label: string;
   onChange: (comment: string) => void;
+  /** Stores an image pasted or dropped in; the Markdown for it. */
+  onAddImage?: (file: File) => Promise<string>;
   /** The panel's own keys (Copy, Pre-fill), ahead of the editor's. */
   onKeys: (event: ReactKeyboardEvent) => void;
 }) {
@@ -87,6 +90,7 @@ function HeldCommentEditor({
             typed.current = value;
             onChange(value);
           }}
+          {...(onAddImage ? { onPasteImage: onAddImage } : {})}
           onCommit={leave}
           onCancel={leave}
           onSuggest={() => {}}
@@ -132,6 +136,7 @@ export function AnnotationPanel({
   focusedAnnotationId,
   onClose,
   onUpdateComment,
+  onAddImage,
   onDelete,
   onMove,
   onClear,
@@ -155,6 +160,8 @@ export function AnnotationPanel({
   /** Goes to a held comment where it was written (its pane, its file). */
   onGo?: (id: string) => void;
   onUpdateComment: (id: string, comment: string) => void;
+  /** Stores an image put in a comment; the Markdown for it. */
+  onAddImage?: (file: File) => Promise<string>;
   onDelete: (id: string) => void;
   onMove: (id: string, delta: -1 | 1) => void;
   onClear: () => void;
@@ -316,6 +323,7 @@ export function AnnotationPanel({
                     onUpdateComment(annotation.id, comment)
                   }
                   onKeys={deliveryKeys}
+                  {...(onAddImage ? { onAddImage } : {})}
                 />
               ) : (
                 <textarea

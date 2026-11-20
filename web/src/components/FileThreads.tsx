@@ -16,7 +16,7 @@ import {
   type ReviewThread,
   unheardComments,
 } from "../../../shared/review";
-import { useReviewState } from "../review";
+import { reviewCall, useReviewState } from "../review";
 import { writeReviewSession } from "../reviewSessionCall";
 import {
   cellPlacement,
@@ -44,7 +44,7 @@ import { ThreadEditor } from "./ThreadEditor";
 import { ThreadsPanel, useOpenOnly } from "./ThreadsPanel";
 import type { ThreadKeys } from "./useThreadKeys";
 import type { NavPlace } from "../unresolvedThreads";
-import { HELD_FOR_SEND } from "../workspaceFeedback";
+import { HELD_FOR_SEND, reviewImageMarkdown } from "../workspaceFeedback";
 
 /*
  * The threads on what the Files preview shows: review threads, drawn in the
@@ -79,6 +79,11 @@ export type ThreadWrites = {
     text: string,
     id: string,
   ) => Promise<void>;
+  /**
+   * Stores an image for a comment in the thread's review; the Markdown
+   * for it (its file's path, which the agent reads).
+   */
+  addImage?: (thread: ReviewThread, file: File) => Promise<string>;
 };
 
 export type FileThreadsApi = ThreadWrites & {
@@ -320,6 +325,12 @@ export function threadWrites(connectionId: string): Required<ThreadWrites> {
             text: thread.comments[0]?.body ?? "",
           })
         : write(thread, "review.restore", { thread }),
+    addImage: (thread, file) =>
+      reviewImageMarkdown(
+        (method, params) => reviewCall(connectionId, method, params),
+        thread.sessionId,
+        file,
+      ),
     addPart: (thread, part, text, id) =>
       write(thread, "review.thread.add", {
         kind: "discussion",
@@ -442,6 +453,7 @@ export function FileThread({
       ) : !comment ? (
         <ThreadEditor
           placeholder="Draft reply..."
+          {...imageStore(api, thread)}
           onLeave={view.backToKeys}
           onClose={close}
           onSave={(text, id) => api.reply(thread, text, id).then(close)}
@@ -450,6 +462,7 @@ export function FileThread({
         <ThreadEditor
           kept={{ text: comment.body }}
           placeholder="Your draft reply..."
+          {...imageStore(api, thread)}
           onLeave={view.backToKeys}
           onClose={close}
           onSave={(text) => api.edit!(thread, comment, text).then(close)}
@@ -536,6 +549,7 @@ export function FileThread({
       <div className="chat-thread is-draft">
         <ThreadEditor
           placeholder={placeholder}
+          {...imageStore(api, thread)}
           onLeave={view.backToKeys}
           onClose={done}
           onSave={(text, id) => addPart(thread, draft, text, id).then(done)}
@@ -692,6 +706,7 @@ export function FileThread({
             <ThreadEditor
               kept={{ text: first.body }}
               placeholder="Your review comment..."
+              {...imageStore(api, thread)}
               onLeave={view.backToKeys}
               onClose={close}
               onSave={(text) => api.edit!(thread, first, text).then(close)}
@@ -712,6 +727,7 @@ export function FileThread({
         ) : view.replying === thread.id ? (
           <ThreadEditor
             placeholder="Reply..."
+            {...imageStore(api, thread)}
             onLeave={view.backToKeys}
             onClose={close}
             onSave={(text, id) => api.reply(thread, text, id).then(close)}
@@ -720,6 +736,15 @@ export function FileThread({
       }
     />
   );
+}
+
+/** A thread's comment box takes images, stored in the thread's review. */
+export function imageStore(
+  api: Pick<ThreadWrites, "addImage">,
+  thread: ReviewThread,
+): { onAddImage?: (file: File) => Promise<string> } {
+  const { addImage } = api;
+  return addImage ? { onAddImage: (file) => addImage(thread, file) } : {};
 }
 
 /** The narrowest a thread's card is drawn in a table's column. */
@@ -1292,7 +1317,7 @@ export function ThreadsList({
   threads: readonly ReviewThread[];
   /** Said after where a thread is (another view's: its commit). */
   whereNote?: (thread: ReviewThread) => string | undefined;
-  api: Pick<FileThreadsApi, "reply" | "resolve">;
+  api: Pick<FileThreadsApi, "reply" | "resolve" | "addImage">;
   onGo: (thread: ReviewThread) => void;
   onClose: () => void;
   className?: string;
@@ -1346,6 +1371,7 @@ export function ThreadsList({
               ) : (
                 <ThreadEditor
                   placeholder="Reply..."
+                  {...imageStore(api, byId.get(replying)!)}
                   onLeave={() => {}}
                   onClose={() => setReplying(null)}
                   onSave={(text, id) =>

@@ -6374,6 +6374,7 @@ function DiffContentViewInner({
       ) : null}
       <AnnotationComposerPopover
         draft={reviewEditor ? null : annotationComposerDraft}
+        {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
         onSave={saveAnnotation}
         onClose={closeAnnotationComposer}
       />

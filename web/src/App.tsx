@@ -6985,6 +6985,7 @@ export default function App() {
               agentPanes={annotationAgentPanes}
               preferredPaneId={annotationPreferredPaneId}
               busy={annotationDeliveryBusy}
+              onAddImage={addReviewImage}
               focusedAnnotationId={focusedAnnotationId}
               onClose={closeAnnotations}
               onUpdateComment={(id, comment) => {

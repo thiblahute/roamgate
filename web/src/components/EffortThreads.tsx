@@ -39,6 +39,8 @@ import {
 } from "./MessageThreads";
 import { NoteBody } from "./ReviewNoteBody";
 import { MessageReplyButton } from "./ThreadCard";
+import { reviewImageMarkdown } from "../workspaceFeedback";
+import { summaryLine } from "./reviewImageUpload";
 
 /**
  * Comment threads on what an upstreaming effort's view shows: a review of
@@ -129,6 +131,8 @@ export type EffortThreads = {
   /** Reply on a message: opens its box. */
   replyMessage: (part: ReviewMessagePart) => void;
   write: (method: string, params: Record<string, unknown>) => Promise<boolean>;
+  /** An image for a comment, kept with the effort's review: its Markdown. */
+  addImage: (file: File) => Promise<string>;
   send: (next: Omit<PendingWrite, "sessionId" | "at">) => Promise<boolean>;
   pendingById: Map<string, PendingWrite>;
   undelivered: Set<string>;
@@ -231,22 +235,35 @@ export function useEffortThreads(
   );
   const [error, setError] = useState("");
 
+  /** The effort's review, opened by the first comment (or image). */
+  const openSession = useCallback(async () => {
+    const known = snapshotRef.current?.session;
+    if (known) return known;
+    const answer = await mrReviewsCall<{
+      snapshot: ReviewSnapshot | null;
+    }>("effort.threads", { id: effort, open: true });
+    if (!answer?.snapshot)
+      throw new Error("the effort's review could not be opened");
+    rememberReviewSnapshot(answer.snapshot);
+    setSessionId(answer.snapshot.session.id);
+    return answer.snapshot.session;
+  }, [effort]);
+  const addImage = useCallback(
+    async (file: File) => {
+      const session = await openSession();
+      return reviewImageMarkdown(
+        (method, params) => reviewCall(session.connectionId, method, params),
+        session.id,
+        file,
+      );
+    },
+    [openSession],
+  );
   const write = useCallback(
     async (method: string, params: Record<string, unknown>) => {
       setError("");
       try {
-        let session = snapshotRef.current?.session;
-        if (!session) {
-          // The first comment opens the effort's review.
-          const answer = await mrReviewsCall<{
-            snapshot: ReviewSnapshot | null;
-          }>("effort.threads", { id: effort, open: true });
-          if (!answer?.snapshot)
-            throw new Error("the effort's review could not be opened");
-          rememberReviewSnapshot(answer.snapshot);
-          setSessionId(answer.snapshot.session.id);
-          session = answer.snapshot.session;
-        }
+        const session = await openSession();
         const connectionId = session.connectionId;
         await writeThenReadBack(
           (name, args) => reviewCall(connectionId, name, args),
@@ -261,7 +278,7 @@ export function useEffortThreads(
         return false;
       }
     },
-    [effort],
+    [openSession],
   );
 
   const send = useCallback(
@@ -327,6 +344,7 @@ export function useEffortThreads(
       setMessageDraft(part);
     },
     write,
+    addImage,
     send,
     pendingById,
     undelivered: undelivered?.ids ?? new Set(),
@@ -378,7 +396,7 @@ function EffortThreadCard({
           {thread.resolved ? "✓ Resolved" : "▸ Folded"}
         </span>
         <span className="chat-thread-summary">
-          {(first?.body ?? "").split("\n")[0]}
+          {summaryLine(first?.body ?? "")}
         </span>
         <span className="chat-thread-count">
           {thread.comments.length} message
@@ -495,6 +513,7 @@ function EffortThreadCard({
       {api.pendingById.has(thread.id) ? null : replying ? (
         <ThreadEditor
           placeholder="Reply..."
+          onAddImage={api.addImage}
           onLeave={api.back}
           onClose={() => {
             setReplying(false);
@@ -553,6 +572,7 @@ function EffortMessageReply({
     <div className="chat-thread is-draft mr-effort-thread">
       <ThreadEditor
         placeholder="Reply..."
+        onAddImage={api.addImage}
         onLeave={api.back}
         onClose={() => {
           api.cancel();
@@ -608,6 +628,7 @@ export function EffortThreadsAt({
           ) : null}
           <ThreadEditor
             placeholder="Comment for the leader session..."
+            onAddImage={api.addImage}
             onLeave={api.back}
             onClose={() => {
               api.cancel();

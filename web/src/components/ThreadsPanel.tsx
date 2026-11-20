@@ -12,6 +12,7 @@ import {
 import type { ReviewThread } from "../../../shared/review";
 import { roamgateLocalStorage } from "../browserStorage";
 import "./ThreadsPanel.css";
+import { summaryLine } from "./reviewImageUpload";
 
 /**
  * The comments of a review or of an agent chat, beside what they are on:
@@ -591,7 +592,7 @@ export function ThreadsPanel({
               >
                 <span className="threads-panel-fold">{open ? "▾" : "▸"}</span>
                 <span className="threads-panel-first">
-                  {open ? "Fold" : (first?.body ?? "").split("\n")[0]}
+                  {open ? "Fold" : summaryLine(first?.body ?? "")}
                 </span>
                 {open ? null : (
                   <span className="threads-panel-count">

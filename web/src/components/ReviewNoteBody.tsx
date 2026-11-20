@@ -383,9 +383,16 @@ export function SuggestionBlock({
   );
 }
 
+/** An image file by its absolute path. */
+const LOCAL_IMAGE = /^\/(?!\/)[^?#\0]*\.(?:png|jpe?g|gif|webp)$/i;
+/** A GitLab upload, relative to its project: not a file here. */
+const FORGE_UPLOAD = /^\/uploads\/[0-9a-f]{32}\//;
+
 /**
- * Images in comments: only those pasted into a review, by their file's
- * path; any other source (a tracker on the web) is dropped.
+ * Images in comments: those pasted into a review, by their file's path,
+ * and any other image file of this host an agent names by its absolute
+ * path (a screenshot it took); any other source (a tracker on the web, a
+ * forge's own upload) is dropped.
  */
 export function reviewImageUrl(source: string): string | null {
   let path = source;
@@ -396,8 +403,9 @@ export function reviewImageUrl(source: string): string | null {
     /\/images\/([0-9a-f]{16})\/([0-9a-f]{16}\.(?:png|jpg|gif|webp))$/.exec(
       path,
     );
-  return match
-    ? `/api/review/image?session=${match[1]}&name=${match[2]}`
+  if (match) return `/api/review/image?session=${match[1]}&name=${match[2]}`;
+  return LOCAL_IMAGE.test(path) && !FORGE_UPLOAD.test(path)
+    ? `/api/review/image?path=${encodeURIComponent(path)}`
     : null;
 }
 

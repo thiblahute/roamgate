@@ -1627,6 +1627,7 @@ export function WorkspaceInspectorHost({
                     }
                     annotations={annotations}
                     onCreateAnnotation={onCreateAnnotation}
+                    {...(onAddReviewImage ? { onAddReviewImage } : {})}
                     onShowInReview={onShowInReview}
                     reviewFiles={reviewFiles}
                     onReanchorAnnotations={onReanchorFileAnnotations}
@@ -1690,6 +1691,7 @@ export function WorkspaceInspectorHost({
                             annotations={annotations}
                             threads={feedbackThreads}
                             onCreateAnnotation={onCreateAnnotation}
+                            {...(onAddReviewImage ? { onAddReviewImage } : {})}
                             onReanchorAnnotations={onReanchorDiffAnnotations}
                             onEditAnnotation={onEditAnnotation}
                             onSelectFile={(entry) =>

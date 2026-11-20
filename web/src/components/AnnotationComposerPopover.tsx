@@ -20,6 +20,7 @@ export function AnnotationComposerPopover({
   commentValue,
   onCommentChange,
   suspendOnFileTabNavigation = false,
+  onAddImage,
 }: {
   draft: AnnotationComposerDraft | null;
   onSave: (comment: string) => void | Promise<void>;
@@ -27,6 +28,8 @@ export function AnnotationComposerPopover({
   commentValue?: string;
   onCommentChange?: (comment: string) => void;
   suspendOnFileTabNavigation?: boolean;
+  /** Stores an image put in the comment; the Markdown for it. */
+  onAddImage?: (file: File) => Promise<string>;
 }) {
   useShortcutPreferences();
   const onCloseRef = useRef(onClose);
@@ -171,6 +174,7 @@ export function AnnotationComposerPopover({
         key={`${draft.title}\n${draft.quote}`}
         placeholder="Add a review comment"
         sendLabel="Add comment"
+        {...(onAddImage ? { onAddImage } : {})}
         kept={keptBox.current}
         onChange={setComment}
         onLeave={() => {}}
