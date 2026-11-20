@@ -4,13 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readVoiceConfig } from "./voice-helper";
 import {
-  PLAYER_SCRIPT,
-  type PlayerProcess,
+  helperFailure,
+  NEEDS_HELPER,
+  NO_CALL,
+  NO_OPUS,
   parseYtDlp,
-  playerCommand,
   resolveYoutube,
   SPOTIFY_MPRIS,
   YoutubeError,
+  type YoutubeHelper,
   YoutubePlayer,
   type YoutubeTrack,
   youtubeConfig,
@@ -48,6 +50,10 @@ describe("finding a video", () => {
     expect(args.at(-2)).toBe("--");
     expect(args.at(-1)).toBe("ytsearch1:--exec rm");
     expect(args).toContain("--no-playlist");
+    // Only WebM with Opus: the helper has no AAC decoder.
+    expect(args[args.indexOf("--format") + 1]).toBe(
+      "bestaudio[acodec=opus]/bestaudio[ext=webm]",
+    );
   });
 
   test("its JSON gives the title, page, length, stream and headers", () => {
@@ -57,11 +63,29 @@ describe("finding a video", () => {
       channel: TRACK.channel,
       duration: 241.6,
       url: TRACK.stream,
+      ext: "webm",
+      acodec: "opus",
       http_headers: TRACK.headers,
     });
     expect(parseYtDlp(`[info] noise\n${line}\n`)).toEqual(TRACK);
     expect(() => parseYtDlp("")).toThrow("nothing was found on YouTube");
     expect(() => parseYtDlp('{"title":"x"}')).toThrow("no audio stream");
+  });
+
+  test("a video with only AAC audio says the helper cannot play it", () => {
+    const m4a = JSON.stringify({
+      title: "x",
+      url: TRACK.stream,
+      ext: "m4a",
+      acodec: "mp4a.40.2",
+    });
+    expect(() => parseYtDlp(m4a)).toThrow(NO_OPUS);
+    expect(
+      ytDlpFailure(
+        "ERROR: [youtube] x: Requested format is not available. Use --list-formats for a list of available formats",
+        1,
+      ),
+    ).toBe(NO_OPUS);
   });
 
   test("a failure says why, and an outdated yt-dlp says to update it", () => {
@@ -102,98 +126,81 @@ describe("finding a video", () => {
   });
 });
 
-/** A player process the test answers, as PLAYER_SCRIPT would. */
-function fakePlayer(
-  answer?: (
-    process: ReturnType<typeof fakePlayer>,
-    command: Record<string, unknown>,
-  ) => void,
+/** A voice helper the test answers, as the helper's call_youtube would. */
+function fakeHelper(
+  answer?: (command: Record<string, unknown>) => Record<string, unknown>,
 ) {
-  const queued: string[] = [];
-  let wake: (() => void) | null = null;
-  let ended = false;
-  const process = {
-    written: [] as Record<string, unknown>[],
-    closed: false,
-    lines: (async function* () {
-      for (;;) {
-        while (queued.length) yield queued.shift()!;
-        if (ended) return;
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
-      }
-    })(),
-    write(line: string) {
-      const command = JSON.parse(line);
-      process.written.push(command);
-      process.reply?.(command);
+  const listeners = new Set<(event: Record<string, unknown>) => void>();
+  const helper = {
+    call: true,
+    sent: [] as Record<string, unknown>[],
+    /** The requests that put the call's music on first. */
+    musicOn: [] as string[],
+    inCall: () => helper.call,
+    async callYoutube(command: Record<string, unknown>, musicOn = false) {
+      if (!helper.call) throw new Error("no call");
+      helper.sent.push(command);
+      if (musicOn) helper.musicOn.push(String(command.action));
+      if (answer) return answer(command);
+      return {
+        state:
+          command.action === "pause"
+            ? "paused"
+            : command.action === "stop"
+              ? "stopped"
+              : "playing",
+        position: 12,
+        duration: 242,
+        volume: typeof command.volume === "number" ? command.volume : 1,
+        music_muted: false,
+        ...(command.action === "play" || command.action === "resume"
+          ? { spotify_paused: false }
+          : {}),
+      };
     },
-    close() {
-      process.closed = true;
-      ended = true;
-      wake?.();
+    onYoutube(listener: (event: Record<string, unknown>) => void) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
-    exited: Promise.resolve(0),
-    push(line: unknown) {
-      queued.push(JSON.stringify(line));
-      wake?.();
+    /** The helper tells a call_youtube event. */
+    tell(event: Record<string, unknown>) {
+      for (const listener of listeners)
+        listener({ event: "call_youtube", call: 1, ...event });
     },
-    /** Answers each command; replaced to answer otherwise. */
-    reply: null as ((command: Record<string, unknown>) => void) | null,
   };
-  process.reply = (command) => {
-    if (answer) return answer(process, command);
-    const state =
-      command.cmd === "pause"
-        ? "paused"
-        : command.cmd === "stop"
-          ? "stopped"
-          : "playing";
-    process.push({
-      id: command.id,
-      ok: true,
-      state,
-      position: 12,
-      duration: 242,
-      volume: 1,
-    });
-  };
-  return process;
+  return helper;
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-function player(answer?: Parameters<typeof fakePlayer>[0]) {
-  const spawned: ReturnType<typeof fakePlayer>[] = [];
+function player(answer?: Parameters<typeof fakeHelper>[0]) {
+  const helper = fakeHelper(answer);
   const asked: string[] = [];
   const using = new YoutubePlayer(
-    () => {
-      const process = fakePlayer(answer);
-      spawned.push(process);
-      return process as PlayerProcess;
-    },
+    helper satisfies YoutubeHelper,
     async (what) => {
       asked.push(what);
       return TRACK;
     },
     1000,
   );
-  return { using, spawned, asked };
+  return { using, helper, asked };
 }
 
-describe("the YouTube player", () => {
-  test("play starts the player and gives it the stream and headers", async () => {
-    const { using, spawned, asked } = player();
+describe("the YouTube player drives the helper's call", () => {
+  test("play gives the helper the stream and headers, the music put on", async () => {
+    const { using, helper, asked } = player();
     const status = await using.play("around the world");
     expect(asked).toEqual(["around the world"]);
-    expect(spawned).toHaveLength(1);
-    expect(spawned[0]!.written[0]).toEqual({
-      id: 1,
-      cmd: "play",
-      uri: TRACK.stream,
-      headers: TRACK.headers,
-    });
+    expect(helper.sent).toEqual([
+      { action: "status" },
+      {
+        action: "play",
+        url: TRACK.stream,
+        headers: TRACK.headers,
+        volume: 1,
+        pause_mpris: SPOTIFY_MPRIS,
+      },
+    ]);
+    expect(helper.musicOn).toEqual(["play"]);
     expect(status).toEqual({
       state: "playing",
       position: 12,
@@ -203,8 +210,8 @@ describe("the YouTube player", () => {
     });
   });
 
-  test("pause, resume, volume, seek and status go to the same player", async () => {
-    const { using, spawned } = player();
+  test("pause, resume, volume, seek and status go to the call", async () => {
+    const { using, helper } = player();
     await using.play("x");
     expect((await using.pause()).state).toBe("paused");
     expect((await using.resume()).state).toBe("playing");
@@ -212,8 +219,8 @@ describe("the YouTube player", () => {
     await using.seek({ by: 30 });
     await using.seek({ position: 5 });
     expect((await using.nowPlaying()).track?.title).toBe(TRACK.title);
-    expect(spawned).toHaveLength(1);
-    expect(spawned[0]!.written.map((each) => each.cmd)).toEqual([
+    expect(helper.sent.map((each) => each.action)).toEqual([
+      "status",
       "play",
       "pause",
       "resume",
@@ -223,114 +230,134 @@ describe("the YouTube player", () => {
       "seek",
       "status",
     ]);
-    expect(spawned[0]!.written[3]!.volume).toBe(0.4);
+    expect(helper.sent[3]).toEqual({
+      action: "resume",
+      pause_mpris: SPOTIFY_MPRIS,
+    });
+    expect(helper.musicOn).toEqual(["play", "resume"]);
+    expect(helper.sent[4]!.volume).toBe(0.4);
     // 12 s in, 30 s ahead.
-    expect(spawned[0]!.written[5]!.position).toBe(42);
-    expect(spawned[0]!.written[6]!.position).toBe(5);
+    expect(helper.sent[6]!.position).toBe(42);
+    expect(helper.sent[7]!.position).toBe(5);
+    // The next video keeps the volume.
+    await using.play("y");
+    expect(helper.sent.at(-1)!.volume).toBe(0.4);
   });
 
-  test("with nothing playing, nothing starts", async () => {
-    const { using, spawned } = player();
-    await expect(using.pause()).rejects.toThrow("nothing is playing");
+  test("an older helper, or no call, is told before yt-dlp runs", async () => {
+    const { using, asked, helper } = player(() => {
+      throw new Error("unknown op call_youtube");
+    });
+    await expect(using.play("x")).rejects.toThrow(NEEDS_HELPER);
+    expect(asked).toEqual([]);
+    helper.call = false;
+    await expect(using.play("x")).rejects.toThrow(NO_CALL);
+    expect(asked).toEqual([]);
+    expect(helperFailure("no call 3")).toBe(NO_CALL);
+    expect(helperFailure("Resource 'the stream' not found")).toBe(
+      "Resource 'the stream' not found",
+    );
+  });
+
+  test("without a call nothing plays, and what played ended with it", async () => {
+    const { using, helper } = player();
+    helper.call = false;
     expect(await using.nowPlaying()).toEqual({ state: "stopped", volume: 100 });
     expect((await using.stop()).state).toBe("stopped");
-    expect(spawned).toHaveLength(0);
-  });
-
-  test("stop ends the player's process", async () => {
-    const { using, spawned } = player();
+    await expect(using.pause()).rejects.toThrow(NO_CALL);
+    helper.call = true;
     await using.play("x");
-    const stopped = await using.stop();
-    expect(stopped.state).toBe("stopped");
-    expect(stopped.track).toBeUndefined();
-    expect(spawned[0]!.closed).toBe(true);
-    // The next video starts a new one.
-    await using.play("y");
-    expect(spawned).toHaveLength(2);
+    helper.call = false;
+    expect(await using.nowPlaying()).toEqual({
+      state: "stopped",
+      volume: 100,
+      ended: "the call ended",
+    });
   });
 
-  test("a failed start is told with the player's reason", async () => {
-    const { using } = player((process, command) =>
-      process.push({ id: command.id, ok: false, error: "Forbidden" }),
+  test("a failed start is told with the helper's reason", async () => {
+    const { using } = player((command) => {
+      if (command.action === "play")
+        throw new Error("Request for 'the stream' failed: 403 Forbidden");
+      return { state: "stopped" };
+    });
+    const failed = await using.play("x").catch((error) => error);
+    expect(failed).toBeInstanceOf(YoutubeError);
+    expect(failed.message).toBe(
+      "Request for 'the stream' failed: 403 Forbidden",
     );
-    await expect(using.play("x")).rejects.toThrow("Forbidden");
   });
 
-  test("Spotify paused for it, and the video's end, are told", async () => {
-    const { using, spawned } = player();
-    const playing = using.play("x");
-    await settle();
-    spawned[0]!.push({ event: "spotify_paused" });
-    await settle();
-    expect((await playing).spotifyPaused).toBeUndefined();
-    spawned[0]!.reply = (command) => {
-      spawned[0]!.push({ event: "spotify_paused" });
-      spawned[0]!.push({ id: command.id, ok: true, state: "playing" });
-    };
-    expect((await using.resume()).spotifyPaused).toBe(true);
-    spawned[0]!.push({ event: "ended" });
-    await settle();
-    await settle();
-    expect(spawned[0]!.closed).toBe(true);
+  test("Spotify paused for it, its end and Spotify's start are told", async () => {
+    const { using, helper } = player((command) => ({
+      state: command.action === "status" ? "stopped" : "playing",
+      spotify_paused: command.action === "play",
+    }));
+    expect((await using.play("x")).spotifyPaused).toBe(true);
+    helper.tell({ state: "playing", position: 0, duration: 242 });
+    helper.tell({ state: "stopped", why: "ended", reason: "the video ended" });
     expect(await using.nowPlaying()).toEqual({
       state: "stopped",
       volume: 100,
       ended: "the video ended",
     });
-  });
-
-  test("Spotify starting stops YouTube", async () => {
-    const { using, spawned } = player();
     await using.play("x");
-    await using.spotifyStarted();
-    expect(spawned[0]!.written.at(-1)!.cmd).toBe("stop");
-    expect(spawned[0]!.closed).toBe(true);
+    helper.tell({
+      state: "stopped",
+      why: "spotify",
+      reason: "Spotify started playing",
+    });
     expect((await using.nowPlaying()).ended).toBe("Spotify started playing");
-    // Nothing to stop: nothing is started for it.
-    await using.spotifyStarted();
-    expect(spawned).toHaveLength(1);
+    await using.play("x");
+    helper.tell({ state: "stopped", why: "error", reason: "it failed: x" });
+    expect((await using.nowPlaying()).ended).toBe("it failed: x");
+    // Lost without a word (the helper restarted): said so.
+    await using.play("x");
+    expect((await using.nowPlaying()).ended).toBe("the call's audio restarted");
   });
 
-  test("a player that dies fails what waited", async () => {
-    const { using, spawned } = player();
+  test("Spotify starting on the call's device stops YouTube", async () => {
+    const { using, helper } = player((command) => ({
+      state: command.action === "stop" ? "stopped" : "playing",
+    }));
     await using.play("x");
-    spawned[0]!.reply = () => spawned[0]!.close();
-    await expect(using.pause()).rejects.toThrow("the player stopped");
+    await using.spotifyStarted();
+    expect(helper.sent.at(-1)!.action).toBe("stop");
+    // Nothing to stop: nothing is asked for it.
+    const sent = helper.sent.length;
+    await using.spotifyStarted();
+    expect(helper.sent).toHaveLength(sent);
+  });
+
+  test("a helper that does not answer fails the command", async () => {
+    const helper = fakeHelper();
+    helper.callYoutube = () => new Promise(() => {});
+    const using = new YoutubePlayer(helper, async () => TRACK, 20);
+    await expect(using.pause()).rejects.toThrow(
+      "the voice helper did not answer",
+    );
   });
 });
 
 describe("voice.json's YouTube", () => {
-  test("on with call_background, into roamgate-music by default", () => {
+  test("on with call_background, unless youtube is false", () => {
     expect(youtubeConfig({ helper: "h" })).toBeNull();
     expect(
-      youtubeConfig({ helper: "h", call_background: "x", youtube_sink: false }),
+      youtubeConfig({ helper: "h", call_background: "x", youtube: false }),
     ).toBeNull();
     expect(youtubeConfig({ helper: "h", call_background: "x" })).toEqual({
-      sink: "roamgate-music",
-      wrapper: [],
       ytDlp: ["yt-dlp"],
     });
-    const on = youtubeConfig({
-      helper: "h",
-      call_background: "x",
-      youtube_sink: "scratch",
-      youtube_player_wrapper: ["systemd-run", "--user", "--pipe", "--"],
-      yt_dlp: ["/opt/yt-dlp"],
-    })!;
-    expect(on.ytDlp).toEqual(["/opt/yt-dlp"]);
-    const command = playerCommand(on);
-    expect(command.slice(0, 6)).toEqual([
-      "systemd-run",
-      "--user",
-      "--pipe",
-      "--",
-      "python3",
-      "-I",
-    ]);
-    expect(command.slice(-2)).toEqual(["scratch", SPOTIFY_MPRIS]);
+    expect(
+      youtubeConfig({
+        helper: "h",
+        call_background: "x",
+        yt_dlp: ["/opt/yt-dlp"],
+      }),
+    ).toEqual({ ytDlp: ["/opt/yt-dlp"] });
   });
 
-  test("its keys are checked", () => {
+  test("its keys are checked; the old player's are ignored", () => {
     const dir = mkdtempSync(join(tmpdir(), "voice-youtube-"));
     try {
       const read = (extra: Record<string, unknown>) => {
@@ -346,238 +373,24 @@ describe("voice.json's YouTube", () => {
         );
         return readVoiceConfig(path);
       };
-      expect(read({ youtube_sink: 3 })).toEqual({
-        error: expect.stringContaining("youtube_sink must be"),
+      expect(read({ youtube: "yes" })).toEqual({
+        error: expect.stringContaining("youtube must be"),
       });
       expect(read({ yt_dlp: [] })).toEqual({
         error: expect.stringContaining("yt_dlp must be"),
       });
-      expect(read({ youtube_player_wrapper: "systemd-run" })).toEqual({
-        error: expect.stringContaining("youtube_player_wrapper must be"),
+      const old = read({
+        call_background: "x",
+        youtube_sink: 3,
+        youtube_player_wrapper: "systemd-run",
+        yt_dlp: ["yt-dlp"],
       });
-      expect(
-        read({
-          youtube_sink: false,
-          yt_dlp: ["yt-dlp"],
-          youtube_player_wrapper: [],
-        }),
-      ).not.toHaveProperty("error");
+      expect(old).not.toHaveProperty("error");
+      expect(youtubeConfig(old as Parameters<typeof youtubeConfig>[0])).toEqual(
+        { ytDlp: ["yt-dlp"] },
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
-});
-
-describe("the player script", () => {
-  test.skipIf(!Bun.which("python3"))("is valid Python", async () => {
-    const child = Bun.spawn(
-      [
-        "python3",
-        "-I",
-        "-c",
-        "import sys; compile(sys.stdin.read(), 'player', 'exec')",
-      ],
-      { stdin: new TextEncoder().encode(PLAYER_SCRIPT), stderr: "pipe" },
-    );
-    expect(await child.exited).toBe(0);
-  });
-});
-
-/** Whether Python has GStreamer's bindings, to run the player's code. */
-const PLAYER_PYTHON =
-  !!Bun.which("python3") &&
-  Bun.spawnSync([
-    "python3",
-    "-I",
-    "-c",
-    "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst",
-  ]).exitCode === 0;
-
-/**
- * Runs the player's code on a scenario, with a fake playing pipeline, a
- * fake pactl answering `streams` (the Spotify app's sink inputs, one list
- * a poll, the last one repeated; null: pactl fails) and a fake Spotify
- * MPRIS saying Playing: "signal" sends its PropertiesChanged, "pause"
- * starts a video (pause_spotify), "pactl" runs PACTL itself.
- */
-const PLAYER_DRIVER = String.raw`import json
-import sys
-
-scenario = json.loads(sys.argv[1])
-sys.argv = ["player", "test-sink", "org.mpris.MediaPlayer2.fake"]
-player = {"__name__": "player_test"}
-exec(compile(sys.stdin.read(), "player", "exec"), player)
-from gi.repository import GLib, Gst
-
-said = []
-calls = []
-polls = []
-player["say"] = said.append
-player["GRACE_S"] = 0.3
-player["POLL_MS"] = 20
-streams = scenario.get("streams")
-
-
-def pactl_json(*args):
-    if streams is None:
-        raise OSError("no pactl")
-    if args[-1] == "sinks":
-        return [{"index": 1, "name": "test-sink"}, {"index": 2, "name": "speakers"}]
-    polls.append(args)
-    return streams[min(len(polls), len(streams)) - 1]
-
-
-class Pipeline:
-    state = Gst.State.PLAYING
-
-    def get_state(self, _timeout):
-        return (Gst.StateChangeReturn.SUCCESS, self.state, Gst.State.VOID_PENDING)
-
-    def set_state(self, state):
-        self.state = state
-        calls.append("set_state")
-
-    def get_bus(self):
-        return self
-
-    def remove_signal_watch(self):
-        pass
-
-
-def dbus(_name, _path, _iface, method, _args=None):
-    calls.append(method)
-    return ("Playing",) if method == "Get" else ()
-
-
-if scenario["run"] == "pactl":
-    player["PACTL"] = [sys.executable, "-c", "import json, sys; print(json.dumps(sys.argv[1:]))"]
-    print(json.dumps(player["pactl_json"]("list", "sink-inputs")))
-    sys.exit(0)
-player["pactl_json"] = pactl_json
-player["pipeline"] = Pipeline()
-player["owners"] = lambda: {":1.5"}
-player["spotify_names"] = lambda: ["org.mpris.MediaPlayer2.fake"]
-player["dbus"] = dbus
-if scenario["run"] == "signal":
-    player["on_properties"](
-        None, ":1.5", "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties",
-        "PropertiesChanged",
-        GLib.Variant("(sa{sv}as)", (
-            "org.mpris.MediaPlayer2.Player",
-            {"PlaybackStatus": GLib.Variant("s", "Playing")}, [],
-        )),
-        None,
-    )
-    loop = GLib.MainLoop()
-    GLib.timeout_add(600, loop.quit)
-    loop.run()
-else:
-    player["pause_spotify"]()
-print(json.dumps({
-    "said": said,
-    "playing": player["pipeline"] is not None,
-    "paused": "Pause" in calls,
-    "polls": len(polls),
-}))
-`;
-
-async function runPlayer(scenario: {
-  run: "signal" | "pause" | "pactl";
-  streams?: unknown[][] | null;
-}): Promise<{
-  said: Record<string, unknown>[];
-  playing: boolean;
-  paused: boolean;
-  polls: number;
-}> {
-  const child = Bun.spawn(
-    ["python3", "-I", "-c", PLAYER_DRIVER, JSON.stringify(scenario)],
-    {
-      stdin: new TextEncoder().encode(PLAYER_SCRIPT),
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
-  const [out, err, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  if (code !== 0) throw new Error(`the player's code failed: ${err}`);
-  return JSON.parse(out.trim().split("\n").at(-1)!);
-}
-
-/** A sink input of the Spotify app's, into `sink` (1: the player's). */
-function spotifyStream(sink = 1, corked = false) {
-  return {
-    index: 9,
-    sink,
-    corked,
-    properties: { "node.name": "spotify", "application.name": "spotify" },
-  };
-}
-
-const YOUTUBE_STREAM = {
-  index: 8,
-  sink: 1,
-  corked: false,
-  properties: { "application.name": "Roamgate YouTube" },
-};
-
-describe.skipIf(!PLAYER_PYTHON)("the player and the Spotify app", () => {
-  test("Spotify playing on another device leaves the video", async () => {
-    // Spotify Connect: the desktop app mirrors the account's playing on
-    // someone else's phone, saying Playing with no sound of its own.
-    const done = await runPlayer({
-      run: "signal",
-      streams: [[YOUTUBE_STREAM]],
-    });
-    expect(done.playing).toBe(true);
-    expect(done.said).toEqual([{ event: "spotify_elsewhere" }]);
-    expect(done.polls).toBeGreaterThan(1);
-  });
-
-  test("the Spotify app playing into the sink stops it, once its stream comes", async () => {
-    const done = await runPlayer({
-      run: "signal",
-      streams: [[YOUTUBE_STREAM], [YOUTUBE_STREAM], [spotifyStream()]],
-    });
-    expect(done.playing).toBe(false);
-    expect(done.said).toEqual([
-      { event: "stopped", reason: "Spotify started playing" },
-    ]);
-  });
-
-  test("a corked Spotify stream, or one on another sink, leaves it", async () => {
-    for (const stream of [spotifyStream(1, true), spotifyStream(2)]) {
-      const done = await runPlayer({ run: "signal", streams: [[stream]] });
-      expect(done.playing).toBe(true);
-    }
-  });
-
-  test("when pactl cannot tell, Spotify's Playing stops it as before", async () => {
-    const done = await runPlayer({ run: "signal", streams: null });
-    expect(done.playing).toBe(false);
-  });
-
-  test("starting a video pauses the Spotify app only when it plays here", async () => {
-    const elsewhere = await runPlayer({ run: "pause", streams: [[]] });
-    expect(elsewhere.paused).toBe(false);
-    expect(elsewhere.said).toEqual([]);
-    const here = await runPlayer({
-      run: "pause",
-      streams: [[spotifyStream()]],
-    });
-    expect(here.paused).toBe(true);
-    expect(here.said).toEqual([{ event: "spotify_paused" }]);
-  });
-
-  test("pactl is asked for JSON", async () => {
-    const child = Bun.spawn(
-      ["python3", "-I", "-c", PLAYER_DRIVER, '{"run":"pactl"}'],
-      { stdin: new TextEncoder().encode(PLAYER_SCRIPT), stdout: "pipe" },
-    );
-    const out = await new Response(child.stdout).text();
-    expect(JSON.parse(out)).toEqual(["-f", "json", "list", "sink-inputs"]);
   });
 });

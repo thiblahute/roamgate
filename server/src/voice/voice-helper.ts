@@ -213,18 +213,11 @@ export type VoiceConfig = {
    */
   call_music_full_volume?: boolean;
   /**
-   * The sound server's sink YouTube videos asked for play into, whose
-   * monitor call_background records ("roamgate-music" by default); false
-   * takes YouTube from the companion's tools (voice-youtube.ts). Only
-   * with call_background.
+   * Whether the companion's tools may play YouTube videos as a call's
+   * music, in the helper (voice-youtube.ts): true by default, with
+   * call_background; false takes YouTube from them.
    */
-  youtube_sink?: string | false;
-  /**
-   * Arguments put before the YouTube player's command (Python with
-   * GStreamer), as helper_wrapper's: a program that runs it where the
-   * sound server is, passing its standard input and output through.
-   */
-  youtube_player_wrapper?: string[];
+  youtube?: boolean;
   /** yt-dlp's command, a program first; ["yt-dlp"] by default. */
   yt_dlp?: string[];
   /**
@@ -444,28 +437,19 @@ export function readVoiceConfig(
     return {
       error: `${path}: helper_wrapper must be a list of arguments, a program first`,
     };
-  for (const key of ["youtube_player_wrapper", "yt_dlp"] as const) {
-    const value = config[key];
-    if (
-      value !== undefined &&
-      !(
-        Array.isArray(value) &&
-        value.every((arg) => typeof arg === "string") &&
-        (key === "youtube_player_wrapper"
-          ? value.length === 0 || value[0]
-          : value[0])
-      )
-    )
-      return {
-        error: `${path}: ${key} must be a list of arguments, a program first`,
-      };
-  }
   if (
-    config.youtube_sink !== undefined &&
-    config.youtube_sink !== false &&
-    !(typeof config.youtube_sink === "string" && config.youtube_sink.trim())
+    config.yt_dlp !== undefined &&
+    !(
+      Array.isArray(config.yt_dlp) &&
+      config.yt_dlp.every((arg) => typeof arg === "string") &&
+      config.yt_dlp[0]
+    )
   )
-    return { error: `${path}: youtube_sink must be a sink's name or false` };
+    return {
+      error: `${path}: yt_dlp must be a list of arguments, a program first`,
+    };
+  if (config.youtube !== undefined && typeof config.youtube !== "boolean")
+    return { error: `${path}: youtube must be true or false` };
   if (
     config.helper_idle_exit_minutes !== undefined &&
     !(
@@ -1092,6 +1076,10 @@ export class VoiceHelper {
   private idleMs = 0;
   /** Stops the helper once idleMs passed with nothing to or from it. */
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Who hears the call_youtube events (voice-youtube.ts). */
+  private youtubeListeners = new Set<
+    (event: Record<string, unknown>) => void
+  >();
 
   constructor(
     private readonly config: () => VoiceConfig | { error: string },
@@ -1168,6 +1156,12 @@ export class VoiceHelper {
           continue;
         }
         if (typeof reply.event === "string") {
+          // A video's events go to the YouTube player, not to the call's
+          // page (voice-youtube.ts).
+          if (reply.event === "call_youtube") {
+            for (const listener of this.youtubeListeners) listener(reply);
+            continue;
+          }
           if (typeof reply.call === "number") {
             const call = this.calls.get(reply.call);
             if (call && reply.event === "call_music") {
@@ -1560,6 +1554,53 @@ export class VoiceHelper {
         if (this.process) this.send({ op: "call_stop", call: id });
       },
     };
+  }
+
+  /** The call the helper runs now, started: the one YouTube plays in. */
+  private runningCall(): number | undefined {
+    let running: number | undefined;
+    for (const [id, call] of this.calls) if (call.started) running = id;
+    return running;
+  }
+
+  /** Whether a call runs: YouTube plays only in one. */
+  inCall(): boolean {
+    return this.runningCall() !== undefined;
+  }
+
+  /**
+   * A call_youtube request (voice-youtube.ts) to the call running, its
+   * music put on first with `musicOn` (a video asked for is to be heard).
+   * Rejects with "no call" without one, and with the helper's "unknown op
+   * call_youtube" when it is older than YouTube.
+   */
+  async callYoutube(
+    command: Record<string, unknown>,
+    musicOn = false,
+  ): Promise<Record<string, unknown>> {
+    const id = this.runningCall();
+    if (id === undefined) throw new Error("no call");
+    const call = this.calls.get(id)!;
+    if (musicOn && call.background.muted) {
+      const answer = await this.request({
+        op: "call_music",
+        call: id,
+        muted: false,
+      });
+      // A helper restarted makes the call again as it is now.
+      call.background = {
+        ...call.background,
+        volume: Number(answer.volume ?? call.background.volume),
+        muted: answer.muted === true,
+      };
+    }
+    return this.request({ ...command, op: "call_youtube", call: id });
+  }
+
+  /** Listens to the helper's call_youtube events; answers how to stop. */
+  onYoutube(listener: (event: Record<string, unknown>) => void): () => void {
+    this.youtubeListeners.add(listener);
+    return () => this.youtubeListeners.delete(listener);
   }
 
   private async speakRequest(

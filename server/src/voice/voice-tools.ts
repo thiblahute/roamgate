@@ -19,7 +19,7 @@ import {
 } from "./voice-research";
 import {
   resolveYoutube,
-  spawnYoutubePlayer,
+  type YoutubeHelper,
   youtubeConfig,
   YoutubePlayer,
   type YoutubeStatus,
@@ -508,7 +508,7 @@ export function youtubeResult(status: YoutubeStatus): string {
       ? "?"
       : `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
   const playing = status.track
-    ? `${status.state === "playing" ? "Playing" : "Paused"} on YouTube: ${JSON.stringify(status.track.title)}${status.track.channel ? ` (${status.track.channel})` : ""}, ${at(status.position)} of ${status.duration ? at(status.duration) : "a live stream"}, player volume ${status.volume}.${status.spotifyPaused ? " Spotify was paused for it." : ""}`
+    ? `${status.state === "playing" ? "Playing" : "Paused"} on YouTube: ${JSON.stringify(status.track.title)}${status.track.channel ? ` (${status.track.channel})` : ""}, ${at(status.position)} of ${status.duration ? at(status.duration) : "a live stream"}, player volume ${status.volume}.${status.spotifyPaused ? " Spotify was paused for it." : ""}${status.musicOff ? " The call's music is off: it is not heard until the music is put back on." : ""}`
     : `Nothing plays on YouTube${status.ended ? ` (${status.ended})` : ""}.`;
   return `${playing}\n${JSON.stringify(status)}`;
 }
@@ -615,8 +615,8 @@ export function youtubeTools(player: YoutubeControls): RangerTool[] {
  * playback to a device) on the call's music device `device`: YouTube's
  * then stops. Music on another device (someone else using the account)
  * leaves it, as does a call naming no device, which may act on whatever
- * device plays: the player stops by itself when the Spotify app starts
- * playing into the call (voice-youtube.ts).
+ * device plays: the voice helper stops the video by itself when the
+ * Spotify app starts playing into the call (voice-youtube.ts).
  */
 export function startsSpotify(
   tool: string,
@@ -1003,8 +1003,9 @@ export function toolsContext(
  * The companion's tools voice.json sets up: with a front and
  * `companion_mcp`, jobs on its `model` (DEFAULT_TOOLS_MODEL by default),
  * read when each starts; null otherwise. With a call's music
- * (call_background) and youtube_sink not false, the jobs also have the
- * YouTube player (YOUTUBE_MCP_SERVER), always allowed.
+ * (call_background) and `youtube` not false, the jobs also have the
+ * YouTube player (YOUTUBE_MCP_SERVER), always allowed, playing in the
+ * voice helper's call (`helper`).
  */
 export function configuredTools(
   config: () => VoiceConfig | { error: string },
@@ -1015,20 +1016,17 @@ export function configuredTools(
     mcpConfig?: string,
   ) => ToolProcess = spawnTools,
   player?: YoutubeControls,
+  helper?: YoutubeHelper,
 ): () => VoiceTools | null {
   const youtubeOn = () => {
+    if (!player && !helper) return null;
     const read = config();
     return "error" in read ? null : youtubeConfig(read);
   };
   let youtubePlayer = player;
   const controls = (): YoutubeControls => {
-    youtubePlayer ??= new YoutubePlayer(
-      () => {
-        const on = youtubeOn();
-        if (!on) throw new Error("YouTube is off in voice.json");
-        return spawnYoutubePlayer(on);
-      },
-      (asked) => resolveYoutube(asked, youtubeOn()?.ytDlp),
+    youtubePlayer ??= new YoutubePlayer(helper!, (asked) =>
+      resolveYoutube(asked, youtubeOn()?.ytDlp),
     );
     return youtubePlayer;
   };

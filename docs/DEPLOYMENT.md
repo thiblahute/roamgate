@@ -1283,18 +1283,17 @@ to one service. Off when empty or absent. A call starts with the music
 off, its source not made (nothing is tapped): it plays once you ask the
 companion to put it on, unless `call_music_at_start` is `true`.
 
-| Key                          | Default            | Meaning                                                             |
-| ---------------------------- | ------------------ | ------------------------------------------------------------------- |
-| `call_background`            | `""`               | The source, such as `osxprocesstapsrc bundle-id=com.spotify.client` |
-| `call_background_volume`     | `0.6`              | The music's level when nobody talks (0 to 1)                        |
-| `call_background_ducked`     | `0.15`             | The factor applied while someone talks (0 to 1)                     |
-| `call_background_release_ms` | `3000`             | Quiet time before the music comes back up                           |
-| `call_music_at_start`        | `false`            | Whether a call starts with the music on                             |
-| `call_music_device`          | unset              | The Spotify Connect device music asked for on a call plays on       |
-| `call_music_full_volume`     | `true`             | Whether music put on `call_music_device` also gets volume 100       |
-| `youtube_sink`               | `"roamgate-music"` | The sink YouTube videos play into; `false` turns YouTube off        |
-| `youtube_player_wrapper`     | `[]`               | Arguments before the YouTube player's command, as `helper_wrapper`  |
-| `yt_dlp`                     | `["yt-dlp"]`       | yt-dlp's command, a program first                                   |
+| Key                          | Default      | Meaning                                                             |
+| ---------------------------- | ------------ | ------------------------------------------------------------------- |
+| `call_background`            | `""`         | The source, such as `osxprocesstapsrc bundle-id=com.spotify.client` |
+| `call_background_volume`     | `0.6`        | The music's level when nobody talks (0 to 1)                        |
+| `call_background_ducked`     | `0.15`       | The factor applied while someone talks (0 to 1)                     |
+| `call_background_release_ms` | `3000`       | Quiet time before the music comes back up                           |
+| `call_music_at_start`        | `false`      | Whether a call starts with the music on                             |
+| `call_music_device`          | unset        | The Spotify Connect device music asked for on a call plays on       |
+| `call_music_full_volume`     | `true`       | Whether music put on `call_music_device` also gets volume 100       |
+| `youtube`                    | `true`       | Whether the companion may play YouTube videos as the call's music   |
+| `yt_dlp`                     | `["yt-dlp"]` | yt-dlp's command, a program first                                   |
 
 The music ducks while the companion's speech is being made or plays, and
 while you talk (from the start of your speech to its final words): down in
@@ -1387,33 +1386,33 @@ video and tells what plays. The companion's tool jobs get these tools from
 Roamgate itself (the `roamgate_youtube` MCP server, always allowed, with no
 `companion_mcp` entry). yt-dlp, where Roamgate runs, finds the video (the
 first search result, or the link; links to other sites are refused) and
-its best audio-only stream. A small player plays it: Python with the
-system's GStreamer (`playbin3`, `pulsesink device=<youtube_sink>`, the
-Python GObject bindings and the `souphttpsrc`, Matroska and Opus plugins),
-started for the first video and ended by stop or the video's end. It
-plays into `youtube_sink`, `roamgate-music` by default: the sink whose
-monitor `call_background` records, so nothing changes on the call's side,
-and nothing is heard from the speakers. The player is not the voice
-helper: it runs whether or not a call does, and the helper's GStreamer
-has no HTTPS source. `youtube_player_wrapper` starts it where the sound
-server is, as `helper_wrapper` starts the helper; on a desktop whose
-Roamgate runs in a toolbox:
+its audio-only stream in WebM with Opus. The voice helper plays it into
+the call's mix, as its music: `reqwesthttpsrc` (with yt-dlp's HTTP
+headers), `matroskademux` and `opusdec`, linked into the helper, at the
+music's level and ducked as `call_background` is. The video plays only
+while a call does, and ends with it; starting or resuming one puts the
+call's music on, if it was off. The helper has no AAC decoder: a video
+without Opus audio (only M4A) is told as one it cannot play, which is rare
+on YouTube. `"youtube": false` takes YouTube from the companion. A helper
+built before YouTube played in it answers that YouTube needs the new
+helper.
 
-```json
-"youtube_player_wrapper": ["systemd-run", "--user", "--pipe", "--collect", "--quiet", "--"]
-```
+The keys of the separate Python player YouTube had before
+(`youtube_sink`, `youtube_player_wrapper`) are ignored; remove them from
+voice.json once the new helper is installed.
 
-Spotify and YouTube never play together: starting or resuming a video
-pauses the Spotify app (its MPRIS player, `org.mpris.MediaPlayer2.spotify`,
-on the session bus) when it plays here, and the video stops when the
-Spotify app starts playing into `youtube_sink` or a tool job starts,
-resumes or moves Spotify's music on `call_music_device`. Only the app's own
-sound counts: with Spotify Connect the app also says it plays when the
-account plays on another device (someone else's phone), and pausing it then
-would pause that device. The player looks for the app's uncorked stream in
-`pactl -f json list sink-inputs` (where the player runs, so `pactl` 16 or
-newer is needed there), giving it 5 seconds to appear; without one, the
-video goes on.
+Spotify and YouTube never play together, and the helper keeps it so where
+it runs: starting or resuming a video pauses the Spotify app (its MPRIS
+player, `org.mpris.MediaPlayer2.spotify`, on the session bus) only when
+`call_background` carries sound, that is when the app plays into the sink
+it records; once that sound was silent, its coming back (the app started
+playing here) stops the video. A tool job starting, resuming or moving
+Spotify's music on `call_music_device` stops it too. Only sound here
+counts: with Spotify Connect the app also says it plays when the account
+plays on another device (someone else's phone), and pausing it then would
+pause that device; silence in `call_background` leaves it, and the video
+goes on. While the call's music is off, `call_background` is not
+recorded: Spotify starting then stops the video once the music is back on.
 
 YouTube changes often break yt-dlp: a video that cannot be played is told
 with yt-dlp's reason ("the video could not be played: ..."), and one that

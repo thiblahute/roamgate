@@ -700,6 +700,79 @@ describe("voice helper", () => {
     }
   });
 
+  test("YouTube goes to the call running, its events to the player only", async () => {
+    const fake = fakeHelper((request) =>
+      request.op === "call_start"
+        ? [{ id: request.id, signalling_port: 4242, music: true }]
+        : request.op === "call_music"
+          ? [{ id: request.id, ok: true, volume: 0.6, muted: false }]
+          : request.op === "call_youtube"
+            ? [{ id: request.id, state: "playing", position: 0.1 }]
+            : [],
+    );
+    const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+    expect(helper.inCall()).toBe(false);
+    await expect(helper.callYoutube({ action: "status" })).rejects.toThrow(
+      "no call",
+    );
+    const told: unknown[] = [];
+    const call = await helper.startCall(
+      { ...CALL_BACKGROUND, muted: true },
+      (event) => told.push(event),
+    );
+    expect(helper.inCall()).toBe(true);
+    expect(call.musicOn()).toBe(false);
+    const heard: Record<string, unknown>[] = [];
+    const stop = helper.onYoutube((event) => heard.push(event));
+    // A start puts the call's music on first: a video asked for is heard.
+    expect(
+      await helper.callYoutube({ action: "play", url: "https://x" }, true),
+    ).toMatchObject({ state: "playing" });
+    const sent = requests(fake.spawned[0]!.frames).slice(1);
+    expect(sent.map((request) => request.op)).toEqual([
+      "call_music",
+      "call_youtube",
+    ]);
+    expect(sent[0]).toMatchObject({ call: call.id, muted: false });
+    expect(sent[1]).toMatchObject({
+      op: "call_youtube",
+      call: call.id,
+      action: "play",
+      url: "https://x",
+    });
+    expect(call.musicOn()).toBe(true);
+    fake.spawned[0]!.say({
+      event: "call_youtube",
+      call: call.id,
+      state: "stopped",
+      why: "ended",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(heard).toEqual([
+      { event: "call_youtube", call: call.id, state: "stopped", why: "ended" },
+    ]);
+    // The call's page hears nothing of it.
+    expect(told).toEqual([]);
+    stop();
+    call.stop();
+    expect(helper.inCall()).toBe(false);
+  });
+
+  test("an older helper's unknown call_youtube is its error", async () => {
+    const fake = fakeHelper((request) =>
+      request.op === "call_start"
+        ? [{ id: request.id, signalling_port: 4242 }]
+        : request.op === "call_youtube"
+          ? [{ id: request.id, error: `unknown op ${request.op}` }]
+          : [],
+    );
+    const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+    await helper.startCall(CALL_BACKGROUND, () => {});
+    await expect(helper.callYoutube({ action: "status" })).rejects.toThrow(
+      "unknown op call_youtube",
+    );
+  });
+
   test("only a speaker's own failure has Kokoro say a sentence", () => {
     expect(speakerFailed("Qwen3Tts speaking failed: Compute error")).toBe(true);
     expect(speakerFailed("no call 3")).toBe(false);

@@ -4,406 +4,42 @@ import type { VoiceConfig } from "./voice-helper";
 /**
  * YouTube as a source of a call's music, beside Spotify: yt-dlp finds the
  * video (a search or a link) and its audio stream where Roamgate runs, and
- * a small player plays that stream's sound, never a picture, into the sink
- * whose monitor call_background records (`roamgate-music` on the desktop),
- * so the call hears it as it hears the Spotify app.
+ * the voice helper plays that stream's sound, never a picture, into the
+ * call's mix as its music (voice/helper/src/call/youtube.rs, its
+ * `call_youtube` op): at the music's level, ducked as the background is.
+ * One GStreamer, in the helper's process: the video plays only while a
+ * call does, and ends with it.
  *
- * The player is its own long-lived process (PLAYER_SCRIPT): GStreamer's
- * playbin3 and pulsesink, through Python, started where the sound server is
- * (youtube_player_wrapper, as helper_wrapper starts the voice helper on the
- * host) and driven by JSON lines on its standard input and output. It is
- * not the voice helper's: the helper's statically linked GStreamer has no
- * HTTPS source or AAC decoder, and the music has to go on whether or not a
- * call, or the helper, runs. Its input closing ends it.
+ * Spotify and YouTube never play together, and the helper keeps it so
+ * where it runs, with the sound server's and the session bus's view of the
+ * desktop: a video starting or resuming pauses the Spotify app (its MPRIS
+ * player) only when the call's background carries its sound, and stops
+ * when that sound comes back. With Spotify Connect, the app also says
+ * Playing when the account plays on another device (someone else's
+ * phone), and pausing it then would pause that device: silence in the
+ * background leaves it. The companion's tools stop the video, too, when
+ * they start Spotify on the call's music device (voice-tools.ts).
  *
- * Spotify and YouTube never play together: the player pauses the Spotify
- * app (its MPRIS player on the session bus) when it starts or resumes, and
- * stops when that app starts playing; the companion's tools stop it, too,
- * when they start Spotify on the call's music device (voice-tools.ts).
- * Only the Spotify app's own sound counts: with Spotify Connect, the app
- * also says Playing when the account plays on another device (someone
- * else's phone), and pausing it then pauses that device. So the player
- * checks that the app has a stream playing here (pactl's sink inputs),
- * into the sink for a stop.
+ * A helper from before call_youtube answers it as an unknown op: YouTube
+ * then says it needs the new helper, so this side can be deployed first.
  */
 
 const log = serverLogger.child("voice-youtube");
 
-/** The sink the player plays into when voice.json names none. */
-export const DEFAULT_YOUTUBE_SINK = "roamgate-music";
 /** The MPRIS bus name prefix of the Spotify app, paused by YouTube. */
 export const SPOTIFY_MPRIS = "org.mpris.MediaPlayer2.spotify";
 /** How long yt-dlp may take to find a video and its stream. */
 const RESOLVE_MS = 45_000;
-/** How long a command may wait for the player (a start waits for sound). */
+/** How long the helper may take to answer (a start waits for sound). */
 const COMMAND_MS = 40_000;
+/** What a helper without call_youtube makes of it. */
+export const NEEDS_HELPER =
+  "YouTube needs the new voice helper: the one installed cannot play it";
+/** YouTube with no call up. */
+export const NO_CALL =
+  "YouTube plays only as a call's music, and no call is up";
 
-/**
- * The player: argv[1] the sink, argv[2] the MPRIS name prefix to pause,
- * argv[3] (optional) the pactl command as a JSON list. Commands, one JSON object a line: {"id", "cmd": "play", "uri",
- * "headers"}, "pause", "resume", "stop", "volume" ("volume" 0 to 1),
- * "seek" ("position" in seconds), "status". Each is answered on its id
- * with {"ok": true, "state", "position", "duration", "volume"} or {"ok":
- * false, "error"}; a start is answered once sound plays. Events: "ready",
- * "ended", "error", "stopped" (Spotify started), "spotify_paused",
- * "spotify_elsewhere" (Spotify said Playing, but not here: it goes on).
- */
-export const PLAYER_SCRIPT = String.raw`import json
-import subprocess
-import sys
-
-import gi
-
-gi.require_version("Gst", "1.0")
-from gi.repository import Gio, GLib, Gst
-
-SINK = sys.argv[1]
-MPRIS = sys.argv[2]
-PACTL = json.loads(sys.argv[3]) if len(sys.argv) > 3 else ["pactl"]
-PLAYER_PATH = "/org/mpris/MediaPlayer2"
-PLAYER_IFACE = "org.mpris.MediaPlayer2.Player"
-START_S = 30
-# How long the Spotify app has to open its stream once it says Playing.
-GRACE_S = 5
-POLL_MS = 250
-
-Gst.init(None)
-loop = GLib.MainLoop()
-try:
-    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-except GLib.Error:
-    bus = None
-pipeline = None
-pending = None
-volume = 1.0
-watching = None
-
-
-def say(message):
-    sys.stdout.write(json.dumps(message) + "\n")
-    sys.stdout.flush()
-
-
-def seconds(value):
-    return round(value / Gst.SECOND, 1) if value >= 0 else None
-
-
-def state():
-    if pipeline is None:
-        return {"state": "stopped", "volume": volume}
-    _, current, target = pipeline.get_state(0)
-    playing = Gst.State.PLAYING in (current, target)
-    ok, position = pipeline.query_position(Gst.Format.TIME)
-    known, duration = pipeline.query_duration(Gst.Format.TIME)
-    return {
-        "state": "playing" if playing else "paused",
-        "position": seconds(position) if ok else None,
-        "duration": seconds(duration) if known else None,
-        "volume": volume,
-    }
-
-
-def answer(request_id, error=None):
-    if error:
-        say({"id": request_id, "ok": False, "error": error})
-    else:
-        say({"id": request_id, "ok": True, **state()})
-
-
-def dbus(name, path, iface, method, args=None):
-    return bus.call_sync(
-        name, path, iface, method, args, None, Gio.DBusCallFlags.NONE, 2000, None
-    ).unpack()
-
-
-def spotify_names():
-    if bus is None:
-        return []
-    try:
-        names = dbus(
-            "org.freedesktop.DBus", "/org/freedesktop/DBus",
-            "org.freedesktop.DBus", "ListNames",
-        )[0]
-    except GLib.Error:
-        return []
-    return [n for n in names if n == MPRIS or n.startswith(MPRIS + ".")]
-
-
-def pactl_json(*args):
-    done = subprocess.run(
-        PACTL + ["-f", "json", *args], capture_output=True, timeout=3, check=True
-    )
-    return json.loads(done.stdout or b"[]")
-
-
-def is_spotify(stream):
-    props = stream.get("properties") or {}
-    return any(
-        "spotify" in str(props.get(key, "")).lower()
-        for key in ("node.name", "application.name", "application.process.binary")
-    )
-
-
-def spotify_here(into_sink):
-    # Whether the Spotify app plays sound here (into SINK when into_sink):
-    # an uncorked stream of its. Connect mirrors another device's playing
-    # in the app's MPRIS without a stream. None when pactl cannot tell.
-    try:
-        inputs = pactl_json("list", "sink-inputs")
-        sinks = (
-            {each.get("index"): each.get("name")
-             for each in pactl_json("list", "short", "sinks")}
-            if into_sink else {}
-        )
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
-        sys.stderr.write("roamgate youtube: pactl failed: %s\n" % error)
-        return None
-    return any(
-        is_spotify(each) and not each.get("corked")
-        and (not into_sink or sinks.get(each.get("sink")) == SINK)
-        for each in inputs
-    )
-
-
-def pause_spotify():
-    paused = False
-    here = None
-    for name in spotify_names():
-        try:
-            status = dbus(
-                name, PLAYER_PATH, "org.freedesktop.DBus.Properties", "Get",
-                GLib.Variant("(ss)", (PLAYER_IFACE, "PlaybackStatus")),
-            )[0]
-            if status != "Playing":
-                continue
-            # Pausing an app that mirrors another device pauses that device.
-            if here is None:
-                here = spotify_here(False) is not False
-            if here:
-                dbus(name, PLAYER_PATH, PLAYER_IFACE, "Pause")
-                paused = True
-        except GLib.Error:
-            continue
-    if paused:
-        say({"event": "spotify_paused"})
-
-
-def owners():
-    found = set()
-    for name in spotify_names():
-        try:
-            found.add(dbus(
-                "org.freedesktop.DBus", "/org/freedesktop/DBus",
-                "org.freedesktop.DBus", "GetNameOwner",
-                GLib.Variant("(s)", (name,)),
-            )[0])
-        except GLib.Error:
-            continue
-    return found
-
-
-def video_playing():
-    return (
-        pipeline is not None and pending is None
-        and Gst.State.PLAYING in pipeline.get_state(0)[1:]
-    )
-
-
-def on_properties(_bus, sender, _path, _iface, _signal, params, _data):
-    iface, changed, _ = params.unpack()
-    if iface != PLAYER_IFACE or changed.get("PlaybackStatus") != "Playing":
-        return
-    if not video_playing() or sender not in owners():
-        return
-    watch_spotify()
-
-
-def watch_spotify():
-    # The video stops once the Spotify app plays into SINK, within GRACE_S;
-    # an app saying Playing for another device leaves it.
-    global watching
-    if watching is not None:
-        return
-    deadline = GLib.get_monotonic_time() + GRACE_S * 1000000
-
-    def check():
-        global watching
-        if not video_playing():
-            watching = None
-            return False
-        if spotify_here(True) is not False:
-            watching = None
-            stop()
-            say({"event": "stopped", "reason": "Spotify started playing"})
-            return False
-        if GLib.get_monotonic_time() >= deadline:
-            watching = None
-            say({"event": "spotify_elsewhere"})
-            return False
-        return True
-
-    if check():
-        watching = GLib.timeout_add(POLL_MS, check)
-
-
-def stop():
-    global pipeline
-    if pipeline is not None:
-        pipeline.set_state(Gst.State.NULL)
-        pipeline.get_bus().remove_signal_watch()
-        pipeline = None
-
-
-def finish_pending(error=None):
-    global pending
-    if pending is None:
-        return
-    request_id, timer = pending
-    pending = None
-    GLib.source_remove(timer)
-    if error:
-        stop()
-    answer(request_id, error)
-
-
-def on_message(_bus, message):
-    if message.type == Gst.MessageType.ERROR:
-        reason = message.parse_error()[0].message
-        if pending is not None:
-            finish_pending(reason)
-        else:
-            stop()
-            say({"event": "error", "error": reason})
-    elif message.type == Gst.MessageType.EOS:
-        stop()
-        say({"event": "ended"})
-    elif (
-        message.type == Gst.MessageType.STATE_CHANGED
-        and message.src == pipeline
-        and message.parse_state_changed()[1] == Gst.State.PLAYING
-    ):
-        finish_pending()
-
-
-def on_source_setup(_playbin, source, headers):
-    names = [p.name for p in source.list_properties()]
-    for key, value in headers.items():
-        if key.lower() == "user-agent" and "user-agent" in names:
-            source.set_property("user-agent", value)
-    if "extra-headers" in names:
-        extra = Gst.Structure.new_empty("extra-headers")
-        for key, value in headers.items():
-            if key.lower() != "user-agent":
-                extra.set_value(key, value)
-        source.set_property("extra-headers", extra)
-
-
-def play(request_id, uri, headers):
-    global pipeline, pending
-    finish_pending("another video was asked for")
-    stop()
-    playbin = Gst.ElementFactory.make("playbin3", None)
-    sink = Gst.ElementFactory.make("pulsesink", None)
-    if playbin is None or sink is None:
-        answer(request_id, "GStreamer's playbin3 or pulsesink is missing")
-        return
-    pause_spotify()
-    sink.set_property("device", SINK)
-    sink.set_property("client-name", "Roamgate YouTube")
-    playbin.set_property("audio-sink", sink)
-    playbin.set_property("video-sink", Gst.ElementFactory.make("fakesink", None))
-    # Sound only: no picture or subtitles decoded (audio | soft-volume).
-    playbin.set_property("flags", 0x2 | 0x10)
-    playbin.set_property("uri", uri)
-    playbin.set_property("volume", volume)
-    playbin.connect("source-setup", on_source_setup, headers or {})
-    watch = playbin.get_bus()
-    watch.add_signal_watch()
-    watch.connect("message", on_message)
-    pipeline = playbin
-
-    def late():
-        finish_pending("no sound came within %d s" % START_S)
-        return False
-
-    pending = (request_id, GLib.timeout_add_seconds(START_S, late))
-    if playbin.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
-        finish_pending("the sink %s could not be opened" % SINK)
-
-
-def command(line):
-    global volume
-    try:
-        request = json.loads(line)
-        request_id = request.get("id")
-        cmd = request.get("cmd")
-    except (ValueError, AttributeError):
-        return
-    if cmd == "play":
-        play(request_id, str(request.get("uri", "")), request.get("headers"))
-    elif cmd == "status":
-        answer(request_id)
-    elif cmd == "stop":
-        finish_pending("it was stopped")
-        stop()
-        answer(request_id)
-    elif cmd == "volume":
-        volume = min(1.0, max(0.0, float(request.get("volume", 1))))
-        if pipeline is not None:
-            pipeline.set_property("volume", volume)
-        answer(request_id)
-    elif cmd not in ("pause", "resume", "seek"):
-        answer(request_id, "unknown command %r" % cmd)
-    elif pipeline is None:
-        answer(request_id, "nothing is playing")
-    elif cmd == "pause":
-        pipeline.set_state(Gst.State.PAUSED)
-        answer(request_id)
-    elif cmd == "resume":
-        pause_spotify()
-        pipeline.set_state(Gst.State.PLAYING)
-        answer(request_id)
-    else:
-        at = max(0.0, float(request.get("position", 0)))
-        known, duration = pipeline.query_duration(Gst.Format.TIME)
-        if known and duration > 0:
-            at = min(at, max(0.0, duration / Gst.SECOND - 1))
-        if pipeline.seek_simple(
-            Gst.Format.TIME, Gst.SeekFlags.FLUSH, int(at * Gst.SECOND)
-        ):
-            pipeline.get_state(5 * Gst.SECOND)
-            answer(request_id)
-        else:
-            answer(request_id, "this video cannot seek")
-
-
-def on_input(channel, condition):
-    if condition & GLib.IOCondition.IN:
-        line = channel.readline()
-        if line:
-            command(line)
-            return True
-    stop()
-    loop.quit()
-    return False
-
-
-if __name__ == "__main__":
-    if bus is not None:
-        bus.signal_subscribe(
-            None, "org.freedesktop.DBus.Properties", "PropertiesChanged",
-            PLAYER_PATH, None, Gio.DBusSignalFlags.NONE, on_properties, None,
-        )
-    GLib.io_add_watch(
-        GLib.IOChannel.unix_new(sys.stdin.fileno()), GLib.PRIORITY_DEFAULT,
-        GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR,
-        on_input,
-    )
-    say({"event": "ready", "sink": SINK})
-    loop.run()
-`;
-
-/** A video found: what plays, and the stream the player reads. */
+/** A video found: what plays, and the stream the helper reads. */
 export type YoutubeTrack = {
   title: string;
   /** Its YouTube page. */
@@ -416,7 +52,7 @@ export type YoutubeTrack = {
   headers: Record<string, string>;
 };
 
-/** What the player does, as the companion's tools tell it. */
+/** What YouTube plays, as the companion's tools tell it. */
 export type YoutubeStatus = {
   state: "playing" | "paused" | "stopped";
   /** In seconds. */
@@ -429,6 +65,8 @@ export type YoutubeStatus = {
   ended?: string;
   /** Whether starting or resuming it paused the Spotify app. */
   spotifyPaused?: boolean;
+  /** The call's music was put off since: the video is not heard. */
+  musicOff?: boolean;
 };
 
 /** A failure told as is: "the video could not be played: <reason>". */
@@ -458,7 +96,10 @@ export function youtubeTarget(asked: string): string {
   return `ytsearch1:${text}`;
 }
 
-/** yt-dlp's arguments: one video's JSON, its best audio-only stream. */
+/**
+ * yt-dlp's arguments: one video's JSON, its best audio-only stream in
+ * WebM with Opus, the only one the voice helper reads.
+ */
 export function ytDlpArgs(command: string[], target: string): string[] {
   return [
     ...command,
@@ -466,11 +107,15 @@ export function ytDlpArgs(command: string[], target: string): string[] {
     "--no-playlist",
     "--no-warnings",
     "--format",
-    "bestaudio[acodec=opus]/bestaudio/best",
+    "bestaudio[acodec=opus]/bestaudio[ext=webm]",
     "--",
     target,
   ];
 }
+
+/** A video with no Opus audio (only AAC in M4A, which the helper cannot read). */
+export const NO_OPUS =
+  "this video has no Opus (WebM) audio, only formats the voice helper cannot play (AAC in M4A)";
 
 /** Why yt-dlp failed, from what it wrote, with what to do about it. */
 export function ytDlpFailure(stderr: string, code: number | null): string {
@@ -487,6 +132,7 @@ export function ytDlpFailure(stderr: string, code: number | null): string {
       .replace(/^ERROR:\s*/, "")
       .replace(/^\[[^\]]+\]\s*[\w-]+:\s*/, "")
       .slice(0, 300) || `yt-dlp ended with ${code ?? "a signal"}`;
+  if (/requested format is not available/i.test(reason)) return NO_OPUS;
   return outdated(reason) ? `${reason} ${UPDATE_HINT}` : reason;
 }
 
@@ -516,6 +162,8 @@ export function parseYtDlp(stdout: string): YoutubeTrack {
   }
   const stream = typeof video.url === "string" ? video.url : "";
   if (!stream) throw new YoutubeError("the video has no audio stream");
+  if (video.acodec !== "opus" && video.ext !== "webm")
+    throw new YoutubeError(NO_OPUS);
   const headers: Record<string, string> = {};
   if (video.http_headers && typeof video.http_headers === "object")
     for (const [key, value] of Object.entries(video.http_headers))
@@ -587,39 +235,47 @@ export async function resolveYoutube(
   return parseYtDlp(done.stdout);
 }
 
-/** The player's process: its lines, its input, and its end. */
-export type PlayerProcess = {
-  lines: AsyncIterable<string>;
-  write: (line: string) => void;
-  /** Ends it: its input closes. */
-  close: () => void;
-  exited: Promise<unknown>;
+/**
+ * The voice helper as YouTube uses it (VoiceHelper): call_youtube on the
+ * call running, and its events.
+ */
+export type YoutubeHelper = {
+  /** Whether a call runs: YouTube plays only in one. */
+  inCall(): boolean;
+  /**
+   * A call_youtube request to the call running, its music put on first
+   * with `musicOn`: the helper's answer, or its error.
+   */
+  callYoutube(
+    command: Record<string, unknown>,
+    musicOn?: boolean,
+  ): Promise<Record<string, unknown>>;
+  /** Listens to the helper's call_youtube events; answers how to stop. */
+  onYoutube(listener: (event: Record<string, unknown>) => void): () => void;
 };
 
-type PlayerReply = {
-  id?: number;
-  ok?: boolean;
-  error?: string;
-  event?: string;
-  reason?: string;
+/** The helper's answer to a call_youtube request. */
+type HelperReply = {
   state?: YoutubeStatus["state"];
   position?: number | null;
   duration?: number | null;
   volume?: number;
+  music_muted?: boolean;
+  spotify_paused?: boolean;
 };
 
+/** Why the helper failed, as the tools tell it. */
+export function helperFailure(message: string): string {
+  if (/unknown op call_youtube/.test(message)) return NEEDS_HELPER;
+  if (/^no call\b/.test(message)) return NO_CALL;
+  return message;
+}
+
 /**
- * The YouTube player of the companion's tools: one process at a time,
- * started for the first video, ended by stop (or when it ends by itself);
- * each command waits for its answer.
+ * The YouTube player of the companion's tools, driving the helper's
+ * call_youtube; each command waits for its answer.
  */
 export class YoutubePlayer {
-  private process: PlayerProcess | null = null;
-  private waiting = new Map<
-    number,
-    { resolve: (reply: PlayerReply) => void; reject: (error: Error) => void }
-  >();
-  private count = 0;
   private track: YoutubeTrack | null = null;
   private ended: string | undefined;
   private pausedSpotify = false;
@@ -627,55 +283,67 @@ export class YoutubePlayer {
   private level = 1;
 
   constructor(
-    private readonly spawn: () => PlayerProcess,
+    private readonly helper: YoutubeHelper,
     private readonly resolve: (asked: string) => Promise<YoutubeTrack>,
     private readonly timeoutMs = COMMAND_MS,
-  ) {}
+    /** The MPRIS players a video pauses when they play here. */
+    private readonly mpris = SPOTIFY_MPRIS,
+  ) {
+    helper.onYoutube((event) => this.event(event));
+  }
 
-  /** Finds `asked` and plays it, pausing Spotify; what plays. */
+  /**
+   * Finds `asked` and plays it in the call, its music put on, pausing
+   * Spotify when it plays here; what plays.
+   */
   async play(asked: string): Promise<YoutubeStatus> {
+    // A helper that cannot, or no call, is told before yt-dlp runs.
+    await this.send({ action: "status" });
     const track = await this.resolve(asked);
-    this.pausedSpotify = false;
-    const reply = await this.send({
-      cmd: "play",
-      uri: track.stream,
-      headers: track.headers,
-    });
+    const reply = await this.send(
+      {
+        action: "play",
+        url: track.stream,
+        headers: track.headers,
+        volume: this.level,
+        pause_mpris: this.mpris,
+      },
+      true,
+    );
     this.track = track;
     this.ended = undefined;
+    this.pausedSpotify = reply.spotify_paused === true;
     return this.status(reply);
   }
 
   async pause(): Promise<YoutubeStatus> {
-    return this.status(await this.send({ cmd: "pause" }, false));
+    return this.status(await this.send({ action: "pause" }));
   }
 
-  /** Plays again what was paused, pausing Spotify. */
+  /** Plays again what was paused, pausing Spotify when it plays here. */
   async resume(): Promise<YoutubeStatus> {
-    this.pausedSpotify = false;
-    return this.status(await this.send({ cmd: "resume" }, false));
-  }
-
-  /** Stops and ends the player; nothing to do when none runs. */
-  async stop(): Promise<YoutubeStatus> {
-    if (!this.process) return this.status({ state: "stopped" });
-    const process = this.process;
-    let reply: PlayerReply = { state: "stopped" };
-    try {
-      reply = await this.send({ cmd: "stop" }, false);
-    } finally {
-      this.track = null;
-      if (this.process === process) this.end(process);
-    }
+    const reply = await this.send(
+      { action: "resume", pause_mpris: this.mpris },
+      true,
+    );
+    this.pausedSpotify = reply.spotify_paused === true;
     return this.status(reply);
   }
 
-  /** The player's own volume, 0 to 100 (the call sets the music's level). */
+  /** Stops the video; nothing to do without a call. */
+  async stop(): Promise<YoutubeStatus> {
+    if (!this.helper.inCall()) return this.gone();
+    const reply = await this.send({ action: "stop" });
+    this.track = null;
+    return this.status(reply);
+  }
+
+  /** The video's own volume, 0 to 100 (the call sets the music's level). */
   async volume(percent: number): Promise<YoutubeStatus> {
     this.level = Math.min(100, Math.max(0, percent)) / 100;
-    if (!this.process) return this.status({ state: "stopped" });
+    if (!this.helper.inCall()) return this.gone();
     return this.status(
-      await this.send({ cmd: "volume", volume: this.level }, false),
+      await this.send({ action: "volume", volume: this.level }),
     );
   }
 
@@ -683,29 +351,62 @@ export class YoutubePlayer {
   async seek(to: { position?: number; by?: number }): Promise<YoutubeStatus> {
     let position = to.position;
     if (position === undefined) {
-      const now = await this.send({ cmd: "status" }, false);
+      const now = await this.send({ action: "status" });
       position = (now.position ?? 0) + (to.by ?? 0);
     }
     return this.status(
-      await this.send({ cmd: "seek", position: Math.max(0, position) }, false),
+      await this.send({ action: "seek", position: Math.max(0, position) }),
     );
   }
 
   /** What plays now. */
   async nowPlaying(): Promise<YoutubeStatus> {
-    if (!this.process) return this.status({ state: "stopped" });
-    return this.status(await this.send({ cmd: "status" }, false));
+    if (!this.helper.inCall()) return this.gone();
+    return this.status(await this.send({ action: "status" }));
   }
 
   /** Spotify started: YouTube stops, so they never play together. */
   async spotifyStarted(): Promise<void> {
-    if (!this.process || !this.track) return;
+    if (!this.track || !this.helper.inCall()) return;
     await this.stop().catch(() => {});
     this.ended = "Spotify started playing";
   }
 
-  private status(reply: PlayerReply): YoutubeStatus {
+  /** The helper's call_youtube events: a video stopping by itself. */
+  private event(event: Record<string, unknown>) {
+    if (event.state === "playing") {
+      log.info("youtube plays", { duration: event.duration });
+      return;
+    }
+    if (event.state !== "stopped") return;
+    this.ended =
+      event.why === "ended"
+        ? "the video ended"
+        : event.why === "spotify"
+          ? "Spotify started playing"
+          : typeof event.reason === "string"
+            ? event.reason
+            : "it stopped";
+    log.info("youtube stopped", { reason: this.ended });
+    this.track = null;
+  }
+
+  /** No call: whatever played ended with it. */
+  private gone(): YoutubeStatus {
+    if (this.track) {
+      this.track = null;
+      this.ended = "the call ended";
+    }
+    return this.status({ state: "stopped" });
+  }
+
+  private status(reply: HelperReply): YoutubeStatus {
     const state = reply.state ?? "stopped";
+    // The helper lost it (its call was made again after a restart).
+    if (state === "stopped" && this.track) {
+      this.track = null;
+      this.ended ??= "the call's audio restarted";
+    }
     return {
       state,
       ...(typeof reply.position === "number"
@@ -730,209 +431,48 @@ export class YoutubePlayer {
       ...(this.pausedSpotify && state === "playing"
         ? { spotifyPaused: true }
         : {}),
+      ...(reply.music_muted === true && state !== "stopped"
+        ? { musicOff: true }
+        : {}),
     };
   }
 
-  /** Sends a command; `start`: starting the player when none runs. */
+  /** A call_youtube request; `musicOn`: the call's music put on first. */
   private async send(
     command: Record<string, unknown>,
-    start = true,
-  ): Promise<PlayerReply> {
-    if (!this.process) {
-      if (!start) {
-        if (command.cmd === "status") return { state: "stopped" };
-        throw new YoutubeError("nothing is playing on YouTube");
-      }
-      this.process = this.started();
-      if (this.level !== 1)
-        void this.send({ cmd: "volume", volume: this.level }, false).catch(
-          () => {},
-        );
-    }
-    const process = this.process;
-    this.count += 1;
-    const id = this.count;
-    const reply = new Promise<PlayerReply>((resolve, reject) => {
-      const late = setTimeout(() => {
-        this.waiting.delete(id);
-        reject(new YoutubeError("the player did not answer"));
-      }, this.timeoutMs);
-      this.waiting.set(id, {
-        resolve: (value) => {
-          clearTimeout(late);
-          resolve(value);
-        },
-        reject: (error) => {
-          clearTimeout(late);
-          reject(error);
-        },
-      });
-    });
+    musicOn = false,
+  ): Promise<HelperReply> {
+    let late: ReturnType<typeof setTimeout> | undefined;
     try {
-      process.write(`${JSON.stringify({ id, ...command })}\n`);
+      return (await Promise.race([
+        this.helper.callYoutube(command, musicOn),
+        new Promise<never>((_, reject) => {
+          late = setTimeout(
+            () => reject(new Error("the voice helper did not answer")),
+            this.timeoutMs,
+          );
+        }),
+      ])) as HelperReply;
     } catch (error) {
-      this.waiting
-        .get(id)
-        ?.reject(
-          new YoutubeError(
-            `the player could not be reached: ${(error as Error).message}`,
-          ),
-        );
-    }
-    const answer = await reply;
-    if (!answer.ok) throw new YoutubeError(answer.error ?? "the player failed");
-    return answer;
-  }
-
-  private started(): PlayerProcess {
-    let process: PlayerProcess;
-    try {
-      process = this.spawn();
-    } catch (error) {
-      throw new YoutubeError(
-        `the player could not start: ${(error as Error).message}`,
-      );
-    }
-    void this.follow(process);
-    return process;
-  }
-
-  private async follow(process: PlayerProcess) {
-    try {
-      for await (const line of process.lines) {
-        let reply: PlayerReply;
-        try {
-          reply = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        if (typeof reply.id === "number") {
-          const waiter = this.waiting.get(reply.id);
-          this.waiting.delete(reply.id);
-          waiter?.resolve(reply);
-          continue;
-        }
-        if (this.process !== process) continue;
-        if (reply.event === "spotify_paused") this.pausedSpotify = true;
-        if (reply.event === "spotify_elsewhere")
-          log.info("youtube goes on: Spotify plays on another device");
-        if (
-          reply.event === "ended" ||
-          reply.event === "error" ||
-          reply.event === "stopped"
-        ) {
-          this.ended =
-            reply.event === "ended"
-              ? "the video ended"
-              : reply.event === "error"
-                ? `it failed: ${reply.error ?? "unknown error"}`
-                : (reply.reason ?? "it stopped");
-          log.info("youtube stopped", { reason: this.ended });
-          this.track = null;
-          this.end(process);
-        }
-      }
-    } catch (error) {
-      log.warn("youtube player output failed", {
-        error: (error as Error).message,
-      });
-    }
-    if (this.process === process) {
-      this.process = null;
-      this.track = null;
-    }
-    for (const [id, waiter] of this.waiting) {
-      this.waiting.delete(id);
-      waiter.reject(new YoutubeError("the player stopped"));
-    }
-  }
-
-  private end(process: PlayerProcess) {
-    if (this.process === process) this.process = null;
-    try {
-      process.close();
-    } catch {
-      // Already gone.
+      throw new YoutubeError(helperFailure((error as Error).message));
+    } finally {
+      clearTimeout(late);
     }
   }
 }
 
-/** voice.json's YouTube player, or null when it is off. */
+/** voice.json's YouTube, or null when it is off. */
 export type YoutubeConfig = {
-  sink: string;
-  wrapper: string[];
   ytDlp: string[];
 };
 
 /**
  * Whether the companion has YouTube for a call's music, and how: with
- * call_background set, unless youtube_sink is false.
+ * call_background set, unless `youtube` is false. The keys of the player
+ * YouTube had before the helper played it (youtube_sink,
+ * youtube_player_wrapper) are ignored.
  */
 export function youtubeConfig(config: VoiceConfig): YoutubeConfig | null {
-  if (config.youtube_sink === false || !config.call_background?.trim())
-    return null;
-  return {
-    sink: config.youtube_sink?.trim() || DEFAULT_YOUTUBE_SINK,
-    wrapper: config.youtube_player_wrapper ?? [],
-    ytDlp: config.yt_dlp?.length ? config.yt_dlp : ["yt-dlp"],
-  };
-}
-
-/** The player's command line: the wrapper, then Python and the script. */
-export function playerCommand(config: YoutubeConfig): string[] {
-  return [
-    ...config.wrapper,
-    "python3",
-    "-I",
-    "-c",
-    PLAYER_SCRIPT,
-    config.sink,
-    SPOTIFY_MPRIS,
-  ];
-}
-
-/**
- * How long a wrapped player has to end once its input closed before its
- * wrapper is signalled.
- */
-const WRAPPED_EXIT_MS = 5_000;
-
-export function spawnYoutubePlayer(config: YoutubeConfig): PlayerProcess {
-  const child = Bun.spawn(playerCommand(config), {
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "inherit",
-  });
-  async function* lines() {
-    const decoder = new TextDecoder();
-    let buffered = "";
-    for await (const chunk of child.stdout) {
-      buffered += decoder.decode(chunk, { stream: true });
-      let newline = buffered.indexOf("\n");
-      while (newline >= 0) {
-        yield buffered.slice(0, newline);
-        buffered = buffered.slice(newline + 1);
-        newline = buffered.indexOf("\n");
-      }
-    }
-  }
-  return {
-    lines: lines(),
-    write: (line) => {
-      child.stdin.write(line);
-      child.stdin.flush();
-    },
-    // As the voice helper's: a wrapper may not pass signals on, so the
-    // player ends at the end of its input, and is signalled only if late.
-    close: () => {
-      try {
-        child.stdin.end();
-      } catch {
-        // Already closed.
-      }
-      const late = setTimeout(() => child.kill(), WRAPPED_EXIT_MS);
-      void child.exited.then(() => clearTimeout(late));
-    },
-    exited: child.exited,
-  };
+  if (config.youtube === false || !config.call_background?.trim()) return null;
+  return { ytDlp: config.yt_dlp?.length ? config.yt_dlp : ["yt-dlp"] };
 }

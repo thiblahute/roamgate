@@ -450,7 +450,12 @@ function conversationKeepAwake(
   return null;
 }
 const voiceResearch = configuredResearch(() => readVoiceConfig());
-const voiceTools = configuredTools(() => readVoiceConfig());
+const voiceTools = configuredTools(
+  () => readVoiceConfig(),
+  undefined,
+  undefined,
+  voiceHelper,
+);
 const companionMemoryFiles = new CompanionMemoryFiles();
 const companionMemory = new CompanionMemory({
   path: companionMemoryPath(),

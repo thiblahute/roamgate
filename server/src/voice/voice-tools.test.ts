@@ -22,7 +22,12 @@ import {
   YOUTUBE_PROMPT,
   type YoutubeControls,
 } from "./voice-tools";
-import { YoutubeError, type YoutubeStatus } from "./voice-youtube";
+import {
+  SPOTIFY_MPRIS,
+  YoutubeError,
+  type YoutubeHelper,
+  type YoutubeStatus,
+} from "./voice-youtube";
 
 const SEND = "mcp__claude_ai_WhatsApp__send_message";
 const LIST = "mcp__claude_ai_WhatsApp__list_chats";
@@ -886,7 +891,9 @@ describe("YouTube for the call's music", () => {
 
   function configured(
     config: Record<string, unknown>,
-    player = fakeYoutube().player,
+    /** null: none, the helper's own player (or no YouTube). */
+    player: YoutubeControls | null = fakeYoutube().player,
+    helper?: YoutubeHelper,
   ) {
     const spawned: {
       process: Fake;
@@ -900,7 +907,8 @@ describe("YouTube for the call's music", () => {
         spawned.push({ process, policy, mcpConfig });
         return process as ToolProcess;
       },
-      player,
+      player ?? undefined,
+      helper,
     )()!;
     return { using, spawned };
   }
@@ -987,12 +995,92 @@ describe("YouTube for the call's music", () => {
     );
   });
 
-  test("off without call_background, or with youtube_sink false", () => {
-    for (const config of [
-      { call_background: undefined },
-      { youtube_sink: false },
-    ]) {
-      const { using, spawned } = configured(config);
+  test("the tools play in the helper's call, the video found by yt-dlp", async () => {
+    const video = {
+      title: "Around the World",
+      webpage_url: "https://www.youtube.com/watch?v=K0HSD_i2DvA",
+      channel: "Daft Punk",
+      duration: 242,
+      url: "https://rr3.googlevideo.com/videoplayback?x=1",
+      ext: "webm",
+      acodec: "opus",
+      http_headers: { "User-Agent": "UA" },
+    };
+    const sent: Record<string, unknown>[] = [];
+    const helper: YoutubeHelper = {
+      inCall: () => true,
+      async callYoutube(command, musicOn) {
+        sent.push({ ...command, ...(musicOn ? { musicOn } : {}) });
+        return { state: "playing", position: 1, duration: 242 };
+      },
+      onYoutube: () => () => {},
+    };
+    const { using, spawned } = configured(
+      // yt-dlp's JSON, from a stand-in that ignores its arguments.
+      {
+        yt_dlp: [
+          "/bin/sh",
+          "-c",
+          `printf '%s\\n' '${JSON.stringify(video)}'`,
+          "yt-dlp",
+        ],
+      },
+      null,
+      helper,
+    );
+    using.start("Mets Around the World sur YouTube", true);
+    const played = await rpc(spawned[0]!.mcpConfig!, {
+      method: "tools/call",
+      params: { name: "play", arguments: { query: "around the world" } },
+    });
+    expect(played.result.content[0].text).toContain(
+      'Playing on YouTube: "Around the World" (Daft Punk), 0:01 of 4:02',
+    );
+    expect(sent).toEqual([
+      { action: "status" },
+      {
+        action: "play",
+        url: video.url,
+        headers: { "User-Agent": "UA" },
+        volume: 1,
+        pause_mpris: SPOTIFY_MPRIS,
+        musicOn: true,
+      },
+    ]);
+    await rpc(spawned[0]!.mcpConfig!, {
+      method: "tools/call",
+      params: { name: "pause", arguments: {} },
+    });
+    expect(sent.at(-1)).toEqual({ action: "pause" });
+  });
+
+  test("an older voice helper says YouTube needs the new one", async () => {
+    const helper: YoutubeHelper = {
+      inCall: () => true,
+      callYoutube: async () => {
+        throw new Error("unknown op call_youtube");
+      },
+      onYoutube: () => () => {},
+    };
+    const { using, spawned } = configured({}, null, helper);
+    using.start("Mets la vidéo sur YouTube");
+    const failed = await rpc(spawned[0]!.mcpConfig!, {
+      method: "tools/call",
+      params: { name: "play", arguments: { query: "x" } },
+    });
+    expect(failed.result.isError).toBe(true);
+    expect(failed.result.content[0].text).toBe(
+      "The video could not be played: YouTube needs the new voice helper: the one installed cannot play it",
+    );
+  });
+
+  test("off without call_background, with youtube false, or without a helper", () => {
+    for (const [config, player] of [
+      [{ call_background: undefined }, fakeYoutube().player],
+      [{ youtube: false }, fakeYoutube().player],
+      [{}, null],
+    ] as const) {
+      const { using, spawned } = configured(config, player);
       using.start("Mets du Daft Punk", true);
       expect(spawned[0]!.mcpConfig).toBeUndefined();
       expect(askRules(spawned[0]!.policy)).not.toContain(
