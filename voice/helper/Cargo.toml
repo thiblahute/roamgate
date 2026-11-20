@@ -30,6 +30,9 @@ gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugi
 # the page, signalled with GStreamer's WebRTC signalling protocol. None of
 # the other signallers (Janus, WHIP, WHEP, AWS, LiveKit...) is built.
 gst-plugin-webrtc = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", default-features = false, features = ["static", "rustls-ring"] }
+# reqwesthttpsrc (youtube.rs): a YouTube video's audio stream, read over
+# HTTPS with rustls (ring, as webrtcsink's) and the system's certificates.
+gst-plugin-reqwest = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", default-features = false, features = ["static", "rustls-ring"] }
 # The libraries webrtcsink and webrtcsrc use, from the prebuilt bundle.
 gst-webrtc = { package = "gstreamer-webrtc", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
 gst-sdp = { package = "gstreamer-sdp", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["binary"] }
@@ -60,6 +63,8 @@ include = [
     "app",
     "typefindfunctions",
     "playback",
+    # matroska and opus: also a YouTube video's WebM with Opus
+    # (call/youtube.rs); no AAC decoder is linked, so no M4A.
     "matroska",
     "wavparse",
     "opus",

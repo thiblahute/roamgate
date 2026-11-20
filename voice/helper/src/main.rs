@@ -83,6 +83,22 @@
 //! change, `"waiting": false` once the voice is taken and the music may
 //! play.
 //!
+//! A YouTube video plays into a call's mix as its music (`call::youtube`):
+//! `{"id": 6, "op": "call_youtube", "call": 7, "action": "play", "url":
+//! "<audio stream>", "headers": {"User-Agent": "..."}, "volume": 1,
+//! "pause_mpris": "org.mpris.MediaPlayer2.spotify"}` (WebM with Opus, read
+//! with reqwesthttpsrc; those players are paused when the call's background
+//! carries their sound) answers once its sound comes: `{"id": 6, "state":
+//! "playing", "position": 0.1, "duration": 212.0, "volume": 1,
+//! "music_muted": false, "spotify_paused": true}`. The other actions,
+//! "pause", "resume", "stop", "volume" (`volume`, 0 to 1), "seek"
+//! (`position`, in seconds) and "status", answer the same state ("playing",
+//! "paused" or "stopped"). Events: `{"event": "call_youtube", "call": 7,
+//! "state": "playing", "position": 0.0, "duration": 212.0}` once it sounds,
+//! `{"event": "call_youtube", "call": 7, "state": "stopped", "why":
+//! "ended" | "error" | "spotify", "reason": "..."}` when it stops by
+//! itself. A helper older than this answers `unknown op call_youtube`.
+//!
 //! A failed request answers `{"id": ..., "error": "..."}`. Listening,
 //! speaking and cloning run on threads of their own, so none waits for
 //! another.
@@ -109,6 +125,7 @@ mod frames;
 mod language;
 mod listen;
 mod loudness;
+mod mpris;
 #[cfg(target_os = "macos")]
 mod processtap;
 mod reference;
@@ -183,6 +200,51 @@ struct Request {
     reply_loudness: Option<Value>,
     #[serde(default)]
     reply_peak: Option<f64>,
+    /// call_youtube: what to do (play, pause, resume, stop, volume, seek,
+    /// status), the stream and its HTTP headers, where to seek to, and the
+    /// MPRIS players to pause.
+    #[serde(default)]
+    action: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    headers: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    position: Option<f64>,
+    #[serde(default)]
+    pause_mpris: Option<String>,
+}
+
+/// A call_youtube request's part for the call.
+fn youtube_request(request: &Request) -> call::YoutubeRequest {
+    call::YoutubeRequest {
+        action: request.action.clone().unwrap_or_default(),
+        url: request.url.clone().unwrap_or_default(),
+        headers: request.headers.clone(),
+        volume: request.volume,
+        position: request.position,
+        pause_mpris: request.pause_mpris.clone(),
+    }
+}
+
+/// A call_youtube request, on the YouTube thread: a start waits for the
+/// video's sound, and must not hold the call's other ops.
+fn youtube_op(output: &Output, calls: &Calls, request: &Request) -> Value {
+    let id = request.call.unwrap_or_default();
+    let current = calls.lock().unwrap().clone().filter(|call| call.id == id);
+    let Some(current) = current else {
+        return json!({"id": request.id, "error": format!("no call {id}")});
+    };
+    let events = output.clone();
+    let on_event: call::OnYoutubeEvent = Arc::new(move |event| reply(&events, event));
+    let pause: call::Pause = Arc::new(mpris::pause_playing);
+    match current.youtube(&youtube_request(request), &pause, &on_event) {
+        Ok(mut answer) => {
+            answer["id"] = request.id.clone();
+            answer
+        }
+        Err(error) => json!({"id": request.id, "error": error}),
+    }
 }
 
 /// The user's voice: its name in a set of voices told apart (voices.rs).
@@ -801,6 +863,7 @@ fn main() {
         .and_then(|_| gstspeechgate::plugin_register_static())
         .and_then(|_| gstrsaudiofx::plugin_register_static())
         .and_then(|_| gstrswebrtc::plugin_register_static())
+        .and_then(|_| gstreqwest::plugin_register_static())
     {
         eprintln!("The speech plugins failed to register: {err}");
         std::process::exit(1);
@@ -876,6 +939,18 @@ fn main() {
         std::thread::spawn(move || {
             for request in call_rx {
                 let answer = call_op(&output, &calls, &listen, &learning, &request);
+                reply(&output, answer);
+            }
+        })
+    };
+
+    let (youtube_tx, youtube_rx) = mpsc::channel::<Request>();
+    let youtubing = {
+        let output = output.clone();
+        let calls = calls.clone();
+        std::thread::spawn(move || {
+            for request in youtube_rx {
+                let answer = youtube_op(&output, &calls, &request);
                 reply(&output, answer);
             }
         })
@@ -1212,6 +1287,7 @@ fn main() {
                 // thread, so they keep their order.
                 call_tx.send(request).map_err(|e| e.0)
             }
+            "call_youtube" => youtube_tx.send(request).map_err(|e| e.0),
             "ping" => {
                 reply(&output, json!({"id": request.id, "ok": true}));
                 Ok(())
@@ -1238,7 +1314,8 @@ fn main() {
         );
         std::process::exit(0);
     });
-    drop((listen_tx, speak_tx, call_tx));
+    drop((listen_tx, speak_tx, call_tx, youtube_tx));
+    let _ = youtubing.join();
     let _ = calling.join();
     calls.lock().unwrap().take();
     let _ = listening.join();
@@ -1257,6 +1334,57 @@ fn main() {
 mod tests {
     use super::*;
     use std::time::Instant;
+
+    /// call_youtube's request, as Roamgate sends it (voice-youtube.ts).
+    #[test]
+    fn a_call_youtube_request_reads_as_the_call_takes_it() {
+        let request: Request = serde_json::from_str(
+            r#"{"id": 6, "op": "call_youtube", "call": 7, "action": "play",
+                "url": "https://rr1.googlevideo.com/videoplayback?x=1",
+                "headers": {"User-Agent": "Mozilla/5.0", "Cookie": "a=1"},
+                "volume": 0.5, "pause_mpris": "org.mpris.MediaPlayer2.spotify"}"#,
+        )
+        .unwrap();
+        assert_eq!(request.call, Some(7));
+        assert_eq!(
+            youtube_request(&request),
+            call::YoutubeRequest {
+                action: "play".into(),
+                url: "https://rr1.googlevideo.com/videoplayback?x=1".into(),
+                headers: [
+                    ("Cookie".to_string(), "a=1".to_string()),
+                    ("User-Agent".to_string(), "Mozilla/5.0".to_string()),
+                ]
+                .into(),
+                volume: Some(0.5),
+                position: None,
+                pause_mpris: Some("org.mpris.MediaPlayer2.spotify".into()),
+            }
+        );
+        let seek: Request = serde_json::from_str(
+            r#"{"id": 8, "op": "call_youtube", "call": 7, "action": "seek", "position": 42.5}"#,
+        )
+        .unwrap();
+        let seek = youtube_request(&seek);
+        assert_eq!((seek.action.as_str(), seek.position), ("seek", Some(42.5)));
+        assert!(seek.headers.is_empty());
+    }
+
+    /// Without a call, a YouTube request says so.
+    #[test]
+    fn call_youtube_without_its_call_is_an_error() {
+        gst::init().unwrap();
+        let output: Output = Arc::new(Mutex::new(Box::new(std::io::sink())));
+        let calls: Calls = Arc::new(Mutex::new(None));
+        let request: Request = serde_json::from_str(
+            r#"{"id": 9, "op": "call_youtube", "call": 3, "action": "status"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            youtube_op(&output, &calls, &request),
+            json!({"id": 9, "error": "no call 3"})
+        );
+    }
 
     /// Sentences of many small buffers (as Qwen3-TTS streams them) through
     /// the speaker's branches, flushed between them as speak() does: every

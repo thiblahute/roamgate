@@ -9,6 +9,8 @@
 //! voice:  appsrc (F32 48 kHz stereo, timestamps set here) ------------> mix
 //! music:  <background> ! audioconvert ! audioresample ! F32 48k stereo
 //!         (ducked in a probe) --------------------------------------> mix
+//! video:  a YouTube video's own pipeline ! appsrc (youtube.rs, ducked
+//!         as the music) ----------------------------------------------> mix
 //! floor:  audiotestsrc wave=silence is-live=true --------------------> mix
 //! audiomixer latency=60ms ! F32 48k stereo ! webrtcsink (Opus 128 kb/s)
 //!
@@ -63,6 +65,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use gst::prelude::*;
+
+mod youtube;
+pub use youtube::{OnEvent as OnYoutubeEvent, Pause, YoutubeRequest};
 
 pub const RATE: u32 = 48_000;
 pub const CHANNELS: u32 = 2;
@@ -229,6 +234,15 @@ struct Mix {
     duck: Duck,
     /// When music last went to the mixer above MUSIC_AUDIBLE.
     music_heard: Option<std::time::Instant>,
+    /// Since when the background's source is in the pipeline, if it is.
+    background_since: Option<std::time::Instant>,
+    /// When the background last carried sound above MUSIC_AUDIBLE, as it
+    /// comes, whatever its level in the mix: a player really playing into
+    /// the sink it records (youtube.rs's Spotify check).
+    background_heard: Option<std::time::Instant>,
+    /// A YouTube video's envelope (youtube.rs): ducked as the background,
+    /// at the same level.
+    youtube_duck: Duck,
 }
 
 impl Mix {
@@ -296,6 +310,8 @@ pub struct Call {
     /// What each voice makes, to bring its replies to the loudness asked
     /// for; None to leave them as made.
     voices: Option<Mutex<crate::loudness::Voices>>,
+    /// A YouTube video playing into the mix (youtube.rs).
+    youtube: Arc<youtube::Tube>,
 }
 
 /// webrtcsrc consuming the page's microphone producer, in a pipeline of its
@@ -480,6 +496,11 @@ fn raw_caps() -> gst::Caps {
         .field("channels", CHANNELS as i32)
         .field("channel-mask", gst::Bitmask::new(0x3))
         .build()
+}
+
+/// Mean square of `samples`.
+fn loudness(samples: &[f32]) -> f32 {
+    samples.iter().map(|s| s * s).sum::<f32>() / samples.len().max(1) as f32
 }
 
 fn make(factory: &str) -> Result<gst::Element, String> {
@@ -775,6 +796,13 @@ impl Call {
                 settings.release_ms,
             ),
             music_heard: None,
+            background_since: None,
+            background_heard: None,
+            youtube_duck: Duck::new(
+                settings.volume.clamp(0.0, 1.0),
+                settings.ducked,
+                settings.release_ms,
+            ),
         }));
         let music_frames = Arc::new(AtomicU64::new(0));
         if let Err(err) = pipeline.set_state(gst::State::Playing) {
@@ -782,6 +810,12 @@ impl Call {
             let _ = pipeline.set_state(gst::State::Null);
             return Err(format!("the call's audio failed to start: {detail}"));
         }
+        let youtube = Arc::new(youtube::Tube::new(
+            id,
+            pipeline.clone(),
+            mixer.clone(),
+            mix.clone(),
+        ));
         let mut call = Self {
             id,
             signalling_port,
@@ -798,6 +832,7 @@ impl Call {
             microphone: Mutex::new(None),
             echo,
             on_error: on_error.clone(),
+            youtube,
             voices: settings.reply_loudness.map(|target| {
                 Mutex::new(crate::loudness::Voices::new(
                     target,
@@ -855,11 +890,12 @@ impl Call {
                         (samples.len() / CHANNELS as usize) as u64,
                         Ordering::Relaxed,
                     );
+                    if loudness(samples) > MUSIC_AUDIBLE {
+                        mix.background_heard = Some(std::time::Instant::now());
+                    }
                     mix.duck
                         .apply(samples, CHANNELS as usize, at.nseconds(), active);
-                    let loud =
-                        samples.iter().map(|s| s * s).sum::<f32>() / samples.len().max(1) as f32;
-                    if loud > MUSIC_AUDIBLE {
+                    if loudness(samples) > MUSIC_AUDIBLE {
                         mix.music_heard = Some(std::time::Instant::now());
                     }
                 }
@@ -873,11 +909,15 @@ impl Call {
             }
         }
         *branch = Some(Branch { elements, pad });
+        let mut mix = self.mix.lock().unwrap();
+        mix.background_since = Some(std::time::Instant::now());
+        mix.background_heard = None;
         Ok(())
     }
 
     /// Takes the background out of the pipeline and stops it.
     fn detach(&self, branch: Branch) {
+        self.mix.lock().unwrap().background_since = None;
         if let Some(last) = branch.elements.last()
             && let Some(src) = last.static_pad("src")
         {
@@ -1171,6 +1211,17 @@ impl Call {
                 .is_some_and(|heard| heard.elapsed() < MUSIC_HEARD_FOR)
     }
 
+    /// A `call_youtube` request: a YouTube video's sound played into the
+    /// mix as the call's music (youtube.rs). Answers its state.
+    pub fn youtube(
+        &self,
+        request: &YoutubeRequest,
+        pause: &Pause,
+        on_event: &OnYoutubeEvent,
+    ) -> Result<serde_json::Value, String> {
+        self.youtube.request(request, pause, on_event)
+    }
+
     /// Whether the background's source is in the pipeline now.
     #[cfg(test)]
     pub fn background_running(&self) -> bool {
@@ -1196,6 +1247,7 @@ impl Drop for Call {
         self.microphone.lock().unwrap().take();
         // Its sources stop with it: a process tap is destroyed then.
         self.branch.lock().unwrap().take();
+        self.youtube.stop();
         stop_away(self.pipeline.clone());
     }
 }
