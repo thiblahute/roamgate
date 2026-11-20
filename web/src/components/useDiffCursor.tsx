@@ -748,7 +748,17 @@ export function useDiffCursor({
       const line = shadowOf(current.key)?.querySelector<HTMLElement>(
         "[data-line][data-editor-active-line]",
       );
-      if (!line) return false;
+      if (!line) {
+        // In sight but not drawn (Pierre's window missed the jump, the
+        // file's height changed under it, as a context change does): drawn
+        // again, to be placed on the next try.
+        (
+          instances.current.get(current.key) as
+            | { rerender?: () => void }
+            | undefined
+        )?.rerender?.();
+        return false;
+      }
       const drawn = line.getBoundingClientRect();
       const frame = box.getBoundingClientRect();
       if (!drawn.height || !frame.height) return false;

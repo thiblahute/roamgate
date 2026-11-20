@@ -119,6 +119,12 @@ export type SurfaceOptions = {
    * and zz zt zb have a screen to act on. Unset: no layout.
    */
   viewport?: number;
+  /**
+   * With a `viewport`: as Pierre's window does, a file whose drawing is more
+   * than a screen away from the view knows no line positions until the
+   * view comes near it.
+   */
+  farUndrawn?: boolean;
   /** A touch screen (a coarse pointer). */
   coarse?: boolean;
   /** The phone layout (mobile mode, its system Back). */

@@ -303,12 +303,14 @@ export function gapForLine(file: ReviewDiffFile, line: number): number | null {
  * What to reveal of a gap so that new-side `line` shows with `around`
  * lines of context each side: the end nearer to it grows (the first gap
  * only from below, the last only from above). Null when the line is in a
- * hunk already, or the hunks cannot be read.
+ * hunk already, the hunks cannot be read, or it would take more than
+ * `limit` lines (a line far into a gap: shown only when asked for).
  */
 export function contextForLine(
   file: ReviewDiffFile,
   line: number,
   around = 3,
+  limit = Number.POSITIVE_INFINITY,
 ): { gap: number; change: (state: GapState) => GapState } | null {
   const gap = gapForLine(file, line);
   if (gap === null) return null;
@@ -324,6 +326,11 @@ export function contextForLine(
   const to = next ? next.newStart - 1 : line + around;
   const fromAbove = gap > 0 ? Math.min(line + around, to) - from + 1 : null;
   const fromBelow = next ? to - Math.max(line - around, from) + 1 : null;
+  const fewest = Math.min(
+    fromAbove ?? Number.POSITIVE_INFINITY,
+    fromBelow ?? Number.POSITIVE_INFINITY,
+  );
+  if (fewest > limit) return null;
   if (fromBelow !== null && (fromAbove === null || fromBelow <= fromAbove))
     return {
       gap,

@@ -615,6 +615,12 @@ type DiffDrawing = {
   chunk: (key: string, id: string) => ReactNode;
 };
 
+/**
+ * The most lines a thread on unchanged code opens on its own: farther from
+ * a change, it is listed above the diff, its line shown when gone to.
+ */
+const REVEAL_LIMIT = 100;
+
 /** The ids of the annotations drawing a gap's controls: its index after. */
 const GAP_ID = "\u0000gap:";
 /**
@@ -4479,10 +4485,9 @@ function DiffContentViewInner({
   /** A file's opened lines closed again: its comments' lines stay. */
   const closeContext = (key: string) => {
     const source = filesByKey[key]?.diff;
+    // Closed for good: neither the context chosen nor a comment's line
+    // opens them again (the comment is listed above the diff).
     if (source) contextFor.current.add(`${key}\u0000${source}`);
-    for (const once of [...revealedFor.current])
-      if (source && once.endsWith(`\u0000${source}`))
-        revealedFor.current.delete(once);
     setExpansions((current) => {
       if (!current.has(key)) return current;
       const next = new Map(current);
@@ -4499,7 +4504,8 @@ function DiffContentViewInner({
     >();
     for (const thread of placement.unplaced) {
       const { path, line, endLine, side = "new" } = thread.anchor;
-      if (!path || !line || side !== "new") continue;
+      // A resolved thread is folded: its line is not opened for it.
+      if (!path || !line || side !== "new" || thread.resolved) continue;
       const section = renderedSectionsRef.current.find(
         (each) => each.entry.path === path && !each.collapsed,
       );
@@ -4507,7 +4513,9 @@ function DiffContentViewInner({
       if (!section || !source) continue;
       const once = `${thread.id}\u0000${source}`;
       if (revealedFor.current.has(once)) continue;
-      const reveal = revealLine(source, endLine ?? line);
+      // Near a change only: a line far into a gap would open everything
+      // between it and the change; its thread is listed above the diff.
+      const reveal = revealLine(source, endLine ?? line, REVEAL_LIMIT);
       if (!reveal) continue;
       revealedFor.current.add(once);
       byKey.set(section.key, [...(byKey.get(section.key) ?? []), reveal]);

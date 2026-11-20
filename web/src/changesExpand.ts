@@ -284,14 +284,16 @@ export function expandPatch(
 
 /**
  * The gaps to open so that the new-side `line` shows with three lines each
- * side (a thread on unchanged code).
+ * side (a thread on unchanged code); null when that takes more than
+ * `limit` lines.
  */
 export function revealLine(
   patch: string,
   line: number,
+  limit?: number,
 ): { gap: number; change: (state: GapState) => GapState } | null {
   const parsed = parsePatch(patch);
-  return parsed ? contextForLine(parsed.file, line) : null;
+  return parsed ? contextForLine(parsed.file, line, 3, limit) : null;
 }
 
 /**

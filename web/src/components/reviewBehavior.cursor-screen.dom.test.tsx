@@ -42,6 +42,29 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
   for (const surface of reviewSurfacesWith("cursor"))
     describe(surface.name, () => {
       const { mount } = surface;
+      test("gg and G scroll to a file Pierre has not drawn yet, far from the view", async () => {
+        const review = await mount({
+          files: ["a", "b", "c", "d", "e", "f"].map((name) =>
+            added(`${name}.ts`, 60),
+          ),
+          viewport: 11,
+          farUndrawn: true,
+        });
+        const onScreen = () =>
+          review
+            .screenLines()
+            .some((line) => line.text === review.cursorLine()?.text);
+        await review.press("G");
+        expect(review.cursorLine()?.text).toBe("f.ts line 60");
+        expect(onScreen()).toBe(true);
+        await review.press("gg");
+        expect(review.cursorLine()?.text).toBe("a.ts line 1");
+        expect(onScreen()).toBe(true);
+        await review.press("G");
+        expect(onScreen()).toBe(true);
+        await review.unmount();
+      });
+
       test("Ctrl-d and Ctrl-u move half a screen", async () => {
         // A screen of 11 lines: half of it is 5.
         const review = await mount({

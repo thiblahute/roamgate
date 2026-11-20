@@ -280,5 +280,49 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         );
         await review.unmount();
       });
+
+      test("the head's fold closes lines a thread opened, for good", async () => {
+        const review = await mount({
+          ...options(),
+          threads: [thread("t1", "a.ts", 50, "What about line 50?")],
+        });
+        expect(shown(review)).toEqual([30, ...range(32, 53), 70, 72]);
+        await review.clickButton("Hide the lines opened around a.ts's changes");
+        await review.press("j");
+        expect(shown(review)).toEqual([30, 32, 70, 72]);
+        // Its thread is listed above the diff instead.
+        expect(review.text()).toContain("What about line 50?");
+        await review.unmount();
+      });
+
+      test("a thread far into a gap, or resolved, opens no lines: it is listed above the diff", async () => {
+        const long = Array.from({ length: 200 }, (_, i) =>
+          i === 149 ? "line one-fifty" : `line ${i + 1}`,
+        );
+        const review = await mount({
+          files: [
+            file(
+              "a.ts",
+              hunk(149, 149, [
+                " line 149",
+                "-line 150",
+                "+line one-fifty",
+                " line 151",
+              ]),
+            ),
+          ],
+          texts: { "a.ts": `${long.join("\n")}\n` },
+          threads: [
+            thread("far", "a.ts", 20, "Far up the file"),
+            {
+              ...thread("done", "a.ts", 140, "Settled near the change"),
+              resolved: true,
+            },
+          ],
+        });
+        expect(shown(review)).toEqual([149, 151]);
+        expect(review.text()).toContain("Far up the file");
+        await review.unmount();
+      });
     });
 }

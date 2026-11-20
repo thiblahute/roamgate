@@ -1145,6 +1145,8 @@ export async function mountChangesReview(
         this.hasAttribute("data-line-type")
       ) {
         const top = layout.rowTop(shown(this, pathOf(section)));
+        // Out of Pierre's window: not drawn, no size.
+        if (options.farUndrawn && farFile(section)) return box(0, 0);
         if (Number.isFinite(top)) return box(top - layout.scroll, LINE);
       }
       return box(0, LINE);
@@ -1153,6 +1155,20 @@ export async function mountChangesReview(
     if (options.viewport === undefined)
       return this === scroller() ? box(0, 100_000) : rect.call(this);
     if (this === scroller()) return box(0, height);
+    // A file's section, where Pierre's window is drawn: its header, then
+    // its lines.
+    if (
+      options.farUndrawn &&
+      this instanceof HTMLElement &&
+      this.dataset.diffEntryKey
+    ) {
+      const index = sections().indexOf(this);
+      if (index >= 0)
+        return box(
+          fileTops[index]! - HEADER - layout.scroll,
+          (fileTops[index + 1] ?? contentHeight + HEADER) - fileTops[index]!,
+        );
+    }
     if (
       this instanceof HTMLElement &&
       this.classList.contains("pierre-diff-surface")
@@ -1164,8 +1180,34 @@ export async function mountChangesReview(
     }
     return rect.call(this);
   };
+  /** A file more than a screen away from the view: out of Pierre's window. */
+  const farFile = (section: HTMLElement) => {
+    const index = sections().indexOf(section);
+    if (index < 0) return false;
+    const top = fileTops[index]!;
+    const end = fileTops[index + 1] ?? contentHeight;
+    return end < layout.scroll - height || top > layout.scroll + 2 * height;
+  };
+  // Pierre's window: a file far from the view has no line positions.
+  const { VirtualizedFileDiff } = await import("@pierre/diffs");
+  const virtualized = VirtualizedFileDiff.prototype as unknown as {
+    getLinePosition: (...args: unknown[]) => unknown;
+  };
+  const linePosition = virtualized.getLinePosition;
+  if (options.farUndrawn && options.viewport !== undefined)
+    virtualized.getLinePosition = function (
+      this: { fileContainer?: Element | null },
+      ...args: unknown[]
+    ) {
+      const section = this.fileContainer?.closest<HTMLElement>(
+        "[data-diff-entry-key]",
+      );
+      if (section && farFile(section)) return undefined;
+      return linePosition.apply(this, args);
+    };
   const restoreLayout = () => {
     proto.getBoundingClientRect = rect;
+    virtualized.getLinePosition = linePosition;
   };
   /** The scroller as tall as the screen, scrolled by the fake layout. */
   const layOutScroller = () => {
