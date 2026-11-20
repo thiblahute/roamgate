@@ -458,18 +458,14 @@
     min-width: 36px;
   }
 
-  /* Not writing, and nothing in the box: the box alone beside the
-     navigation; the voice call is on the box, with the microphone. */
+  /* Not writing, and nothing in the box: the box beside the navigation,
+     with Attach before it; the call is on the box, with the microphone. */
   .mobile-bottom-input
     > .agent-history-composer:not(
       :focus-within,
       :has(.agent-history-composer-send:not(:disabled))
     )
-    :is(
-      .agent-history-composer-attach,
-      .agent-history-composer-escape,
-      .agent-history-composer-send:disabled
-    ) {
+    :is(.agent-history-composer-escape, .agent-history-composer-send:disabled) {
     display: none;
   }
 

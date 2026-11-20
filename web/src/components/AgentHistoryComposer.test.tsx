@@ -337,12 +337,21 @@ if (process.env.ROAMGATE_HISTORY_COMPOSER_DOM_TEST !== "1") {
       expect(picker.multiple).toBe(true);
       const pickerClick = mock(() => {});
       picker.addEventListener("click", pickerClick);
+      // Attach opens its menu; Photos is the image chooser.
       await React.act(async () => {
         container
-          .querySelector<HTMLButtonElement>('[aria-label="Add images"]')!
+          .querySelector<HTMLButtonElement>('[aria-label="Attach"]')!
+          .click();
+      });
+      await React.act(async () => {
+        Array.from(
+          container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+        )
+          .find((item) => item.textContent === "Photos")!
           .click();
       });
       expect(pickerClick).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[role="menu"]')).toBeNull();
       const chooseImages = (files: File[]) =>
         React.act(async () => {
           Object.defineProperty(picker, "files", {

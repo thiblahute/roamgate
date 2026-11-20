@@ -14,9 +14,12 @@ import { useVimKeys } from "../vimKeys";
 import { lazyWithReload } from "../lazyWithReload";
 import {
   AtSign,
+  Camera,
   CornerDownRight,
-  ImagePlus,
+  FileText,
+  Images,
   ListPlus,
+  Paperclip,
   PhoneCall,
   Route,
   Send,
@@ -64,6 +67,7 @@ import { UploadProgressBar, useUploadProgress } from "./UploadProgressBar";
 import {
   attachmentDisplay,
   type ComposerAttachment,
+  type ComposerAttachmentKind,
   rememberComposerAttachment,
   withoutAttachment,
 } from "../composerAttachments";
@@ -123,6 +127,22 @@ const MAX_INPUT_HEIGHT_PX = 160;
 let uploadBatches = 0;
 
 /**
+ * Where attached files came from: the camera or the photo picker give
+ * images, even without a type (some cameras say none); anywhere else a
+ * file is an image by its type.
+ */
+export type AttachSource = "image" | "any";
+
+/** An image the agent sees as one, or a file it reads by its path. */
+export function attachmentKind(
+  file: File,
+  source: AttachSource,
+): ComposerAttachmentKind {
+  if (file.type) return file.type.startsWith("image/") ? "image" : "file";
+  return source === "image" ? "image" : "file";
+}
+
+/**
  * Message input under the chat-style session history. It shares the pane's
  * terminal composer draft, so text moves with the user between the terminal
  * and the history panel, and both surfaces send through the same submission
@@ -141,6 +161,7 @@ export function AgentHistoryComposer({
   stateSeq,
   onSend,
   onUploadImage,
+  onUploadFile,
   commands = [],
   vimKeys: vimKeysProp,
   onError,
@@ -168,8 +189,13 @@ export function AgentHistoryComposer({
   // Herdr's agent state-change sequence; it advances on every transition.
   stateSeq?: number;
   onSend: (text: string) => Promise<void>;
-  /** Without it, the box takes no images. */
+  /** Without it, the box takes no images (or sends them as files). */
   onUploadImage?: (file: File) => Promise<string>;
+  /**
+   * Any other file, uploaded where the agent runs: its path goes in the
+   * message, for the agent to read. Without it, the box takes images only.
+   */
+  onUploadFile?: (file: File) => Promise<string>;
   /** The agent's /commands, offered while one is being typed. */
   commands?: AgentCommand[];
   /** Vim keys in the box; the one Vim keys setting by default. */
@@ -269,6 +295,28 @@ export function AgentHistoryComposer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const vimHandleRef = useRef<ComposerVimHandle | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const anyFileInputRef = useRef<HTMLInputElement | null>(null);
+  // The attach menu: Take photo, Photos, Files.
+  const [attachOpen, setAttachOpen] = useState(false);
+  const attachRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!attachOpen) return;
+    const close = (event: Event) => {
+      if (
+        event instanceof KeyboardEvent
+          ? event.key === "Escape"
+          : !attachRef.current?.contains(event.target as Node | null)
+      )
+        setAttachOpen(false);
+    };
+    document.addEventListener("pointerdown", close, true);
+    document.addEventListener("keydown", close, true);
+    return () => {
+      document.removeEventListener("pointerdown", close, true);
+      document.removeEventListener("keydown", close, true);
+    };
+  }, [attachOpen]);
   // Shell mode: the box starts with `!`, and Send runs it.
   const shellMode = !!shell && /^\s*!/.test(text);
   // Dictation into the box (Dictation.tsx): the words as heard while they
@@ -369,16 +417,30 @@ export function AgentHistoryComposer({
   const sendDisabled =
     !text.trim() || busy || composing || (shellMode && shellCommand === null);
 
-  const uploadImages = async (files: File[]) => {
+  const uploadImages = async (
+    files: File[],
+    source: AttachSource = "image",
+  ) => {
     if (
       files.length === 0 ||
       composingRef.current ||
       terminalComposerSubmissionPending(draftKey)
     )
       return;
+    // Each file goes up as an image or as a file, by what it is and what
+    // the box takes.
+    const kinds = new Map(
+      files.map((file) => {
+        const kind = attachmentKind(file, source);
+        return [
+          file,
+          kind === "image" && !onUploadImage && onUploadFile ? "file" : kind,
+        ] as const;
+      }),
+    );
     // Said now rather than by the bridge refusing the message once sent.
     const tooMany = tooManyImagesMessage(
-      files.length,
+      files.filter((file) => kinds.get(file) === "image").length,
       messageImagePieces(readTerminalComposerDraft(draftKey)).filter(
         (piece) => "image" in piece,
       ).length,
@@ -397,8 +459,10 @@ export function AgentHistoryComposer({
       const results = await uploadInOrder(
         files,
         async (file) => {
-          if (file.type && !file.type.startsWith("image/"))
-            throw new Error("it is not an image");
+          if (kinds.get(file) === "file") {
+            if (!onUploadFile) throw new Error("it is not an image");
+            return onUploadFile(file);
+          }
           if (!onUploadImage) throw new Error("This chat takes no images.");
           return onUploadImage(file);
         },
@@ -409,6 +473,7 @@ export function AgentHistoryComposer({
             const attachment = rememberComposerAttachment(
               result.path,
               result.file,
+              kinds.get(result.file),
             );
             setUploadedEarly((current) =>
               [...current, { ...attachment, batch, index }].sort(
@@ -419,7 +484,10 @@ export function AgentHistoryComposer({
         },
       );
       paths = uploadedPaths(results);
-      const failure = uploadFailureMessage(results, "Image upload failed");
+      const failure = uploadFailureMessage(
+        results,
+        onUploadFile ? "Upload failed" : "Image upload failed",
+      );
       if (failure) {
         failed = true;
         onError(failure);
@@ -445,7 +513,7 @@ export function AgentHistoryComposer({
             );
           if (!active)
             onError(
-              "Connection or pane changed; image paths retained in the original draft.",
+              "Connection or pane changed; attachment paths retained in the original draft.",
             );
         }
       } finally {
@@ -704,9 +772,45 @@ export function AgentHistoryComposer({
     return () => textarea.removeEventListener("beforeinput", capture);
   }, [mentionsOn, vimKeys]);
 
+  const canAttach = !!onUploadImage || !!onUploadFile;
+  /** Whether the box takes a file, given or dropped from `source`. */
+  const takes = (file: File, source: AttachSource) =>
+    attachmentKind(file, source) === "image"
+      ? !!onUploadImage || !!onUploadFile
+      : !!onUploadFile;
+  /** Opens a picker from the attach menu, which closes. */
+  const pick = (input: React.RefObject<HTMLInputElement | null>) => {
+    setAttachOpen(false);
+    input.current?.click();
+  };
+  // Files dragged over the box: dropped, they go up as pasted ones do.
+  const [dragging, setDragging] = useState(false);
+  const draggingFiles = (event: React.DragEvent) =>
+    canAttach && Array.from(event.dataTransfer?.types ?? []).includes("Files");
+
   return (
     <div
-      className={`agent-history-composer${shellMode ? " is-shell" : ""}${mobile ? " is-mobile" : ""}`}
+      className={`agent-history-composer${shellMode ? " is-shell" : ""}${mobile ? " is-mobile" : ""}${dragging ? " is-dropping" : ""}`}
+      onDragOver={(event) => {
+        if (!draggingFiles(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        setDragging(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setDragging(false);
+      }}
+      onDrop={(event) => {
+        setDragging(false);
+        if (!draggingFiles(event)) return;
+        event.preventDefault();
+        const files = Array.from(event.dataTransfer.files).filter((file) =>
+          takes(file, "any"),
+        );
+        if (files.length) void uploadImages(files, "any");
+        else onError("This chat takes images only.");
+      }}
       // Its draft outlives a reload: a newer build need not wait for it.
       data-draft-saved={terminalComposerDraftSaved(draftKey) || undefined}
       onKeyDownCapture={(event) => {
@@ -838,35 +942,62 @@ export function AgentHistoryComposer({
       ) : null}
       {shown.attachments.length || uploadedEarly.length ? (
         <div className="agent-history-composer-attachments">
-          {shown.attachments.map((attachment, index) => (
-            <span key={attachment.path} title={attachment.name}>
-              {attachment.url ? (
-                <img src={attachment.url} alt={attachment.name} />
-              ) : null}
-              <span>#{index + 1}</span>
-              <button
-                type="button"
-                aria-label={`Remove image ${index + 1}`}
-                onMouseDown={keepTextareaFocus}
-                onClick={() =>
-                  writeTerminalComposerDraft(
-                    draftKey,
-                    withoutAttachment(text, attachment.path),
-                  )
+          {shown.attachments.map((attachment) => {
+            const file = attachment.kind === "file";
+            // Numbered as the box shows them, images and files apart.
+            const number =
+              shown.attachments
+                .filter((each) => (each.kind === "file") === file)
+                .indexOf(attachment) + 1;
+            return (
+              <span
+                key={attachment.path}
+                className={file ? "is-file" : undefined}
+                title={
+                  file
+                    ? `${attachment.name}: ${attachment.path}`
+                    : attachment.name
                 }
               >
-                <X size={12} aria-hidden="true" />
-              </button>
-            </span>
-          ))}
+                {file ? (
+                  <FileText size={16} aria-hidden="true" />
+                ) : attachment.url ? (
+                  <img src={attachment.url} alt={attachment.name} />
+                ) : null}
+                <span>{file ? attachment.name : `#${number}`}</span>
+                <button
+                  type="button"
+                  aria-label={
+                    file
+                      ? `Remove file ${attachment.name}`
+                      : `Remove image ${number}`
+                  }
+                  onMouseDown={keepTextareaFocus}
+                  onClick={() =>
+                    writeTerminalComposerDraft(
+                      draftKey,
+                      withoutAttachment(text, attachment.path),
+                    )
+                  }
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </span>
+            );
+          })}
           {/* Uploaded already, in the box once the others are up too. */}
           {uploadedEarly.map((attachment) => (
             <span
               key={`uploading-${attachment.path}`}
-              className="is-uploading"
+              className={`is-uploading${attachment.kind === "file" ? " is-file" : ""}`}
               title={attachment.name}
             >
-              {attachment.url ? (
+              {attachment.kind === "file" ? (
+                <>
+                  <FileText size={16} aria-hidden="true" />
+                  <span>{attachment.name}</span>
+                </>
+              ) : attachment.url ? (
                 <img src={attachment.url} alt={attachment.name} />
               ) : (
                 <span>{attachment.name}</span>
@@ -916,18 +1047,64 @@ export function AgentHistoryComposer({
         </div>
       ) : null}
       <div className="agent-history-composer-row">
-        {onUploadImage ? (
-          <button
-            type="button"
-            className="agent-history-composer-attach"
-            aria-label="Add images"
-            title="Add images"
-            disabled={busy || composing}
-            onMouseDown={keepTextareaFocus}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <ImagePlus size={17} aria-hidden="true" />
-          </button>
+        {canAttach ? (
+          // One button, a small menu: the camera, photos, any file.
+          <div className="agent-history-composer-attach-menu" ref={attachRef}>
+            <button
+              type="button"
+              className="agent-history-composer-attach"
+              aria-label="Attach"
+              title={onUploadFile ? "Attach photos or files" : "Attach photos"}
+              aria-haspopup="menu"
+              aria-expanded={attachOpen}
+              disabled={busy || composing}
+              onMouseDown={keepTextareaFocus}
+              onClick={() => setAttachOpen((open) => !open)}
+            >
+              <Paperclip size={17} aria-hidden="true" />
+            </button>
+            {attachOpen ? (
+              <div
+                className="agent-history-composer-attach-options"
+                role="menu"
+                aria-label="Attach"
+              >
+                {touch && onUploadImage ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onMouseDown={keepTextareaFocus}
+                    onClick={() => pick(cameraInputRef)}
+                  >
+                    <Camera size={16} aria-hidden="true" />
+                    Take photo
+                  </button>
+                ) : null}
+                {onUploadImage ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onMouseDown={keepTextareaFocus}
+                    onClick={() => pick(fileInputRef)}
+                  >
+                    <Images size={16} aria-hidden="true" />
+                    Photos
+                  </button>
+                ) : null}
+                {onUploadFile ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onMouseDown={keepTextareaFocus}
+                    onClick={() => pick(anyFileInputRef)}
+                  >
+                    <FileText size={16} aria-hidden="true" />
+                    Files
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         ) : null}
         {vimKeys && touch ? (
           // Phone keyboards have no Esc key, and Vim needs one.
@@ -1083,16 +1260,16 @@ export function AgentHistoryComposer({
               }}
               onPaste={(event) => {
                 const files = Array.from(event.clipboardData.files);
-                const images = (
+                const taken = (
                   files.length
                     ? files
                     : Array.from(event.clipboardData.items)
                         .map((item) => item.getAsFile())
                         .filter((file): file is File => file !== null)
-                ).filter((file) => file.type.startsWith("image/"));
-                if (images.length === 0 || !onUploadImage) return;
+                ).filter((file) => takes(file, "any"));
+                if (taken.length === 0) return;
                 event.preventDefault();
-                void uploadImages(images);
+                void uploadImages(taken, "any");
               }}
               onSelect={(event) => {
                 const textarea = event.currentTarget;
@@ -1348,6 +1525,32 @@ export function AgentHistoryComposer({
             const files = Array.from(event.currentTarget.files ?? []);
             event.currentTarget.value = "";
             void uploadImages(files);
+          }}
+        />
+        {/* A phone's camera, straight to a photo. */}
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          data-attach="camera"
+          onChange={(event) => {
+            const files = Array.from(event.currentTarget.files ?? []);
+            event.currentTarget.value = "";
+            void uploadImages(files);
+          }}
+        />
+        <input
+          ref={anyFileInputRef}
+          type="file"
+          multiple
+          hidden
+          data-attach="files"
+          onChange={(event) => {
+            const files = Array.from(event.currentTarget.files ?? []);
+            event.currentTarget.value = "";
+            void uploadImages(files, "any");
           }}
         />
       </div>

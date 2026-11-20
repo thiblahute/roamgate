@@ -1,11 +1,20 @@
 /**
- * Images attached in the agent chat's message box. The shared draft keeps
- * their uploaded paths, which is what the agent gets; the box shows each as
- * `[Image #N]`, as Claude Code does, with a thumbnail above it.
+ * Images and files attached in the agent chat's message box. The shared
+ * draft keeps their uploaded paths, which is what the agent gets (it reads a
+ * file there); the box shows an image as `[Image #N]`, as Claude Code does,
+ * with a thumbnail above it, and a file as `[File #N]`, with its name.
  */
 import { roamgateSessionStorage } from "./browserStorage";
 
-export type ComposerAttachment = { path: string; name: string; url?: string };
+export type ComposerAttachmentKind = "image" | "file";
+
+export type ComposerAttachment = {
+  path: string;
+  name: string;
+  url?: string;
+  /** An image unless said otherwise. */
+  kind?: ComposerAttachmentKind;
+};
 
 const known = new Map<string, ComposerAttachment>();
 /**
@@ -18,7 +27,11 @@ function keep() {
   try {
     roamgateSessionStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify([...known.values()].map(({ path, name }) => [path, name])),
+      JSON.stringify(
+        [...known.values()].map(({ path, name, kind }) =>
+          kind === "file" ? [path, name, kind] : [path, name],
+        ),
+      ),
     );
   } catch {
     // Shown as their paths after a reload.
@@ -36,7 +49,11 @@ try {
         typeof entry[0] === "string" &&
         typeof entry[1] === "string"
       )
-        known.set(entry[0], { path: entry[0], name: entry[1] });
+        known.set(entry[0], {
+          path: entry[0],
+          name: entry[1],
+          ...(entry[2] === "file" ? { kind: "file" as const } : {}),
+        });
 } catch {
   // Nothing kept.
 }
@@ -61,15 +78,21 @@ function forget(path: string) {
 export function rememberComposerAttachment(
   path: string,
   file: File,
+  kind: ComposerAttachmentKind = "image",
 ): ComposerAttachment {
   let url: string | undefined;
-  try {
-    url = URL.createObjectURL(file);
-  } catch {
-    url = undefined;
-  }
+  // A file shows its name, not a thumbnail.
+  if (kind === "image")
+    try {
+      url = URL.createObjectURL(file);
+    } catch {
+      url = undefined;
+    }
   forget(path);
-  const attachment = { path, name: file.name || "image", url };
+  const attachment: ComposerAttachment =
+    kind === "file"
+      ? { path, name: file.name || "file", kind }
+      : { path, name: file.name || "image", url };
   known.set(path, attachment);
   while (known.size > REMEMBERED_ATTACHMENTS)
     forget(known.keys().next().value!);
@@ -77,7 +100,12 @@ export function rememberComposerAttachment(
   return attachment;
 }
 
-const PLACEHOLDER = /\[Image #(\d+)\]/g;
+const PLACEHOLDER = /\[(Image|File) #(\d+)\]/g;
+
+/** What the box shows for an attachment: `[Image #N]` or `[File #N]`. */
+function placeholderWord(attachment: ComposerAttachment) {
+  return attachment.kind === "file" ? "File" : "Image";
+}
 
 export type AttachmentDisplay = {
   /** The draft as the box shows it. */
@@ -110,9 +138,14 @@ export function attachmentDisplay(draft: string): AttachmentDisplay {
   let position = 0;
   for (const { at, attachment } of found) {
     if (at < position) continue;
-    let index = attachments.indexOf(attachment);
-    if (index < 0) index = attachments.push(attachment) - 1;
-    const placeholder = `[Image #${index + 1}]`;
+    if (!attachments.includes(attachment)) attachments.push(attachment);
+    // Images and files are numbered apart, as Claude Code numbers images.
+    const word = placeholderWord(attachment);
+    const number =
+      attachments
+        .filter((each) => placeholderWord(each) === word)
+        .indexOf(attachment) + 1;
+    const placeholder = `[${word} #${number}]`;
     text += draft.slice(position, at);
     const shown = text.length;
     text += placeholder;
@@ -120,19 +153,23 @@ export function attachmentDisplay(draft: string): AttachmentDisplay {
     spans.push({ at, end: position, shown, shownEnd: text.length });
   }
   text += draft.slice(position);
-  const pathOf = (number: string) => attachments[Number(number) - 1]?.path;
+  const pathOf = (word: string, number: string) =>
+    attachments.filter((each) => placeholderWord(each) === word)[
+      Number(number) - 1
+    ]?.path;
   return {
     text,
     attachments,
     toDraft: (shown) =>
       shown.replace(
         PLACEHOLDER,
-        (placeholder, number: string) => pathOf(number) ?? placeholder,
+        (placeholder, word: string, number: string) =>
+          pathOf(word, number) ?? placeholder,
       ),
     draftOffset: (shown, offset) => {
       let delta = 0;
       for (const match of shown.matchAll(PLACEHOLDER)) {
-        const path = pathOf(match[1]!);
+        const path = pathOf(match[1]!, match[2]!);
         if (!path || match.index! >= offset) continue;
         // Inside a placeholder counts as after it.
         delta += path.length - match[0].length;

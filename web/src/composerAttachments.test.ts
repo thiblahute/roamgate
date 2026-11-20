@@ -68,3 +68,26 @@ test("remembers a bounded number of images and releases older thumbnails", () =>
     URL.revokeObjectURL = revokeObjectURL;
   }
 });
+
+test("attached files show as [File #N], numbered apart from images, by their own name", () => {
+  const image = "/tmp/roamgate-uploads-501/upload-c/img-3.png";
+  const pdf = "/tmp/roamgate-uploads-501/upload-d/My_Report.pdf";
+  rememberComposerAttachment(image, new File([], "photo.png"));
+  const file = rememberComposerAttachment(
+    pdf,
+    new File([], "My Report.pdf"),
+    "file",
+  );
+  expect(file).toEqual({ path: pdf, name: "My Report.pdf", kind: "file" });
+  const draft = `read ${pdf} and see ${image} `;
+  const shown = attachmentDisplay(draft);
+  expect(shown.text).toBe("read [File #1] and see [Image #1] ");
+  expect(shown.toDraft(shown.text)).toBe(draft);
+  expect(shown.toDraft("[Image #1] then [File #1]")).toBe(
+    `${image} then ${pdf}`,
+  );
+  expect(shown.draftOffset(shown.text, "read [File #1]".length)).toBe(
+    `read ${pdf}`.length,
+  );
+  expect(withoutAttachment(draft, pdf)).toBe(`read and see ${image} `);
+});

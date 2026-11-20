@@ -51,6 +51,53 @@
   opacity: 0.45;
 }
 
+/* Attach: one button, and over it a small menu (Take photo, Photos,
+   Files). */
+.agent-history-composer-attach-menu {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+}
+
+.agent-history-composer-attach-options {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 6;
+  display: grid;
+  min-width: 160px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+}
+
+.agent-history-composer-attach-options button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.agent-history-composer-attach-options button:hover,
+.agent-history-composer-attach-options button:focus-visible {
+  background: color-mix(in srgb, var(--text-strong) 10%, transparent);
+}
+
+/* Files dragged over the box. */
+.agent-history-composer.is-dropping {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+
 .agent-history-composer-escape {
   padding: 0 8px;
   font-family: var(--mono-font);
@@ -110,6 +157,23 @@
   background: var(--input-bg);
   color: var(--muted);
   font-size: 11px;
+}
+
+.agent-history-composer-attachments > span.is-file {
+  max-width: 220px;
+  padding-left: 8px;
+  color: var(--text);
+}
+
+.agent-history-composer-attachments > span.is-file > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-history-composer-attachments > span.is-file > svg {
+  flex: none;
+  color: var(--muted);
 }
 
 .agent-history-composer-attachments img {

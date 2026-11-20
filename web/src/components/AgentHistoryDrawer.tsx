@@ -111,7 +111,11 @@ import {
   writeTerminalComposerDraft,
 } from "../terminalComposer";
 import { sendTerminalComposerText } from "../terminalComposerSend";
-import { uploadTerminalImage } from "../terminalImageUpload";
+import { downscaleImage } from "../imageDownscale";
+import {
+  uploadTerminalFile,
+  uploadTerminalImage,
+} from "../terminalImageUpload";
 import type { AgentActivity, AgentPrompt } from "../agentPrompt";
 import { AgentArtifactsMenu } from "./AgentArtifactsMenu";
 import { useAgentArtifacts } from "../agentArtifacts";
@@ -2989,7 +2993,12 @@ export function AgentHistoryDrawer({
             }
           : null
       }
-      onUploadImage={(file) => uploadTerminalImage(connectionClient, file)}
+      // Uploaded to the session's host (an SSH one too), where it reads
+      // them: a photo made the size a model takes, any file as it is.
+      onUploadImage={async (file) =>
+        uploadTerminalImage(connectionClient, await downscaleImage(file))
+      }
+      onUploadFile={(file) => uploadTerminalFile(connectionClient, file)}
       commands={
         inConversation ? conversationCommands(agentCommands) : agentCommands
       }
