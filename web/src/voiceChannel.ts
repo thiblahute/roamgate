@@ -56,6 +56,8 @@ export type ChannelEvent = {
   heard?: boolean;
   /** call_carrier left: why. */
   why?: string;
+  /** call_mute: the Roamgate app asks to mute (true) or unmute (false). */
+  muted?: unknown;
   /** call_handoff: the single-use token the app joins with. */
   handoff?: string;
   /** call_output_state: the app's outputs, and the one it plays on. */

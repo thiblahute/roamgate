@@ -5,6 +5,7 @@ import {
   activeCall,
   activeMicrophoneConstraints,
   BACKOFF_MS,
+  bindCallMute,
   type CallChannel,
   callOutputs,
   type CallOptions,
@@ -26,10 +27,12 @@ import {
   microphoneEnergy,
   NEVER_OPENED_TRIES,
   nextCallOutput,
+  onCallMuteAsked,
   OUTPUT_CLOSE_MS,
   RELEASE_MARGIN_MS,
   REOPEN_MS,
   type ScreenLock,
+  setCallMuted,
   type SignallingApi,
   SILENT_MS,
   type SignallingConfig,
@@ -2076,6 +2079,84 @@ describe("a call handed to the Android app", () => {
     expect(onMusic.current).toBe("bluetooth-music");
     expect(nextCallOutput(onMusic)).toMatchObject({ kind: "speaker" });
     call.stop();
+  });
+
+  test("mute: the chat's Mute is reported, the app's applied as the button and reported back", async () => {
+    const { options } = fakeApp(false);
+    setCallMuted(false);
+    const { call, sent, tell } = await started({ app: options });
+    const mutes = () => sent.filter((m) => m.op === "call_mute_state");
+    // Unmuted, as the server takes a call to start: nothing said.
+    expect(mutes()).toEqual([]);
+    // The page's button: each change reported once.
+    setCallMuted(true);
+    setCallMuted(true);
+    expect(mutes()).toEqual([{ op: "call_mute_state", call: 7, muted: true }]);
+    // The app unmutes: the voice chat applies it as its button does, and
+    // that is reported; asked again, nothing changes and nothing is sent.
+    const asked: boolean[] = [];
+    const stop = onCallMuteAsked((muted) => {
+      asked.push(muted);
+      setCallMuted(muted);
+    });
+    tell({ event: "call_mute", call: 7, muted: false });
+    tell({ event: "call_mute", call: 7, muted: false });
+    expect(asked).toEqual([false]);
+    expect(mutes().slice(1)).toEqual([
+      { op: "call_mute_state", call: 7, muted: false },
+    ]);
+    // Another call's, or a muted that is not a boolean: ignored.
+    tell({ event: "call_mute", call: 8, muted: true });
+    tell({ event: "call_mute", call: 7, muted: "yes" });
+    expect(asked).toEqual([false]);
+    stop();
+    // No voice chat to take it: the call's state is said again.
+    tell({ event: "call_mute", call: 7, muted: true });
+    expect(mutes().slice(2)).toEqual([
+      { op: "call_mute_state", call: 7, muted: false },
+    ]);
+    call.stop();
+  });
+
+  test("a running voice chat applies the app's Mute with its Mute button, which reports it", async () => {
+    const { options } = fakeApp(false);
+    setCallMuted(false);
+    const { call, sent, tell } = await started({ app: options });
+    // The voice chat's Mute button (useVoiceChat's toggleMute).
+    let muted = false;
+    let pressed = 0;
+    const button = () => {
+      pressed += 1;
+      muted = !muted;
+      setCallMuted(muted);
+    };
+    const unbind = bindCallMute(() => muted, button);
+    tell({ event: "call_mute", call: 7, muted: true });
+    expect(pressed).toBe(1);
+    expect(muted).toBe(true);
+    // Said again (the app's own echo of it): no second press.
+    tell({ event: "call_mute", call: 7, muted: true });
+    expect(pressed).toBe(1);
+    button();
+    expect(
+      sent.filter((m) => m.op === "call_mute_state").map((m) => m.muted),
+    ).toEqual([true, false]);
+    unbind();
+    call.stop();
+  });
+
+  test("a call starting while the chat is muted reports it at once", async () => {
+    const { options } = fakeApp(false);
+    setCallMuted(true);
+    try {
+      const { call, sent } = await started({ app: options });
+      expect(sent.filter((m) => m.op === "call_mute_state")).toEqual([
+        { op: "call_mute_state", call: 7, muted: true },
+      ]);
+      call.stop();
+    } finally {
+      setCallMuted(false);
+    }
   });
 
   test("an app that does not join leaves the call here, and is told it missed", async () => {

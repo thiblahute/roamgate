@@ -242,6 +242,7 @@ describe("a call handed to the Android app", () => {
         waiting: false,
         replies_peer: null,
       },
+      { event: "call_mute", call: 1, muted: false },
     ]);
     expect(page.sent.at(-1)).toEqual({
       event: "call_carrier",
@@ -425,6 +426,89 @@ describe("a call handed to the Android app", () => {
     ]);
   });
 
+  test("mute: the page's state reaches the app, the app's Mute the page", async () => {
+    const { socket, page, carry } = await started();
+    // Muted before the app joined: the app learns it right after joining.
+    socket.message(
+      page.ws,
+      JSON.stringify({ op: "call_mute_state", call: 1, muted: true }),
+    );
+    const { app } = carry(["microphone", "replies"]);
+    expect(app.sent.map((each) => each.event)).toEqual([
+      "call_carry",
+      "call_mute",
+    ]);
+    expect(app.sent.at(-1)).toEqual({
+      event: "call_mute",
+      call: 1,
+      muted: true,
+    });
+    // Each change of the page's is told to the app.
+    socket.message(
+      page.ws,
+      JSON.stringify({ op: "call_mute_state", call: 1, muted: false }),
+    );
+    expect(app.sent.at(-1)).toEqual({
+      event: "call_mute",
+      call: 1,
+      muted: false,
+    });
+    // The app's Mute goes to the page, as the same event.
+    const told = page.sent.length;
+    socket.message(
+      app.ws,
+      JSON.stringify({ op: "call_mute", call: 1, muted: true }),
+    );
+    expect(page.sent.slice(told)).toEqual([
+      { event: "call_mute", call: 1, muted: true },
+    ]);
+    // Nothing for another call, a muted that is not a boolean, or a
+    // socket that does not carry it; and a page's state from another
+    // socket is not the call's.
+    const appTold = app.sent.length;
+    const stranger = fakeSocket();
+    socket.message(
+      app.ws,
+      JSON.stringify({ op: "call_mute", call: 2, muted: false }),
+    );
+    socket.message(
+      app.ws,
+      JSON.stringify({ op: "call_mute", call: 1, muted: "no" }),
+    );
+    socket.message(
+      stranger.ws,
+      JSON.stringify({ op: "call_mute", call: 1, muted: false }),
+    );
+    socket.message(
+      stranger.ws,
+      JSON.stringify({ op: "call_mute_state", call: 1, muted: true }),
+    );
+    socket.message(
+      page.ws,
+      JSON.stringify({ op: "call_mute_state", call: 1, muted: 1 }),
+    );
+    socket.message(
+      page.ws,
+      JSON.stringify({ op: "call_mute_state", call: 2, muted: true }),
+    );
+    expect(page.sent.length).toBe(told + 1);
+    expect(app.sent.length).toBe(appTold);
+    expect(stranger.sent).toEqual([]);
+    // Once the app gave the call back, neither way goes on.
+    socket.message(app.ws, JSON.stringify({ op: "call_carry_end" }));
+    const pageLeft = page.sent.length;
+    socket.message(
+      page.ws,
+      JSON.stringify({ op: "call_mute_state", call: 1, muted: false }),
+    );
+    socket.message(
+      app.ws,
+      JSON.stringify({ op: "call_mute", call: 1, muted: false }),
+    );
+    expect(app.sent.length).toBe(appTold);
+    expect(page.sent.length).toBe(pageLeft);
+  });
+
   test("restarts and music reach the app too", async () => {
     const { fake, page, carry } = await started();
     const { app } = carry();
@@ -539,6 +623,7 @@ describe("the replies' producer, for the Android app", () => {
         waiting: false,
         replies_peer: "replies-1",
       },
+      { event: "call_mute", call: 1, muted: false },
     ]);
     // The same producer registering again tells nothing new.
     say(watch, {
@@ -547,13 +632,13 @@ describe("the replies' producer, for the Android app", () => {
       roles: ["producer"],
       meta: REPLIES,
     });
-    expect(app.sent).toHaveLength(1);
+    expect(app.sent).toHaveLength(2);
   });
 
   test("a producer known later, or a new one, is told as call_replies_peer", async () => {
     const ready = await started();
     const { app, watch } = joined(ready);
-    expect(app.sent.at(-1)).toMatchObject({
+    expect(app.sent.at(-2)).toMatchObject({
       event: "call_carry",
       ok: true,
       replies_peer: null,

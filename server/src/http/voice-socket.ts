@@ -121,7 +121,13 @@ import {
  * true}` and lets the legs the app carries go; `"state": "left"` gives
  * them back (`call_carry_end`, a newer carrier, or the app's socket gone
  * DETACHED_MS). `call_output` from the page goes to the app, its
- * `call_output_state` to the page. docs/ARCHITECTURE.md tells it all.
+ * `call_output_state` to the page. The page's Mute (nothing listened to,
+ * replies still read) is the app's too: the page reports it `{"op":
+ * "call_mute_state", "call": 7, "muted": true}`, each change told to the
+ * app `{"event": "call_mute", "call": 7, "muted": true}` (and once right
+ * after its call_carry answer); the app's `{"op": "call_mute", "call": 7,
+ * "muted": true}` goes to the page as that same event, which mutes as its
+ * button does and reports it. docs/ARCHITECTURE.md tells it all.
  *
  * A listening on a call's microphone whose stream stops for STALL_MS stays
  * on its socket, which is alive: the page is told `{"event": "stalled",
@@ -256,6 +262,8 @@ type CallState = {
   iceLines?: number;
   /** Who the replies' producer is, watched while the app carries it. */
   replies?: RepliesWatch | null;
+  /** The page's Mute, as it last reported it (call_mute_state). */
+  muted?: boolean;
   /** Watches the replies again after the helper's server closed. */
   repliesRetry?: ReturnType<typeof setTimeout> | null;
 };
@@ -1638,8 +1646,54 @@ export function createVoiceSocket(
             waiting: found.handle.musicWaiting(),
             replies_peer: repliesPeer,
           });
+          send(ws, {
+            event: "call_mute",
+            call: found.handle.id,
+            muted: found.muted === true,
+          });
           send(found.ws, carrierState(found, carrier));
           if (carrier.outputs) send(found.ws, carrier.outputs);
+          return;
+        }
+        case "call_mute_state": {
+          // The page's Mute changed (its button, the app's, anything that
+          // mutes): the app carrying the call shows it.
+          const found = call?.ws === ws ? call : null;
+          if (
+            !found?.handle ||
+            found.stopped ||
+            found.handle.id !== request.call ||
+            typeof request.muted !== "boolean"
+          )
+            return;
+          found.muted = request.muted;
+          if (found.carrier?.joined)
+            send(found.carrier.ws, {
+              event: "call_mute",
+              call: found.handle.id,
+              muted: request.muted,
+            });
+          return;
+        }
+        case "call_mute": {
+          // The app's Mute (its notification, a headset, the car): the
+          // page mutes as its own button does, and reports it back.
+          const found = carried(ws);
+          if (
+            !found?.handle ||
+            found.stopped ||
+            found.handle.id !== request.call ||
+            typeof request.muted !== "boolean"
+          )
+            return;
+          debug(
+            `call ${found.handle.id}: the app ${request.muted ? "mutes" : "unmutes"} the call`,
+          );
+          send(found.ws, {
+            event: "call_mute",
+            call: found.handle.id,
+            muted: request.muted,
+          });
           return;
         }
         case "call_carry_end": {

@@ -1927,6 +1927,21 @@ that has the app is carried by the app (`web/src/androidApp.ts`,
    the page shows them on its output button and sends a choice as
    `{"op": "call_output", "call": 7, "output": "<id>"}`, which the app
    gets as `{"event": "call_output", ...}`.
+   Mute is the page's voice chat Mute (the companion still speaks,
+   nothing is listened to), shared with the app. The page reports each
+   change for its call as `{"op": "call_mute_state", "call": 7, "muted":
+   true}` (from its socket owning the call; it starts unmuted), and the
+   carrying socket gets each one as `{"event": "call_mute", "call": 7,
+   "muted": true}`, plus once right after the `call_carry` answer with
+   the state then. The app's Mute (its ongoing-call notification, or
+   Android's: a Bluetooth headset, the car) is `{"op": "call_mute",
+   "call": 7, "muted": false}` on the carrying socket; the page gets it
+   as the same `call_mute` event and applies it as its own Mute button,
+   then reports the new state, which the app gets back. A Mute the page
+   already has changes and sends nothing; with no voice chat running it,
+   the page reports its state again so the app shows what is. `muted`
+   must be a boolean; ops for another call, an ended one, or from a
+   socket that does not own or carry the call are ignored.
 7. **Giving it back.** `{"op": "call_carry_end"}`, a newer carrier, an
    app that never sends `call_carry`, or a carrying socket gone for
    DETACHED_MS (20 s; `call_carry` again on a new socket within it keeps

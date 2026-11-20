@@ -100,6 +100,16 @@
  * The app giving the call back (`"state": "left"`) gives the legs back to
  * the page. An app that does not join within HANDOFF_WAIT_MS leaves the
  * call here, as without it.
+ *
+ * Mute: the voice chat's Mute (useVoiceChat) is the call's, told by
+ * setCallMuted and reported to the server on each change (`{"op":
+ * "call_mute_state", "call": 7, "muted": true}`), which shows it on the
+ * app's notification. The app's own Mute (its notification, a headset,
+ * the car) comes back as `{"event": "call_mute", "call": 7, "muted":
+ * true}`: the voice chat (onCallMuteAsked) mutes as its button does, and
+ * its report follows. Asked for what it already is, nothing changes and
+ * nothing is sent; with no voice chat to take it, the call's state is
+ * said again, for the app to show what is.
  */
 
 import {
@@ -262,6 +272,46 @@ export function subscribeActiveCall(listener: () => void): () => void {
 
 function callChanged() {
   for (const listener of [...callListeners]) listener();
+}
+
+/** The voice chat's Mute: nothing listened to, replies still read. */
+let callMuted = false;
+/** The voice chats that apply a Mute asked for on the call (the app's). */
+const muteAsked = new Set<(muted: boolean) => void>();
+
+/**
+ * The voice chat's Mute changed (its button, the app's, anything that
+ * mutes): the call going on reports it to the server.
+ */
+export function setCallMuted(muted: boolean) {
+  callMuted = muted;
+  active?.tellMuted();
+}
+
+/**
+ * Calls `listener` when the call is asked to mute or unmute (the Android
+ * app's `call_mute`); it applies it as the Mute button does.
+ */
+export function onCallMuteAsked(
+  listener: (muted: boolean) => void,
+): () => void {
+  muteAsked.add(listener);
+  return () => muteAsked.delete(listener);
+}
+
+/**
+ * Makes a running voice chat's Mute the call's: its state now reported,
+ * and a Mute the app asks for applied by `toggle`, its Mute button's own
+ * action (which reports the change), only when it is not that already.
+ */
+export function bindCallMute(
+  muted: () => boolean,
+  toggle: () => void,
+): () => void {
+  setCallMuted(muted());
+  return onCallMuteAsked((mute) => {
+    if (mute !== muted()) toggle();
+  });
 }
 
 /**
@@ -712,6 +762,8 @@ export class WebRtcCall {
     heard: boolean;
     outputs: { current: string | null; outputs: AppOutput[] } | null;
   } | null = null;
+  /** The Mute last reported to the server (it starts unmuted). */
+  private toldMuted = false;
   /** A handoff offered to the app, waited for. */
   private handoffTimer: ReturnType<typeof setTimeout> | null = null;
   /** The app's bridge threw: the call stays here, not handed again. */
@@ -846,6 +898,7 @@ export class WebRtcCall {
     callChanged();
     void call.traceOutputs();
     call.listen();
+    call.tellMuted();
     call.musicWaits(musicWaiting);
     void call.holdScreen();
     call.watchMicrophone();
@@ -927,9 +980,37 @@ export class WebRtcCall {
           event.call === this.id
         ) {
           this.appOutputs(event);
+        } else if (
+          event.event === "call_mute" &&
+          event.call === this.id &&
+          typeof event.muted === "boolean"
+        ) {
+          this.muteAsked(event.muted);
         }
       }),
     );
+  }
+
+  /** Reports the voice chat's Mute to the server, when it changed. */
+  tellMuted(force = false) {
+    if (this.stopped || (!force && this.toldMuted === callMuted)) return;
+    this.toldMuted = callMuted;
+    this.channel.send({
+      op: "call_mute_state",
+      call: this.id,
+      muted: callMuted,
+    });
+  }
+
+  /**
+   * The app asks to mute or unmute: the voice chat does as its button
+   * would, and reports it; with none to take it, what is is said again.
+   */
+  private muteAsked(muted: boolean) {
+    if (muted === callMuted) return;
+    this.trace(`the Roamgate app ${muted ? "mutes" : "unmutes"} the call`);
+    for (const listener of [...muteAsked]) listener(muted);
+    if (callMuted !== muted) this.tellMuted(true);
   }
 
   /**

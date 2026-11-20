@@ -154,6 +154,7 @@ import {
   type MoveQuestion,
 } from "../voiceFollow";
 import { setVoiceCallPhase } from "../voiceCallReload";
+import { bindCallMute, setCallMuted } from "../webrtcCall";
 import { checkFrontendFreshness } from "../frontendFreshness";
 import { installVoiceFollow } from "../voiceFollowGuard";
 import { useAllServerAgentSessions } from "../useAllServerAgentSessions";
@@ -2536,6 +2537,8 @@ export function useVoiceChat({
     const mute = !mutedRef.current;
     mutedRef.current = mute;
     setMuted(mute);
+    // The call's Mute too: the Roamgate app shows it.
+    if (stateRef.current !== "off") setCallMuted(mute);
     // What is being said goes, as a tap would send it; then nothing more
     // is heard.
     if (mute) (finishRef.current ?? muteAbortRef.current)?.abort();
@@ -2544,6 +2547,15 @@ export function useVoiceChat({
       unmutedRef.current = null;
     }
   }, []);
+
+  // While it runs, its Mute is the call's: reported, and the Roamgate
+  // app's Mute (its notification, a headset, the car) applied as the
+  // button.
+  const live = state !== "off";
+  useEffect(() => {
+    if (!live) return;
+    return bindCallMute(() => mutedRef.current, toggleMute);
+  }, [live, toggleMute]);
 
   // A newer build reloads the page between turns only (voiceCallReload.ts).
   const callConnection = voiceKey?.connectionId;
