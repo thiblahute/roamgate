@@ -3,7 +3,10 @@ import {
   saveWorkspaceSheetAll,
 } from "./workspaceSheetView";
 import { useLimitPausesSync } from "./limitPauses";
-import { MobileBottomBar } from "./components/MobileBottomBar";
+import {
+  MobileBottomBar,
+  mobileBottomBarHidden,
+} from "./components/MobileBottomBar";
 import { withWaitsOn } from "./needsYou";
 import { usePaneJumpLanding } from "./paneJumpLanding";
 import { useMarkAgentsSeen } from "./agentSeen";
@@ -7101,6 +7104,7 @@ export default function App() {
           moreOpen={mobileMoreOpen}
           onTabsOpenChange={setMobileTabSheetOpen}
           onMoreOpenChange={setMobileMoreOpen}
+          hidden={mobileBottomBarHidden(mobileView, inspectorState)}
           workspaces={{
             open: mobileView === "workspaces",
             onToggle:

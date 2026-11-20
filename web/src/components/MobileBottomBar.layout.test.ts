@@ -249,3 +249,20 @@ test("a chat box holding a draft keeps the writing layout when the focus is else
     ".mobile-bottom-bar:has(.agent-history-composer.agent-history-composer-send:not(:disabled)).mobile-appbar{",
   );
 });
+
+test("the review on a phone takes the rail's room: hidden, still mounted, only while Changes shows", async () => {
+  const { mobileBottomBarHidden } = await import("./MobileBottomBar");
+  const changes = { open: true, view: "changes" };
+  expect(mobileBottomBarHidden("changes", changes)).toBe(true);
+  // Another view of the phone, or the inspector on another view or closed.
+  expect(mobileBottomBarHidden("session", changes)).toBe(false);
+  expect(mobileBottomBarHidden("files", { open: true, view: "files" })).toBe(
+    false,
+  );
+  expect(
+    mobileBottomBarHidden("changes", { open: false, view: "changes" }),
+  ).toBe(false);
+  expect(mobileBottomBarHidden("changes", null)).toBe(false);
+  // The hidden attribute wins over the phone's display: block.
+  expect(rule(nav, ".mobile-bottom-bar[hidden]")).toContain("display: none;");
+});

@@ -341,6 +341,11 @@
     background: var(--terminal-bg);
   }
 
+  /* The review fills the screen: its own comment boxes, its own way back. */
+  .mobile-bottom-bar[hidden] {
+    display: none;
+  }
+
   .app:has(.agent-history-drawer.is-open[data-view="chat"]) .mobile-bottom-bar {
     --terminal-bg: var(--shell-panel);
   }

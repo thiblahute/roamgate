@@ -3,6 +3,22 @@ import { useEffect, type ReactNode, type Ref } from "react";
 import { focusIfUnchanged } from "./dialogFocus";
 import { blurActiveInput } from "../activeTerminalInput";
 
+/**
+ * Whether the phone's rail gives its room to the view shown: the review
+ * (Changes, always the review) fills the screen, with its own comment
+ * boxes and its own way back (its Back, its X, the system Back).
+ */
+export function mobileBottomBarHidden(
+  mobileView: string,
+  inspector: { open: boolean; view: string } | null | undefined,
+): boolean {
+  return (
+    mobileView === "changes" &&
+    inspector?.open === true &&
+    inspector.view === "changes"
+  );
+}
+
 // App owns this rail, outside every hideable mobile surface. The active
 // input owner (TerminalView or Ranger) portals its editor into the input surface.
 export function MobileBottomBar({
@@ -16,6 +32,7 @@ export function MobileBottomBar({
   onTabsOpenChange,
   onMoreOpenChange,
   workspaces,
+  hidden = false,
 }: {
   inputRef: Ref<HTMLDivElement>;
   chatButton?: ReactNode;
@@ -29,6 +46,11 @@ export function MobileBottomBar({
   onMoreOpenChange: (open: boolean) => void;
   /** The workspace list, beside the tabs: switching workspaces in one tap. */
   workspaces?: { open: boolean; onToggle: () => void };
+  /**
+   * Out of sight (mobileBottomBarHidden), still mounted: the input owners
+   * keep their surface, and what was typed waits there.
+   */
+  hidden?: boolean;
 }) {
   useEffect(() => {
     if (!moreOpen) return;
@@ -53,6 +75,7 @@ export function MobileBottomBar({
       className="mobile-bottom-bar"
       aria-label="Mobile controls"
       data-chat={chatButton ? "" : undefined}
+      hidden={hidden}
     >
       <div className="mobile-bottom-input" ref={inputRef} />
       <nav className="mobile-appbar" aria-label="Workspace navigation">
