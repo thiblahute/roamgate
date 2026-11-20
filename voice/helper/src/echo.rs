@@ -16,11 +16,23 @@
 //! microphone is matched with the far end timestamped alike. Both are
 //! pushed here, synchronously, on pads of our own: the mix stamped with the
 //! time it goes out plus `lead`, the microphone with the time it comes in.
-//! What the page plays comes back over the network a round trip and the
-//! phone's buffers later; AEC3 finds that delay itself (up to about half a
-//! second past `lead`, see the tests), so `lead` stays below the shortest
-//! round trip and the canceller never gets the far end too late.
+//!
+//! What the page plays comes back a round trip later: the jitter buffers
+//! of both legs, the phone's output and input. AEC3 finds the echo from
+//! about 40 ms to about 500 ms past the far end's timestamps (see the
+//! tests), not further: a round trip of 600 ms with a 60 ms lead is never
+//! cancelled. So the delay is measured here (`Delay`): the energy of the
+//! far end and of the microphone, in 10 ms frames, correlated over the last
+//! seconds; and the lead moves when the echo is out of AEC3's reach, to put
+//! it AIM_MS past the far end. The call starts with DEFAULT_LEAD_MS, below
+//! any round trip, so that the far end never comes too late.
+//!
+//! The reports count the microphone while the far end's echo comes, at the
+//! delay measured, leaving out where the user talks over it (the microphone
+//! well above the echo expected): what is left is the echo, before and
+//! after the canceller (and its gain control).
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -28,21 +40,57 @@ use gst::prelude::*;
 
 /// The rate the microphone comes at, and the canceller runs at.
 pub const RATE: i32 = 16_000;
-/// The default `lead`: what the far end is put ahead by (see the module).
+/// The lead a call starts with, until the echo's delay is measured.
 pub const DEFAULT_LEAD_MS: u64 = 60;
-/// Far-end blocks louder than this (mean square, -50 dBFS) are a reply or
+/// Far-end frames louder than this (mean square, -50 dBFS) are a reply or
 /// music playing, whose echo may come.
 const FAR_AUDIBLE: f64 = 1e-5;
-/// The echo of what played may come this long after it went out.
-const ECHO_TAIL: std::time::Duration = std::time::Duration::from_millis(1200);
-/// A stretch of far end shorter than this is not reported.
+/// A stretch of echo shorter than this is not reported.
 const REPORT_MIN_SECONDS: f64 = 1.0;
+
+/// The frames the echo's delay is measured in: 10 ms.
+const FRAME_NS: u64 = 10_000_000;
+/// The longest echo delay looked for, in frames: 1.5 s.
+const MAX_DELAY: usize = 150;
+/// The microphone's last 8 s are measured...
+const WINDOW: usize = 800;
+/// ...once there are 3 s of it, with the far end audible for 1.5 s...
+const MIN_WINDOW: usize = 300;
+const MIN_AUDIBLE: usize = 150;
+/// ...every second.
+const MEASURE_EVERY: u64 = 100;
+/// A delay is taken when the correlation there is at least this, and this
+/// much above any other further than SHARP frames from it...
+const MIN_CORRELATION: f64 = 0.3;
+const MIN_MARGIN: f64 = 0.05;
+const SHARP: usize = 5;
+/// ...and two measures in a row agree, this close (frames).
+const AGREE: u64 = 3;
+/// The echo is kept from REACH_MIN_MS to REACH_MAX_MS past the far end's
+/// timestamps, where AEC3 finds it, and put AIM_MS past when the lead moves.
+const REACH_MIN_MS: u64 = 60;
+const REACH_MAX_MS: u64 = 420;
+const AIM_MS: u64 = 200;
+/// The far end is looked at this many frames around the delay, each side.
+const ECHO_SPREAD: u64 = 3;
+/// The microphone louder than DOUBLE_TALK_FLOOR and DOUBLE_TALK_RATIO
+/// (3 dB) above the echo expected: the user talks over the reply. Echo
+/// taken for the user only goes uncounted; the user taken for echo would
+/// count as echo left.
+const DOUBLE_TALK_RATIO: f64 = 2.0;
+const DOUBLE_TALK_FLOOR: f64 = 1e-6;
+/// A report ends when no echo came for REPORT_GAP frames (1.2 s), or once
+/// it covers REPORT_MAX (30 s: the music plays on).
+const REPORT_GAP: u64 = 120;
+const REPORT_MAX: u64 = 3000;
 
 /// The canceller's settings.
 #[derive(Clone, Debug)]
 pub struct Settings {
-    /// What the far end is put ahead by.
+    /// What the far end is put ahead by, at first.
     pub lead: gst::ClockTime,
+    /// Whether the lead follows the echo's delay measured.
+    pub align: bool,
     pub noise_suppression: bool,
     pub gain_control: bool,
 }
@@ -51,6 +99,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             lead: gst::ClockTime::from_mseconds(DEFAULT_LEAD_MS),
+            align: true,
             noise_suppression: true,
             gain_control: true,
         }
@@ -59,36 +108,88 @@ impl Default for Settings {
 
 /// The microphone with the echo taken out: 16 kHz mono S16LE.
 pub type OnClean = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
-/// What the canceller did over a stretch of far end (a reply), to trace.
-pub type OnReport = Arc<dyn Fn(Report) + Send + Sync>;
+/// What the canceller found and did, to trace.
+pub type OnReport = Arc<dyn Fn(Event) + Send + Sync>;
 
-/// The microphone's levels while the far end played, and its echo could
-/// come back: before the canceller, and after.
+/// What the canceller traces.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Event {
+    /// The microphone's levels over a stretch of echo.
+    Report(Report),
+    /// The echo's delay measured (a new one): how long after the far end
+    /// goes out its echo comes in.
+    Delay {
+        delay_ms: u64,
+        correlation: f64,
+        lead_ms: u64,
+        /// The lead moved for it.
+        moved: bool,
+    },
+}
+
+impl std::fmt::Display for Event {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Event::Report(report) => report.fmt(f),
+            Event::Delay {
+                delay_ms,
+                correlation,
+                lead_ms,
+                moved: true,
+            } => write!(
+                f,
+                "the echo comes {delay_ms} ms after the replies go out (correlation {correlation:.2}): the far end now leads by {lead_ms} ms, for AEC3 to find it"
+            ),
+            Event::Delay {
+                delay_ms,
+                correlation,
+                lead_ms,
+                moved: false,
+            } => write!(
+                f,
+                "the echo comes {delay_ms} ms after the replies go out (correlation {correlation:.2}), within AEC3's reach from the {lead_ms} ms lead"
+            ),
+        }
+    }
+}
+
+/// The microphone's levels while the far end's echo came: before the
+/// canceller, and after.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Report {
     pub seconds: f64,
     /// Mean square, in dBFS.
     pub before_db: f64,
     pub after_db: f64,
-}
-
-impl Report {
-    /// What the canceller took out, in dB.
-    pub fn removed_db(&self) -> f64 {
-        self.before_db - self.after_db
-    }
+    /// What the canceller took out of a 10 ms frame, in dB: the median, which
+    /// the user talking over the echo (not told apart) moves little.
+    pub removed_db: f64,
+    /// Left out: the user talking over the echo.
+    pub double_talk_seconds: f64,
+    /// The echo's delay, when measured.
+    pub delay_ms: Option<u64>,
 }
 
 impl std::fmt::Display for Report {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "over {:.1} s of the replies' echo", self.seconds)?;
+        match self.delay_ms {
+            Some(delay) => write!(f, " ({delay} ms late)")?,
+            None => write!(f, " (its delay not measured)")?,
+        }
         write!(
             f,
-            "over {:.1} s of the replies playing, the microphone at {:.1} dBFS, {:.1} dBFS once cancelled ({:.1} dB taken out)",
-            self.seconds,
-            self.before_db,
-            self.after_db,
-            self.removed_db()
-        )
+            ", the microphone at {:.1} dBFS, {:.1} dBFS once cancelled ({:.1} dB taken out of a 10 ms frame, the median)",
+            self.before_db, self.after_db, self.removed_db
+        )?;
+        if self.double_talk_seconds > 0.0 {
+            write!(
+                f,
+                "; {:.1} s of the user talking over it left out",
+                self.double_talk_seconds
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -96,14 +197,419 @@ fn db(mean_square: f64) -> f64 {
     10.0 * mean_square.max(1e-12).log10()
 }
 
-/// The microphone's energy while the far end may echo in it.
+/// A stream's energy, a mean square per frame, the last ones.
+#[derive(Default)]
+struct Envelope {
+    first: u64,
+    power: VecDeque<f64>,
+}
+
+impl Envelope {
+    const KEEP: usize = WINDOW + MAX_DELAY + 2 * ECHO_SPREAD as usize + 100;
+
+    fn end(&self) -> u64 {
+        self.first + self.power.len() as u64
+    }
+
+    fn add(&mut self, frame: u64, power: f64) {
+        if self.power.is_empty() {
+            self.first = frame;
+        }
+        if frame < self.first {
+            return;
+        }
+        if frame < self.end() {
+            self.power[(frame - self.first) as usize] = power;
+            return;
+        }
+        let gap = frame - self.end();
+        if gap > Self::KEEP as u64 {
+            self.power.clear();
+            self.first = frame;
+        } else {
+            self.power.extend(std::iter::repeat_n(0.0, gap as usize));
+        }
+        self.power.push_back(power);
+        while self.power.len() > Self::KEEP {
+            self.power.pop_front();
+            self.first += 1;
+        }
+    }
+
+    fn get(&self, frame: u64) -> Option<f64> {
+        frame
+            .checked_sub(self.first)
+            .and_then(|i| self.power.get(i as usize).copied())
+    }
+
+    /// The loudest frame from `from` to `to`, both included.
+    fn loudest(&self, from: u64, to: u64) -> f64 {
+        (from..=to)
+            .filter_map(|frame| self.get(frame))
+            .fold(0.0, f64::max)
+    }
+}
+
+/// Cuts samples timestamped at `rate` into frames, by their time.
+#[derive(Default)]
+struct Framer {
+    start: u64,
+    next: u64,
+    sum: f64,
+    count: u32,
+}
+
+impl Framer {
+    /// Adds `squares` (a sample's square each) from `at` (ns); gives each
+    /// frame completed, its index and mean square, to `out`.
+    fn add(
+        &mut self,
+        at: u64,
+        rate: u64,
+        squares: impl Iterator<Item = f64>,
+        mut out: impl FnMut(u64, f64),
+    ) {
+        let per_frame = (rate * FRAME_NS / 1_000_000_000) as u32;
+        // Not where the last one ended: a frame afresh.
+        if self.count > 0 && at.abs_diff(self.next) > FRAME_NS {
+            self.count = 0;
+            self.sum = 0.0;
+        }
+        let mut n = 0u64;
+        for square in squares {
+            if self.count == 0 {
+                self.start = at + n * 1_000_000_000 / rate;
+            }
+            self.sum += square;
+            self.count += 1;
+            n += 1;
+            if self.count == per_frame {
+                out(
+                    (self.start + FRAME_NS / 2) / FRAME_NS,
+                    self.sum / per_frame as f64,
+                );
+                self.sum = 0.0;
+                self.count = 0;
+            }
+        }
+        self.next = at + n * 1_000_000_000 / rate;
+    }
+}
+
+/// A delay measured: in frames, the correlation there, and the echo's
+/// power over the far end's (median).
+#[derive(Clone, Copy, Debug)]
+struct Measure {
+    frames: u64,
+    correlation: f64,
+    coupling: f64,
+}
+
+/// The log of a frame's energy, -90 dBFS at the least.
+fn feature(power: f64) -> f64 {
+    (power + 1e-9).log10()
+}
+
+/// The echo's delay: the far end's energy (frames by the time it goes out)
+/// and the microphone's (by the time it comes in), correlated.
+#[derive(Default)]
+struct Delay {
+    far: Envelope,
+    near: Envelope,
+}
+
+impl Delay {
+    fn measure(&self) -> Option<Measure> {
+        let end = self.near.end();
+        let from = end.saturating_sub(WINDOW as u64).max(self.near.first);
+        if end - from < MIN_WINDOW as u64 {
+            return None;
+        }
+        let far_from = from.saturating_sub(MAX_DELAY as u64);
+        let audible = (far_from..end)
+            .filter(|&frame| self.far.get(frame).is_some_and(|p| p > FAR_AUDIBLE))
+            .count();
+        if audible < MIN_AUDIBLE {
+            return None;
+        }
+        // The log energy's changes, frame to frame: the syllables' onsets
+        // and ends, much sharper in time than the energy itself.
+        let near: Vec<f64> = (from..end)
+            .map(|frame| {
+                let at = |frame| feature(self.near.get(frame).unwrap_or(0.0));
+                at(frame) - at(frame.saturating_sub(1))
+            })
+            .collect();
+        let far: Vec<Option<f64>> = (far_from..end)
+            .map(|frame| {
+                let before = self.far.get(frame.checked_sub(1)?)?;
+                Some(feature(self.far.get(frame)?) - feature(before))
+            })
+            .collect();
+        let correlations: Vec<f64> = (0..=MAX_DELAY as u64)
+            .map(|lag| {
+                let (mut n, mut sx, mut sy, mut sxx, mut syy, mut sxy) =
+                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+                for (i, &x) in near.iter().enumerate() {
+                    let Some(at) = (from + i as u64).checked_sub(lag + far_from) else {
+                        continue;
+                    };
+                    let Some(y) = far[at as usize] else {
+                        continue;
+                    };
+                    n += 1.0;
+                    sx += x;
+                    sy += y;
+                    sxx += x * x;
+                    syy += y * y;
+                    sxy += x * y;
+                }
+                if n < MIN_WINDOW as f64 {
+                    return 0.0;
+                }
+                let vx = sxx - sx * sx / n;
+                let vy = syy - sy * sy / n;
+                if vx <= 1e-12 || vy <= 1e-12 {
+                    return 0.0;
+                }
+                (sxy - sx * sy / n) / (vx * vy).sqrt()
+            })
+            .collect();
+        let (best, &correlation) = correlations
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1))?;
+        let other = correlations
+            .iter()
+            .enumerate()
+            .filter(|(lag, _)| lag.abs_diff(best) > SHARP)
+            .map(|(_, &r)| r)
+            .fold(f64::MIN, f64::max);
+        if correlation < MIN_CORRELATION || correlation - other < MIN_MARGIN {
+            return None;
+        }
+        let mut ratios: Vec<f64> = (from..end)
+            .filter_map(|frame| {
+                let far = self.far.get(frame.checked_sub(best as u64)?)?;
+                (far > FAR_AUDIBLE).then(|| self.near.get(frame).unwrap_or(0.0) / far)
+            })
+            .collect();
+        if ratios.is_empty() {
+            return None;
+        }
+        ratios.sort_by(f64::total_cmp);
+        Some(Measure {
+            frames: best as u64,
+            correlation,
+            coupling: ratios[ratios.len() / 2],
+        })
+    }
+}
+
+/// The microphone's energy while the far end's echo comes.
 #[derive(Default)]
 struct Stats {
-    /// Until when the far end's echo may come.
-    echo_until: Option<std::time::Instant>,
-    samples: u64,
-    before: f64,
-    after: f64,
+    /// Each frame's energy, before and after the canceller.
+    frames: Vec<(f64, f64)>,
+    double_talk: u64,
+    /// The last frame the echo came in.
+    last_echo: Option<u64>,
+}
+
+/// What the far end's and the microphone's threads share.
+struct State {
+    lead: gst::ClockTime,
+    /// The far end's and the microphone's next timestamps: never before
+    /// the last ones.
+    far_next: gst::ClockTime,
+    near_next: gst::ClockTime,
+    far_frames: Framer,
+    near_frames: Framer,
+    delay: Delay,
+    /// Microphone frames measured since the last measure.
+    unmeasured: u64,
+    /// The last measure, and the one taken (agreed with the one before).
+    last: Option<Measure>,
+    taken: Option<Measure>,
+    /// The microphone's frames on their way through the canceller: their
+    /// index and power, and the canceller's output so far.
+    pending: VecDeque<(u64, f64)>,
+    clean_sum: f64,
+    clean_count: u32,
+    stats: Stats,
+}
+
+impl State {
+    /// Whether the frame `frame` of the microphone, at `before` and
+    /// `after` the canceller, had echo in it; a report when one ends.
+    fn count(&mut self, frame: u64, before: f64, after: f64) -> Option<Report> {
+        let far = match self.taken {
+            Some(m) => {
+                let at = frame.saturating_sub(m.frames);
+                self.delay
+                    .far
+                    .loudest(at.saturating_sub(ECHO_SPREAD), at + ECHO_SPREAD)
+            }
+            None => self
+                .delay
+                .far
+                .loudest(frame.saturating_sub(MAX_DELAY as u64), frame),
+        };
+        if far > FAR_AUDIBLE {
+            self.stats.last_echo = Some(frame);
+            match self.taken {
+                Some(m)
+                    if before > DOUBLE_TALK_FLOOR
+                        && before > DOUBLE_TALK_RATIO * m.coupling * far =>
+                {
+                    self.stats.double_talk += 1
+                }
+                _ => {
+                    self.stats.frames.push((before, after));
+                }
+            }
+        }
+        let counted = self.stats.frames.len() as u64 + self.stats.double_talk;
+        let ended = self
+            .stats
+            .last_echo
+            .is_some_and(|last| frame > last + REPORT_GAP)
+            || counted >= REPORT_MAX;
+        if !ended {
+            return None;
+        }
+        self.finish()
+    }
+
+    /// The report of the echo counted so far, if long enough.
+    fn finish(&mut self) -> Option<Report> {
+        let stats = std::mem::take(&mut self.stats);
+        let seconds = stats.frames.len() as f64 * FRAME_NS as f64 / 1e9;
+        if seconds < REPORT_MIN_SECONDS {
+            return None;
+        }
+        let median = |mut values: Vec<f64>| {
+            values.sort_by(f64::total_cmp);
+            values[values.len() / 2]
+        };
+        Some(Report {
+            seconds,
+            before_db: db(stats.frames.iter().map(|f| f.0).sum::<f64>() / stats.frames.len() as f64),
+            after_db: db(stats.frames.iter().map(|f| f.1).sum::<f64>() / stats.frames.len() as f64),
+            removed_db: db(median(
+                stats
+                    .frames
+                    .iter()
+                    .map(|(before, after)| before.max(1e-12) / after.max(1e-12))
+                    .collect(),
+            )),
+            double_talk_seconds: stats.double_talk as f64 * FRAME_NS as f64 / 1e9,
+            delay_ms: self.taken.map(|m| m.frames * FRAME_NS / 1_000_000),
+        })
+    }
+
+    /// Measures the delay again; moves the lead when `align` and the echo
+    /// is out of AEC3's reach, the echo counted so far reported first. A
+    /// new delay taken is told.
+    fn measure(&mut self, align: bool) -> Vec<Event> {
+        let mut events = Vec::new();
+        let Some(measure) = self.delay.measure() else {
+            return events;
+        };
+        let agreed = self
+            .last
+            .is_some_and(|last| last.frames.abs_diff(measure.frames) <= AGREE);
+        self.last = Some(measure);
+        if !agreed {
+            return events;
+        }
+        let new = self
+            .taken
+            .is_none_or(|taken| taken.frames.abs_diff(measure.frames) > AGREE);
+        if new {
+            self.taken = Some(measure);
+        } else if let Some(taken) = &mut self.taken {
+            // The same delay: its coupling, as it is now.
+            taken.coupling = measure.coupling;
+        }
+        let delay = gst::ClockTime::from_nseconds(measure.frames * FRAME_NS);
+        let past = delay.nseconds() as i64 - self.lead.nseconds() as i64;
+        let reach = REACH_MIN_MS as i64 * 1_000_000..=REACH_MAX_MS as i64 * 1_000_000;
+        let moved = align && !reach.contains(&past) && {
+            let lead = delay.saturating_sub(gst::ClockTime::from_mseconds(AIM_MS));
+            let moved = lead != self.lead;
+            self.lead = lead;
+            // The far end's timestamps may go back.
+            self.far_next = gst::ClockTime::ZERO;
+            moved
+        };
+        if moved {
+            self.taken = Some(measure);
+            if let Some(report) = self.finish() {
+                events.push(Event::Report(report));
+            }
+        }
+        if new || moved {
+            events.push(Event::Delay {
+                delay_ms: delay.mseconds(),
+                correlation: measure.correlation,
+                lead_ms: self.lead.mseconds(),
+                moved,
+            });
+        }
+        events
+    }
+}
+
+/// The far end's format: F32 or S16, interleaved.
+#[derive(Clone, Copy, Debug)]
+struct Format {
+    float: bool,
+    channels: usize,
+    rate: u64,
+}
+
+impl Format {
+    fn from_caps(caps: &gst::Caps) -> Result<Self, String> {
+        let s = caps.structure(0).ok_or("no far-end caps")?;
+        let float = match s.get::<&str>("format") {
+            Ok("F32LE") => true,
+            Ok("S16LE") => false,
+            other => return Err(format!("far end as {other:?}: F32LE or S16LE only")),
+        };
+        Ok(Self {
+            float,
+            channels: s.get::<i32>("channels").unwrap_or(1).max(1) as usize,
+            rate: s.get::<i32>("rate").map_err(|e| e.to_string())?.max(1) as u64,
+        })
+    }
+
+    /// Each sample's square (the channels' mean), full scale 1.
+    fn squares(self, bytes: &[u8]) -> impl Iterator<Item = f64> + '_ {
+        let width = if self.float { 4 } else { 2 };
+        bytes.chunks_exact(width * self.channels).map(move |frame| {
+            frame
+                .chunks_exact(width)
+                .map(|b| {
+                    let s = if self.float {
+                        f32::from_le_bytes([b[0], b[1], b[2], b[3]]) as f64
+                    } else {
+                        i16::from_le_bytes([b[0], b[1]]) as f64 / 32768.0
+                    };
+                    s * s
+                })
+                .sum::<f64>()
+                / self.channels as f64
+        })
+    }
+}
+
+/// Each S16LE sample's square, full scale 1.
+fn s16_squares(bytes: &[u8]) -> impl Iterator<Item = f64> + '_ {
+    bytes.chunks_exact(2).map(|b| {
+        let s = i16::from_le_bytes([b[0], b[1]]) as f64 / 32768.0;
+        s * s
+    })
 }
 
 static COUNT: AtomicU32 = AtomicU32::new(0);
@@ -112,15 +618,12 @@ pub struct EchoCanceller {
     pipeline: gst::Pipeline,
     far: gst::Pad,
     near: gst::Pad,
-    lead: gst::ClockTime,
+    far_format: Format,
+    align: bool,
     /// The time pushes are stamped with: our own clock, from `base`.
     clock: gst::Clock,
     base: gst::ClockTime,
-    /// The far end's and the microphone's next timestamps: never before
-    /// the last ones.
-    far_next: Mutex<gst::ClockTime>,
-    near_next: Mutex<gst::ClockTime>,
-    stats: Arc<Mutex<Stats>>,
+    state: Arc<Mutex<State>>,
     on_report: OnReport,
     /// Buffers of far end pushed, for tests.
     far_buffers: AtomicU64,
@@ -155,14 +658,15 @@ fn feeding(name: &str, caps: &gst::Caps, into: &gst::Pad) -> Result<gst::Pad, St
 }
 
 impl EchoCanceller {
-    /// The far end comes as `far_caps` (the call's mix); the microphone
-    /// goes to `on_clean`, the echo taken out.
+    /// The far end comes as `far_caps` (the call's mix, F32LE or S16LE);
+    /// the microphone goes to `on_clean`, the echo taken out.
     pub fn start(
         settings: &Settings,
         far_caps: &gst::Caps,
         on_clean: OnClean,
         on_report: OnReport,
     ) -> Result<Self, String> {
+        let far_format = Format::from_caps(far_caps)?;
         let n = COUNT.fetch_add(1, Ordering::Relaxed);
         let pipeline = gst::Pipeline::with_name(&format!("roamgate-echo-{n}"));
         let convert = make("audioconvert")?;
@@ -209,9 +713,25 @@ impl EchoCanceller {
             .map_err(|e| e.to_string())?;
         dsp.link(&sink).map_err(|e| e.to_string())?;
 
-        let stats: Arc<Mutex<Stats>> = Arc::default();
+        let state = Arc::new(Mutex::new(State {
+            lead: settings.lead,
+            far_next: gst::ClockTime::ZERO,
+            near_next: gst::ClockTime::ZERO,
+            far_frames: Framer::default(),
+            near_frames: Framer::default(),
+            delay: Delay::default(),
+            unmeasured: 0,
+            last: None,
+            taken: None,
+            pending: VecDeque::new(),
+            clean_sum: 0.0,
+            clean_count: 0,
+            stats: Stats::default(),
+        }));
         {
-            let stats = stats.clone();
+            let state = state.clone();
+            let on_report = on_report.clone();
+            let per_frame = (RATE as u64 * FRAME_NS / 1_000_000_000) as u32;
             sink.set_callbacks(
                 gst_app::AppSinkCallbacks::builder()
                     .new_sample(move |sink| {
@@ -219,11 +739,28 @@ impl EchoCanceller {
                         if let Some(buffer) = sample.buffer()
                             && let Ok(map) = buffer.map_readable()
                         {
-                            let mut stats = stats.lock().unwrap();
-                            if stats.echo_until.is_some() {
-                                stats.after += energy(&map);
+                            let mut reports = Vec::new();
+                            {
+                                let mut state = state.lock().unwrap();
+                                for square in s16_squares(&map) {
+                                    state.clean_sum += square;
+                                    state.clean_count += 1;
+                                    if state.clean_count < per_frame {
+                                        continue;
+                                    }
+                                    let after = state.clean_sum / per_frame as f64;
+                                    state.clean_sum = 0.0;
+                                    state.clean_count = 0;
+                                    if let Some((frame, before)) = state.pending.pop_front()
+                                        && let Some(report) = state.count(frame, before, after)
+                                    {
+                                        reports.push(report);
+                                    }
+                                }
                             }
-                            drop(stats);
+                            for report in reports {
+                                on_report(Event::Report(report));
+                            }
                             on_clean(map.to_vec());
                         }
                         Ok(gst::FlowSuccess::Ok)
@@ -247,12 +784,11 @@ impl EchoCanceller {
             pipeline,
             far,
             near,
-            lead: settings.lead,
+            far_format,
+            align: settings.align,
             clock,
             base,
-            far_next: Mutex::new(gst::ClockTime::ZERO),
-            near_next: Mutex::new(gst::ClockTime::ZERO),
-            stats,
+            state,
             on_report,
             far_buffers: AtomicU64::new(0),
         })
@@ -265,23 +801,8 @@ impl EchoCanceller {
 
     /// The far end as it goes out now (a buffer of the call's mix).
     pub fn far(&self, buffer: &gst::BufferRef) {
-        let at = self.now() + self.lead;
         let mut copy = buffer.copy();
-        if let Ok(map) = buffer.map_readable() {
-            let samples = map.len() / 4;
-            let loud = map
-                .chunks_exact(4)
-                .map(|b| {
-                    let s = f32::from_le_bytes([b[0], b[1], b[2], b[3]]) as f64;
-                    s * s
-                })
-                .sum::<f64>()
-                / samples.max(1) as f64;
-            if loud > FAR_AUDIBLE {
-                self.stats.lock().unwrap().echo_until = Some(std::time::Instant::now() + ECHO_TAIL);
-            }
-        }
-        self.push_far(copy.make_mut(), at, buffer.duration());
+        self.push_far(copy.make_mut(), self.now(), buffer.duration());
         self.far_buffers.fetch_add(1, Ordering::Relaxed);
         let _ = self.far.push(copy);
     }
@@ -292,7 +813,8 @@ impl EchoCanceller {
         self.far_buffers.load(Ordering::Relaxed)
     }
 
-    /// The far end at `at`, for tests: `samples` as the far caps say.
+    /// The far end going out at `at`, for tests: `samples` as the far caps
+    /// say.
     #[cfg(test)]
     pub fn far_at(&self, samples: &[u8], at: gst::ClockTime, duration: gst::ClockTime) {
         let mut buffer = gst::Buffer::from_slice(samples.to_vec());
@@ -300,17 +822,37 @@ impl EchoCanceller {
         let _ = self.far.push(buffer);
     }
 
+    /// The lead now, for tests.
+    #[cfg(test)]
+    pub fn lead(&self) -> gst::ClockTime {
+        self.state.lock().unwrap().lead
+    }
+
+    /// Stamps `buffer`, going out at `out`, with `out` plus the lead, and
+    /// adds it to the far end's energy, by `out`.
     fn push_far(
         &self,
         buffer: &mut gst::BufferRef,
-        at: gst::ClockTime,
+        out: gst::ClockTime,
         duration: Option<gst::ClockTime>,
     ) {
-        let mut next = self.far_next.lock().unwrap();
-        let at = at.max(*next);
-        *next = at + duration.unwrap_or(gst::ClockTime::ZERO);
+        let mut state = self.state.lock().unwrap();
+        let lead = state.lead;
+        let at = (out + lead).max(state.far_next);
+        state.far_next = at + duration.unwrap_or(gst::ClockTime::ZERO);
         buffer.set_pts(at);
         buffer.set_dts(gst::ClockTime::NONE);
+        if let Ok(map) = buffer.map_readable() {
+            let State {
+                far_frames, delay, ..
+            } = &mut *state;
+            far_frames.add(
+                (at - lead).nseconds(),
+                self.far_format.rate,
+                self.far_format.squares(&map),
+                |frame, power| delay.far.add(frame, power),
+            );
+        }
     }
 
     /// The microphone as it comes in now: 16 kHz mono S16LE.
@@ -323,53 +865,53 @@ impl EchoCanceller {
     pub fn near_at(&self, samples: Vec<u8>, at: gst::ClockTime) {
         let duration =
             gst::ClockTime::from_nseconds(samples.len() as u64 / 2 * 1_000_000_000 / RATE as u64);
-        let report = {
-            let mut stats = self.stats.lock().unwrap();
-            match stats.echo_until {
-                Some(until) if std::time::Instant::now() < until => {
-                    stats.samples += samples.len() as u64 / 2;
-                    stats.before += energy(&samples);
-                    None
-                }
-                Some(_) => {
-                    let report = (stats.samples > 0).then(|| Report {
-                        seconds: stats.samples as f64 / RATE as f64,
-                        before_db: db(stats.before / stats.samples as f64),
-                        after_db: db(stats.after / stats.samples as f64),
-                    });
-                    *stats = Stats::default();
-                    report
-                }
-                None => None,
-            }
-        };
-        if let Some(report) = report
-            && report.seconds >= REPORT_MIN_SECONDS
-        {
-            (self.on_report)(report);
-        }
         let mut buffer = gst::Buffer::from_slice(samples);
-        {
+        let events = {
+            let mut state = self.state.lock().unwrap();
+            let at = at.max(state.near_next);
+            state.near_next = at + duration;
+            let mut frames = 0;
+            {
+                let State {
+                    near_frames,
+                    delay,
+                    pending,
+                    ..
+                } = &mut *state;
+                let map = buffer.map_readable().unwrap();
+                near_frames.add(
+                    at.nseconds(),
+                    RATE as u64,
+                    s16_squares(&map),
+                    |frame, power| {
+                        delay.near.add(frame, power);
+                        pending.push_back((frame, power));
+                        frames += 1;
+                    },
+                );
+            }
+            // The canceller gives as much as it takes: more pending means
+            // its output was lost.
+            while state.pending.len() > 100 {
+                state.pending.pop_front();
+            }
+            state.unmeasured += frames;
+            let events = if state.unmeasured >= MEASURE_EVERY {
+                state.unmeasured = 0;
+                state.measure(self.align)
+            } else {
+                Vec::new()
+            };
             let buffer = buffer.make_mut();
-            let mut next = self.near_next.lock().unwrap();
-            let at = at.max(*next);
-            *next = at + duration;
             buffer.set_pts(at);
             buffer.set_duration(duration);
+            events
+        };
+        for event in events {
+            (self.on_report)(event);
         }
         let _ = self.near.push(buffer);
     }
-}
-
-/// The sum of squares of S16LE `bytes`, scaled to full scale 1.
-fn energy(bytes: &[u8]) -> f64 {
-    bytes
-        .chunks_exact(2)
-        .map(|b| {
-            let s = i16::from_le_bytes([b[0], b[1]]) as f64 / 32768.0;
-            s * s
-        })
-        .sum()
 }
 
 impl Drop for EchoCanceller {
@@ -510,6 +1052,10 @@ mod tests {
         /// before, and after the canceller (with the echo's residue).
         near_db: f64,
         near_after_db: f64,
+        /// The last delay measured, the lead at the end, and the reports.
+        delay_ms: Option<u64>,
+        lead_ms: u64,
+        reports: Vec<Report>,
     }
 
     /// Plays `seconds` of a reply whose echo comes back `delay_ms` later,
@@ -519,11 +1065,15 @@ mod tests {
     fn run(delay_ms: u64, echo_db: f64, lead_ms: u64, seconds: f64, near_talks: bool) -> Run {
         let far = speech(seconds, 210.0, 1);
         let user = speech(seconds, 120.0, 2);
-        run_with(&far, &user, delay_ms, echo_db, lead_ms, near_talks, false)
+        run_with(
+            &far, &user, delay_ms, echo_db, lead_ms, near_talks, false, false, 2.0,
+        )
     }
 
     /// `run` with the reply `far` and the user `user` (16 kHz); `distort`
-    /// overdrives the loudspeaker a little.
+    /// overdrives the loudspeaker a little; `align` lets the lead follow the
+    /// delay measured; the echo left is measured from `settle` s on.
+    #[allow(clippy::too_many_arguments)]
     fn run_with(
         far: &[f64],
         user: &[f64],
@@ -532,6 +1082,8 @@ mod tests {
         lead_ms: u64,
         near_talks: bool,
         distort: bool,
+        align: bool,
+        settle: f64,
     ) -> Run {
         gst::init().unwrap();
         let rate = RATE as usize;
@@ -563,49 +1115,66 @@ mod tests {
             }
         }
         let clean: Arc<Mutex<Vec<u8>>> = Arc::default();
+        let events: Arc<Mutex<Vec<Event>>> = Arc::default();
         let canceller = {
             let clean = clean.clone();
             EchoCanceller::start(
                 &Settings {
                     lead: gst::ClockTime::from_mseconds(lead_ms),
+                    align,
                     noise_suppression: false,
                     gain_control: false,
                 },
                 &s16_caps(RATE),
                 Arc::new(move |samples| clean.lock().unwrap().extend(samples)),
-                Arc::new(|_| {}),
+                {
+                    let events = events.clone();
+                    Arc::new(move |event| {
+                        eprintln!("  {event}");
+                        events.lock().unwrap().push(event)
+                    })
+                },
             )
             .unwrap()
         };
         // 10 ms blocks, the far end first: it went out before its echo.
         let block = rate / 100;
-        let far_bytes = s16(&far);
-        let near_bytes = s16(&near);
+        // Then 3 s of silence and the room's noise: the last report.
+        let tail = rate * 3;
+        let far_bytes = s16(&far
+            .iter()
+            .copied()
+            .chain(std::iter::repeat_n(0.0, tail))
+            .collect::<Vec<_>>());
+        let near_bytes = s16(&near
+            .iter()
+            .copied()
+            .chain((0..tail).map(|_| 0.0005 * noise.next()))
+            .collect::<Vec<_>>());
         for (i, (f, n)) in far_bytes
             .chunks(block * 2)
             .zip(near_bytes.chunks(block * 2))
             .enumerate()
         {
             let at = gst::ClockTime::from_mseconds(i as u64 * 10);
-            canceller.far_at(
-                f,
-                at + gst::ClockTime::from_mseconds(lead_ms),
-                gst::ClockTime::from_mseconds(10),
-            );
+            canceller.far_at(f, at, gst::ClockTime::from_mseconds(10));
             canceller.near_at(n.to_vec(), at);
         }
+        let lead_ms = canceller.lead().mseconds();
         drop(canceller);
-        let out = from_s16(&clean.lock().unwrap());
+        let mut out = from_s16(&clean.lock().unwrap());
+        out.truncate(near.len());
         assert!(
             out.len() + 2 * block >= near.len(),
             "{} of {} samples came out",
             out.len(),
             near.len()
         );
-        // Converged: from 2 s on, until the user talks.
-        let from = 2 * rate;
+        // Converged: from `settle` s on, until the user talks.
+        let from = (settle * rate as f64) as usize;
         let to = double_from.min(out.len());
         let user_part = &user[double_from..out.len().min(user.len())];
+        let events = std::mem::take(&mut *events.lock().unwrap());
         Run {
             echo_db: db(mean_square(&echo[from..to])),
             residual_db: db(mean_square(&out[from..to])),
@@ -613,6 +1182,18 @@ mod tests {
                 &user_part.iter().map(|s| s * 0.5).collect::<Vec<_>>(),
             )),
             near_after_db: db(mean_square(&out[double_from.min(out.len())..])),
+            delay_ms: events.iter().rev().find_map(|e| match e {
+                Event::Delay { delay_ms, .. } => Some(*delay_ms),
+                _ => None,
+            }),
+            lead_ms,
+            reports: events
+                .iter()
+                .filter_map(|e| match e {
+                    Event::Report(r) => Some(*r),
+                    _ => None,
+                })
+                .collect(),
         }
     }
 
@@ -710,7 +1291,17 @@ mod tests {
         let near = read_voice(&near);
         for distort in [false, true] {
             for delay in [150, 300, 450] {
-                let run = run_with(&far, &near, delay, -10.0, DEFAULT_LEAD_MS, true, distort);
+                let run = run_with(
+                    &far,
+                    &near,
+                    delay,
+                    -10.0,
+                    DEFAULT_LEAD_MS,
+                    true,
+                    distort,
+                    false,
+                    2.0,
+                );
                 eprintln!(
                     "real voices, echo {delay} ms late at -10 dB{}: {:.1} dBFS, {:.1} dBFS left ({:.1} dB taken out); the user at {:.1} dBFS, {:.1} dBFS out while both talk",
                     if distort {
@@ -728,17 +1319,151 @@ mod tests {
         }
     }
 
+    /// A round trip past AEC3's reach from the lead the call starts with
+    /// (the phone's buffers, the jitter buffers of both legs): with a fixed
+    /// lead the echo stays; measured, the lead moves and it is taken out.
+    #[test]
+    fn follows_a_long_round_trip() {
+        let far = speech(20.0, 210.0, 1);
+        let user = speech(20.0, 120.0, 2);
+        for delay in [650, 900, 1200] {
+            let fixed = run_with(
+                &far,
+                &user,
+                delay,
+                -10.0,
+                DEFAULT_LEAD_MS,
+                true,
+                false,
+                false,
+                9.0,
+            );
+            let aligned = run_with(
+                &far,
+                &user,
+                delay,
+                -10.0,
+                DEFAULT_LEAD_MS,
+                true,
+                false,
+                true,
+                9.0,
+            );
+            let removed = |run: &Run| run.echo_db - run.residual_db;
+            eprintln!(
+                "echo {delay} ms late at -10 dB: {:.1} dB taken out with a {DEFAULT_LEAD_MS} ms lead, {:.1} dB with the lead at {} ms (delay measured: {:?} ms); the user at {:.1} dBFS, {:.1} dBFS out while both talk",
+                removed(&fixed),
+                removed(&aligned),
+                aligned.lead_ms,
+                aligned.delay_ms,
+                aligned.near_db,
+                aligned.near_after_db,
+            );
+            assert!(
+                removed(&fixed) < 12.0,
+                "{:.1} dB taken out at {delay} ms with a fixed lead",
+                removed(&fixed)
+            );
+            let measured = aligned.delay_ms.expect("no delay measured");
+            assert!(
+                measured.abs_diff(delay) <= 30,
+                "{measured} ms measured for {delay} ms"
+            );
+            assert!(
+                removed(&aligned) > 20.0,
+                "only {:.1} dB taken out at {delay} ms, the lead at {} ms",
+                removed(&aligned),
+                aligned.lead_ms
+            );
+            assert!(
+                aligned.near_after_db > aligned.near_db - 10.0,
+                "the user went from {:.1} to {:.1} dBFS",
+                aligned.near_db,
+                aligned.near_after_db
+            );
+            // The report counts the echo, not the user talking over it.
+            let report = aligned.reports.last().expect("no report");
+            assert_eq!(report.delay_ms, Some(measured));
+            assert!(report.double_talk_seconds > 0.0, "{report}");
+            assert!(report.removed_db > 10.0, "{report}");
+        }
+    }
+
+    /// An echo within AEC3's reach from the lead leaves the lead alone.
+    #[test]
+    fn keeps_a_lead_in_reach() {
+        let run = run_with(
+            &speech(12.0, 210.0, 1),
+            &speech(12.0, 120.0, 2),
+            300,
+            -10.0,
+            DEFAULT_LEAD_MS,
+            false,
+            false,
+            true,
+            2.0,
+        );
+        assert_eq!(run.lead_ms, DEFAULT_LEAD_MS);
+        let measured = run.delay_ms.expect("no delay measured");
+        assert!(measured.abs_diff(300) <= 30, "{measured} ms measured");
+        assert!(run.echo_db - run.residual_db > 20.0);
+    }
+
+    /// A far end that comes too late (the lead past the round trip) moves
+    /// back.
+    #[test]
+    fn moves_a_lead_back() {
+        let run = run_with(
+            &speech(16.0, 210.0, 1),
+            &speech(16.0, 120.0, 2),
+            150,
+            -10.0,
+            400,
+            false,
+            false,
+            true,
+            8.0,
+        );
+        assert_eq!(run.lead_ms, 0);
+        assert!(
+            run.echo_db - run.residual_db > 20.0,
+            "{:.1} dB taken out",
+            run.echo_db - run.residual_db
+        );
+    }
+
     #[test]
     fn reports_say_what_was_taken_out() {
         let report = Report {
             seconds: 3.24,
             before_db: -31.0,
             after_db: -52.3,
+            removed_db: 21.3,
+            double_talk_seconds: 0.0,
+            delay_ms: None,
         };
-        assert!((report.removed_db() - 21.3).abs() < 1e-9);
         assert_eq!(
             report.to_string(),
-            "over 3.2 s of the replies playing, the microphone at -31.0 dBFS, -52.3 dBFS once cancelled (21.3 dB taken out)"
+            "over 3.2 s of the replies' echo (its delay not measured), the microphone at -31.0 dBFS, -52.3 dBFS once cancelled (21.3 dB taken out of a 10 ms frame, the median)"
+        );
+        let report = Report {
+            double_talk_seconds: 1.5,
+            delay_ms: Some(640),
+            ..report
+        };
+        assert_eq!(
+            report.to_string(),
+            "over 3.2 s of the replies' echo (640 ms late), the microphone at -31.0 dBFS, -52.3 dBFS once cancelled (21.3 dB taken out of a 10 ms frame, the median); 1.5 s of the user talking over it left out"
+        );
+        assert_eq!(
+            Event::Delay {
+                delay_ms: 640,
+                correlation: 0.71,
+                lead_ms: 440,
+                moved: true
+            }
+            .to_string(),
+            "the echo comes 640 ms after the replies go out (correlation 0.71): the far end now leads by 440 ms, for AEC3 to find it"
         );
     }
 }

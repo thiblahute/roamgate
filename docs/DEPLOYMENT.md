@@ -1125,14 +1125,22 @@ A call has one of two modes:
   on the loudspeaker. The helper cancels their echo itself, with
   GStreamer's `webrtcdsp` (WebRTC's AEC3, its noise suppression and gain
   control) and the call's mix as `webrtcechoprobe`'s far end. AEC3 finds
-  the echo's delay (the network's round trip and the phone's buffers) up
-  to about 450 ms past a 60 ms lead.
+  the echo only from about 40 to 500 ms past the far end's timestamps,
+  while the round trip (the jitter buffers of both legs, the phone's
+  output and input) can be longer: the helper measures the echo's delay
+  by correlating the mix's and the microphone's energy, and puts the far
+  end ahead by that delay less 200 ms when the echo is out of AEC3's reach
+  (the call starts with 60 ms).
 
 The log says each call's mode and why (`loudspeaker mode: no headset
-connected ...`), the helper whether it cancels the echo, and after each
-reply in loudspeaker mode how much it took out (`echo canceller: over 3.2 s
-of the replies playing, the microphone at ... dBFS, ... dBFS once
-cancelled`). The page signals with
+connected ...`), the helper whether it cancels the echo, the echo's delay
+it measured (`echo canceller: the echo comes 640 ms after the replies go
+out ...: the far end now leads by 440 ms`), and after each stretch of
+echo in loudspeaker mode how much it took out (`echo canceller: over 3.2 s
+of the replies' echo (640 ms late), the microphone at ... dBFS, ... dBFS
+once cancelled (... dB taken out of a 10 ms frame, the median)`), leaving
+out where the user talks over the replies. The levels are after the
+canceller's gain control, which raises a quiet microphone. The page signals with
 [gstwebrtc-api](https://www.npmjs.com/package/gstwebrtc-api) on
 `/api/voice/call/signalling`, which Roamgate fronts, behind its login, to
 the signalling server the helper runs for that call on 127.0.0.1 only

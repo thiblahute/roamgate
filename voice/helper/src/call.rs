@@ -978,7 +978,7 @@ impl Call {
                     let near = canceller.clone();
                     let heard: OnSamples = Arc::new(move |samples| near.near(samples));
                     eprintln!(
-                        "call {id}: the page plays the replies without its echo canceller: the echo is cancelled here (AEC3, {} ms lead)",
+                        "call {id}: the page plays the replies without its echo canceller: the echo is cancelled here (AEC3, {} ms lead until the echo's delay is measured)",
                         crate::echo::DEFAULT_LEAD_MS
                     );
                     (heard, Some(canceller))
