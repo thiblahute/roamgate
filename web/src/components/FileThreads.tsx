@@ -781,6 +781,7 @@ export function SlotThreads({
   undelivered,
   where,
   nested,
+  draft,
 }: {
   stops: readonly string[];
   stopOf: (line: number, quote?: string) => string | undefined;
@@ -791,6 +792,11 @@ export function SlotThreads({
   where?: SlotWhere;
   /** Threads on parts of messages, by the message. */
   nested?: ReadonlyMap<string, ReviewThread[]>;
+  /**
+   * A comment being written on a line and words: its box, drawn under
+   * their stop after its threads, as wide as they are.
+   */
+  draft?: { line: number; quote?: string; node: ReactNode };
 }) {
   if (!stops.length) return null;
   const groups = new Map<string, ReviewThread[]>();
@@ -801,6 +807,9 @@ export function SlotThreads({
     if (stop === undefined || !stops.includes(stop)) continue;
     groups.set(stop, [...(groups.get(stop) ?? []), thread]);
   }
+  const draftStop = draft ? stopOf(draft.line, draft.quote) : undefined;
+  if (draftStop !== undefined && stops.includes(draftStop))
+    groups.set(draftStop, groups.get(draftStop) ?? []);
   if (!groups.size) return null;
   const at = (stop: string, thread: ReviewThread) => {
     const quote = thread.anchor.render?.quote;
@@ -846,6 +855,7 @@ export function SlotThreads({
             nested={nested}
           />
         ))}
+        {draft && stop === draftStop ? draft.node : null}
       </div>,
     ];
   });

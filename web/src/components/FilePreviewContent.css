@@ -253,6 +253,70 @@
   background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 
+/* The lines a thread is on, in the comments' color, as the diff marks them. */
+.file-preview-code .cm-line[data-review-threaded="true"] {
+  background: color-mix(in srgb, var(--chat-comment) 10%, transparent);
+}
+
+/* A thread's cards under the last line it is on (sourceThreads.tsx): a
+   block widget in the editor's content, drawn as the diff draws them. */
+.file-preview-code .cm-source-threads {
+  /* As wide as the view (the content is as wide as its longest line),
+     kept in sight past the gutters when the file is scrolled sideways. */
+  position: sticky;
+  left: var(--cm-gutters-width, 0px);
+  width: min(640px, var(--cm-visible-width, 100%));
+  box-sizing: border-box;
+  padding: 4px 8px 4px 12px;
+  font-family: var(--sans-font);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: normal;
+  cursor: default;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.file-preview-code .cm-source-threads .chat-thread {
+  margin: 4px 0;
+}
+
+/* A comment being written, under the block or line it is on, as wide as
+   its column (FileDraftCard): what it is on above its box. */
+.file-draft {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.file-draft-title {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-draft-quote {
+  max-height: 140px;
+  margin: 0;
+  overflow: auto;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent);
+  background: var(--viewer-code-bg);
+  color: var(--text-code);
+  font: 10px / 1.45 var(--mono-font);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.file-draft .chat-thread-editor,
+.file-draft .cm-editor {
+  width: 100%;
+  min-width: 0;
+}
+
 .file-preview-mermaid {
   flex: 1 1 auto;
   min-height: 0;

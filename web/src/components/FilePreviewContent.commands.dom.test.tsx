@@ -282,8 +282,10 @@ if (
         ?.dataset.line,
     ).toBe("5");
     await view.command("comment");
+    // The box is drawn under the block, not floating over the text.
+    expect(document.querySelector(".annotation-composer-popover")).toBeNull();
     expect(
-      document.querySelector(".annotation-composer-popover"),
+      view.host.querySelector('.md-thread-slot[data-line="5"] .file-draft'),
     ).not.toBeNull();
     // :review, the Review button: the file at the cursor's line.
     await view.command("review");

@@ -33,50 +33,69 @@ export type CommentEditorHandle = {
   addImages: (files: readonly File[]) => void;
 };
 
-export const reviewEditorTheme = EditorView.theme({
+/*
+ * The editor's colors: the review's palette (--rv-*) where a review sets
+ * it (the overlay, Changes, a chat's threads), else the app's own, so that
+ * the editor reads the same wherever it is put, the comment box floating
+ * over a file among them: without the fallbacks, a caret drawn in an
+ * unset color is no caret at all.
+ */
+export const reviewEditorThemeSpec = {
   "&": {
     minHeight: "64px",
-    border: "1px solid var(--rv-border)",
+    border: "1px solid var(--rv-border, var(--border))",
     borderRadius: "5px",
-    background: "var(--rv-surface)",
-    color: "var(--rv-text)",
+    background: "var(--rv-surface, var(--input-bg))",
+    color: "var(--rv-text, var(--text))",
     font: "inherit",
     lineHeight: "1.45",
   },
-  "&.cm-focused": { outline: "none", borderColor: "var(--rv-accent)" },
+  "&.cm-focused": {
+    outline: "none",
+    borderColor: "var(--rv-accent, var(--accent))",
+  },
   ".cm-content": {
     minHeight: "64px",
     padding: "6px 4px",
     fontFamily: "inherit",
-    caretColor: "var(--rv-text)",
+    caretColor: "var(--rv-text, var(--text))",
   },
   ".cm-scroller": { fontFamily: "inherit" },
   // The caret is drawn (drawSelection), not the browser's: a thin bar in
   // the text's color while typing (insert mode), Vim's block otherwise.
   ".cm-cursor, .cm-dropCursor": {
-    borderLeft: "2px solid var(--rv-text)",
+    borderLeft: "2px solid var(--rv-text, var(--text))",
+  },
+  // Drawn inside a file's own editor (a comment under a line of the Files
+  // source view), whose Vim keys hide every drawn caret under them: this
+  // editor's own bar shows whenever it is not in Vim's normal mode itself.
+  ".cm-scroller:not(.cm-vimMode) .cm-cursorLayer:not(.cm-vimCursorLayer)": {
+    display: "block",
   },
   ".cm-fat-cursor": {
-    background: "var(--rv-accent) !important",
+    background: "var(--rv-accent, var(--accent)) !important",
     opacity: "0.6",
   },
   "&:not(.cm-focused) .cm-fat-cursor": { outline: "none !important" },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-    background: "var(--rv-accent-soft) !important",
+    background: "var(--rv-accent-soft, var(--accent-soft)) !important",
   },
-  ".cm-placeholder": { color: "var(--rv-faint)" },
+  ".cm-placeholder": { color: "var(--rv-faint, var(--muted))" },
   // CodeMirror sticks its panels to the scrolled pane's edge: an editor at
   // the bottom of the review then has the Vim bar over its lines. Keep the
   // bar under the text instead.
   ".cm-panels": { position: "static !important" },
   ".cm-vim-panel": {
     padding: "2px 6px",
-    background: "var(--rv-surface-2)",
-    color: "var(--rv-text)",
-    fontFamily: "var(--rv-mono)",
+    background: "var(--rv-surface-2, var(--panel-2))",
+    color: "var(--rv-text, var(--text))",
+    fontFamily:
+      "var(--rv-mono, ui-monospace, SFMono-Regular, Menlo, monospace)",
   },
-  ".cm-vim-panel input": { color: "var(--rv-text)" },
-});
+  ".cm-vim-panel input": { color: "var(--rv-text, var(--text))" },
+} as const;
+
+export const reviewEditorTheme = EditorView.theme(reviewEditorThemeSpec);
 
 /**
  * maildesk's review comment editor: CodeMirror with Vim keys, starting in

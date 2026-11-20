@@ -77,6 +77,22 @@ import {
   useQuoteHighlights,
 } from "./FileThreads";
 import { useThreadKeys } from "./useThreadKeys";
+import { contentMayTakeFocus } from "./contentFocus";
+import { FileDraftCard } from "./FileDraftCard";
+import type { ThreadBox } from "./ThreadEditor";
+import {
+  type SourceKeys,
+  type SourceThreadDrawing,
+  SourceThreadCards,
+  measureCardWidth,
+  revealStop,
+  sourceKeyCommand,
+  sourceThreadsByLine,
+  sourceViewKey,
+  threadsWidgetClass,
+  useSourceThreadHosts,
+  type VimAccess,
+} from "./sourceThreads";
 import {
   stepNotice,
   stepUnresolved,
@@ -185,6 +201,8 @@ type AppTheme = "dark" | "light";
 const PDF_INLINE_PREVIEW_MAX_BYTES = 25 * 1024 * 1024;
 /** How long a scroll waits for the file to be tall enough for it. */
 const SCROLL_RESTORE_MS = 3000;
+/** No comments: the same list each time, so nothing is drawn again for it. */
+const NO_ANNOTATIONS: readonly ReviewAnnotation[] = [];
 
 type PendingFileAnnotation =
   | {
@@ -238,8 +256,11 @@ async function importCodeMirrorPreviewDeps() {
     ),
     Compartment: state.Compartment,
     Decoration: view.Decoration,
+    Prec: state.Prec,
     RangeSet: state.RangeSet,
     GutterMarker: view.GutterMarker,
+    /** One class: CodeMirror keeps a widget's element while they compare equal. */
+    ThreadsWidget: threadsWidgetClass(view.WidgetType),
     gutter: view.gutter,
     EditorState: state.EditorState,
     EditorView: view.EditorView,
@@ -391,7 +412,7 @@ export function FilePreviewContent({
   snippet,
   changesContent,
   changesKey,
-  annotations = [],
+  annotations = NO_ANNOTATIONS,
   backAction,
   onOpenChanges,
   onOpenFile,
@@ -551,12 +572,15 @@ export function FilePreviewContent({
     },
     [draftPath],
   );
-  const setDraftComment = (comment: string) => {
-    setFileDrafts((current) => ({
-      ...current,
-      [draftPath]: { pending: current[draftPath]?.pending ?? null, comment },
-    }));
-  };
+  const setDraftComment = useCallback(
+    (comment: string) => {
+      setFileDrafts((current) => ({
+        ...current,
+        [draftPath]: { pending: current[draftPath]?.pending ?? null, comment },
+      }));
+    },
+    [draftPath],
+  );
   const [markdownSelection, setMarkdownSelection] = useState<
     (MarkdownSelectionTarget & { render?: ReviewRenderPart }) | null
   >(null);
@@ -670,17 +694,35 @@ export function FilePreviewContent({
       ),
     [annotations, previewPath],
   );
+  /**
+   * A comment being written on a line of the source, or on a block of a
+   * rendered Markdown file, is drawn under it, as wide as the column, as
+   * the diff draws one (FileDraftCard); on a graphic's region, in a page's
+   * frame, it floats by what it is on (AnnotationComposerPopover).
+   */
+  const draftInline =
+    !!pendingAnnotation &&
+    !showingChanges &&
+    (pendingAnnotation.kind === "line"
+      ? hasPreviewText && !renderRichPreview && !hasMediaPreview
+      : hasMarkdownPreview &&
+        renderRichPreview &&
+        pendingAnnotation.line !== undefined &&
+        !pendingAnnotation.render?.graphic &&
+        !pendingAnnotation.snapshot);
+  const draftTitle = pendingAnnotation
+    ? pendingAnnotation.kind === "line"
+      ? `${pendingAnnotation.path} · ${fileReviewLineLabel(pendingAnnotation)}`
+      : pendingAnnotation.section.length
+        ? `${pendingAnnotation.path} · ${pendingAnnotation.section.join(" › ")}`
+        : `${pendingAnnotation.path} · selected passage`
+    : "";
   const annotationComposerDraft: AnnotationComposerDraft | null =
-    pendingAnnotation
+    pendingAnnotation && !draftInline
       ? {
           x: pendingAnnotation.x,
           y: pendingAnnotation.y,
-          title:
-            pendingAnnotation.kind === "line"
-              ? `${pendingAnnotation.path} · ${fileReviewLineLabel(pendingAnnotation)}`
-              : pendingAnnotation.section.length
-                ? `${pendingAnnotation.path} · ${pendingAnnotation.section.join(" › ")}`
-                : `${pendingAnnotation.path} · selected passage`,
+          title: draftTitle,
           quote: pendingAnnotation.quote,
           ...(pendingAnnotation.kind === "quote" && pendingAnnotation.preview
             ? { preview: pendingAnnotation.preview }
@@ -762,10 +804,33 @@ export function FilePreviewContent({
     return () => section.removeEventListener("copy", onCopy);
   }, []);
 
+  /**
+   * The keys back on the file once a comment box closes, however it
+   * closed (sent, Esc, Cancel, a click outside): on the editor in the
+   * source view, on the content otherwise, where they were; not taken
+   * from a box or a dialog the reader went to.
+   */
+  const returnKeys = useCallback(() => {
+    requestAnimationFrame(() => {
+      const target =
+        editorViewRef.current?.contentDOM ?? previewContentRef.current;
+      if (!target?.isConnected) return;
+      const active = document.activeElement;
+      // The box closing may still be drawn: it keeps nothing.
+      const inBox = !!active?.closest(
+        ".file-draft, .annotation-composer-popover",
+      );
+      if (!inBox && !contentMayTakeFocus(active, previewSectionRef.current))
+        return;
+      target.focus({ preventScroll: true });
+    });
+  }, []);
+
   const closeAnnotationComposer = useCallback(() => {
     setPendingAnnotation(null);
     letGraphicGo();
-  }, [letGraphicGo, setPendingAnnotation]);
+    returnKeys();
+  }, [letGraphicGo, returnKeys, setPendingAnnotation]);
 
   const saveAnnotation = useCallback(
     (comment: string) => {
@@ -821,6 +886,7 @@ export function FilePreviewContent({
       setMarkdownSelection(null);
       letGraphicGo();
       window.getSelection()?.removeAllRanges();
+      returnKeys();
     },
     [
       letGraphicGo,
@@ -828,10 +894,40 @@ export function FilePreviewContent({
       pendingAnnotation,
       preview?.root,
       previewText,
+      returnKeys,
       setPendingAnnotation,
     ],
   );
 
+  /** The words of the comment being written, kept across draws. */
+  const draftBox = useRef<ThreadBox>({ text: "" });
+  draftBox.current.text = fileDrafts[draftPath]?.comment ?? "";
+  const draftQuote = pendingAnnotation?.quote;
+  const draftCard = useMemo(
+    () =>
+      draftInline && draftQuote !== undefined ? (
+        <FileDraftCard
+          title={draftTitle}
+          quote={draftQuote}
+          kept={draftBox.current}
+          onChange={setDraftComment}
+          onSave={saveAnnotation}
+          onClose={closeAnnotationComposer}
+          onLeave={returnKeys}
+          {...(onAddReviewImage ? { onAddImage: onAddReviewImage } : {})}
+        />
+      ) : null,
+    [
+      closeAnnotationComposer,
+      draftInline,
+      draftQuote,
+      draftTitle,
+      onAddReviewImage,
+      returnKeys,
+      saveAnnotation,
+      setDraftComment,
+    ],
+  );
   const siteUrl = entry && /^https?:\/\//i.test(entry.path) ? entry.path : null;
   const absolutePath =
     preview && previewPath
@@ -1472,7 +1568,9 @@ export function FilePreviewContent({
   // The threads' keys and what they have open, as in an agent chat: j / k
   // through the blocks and the threads' messages, n / N, gn / gN, gH, c,
   // R, r, za, dd, T, zz / zt / zb (useThreadKeys).
-  const threadView = useFileThreadView(() => previewContentRef.current);
+  const threadView = useFileThreadView(
+    () => editorViewRef.current?.contentDOM ?? previewContentRef.current,
+  );
   const { cursor: threadCursor, setCursor: setThreadCursor } = threadView;
   /*
    * Where the tab is left (previewPlaces): kept as it changes, its scroll
@@ -1558,7 +1656,13 @@ export function FilePreviewContent({
     observer.observe(section);
     return () => observer.disconnect();
   }, []);
-  const keysRoot = canComment ? contentElement : null;
+  /** The source view, whose Vim keys are its own: `:` commands said. */
+  const sourceShown =
+    !showingChanges && hasPreviewText && !renderRichPreview && !hasMediaPreview;
+  const sourceShownRef = useRef(sourceShown);
+  sourceShownRef.current = sourceShown;
+  // In the source view the editor has the keys (sourceThreads.tsx).
+  const keysRoot = canComment && !sourceShown ? contentElement : null;
   const threadOrder = useMemo(
     () => fileThreadOrder(fileThreads.threads, previewText),
     [fileThreads.threads, previewText],
@@ -1589,6 +1693,9 @@ export function FilePreviewContent({
    * the file was opened at.
    */
   const cursorLine = (): number | undefined => {
+    const editor = editorViewRef.current;
+    if (sourceShown && editor)
+      return editor.state.doc.lineAt(editor.state.selection.main.head).number;
     const block = /^b:(\d+)/.exec(threadCursor ?? "");
     if (block) return Number(block[1]);
     const thread = cursorThread ? threadsById.get(cursorThread) : undefined;
@@ -1606,8 +1713,14 @@ export function FilePreviewContent({
     return () => window.clearTimeout(timer);
   }, [threadNotice]);
   /** A thread's place, shown: in the file, or in the page's frame. */
+  /** The thread shown in the source view (set below, once it is drawn). */
+  const showSourceThreadRef = useRef<(thread: ReviewThread) => void>(() => {});
   const goToThread = useCallback(
     (thread: ReviewThread) => {
+      if (sourceShownRef.current) {
+        showSourceThreadRef.current(thread);
+        return;
+      }
       if (isFramePage) {
         const render = thread.anchor.render;
         frameRef.current?.contentWindow?.postMessage(
@@ -1627,9 +1740,27 @@ export function FilePreviewContent({
   );
   /** gn / gN: the next or previous unresolved thread, wrapping around. */
   const jumpUnresolved = (direction: 1 | -1) => {
+    // In the source view, off a thread's messages: on the thread drawn
+    // under the cursor's line, else from that line.
+    const editor = editorViewRef.current;
+    const sourceLine =
+      sourceShown && editor
+        ? editor.state.doc.lineAt(editor.state.selection.main.head).number
+        : undefined;
+    const underLine =
+      sourceLine === undefined || threadCursor
+        ? undefined
+        : sourceByLine.get(sourceLine)?.[0]?.id;
+    const place =
+      threadCursor ?? (sourceLine === undefined ? null : `b:${sourceLine}`);
     const step = stepUnresolved(
       threadOrder,
-      fileThreadPlace(threadOrder, threadCursor, cursorThread, direction),
+      fileThreadPlace(
+        threadOrder,
+        place,
+        cursorThread ?? underLine ?? null,
+        direction,
+      ),
       direction,
     );
     if (!step) {
@@ -1679,6 +1810,219 @@ export function FilePreviewContent({
     setMarkdownSelection(null);
     return true;
   };
+  /*
+   * The source view's threads: drawn under their lines, with the keys of
+   * the diff and the rendered view, on the editor (sourceThreads.tsx).
+   */
+  const lineCount = useMemo(
+    () => (previewText === null ? 0 : previewText.split(/\r?\n/).length),
+    [previewText],
+  );
+  const sourceByLine = useMemo(
+    () =>
+      sourceThreadsByLine(fileThreads.threads, threadView.openOnly, lineCount),
+    [fileThreads.threads, threadView.openOnly, lineCount],
+  );
+  const sourceHosts = useSourceThreadHosts(() => editorViewRef.current);
+  /** The messages and folded lines drawn under a line, in order. */
+  const sourceStopsAt = (at: number): HTMLElement[] =>
+    Array.from(
+      sourceHosts.elements
+        .get(at)
+        ?.querySelectorAll<HTMLElement>("[data-chat-stop]") ?? [],
+    );
+  const sourceThreadOf = (stop: HTMLElement) => {
+    const id = stop.closest<HTMLElement>("[data-thread-id]")?.dataset.threadId;
+    return id ? threadsById.get(id) : undefined;
+  };
+  /** The line a thread is drawn under. */
+  const sourceLineOf = (thread: ReviewThread): number | undefined => {
+    for (const [at, under] of sourceByLine)
+      if (under.some((each) => each.id === thread.id)) return at;
+    return undefined;
+  };
+  /**
+   * A thread shown in the source: the cursor on its line, j / k on its
+   * first message (unfolded to be read), the editor with the keys.
+   */
+  const showSourceThread = (thread: ReviewThread) => {
+    const editor = editorViewRef.current;
+    const at = sourceLineOf(thread);
+    if (!editor || at === undefined) return;
+    if (threadView.folded(thread)) threadView.unfold([thread.id]);
+    const first = thread.comments[0];
+    const key = first ? `m:${first.id}` : `t:${thread.id}`;
+    editor.dispatch({
+      selection: { anchor: editor.state.doc.line(at).from },
+      scrollIntoView: true,
+    });
+    setThreadCursor(key);
+    editor.contentDOM.focus({ preventScroll: true });
+    requestAnimationFrame(() => {
+      const stop = sourceStopsAt(at).find(
+        (each) => each.dataset.chatStop === key,
+      );
+      if (stop) revealStop(stop, "center");
+    });
+  };
+  showSourceThreadRef.current = showSourceThread;
+  /** c, R on a thread: its answer, or back into the one being written. */
+  const replySourceThread = (thread: ReviewThread) => {
+    const at = sourceLineOf(thread);
+    const open =
+      at === undefined
+        ? null
+        : sourceHosts.elements
+            .get(at)
+            ?.querySelector<HTMLElement>(
+              `.chat-thread[data-thread-id="${CSS.escape(thread.id)}"] .chat-thread-editor .cm-content`,
+            );
+    if (open) {
+      open.focus();
+      return;
+    }
+    if (threadView.folded(thread)) threadView.unfold([thread.id]);
+    const first = thread.comments[0];
+    if (first) setThreadCursor(`m:${first.id}`);
+    threadView.setReplying(thread.id);
+  };
+  /** The gutter's badge: the line's threads folded, or all unfolded. */
+  const toggleSourceFold = (at: number) => {
+    const under = fileThreads.threads.filter(
+      (thread) => thread.anchor.line === at,
+    );
+    if (!under.length) return;
+    const fold = under.some((thread) => !threadView.folded(thread));
+    const next = new Set(threadView.flipped);
+    for (const thread of under) {
+      if (thread.resolved !== fold) next.add(thread.id);
+      else next.delete(thread.id);
+    }
+    threadView.setFlipped(next);
+  };
+  const toggleSourceFoldRef = useRef(toggleSourceFold);
+  toggleSourceFoldRef.current = toggleSourceFold;
+  const draftLine =
+    draftInline && pendingAnnotation?.kind === "line"
+      ? Math.max(
+          1,
+          Math.min(
+            pendingAnnotation.endLine ?? pendingAnnotation.line,
+            lineCount,
+          ),
+        )
+      : undefined;
+  const sourceDrawing = useMemo<SourceThreadDrawing | undefined>(
+    () =>
+      canComment && sourceShown
+        ? {
+            byLine: sourceByLine,
+            ...(draftLine === undefined ? {} : { draftLine }),
+            hosts: sourceHosts.hosts,
+            onToggleFold: (at) => toggleSourceFoldRef.current(at),
+          }
+        : undefined,
+    [canComment, sourceShown, sourceByLine, sourceHosts.hosts, draftLine],
+  );
+  const sourceCards = (at: number) => (
+    <>
+      <SourceThreadCards
+        threads={sourceByLine.get(at) ?? []}
+        api={fileThreads}
+        view={threadView}
+        undelivered={undelivered}
+        nested={fileThreads.nested}
+      />
+      {at === draftLine ? draftCard : null}
+    </>
+  );
+  const sourcePrefix = useRef("");
+  const sourceKeys: SourceKeys = {
+    cursor: threadCursor,
+    setCursor: setThreadCursor,
+    threadsAt: (at) => sourceByLine.get(at) ?? [],
+    stopsAt: sourceStopsAt,
+    threadOf: sourceThreadOf,
+    folded: threadView.folded,
+    toggleFold: threadView.toggleFold,
+    reply: replySourceThread,
+    resolve: fileThreads.resolve,
+    remove: fileThreads.remove,
+    comment: (range, at) =>
+      setPendingAnnotation({
+        kind: "line",
+        path: previewPath,
+        line: range.line,
+        ...(range.endLine === undefined ? {} : { endLine: range.endLine }),
+        quote: range.quote,
+        x: at.x,
+        y: at.y,
+      }),
+    openOverview: () => setThreadsOpen(true),
+    jumpUnresolved,
+    // n / N without Vim keys: thread to thread from the cursor's line,
+    // around past either end.
+    stepThread: (direction) => {
+      const editor = editorViewRef.current;
+      const order = threadOrder.filter(
+        (thread) =>
+          thread.anchor.line !== undefined &&
+          !(threadView.openOnly && thread.resolved),
+      );
+      if (!editor) return;
+      if (!order.length) {
+        setThreadNotice("No comment in this file.");
+        return;
+      }
+      const at = editor.state.doc.lineAt(
+        editor.state.selection.main.head,
+      ).number;
+      const drawnAt = (thread: ReviewThread) =>
+        Math.min(thread.anchor.endLine ?? thread.anchor.line ?? 0, lineCount);
+      let index = cursorThread
+        ? order.findIndex((thread) => thread.id === cursorThread)
+        : -1;
+      if (index >= 0) index += direction;
+      else if (direction === 1)
+        index = order.findIndex((thread) => drawnAt(thread) >= at);
+      else {
+        index = -1;
+        order.forEach((thread, each) => {
+          if (drawnAt(thread) < at) index = each;
+        });
+      }
+      if (index >= order.length || index < 0)
+        index = direction === 1 ? 0 : order.length - 1;
+      showSourceThread(order[index]!);
+    },
+    toggleOpenOnly: () => threadView.setOpenOnly(!threadView.openOnly),
+    say: setThreadNotice,
+    prefix: sourcePrefix,
+  };
+  const onSourceKey = (
+    event: KeyboardEvent,
+    view: CodeMirrorEditorView,
+    vim: VimAccess | null,
+  ) => {
+    if (!canComment || isTypingTarget(event.target)) return false;
+    return sourceViewKey(event, view, vim, sourceKeys);
+  };
+  /** `:comment`, `:fold` in the source view: the key, on the editor. */
+  const pressSourceKey = (full: string) => {
+    const editor = editorViewRef.current;
+    if (editor) sourceKeyCommand(full, editor, null, sourceKeys);
+  };
+  // The cursor moved off the line its thread is under: off its messages.
+  const threadCursorRef = useRef(threadCursor);
+  threadCursorRef.current = threadCursor;
+  const onSourceCursorLine = (at: number) => {
+    const cursor = threadCursorRef.current;
+    if (
+      cursor &&
+      !sourceStopsAt(at).some((stop) => stop.dataset.chatStop === cursor)
+    )
+      setThreadCursor(null);
+  };
   useThreadKeys(
     () => keysRoot,
     keysRoot,
@@ -1722,16 +2066,24 @@ export function FilePreviewContent({
         view={threadView}
         undelivered={undelivered}
         nested={fileThreads.nested}
+        {...(draftCard &&
+        pendingAnnotation?.kind === "quote" &&
+        pendingAnnotation.line !== undefined
+          ? {
+              draft: {
+                line: pendingAnnotation.line,
+                quote: pendingAnnotation.quote,
+                node: draftCard,
+              },
+            }
+          : {})}
       />
     ),
-    [fileThreads, threadView, undelivered],
+    [draftCard, fileThreads, pendingAnnotation, threadView, undelivered],
   );
   const fileShown = !showingChanges;
   /** A page, a rendered file: what has the threads' blocks and keys. */
   const renderedShown = fileShown && (renderRichPreview || !!siteUrl);
-  /** The source view, whose Vim keys are its own: `:` commands said. */
-  const sourceShown =
-    fileShown && hasPreviewText && !renderRichPreview && !hasMediaPreview;
   const unresolvedNav = (
     <>
       <UnresolvedNav
@@ -1828,18 +2180,21 @@ export function FilePreviewContent({
           },
         ]
       : []),
-    ...(canComment && renderedShown
+    ...(canComment && (renderedShown || sourceShown)
       ? [
           {
             name: "comment",
-            description:
-              "comment on the cursor's block, or answer its thread (c)",
-            run: () => pressThreadKeys("c"),
+            description: sourceShown
+              ? "comment on the cursor's line or selection, or answer its thread (c)"
+              : "comment on the cursor's block, or answer its thread (c)",
+            run: () =>
+              sourceShown ? pressSourceKey("c") : pressThreadKeys("c"),
           },
           {
             name: "fold",
             description: "fold / unfold the cursor's thread (za)",
-            run: () => pressThreadKeys("z", "a"),
+            run: () =>
+              sourceShown ? pressSourceKey("za") : pressThreadKeys("z", "a"),
           },
         ]
       : []),
@@ -2579,8 +2934,13 @@ export function FilePreviewContent({
                 line={line}
                 theme={theme}
                 annotations={lineAnnotations}
+                threads={sourceDrawing}
+                hostElements={sourceHosts.elements}
+                cards={sourceCards}
                 editorViewRef={editorViewRef}
                 onCommand={runPreviewCommand}
+                onKey={onSourceKey}
+                onCursorLine={onSourceCursorLine}
                 onRequestAnnotation={
                   onCreateAnnotation
                     ? ({ line, endLine, quote, x, y }) =>
@@ -2742,14 +3102,33 @@ function codeMirrorAnnotationExtensions(
   text: string,
   annotations: readonly FileLineReviewAnnotation[],
   onRequestAnnotation?: (request: CodeMirrorAnnotationRequest) => void,
+  threads?: SourceThreadDrawing,
 ) {
-  if (!onRequestAnnotation && annotations.length === 0) return [];
-  const annotationsByLine = new Map<number, FileLineReviewAnnotation[]>();
-  for (const annotation of annotations) {
-    const current = annotationsByLine.get(annotation.line);
-    if (current) current.push(annotation);
-    else annotationsByLine.set(annotation.line, [annotation]);
-  }
+  const drawn =
+    threads && (threads.byLine.size || threads.draftLine !== undefined)
+      ? threads
+      : undefined;
+  if (!onRequestAnnotation && annotations.length === 0 && !drawn) return [];
+  /** The gutter's count on a line: the comments and threads starting there. */
+  const countsByLine = new Map<number, { count: number; stale: boolean }>();
+  const countAt = (line: number, stale: boolean) => {
+    const current = countsByLine.get(line);
+    if (current) {
+      current.count += 1;
+      current.stale &&= stale;
+    } else countsByLine.set(line, { count: 1, stale });
+  };
+  for (const annotation of annotations)
+    countAt(annotation.line, !!annotation.stale);
+  /** The lines with a thread starting on them: their badge folds them. */
+  const threadLines = new Set<number>();
+  for (const under of drawn?.byLine.values() ?? [])
+    for (const thread of under) {
+      const line = thread.anchor.line;
+      if (line === undefined) continue;
+      countAt(line, false);
+      threadLines.add(line);
+    }
 
   const normalizedText = text.replace(/\r\n?/g, "\n");
   const lineStarts = [0];
@@ -2766,9 +3145,19 @@ function codeMirrorAnnotationExtensions(
     for (let line = annotation.line; line <= end; line += 1)
       annotatedLines.add(line);
   }
+  /** The lines the threads are on, marked as the diff marks them. */
+  const threadedLines = new Set<number>();
+  for (const under of drawn?.byLine.values() ?? [])
+    for (const thread of under) {
+      const { line, endLine } = thread.anchor;
+      if (line === undefined) continue;
+      const end = Math.min(endLine ?? line, lineStarts.length);
+      for (let each = line; each <= end; each += 1) threadedLines.add(each);
+    }
 
   class ReviewGutterMarker extends deps.GutterMarker {
     constructor(
+      private line: number,
       private count: number,
       private stale: boolean,
     ) {
@@ -2780,8 +3169,11 @@ function codeMirrorAnnotationExtensions(
       marker.className = `cm-review-annotation-marker ${
         this.stale ? "is-stale" : ""
       }`;
+      marker.dataset.line = String(this.line);
       marker.textContent = String(this.count);
-      marker.title = `${this.count} review comment${this.count === 1 ? "" : "s"}`;
+      marker.title = `${this.count} review comment${this.count === 1 ? "" : "s"}${
+        drawn && threadLines.has(this.line) ? " (fold / unfold)" : ""
+      }`;
       return marker;
     }
   }
@@ -2800,46 +3192,92 @@ function codeMirrorAnnotationExtensions(
       ),
   );
 
+  const { ThreadsWidget } = deps;
+  /** Each thread's card under the last line it is on, as the diff draws it. */
+  const threadWidgets = drawn
+    ? deps.Decoration.set(
+        Array.from(
+          new Set([
+            ...drawn.byLine.keys(),
+            ...(drawn.draftLine === undefined ? [] : [drawn.draftLine]),
+          ]),
+        )
+          .sort((left, right) => left - right)
+          .flatMap((lineNumber) => {
+            const start = lineStarts[lineNumber - 1];
+            const next = lineStarts[lineNumber];
+            if (start === undefined) return [];
+            const end = next === undefined ? normalizedText.length : next - 1;
+            const ids = [
+              ...(drawn.byLine.get(lineNumber) ?? []).map(
+                (thread) => thread.id,
+              ),
+              ...(drawn.draftLine === lineNumber ? ["draft"] : []),
+            ];
+            return [
+              deps.Decoration.widget({
+                widget: new ThreadsWidget(
+                  lineNumber,
+                  ids.join(","),
+                  drawn.hosts,
+                ),
+                block: true,
+                side: 1,
+              }).range(end),
+            ];
+          }),
+        true,
+      )
+    : deps.Decoration.none;
+
   return [
     dragPlugin,
     deps.gutter({
       class: "cm-review-annotation-gutter",
       markers: (view) =>
         deps.RangeSet.of(
-          Array.from(annotationsByLine.entries())
+          Array.from(countsByLine.entries())
             .sort(([left], [right]) => left - right)
-            .flatMap(([lineNumber, matches]) => {
+            .flatMap(([lineNumber, { count, stale }]) => {
               if (lineNumber > view.state.doc.lines) return [];
               const line = view.state.doc.line(lineNumber);
               return [
-                new ReviewGutterMarker(
-                  matches.length,
-                  matches.every((annotation) => annotation.stale),
-                ).range(line.from),
+                new ReviewGutterMarker(lineNumber, count, stale).range(
+                  line.from,
+                ),
               ];
             }),
           true,
         ),
       domEventHandlers: {
         mousedown: (view, line, event) => {
-          if (
-            !(event instanceof MouseEvent) ||
-            event.button !== 0 ||
-            !onRequestAnnotation
-          ) {
+          if (!(event instanceof MouseEvent) || event.button !== 0)
             return false;
+          const badge =
+            event.target instanceof Element
+              ? event.target.closest<HTMLElement>(
+                  ".cm-review-annotation-marker",
+                )
+              : null;
+          const lineNumber = badge?.dataset.line
+            ? Number(badge.dataset.line)
+            : view.state.doc.lineAt(line.from).number;
+          // The badge of a line with threads: folds or unfolds them.
+          if (drawn && badge && threadLines.has(lineNumber)) {
+            event.preventDefault();
+            drawn.onToggleFold(lineNumber);
+            // The keys stay the editor's.
+            view.focus();
+            return true;
           }
-          return (
-            view
-              .plugin(dragPlugin)
-              ?.start(view.state.doc.lineAt(line.from).number, event) ?? false
-          );
+          if (!onRequestAnnotation) return false;
+          return view.plugin(dragPlugin)?.start(lineNumber, event) ?? false;
         },
       },
     }),
     deps.EditorView.decorations.of(
       deps.Decoration.set(
-        Array.from(annotatedLines)
+        Array.from(new Set([...annotatedLines, ...threadedLines]))
           .sort((left, right) => left - right)
           .flatMap((lineNumber) => {
             const from = lineStarts[lineNumber - 1];
@@ -2847,13 +3285,44 @@ function codeMirrorAnnotationExtensions(
               ? []
               : [
                   deps.Decoration.line({
-                    attributes: { "data-review-annotated": "true" },
+                    attributes: {
+                      ...(annotatedLines.has(lineNumber)
+                        ? { "data-review-annotated": "true" }
+                        : {}),
+                      ...(threadedLines.has(lineNumber)
+                        ? { "data-review-threaded": "true" }
+                        : {}),
+                    },
                   }).range(from),
                 ];
           }),
       ),
     ),
+    deps.EditorView.decorations.of(threadWidgets),
   ];
+}
+
+/** Vim's state for the editor as a key is pressed; null without Vim keys. */
+function vimAccess(
+  deps: CodeMirrorPreviewDeps,
+  view: CodeMirrorEditorView,
+): VimAccess | null {
+  const cm = deps.getCM(view);
+  const vim = cm?.state.vim;
+  if (!cm || !vim) return null;
+  const input = vim.inputState;
+  return {
+    insertMode: !!vim.insertMode,
+    visualMode: !!vim.visualMode,
+    pending: (input?.keyBuffer ?? []).join(""),
+    operator: input?.operator ?? null,
+    count: !!(input?.prefixRepeat?.length || input?.motionRepeat?.length),
+    // Esc: what Vim kept is dropped, and visual mode left.
+    clear: () => deps.Vim.handleKey(cm, "<Esc>", "user"),
+    exitVisual: () => {
+      if (vim.visualMode) deps.Vim.handleKey(cm, "<Esc>", "user");
+    },
+  };
 }
 
 function CodeMirrorPreview({
@@ -2862,28 +3331,56 @@ function CodeMirrorPreview({
   line,
   theme,
   annotations,
+  threads,
+  hostElements,
+  cards,
   editorViewRef,
   onRequestAnnotation,
   onCommand,
+  onKey,
+  onCursorLine,
 }: {
   text: string;
   path: string;
   line?: number;
   theme: AppTheme;
   annotations: readonly FileLineReviewAnnotation[];
+  /** The threads drawn under their lines. */
+  threads?: SourceThreadDrawing;
+  /** Their widgets' elements, by line, once CodeMirror drew them. */
+  hostElements?: ReadonlyMap<number, HTMLElement>;
+  /** The cards drawn in the widget under a line. */
+  cards?: (line: number) => ReactNode;
   editorViewRef: MutableRefObject<CodeMirrorEditorView | null>;
   onRequestAnnotation?: (request: CodeMirrorAnnotationRequest) => void;
   /** A `:` command typed in its Vim keys (`:files`, `:only`...). */
   onCommand?: (input: string) => void;
+  /**
+   * A key pressed in the editor, before Vim and the editor's own keys:
+   * true when taken (the threads' keys, c).
+   */
+  onKey?: (
+    event: KeyboardEvent,
+    view: CodeMirrorEditorView,
+    vim: VimAccess | null,
+  ) => boolean;
+  /** The cursor's line, as it moves. */
+  onCursorLine?: (line: number) => void;
 }) {
   const commandRef = useRef(onCommand);
   commandRef.current = onCommand;
+  const keyRef = useRef(onKey);
+  keyRef.current = onKey;
+  const cursorLineRef = useRef(onCursorLine);
+  cursorLineRef.current = onCursorLine;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const annotationRuntimeRef = useRef<CodeMirrorAnnotationRuntime | null>(null);
   const annotationsRef = useRef(annotations);
+  const threadsRef = useRef(threads);
   const requestAnnotationRef = useRef(onRequestAnnotation);
   const lineRef = useRef(line);
   annotationsRef.current = annotations;
+  threadsRef.current = threads;
   requestAnnotationRef.current = onRequestAnnotation;
   lineRef.current = line;
 
@@ -2927,6 +3424,29 @@ function CodeMirrorPreview({
             deps.EditorState.readOnly.of(true),
             deps.EditorView.editable.of(false),
             deps.EditorView.contentAttributes.of({ tabindex: "0" }),
+            // The threads' keys and c, ahead of Vim's (c is "change" there,
+            // nothing in a read-only file) and the editor's own.
+            deps.Prec.highest(
+              deps.EditorView.domEventHandlers({
+                keydown: (event, view) => {
+                  const taken =
+                    keyRef.current?.(event, view, vimAccess(deps, view)) ??
+                    false;
+                  if (taken) event.stopPropagation();
+                  return taken;
+                },
+              }),
+            ),
+            deps.EditorView.updateListener.of((update) => {
+              if (update.selectionSet)
+                cursorLineRef.current?.(
+                  update.state.doc.lineAt(update.state.selection.main.head)
+                    .number,
+                );
+              // The cards' width: the view's, as it and its gutters change.
+              if (update.geometryChanged || update.docChanged)
+                measureCardWidth(update.view);
+            }),
             syntaxCompartment.of([]),
             annotationCompartment.of(
               codeMirrorAnnotationExtensions(
@@ -2934,6 +3454,7 @@ function CodeMirrorPreview({
                 text,
                 annotationsRef.current,
                 (request) => requestAnnotationRef.current?.(request),
+                threadsRef.current,
               ),
             ),
             deps.EditorView.theme(
@@ -3093,6 +3614,7 @@ function CodeMirrorPreview({
         }),
       });
       editorViewRef.current = view;
+      measureCardWidth(view);
       const cm = deps.getCM(view);
       if (cm) {
         definePreviewExCommands(deps);
@@ -3155,12 +3677,23 @@ function CodeMirrorPreview({
           text,
           annotations,
           (request) => requestAnnotationRef.current?.(request),
+          threads,
         ),
       ),
     });
-  }, [annotations, text]);
+  }, [annotations, text, threads]);
 
   return (
-    <div ref={containerRef} className="file-preview-code syntax-highlighted" />
+    <>
+      <div
+        ref={containerRef}
+        className="file-preview-code syntax-highlighted"
+      />
+      {cards && hostElements
+        ? Array.from(hostElements, ([at, element]) =>
+            createPortal(cards(at), element, `threads-${at}`),
+          )
+        : null}
+    </>
   );
 }

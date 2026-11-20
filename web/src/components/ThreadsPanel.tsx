@@ -317,6 +317,21 @@ export function ThreadsPanel({
   useEffect(() => {
     panelRef.current?.focus({ preventScroll: true });
   }, []);
+  // An answer sent or closed: its box goes, the list keeps the keys (the
+  // page would have them otherwise).
+  const replyingId = replying?.id ?? null;
+  const wasReplying = useRef(replyingId);
+  useEffect(() => {
+    const was = wasReplying.current;
+    wasReplying.current = replyingId;
+    if (!was || replyingId) return;
+    const frame = requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (!active || active === document.body)
+        panelRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [replyingId]);
 
   const toggleShowResolved = () =>
     setShowResolved((current) => {
