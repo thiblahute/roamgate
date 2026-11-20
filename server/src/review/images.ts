@@ -7,7 +7,8 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { open } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 import { ReviewError } from "./service";
 
 /** Images pasted into comments: kept with the reviews, read by agents. */
@@ -91,4 +92,41 @@ export function reviewImageFile(
     path: join(directory, "images", sessionId, name),
     type: CONTENT_TYPES[extension]!,
   };
+}
+
+const LOCAL_EXTENSION = /\.(png|jpe?g|gif|webp)$/i;
+
+/**
+ * An image file of this host named by its absolute path in a comment (an
+ * agent's screenshot): its type, read from its first bytes, or null for
+ * anything that is not a readable PNG, JPEG, GIF or WebP file of at most
+ * REVIEW_IMAGE_MAX_BYTES.
+ */
+export async function localImageFile(
+  path: string,
+): Promise<{ path: string; type: string } | null> {
+  if (!path || path.includes("\0") || !isAbsolute(path)) return null;
+  if (!LOCAL_EXTENSION.test(path)) return null;
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    handle = await open(path, "r");
+    const info = await handle.stat();
+    if (!info.isFile() || !info.size || info.size > REVIEW_IMAGE_MAX_BYTES)
+      return null;
+    const head = new Uint8Array(12);
+    await handle.read(head, 0, head.length, 0);
+    for (const [type, { magic }] of Object.entries(TYPES))
+      if (magic.every((byte, index) => head[index] === byte))
+        if (
+          type !== "image/webp" ||
+          String.fromCharCode(...head.slice(8, 12)) === "WEBP"
+        )
+          // RIFF is WebP only with its WEBP tag.
+          return { path, type };
+    return null;
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
 }

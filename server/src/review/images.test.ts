@@ -10,7 +10,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pruneReviewImages, reviewImageFile, saveReviewImage } from "./images";
+import {
+  localImageFile,
+  pruneReviewImages,
+  reviewImageFile,
+  saveReviewImage,
+} from "./images";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -82,4 +87,33 @@ test("pruning removes the images of gone reviews only", () => {
   // Nothing left to remove, and no images folder at all, is fine.
   expect(pruneReviewImages(directory, new Set([live]))).toEqual([]);
   expect(pruneReviewImages(join(directory, "none"), new Set())).toEqual([]);
+});
+
+test("an agent's image by its path: only image files, by their bytes", async () => {
+  const folder = mkdtempSync(join(tmpdir(), "review-local-image-"));
+  try {
+    const shot = join(folder, "shot.png");
+    writeFileSync(shot, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0]));
+    const named = join(folder, "secret.png");
+    writeFileSync(named, "not an image");
+    const webp = join(folder, "a.webp");
+    writeFileSync(webp, Buffer.from("RIFF\0\0\0\0WEBPVP8 "));
+    const wav = join(folder, "b.webp");
+    writeFileSync(wav, Buffer.from("RIFF\0\0\0\0WAVEfmt "));
+    expect(await localImageFile(shot)).toEqual({
+      path: shot,
+      type: "image/png",
+    });
+    expect(await localImageFile(webp)).toEqual({
+      path: webp,
+      type: "image/webp",
+    });
+    expect(await localImageFile(named)).toBeNull();
+    expect(await localImageFile(wav)).toBeNull();
+    expect(await localImageFile(join(folder, "gone.png"))).toBeNull();
+    expect(await localImageFile("shot.png")).toBeNull();
+    expect(await localImageFile(folder)).toBeNull();
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 });
