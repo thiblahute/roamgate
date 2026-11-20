@@ -231,3 +231,92 @@ test("built-in tools say what they did in plain words", () => {
     }),
   ).toBe("Doing B");
 });
+
+test("Codex's tools say what they do, out of its code-mode JavaScript too", () => {
+  // As Codex's rollouts write them: a custom tool's input comes as `value`.
+  const exec = (code: string, context = {}) =>
+    summary("exec", { value: code }, context);
+  expect(
+    exec(
+      'const r = await tools.exec_command({cmd:"git status --short","workdir":"/srv","yield_time_ms":10000}); text(r.output);\n',
+    ),
+  ).toBe("git status --short");
+  expect(
+    exec(
+      'text(await tools.write_stdin({session_id:25083,chars:"","yield_time_ms":1000,"max_output_tokens":4000}));\n',
+    ),
+  ).toBe("Wait for output of session 25083");
+  expect(
+    exec(
+      'await tools.write_stdin({session_id:7, chars:"\\u0003", yield_time_ms:1000});',
+    ),
+  ).toBe("Interrupt session 7");
+  expect(
+    exec(
+      "const rs = await Promise.allSettled([\ntools.exec_command({cmd:\"cat a.txt\",max_output_tokens:7000}),\ntools.exec_command({cmd:'ls -la'})\n]);",
+    ),
+  ).toBe("cat a.txt; ls -la");
+  expect(
+    exec(
+      'text(await tools.apply_patch("*** Begin Patch\\n*** Update File: /srv/app/src/main.rs\\n@@\\n-a\\n+b\\n*** Add File: /srv/app/src/new.rs\\n+x\\n*** End Patch\\n"));',
+    ),
+  ).toBe("Edit src/main.rs, Add src/new.rs");
+  expect(
+    exec(
+      'const r = await tools.web__run({search_query:[{q:"redis 8.2.11 security"}],response_length:"short"}); text(JSON.stringify(r));',
+    ),
+  ).toBe("Search the web: redis 8.2.11 security");
+
+  expect(
+    summary("exec_command", { cmd: "df -h\nfree -m", workdir: "/srv" }),
+  ).toBe("df -h");
+  expect(summary("write_stdin", { session_id: 80239, chars: "" })).toBe(
+    "Wait for output of session 80239",
+  );
+  expect(
+    summary("apply_patch", {
+      value:
+        "*** Begin Patch\n*** Update File: /srv/app/web/src/App.tsx\n@@\n-a\n+b\n*** End Patch\n",
+    }),
+  ).toBe("Edit src/App.tsx");
+  expect(
+    summary("update_plan", {
+      plan: [
+        { step: "Read the code", status: "completed" },
+        { step: "Fix the bug", status: "in_progress" },
+      ],
+    }),
+  ).toBe("Plan: Fix the bug");
+  expect(summary("view_image", { path: "/tmp/shots/a.png" })).toBe(
+    "View shots/a.png",
+  );
+});
+
+test("a Codex wait says the command it waits for, once a call started it", () => {
+  const notes = createToolSummaryNotes();
+  const code =
+    'const r = await tools.exec_command({cmd:"cargo build --release","yield_time_ms":1000}); text(r.output);';
+  notes.noteCall(
+    "exec",
+    { value: code },
+    'Script completed\nOutput:\n\n{"chunk_id":"f9b910","session_id":25083,"output":"Compiling"}',
+  );
+  notes.noteCall(
+    "exec_command",
+    { cmd: "npm test" },
+    "Process running with session ID 96485\nOriginal token count: 0\nOutput:\n",
+  );
+  expect(
+    summary(
+      "exec",
+      {
+        value:
+          'text(await tools.write_stdin({session_id:25083,chars:"",yield_time_ms:1000}));',
+      },
+      notes.context(),
+    ),
+  ).toBe("Wait for output of cargo build --release");
+  expect(
+    summary("write_stdin", { session_id: 96485, chars: "" }, notes.context()),
+  ).toBe("Wait for output of npm test");
+});

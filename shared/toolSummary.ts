@@ -143,6 +143,8 @@ export type ToolSummaryContext = {
   threadLabel?: (id: string) => string | undefined;
   /** A Roamgate agent session's name, from its address. */
   sessionName?: (address: string) => string | undefined;
+  /** The command a Codex terminal session runs, from its id. */
+  codexCommand?: (sessionId: string) => string | undefined;
 };
 
 // An agent id Claude Code gives a background agent, or a session socket:
@@ -315,6 +317,223 @@ function searchSummary(verb: string, args: Record<string, unknown>) {
   return `${verb} ${pattern}${path ? ` in ${shortPath(path)}` : ""}`;
 }
 
+// Codex's tools. In code mode its one `exec` tool runs JavaScript that calls
+// the others (`await tools.exec_command({cmd:"git status"})`), so their
+// arguments are read out of the code.
+
+/** The JavaScript string literal `literal`'s value, quotes included. */
+function jsStringValue(literal: string): string {
+  if (literal.startsWith('"')) {
+    try {
+      return JSON.parse(literal) as string;
+    } catch {
+      // Fall through: unescape by hand.
+    }
+  }
+  return literal
+    .slice(1, -1)
+    .replace(/\\(u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|.)/g, (_, escape: string) => {
+      if (escape.length > 1)
+        return String.fromCharCode(Number.parseInt(escape.slice(1), 16));
+      return escape === "n" ? "\n" : escape === "t" ? "\t" : escape;
+    });
+}
+
+const JS_STRING =
+  String.raw`"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|` + "`(?:[^`\\\\]|\\\\.)*`";
+
+/** The string values of `key` in a JavaScript object literal's text. */
+function jsStringArguments(code: string, key: string): string[] {
+  const pattern = new RegExp(
+    String.raw`(?:^|[{,\s])["']?${key}["']?\s*:\s*(${JS_STRING})`,
+    "g",
+  );
+  return [...code.matchAll(pattern)].map((match) => jsStringValue(match[1]!));
+}
+
+function jsNumberArgument(code: string, key: string): string | undefined {
+  return new RegExp(String.raw`["']?${key}["']?\s*:\s*(\d+)`).exec(code)?.[1];
+}
+
+/** The files a Codex patch adds, edits or deletes, as one line. */
+function patchSummary(patch: string): string | undefined {
+  const verbs = { Add: "Add", Update: "Edit", Delete: "Delete" } as const;
+  const files: { verb: string; path: string }[] = [];
+  // In code mode the patch is still a string literal: \n is two characters.
+  for (const match of patch.matchAll(
+    /\*\*\* (Add|Update|Delete) File: (.+?)(?=\\n|\n|"|$)/g,
+  )) {
+    files.push({
+      verb: verbs[match[1] as keyof typeof verbs],
+      path: shortPath(match[2]!.trim()),
+    });
+  }
+  if (!files.length) return undefined;
+  const sameVerb = files.every((file) => file.verb === files[0]!.verb);
+  return sameVerb
+    ? `${files[0]!.verb} ${files.map((file) => file.path).join(", ")}`
+    : files.map((file) => `${file.verb} ${file.path}`).join(", ");
+}
+
+/** What writing `chars` to a Codex terminal session does. */
+function writeStdinSummary(
+  sessionId: string | undefined,
+  chars: string,
+  context: ToolSummaryContext,
+): string {
+  const command = sessionId ? context.codexCommand?.(sessionId) : undefined;
+  const target = command
+    ? firstLine(command)
+    : sessionId
+      ? `session ${sessionId}`
+      : "a session";
+  if (!chars) return `Wait for output of ${target}`;
+  if (chars === "\u0003") return `Interrupt ${target}`;
+  return `Type into ${target}: ${start(chars)}`;
+}
+
+function planSummary(plan: unknown): string {
+  const steps = Array.isArray(plan) ? plan : [];
+  const active = steps.find(
+    (step) => isArgumentObject(step) && step.status === "in_progress",
+  ) as Record<string, unknown> | undefined;
+  const step = active && nonEmptyString(active.step);
+  return step ? `Plan: ${firstLine(step)}` : "Updated the plan";
+}
+
+/** One call Codex's code makes: `tools.<name>(<arguments>)`. */
+function codexCodeCallSummary(
+  name: string,
+  code: string,
+  context: ToolSummaryContext,
+): string {
+  switch (name) {
+    case "exec_command": {
+      const command = jsStringArguments(code, "cmd")[0];
+      return command ? firstLine(command) : "Run a command";
+    }
+    case "write_stdin":
+      return writeStdinSummary(
+        jsNumberArgument(code, "session_id"),
+        jsStringArguments(code, "chars")[0] ?? "",
+        context,
+      );
+    case "apply_patch":
+      return patchSummary(code) ?? "Edit files";
+    case "update_plan": {
+      const step =
+        /step\s*["']?\s*:\s*("(?:[^"\\]|\\.)*")\s*,\s*["']?status["']?\s*:\s*["']in_progress/.exec(
+          code,
+        )?.[1];
+      return step
+        ? `Plan: ${firstLine(jsStringValue(step))}`
+        : "Updated the plan";
+    }
+    case "view_image": {
+      const path = jsStringArguments(code, "path")[0];
+      return path ? `View ${shortPath(path)}` : "View an image";
+    }
+    case "web__run": {
+      const query = jsStringArguments(code, "q")[0];
+      if (query) return `Search the web: ${firstLine(query)}`;
+      const ref = jsStringArguments(code, "ref_id")[0];
+      return ref && /^https?:/.test(ref)
+        ? `Fetch ${hostOf(ref)}`
+        : "Browse the web";
+    }
+    default:
+      return capitalize(words(name.replace(/__/g, ": ")));
+  }
+}
+
+/** What Codex's code-mode `exec` does: the calls its code makes. */
+function codexExecSummary(
+  code: string,
+  context: ToolSummaryContext,
+): string | undefined {
+  const calls = [...code.matchAll(/\btools\.(\w+)\s*\(/g)];
+  if (!calls.length) return undefined;
+  return calls
+    .map((call, index) =>
+      codexCodeCallSummary(
+        call[1]!,
+        code.slice(
+          call.index! + call[0].length,
+          calls[index + 1]?.index ?? code.length,
+        ),
+        context,
+      ),
+    )
+    .join("; ");
+}
+
+/** A Codex tool's summary, from its arguments; undefined for the others. */
+function codexToolSummary(
+  name: string,
+  args: Record<string, unknown>,
+  context: ToolSummaryContext,
+): string | undefined {
+  // A custom tool's input, which is not JSON, comes as `value`.
+  const value = nonEmptyString(args.value);
+  switch (name) {
+    case "exec":
+      return value ? codexExecSummary(value, context) : undefined;
+    case "exec_command": {
+      const command = nonEmptyString(args.cmd);
+      return command ? firstLine(command) : undefined;
+    }
+    case "write_stdin": {
+      const id = args.session_id;
+      return writeStdinSummary(
+        typeof id === "number" || typeof id === "string"
+          ? String(id)
+          : undefined,
+        typeof args.chars === "string" ? args.chars : "",
+        context,
+      );
+    }
+    case "apply_patch":
+      return patchSummary(value ?? nonEmptyString(args.input) ?? "");
+    case "update_plan":
+      return planSummary(args.plan);
+    case "view_image":
+      return pathSummary("View", args);
+    case "spawn_agent": {
+      const message = nonEmptyString(args.message);
+      return message ? `Agent: ${start(message, 100)}` : undefined;
+    }
+    case "wait":
+    case "wait_agent":
+      return "Wait for agents";
+    case "close_agent":
+      return "Close an agent";
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The Codex terminal session a call started, as [id, command]: a command
+ * still running when the call returned says its session id.
+ */
+function codexStartedSession(
+  name: string,
+  args: Record<string, unknown>,
+  result: string,
+): [string, string] | undefined {
+  const id = /session ID (\d+)|\\?"session_id\\?"\s*:\s*(\d+)/.exec(result);
+  if (!id) return undefined;
+  let command: string | undefined;
+  if (name === "exec_command") command = nonEmptyString(args.cmd);
+  else if (name === "exec") {
+    const code = nonEmptyString(args.value) ?? "";
+    const calls = [...code.matchAll(/\btools\.(\w+)\s*\(/g)];
+    if (calls.length === 1 && calls[0]![1] === "exec_command")
+      command = jsStringArguments(code, "cmd")[0];
+  }
+  return command ? [id[1] ?? id[2]!, command] : undefined;
+}
+
 /** A known tool's summary, from its arguments; undefined for the others. */
 function knownToolSummary(
   name: string,
@@ -378,7 +597,7 @@ function knownToolSummary(
     case "AskUserQuestion":
       return questionSummary(args);
     default:
-      return undefined;
+      return codexToolSummary(name, args, context);
   }
 }
 
@@ -424,6 +643,7 @@ export function createToolSummaryNotes() {
   const agents = new Map<string, string>();
   const threads = new Map<string, string>();
   const sessions = new Map<string, string>();
+  const codexSessions = new Map<string, string>();
   return {
     /** A message the session got: Roamgate's comments, other sessions. */
     noteMessage(text: string) {
@@ -457,6 +677,8 @@ export function createToolSummaryNotes() {
     /** A call and its result, once it has one. */
     noteCall(name: string, args: unknown, result?: string) {
       const input = isArgumentObject(args) ? args : {};
+      const started = result && codexStartedSession(name, input, result);
+      if (started) codexSessions.set(...started);
       if ((name === "Agent" || name === "Task") && result) {
         const id = /agentId:\s*([\w-]+)/.exec(result)?.[1];
         const agentName = nonEmptyString(input.name);
@@ -495,6 +717,7 @@ export function createToolSummaryNotes() {
         agentName: (id) => agents.get(id),
         threadLabel: (id) => threads.get(id.slice(0, 8)),
         sessionName: (address) => sessions.get(address),
+        codexCommand: (id) => codexSessions.get(id),
       };
     },
   };
