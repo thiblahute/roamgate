@@ -217,6 +217,20 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("a chunk with only resolved comments folds when reviewed", async () => {
+        const review = await mount({
+          files: files(),
+          threads: [{ ...thread("t1", "a.ts", 3, "Settled"), resolved: true }],
+        });
+        await review.press("r");
+        expect(review.chunkProgress("a.ts")).toBe("1/2");
+        expect(texts(review)).not.toContain("a 3");
+        expect(
+          review.lines("a.ts").filter((line) => line.kind === "reviewed"),
+        ).toHaveLength(1);
+        await review.unmount();
+      });
+
       test("reviewed chunks and files are ticked and counted in the file list", async () => {
         const review = await mount({ files: files() });
         expect(review.chunkProgress("a.ts")).toBeNull();

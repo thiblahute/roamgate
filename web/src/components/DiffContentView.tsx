@@ -3398,8 +3398,10 @@ function DiffContentViewInner({
       const next = spans.map((span) => {
         if (!span.reviewed || peekedChunks.has(`${key}\n${span.id}`))
           return span;
+        // An open thread keeps it open; a resolved one (folded, a
+        // checkout's other review's) does not.
         const talked = readingOrder.some((placed) => {
-          if (placed.key !== key) return false;
+          if (placed.key !== key || placed.thread.resolved) return false;
           const range = placed.side === "old" ? span.removed : span.added;
           return !!range && placed.line >= range[0] && placed.line <= range[1];
         });
