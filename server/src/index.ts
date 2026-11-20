@@ -34,6 +34,7 @@ import { isHtmlPath } from "../../shared/filePreview";
 import {
   type AgentPermissionPrompt,
   EFFORT_SESSION_PREFIX,
+  WORK_SESSION_PREFIX,
 } from "../../shared/review";
 import { agentAddress } from "../../shared/agentMessage";
 import { DOWNLOAD_TIMEOUT_MS } from "./workspace/file-constants";
@@ -248,6 +249,11 @@ import { rpcLogLevel } from "./utils/rpc-logging";
 import { handleReviewRpc, isReviewMethod } from "./review/rpc";
 import { createMrReviews, type MrReviews } from "./mr-reviews/module";
 import { isMrReviewsMethod } from "./mr-reviews/rpc";
+import { handleWorkRpc, isWorkMethod } from "./work/rpc";
+import { createWorkService, type WorkService } from "./work/service";
+import { openWorkStore, workDirectory, WorkError } from "./work/store";
+import { workTool } from "./work/tools";
+import { ownCheckout, readDeployed, readHead } from "./work/deployed";
 import { type MrConnection, orderConnections } from "./mr-reviews/clones";
 import { gitShellCommandArgv } from "./workspace/git-shell";
 import { keepLastSteps } from "./workspace/git-diff";
@@ -1394,6 +1400,146 @@ function mrReviewConnections(): MrConnection[] {
   );
 }
 
+let workService: WorkService | null = null;
+/** The Work board (bridge.work.*), started on first use. */
+function getWorkService(): WorkService {
+  if (workService) return workService;
+  const review = getReviewService();
+  const checkout = ownCheckout();
+  workService = createWorkService({
+    store: openWorkStore(workDirectory()),
+    publish: (push) => {
+      const line = JSON.stringify({ work: push });
+      for (const ws of clients) safeSend(ws, line, "work");
+    },
+    reviews: {
+      find: (itemId) =>
+        review
+          .list({ chats: true })
+          .find(
+            ({ session }) =>
+              session.target.kind === "work" && session.target.item === itemId,
+          ) ?? null,
+      open: ({ item, connectionId, root, title }) =>
+        review.open({
+          connectionId,
+          root,
+          target: { kind: "work", item },
+          title,
+          agent: "Claude",
+          raise: false,
+        }),
+      get: (reviewId) =>
+        review
+          .list({ chats: true })
+          .find(({ session }) => session.id.startsWith(reviewId)) ?? null,
+      // The review a thread (or a comment) of any connection is in.
+      sessionOfComment: (ref: string) =>
+        review
+          .list({ chats: true })
+          .find(({ threads }) =>
+            threads.some(
+              (thread) =>
+                thread.id === ref ||
+                thread.id.startsWith(ref) ||
+                thread.comments.some(
+                  (comment) => comment.id === ref || comment.id.startsWith(ref),
+                ),
+            ),
+          )?.session ?? null,
+      addThread: (input) =>
+        review.addThread({
+          sessionId: input.sessionId,
+          author: input.author,
+          text: input.text,
+          anchor: input.anchor,
+          kind: "discussion",
+        }),
+      moveThread: (input) =>
+        review.moveThread({
+          sessionId: input.sessionId,
+          threadId: input.threadId,
+          anchor: input.anchor,
+        }),
+    },
+    notifications: {
+      publish: (item) => {
+        const status =
+          connectionManager.list().find((each) => each.is_default) ??
+          connectionManager.list()[0];
+        if (!status) return;
+        // The item stands as the pane: its tag stays the same whatever the
+        // title becomes, so the clear finds it.
+        notifications.publish(
+          {
+            kind: "blocked",
+            connectionId: status.id,
+            runtimeGeneration: status.generation,
+            paneId: `work:${item.id}`,
+            agent: "Work",
+            workspaceLabel: "Work",
+            title: `For you: ${item.title.slice(0, 120)}`,
+            body: item.tags.length ? item.tags.join(", ") : "On the Work board",
+          },
+          { kind: "work", path: `/#roamgate-work=${item.id}` },
+        );
+      },
+      clear: (item) => {
+        const status =
+          connectionManager.list().find((each) => each.is_default) ??
+          connectionManager.list()[0];
+        if (!status) return;
+        notifications.clearTag(
+          JSON.stringify([
+            "roamgate-task",
+            status.id,
+            status.generation,
+            `work:${item.id}`,
+          ]),
+        );
+      },
+    },
+    // The done rules: git in the rule's checkout, on its connection.
+    git: async (root, args, connectionId) => {
+      const runtime = connectionId
+        ? connectionManager.readyRuntime(connectionId)
+        : null;
+      if (connectionId && (!runtime || runtime.remotePlatform === "windows"))
+        return { code: null, stdout: "" };
+      const script = `git -C ${shQuote(root)} ${args.map(shQuote).join(" ")}`;
+      try {
+        const read = await runProcessWithCodeTimeout(
+          gitShellCommandArgv(script, runtime?.sshHost() || undefined),
+          30_000,
+        );
+        return { code: read.code, stdout: read.stdout };
+      } catch {
+        return { code: null, stdout: "" };
+      }
+    },
+    deployed: () => readDeployed() ?? readHead(checkout),
+    ownRoot: () => checkout,
+    defaultConnection: () =>
+      connectionManager.list().find((each) => each.is_default)?.id ??
+      connectionManager.list()[0]?.id ??
+      null,
+    panes: async (connectionId) => {
+      const runtime = connectionManager.readyRuntime(connectionId);
+      if (!runtime) return [];
+      const listed = (await runtime.herdr.call("pane.list", {})) as {
+        panes?: { pane_id: string; workspace_id?: string }[];
+      };
+      return listed?.panes ?? [];
+    },
+    generation: (connectionId) =>
+      connectionManager.list().find((each) => each.id === connectionId)
+        ?.generation ?? null,
+    log: (message, fields) => logger.warn(message, fields),
+  });
+  workService.start();
+  return workService;
+}
+
 let mrReviews: MrReviews | null = null;
 /** The reviews inbox (bridge.mr_reviews.*), started on first use. */
 function getMrReviews(): MrReviews {
@@ -1836,6 +1982,12 @@ function getReviewService(): ReviewService {
           connectionId,
           sessionId.slice(EFFORT_SESSION_PREFIX.length),
         );
+      // A work item's go to its owner's pane, on the owner's connection.
+      if (sessionId.startsWith(WORK_SESSION_PREFIX))
+        return getWorkService().ownerPane(
+          sessionId.slice(WORK_SESSION_PREFIX.length),
+          connectionId,
+        );
       const runtime = runtimeOf(connectionId);
       return runtime.agentSessions.sessionPane(sessionId);
     },
@@ -2006,6 +2158,29 @@ function getReviewAgent(): ReviewAgentServer {
         params,
         `${agent || "Claude"} in ${await agentWorkspaceLabel(connectionId, workspaceId)}`,
       ),
+    // The Work board's tools, for any agent session.
+    work: async ({
+      connectionId,
+      paneId,
+      workspaceId,
+      agent,
+      tool,
+      params,
+    }) => {
+      try {
+        return await workTool(
+          getWorkService(),
+          tool,
+          params,
+          `${agent || "Claude"} in ${await agentWorkspaceLabel(connectionId, workspaceId)}`,
+          paneId ? `${connectionId}/${paneId}` : undefined,
+        );
+      } catch (error) {
+        if (error instanceof WorkError)
+          throw Object.assign(new Error(error.message), { code: error.code });
+        throw error;
+      }
+    },
     // A claude started by hand in a pane: the claude start setting says
     // whether conversation mode takes it.
     claudeStart: async ({ connectionId, paneId, sessionId, source }) => {
@@ -3089,6 +3264,21 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, "mr-reviews");
     } catch (error) {
       sendError("mr-reviews-error", error);
+    }
+    return;
+  }
+  if (isWorkMethod(method)) {
+    // Machine-wide: the Work board is this server's, whichever connection
+    // the page shows.
+    try {
+      const result = await handleWorkRpc(
+        getWorkService(),
+        method,
+        params ?? {},
+      );
+      sendReply({ id, result }, "work");
+    } catch (error) {
+      sendError("work-error", error);
     }
     return;
   }

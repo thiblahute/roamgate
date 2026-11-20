@@ -28,7 +28,8 @@ export type FeedKind =
   | "completed"
   | "review"
   | "ranger_task"
-  | "effort";
+  | "effort"
+  | "work";
 export type FeedAction = { id: "allow" | "deny"; label: string };
 /** What an action on a notification answers: an agent's permission prompt. */
 export type FeedPrompt = { connectionId: string; promptId: string };
@@ -413,6 +414,8 @@ export function createNotificationFeed(options: {
         isCurrent?: () => boolean;
         actions?: FeedAction[];
         prompt?: FeedPrompt;
+        /** The page path a click opens, when not the task's pane. */
+        path?: string;
       } = {},
     ) {
       const isCurrent = extra.isCurrent ?? (() => true);
@@ -427,7 +430,7 @@ export function createNotificationFeed(options: {
         body: payload.body.slice(0, BODY_CHARS),
         tag: payload.tag,
         group: groupOf(task),
-        path: notificationPath(payload.target),
+        path: extra.path ?? notificationPath(payload.target),
         ...(extra.actions?.length && extra.prompt
           ? { actions: extra.actions, prompt: extra.prompt }
           : {}),

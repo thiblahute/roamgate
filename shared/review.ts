@@ -59,7 +59,12 @@ export type ReviewTarget =
    * An upstreaming effort's view in Reviews (its id): no diff, threads on
    * what the view shows, delivered to the effort's leader session.
    */
-  | { kind: "effort"; effort: string };
+  | { kind: "effort"; effort: string }
+  /**
+   * A work item of the Work board (its id): no diff, its comments, delivered
+   * to the session (or subagent) that owns the item.
+   */
+  | { kind: "work"; item: string };
 
 export type ReviewSide = "old" | "new";
 
@@ -129,6 +134,8 @@ export type ReviewAnchor = {
   chat?: ReviewChatPart;
   /** On what an effort's view shows (an effort review). */
   effort?: ReviewEffortPart;
+  /** On a work item (a work review): the item, and where it came from. */
+  work?: ReviewWorkPart;
   /**
    * On what a rendered review shows: the words, the graphic's region or
    * the page's element pointed at. `path` and the lines, when known, are
@@ -218,6 +225,16 @@ export type ReviewEffortPart = {
 };
 
 /**
+ * Where a thread of a work review is: its item, the thread it was promoted
+ * or imported from (its comments copied), and the words it quoted there.
+ */
+export type ReviewWorkPart = {
+  item: string;
+  from?: { review: string; thread: string };
+  quote?: string;
+};
+
+/**
  * The agent session an effort review's comments follow: its leader, the
  * Claude session of its head workspace, looked up when they are sent.
  */
@@ -226,6 +243,16 @@ export const EFFORT_SESSION_PREFIX = "effort:";
 /** Why an effort's comments wait: no leader session runs. */
 export const EFFORT_NO_LEADER =
   "no leader session runs for this effort: the comments wait for one";
+
+/**
+ * The agent session a work item's review follows: its owner, looked up each
+ * time the comments are sent as the session `work:<item id>`.
+ */
+export const WORK_SESSION_PREFIX = "work:";
+
+/** Why a work item's comments wait: its owner does not run. */
+export const WORK_NO_OWNER =
+  "no owner session runs for this work item: the comments wait for one";
 
 /** A thread's place in an effort's view, in words. */
 export function describeEffortPart(part: ReviewEffortPart): string {

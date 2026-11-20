@@ -19,6 +19,7 @@ import {
 import { clearSavedTerminalComposerDrafts } from "./terminalComposer";
 import type { MrCachePush } from "../../shared/forge";
 import { MR_PUSH_KINDS, type MrReviewsPush } from "../../shared/mrReviews";
+import type { WorkPush } from "../../shared/work";
 import type { ReviewPush } from "../../shared/review";
 import { isReviewSnapshot } from "./reviewValidate";
 
@@ -428,6 +429,24 @@ function wsUrl(): string {
   return `${proto}://${location.host}/ws`;
 }
 
+function parseWorkPush(value: unknown): WorkPush | null {
+  if (!value || typeof value !== "object") return null;
+  const push = value as Record<string, unknown>;
+  const kinds: readonly string[] = ["items", "projects", "item"];
+  if (
+    !Array.isArray(push.changed) ||
+    push.changed.some((kind) => !kinds.includes(kind as string)) ||
+    (push.by !== "user" && push.by !== "agent")
+  )
+    return null;
+  return {
+    changed: push.changed as WorkPush["changed"],
+    by: push.by,
+    ...(typeof push.item === "string" ? { item: push.item } : {}),
+    ...(typeof push.summary === "string" ? { summary: push.summary } : {}),
+  };
+}
+
 function parseForgeCachePush(value: unknown): MrCachePush | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const push = value as Record<string, any>;
@@ -594,6 +613,7 @@ export class Bridge {
   private workspaceTreeHandlers = new Set<(tree: unknown) => void>();
   private mrReviewsHandlers = new Set<(push: MrReviewsPush) => void>();
   private forgeCacheHandlers = new Set<(push: MrCachePush) => void>();
+  private workHandlers = new Set<(push: WorkPush) => void>();
   private forwardsHandlers = new Set<(forwards: ForwardRecord[]) => void>();
   private reviewHandlers = new Set<(push: ReviewPush) => void>();
   private statusHandlers = new Set<(s: ConnectionStatus) => void>();
@@ -1255,6 +1275,7 @@ export class Bridge {
     const hasUiSettings = owns("ui_settings");
     const hasWorkspaceTree = owns("workspace_tree");
     const hasMrReviews = owns("mr_reviews");
+    const hasWork = owns("work");
     const hasForgeCache = owns("forge_cache");
     const hasForwards = owns("forwards");
     const hasReview = owns("review");
@@ -1272,6 +1293,7 @@ export class Bridge {
       hasUiSettings,
       hasWorkspaceTree,
       hasMrReviews,
+      hasWork,
       hasForgeCache,
       hasForwards,
       hasReview,
@@ -1563,6 +1585,13 @@ export class Bridge {
       return;
     }
 
+    if (hasWork) {
+      // Server-wide: the Work board, whichever connection this page shows.
+      const push = parseWorkPush(msg.work);
+      if (push) this.workHandlers.forEach((handler) => handler(push));
+      return;
+    }
+
     if (hasWorkspaceTree) {
       // Server-wide, like interface preferences: whichever connection shows.
       this.workspaceTreeHandlers.forEach((handler) =>
@@ -1845,6 +1874,12 @@ export class Bridge {
   onMrReviews(cb: (push: MrReviewsPush) => void): () => void {
     this.mrReviewsHandlers.add(cb);
     return () => this.mrReviewsHandlers.delete(cb);
+  }
+
+  /** The Work board changed (an item, the items, the projects). */
+  onWork(cb: (push: WorkPush) => void): () => void {
+    this.workHandlers.add(cb);
+    return () => this.workHandlers.delete(cb);
   }
 
   /** The Workspaces arrangement changed (unvalidated: the reader parses it). */

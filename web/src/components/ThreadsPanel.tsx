@@ -11,6 +11,8 @@ import {
 } from "react";
 import type { ReviewThread } from "../../../shared/review";
 import { roamgateLocalStorage } from "../browserStorage";
+import { workCall } from "../work";
+import { openWork } from "../workOpen";
 import "./ThreadsPanel.css";
 import { summaryLine } from "./reviewImageUpload";
 
@@ -42,6 +44,24 @@ function writeShowResolved(show: boolean) {
 }
 
 /** When the thread's latest message was written or rewritten. */
+/**
+ * A thread becomes a work item that adopts it (its comments and id kept),
+ * shown on the Work board; the thread is then the item's, not the
+ * review's.
+ */
+async function promoteToWork(threadId: string) {
+  try {
+    const { item } = await workCall<{ item: { id: string } }>("promote", {
+      thread: threadId,
+    });
+    openWork(item.id);
+  } catch (error) {
+    window.alert(
+      `Could not make a work item: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 export function lastMessageAt(thread: ReviewThread): string {
   let last = "";
   for (const comment of thread.comments) {
@@ -655,6 +675,13 @@ export function ThreadsPanel({
                   onClick={() => onGo(thread.id)}
                 >
                   Go to it
+                </button>
+                <button
+                  type="button"
+                  title="Make it a work item: the thread moves to the Work board"
+                  onClick={() => void promoteToWork(thread.id)}
+                >
+                  Work item
                 </button>
               </div>
             </section>,

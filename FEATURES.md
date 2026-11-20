@@ -2188,6 +2188,41 @@ Its settings (gear) hold the hosts, the followed projects, when the review
 worktree follows the selected request, how long a closed request's review
 is kept, and hints for the suggestions.
 
+## Work board
+
+**Menu > Work**, the command menu or `Option+W` (`Alt+W`) opens the Work
+board: your work items in columns by state, **For you** (waits on you),
+**Doing**, **Verify** (built, to be confirmed in real use), **Open** (nobody
+on it) and **Done** (folded until asked), one project at a time (chips at
+the top: `roamgate`, `gst2`...), filtered by tags (chips, several at once)
+and words (`/`). It sits beside the page as Reviews does; the whole-page
+button puts the columns side by side; a phone has the one list, the whole
+screen.
+
+Each card is an item: its title, tags, owner (the session or subagent
+working on it), when it moved, and its links (a review thread, an effort,
+a request, a commit, a branch, an RFC's decision, another item it waits
+for). Select a card (a tap, `j`/`k`, `h`/`l` between columns) for its
+actions and its thread: a state menu (`s`), **Done** (`dd`), **Open the
+agent's work** (`o`: the owner's pane, and its subagent's task in the
+Background tasks sheet), tags (`t`), **Delete**, and the comments below,
+**Comment** (`c`) and **Reply** (`r`) for the owner session, which answers
+in the thread as it does a review's. A comment with no owner running waits
+and says so, sent once one runs. `a` (or **+**) adds an item; `za` folds a
+column; `?` lists the keys. An item entering For you notifies you once; the
+notification opens the board on it.
+
+Agents keep the board true with their `work_*` tools (`work_list`,
+`work_add`, `work_update`, `work_done`, `work_reopen`, `work_adopt`,
+`work_project`): an item they take says `doing` with them as owner (a
+subagent's task id when one does the work), a fix waiting for a deploy
+says `verify` with its commit linked, and becomes **done by itself** once
+that commit is on dogfood's deployed build (the `roamgate` project) or on
+the project's branch (`gstreamer2/main` for GStreamer 2.0); a decision item
+is done once its box is ticked in the RFC. In a review's Comments panel,
+**Work item** on a thread moves it to the board as an item: its comments
+and id are kept, the review linked.
+
 ## Diff Viewer
 
 - Compare **Working tree**, **Against branch**, or **Last step** (the latest
@@ -2412,6 +2447,7 @@ and is skipped, with a note, on a browser that does not match.
 | Ask the companion in writing, without a call                          | `Cmd+Option+Shift+V`    | `Ctrl+Alt+Shift+V`                      |
 | Activity timeline                                                     | `Option+A`              | `Alt+A`                                 |
 | Reviews inbox                                                         | `Option+M`              | `Alt+M`                                 |
+| Work board                                                            | `Option+W`              | `Alt+W`                                 |
 | Zen mode (desktop)                                                    | `Cmd+Shift+Z`           | `Ctrl+Alt+Z`                            |
 | Recent pane switcher                                                  | `Ctrl+Tab`              | `Ctrl+Alt+J`                            |
 | Search panes                                                          | `Alt+K`                 | `Alt+K`                                 |

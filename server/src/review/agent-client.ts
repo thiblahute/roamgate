@@ -256,6 +256,13 @@ def parser():
     rv.add_argument("tool", help="reviews_list, reviews_override, reviews_order, ...")
     rv.add_argument("params", nargs="?", help="a JSON object, or - for standard input")
 
+    wk = sub.add_parser(
+        "work",
+        help="the Work board: work items by state, tags, owner and links (TOOL, then its parameters as JSON; help lists them)",
+    )
+    wk.add_argument("tool", help="work_list, work_add, work_update, work_done, work_reopen, work_adopt, work_project, help")
+    wk.add_argument("params", nargs="?", help="a JSON object, or - for standard input")
+
     q = sub.add_parser(
         "permission",
         help="Claude Code PermissionRequest hook: ask in Roamgate, else the terminal",
@@ -534,7 +541,7 @@ def main():
         if isinstance(value, list):
             value = "\\n".join(real_repo(v) for v in value)
         body[key.replace("-", "_")] = "1" if value is True else value
-    if args.command == "reviews" and args.params == "-":
+    if args.command in ("reviews", "work") and args.params == "-":
         body["params"] = sys.stdin.read()
     if "text" in vars(args):
         text = text_of(args)

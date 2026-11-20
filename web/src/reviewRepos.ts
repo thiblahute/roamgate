@@ -67,7 +67,8 @@ export function workspaceRepos(
       // checkout's.
       other.target.kind === "chat" ||
       other.target.kind === "rendered" ||
-      other.target.kind === "effort"
+      other.target.kind === "effort" ||
+      other.target.kind === "work"
     )
       continue;
     const entry = byRoot.get(other.root) ?? { root: other.root };

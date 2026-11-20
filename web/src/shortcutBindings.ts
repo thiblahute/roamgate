@@ -32,6 +32,7 @@ const base = {
   "companion.ask": ["Ctrl+Alt+Shift+V"],
   "activity.open": ["Alt+A"],
   "reviews.inbox": ["Alt+M"],
+  "work.board": ["Alt+W"],
   "zen.toggle": ["Ctrl+Alt+Z"],
   "panes.recent": ["Ctrl+Alt+J"],
   "overlay.toggle": ["Alt+F"],

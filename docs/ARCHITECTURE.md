@@ -1745,6 +1745,90 @@ topic (median 10 s, about $0.07 a question), Sonnet as accurate but slower
 (14 s, $0.035), Haiku missed 2 of 24 and cited one off-topic request (9 s,
 $0.002).
 
+## Work board
+
+The Work board (`server/src/work/`, `web/src/components/WorkPanel.tsx`) is
+the user's list of work items on a kanban by state, one project at a time,
+built on the effort model: a project is an effort with no git source, its
+items its parts, their threads a review delivered to the item's owner as an
+effort's are to its leader. The store is this server's, machine-wide, and
+every page shows it.
+
+Store: `<data>/work/work.json` (`ROAMGATE_WORK_DIR`), written whole on each
+change: `projects` (`{id, name, roots: [{connectionId, path}], done, tags?}`,
+at most 50; `done` is `{kind: "deployed"}`, this Roamgate's running build,
+or `{kind: "branch", root, branch, connectionId?}`, a commit reachable from
+that branch in that checkout) and `items` (at most 2000: `{id` (8 to 16 hex
+characters), `project, title, state, tags[], owner?: {session, task?},
+source?, links[], createdAt, updatedAt, doneAt?, by, review?}`). States are
+`you` (For you: waits on the user), `doing`, `verify` (built, to be
+confirmed in real use), `open` (nobody on it) and `done`. Tags are free
+words (lower case, spaces as dashes, 40 characters, 12 per item). The owner
+is a session's address (`connection/pane`) and, for a background subagent,
+its task id. `source` is one line saying where the item came from (a
+review thread id, "imported from STATUS.md line 12"): one item per source
+in a project, the same source given again changes that item. Links:
+`review {id, thread?}`, `effort {id, part?}`, `pr {url}`, `commit {sha,
+subject?, root?}`, `branch {name, root?}`, `decision {path, id}` (an RFC
+or plan file and its `Dn`), `item {id}` (waits for it), `deploy {sha,
+branch?}` (set by the done rule). `history.jsonl` appends one line per
+change of an item (`{at, item, by, change}`), never capped. The
+`roamgate` project is seeded on the deployed rule with this checkout as
+its root.
+
+Threads: an item's comments are a review of the item (target `{kind:
+"work", item}`, one review per item, made by the first comment or an
+adoption, anchor `work: {item, from?: {review, thread}, quote?}`). Its
+agent session is `work:<item id>`, resolved by `sessionPane` to the
+owner's pane when the owner is on the review's connection, else the
+comments wait with `WORK_NO_OWNER` and go once an owner runs (the review
+service's retries). The delivered prompt names the item and the `work_*`
+tools. A review thread adopted by an item (`moveThread`) keeps its id,
+comments and timestamps, takes the item's anchor, is marked handed (nothing
+is delivered again) and leaves its review; the thread's review is linked
+from the item. Lists of a checkout's reviews leave work reviews out, as
+they do efforts'.
+
+Notification: an item entering `you` publishes one feed notification (kind
+`work`, pane `work:<item id>` so its tag is stable, path
+`/#roamgate-work=<id>`, which opens the board on the item), cleared when it
+leaves `you` or is removed.
+
+Done rule: at start, every 10 minutes, and when the deployed build changes
+(`server/public/.built-from` next to the server, read every minute; the
+checkout's HEAD when there is no build), every live item with a `commit`
+link is checked against its project's rule (`git merge-base --is-ancestor
+SHA TARGET` in the rule's root, through its connection; a sha the
+checkout no longer has falls back to `git log --grep=SUBJECT TARGET` when
+the link has a subject), an item whose only links are decisions against
+the file on the rule's branch (`- [x] **Dn**`); a hit moves the item to
+`done` with a `deploy` link and a push saying so.
+
+RPCs `bridge.work.*` (machine-wide; `by: "agent"` with a `summary` says an
+agent wrote): `board`, `list {project?, state?, open?, tags?, owner?,
+query?}`, `project.set {name, roots?, done?, tags?}`, `add {title,
+project?, state?, tags?, owner?, links?, source?, created_at?, updated_at?,
+done_at?, adopt_thread?}`, `update {item, title?, state?, project?, tags?,
+add_tags?, remove_tags?, owner?, links?, add_links?, remove_links?,
+source?, created_at?, done_at?, adopt_thread?}`, `done {item, landed?:
+{commit?, subject?, root?, pr?, branch?}, done_at?}`, `reopen {item,
+state?}`, `remove {item}`, `threads {item, open?}` (the item's review
+snapshot, made when `open`), `promote {thread, project?, title?, state?,
+tags?, owner?}` (a review thread becomes an item that adopts it, source
+`thread <id>`), `adopt {item, thread}`, `owner_target {item}` (the owner's
+connection, generation, workspace, pane and task, for the page to open its
+chat or its Background tasks sheet), `check`. Every change is pushed to
+every page as `{work: {changed: ["items" | "item" | "projects"], item?,
+by, summary?}}`.
+
+Tools (the review socket's `work` command: `roamgate-review work TOOL
+JSON`, the mod's `work_*` tools, deferred): `work_list`, `work_add`,
+`work_update`, `work_done`, `work_reopen`, `work_adopt`, `work_project`,
+with the RPCs' parameters checked against their schemas
+(`server/src/work/tools.ts`; `help` lists them). Answers are JSON after a
+line saying what in them other people wrote. The caller is named in what
+the user is told ("Claude in roamgate added ...").
+
 ## Conversation mode
 
 A Claude session can be driven by a long-lived headless `claude -p
@@ -2705,7 +2789,8 @@ history), then `{"event":"ready","last":<last id>}`, then streams new events:
   peers only; a `*.ts.net` name on the default port is `https`. Events keep
   only the path, so a replay gets the same origin.
   `group` is the workspace label (or id, or connection), `Ranger` for Ranger
-  runs. `kind` is `blocked`, `completed`, `review` (an agent's `notify`) or
+  runs. `kind` is `blocked`, `completed`, `review` (an agent's `notify`),
+  `work` (a work item for the user) or
   `ranger_task`; the client switch it obeys is `completed` for completed
   agents and succeeded Ranger runs, `blocked` for the others. `actions` is
   present only on an agent's permission prompt.

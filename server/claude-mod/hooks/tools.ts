@@ -450,7 +450,228 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
       params: JSON.stringify(input.params ?? {}),
     }),
   },
+  ...workTools(),
 ];
+
+/**
+ * The Work board's tools: each one request to the `work` command with its
+ * name and its input as the parameters, checked by the server against the
+ * tool's schema (server/src/work/tools.ts), which also describes them.
+ */
+function workTools(): RoamgateTool[] {
+  const STATE = {
+    type: "string",
+    enum: ["you", "doing", "verify", "open", "done"],
+    description:
+      "you: waits on the user (For you); doing: an agent is on it; verify: built, to be confirmed in real use; open: known, nobody on it; done.",
+  };
+  const TAGS = {
+    type: "array",
+    items: { type: "string" },
+    description: "Free words: reviews, voice, android, rfc-0052, p6...",
+  };
+  const OWNER = {
+    type: "object",
+    properties: {
+      session: {
+        type: "string",
+        description:
+          "The session's address, CONNECTION/PANE (agent_sessions; yours has self: true).",
+      },
+      task: {
+        type: "string",
+        description:
+          "A background subagent of that session: the agent id its spawn gave.",
+      },
+    },
+    required: ["session"],
+    additionalProperties: false,
+  };
+  const LINKS = {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        kind: {
+          type: "string",
+          enum: [
+            "review",
+            "effort",
+            "pr",
+            "commit",
+            "branch",
+            "decision",
+            "item",
+          ],
+        },
+        id: { type: "string" },
+        thread: { type: "string" },
+        part: { type: "string" },
+        url: { type: "string" },
+        sha: { type: "string" },
+        subject: { type: "string" },
+        root: { type: "string" },
+        name: { type: "string" },
+        path: { type: "string" },
+      },
+      required: ["kind"],
+      additionalProperties: false,
+    },
+    description:
+      "review {id, thread?}, effort {id, part?}, pr {url}, commit {sha, subject?, root?} (the done rule watches it), branch {name, root?}, decision {path, id} (an RFC or plan's Dn), item {id} (waits for it).",
+  };
+  const ITEM = {
+    type: "string",
+    description: "The item: its id from work_list (8 characters are enough).",
+  };
+  const SOURCE = {
+    type: "string",
+    description:
+      'Where it came from, in a few words: a review thread id, "imported from STATUS.md line 12". One item per source in a project: the same source again changes that item.',
+  };
+  const ADOPT = {
+    type: "string",
+    description:
+      "A review thread (its id, or a comment's) that becomes the item's own thread: comments and ids kept, its old anchor dropped, the review linked.",
+  };
+  const tool = (
+    name: string,
+    description: string,
+    properties: Record<string, unknown>,
+    required: string[] = [],
+  ): RoamgateTool => ({
+    name,
+    command: "work",
+    deferred: true,
+    description,
+    inputSchema: schema(properties, required),
+    body: (input) => ({ tool: name, params: JSON.stringify(input) }),
+  });
+  return [
+    tool(
+      "work_list",
+      'The user\'s Work board: work items by project (roamgate by default) with id, title, state (you: waits on the user, doing, verify, open, done), tags, owner (a session address and its subagent task), links (review threads, efforts, requests, commits, branches, decisions, other items) and times. Filter by state, open (live items only), tags (all of them), owner, query words; item: one item with its comments. Use it before changing the board, and to answer "what is on the list".',
+      {
+        project: { type: "string" },
+        state: STATE,
+        open: { type: "boolean" },
+        tags: TAGS,
+        owner: { type: "string" },
+        query: { type: "string" },
+        item: ITEM,
+      },
+    ),
+    tool(
+      "work_add",
+      "Add a work item to the user's Work board: a title, its project (roamgate by default), a state (open by default; you when it waits on the user, doing when you take it), tags, an owner {session, task?} (yours from agent_sessions; the agent id of a subagent you spawned), links (the review thread it came from, the commit its fix landed in, an RFC's decision), text: a first comment. Importing existing work: source says where it came from (a review thread id, \"imported from STATUS.md line 12\"; the same source again changes that item instead of adding one), created_at and done_at keep its dates (ISO 8601), adopt_thread makes an existing review thread the item's own (comments and ids kept). The user sees it on the board; a For you item notifies them once.",
+      {
+        title: { type: "string" },
+        project: { type: "string" },
+        state: STATE,
+        tags: TAGS,
+        owner: OWNER,
+        links: LINKS,
+        text: { type: "string" },
+        source: SOURCE,
+        created_at: { type: "string" },
+        updated_at: { type: "string" },
+        done_at: { type: "string" },
+        adopt_thread: ADOPT,
+      },
+      ["title"],
+    ),
+    tool(
+      "work_update",
+      "Change a work item: title, state, project, tags (tags replaces; add_tags and remove_tags edit), owner (yours, a subagent's, or null to clear), links (links replaces; add_links and remove_links edit), source, created_at and done_at (an imported item's dates), adopt_thread (an existing review thread becomes the item's own). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. Comments on the item reach its owner; answer them with review_reply.",
+      {
+        item: ITEM,
+        title: { type: "string" },
+        state: STATE,
+        project: { type: "string" },
+        tags: TAGS,
+        add_tags: TAGS,
+        remove_tags: TAGS,
+        owner: { ...OWNER, type: ["object", "null"] },
+        links: LINKS,
+        add_links: LINKS,
+        remove_links: LINKS,
+        source: SOURCE,
+        created_at: { type: "string" },
+        done_at: { type: "string" },
+        adopt_thread: ADOPT,
+      },
+      ["item"],
+    ),
+    tool(
+      "work_adopt",
+      "An existing Roamgate review thread (its id, or a comment's) becomes a work item's own thread: moved into the item's review with its comments and ids, its old anchor dropped, the review it came from linked. Idempotent: a thread the item has already changes nothing. For importing the TODO file's threads, and for taking a review comment into the item it is about.",
+      { item: ITEM, thread: ADOPT },
+      ["item", "thread"],
+    ),
+    tool(
+      "work_done",
+      "Mark a work item done, saying what landed when known (landed: {commit, subject, root, pr, branch}): the link stays with the item. An item with a commit link and a live state becomes done by itself once the commit reaches where its project says (this Roamgate's deployed build, or the project's branch), so a fix that waits for a deploy is verify with its commit linked, not done.",
+      {
+        item: ITEM,
+        landed: {
+          type: "object",
+          properties: {
+            commit: { type: "string" },
+            subject: { type: "string" },
+            root: { type: "string" },
+            pr: { type: "string" },
+            branch: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+      },
+      ["item"],
+    ),
+    tool(
+      "work_reopen",
+      "Reopen a done work item (open by default, or the state given).",
+      { item: ITEM, state: STATE },
+      ["item"],
+    ),
+    tool(
+      "work_project",
+      "Declare or change a project of the Work board, only when the user asked: its name, the checkouts it spans (roots: paths, or {connectionId, path}), its done rule ({kind: deployed}: this Roamgate's running build holds the commit; {kind: branch, root, branch}: the commit is reachable from that branch in that checkout), suggested tags.",
+      {
+        name: { type: "string" },
+        roots: {
+          type: "array",
+          items: {
+            anyOf: [
+              { type: "string" },
+              {
+                type: "object",
+                properties: {
+                  connectionId: { type: "string" },
+                  path: { type: "string" },
+                },
+                required: ["connectionId", "path"],
+                additionalProperties: false,
+              },
+            ],
+          },
+        },
+        done: {
+          type: "object",
+          properties: {
+            kind: { type: "string", enum: ["deployed", "branch"] },
+            root: { type: "string" },
+            branch: { type: "string" },
+            connectionId: { type: "string" },
+          },
+          required: ["kind"],
+          additionalProperties: false,
+        },
+        tags: TAGS,
+      },
+      ["name"],
+    ),
+  ];
+}
 
 const BY_NAME = new Map(ROAMGATE_TOOLS.map((tool) => [tool.name, tool]));
 

@@ -96,6 +96,13 @@ export async function changesReviewChoice({
       home: "reviews",
       reason: "An effort's threads are discussed in its view in Reviews.",
     };
+  if (target.kind === "work")
+    return {
+      kind: "home",
+      sessionId: session.id,
+      home: "reviews",
+      reason: "A work item's thread is discussed on the Work board.",
+    };
   // A workspace without a known checkout shows its focused pane's
   // repository in Changes.
   const focused = panes.find((pane) => pane.focused) ?? panes[0];

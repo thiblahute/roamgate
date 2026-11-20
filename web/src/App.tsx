@@ -60,6 +60,7 @@ import {
   openMrReviews,
   takeMrFileOpen,
 } from "./mrReviewsOpen";
+import { handleWorkShortcut, openWork, watchWorkHash } from "./workOpen";
 import {
   CompanionChip,
   CompanionStrip,
@@ -2923,6 +2924,8 @@ export default function App() {
     [connectionClient.connectionId, mobile, setAnnotationDraftScope],
   );
   useEffect(() => startReviewClient(), []);
+  // A notification's link to a work item opens the board on it.
+  useEffect(() => watchWorkHash(), []);
   /** A file or a site an agent opened: the Files preview shows it. */
   const showRenderedInFiles = useCallback(
     (snapshot: ReviewHead) => {
@@ -2958,6 +2961,7 @@ export default function App() {
       const { session } = snapshot;
       if (session.target.kind === "rendered") showRenderedInFiles(snapshot);
       else if (session.target.kind === "effort") openMrReviews();
+      else if (session.target.kind === "work") openWork(session.target.item);
       else if (session.target.kind !== "chat") return false;
       else if (session.agent.paneId) void store.focusPane(session.agent.paneId);
       return true;
@@ -5406,6 +5410,13 @@ export default function App() {
         !blocksNavigationShortcuts(e.target, e)
       ) {
         handleMrReviewsShortcut(e);
+        return;
+      }
+      if (
+        shortcutMatches(e, "work.board") &&
+        !blocksNavigationShortcuts(e.target, e)
+      ) {
+        handleWorkShortcut(e);
         return;
       }
       if (shortcutMatches(e, "companion.call")) {

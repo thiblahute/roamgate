@@ -23,6 +23,7 @@ import {
   openMrReviews,
 } from "../mrReviewsOpen";
 import { latestMrInbox, loadMrInbox } from "../mrReviews";
+import { openWork, WORK_ENTRY } from "../workOpen";
 import { forgeRefLabel } from "../../../shared/forge";
 import { voiceFronting } from "../voiceFrontFlag";
 import { endpointCreationReason } from "../store";
@@ -59,6 +60,7 @@ import {
   SplitSquareVertical,
   Waypoints,
   X,
+  ClipboardList,
   GitPullRequest,
 } from "lucide-react";
 import { shallowEqual, store, useStoreSelector } from "../store";
@@ -1151,6 +1153,15 @@ export function CommandCombobox({
       shortcut: shortcutLabel("reviews.inbox"),
       keywords: MR_REVIEWS_ENTRY.keywords,
       run: () => openMrReviews(),
+    },
+    {
+      key: "work-board",
+      icon: <ClipboardList size={15} />,
+      title: WORK_ENTRY.title,
+      detail: WORK_ENTRY.detail,
+      shortcut: shortcutLabel("work.board"),
+      keywords: WORK_ENTRY.keywords,
+      run: () => openWork(),
     },
   ];
 

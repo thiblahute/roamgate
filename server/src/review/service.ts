@@ -12,6 +12,7 @@ import {
   type ReviewComment,
   type ReviewDiff,
   type ReviewEffortPart,
+  type ReviewWorkPart,
   type ReviewDiffFile,
   type ReviewMergeRequestLink,
   type ReviewRenderPart,
@@ -25,6 +26,8 @@ import {
   describeEffortPart,
   EFFORT_NO_LEADER,
   EFFORT_SESSION_PREFIX,
+  WORK_NO_OWNER,
+  WORK_SESSION_PREFIX,
   describeStepTarget,
   isMetadataRef,
   isSuggestion,
@@ -183,6 +186,34 @@ function body(value: unknown): string {
 /** An effort's id, as the reviews inbox makes them. */
 const EFFORT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
+/** A work item's id, as the Work board makes them. */
+const WORK_ITEM_ID = /^[0-9a-f]{8,16}$/;
+
+function workTarget(target: Record<string, unknown>): ReviewTarget {
+  const item = text(target.item, "item", 16);
+  if (!WORK_ITEM_ID.test(item)) throw new ReviewError("invalid work item");
+  return { kind: "work", item };
+}
+
+/** A thread's place on a work item: the item, where it came from, its words. */
+function workPart(value: unknown): ReviewWorkPart | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object") throw new ReviewError("invalid work part");
+  const raw = value as Record<string, unknown>;
+  const item = text(raw.item, "work item", 16);
+  if (!WORK_ITEM_ID.test(item)) throw new ReviewError("invalid work item");
+  const part: ReviewWorkPart = { item };
+  const from = raw.from as Record<string, unknown> | undefined;
+  if (from && typeof from === "object") {
+    const review = optionalText(from.review, "from review", 64);
+    const thread = optionalText(from.thread, "from thread", 64);
+    if (review && thread) part.from = { review, thread };
+  }
+  const quote = optionalText(raw.quote, "quote", 4000)?.trim();
+  if (quote) part.quote = quote;
+  return part;
+}
+
 function effortTarget(target: Record<string, unknown>): ReviewTarget {
   const effort = text(target.effort, "effort", 200);
   if (!EFFORT_ID.test(effort)) throw new ReviewError("invalid effort");
@@ -320,6 +351,7 @@ export function parseReviewTarget(value: unknown): ReviewTarget {
     return { kind: "rendered", url };
   }
   if (target.kind === "effort") return effortTarget(target);
+  if (target.kind === "work") return workTarget(target);
   if (target.kind === "mr") {
     const url = text(target.url, "url", 2048).trim();
     let parsed: URL;
@@ -370,6 +402,7 @@ function sameTarget(a: ReviewTarget, b: ReviewTarget): boolean {
   if (a.kind === "rendered" && b.kind === "rendered")
     return a.path === b.path && a.url === b.url;
   if (a.kind === "effort" && b.kind === "effort") return a.effort === b.effort;
+  if (a.kind === "work" && b.kind === "work") return a.item === b.item;
   return true;
 }
 
@@ -424,6 +457,7 @@ export function describeTarget(target: ReviewTarget): string {
   if (target.kind === "chat") return "chat";
   if (target.kind === "rendered") return target.path ?? target.url ?? "";
   if (target.kind === "effort") return "effort";
+  if (target.kind === "work") return `work item ${target.item.slice(0, 8)}`;
   if (target.kind === "step") return describeStepTarget(target);
   // A kind of a newer build reads as what it may be, never throws.
   return target.kind === "worktree" ? "working tree" : "review";
@@ -541,6 +575,8 @@ function parseAnchor(value: unknown): ReviewAnchor {
   if (feedback) anchor.feedback = feedback;
   const effort = effortPart(raw.effort);
   if (effort) anchor.effort = effort;
+  const work = workPart(raw.work);
+  if (work) anchor.work = work;
   return anchor;
 }
 
@@ -1661,9 +1697,11 @@ export function createReviewService(args: {
         (s) =>
           (!connectionId || s.connectionId === connectionId) &&
           (!root || s.root === root) &&
-          // A chat's threads, or an effort's, are not a review of the
-          // checkout.
-          ((s.target.kind !== "chat" && s.target.kind !== "effort") ||
+          // A chat's threads, an effort's or a work item's are not a
+          // review of the checkout.
+          ((s.target.kind !== "chat" &&
+            s.target.kind !== "effort" &&
+            s.target.kind !== "work") ||
             params.chats === true),
       )
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -2435,6 +2473,47 @@ export function createReviewService(args: {
     return snapshot(target);
   }
 
+  /**
+   * A thread becomes another review's (a work item adopting a TODO thread):
+   * its id, comments and timestamps kept, its anchor replaced by the one
+   * given, its old review told. What it says was heard where it was
+   * written: nothing is delivered again.
+   */
+  function moveThread(params: Record<string, unknown>): ReviewThread {
+    const target = session(params.sessionId);
+    const id = text(params.threadId, "thread", 200);
+    let found: ReviewThread | undefined;
+    for (const map of threads.values()) {
+      found = map.get(id) ?? [...map.values()].find((t) => t.id.startsWith(id));
+      if (found) break;
+    }
+    if (!found || found.kind === "merge-request")
+      throw new ReviewError("no such thread", 404);
+    if (found.gitlab?.discussionId || found.gitlab?.draftId !== undefined)
+      throw new ReviewError("a forge thread stays in its review");
+    const from = sessions.get(found.sessionId);
+    if (found.sessionId === target.id) return found;
+    const at = now();
+    threadsOf(found.sessionId).delete(found.id);
+    found.sessionId = target.id;
+    found.anchor = parseAnchor(params.anchor);
+    delete found.pendingFor;
+    delete found.held;
+    found.handedAt = at;
+    found.updatedAt = at;
+    threadsOf(target.id).set(found.id, found);
+    // The row's review changes: written anew (an upsert keeps the review).
+    storage.deleteThread(found.id);
+    storage.saveThread(found);
+    if (!target.deliveredAt) {
+      target.deliveredAt = at;
+      storage.saveSession(target);
+    }
+    if (from) changed(from);
+    changed(target);
+    return found;
+  }
+
   /** The pushes in flight, by merge request review. */
   const pushes = new Map<string, Promise<ReviewSnapshot>>();
 
@@ -3077,6 +3156,9 @@ export function createReviewService(args: {
   function agentSession(target: ReviewSession): string | undefined {
     if (target.target.kind === "effort")
       return `${EFFORT_SESSION_PREFIX}${target.target.effort}`;
+    // A work item's follow its owner, looked up as `work:ID`.
+    if (target.target.kind === "work")
+      return `${WORK_SESSION_PREFIX}${target.target.item}`;
     return target.target.kind === "chat"
       ? target.target.chat
       : target.agent.sessionId;
@@ -3094,6 +3176,8 @@ export function createReviewService(args: {
   function notRunning(target: ReviewSession): AgentNotRunning {
     if (target.target.kind === "effort")
       return new AgentNotRunning(EFFORT_NO_LEADER);
+    if (target.target.kind === "work")
+      return new AgentNotRunning(WORK_NO_OWNER);
     return new AgentNotRunning(
       `${agentLabel(target)} for this ${target.target.kind === "chat" ? "chat" : "review"} is not running in any pane`,
     );
@@ -3113,7 +3197,8 @@ export function createReviewService(args: {
     if (
       !args.paneSession ||
       target.target.kind === "chat" ||
-      target.target.kind === "effort"
+      target.target.kind === "effort" ||
+      target.target.kind === "work"
     )
       return;
     let sessionId: string | null;
@@ -3156,6 +3241,7 @@ export function createReviewService(args: {
         found === null &&
         (target.target.kind === "chat" ||
           target.target.kind === "effort" ||
+          target.target.kind === "work" ||
           !target.agent.paneId)
       )
         throw notRunning(target);
@@ -3312,6 +3398,10 @@ export function createReviewService(args: {
 
   function describeAnchor(anchor: ReviewAnchor): string {
     if (anchor.terminal) return `the terminal "${anchor.terminal.title}"`;
+    if (anchor.work)
+      return anchor.work.quote
+        ? `the work item, about "${oneLine(anchor.work.quote, 120)}"`
+        : "the work item";
     if (!anchor.path && anchor.render?.url)
       return oneLine(anchor.render.url, 300);
     if (!anchor.path) return "the whole change";
@@ -3396,6 +3486,7 @@ export function createReviewService(args: {
       );
     const chat = target.target.kind === "chat";
     const effort = target.target.kind === "effort";
+    const work = target.target.kind === "work";
     // In a chat: on its messages, on files its tool calls changed, or both.
     const onFile = (thread: ReviewThread) =>
       !!thread.anchor.chat && !!thread.anchor.path;
@@ -3412,7 +3503,9 @@ export function createReviewService(args: {
           ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me ${onWhat} in this chat:`
           : effort
             ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on the view of the upstreaming effort you lead (${oneLine(target.title, 200)}, id ${target.target.kind === "effort" ? target.target.effort : ""}) in Reviews:`
-            : `${due.length === 1 ? "A comment" : `${due.length} comments`} from me in the review:`,
+            : work
+              ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on the work item you own (${oneLine(target.title, 200)}, id ${target.target.kind === "work" ? target.target.item : ""}) on the Work board:`
+              : `${due.length === 1 ? "A comment" : `${due.length} comments`} from me in the review:`,
       );
     const since = target.deliveredAt ?? "";
     for (const thread of due) {
@@ -3471,6 +3564,11 @@ export function createReviewService(args: {
       lines.push(
         "",
         `These are threads on the effort's view (its ledger, plans and progress), not on code: read it with your effort_get tool when you need more. Answer each in its thread with ${how.reply}, and say there what you did or changed.`,
+      );
+    else if (due.length && work)
+      lines.push(
+        "",
+        `These are threads on a work item of the Work board, not on code: read the item with your work_list tool (item: its id) when you need more, and move it with work_update, work_done or work_reopen as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`,
       );
     else if (due.length && chat)
       lines.push(
@@ -4427,6 +4525,7 @@ export function createReviewService(args: {
     openGitlab,
     pushLocalDrafts,
     adoptThread,
+    moveThread,
     requestAgentReview,
     agentSummary,
     /**

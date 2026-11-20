@@ -1,0 +1,482 @@
+/* The Work board: a panel beside the page, as Reviews is, its items in
+   columns by state (side by side when wide, one list when narrow or on a
+   phone), filtered by project and tags. */
+.work-root {
+  position: fixed;
+  /* Over the reviews list (5500), under the toasts (6001), as Reviews is. */
+  z-index: 5700;
+  inset: 0;
+  pointer-events: none;
+}
+
+.work-panel {
+  pointer-events: auto;
+  outline: none;
+}
+
+.work-panel.is-floating {
+  position: absolute;
+  top: 52px;
+  right: 8px;
+  bottom: 8px;
+  width: min(var(--assistant-panel-width, 440px), calc(100% - 16px));
+}
+
+.work-panel.is-maximized {
+  position: absolute;
+  inset: 52px 8px 8px;
+}
+
+.work-panel.is-mobile {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+}
+
+/* The head's buttons stay on one line at the right: not the head's grid
+   column the title's div is. */
+.work-panel .assistant-panel-head > .work-head-actions {
+  flex: 0 0 auto;
+  display: flex;
+}
+
+.work-status {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.work-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.work-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
+  padding: 8px 12px 12px;
+  overflow: auto;
+}
+
+.work-body > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Project chips, then tag chips: the filter. */
+.work-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.work-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.work-chips-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.work-chip {
+  border: 1px solid var(--viewer-border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: var(--viewer-code-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.work-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft, rgba(88, 166, 255, 0.18));
+  color: var(--accent);
+}
+
+.work-chip > small {
+  margin-left: 4px;
+  color: var(--muted);
+}
+
+.is-mobile .work-chip {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.work-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--viewer-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: var(--viewer-code-bg);
+}
+
+.work-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+/* The columns. */
+.work-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.work-columns.is-wide {
+  flex: 1 1 0;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 12px;
+  min-height: 320px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+}
+
+.work-column {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.is-wide > .work-column {
+  flex: 1 1 240px;
+  min-width: 220px;
+  max-width: 520px;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid var(--viewer-border);
+  border-radius: 8px;
+  background: var(--viewer-content-bg);
+}
+
+.is-wide > .work-column > .work-cards {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.work-column-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  width: fit-content;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.work-column-title > span {
+  border-radius: 8px;
+  padding: 0 6px;
+  background: var(--viewer-code-bg);
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.work-column.is-you > .work-column-title {
+  color: var(--accent);
+}
+
+.work-column.is-done > .work-column-title {
+  color: var(--muted);
+}
+
+.work-cards {
+  display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.work-card {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--viewer-border);
+  border-radius: 8px;
+  background: var(--viewer-panel-bg);
+}
+
+.work-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.work-card.is-done {
+  opacity: 0.75;
+}
+
+.work-card-main {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 10px 6px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.work-card-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 8px;
+}
+
+.work-card-title {
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.work-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.work-tag {
+  border-radius: 999px;
+  padding: 0 7px;
+  background: var(--viewer-code-bg);
+  color: var(--muted);
+}
+
+.work-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 999px;
+  padding: 0 7px;
+  background: var(--accent-soft, rgba(88, 166, 255, 0.18));
+  color: var(--accent);
+}
+
+.work-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 10px;
+}
+
+.work-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  border: 1px solid var(--viewer-border);
+  border-radius: 999px;
+  padding: 0 7px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.work-link > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-link.is-landed {
+  border-color: var(--success, #3fb950);
+  color: var(--success-text, #3fb950);
+}
+
+/* The selected card's actions: state, done, the owner's work, comments. */
+.work-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 8px;
+}
+
+.work-card-actions select,
+.work-card-actions button,
+.work-card-actions input {
+  border: 1px solid var(--viewer-border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  background: var(--viewer-code-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.work-card-actions input {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.is-mobile .work-card-actions select,
+.is-mobile .work-card-actions button {
+  min-height: 36px;
+}
+
+.work-card-actions .is-primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.work-threads {
+  display: grid;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+
+.work-threads-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-threads-bar button {
+  border: 1px solid var(--viewer-border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  background: var(--viewer-code-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.work-threads-waiting,
+.work-threads-error {
+  margin: 0;
+  color: var(--warning, #d29922);
+  font-size: 11px;
+}
+
+.work-threads-error {
+  color: var(--danger, #f85149);
+}
+
+.work-thread-quote {
+  margin: 0 0 4px;
+  padding: 2px 8px;
+  border-left: 3px solid var(--viewer-border);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+/* Adding an item. */
+.work-add {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--viewer-panel-bg);
+}
+
+.work-add input,
+.work-add select {
+  border: 1px solid var(--viewer-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: var(--viewer-code-bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.work-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.work-add-row > * {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.work-add-row > button {
+  flex: 0 0 auto;
+  border: 1px solid var(--viewer-border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  background: var(--viewer-code-bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.work-add-row > button.is-primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.work-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.work-help {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--viewer-border);
+  border-radius: 8px;
+  background: var(--viewer-content-bg);
+  font-size: 12px;
+}
+
+.work-help dt {
+  display: inline;
+  font-family: var(--font-mono, monospace);
+}
+
+.work-help dd {
+  display: inline;
+  margin: 0 0 0 6px;
+  color: var(--muted);
+}
+
+.work-help div + div {
+  margin-top: 2px;
+}
+
+.work-deployed {
+  color: var(--muted);
+  font-size: 11px;
+}

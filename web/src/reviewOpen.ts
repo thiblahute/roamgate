@@ -66,6 +66,7 @@ export async function openWorkspaceReview(
         // workspace's code.
         snapshot.session.target.kind !== "chat" &&
         snapshot.session.target.kind !== "effort" &&
+        snapshot.session.target.kind !== "work" &&
         // Nor is a file or a site shown rendered.
         snapshot.session.target.kind !== "rendered" &&
         !(options.local && snapshot.session.target.kind === "mr"),

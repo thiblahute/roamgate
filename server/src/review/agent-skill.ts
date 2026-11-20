@@ -273,6 +273,34 @@ panel's search: \`project:group/*\`, \`label:x\`, \`lane:needs-you\`,
 your user asks, or to record what you found about your own work; the user
 sees each change with Undo.
 
+## The Work board
+
+Roamgate's Work panel is the user's list of work items on a kanban: For
+you (waits on the user), Doing, Verify (built, to be confirmed in real
+use), Open and Done, one project at a time (roamgate, gst2...), filtered by
+tags. Each item is a thread for the session or subagent that owns it, and
+links to what it is about (a review thread, an effort part, a request, a
+commit, a decision of an RFC or plan):
+
+    roamgate-review work work_list '{"open": true}'
+    roamgate-review work work_add '{"title": "Fold a reviewed chunk again", "state": "doing", "tags": ["reviews"], "owner": {"session": "desktop/w35:p1"}, "links": [{"kind": "review", "id": "d22a2f86", "thread": "b057f8a2"}]}'
+    roamgate-review work work_update '{"item": "0123abcd", "state": "verify", "add_links": [{"kind": "commit", "sha": "abc1234", "subject": "Fold a reviewed chunk again"}]}'
+    roamgate-review work work_done '{"item": "0123abcd", "landed": {"pr": "https://..."}}'
+
+Tools: \`work_list\`, \`work_add\`, \`work_update\` (state, tags, owner, links),
+\`work_done\`, \`work_reopen\`, \`work_adopt\` (an existing review thread
+becomes an item's own, comments and ids kept), \`work_project\` (a
+project's checkouts and done rule: this Roamgate's deployed build, or a
+branch of a checkout). Importing existing work: \`work_add\` with
+\`source\` (one item per source: the same source again changes the item),
+\`created_at\` / \`done_at\`, and \`adopt_thread\`. Keep the board true as you
+work: take an item (doing, owner: your address or the subagent's task id),
+link the commit its fix landed in and move it to verify (it becomes done
+by itself once the commit is on the deployed build or the project's
+branch), put it in For you when it needs the user. The user's comments on
+an item reach its owner as review comments: answer them with
+\`review_reply\`. \`roamgate-review work help\` lists each tool's parameters.
+
 ## Rules
 
 - Edit or delete only your own comments; edits to the user's are refused.

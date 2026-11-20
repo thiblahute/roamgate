@@ -22,11 +22,13 @@ import {
   Settings,
   Speech,
   Wifi,
+  ClipboardList,
   GitPullRequest,
 } from "lucide-react";
 import packageJson from "../../package.json";
 import { ACTIVITY_ENTRY, openActivityTimeline } from "../activityTimelineOpen";
 import { MR_REVIEWS_ENTRY, openMrReviews } from "../mrReviewsOpen";
+import { openWork, WORK_ENTRY } from "../workOpen";
 import { askCompanion, callCompanion } from "../companionCallOpen";
 import { voiceFronting } from "../voiceFrontFlag";
 import { logoutBrowserSession } from "../api";
@@ -396,6 +398,16 @@ export function ConfigMenu({
                   onClick={() => {
                     setOpen(false);
                     openMrReviews();
+                  }}
+                />
+                <ConfigMenuItem
+                  icon={<ClipboardList size={15} />}
+                  label={WORK_ENTRY.title}
+                  description={`${WORK_ENTRY.detail}${layout.mobile ? "" : ` \u00b7 ${shortcutLabel("work.board")}`}`}
+                  className="config-menu-item-row"
+                  onClick={() => {
+                    setOpen(false);
+                    openWork();
                   }}
                 />
                 {layout.mobile ? null : (

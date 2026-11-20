@@ -367,6 +367,19 @@ export function createReviewAgentServer(args: {
     params: unknown;
   }) => Promise<string>;
   /**
+   * The Work board's tools for any agent session (`roamgate-review work
+   * TOOL JSON`, the mod's work_* tools): `params` checked against the
+   * tool's schema there. Local state only.
+   */
+  work?: (input: {
+    connectionId: string;
+    paneId: string;
+    workspaceId: string;
+    agent: string;
+    tool: string;
+    params: unknown;
+  }) => Promise<string>;
+  /**
    * Agent sessions messaging each other (`roamgate-review sessions` and
    * `message`): the sessions Roamgate manages, across connections.
    */
@@ -846,9 +859,13 @@ export function createReviewAgentServer(args: {
       });
       return { notified: true };
     }
-    if (command === "reviews") {
-      if (!args.reviews)
-        throw new ReviewError("the Reviews board is unavailable", 503);
+    if (command === "reviews" || command === "work") {
+      const board = command === "work" ? args.work : args.reviews;
+      if (!board)
+        throw new ReviewError(
+          `the ${command === "work" ? "Work" : "Reviews"} board is unavailable`,
+          503,
+        );
       const tool = (form.get("tool") ?? "").trim();
       if (!tool) throw new ReviewError("tool is required");
       let params: unknown = {};
@@ -863,7 +880,7 @@ export function createReviewAgentServer(args: {
       if (!params || typeof params !== "object" || Array.isArray(params))
         throw new ReviewError("params must be a JSON object");
       try {
-        const text = await args.reviews({
+        const text = await board({
           connectionId: connection.id,
           paneId: form.get("pane") ?? "",
           workspaceId: form.get("workspace") ?? "",
