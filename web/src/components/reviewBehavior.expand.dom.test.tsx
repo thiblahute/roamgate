@@ -213,5 +213,72 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(shown(below)).toEqual([30, 32, ...range(57, 70), 72]);
         await below.unmount();
       });
+
+      test("More sets the context: none leaves git's lines out but a comment's, ten and the whole file open the gaps, remembered", async () => {
+        const review = await mount({
+          ...options(),
+          threads: [thread("t1", "a.ts", 72, "About line 72")],
+        });
+        expect(shown(review)).toEqual([30, 32, 70, 72]);
+        expect(
+          (await review.menu("more"))
+            .filter((item) => item.label.startsWith("Context"))
+            .map((item) => [item.label, item.checked]),
+        ).toEqual([
+          ["Context: none", false],
+          ["Context: 3 lines", true],
+          ["Context: 10 lines", false],
+          ["Context: whole file", false],
+        ]);
+        await review.chooseMenu("more", "Context: none");
+        // Line 72 has a comment: it stays.
+        expect(shown(review)).toEqual([72]);
+        expect(review.text()).toContain("About line 72");
+        // The gaps count the lines left out.
+        expect(review.gaps("a.ts").map((gap) => gap.label)).toEqual([
+          "30 hidden lines",
+          "39 hidden lines",
+          "more lines",
+        ]);
+        // Their buttons show them back.
+        await review.expandGap("a.ts", 1, "↓ 20");
+        // Its side only: line 30 waits for the gap above.
+        expect(shown(review)).toEqual([32, ...range(33, 52), 72]);
+        await review.chooseMenu("more", "Context: 10 lines");
+        // Gaps opened 7 lines more each side (the first only from below).
+        expect(shown(review)).toEqual([
+          ...range(23, 30),
+          ...range(32, 39),
+          ...range(63, 70),
+          ...range(72, 79),
+        ]);
+        await review.reload();
+        expect(shown(review)).toEqual([
+          ...range(23, 30),
+          ...range(32, 39),
+          ...range(63, 70),
+          ...range(72, 79),
+        ]);
+        await review.chooseMenu("more", "Context: whole file");
+        expect(shown(review)).toEqual(range(1, 100));
+        await review.chooseMenu("more", "Context: 3 lines");
+        expect(shown(review)).toEqual([30, 32, 70, 72]);
+        await review.unmount();
+      });
+
+      test("a file's head closes the lines opened around its changes again", async () => {
+        const review = await mount(options());
+        expect(review.buttons()).not.toContain(
+          "Hide the lines opened around a.ts's changes",
+        );
+        await review.expandGap("a.ts", 0, "Show all 29");
+        expect(shown(review)).toEqual([...range(1, 30), 32, 70, 72]);
+        await review.clickButton("Hide the lines opened around a.ts's changes");
+        expect(shown(review)).toEqual([30, 32, 70, 72]);
+        expect(review.buttons()).not.toContain(
+          "Hide the lines opened around a.ts's changes",
+        );
+        await review.unmount();
+      });
     });
 }

@@ -12,7 +12,7 @@ import { reviewAsMarkdown } from "../reviewModel";
 import { mergeRequestNumber, reviewMrSwitch } from "../reviewMrSwitch";
 import { store } from "../store";
 import { plural } from "./MrThreadCard";
-import { ReviewMenu } from "./ReviewMenu";
+import { ReviewMenu, type ReviewMenuItem } from "./ReviewMenu";
 import "./ChangesForge.css";
 
 /*
@@ -160,6 +160,7 @@ export function ChangesForgeHead({
   forge,
   mode,
   threads,
+  viewItems = [],
 }: {
   connectionId: string;
   snapshot: ReviewSnapshot | null;
@@ -167,6 +168,8 @@ export function ChangesForgeHead({
   mode: ForgeMode;
   /** The review's threads as shown (the copy's comments). */
   threads: readonly ReviewThread[];
+  /** How the diff is drawn (its context, the resolved threads), first. */
+  viewItems?: readonly (ReviewMenuItem | null | false)[];
 }) {
   const session = snapshot?.session;
   const mr = session?.gitlab ? snapshot?.mergeRequest : undefined;
@@ -249,9 +252,10 @@ export function ChangesForgeHead({
       ) : null}
       <ReviewMenu
         className="rv-more diff-forge-more"
-        title={`More: ${forge}, copying the review`}
+        title={`More: the diff's context, resolved threads, ${forge}, copying the review`}
         label={<MoreHorizontal size={14} />}
         items={[
+          ...viewItems,
           mode.switchable && {
             label: `${forge} mode`,
             title: mode.gitlab

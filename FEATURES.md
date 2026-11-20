@@ -398,7 +398,11 @@ Inspector button, shortcuts, or workspace/agent menus.
   code the diff hides opens the hunk nearer to it, three lines past it, so it
   is read on its line. The lines come from the checkout's file; a file that
   reads otherwise there (other changes in it not shown) says so and shows no
-  more.
+  more. The review's **More** menu (`...`) sets the context around every
+  change, remembered in the browser: none (the lines a comment is on stay),
+  git's 3 lines (the default), 10 lines or the whole file. A file whose
+  lines were opened has a fold button on its header that hides them again.
+  **More** also holds **Hide resolved threads** (`gH`), on a phone too.
 - A reviewed file folded to its header opens again when it is picked in the
   tree, the cursor on its first line.
 - On the working changes, `gs` stages the file at the cursor, and `:stage`,
@@ -409,7 +413,10 @@ Inspector button, shortcuts, or workspace/agent menus.
   chunks `V` selected; on a line with a comment it resolves the thread
   first), then goes on to the next chunk not reviewed, and `r` again unmarks
   it. `v` and `Option+V` (`Alt+V`) mark the file, every chunk of it. `gu` and
-  `gU` jump to the next and previous chunk not reviewed. The marks are the
+  `gU` jump to the next and previous chunk not reviewed. By touch, each
+  chunk has **Mark chunk reviewed** under it, each file's header a
+  **Reviewed** toggle (a check on a desktop), and the head's reviewed count
+  goes to the next chunk not reviewed. The marks are the
   checkout review's, so a chunk keeps its mark when it is staged. The diff
   shows each file once, its staged and unstaged changes together against
   `HEAD` (an untracked file as new), the lines comments are anchored on, so

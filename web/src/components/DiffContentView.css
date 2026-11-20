@@ -795,11 +795,98 @@
   color: var(--text-strong);
 }
 
+/* A button: the next chunk not reviewed (gu). */
 .diff-reviewed-count {
   flex: 0 0 auto;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
   color: var(--muted);
+  font: inherit;
   font-size: 11px;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.diff-reviewed-count:hover {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
+
+/* A file head's touch controls: close the lines opened around its
+   changes, mark it reviewed (v). */
+.diff-file-head-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.diff-file-head-actions button {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--viewer-content-bg);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.diff-file-head-actions button:hover {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
+
+.diff-file-reviewed-toggle.is-reviewed {
+  color: var(--success-text);
+}
+
+/* Desktop's v says it: the word only where touch needs it. */
+.diff-content-view[data-review-cursor]:not(.is-mobile)
+  .diff-file-reviewed-word {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .diff-file-head-actions button {
+    min-height: 32px;
+    padding: 0 10px;
+  }
+
+  .diff-content-view[data-review-cursor]:not(.is-mobile)
+    .diff-file-reviewed-word {
+    display: inline;
+  }
+}
+
+/* A touch screen's Reviewed under each chunk (r), on the right. */
+.diff-chunk-review {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 8px;
+}
+
+.diff-chunk-review button {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.diff-chunk-review.is-reviewed button {
+  border-color: transparent;
+  color: var(--success-text);
 }
 
 /* The review in Changes: the overall comment above the diff, its button in
@@ -1029,9 +1116,9 @@
 }
 
 /*
- * A phone's (or a narrow inspector's) review head: two rows. The review on
- * its own line, every control on one row under it, Back first; a row too
- * long for the screen scrolls, never wraps.
+ * A phone's (or a narrow inspector's) review head: the review on its own
+ * line, its controls under it, Back first, wrapping onto a second row
+ * rather than past the screen's edge.
  */
 .diff-content-view.is-mobile .diff-content-head.is-review {
   flex-wrap: wrap;
@@ -1051,17 +1138,12 @@
 .diff-review-row {
   display: flex;
   flex: 1 0 100%;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  row-gap: 2px;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
   white-space: nowrap;
-}
-
-.diff-review-row::-webkit-scrollbar {
-  display: none;
 }
 
 .diff-review-row > * {

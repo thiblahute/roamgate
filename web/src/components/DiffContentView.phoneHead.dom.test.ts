@@ -29,17 +29,19 @@ if (
   };
   const head = () => document.querySelector<HTMLElement>(".diff-content-head")!;
   const back = { label: "Changed files", onClick: () => {} };
-  const wrapItem = async () => {
+  /** The More menu's entries, opened. */
+  const moreItems = async () => {
     const button = head().querySelector<HTMLButtonElement>(
-      ".diff-view-menu .rv-menu-button",
+      ".rv-more .rv-menu-button",
     );
-    if (!button) return null;
+    if (!button) return [];
     await act(async () => button.click());
-    const item = document.querySelector<HTMLButtonElement>(
-      ".rv-menu [role=menuitemcheckbox]",
-    )!;
-    return item;
+    return [...document.querySelectorAll<HTMLButtonElement>(".rv-menu button")];
   };
+  const wrapItem = async () =>
+    (await moreItems()).find((item) =>
+      item.textContent?.includes("Wrap long lines"),
+    ) ?? null;
 
   test("on a phone, the review is one line and its controls one row under it, Back first", async () => {
     roamgateLocalStorage.removeItem("mobileDiffWrap");
@@ -62,9 +64,25 @@ if (
       expect(row.firstElementChild?.getAttribute("aria-label")).toBe(
         "Changed files",
       );
-      expect(row.contains(head().querySelector(".diff-view-menu"))).toBe(true);
-      // The view menu holds Wrap: no Wrap button of its own in the row.
+      // One menu, More, holds how the diff is drawn: no view menu, no
+      // Wrap button of its own in the row.
+      expect(row.contains(head().querySelector(".rv-more"))).toBe(true);
+      expect(head().querySelector(".diff-view-menu")).toBeNull();
       expect(head().querySelector(".diff-wrap-toggle")).toBeNull();
+      expect(
+        (await moreItems()).map(
+          (item) => item.querySelector(".rv-menu-label")?.textContent,
+        ),
+      ).toEqual(
+        expect.arrayContaining([
+          "Context: none",
+          "Context: 3 lines",
+          "Context: 10 lines",
+          "Context: whole file",
+          "Hide resolved threads",
+          "Wrap long lines",
+        ]),
+      );
     } finally {
       await diff.unmount();
     }

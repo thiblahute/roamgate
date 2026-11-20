@@ -116,6 +116,17 @@ function context(
   return found;
 }
 
+/** How much of a patch's own context is drawn. */
+export type ContextTrim = {
+  /**
+   * None: the unchanged lines git put at each hunk's ends are left in the
+   * gaps beside them (those between two changes of a hunk stay).
+   */
+  trim?: boolean;
+  /** Unchanged lines kept all the same (a comment is on them). */
+  keep?: (line: { old: number | null; new: number | null }) => boolean;
+};
+
 /**
  * The patch with the lines revealed put back as context, each hunk kept
  * apart, and the gaps still hidden with where their controls go. The
@@ -124,6 +135,7 @@ function context(
 export function expandPatch(
   patch: string,
   expansion: FileExpansion | undefined,
+  options: ContextTrim = {},
 ): { patch: string; gaps: ChangesGap[] } {
   const parsed = parsePatch(patch);
   if (!parsed) return { patch, gaps: [] };
@@ -138,7 +150,7 @@ export function expandPatch(
     { files: [file], truncated: false } as ReviewDiff,
     expansion ? new Map([[0, expansion]]) : new Map(),
   );
-  if (!gaps.size && !expansion) return { patch, gaps: [] };
+  if (!gaps.size && !expansion && !options.trim) return { patch, gaps: [] };
   const hunks = file.hunks.map((hunk) => ({
     lines: [...hunk.lines] as PatchLine[],
     rest: range(hunk.header)!.rest,
@@ -189,6 +201,43 @@ export function expandPatch(
         ...context(expansion.lines, from, from + top - 1, endOffset),
       );
   }
+  // No context: the unchanged lines at a hunk's ends go into the gap
+  // beside them, unless that side of it was opened (its lines then show
+  // whole) or a comment is on them (they stay, and those between it and
+  // the change).
+  const trimmed = new Map<number, number>();
+  if (options.trim) {
+    const kept = (line: PatchLine) =>
+      line.kind !== " " || line.expanded === true || !!options.keep?.(line);
+    const gapAt = (index: number) =>
+      [...gaps.values()].find((gap) => gap.gap === index);
+    const state = (index: number): GapState =>
+      expansion?.gaps.get(index) ?? { top: 0, bottom: 0 };
+    hunks.forEach((hunk, index) => {
+      const before = gapAt(index);
+      const after = gapAt(index + 1);
+      if (before && !state(index).all && !state(index).bottom) {
+        let count = 0;
+        while (count < hunk.lines.length && !kept(hunk.lines[count]!)) count++;
+        if (count < hunk.lines.length) {
+          hunk.lines.splice(0, count);
+          trimmed.set(index, (trimmed.get(index) ?? 0) + count);
+        }
+      }
+      if (after && !state(index + 1).all && !state(index + 1).top) {
+        let count = 0;
+        while (
+          count < hunk.lines.length &&
+          !kept(hunk.lines[hunk.lines.length - 1 - count]!)
+        )
+          count++;
+        if (count < hunk.lines.length) {
+          hunk.lines.splice(hunk.lines.length - count, count);
+          trimmed.set(index + 1, (trimmed.get(index + 1) ?? 0) + count);
+        }
+      }
+    });
+  }
   const text: string[] = [...parsed.head];
   for (const hunk of hunks) {
     const olds = hunk.lines.filter((line) => line.old !== null);
@@ -205,6 +254,12 @@ export function expandPatch(
   }
   const shown: ChangesGap[] = [...gaps.values()]
     .sort((a, b) => a.gap - b.gap)
+    .map((each) => {
+      const more = trimmed.get(each.gap) ?? 0;
+      return more && each.hidden !== null
+        ? { ...each, hidden: each.hidden + more }
+        : each;
+    })
     .map((gap) => {
       if (gap.gap === 0)
         return {

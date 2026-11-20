@@ -161,6 +161,62 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("by touch: each chunk's Reviewed, the file head's, and the count to the next chunk not reviewed", async () => {
+        const review = await mount({ files: files(), phone: true });
+        const chunkButtons = () =>
+          review
+            .buttons()
+            .filter(
+              (label) =>
+                label === "Mark chunk reviewed" || label === "Chunk reviewed",
+            );
+        // a.ts's two chunks, b.ts's and c.ts's.
+        expect(chunkButtons()).toEqual(Array(4).fill("Mark chunk reviewed"));
+        const at = review.cursorLine();
+        await review.clickButton("Mark this chunk reviewed", 0);
+        expect(review.chunkProgress("a.ts")).toBe("1/2");
+        expect(review.notices()).toContain("Chunk reviewed (1/2 in the file)");
+        // Folded to its line, its button with it; the cursor stays.
+        expect(texts(review)).not.toContain("a 3");
+        expect(chunkButtons()).toHaveLength(3);
+        expect(review.cursorLine()?.path).toBe(at?.path);
+        // Shown again (a tap on its line), it is unmarked there.
+        await review.click({ path: "a.ts", kind: "reviewed" });
+        expect(texts(review)).toContain("a 3");
+        expect(chunkButtons()[0]).toBe("Chunk reviewed");
+        await review.clickButton("Chunk reviewed: unmark it");
+        expect(review.chunkProgress("a.ts")).toBeNull();
+        expect(review.fileReviewed("a.ts")).toBe(false);
+        // The file head marks the whole file, and unmarks it.
+        await review.clickButton("Mark b.ts reviewed");
+        expect(review.fileReviewed("b.ts")).toBe(true);
+        expect(review.text()).toContain("1/3");
+        await review.clickButton("b.ts reviewed: unmark it");
+        expect(review.fileReviewed("b.ts")).toBe(false);
+        // The count goes to the next chunk not reviewed, round the end.
+        await review.clickButton("Mark this chunk reviewed", 1);
+        await review.press("gg");
+        // The head's "0/3": a.ts's second chunk reviewed is skipped.
+        const count =
+          "0 of 3 files reviewed: go to the next chunk not reviewed";
+        expect(review.buttons()).toContain("0/3 reviewed");
+        await review.clickButton(count);
+        expect(review.cursorLine()?.text).toBe("b 1");
+        await review.clickButton(count);
+        expect(review.cursorLine()?.text).toBe("c 1");
+        await review.clickButton(count);
+        expect(review.cursorLine()?.text).toBe("a 1");
+        await review.unmount();
+      });
+
+      test("with a mouse, no Reviewed under each chunk; the file head's stays", async () => {
+        const review = await mount({ files: files() });
+        expect(review.buttons()).not.toContain("Mark chunk reviewed");
+        await review.clickButton("Mark a.ts reviewed");
+        expect(review.fileReviewed("a.ts")).toBe(true);
+        await review.unmount();
+      });
+
       test("reviewed chunks and files are ticked and counted in the file list", async () => {
         const review = await mount({ files: files() });
         expect(review.chunkProgress("a.ts")).toBeNull();

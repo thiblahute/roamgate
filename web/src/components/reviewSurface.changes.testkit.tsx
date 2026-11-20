@@ -1945,6 +1945,8 @@ export async function mountChangesReview(
         return;
       }
       await act(async () => found.click());
+      // Twice, as a file head's buttons: Pierre draws the file again.
+      await settleAll();
       await settleAll();
     },
     async writeInEditor(text) {

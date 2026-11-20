@@ -68,6 +68,31 @@ if (
         expect(later.text()).not.toContain("Settled long ago");
         await later.unmount();
       });
+
+      test("on a phone, More hides the resolved threads, those on the whole review too, with no thread on a line to step through", async () => {
+        const general = {
+          ...thread("t3", "", 0, "Settled on the whole review"),
+          anchor: {},
+          resolved: true,
+        } as (typeof threads)[number];
+        const review = await mount({ files, threads: [general], phone: true });
+        expect(review.text()).toContain("Settled on the whole review");
+        const item = (await review.menu("more")).find(
+          (each) => each.label === "Hide resolved threads",
+        );
+        expect(item?.checked).toBe(false);
+        await review.chooseMenu("more", "Hide resolved threads");
+        expect(review.text()).not.toContain("Settled on the whole review");
+        expect(
+          (await review.menu("more")).find(
+            (each) => each.label === "Hide resolved threads",
+          )?.checked,
+        ).toBe(true);
+        // The same choice as gH's.
+        await review.press("gH");
+        expect(review.text()).toContain("Settled on the whole review");
+        await review.unmount();
+      });
     });
   }
 }

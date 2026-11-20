@@ -4,18 +4,19 @@ import { shortcutMatches } from "../shortcutPreferences";
 import { useSystemBack } from "../systemBack";
 import type { SelectedLineRange } from "@pierre/diffs";
 import {
+  Check,
   ChevronDown,
   Columns2,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  FoldVertical,
   FolderOpen,
   MessageSquare,
   MessageSquareOff,
   MessageSquarePlus,
   MessageSquareText,
   Search,
-  WrapText,
   X,
 } from "lucide-react";
 import {
@@ -60,6 +61,13 @@ import {
   fileLines,
   type GapState,
 } from "../reviewModel";
+import {
+  REVIEW_CONTEXTS,
+  type ReviewContext,
+  reviewContextLabel,
+  reviewContextNotice,
+  useReviewContext,
+} from "../reviewContext";
 import {
   type ChangesGap,
   expandPatch,
@@ -603,10 +611,17 @@ type DiffDrawing = {
   openOnly: boolean;
   /** A section's hidden gap: its count and buttons (GAP_ID). */
   gap: (key: string, index: number) => ReactNode;
+  /** A chunk's reviewed toggle, on a touch screen (CHUNK_ID). */
+  chunk: (key: string, id: string) => ReactNode;
 };
 
 /** The ids of the annotations drawing a gap's controls: its index after. */
 const GAP_ID = "\u0000gap:";
+/**
+ * The ids of the annotations drawing a chunk's reviewed toggle under its
+ * last line: its mark (0 or 1, for it to be drawn again), then its id.
+ */
+const CHUNK_ID = "\u0000chunk:";
 
 const DiffDrawingContext = createContext<DiffDrawing | null>(null);
 
@@ -793,6 +808,15 @@ function DiffAnnotation({
         )}
       </>
     );
+  if (annotation.id.startsWith(CHUNK_ID))
+    return (
+      <>
+        {drawing?.chunk(
+          `${annotation.kind}:${annotation.path}`,
+          annotation.id.slice(CHUNK_ID.length + 2),
+        )}
+      </>
+    );
   const thread = threads?.byId.get(annotation.id);
   if (
     drawing &&
@@ -897,6 +921,15 @@ type DiffFileSectionProps = {
   onShowReviewed?: (path: string) => void;
   /** The ids of the threads on the file and no line, drawn at its head. */
   fileThreadIds?: string;
+  /**
+   * The file is reviewed (every chunk), for its head's toggle;
+   * `onToggleReviewed` marks or unmarks it. Undefined: no toggle.
+   */
+  fileReviewed?: boolean;
+  onToggleReviewed?: (path: string) => void;
+  /** Lines were opened around its changes: `onCloseContext` closes them. */
+  contextOpened?: boolean;
+  onCloseContext?: (key: string) => void;
 };
 
 const DiffFileSection = memo(function DiffFileSection({
@@ -926,6 +959,10 @@ const DiffFileSection = memo(function DiffFileSection({
   reviewedFolded = false,
   onShowReviewed,
   fileThreadIds,
+  fileReviewed,
+  onToggleReviewed,
+  contextOpened = false,
+  onCloseContext,
 }: DiffFileSectionProps) {
   /**
    * A commit's message is words, not a change: drawn once, one column,
@@ -1160,6 +1197,45 @@ const DiffFileSection = memo(function DiffFileSection({
               <span>{openFileLabel}</span>
             </button>
           )}
+          {/* Touch's way to what zc-less keys and v do: close the lines
+              opened around the changes, mark the file reviewed. */}
+          {(contextOpened && onCloseContext) ||
+          (fileReviewed !== undefined && onToggleReviewed) ? (
+            <span className="diff-file-head-actions">
+              {contextOpened && onCloseContext ? (
+                <button
+                  type="button"
+                  className="diff-file-close-context"
+                  aria-label={`Hide the lines opened around ${section.entry.path}'s changes`}
+                  title="Hide the lines opened around the changes (the review's menu sets how many show)"
+                  onClick={() => onCloseContext(section.key)}
+                >
+                  <FoldVertical size={14} aria-hidden="true" />
+                </button>
+              ) : null}
+              {fileReviewed !== undefined && onToggleReviewed ? (
+                <button
+                  type="button"
+                  className={`diff-file-reviewed-toggle${fileReviewed ? " is-reviewed" : ""}`}
+                  aria-pressed={fileReviewed}
+                  aria-label={
+                    fileReviewed
+                      ? `${section.entry.path} reviewed: unmark it`
+                      : `Mark ${section.entry.path} reviewed`
+                  }
+                  title={
+                    fileReviewed
+                      ? "Reviewed, every chunk: unmark it (v)"
+                      : "Mark the file reviewed, every chunk (v)"
+                  }
+                  onClick={() => onToggleReviewed(section.entry.path)}
+                >
+                  <Check size={14} aria-hidden="true" />
+                  <span className="diff-file-reviewed-word">Reviewed</span>
+                </button>
+              ) : null}
+            </span>
+          ) : null}
         </header>
       )}
       {fileThreadIds && !reviewedFolded ? (
@@ -1304,7 +1380,11 @@ function areDiffFileSectionPropsEqual(
     previous.threadMarks === next.threadMarks &&
     previous.reviewedFolded === next.reviewedFolded &&
     previous.onShowReviewed === next.onShowReviewed &&
-    previous.fileThreadIds === next.fileThreadIds
+    previous.fileThreadIds === next.fileThreadIds &&
+    previous.fileReviewed === next.fileReviewed &&
+    previous.onToggleReviewed === next.onToggleReviewed &&
+    previous.contextOpened === next.contextOpened &&
+    previous.onCloseContext === next.onCloseContext
   );
 }
 
@@ -1809,6 +1889,11 @@ function DiffContentViewInner({
   const theme = useDocumentTheme();
   const effectiveViewMode: DiffViewMode = mobile ? "unified" : viewMode;
   const splitView = effectiveViewMode === "split";
+  /** A phone or a touch screen: touch's ways to what keys do. */
+  const touchControls =
+    mobile ||
+    (typeof window !== "undefined" &&
+      globalThis.matchMedia?.("(pointer: coarse)")?.matches === true);
   /** Full width diffs (:set wide), else the files in a centred column. */
   const wide = useWideDiffs();
   const wrapEnabled = mobile ? mobileWrap : desktopWrap;
@@ -2461,29 +2546,66 @@ function DiffContentViewInner({
   const gapRowRef = useRef<(key: string, index: number) => ReactNode>(
     () => null,
   );
+  const chunkRowRef = useRef<(key: string, id: string) => ReactNode>(
+    () => null,
+  );
+  const closeContextRef = useRef<(key: string) => void>(() => {});
+  const onCloseContext = useCallback(
+    (key: string) => closeContextRef.current(key),
+    [],
+  );
+  const toggleFileReviewedRef = useRef<(path: string) => void>(() => {});
+  const onToggleFileReviewed = useCallback(
+    (path: string) => toggleFileReviewedRef.current(path),
+    [],
+  );
   const expandedCache = useRef(
     new Map<
       string,
       {
         source: GitDiffFile;
         expansion: FileExpansion | undefined;
+        trim: boolean;
+        notes: readonly DiffReviewAnnotation[] | undefined;
         file: GitDiffFile;
         gaps: ChangesGap[];
       }
     >(),
   );
+  // The context drawn around the changes (the review's menu): none trims
+  // git's three lines, ten and the whole file open the gaps once read.
+  const [reviewContext, setReviewContext] = useReviewContext();
   /** A file's patch with its revealed context, and its hidden gaps. */
   const expandedFile = (key: string, file: GitDiffFile | null) => {
     if (!reviewCursor || embedded || !file?.diff) return null;
     const kept = expansions.get(key);
     const expansion = kept?.source === file.diff ? kept.expansion : undefined;
+    const trim = reviewContext === 0 && file.path !== COMMIT_MESSAGE_PATH;
+    // The lines comments are on stay with no context too.
+    const notes = trim ? annotationsByPath.get(key) : undefined;
     const cached = expandedCache.current.get(key);
-    if (cached?.source === file && cached.expansion === expansion)
+    if (
+      cached?.source === file &&
+      cached.expansion === expansion &&
+      cached.trim === trim &&
+      cached.notes === notes
+    )
       return cached;
-    const expanded = expandPatch(file.diff, expansion);
+    const expanded = expandPatch(file.diff, expansion, {
+      trim,
+      keep: (line) =>
+        !!notes?.some((note) => {
+          const at = note.side === "old" ? line.old : line.new;
+          return (
+            at !== null && at >= note.line && at <= (note.endLine ?? note.line)
+          );
+        }),
+    });
     const entry = {
       source: file,
       expansion,
+      trim,
+      notes,
       file:
         expanded.patch === file.diff ? file : { ...file, diff: expanded.patch },
       // A commit's message is drawn whole: nothing hidden around it.
@@ -2530,10 +2652,12 @@ function DiffContentViewInner({
       activeEntryKey,
       continuous,
       embedded,
+      annotationsByPath,
       expansions,
       fileErrors,
       filesByKey,
       manualCollapseStates,
+      reviewContext,
       reviewCursor,
       visibleEntries,
     ],
@@ -2546,6 +2670,21 @@ function DiffContentViewInner({
       if (gaps?.length && !section.collapsed) byKey.set(section.key, gaps);
     }
     return byKey;
+  }, [renderedSections]);
+  /** The sections with lines opened around their changes. */
+  const contextOpenedKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const section of renderedSections) {
+      const expansion = expandedCache.current.get(section.key)?.expansion;
+      if (
+        expansion &&
+        [...expansion.gaps.values()].some(
+          (gap) => gap.all || gap.top > 0 || gap.bottom > 0,
+        )
+      )
+        keys.add(section.key);
+    }
+    return keys;
   }, [renderedSections]);
   const renderedSectionsRef = useRef(renderedSections);
   renderedSectionsRef.current = renderedSections;
@@ -2932,6 +3071,11 @@ function DiffContentViewInner({
     [cursor.model],
   );
   const reviewedMarks = changesAgent.snapshot?.session.reviewed ?? NO_MARKS;
+  /** Each path's index among the layout's files. */
+  const reviewFileIndex = useMemo(
+    () => new Map(reviewLayout.files.map((info, at) => [info.path, at])),
+    [reviewLayout],
+  );
   const ownReviewId = changesAgent.snapshot?.session.id;
   /** The checkout's code reviews, whose threads are this review's too. */
   const checkoutReviewIds = useMemo(
@@ -3479,11 +3623,38 @@ function DiffContentViewInner({
       `${pendingAnnotation.kind}:${pendingAnnotation.path}`;
     const commented = (key: string, side: string, line: number) =>
       (grouped.get(key) ?? []).some(
-        (note) => note.side === side && note.line === line,
+        (note) =>
+          note.side === side &&
+          note.line === line &&
+          !note.id.startsWith(CHUNK_ID),
       ) ||
       (composerAt === key &&
         pendingAnnotation!.side === side &&
         (pendingAnnotation!.endLine ?? pendingAnnotation!.line) === line);
+    // On a touch screen, each chunk's Reviewed under its last line (r's
+    // way there), above the gap after it.
+    if (touchControls)
+      for (const [key, spans] of foldedSpansByKey) {
+        const section = renderedSections.find((each) => each.key === key);
+        if (!section || section.collapsed) continue;
+        for (const span of spans) {
+          const last = cursor.model.rows[span.rows[1]];
+          if (span.folded || !last) continue;
+          const side = last.new !== null ? "new" : "old";
+          add(key, {
+            id: `${CHUNK_ID}${span.reviewed ? 1 : 0}:${span.id}`,
+            source: "diff",
+            path: section.entry.path,
+            kind: section.entry.kind,
+            side,
+            line: (side === "new" ? last.new : last.old) ?? 0,
+            hunk: "",
+            quote: "",
+            comment: "",
+            createdAt: 0,
+          });
+        }
+      }
     for (const [key, gaps] of gapsByKey) {
       const section = renderedSections.find((each) => each.key === key);
       if (!section) continue;
@@ -3531,14 +3702,17 @@ function DiffContentViewInner({
     return grouped;
   }, [
     annotationsByPath,
+    cursor.model.rows,
     diffNotes,
     diffThreads,
+    foldedSpansByKey,
     gapsByKey,
     pendingAnnotation,
     placement,
     renderedSections,
     reviewEditor,
     splitView,
+    touchControls,
   ]);
 
   /** gH, :unresolved: only the unresolved threads drawn, or all again. */
@@ -3970,13 +4144,22 @@ function DiffContentViewInner({
   const reviewedFileCount = reviewState.files.size;
   const reviewedChunkRows = (file: number, hunk: number) =>
     reviewState.hunks[file]?.has(hunk) ?? false;
+  /** A file (its index in the layout) reviewed, every chunk of it, or not. */
+  const toggleFileAt = (file: number) => {
+    const info = reviewLayout.files[file];
+    if (!info) return;
+    const marking = !reviewState.files.has(file);
+    writeMarks(
+      fileToggleChanges(info, marking, reviewView, reviewedMarks),
+      () =>
+        fileToggleNotice(marking, reviewedFileCount, reviewLayout.files.length),
+    );
+  };
   /** Option+V, v: the cursor's file reviewed, every chunk of it, or not. */
   const toggleFile = () => {
     const unit = reviewLayout.units[cursorHandle.current.rowIndex()];
-    const info = unit ? reviewLayout.files[unit.file] : undefined;
-    if (!unit || !info) return;
-    const marking = !reviewState.files.has(unit.file);
-    const to = marking
+    if (!unit || !reviewLayout.files[unit.file]) return;
+    const to = !reviewState.files.has(unit.file)
       ? nextUnreviewedHunk(
           reviewLayout.units,
           (file, hunk) => file === unit.file || reviewedChunkRows(file, hunk),
@@ -3984,12 +4167,61 @@ function DiffContentViewInner({
           1,
         )
       : null;
-    writeMarks(
-      fileToggleChanges(info, marking, reviewView, reviewedMarks),
-      () =>
-        fileToggleNotice(marking, reviewedFileCount, reviewLayout.files.length),
-    );
+    toggleFileAt(unit.file);
     if (to !== null) cursorHandle.current.moveTo(to);
+  };
+  /** A file head's Reviewed: the cursor stays where it is. */
+  toggleFileReviewedRef.current = (path) => {
+    toggleFileAt(reviewLayout.files.findIndex((info) => info.path === path));
+  };
+  /** A chunk's Reviewed (a touch screen's, under the chunk): it alone. */
+  const toggleChunk = (key: string, id: string) => {
+    const file = reviewLayout.chunks.findIndex((own) =>
+      own.some((chunk) => chunk.key === key && chunk.id === id),
+    );
+    const chunk = reviewLayout.chunks[file]?.find(
+      (each) => each.key === key && each.id === id,
+    );
+    if (!chunk) return;
+    const toggle = hunkToggle(
+      new Map([[file, new Set([chunk.index])]]),
+      reviewLayout.files,
+      reviewState.hunks,
+      reviewView,
+      reviewedMarks,
+    );
+    writeMarks(toggle.changes, () =>
+      hunkToggleNotice(toggle, reviewedFileCount, reviewLayout.files.length),
+    );
+  };
+  chunkRowRef.current = (key, id) => {
+    const span = foldedSpansByKey.get(key)?.find((each) => each.id === id);
+    if (!span || span.folded) return null;
+    return (
+      <div
+        className={`diff-chunk-review${span.reviewed ? " is-reviewed" : ""}`}
+      >
+        <button
+          type="button"
+          className="btn ghost rv-sm"
+          aria-pressed={span.reviewed}
+          aria-label={
+            span.reviewed
+              ? "Chunk reviewed: unmark it"
+              : "Mark this chunk reviewed"
+          }
+          title={
+            span.reviewed
+              ? "Reviewed: unmark the chunk (r)"
+              : "Mark the chunk reviewed: it folds to one line (r)"
+          }
+          onClick={() => toggleChunk(key, id)}
+        >
+          <Check size={13} aria-hidden="true" />
+          {span.reviewed ? "Chunk reviewed" : "Mark chunk reviewed"}
+        </button>
+      </div>
+    );
   };
   /** r (no thread): the cursor's chunk, or those V covers, reviewed or not. */
   const toggleChunks = () => {
@@ -4207,6 +4439,58 @@ function DiffContentViewInner({
   const revealedFor = useRef(new Set<string>());
   const expandGapsRef = useRef(expandGaps);
   expandGapsRef.current = expandGaps;
+  /**
+   * Ten lines or the whole file: each file's gaps opened that far once it
+   * is read, once per patch (a file's context closed by hand stays so).
+   */
+  const contextFor = useRef(new Set<string>());
+  useEffect(() => {
+    if (reviewContext !== 10 && reviewContext !== "full") return;
+    for (const [key, gaps] of gapsByKey) {
+      const source = filesByKey[key]?.diff;
+      if (!source) continue;
+      const once = `${key}\u0000${source}`;
+      if (contextFor.current.has(once)) continue;
+      contextFor.current.add(once);
+      expandGapsRef.current(
+        key,
+        gaps.map((gap) => ({
+          gap: gap.gap,
+          change: (state: GapState): GapState =>
+            reviewContext === "full"
+              ? { ...state, all: true }
+              : {
+                  ...state,
+                  top: gap.gap > 0 ? Math.max(state.top, 7) : state.top,
+                  bottom: gap.canUp ? Math.max(state.bottom, 7) : state.bottom,
+                },
+        })),
+      );
+    }
+  }, [filesByKey, gapsByKey, reviewContext]);
+  /** The menu's context: every file's opened lines closed, then drawn so. */
+  const chooseContext = (context: ReviewContext) => {
+    contextFor.current.clear();
+    revealedFor.current.clear();
+    setExpansions(new Map());
+    setReviewContext(context);
+    say(reviewContextNotice(context));
+  };
+  /** A file's opened lines closed again: its comments' lines stay. */
+  const closeContext = (key: string) => {
+    const source = filesByKey[key]?.diff;
+    if (source) contextFor.current.add(`${key}\u0000${source}`);
+    for (const once of [...revealedFor.current])
+      if (source && once.endsWith(`\u0000${source}`))
+        revealedFor.current.delete(once);
+    setExpansions((current) => {
+      if (!current.has(key)) return current;
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
+  };
+  closeContextRef.current = closeContext;
   useEffect(() => {
     if (!placement) return;
     const byKey = new Map<
@@ -5054,6 +5338,7 @@ function DiffContentViewInner({
             hideComments,
             openOnly: threadView.openOnly,
             gap: (key: string, index: number) => gapRowRef.current(key, index),
+            chunk: (key: string, id: string) => chunkRowRef.current(key, id),
           }
         : null,
     [composerKey, hideComments, reviewEditor, threadView.openOnly],
@@ -5621,6 +5906,16 @@ function DiffContentViewInner({
                       onShowReviewed: showReviewed,
                       fileThreadIds:
                         fileThreadsKey.get(section.key) ?? undefined,
+                      ...(reviewFileIndex.has(section.entry.path)
+                        ? {
+                            fileReviewed: reviewState.files.has(
+                              reviewFileIndex.get(section.entry.path)!,
+                            ),
+                            onToggleReviewed: onToggleFileReviewed,
+                          }
+                        : {}),
+                      contextOpened: contextOpenedKeys.has(section.key),
+                      onCloseContext,
                     }
                   : {}),
               }
@@ -5889,6 +6184,28 @@ function DiffContentViewInner({
           forge={forge}
           mode={forgeMode}
           threads={drawnThreads ?? NO_THREADS}
+          viewItems={[
+            // How the diff is drawn, by touch too: its context, the
+            // resolved threads, a phone's wrapping (its own menu once).
+            ...REVIEW_CONTEXTS.map((context) => ({
+              label: reviewContextLabel(context),
+              checked: reviewContext === context,
+              onSelect: () => chooseContext(context),
+            })),
+            {
+              label: "Hide resolved threads",
+              hint: "gH",
+              title:
+                "Only the unresolved threads drawn, on the code and above it (gH, :unresolved)",
+              checked: threadView.openOnly,
+              onSelect: () => toggleOpenOnly(),
+            },
+            mobile && {
+              label: "Wrap long lines",
+              checked: mobileWrap,
+              onSelect: toggleMobileWrap,
+            },
+          ]}
         />
       ) : null}
       {reviewEditor &&
@@ -6065,13 +6382,19 @@ function DiffContentViewInner({
         ) : null}
       </div>
       {reviewEditor && reviewLayout.files.length ? (
-        <span
+        <button
+          type="button"
           className="diff-reviewed-count"
-          title="Files reviewed (r a chunk, v a file)"
+          aria-label={`${reviewedFileCount} of ${reviewLayout.files.length} files reviewed: go to the next chunk not reviewed`}
+          title="Files reviewed (r a chunk, v a file): go to the next chunk not reviewed (gu)"
+          onClick={() => {
+            jumpUnreviewed(1);
+            sectionRef.current?.focus({ preventScroll: true });
+          }}
         >
           {reviewedFileCount}/{reviewLayout.files.length}
           <span className="diff-head-word"> reviewed</span>
-        </span>
+        </button>
       ) : null}
       {reviewEditor && listedThreads.length ? (
         <button
@@ -6129,26 +6452,6 @@ function DiffContentViewInner({
           }
           open={threadsOpen}
           onToggle={() => setThreadsOpen((open) => !open)}
-        />
-      ) : null}
-      {mobile && reviewEditor ? (
-        // A phone's diff is unified: its view menu only wraps.
-        <ReviewMenu
-          className="diff-view-menu"
-          title="How the diff is drawn: long lines wrapped or not (:set)"
-          label={
-            <>
-              <WrapText size={14} aria-hidden="true" />
-              <ChevronDown size={12} />
-            </>
-          }
-          items={[
-            {
-              label: "Wrap long lines",
-              checked: mobileWrap,
-              onSelect: toggleMobileWrap,
-            },
-          ]}
         />
       ) : null}
       {!mobile && reviewEditor ? (
