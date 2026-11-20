@@ -337,6 +337,8 @@ type Live = {
   owner: ListenOwner | null;
   heard: HeardSoFar;
   ended: boolean;
+  /** Its speech started and its end is not heard yet: the user talks. */
+  talking: boolean;
   result: Promise<Heard | null>;
   /** Drops it: nothing is sent. */
   stop: () => void;
@@ -367,6 +369,8 @@ export class VoiceLink {
   onAnySpeech: (() => void) | null = null;
   /** Something else plays (the front's voice): only a louder voice counts. */
   alsoHolding: () => boolean = () => false;
+  /** Who waits for the utterance under way to end (untilTurnEnds). */
+  private turnWaiters = new Set<() => void>();
   /** The microphone and outputs were traced (traceAudioRoute). */
   private routeTraced = false;
   /** The socket came back after it was lost. */
@@ -451,6 +455,38 @@ export class VoiceLink {
   /** Whether a listening is in progress. */
   get listening() {
     return this.live !== null;
+  }
+
+  /**
+   * Whether the user is in the middle of an utterance: the helper said its
+   * speech started (the speaker check passed) and not yet that it ended.
+   * Nothing is said over it: a reply waits (untilTurnEnds).
+   */
+  get talking(): boolean {
+    return this.live?.talking === true;
+  }
+
+  /**
+   * Resolves once no utterance is under way (at once when none is), or
+   * when `signal` aborts.
+   */
+  untilTurnEnds(signal: AbortSignal): Promise<void> {
+    if (!this.talking || signal.aborted) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        this.turnWaiters.delete(done);
+        signal.removeEventListener("abort", done);
+        resolve();
+      };
+      this.turnWaiters.add(done);
+      signal.addEventListener("abort", done, { once: true });
+    });
+  }
+
+  /** An utterance ended, or its listening: whoever waited for it goes on. */
+  private turnMoved() {
+    if (this.talking) return;
+    for (const done of [...this.turnWaiters]) done();
   }
 
   close() {
@@ -562,15 +598,19 @@ export class VoiceLink {
       owner: null,
       heard: { text: "", whole: false },
       ended: false,
+      talking: false,
       result: Promise.resolve(null),
       stop: () => {},
     };
     live.result = this.run(live, { language, conversation });
     this.live = live;
+    this.turnMoved();
     void live.result
       .catch(() => null)
       .finally(() => {
+        live.talking = false;
         if (this.live === live) this.live = null;
+        this.turnMoved();
       });
     return this.own(live, signal, finish);
   }
@@ -716,9 +756,17 @@ export class VoiceLink {
           }
           if (event.event === "speech_start") {
             heard = true;
+            live.talking = true;
             this.onAnySpeech?.();
             live.hooks.onSpeech?.();
-          } else if (event.event === "speech_end") {
+          } else if (
+            event.event === "speech_end" ||
+            event.event === "speech_cancelled"
+          ) {
+            // Cancelled (too short to be speech), it ends with no final.
+            live.talking = false;
+            this.turnMoved();
+            if (event.event === "speech_cancelled") return;
             live.ended = true;
             live.hooks.onSpeechEnd?.();
           } else if (event.event === "partial" || event.event === "text") {

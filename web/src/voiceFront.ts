@@ -134,6 +134,12 @@ export function createFrontVoice<Speech>(
   speech: AckSpeech<Speech>,
   /** Takes the speaker from whatever reads (voiceChat.ts claimSpeaker). */
   claim: (owner: AbortController) => void = () => {},
+  /**
+   * Resolves once the user is not in the middle of an utterance
+   * (voiceChat.ts VoiceLink.untilTurnEnds): nothing is said over them. Each
+   * sentence is made only then: in a call, made is played (its mix).
+   */
+  turn: (signal: AbortSignal) => Promise<void> = async () => {},
 ): FrontVoice {
   let hushed = new AbortController();
   let pending = 0;
@@ -149,8 +155,13 @@ export function createFrontVoice<Speech>(
       // sentences mark it, one per piece of speech.
       const sentences = spokenSentences(text);
       let started = false;
+      const turnOver = turn(stop);
+      turnOver.catch(() => {});
       const audio = sentences.map((sentence) => {
-        const made = speech.fetchAudio(sentence, language, stop);
+        const made = turnOver.then(() => {
+          stop.throwIfAborted();
+          return speech.fetchAudio(sentence, language, stop);
+        });
         made.catch(() => {});
         return made;
       });

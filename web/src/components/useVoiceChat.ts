@@ -553,10 +553,21 @@ export function useVoiceChat({
        * send ("nobody": the router's question asked, an errand), or another
        * session, which now has the voice chat ("left").
        */
+      // The link listening, once there is one: while the user is in the
+      // middle of an utterance, what the front says waits for its end.
+      let turnLink: VoiceLink | null = null;
+      const turnEnds = async (stop: AbortSignal) => {
+        const link = turnLink;
+        if (!link?.talking) return;
+        voiceTrace("the front waits: the user is talking");
+        await link.untilTurnEnds(stop);
+        if (!stop.aborted)
+          voiceTrace("the user's utterance ended: the front says it");
+      };
       // The front (voiceFront.ts): it says at once what it does with what
       // was said, or answers it. Off, voice chat goes as it always did.
       const made = voiceFronting()
-        ? createFrontVoice(ackSpeech, claimSpeaker)
+        ? createFrontVoice(ackSpeech, claimSpeaker, turnEnds)
         : null;
       // A call with the companion: what it says shows in its strip, a
       // sentence at a time, and in its conversation view, not in a bar over
@@ -1235,10 +1246,13 @@ export function useVoiceChat({
       if (front) {
         const told: Telling[] = [];
         let telling = false;
+        // Speech under way counts before any word of it is read: nothing
+        // starts over the user.
         const quiet = () =>
           (stateRef.current === "listening" ||
             stateRef.current === "waiting") &&
           !heardRef.current &&
+          !turnLink?.talking &&
           !front.playing();
         const tell = async () => {
           if (telling) return;
@@ -1935,6 +1949,7 @@ export function useVoiceChat({
             if (front) {
               // Speaking up stops the front, as it stops a reply.
               voice.onAnySpeech = () => front.hush();
+              turnLink = voice;
               voice.alsoHolding = () => front.playing();
             }
             // The user went for a workspace with no agent: asked first.

@@ -146,6 +146,80 @@ describe("createFrontVoice", () => {
   });
 });
 
+describe("while the user is in the middle of an utterance", () => {
+  /** A voice whose turn gate opens on `turnEnds()`. */
+  function gatedSpeech() {
+    const fetched: string[] = [];
+    const played: string[] = [];
+    let turnEnds = () => {};
+    let finish = () => {};
+    const voice = createFrontVoice(
+      {
+        fetchAudio: async (text) => {
+          fetched.push(text);
+          return text;
+        },
+        playAudio: (audio, signal) => {
+          played.push(audio);
+          return new Promise<void>((resolve) => {
+            finish = resolve;
+            signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+        },
+      },
+      () => {},
+      (signal) =>
+        new Promise<void>((resolve) => {
+          turnEnds = resolve;
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        }),
+    );
+    return {
+      voice,
+      fetched,
+      played,
+      turnEnds: () => turnEnds(),
+      finish: () => finish(),
+    };
+  }
+
+  test("a reply waits for its end: nothing is made (in a call, played) before", async () => {
+    const speech = gatedSpeech();
+    const said = speech.voice.say(
+      "Roamgate says it is still a bug. It fixes every case.",
+      new AbortController().signal,
+    );
+    await flush();
+    // In a call, making a sentence puts it in the mix: none is asked for.
+    expect(speech.fetched).toEqual([]);
+    expect(speech.played).toEqual([]);
+    expect(speech.voice.playing()).toBe(true);
+    speech.turnEnds();
+    await flush();
+    expect(speech.played).toEqual(["Roamgate says it is still a bug."]);
+    speech.finish();
+    await flush();
+    speech.finish();
+    await said;
+    expect(speech.played).toHaveLength(2);
+    expect(speech.voice.playing()).toBe(false);
+  });
+
+  test("speaking up meanwhile drops it, as it drops what waits", async () => {
+    const speech = gatedSpeech();
+    const said = speech.voice.say(
+      "Never over the user.",
+      new AbortController().signal,
+    );
+    await flush();
+    speech.voice.hush();
+    await said;
+    expect(speech.fetched).toEqual([]);
+    expect(speech.played).toEqual([]);
+    expect(speech.voice.playing()).toBe(false);
+  });
+});
+
 describe("where a say is", () => {
   test("each sentence is told as it starts playing, the very ones made", async () => {
     const fetched: string[] = [];

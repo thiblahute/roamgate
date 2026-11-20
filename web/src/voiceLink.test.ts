@@ -200,6 +200,60 @@ describe("a listening kept over a rebuild of the chat", () => {
   });
 });
 
+describe("an utterance under way", () => {
+  test("is told from its start to its end, and replies wait for it", async () => {
+    const { link, socket, result } = await listening();
+    // Its speech started (listening() says so): the user is talking.
+    expect(link.talking).toBe(true);
+    let over = false;
+    const waited = link.untilTurnEnds(new AbortController().signal).then(() => {
+      over = true;
+    });
+    await settle();
+    expect(over).toBe(false);
+    socket.tell({ event: "speech_end", session: 7 });
+    await waited;
+    expect(link.talking).toBe(false);
+    socket.tell({
+      event: "final",
+      session: 7,
+      text: "I was saying.",
+      speech_ms: 900,
+    });
+    await result;
+    // With none under way, at once.
+    await link.untilTurnEnds(new AbortController().signal);
+    link.close();
+  });
+
+  test("another listening's speech, or a cancelled one, is no utterance", async () => {
+    const link = await VoiceLink.open();
+    const socket = FakeWebSocket.last!;
+    const owner = new AbortController();
+    const result = link.listen(owner.signal);
+    await settle();
+    socket.tell({ event: "listening", session: 3 });
+    expect(link.talking).toBe(false);
+    socket.tell({ event: "speech_start", session: 2 });
+    expect(link.talking).toBe(false);
+    socket.tell({ event: "speech_start", session: 3 });
+    expect(link.talking).toBe(true);
+    const waited = link.untilTurnEnds(new AbortController().signal);
+    // Too short to be speech: the helper cancels it, with no final.
+    socket.tell({ event: "speech_cancelled", session: 3 });
+    await waited;
+    expect(link.talking).toBe(false);
+    // A listening stopped mid-utterance ends it too.
+    socket.tell({ event: "speech_start", session: 3 });
+    const stopped = link.untilTurnEnds(new AbortController().signal);
+    owner.abort();
+    expect(await result).toBeNull();
+    await stopped;
+    expect(link.talking).toBe(false);
+    link.close();
+  });
+});
+
 describe("a listening whose helper stopped", () => {
   test("ends with what was heard, and the link goes on", async () => {
     const { link, socket, result } = await listening();
