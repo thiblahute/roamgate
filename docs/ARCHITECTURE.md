@@ -1612,13 +1612,31 @@ moved only by sure stretches, two voices whose prints reach 0.5 merged
 under the older name). Each final carries `voice`: the set of voices
 (`voices`, new with each `new_speaker` listening), the voice most heard
 (`id`), its `share`, `mixed`, each voice's share (`mix`), the utterance's
-`similarity` to each voice, and the voices `merged` since. The server
-(voice-speakers.ts) learns which voice is the user's from the routes of
-the turns (taken up or left to nobody) and the front's `voice` verdict,
-labels each utterance for the front and the router (`Said [you 0.58]:
-"..."`), and sends `user_voice` with each listen_start: while the gate
-holds, an utterance then says nothing (no `speech_start`, no partial
-words) until a stretch sounds like the user's. With `drop_other_voices`,
+`similarity` to each voice, the voices `merged` since, and the prints the
+server keeps: the utterance's (`print`) and each of its voices' (`prints`),
+unit WeSpeaker embeddings to four decimals. The server strips the prints
+before the final goes to the page (the page sends the tag back with its
+route, an `utterance` number standing for its print). The voice profiles
+(voice-profiles.ts, one private file per person in `voice-profiles/` under
+the data directory) are matched against each voice of the call by its
+print: named when its closest kept print scores 0.60 or more with a 0.15
+margin over the next person, "maybe" from 0.45 (calibrated in voices.rs'
+`real_voices_are_known_again_on_another_call`). A profile learns only from
+confident utterances (unmixed, 80% one voice, 0.45 close to it, a second
+long): each call keeps one print per person, the mean of those, replaced
+as the call goes and undone when the name is corrected; past six prints
+the two closest merge. The server (voice-speakers.ts) takes the voice
+matched to the user's profile for theirs; otherwise it learns which voice
+is the user's from the routes of the turns (taken up or left to nobody)
+and the front's `voice` verdict, and keeps it as their profile once sure.
+The front names voices with `voice_name`, `voice_id` and `voice_role` in
+its JSON. Each utterance is labelled for the front and the router (`Said
+[Simon 0.84]: "..."`), the front also getting every score (`Voices:`), and
+each listen_start sends `user_voice`: the user's voice on the call once
+known, and their kept prints (a new call's start carries only those).
+While the gate holds, an utterance then says nothing (no `speech_start`,
+no partial words) until a stretch sounds like the user's: it went to their
+voice, or scores 0.30 against it or one of their prints. With `drop_other_voices`,
 the helper's listener also keeps one voice in speechgate: from the speaker's reference
 recordings (`speaker_reference`), heard first in a session of their own
 that is stopped at once, or else from the first 2 s of voice it hears

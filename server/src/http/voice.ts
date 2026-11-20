@@ -607,6 +607,11 @@ export function createVoiceRoutes(
       const voice = voiceTag
         ? helper.speakers.label(voiceTag) || undefined
         : undefined;
+      // Every score behind the label, for the companion to judge with.
+      const voices =
+        voiceTag && fronting
+          ? helper.speakers.detail(voiceTag, true) || undefined
+          : undefined;
       // What was heard and said lately on the call (companionRecent).
       const recent =
         typeof body?.recent === "string"
@@ -643,6 +648,7 @@ export function createVoiceRoutes(
               said,
               sessions,
               voice,
+              voices,
               context: withSearches(
                 [contextOf(body?.context), skippedContext(skipped)]
                   .filter(Boolean)
@@ -726,6 +732,18 @@ export function createVoiceRoutes(
         // Which voice is the user's: the one whose words were taken up, or
         // what the front said of it; a turn that timed out tells nothing.
         if (voiceTag && timing.timedOut !== true) {
+          // A name the companion gives a voice, or corrects.
+          if (route.naming) {
+            const named = helper.speakers.name(voiceTag, route.naming);
+            voiceLog.debug("voice named", {
+              voice: route.naming.voice ?? voiceTag.id ?? "",
+              name: route.naming.name,
+              role: route.naming.role ?? "",
+              done: named ?? "nothing to name",
+            });
+            if (debug)
+              console.error(`[voice] named: ${named ?? "nothing to name"}`);
+          }
           helper.speakers.learn(voiceTag, route.to, route.voice);
           const learnt = helper.speakers.label(voiceTag);
           voiceLog.debug("voice turn speaker", {
@@ -742,9 +760,10 @@ export function createVoiceRoutes(
               `[voice] speaker: [${voice ?? ""}] routed ${route.to}${route.voice ? `, the front says ${route.voice}` : ""}; now [${learnt}]`,
             );
         }
-        if (route.voice) {
+        if (route.voice || route.naming) {
           route = { ...route };
           delete route.voice;
+          delete route.naming;
         }
         // Each turn's times (debug): where the companion's first words wait.
         voiceLog.debug("voice turn routed", {

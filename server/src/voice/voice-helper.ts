@@ -14,7 +14,12 @@ import {
 } from "../../../shared/speechRate";
 import { dataRoot } from "../config/data-paths";
 import { serverLogger } from "../utils/logger";
-import { parseVoiceTag, SpeakerTracker, type VoiceTag } from "./voice-speakers";
+import {
+  parseVoiceTag,
+  SpeakerTracker,
+  type VoiceTag,
+  withoutPrints,
+} from "./voice-speakers";
 import type { CompanionMcpConfig } from "./voice-tools";
 
 /**
@@ -1255,7 +1260,8 @@ export class VoiceHelper {
     if (event.event === "final" && event.voice !== undefined) {
       const voice = parseVoiceTag(event.voice);
       this.speakers.observe(voice);
-      if (voice) event.voice = voice;
+      // The prints stay here: the page gets the rest, and sends it back.
+      if (voice) event.voice = withoutPrints(voice);
       else delete event.voice;
     }
     if (typeof event.session === "number") {
@@ -1371,7 +1377,10 @@ export class VoiceHelper {
   ): VoiceSession {
     const id = this.nextSession++;
     this.listeners.set(id, { helper: this.start(), onEvent });
-    const user = options.newSpeaker ? null : this.speakers.user();
+    // A new call knows the user by the prints kept of them only.
+    const user = options.newSpeaker
+      ? this.speakers.keptUser()
+      : this.speakers.user();
     this.send({
       op: "listen_start",
       session: id,

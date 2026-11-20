@@ -1,8 +1,10 @@
 import { describe, expect, jest, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createVoiceRoutes, VOICE_REQUEST_HEADER } from "../http/voice";
+import { near, person } from "./testdata/prints";
+import { VoiceProfiles } from "./voice-profiles";
 import { createVoiceSocket, DETACHED_MS, KEPT_MS } from "../http/voice-socket";
 import {
   encodeFrame,
@@ -312,6 +314,7 @@ describe("voice helper", () => {
       mixed: false,
       mix: [{ id: "B", share: 0.9 }],
       similarity: { A: 0.05, B: 0.61 },
+      seconds: 2.2,
     });
     expect(heard[1]).not.toHaveProperty("voice");
     expect(helper.speakers.label(heard[0]!.voice as never)).toBe("voice B");
@@ -332,6 +335,60 @@ describe("voice helper", () => {
       hold: false,
       new_speaker: true,
     });
+  });
+
+  test("finals' prints stay on the server; a new call is told the user's kept prints", async () => {
+    const root = mkdtempSync(join(tmpdir(), "roamgate-helper-voices-"));
+    try {
+      const library = new VoiceProfiles(join(root, "voice-profiles"));
+      const me = library.create("Thibault", "user");
+      library.learn(me, 1, person(0), 30);
+      const fake = fakeHelper();
+      const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+      helper.speakers.useLibrary(library);
+      const heard: Record<string, unknown>[] = [];
+      const call = helper.listen((event) => heard.push(event), {
+        newSpeaker: true,
+      });
+      const child = fake.spawned[0]!;
+      // The user's prints go with the new call's start, before any word.
+      const start = requests(child.frames).at(-1) as {
+        user_voice?: { prints?: number[][]; id?: string };
+      };
+      expect(start.user_voice?.id).toBeUndefined();
+      expect(start.user_voice?.prints?.length).toBe(1);
+      const print = near(person(0), 0.02, 1);
+      child.say({
+        event: "final",
+        session: call.id,
+        text: "Salut",
+        voice: {
+          voices: 9,
+          id: "A",
+          share: 1,
+          mixed: false,
+          mix: [{ id: "A", share: 1 }],
+          similarity: { A: 0.7 },
+          seconds: 4,
+          print,
+          prints: { A: print },
+        },
+      });
+      await Bun.sleep(1);
+      const voice = heard[0]!.voice as Record<string, unknown>;
+      expect(voice).not.toHaveProperty("print");
+      expect(voice).not.toHaveProperty("prints");
+      expect(voice.utterance).toBe(1);
+      expect(helper.speakers.label(voice as never)).toBe("Thibault (you) 0.70");
+      // Known from the first utterance: told with the next start.
+      const next = helper.listen(() => {});
+      expect(requests(child.frames).at(-1)).toMatchObject({
+        session: next.id,
+        user_voice: { voices: 9, id: "A", prints: expect.any(Array) },
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("a helper that stops ends each session on its own, and starts again", async () => {

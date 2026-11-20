@@ -95,8 +95,8 @@ pub enum Command {
         new_speaker: bool,
         /// The call whose microphone it hears (call.rs), not the socket's.
         call: Option<u32>,
-        /// The user's voice, as the server learnt it: (set, name).
-        user_voice: Option<(u64, String)>,
+        /// The user's voice, as the server knows it.
+        user_voice: Option<crate::voices::User>,
     },
     Audio {
         id: u32,
@@ -298,8 +298,9 @@ struct State {
     language: Option<String>,
     /// whispertranscriber, which takes the language as a property.
     whisper: Option<gst::Element>,
-    /// The user's voice as the server learnt it: (set of voices, name).
-    user_voice: Option<(u64, String)>,
+    /// The user's voice as the server knows it: its name among this
+    /// call's voices, the prints kept of it.
+    user_voice: Option<crate::voices::User>,
     /// A reply or the call's music plays (the gate holds).
     held: bool,
     /// Voices are told apart here, and none dropped by the gate: an
@@ -390,7 +391,8 @@ impl State {
             pending.unconfirmed = false;
             eprintln!(
                 "[voice] session {}: the user's voice ({}) came: the utterance is told",
-                pending.id, user.1
+                pending.id,
+                user.id_in(set).unwrap_or("their kept prints")
             );
             (self.emit)(json!({"event": "speech_start", "session": pending.id}));
         }
@@ -432,7 +434,10 @@ impl State {
                 } else if unconfirmed {
                     eprintln!(
                         "[voice] session {id}: a voice while something plays: transcribed, told as it goes once it sounds like the user's ({})",
-                        self.user_voice.as_ref().map_or("", |user| user.1.as_str())
+                        self.user_voice
+                            .as_ref()
+                            .and_then(|user| user.id.as_deref())
+                            .unwrap_or("known by their kept prints")
                     );
                 } else {
                     (self.emit)(json!({"event": "speech_start", "session": id}));
@@ -1393,7 +1398,7 @@ mod tests {
         let (mut state, events) = recording();
         state.waits_for_user = true;
         state.held = true;
-        state.user_voice = Some((5, "A".into()));
+        state.user_voice = Some(crate::voices::User::named(5, "A"));
         let start = |id: u32| {
             gst::Structure::builder("speechgate-speech-start")
                 .field("session", id)

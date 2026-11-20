@@ -12,9 +12,12 @@
 //! (`user_voice`). Each final carries what this module made of its
 //! utterance (`voice`): the voice most heard in it and its share, whether
 //! two voices were heard in it (`mixed`: in turn, or over each other), and
-//! how close the utterance is to each voice known. The voices are
-//! forgotten with each new speaker (a new call): nothing is kept across
-//! calls.
+//! how close the utterance is to each voice known, with the prints the
+//! server needs to know the voices again on later calls: the utterance's
+//! (`print`) and each voice's in it (`prints`). The voices are forgotten
+//! with each new speaker (a new call): the server keeps what it learnt of
+//! people across calls (server/src/voice/voice-profiles.ts), never audio,
+//! and tells the user's prints with `user_voice` from the first word.
 //!
 //! The embedding is speechgate's (its speaker check), done again here on
 //! what the gate lets through, so the gate need not keep one voice.
@@ -295,6 +298,20 @@ pub struct Summary {
     /// Voices found to be one since the last summary: (gone, kept).
     pub merged: Vec<(String, String)>,
     pub seconds: f32,
+    /// The whole utterance's print (unit length), empty when none.
+    pub print: Vec<f32>,
+    /// The print of each voice heard in it, as it stands now.
+    pub prints: Vec<(String, Vec<f32>)>,
+}
+
+/// A print in a final: four decimals keep its cosines to 1e-3.
+fn print_json(print: &[f32]) -> Value {
+    Value::Array(
+        print
+            .iter()
+            .map(|v| json!((f64::from(*v) * 10_000.0).round() / 10_000.0))
+            .collect(),
+    )
 }
 
 impl Summary {
@@ -319,6 +336,16 @@ impl Summary {
         });
         if !merged.is_empty() {
             value["merged"] = Value::Object(merged);
+        }
+        if !self.print.is_empty() {
+            value["print"] = print_json(&self.print);
+        }
+        if !self.prints.is_empty() {
+            let mut prints = Map::new();
+            for (name, print) in &self.prints {
+                prints.insert(name.clone(), print_json(print));
+            }
+            value["prints"] = Value::Object(prints);
         }
         value
     }
@@ -516,11 +543,25 @@ impl Voices {
                 *w += e * stretch.seconds;
             }
         }
-        let similarity = if stretches.is_empty() {
+        let print = if stretches.is_empty() || whole.is_empty() {
             Vec::new()
         } else {
-            self.scores(&unit(whole))
+            unit(whole)
         };
+        let similarity = if print.is_empty() {
+            Vec::new()
+        } else {
+            self.scores(&print)
+        };
+        let prints = mix
+            .iter()
+            .filter_map(|(name, _)| {
+                self.voices
+                    .iter()
+                    .find(|voice| voice.name == *name)
+                    .map(|voice| (name.clone(), voice.print.clone()))
+            })
+            .collect();
         let overlapped: f32 = stretches
             .iter()
             .filter(|s| s.overlapped)
@@ -547,6 +588,8 @@ impl Voices {
             similarity,
             merged,
             seconds,
+            print,
+            prints,
         }
     }
 }
@@ -761,17 +804,56 @@ impl Tracker {
     }
 }
 
-/// Whether a stretch sounds like `user` (the voice named so in set `set`):
-/// it went to that voice, or is close to it.
-pub fn sounds_like(stretch: &Stretch, set: u64, user: &(u64, String)) -> bool {
+/// The user's voice, as the server knows it (`listen_start`'s
+/// `user_voice`): its name among this call's voices (`voices`, `id`) once
+/// learnt, and the prints kept of it from earlier calls (`prints`), which
+/// tell it from the first word of a call.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct User {
+    pub voices: Option<u64>,
+    pub id: Option<String>,
+    pub prints: Vec<Vec<f32>>,
+}
+
+impl User {
+    /// A name in this call's voices, as told before profiles were kept.
+    pub fn named(voices: u64, id: &str) -> Self {
+        Self {
+            voices: Some(voices),
+            id: Some(id.to_string()),
+            prints: Vec::new(),
+        }
+    }
+
+    /// The name it has in set `set`, if any.
+    pub fn id_in(&self, set: u64) -> Option<&str> {
+        (self.voices == Some(set))
+            .then_some(self.id.as_deref())
+            .flatten()
+    }
+}
+
+/// Whether a stretch sounds like `user` (the voice named so in set `set`,
+/// or the prints kept of them): it went to that voice, or is close to it
+/// or to one of their prints.
+pub fn sounds_like(stretch: &Stretch, set: u64, user: &User) -> bool {
     const CLOSE: f32 = 0.30;
-    set == user.0
-        && stretch.seconds >= 0.4
-        && (stretch.voice.as_deref() == Some(user.1.as_str())
+    if stretch.seconds < 0.4 {
+        return false;
+    }
+    let named = user.id_in(set).is_some_and(|id| {
+        stretch.voice.as_deref() == Some(id)
             || stretch
                 .scores
                 .iter()
-                .any(|(name, score)| *name == user.1 && *score >= CLOSE))
+                .any(|(name, score)| name == id && *score >= CLOSE)
+    });
+    named
+        || (!stretch.embedding.is_empty()
+            && user.prints.iter().any(|print| {
+                print.len() == stretch.embedding.len()
+                    && similarity(print, &stretch.embedding) >= CLOSE
+            }))
 }
 
 #[cfg(test)]
@@ -1002,6 +1084,107 @@ mod tests {
         assert!(mixed.mixed, "{}", mixed.describe());
     }
 
+    /// Real voices on two calls: what the server's voice library
+    /// (voice-profiles.ts) compares. Each person's first half is heard on
+    /// a call, their second half on another (a new set of voices), the
+    /// second once as recorded and once through a phone's band with
+    /// noise (another microphone). Prints the cosine of each voice's print
+    /// on the second call to each voice's print on the first: the same
+    /// person against the others, and the margin. SPEAKER_MODEL and
+    /// VOICES_F32 as for real_voices_are_told_apart.
+    #[test]
+    #[ignore]
+    fn real_voices_are_known_again_on_another_call() {
+        let mut embedder = Embedder::load(&std::env::var("SPEAKER_MODEL").unwrap()).unwrap();
+        let people: Vec<Vec<f32>> = std::env::var("VOICES_F32")
+            .unwrap()
+            .split(',')
+            .map(|path| {
+                std::fs::read(path)
+                    .unwrap()
+                    .chunks_exact(4)
+                    .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    .collect()
+            })
+            .collect();
+        let mut hear = |voices: &mut Voices, samples: &[f32]| {
+            let mut cutter = Cutter::default();
+            let mut stretches = cutter.push(samples);
+            stretches.extend(cutter.end());
+            for stretch in stretches {
+                if let Some(embedding) = embedder.embed(&stretch).unwrap() {
+                    voices.place(embedding, stretch.len() as f32 / RATE as f32);
+                }
+            }
+            voices.end()
+        };
+        let part = |person: &Vec<f32>, second: bool| {
+            let (middle, end) = (person.len() * 2 / 5, person.len() * 4 / 5);
+            if second {
+                person[middle..end].to_vec()
+            } else {
+                person[..middle].to_vec()
+            }
+        };
+        // A phone's band (300 Hz to 3.4 kHz, roughly) and some noise.
+        let phone = |samples: Vec<f32>| -> Vec<f32> {
+            let (mut low, mut high, mut last, mut state) = (0f32, 0f32, 0f32, 7u32);
+            samples
+                .iter()
+                .map(|&x| {
+                    low += 0.55 * (x - low);
+                    high = 0.89 * (high + low - last);
+                    last = low;
+                    state ^= state << 13;
+                    state ^= state >> 17;
+                    state ^= state << 5;
+                    high + 0.004 * ((state as f32 / u32::MAX as f32) * 2.0 - 1.0)
+                })
+                .collect()
+        };
+        // Each person's print from a call of their own.
+        let kept: Vec<Vec<f32>> = people
+            .iter()
+            .enumerate()
+            .map(|(i, person)| {
+                let mut first = Voices::new(i as u64 + 10);
+                let summary = hear(&mut first, &part(person, false));
+                summary.prints[0].1.clone()
+            })
+            .collect();
+        for (i, a) in kept.iter().enumerate() {
+            let row: Vec<f32> = kept.iter().map(|b| similarity(a, b)).collect();
+            println!("first calls, person {i} against each: {row:.2?}");
+        }
+        for (how, through) in [("as recorded", false), ("through a phone", true)] {
+            println!("second call, {how}:");
+            for (i, person) in people.iter().enumerate() {
+                let samples = part(person, true);
+                let samples = if through { phone(samples) } else { samples };
+                let mut second = Voices::new(i as u64 + 20);
+                let summary = hear(&mut second, &samples);
+                let Some((_, print)) = summary.prints.first() else {
+                    println!("  person {i}: no voice");
+                    continue;
+                };
+                let scores: Vec<f32> = kept.iter().map(|k| similarity(k, print)).collect();
+                let others = scores
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, _)| *j != i)
+                    .map(|(_, s)| *s)
+                    .fold(f32::MIN, f32::max);
+                let words: Vec<f32> = kept.iter().map(|k| similarity(k, &summary.print)).collect();
+                println!(
+                    "  person {i}: voice {:?} own {:.2}, best other {others:.2}, margin {:.2}; all {scores:.2?}; utterance {words:.2?}",
+                    summary.voice,
+                    scores[i],
+                    scores[i] - others
+                );
+            }
+        }
+    }
+
     /// Voices past the 26th are named AA, AB...
     #[test]
     fn voices_are_named_in_order() {
@@ -1053,6 +1236,8 @@ mod tests {
             similarity: Vec::new(),
             merged: Vec::new(),
             seconds,
+            print: Vec::new(),
+            prints: Vec::new(),
         };
         assert_eq!(tracker.take(), None);
         tracker.end();
@@ -1077,6 +1262,8 @@ mod tests {
             similarity: vec![("A".into(), 0.584), ("B".into(), 0.071)],
             merged: vec![("C".into(), "A".into())],
             seconds: 4.1,
+            print: vec![0.6, 0.8],
+            prints: vec![("A".into(), vec![0.123_456, -0.992_36])],
         };
         assert_eq!(
             summary.to_json(),
@@ -1084,7 +1271,8 @@ mod tests {
                 "voices": 7, "id": "A", "share": 0.76, "mixed": true,
                 "mix": [{"id": "A", "share": 0.76}, {"id": "B", "share": 0.24}],
                 "similarity": {"A": 0.58, "B": 0.07},
-                "merged": {"C": "A"}, "seconds": 4.1
+                "merged": {"C": "A"}, "seconds": 4.1,
+                "print": [0.6, 0.8], "prints": {"A": [0.1235, -0.9924]}
             })
         );
     }
@@ -1093,7 +1281,7 @@ mod tests {
     /// close to it, in the same set of voices only.
     #[test]
     fn a_stretch_sounds_like_the_user() {
-        let user = (3, "A".to_string());
+        let user = User::named(3, "A");
         let stretch = |voice: &str, a: f32| Stretch {
             seconds: 1.0,
             voice: Some(voice.into()),
@@ -1105,5 +1293,40 @@ mod tests {
         assert!(sounds_like(&stretch("B", 0.35), 3, &user));
         assert!(!sounds_like(&stretch("B", 0.1), 3, &user));
         assert!(!sounds_like(&stretch("A", 0.5), 4, &user));
+    }
+
+    /// The prints kept of the user from earlier calls tell their voice
+    /// before this call has learnt which voice is theirs.
+    #[test]
+    fn a_stretch_sounds_like_the_users_kept_prints() {
+        let user = User {
+            prints: vec![voice(0)],
+            ..User::default()
+        };
+        let stretch = |embedding: Vec<f32>| Stretch {
+            seconds: 1.0,
+            voice: Some("A".into()),
+            scores: Vec::new(),
+            overlapped: false,
+            embedding,
+        };
+        assert!(sounds_like(&stretch(near(&voice(0), 0.3, 1)), 9, &user));
+        assert!(!sounds_like(&stretch(near(&voice(1), 0.3, 2)), 9, &user));
+    }
+
+    /// Each final carries the utterance's print and the print of each
+    /// voice in it, for the server to know them on later calls.
+    #[test]
+    fn a_summary_carries_the_prints() {
+        let mut voices = Voices::new(1);
+        let summary = summary_of(&mut voices, &[(0, 1, 1.5), (0, 2, 1.5)]);
+        assert_eq!(summary.prints.len(), 1);
+        assert_eq!(summary.prints[0].0, "A");
+        let (kept, heard) = (&summary.prints[0].1, &summary.print);
+        assert!(similarity(kept, &voice(0)) > 0.6);
+        assert!(similarity(kept, &voice(0)) > similarity(kept, &voice(1)) + 0.3);
+        assert!(similarity(heard, &voice(0)) > 0.6);
+        let empty = voices.end();
+        assert!(empty.print.is_empty() && empty.prints.is_empty());
     }
 }

@@ -10,8 +10,10 @@
 //!   heard since a `new_speaker` start are told apart (`voices`), each
 //!   final saying whose it is (`"voice": {"voices": ..., "id": "A",
 //!   "share": 0.9, "mixed": false, "mix": [...], "similarity": {"A": 0.6}}`),
-//!   and `user_voice` (the server's guess) keeps other voices from cutting
-//!   a reply; with `--drop-other-voices` too, only the voice of whoever
+//!   and `user_voice` (the server's guess: `voices` and `id` once known on
+//!   the call, `prints` kept of the user from earlier calls) keeps other
+//!   voices from cutting a reply; finals carry the prints the server keeps
+//!   (`print`, the utterance's, and `prints`, each voice's in it); with `--drop-other-voices` too, only the voice of whoever
 //!   spoke first since a `new_speaker` start counts, others silenced;
 //! - `{"op": "listen_release", "session": 3}` once a reply stops playing;
 //! - `{"op": "listen_finish", "session": 3}` ends the utterance now,
@@ -186,8 +188,13 @@ struct Request {
 /// The user's voice: its name in a set of voices told apart (voices.rs).
 #[derive(Deserialize)]
 struct UserVoice {
-    voices: u64,
-    id: String,
+    #[serde(default)]
+    voices: Option<u64>,
+    #[serde(default)]
+    id: Option<String>,
+    /// The prints kept of the user from earlier calls (voice-profiles.ts).
+    #[serde(default)]
+    prints: Vec<Vec<f32>>,
 }
 
 /// The call playing now, if any.
@@ -1176,7 +1183,11 @@ fn main() {
                     language: request.language,
                     new_speaker: request.new_speaker,
                     call: request.call,
-                    user_voice: request.user_voice.map(|user| (user.voices, user.id)),
+                    user_voice: request.user_voice.map(|user| voices::User {
+                        voices: user.voices,
+                        id: user.id,
+                        prints: user.prints,
+                    }),
                 });
                 Ok(())
             }

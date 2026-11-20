@@ -783,14 +783,42 @@ utterance is transcribed and given to the companion with who said it:
 learnt from the conversation, never from the first sound heard: the voice
 whose words the companion takes up (answers, passes on, looks up) is
 yours, one whose words it leaves is not, and the companion can say so
-itself (as after asking "c'était pour moi ?"). Nothing is kept across
-calls. The companion answers you and leaves background voices (a radio, a
-TV, people nearby) unless they clearly speak to it; while a reply or the
-call's music plays, only your voice cuts it. Without a companion, words of
-a voice clearly not yours are held, not sent. The log has one line per
+itself (as after asking "c'était pour moi ?"). The companion answers you
+and leaves background voices (a radio, a TV, people nearby) unless they
+clearly speak to it; while a reply or the call's music plays, only your
+voice cuts it. Without a companion, words of a voice clearly not yours, or
+of someone else known, are held, not sent. The log has one line per
 utterance (`voice B (92%) in 3.1 s of voice [...], similarity: A 0.05,
 B 0.71`), each stretch's scores with `ROAMGATE_VOICE_DEBUG`, and the
-label and route of each turn in the voice debug log.
+label, route and any name given of each turn in the voice debug log.
+
+Voice profiles: the voices heard often are kept across calls, so the
+companion knows you and the people around you by name: `[Thibault (you) 0.91]`, `[Simon 0.84]`,
+`[voice C, maybe Simon 0.52]`, `[voice C, unknown]`, `[mixed: you +
+Simon]`, with every score behind the label beside it. Your own profile
+makes your voice "you" from your first words on a call, and is told to the
+helper so that only your voice cuts a reply from the start. Names come
+from the conversation: "c'est Simon qui parle", "that was my daughter Elo",
+"moi c'est Thibault"; saying a name is wrong ("non, c'est Oli") corrects
+it, and what the wrong person learnt from that call is undone. A voice no
+one is, heard for a while on several calls, is kept unnamed, and the
+companion asks once who it is.
+
+Each person is one file in `~/.config/roamgate/voice-profiles/` (or
+`%APPDATA%\roamgate\voice-profiles\` on Windows), private to your user:
+a name, a role (`user`, `family`, `other`, or `unknown` for a voice not
+named yet), how much and when they were heard, and up to six voice prints,
+about one per microphone or room (the phone, a headset, the desktop). A
+print is a speaker embedding (256 numbers from the WeSpeaker model)
+averaged over many seconds of confident speech: no audio is ever kept.
+Voice prints are biometric data. They stay on this machine, are never
+sent anywhere but to the local voice helper, and are only learnt from
+utterances of one voice, unmixed, that are surely that person's.
+
+To forget a person, delete their file (`grep -l '"name":"Simon"'
+~/.config/roamgate/voice-profiles/*.json` finds it); to forget every voice,
+delete the directory. A file deleted while the server runs stays deleted:
+the next call reads the directory again and nothing is written back.
 
 In noisy places, `"drop_other_voices": true` goes back to keeping one
 voice: only the voice of whoever speaks first in a voice chat counts (learnt from

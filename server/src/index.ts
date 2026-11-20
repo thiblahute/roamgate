@@ -198,6 +198,7 @@ import {
   writeFrontMode,
 } from "./voice/voice-helper";
 import { VoiceLibrary } from "./voice/voice-library";
+import { VoiceProfiles, voiceProfilesDir } from "./voice/voice-profiles";
 import {
   createUpdateHandlers,
   UPDATE_HTTP_IDLE_TIMEOUT_SECONDS,
@@ -379,6 +380,8 @@ const webPush = createWebPushService({
 });
 // Voice chat's helper starts on the first voice request.
 const voiceHelper = new VoiceHelper(() => readVoiceConfig());
+// The people whose voices calls know again (voice-profiles.ts).
+voiceHelper.speakers.useLibrary(new VoiceProfiles(voiceProfilesDir()));
 // Work said by voice on sessions (errands): their processes stay up
 // while it runs (idle stop).
 const voiceErrands = new VoiceErrands({

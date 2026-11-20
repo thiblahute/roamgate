@@ -9,6 +9,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CompanionMemoryFiles } from "../voice/voice-memory-files";
+import { parseVoiceTag, withoutPrints } from "../voice/voice-speakers";
 import { callMusic, createVoiceRoutes } from "./voice";
 
 const helper = {
@@ -600,6 +601,83 @@ describe("the voice front", () => {
       "you 0.61",
     ]);
     expect(speakers.user()).toEqual({ voices: 9, id: "B" });
+  });
+
+  test("the front sees every voice score, and names a voice for later calls", async () => {
+    const { SpeakerTracker } = await import("../voice/voice-speakers");
+    const { VoiceProfiles } = await import("../voice/voice-profiles");
+    const { person } = await import("../voice/testdata/prints");
+    const root = mkdtempSync(join(tmpdir(), "roamgate-voice-naming-"));
+    try {
+      const library = new VoiceProfiles(join(root, "voice-profiles"));
+      const speakers = new SpeakerTracker(library);
+      const voiced = { ...helper, speakers } as unknown as VoiceHelper;
+      const heard: { voice?: string; voices?: string }[] = [];
+      let reply: Record<string, unknown> = {
+        to: "self",
+        reply: "Salut Simon !",
+        naming: { name: "Simon", role: "family" },
+      };
+      const front = {
+        warm: () => {},
+        turn: async (request: { voice?: string; voices?: string }) => {
+          heard.push({ voice: request.voice, voices: request.voices });
+          return reply;
+        },
+      } as unknown as VoiceFront;
+      const routes = createVoiceRoutes(
+        voiced,
+        () => unused,
+        null,
+        () => undefined,
+        null,
+        () => front,
+      );
+      // What the helper said, as the page sends it back: prints kept here.
+      const final = {
+        voices: 11,
+        id: "C",
+        share: 1,
+        mixed: false,
+        mix: [{ id: "C", share: 1 }],
+        similarity: { C: 0.7 },
+        seconds: 4,
+        print: person(2),
+        prints: { C: person(2) },
+      };
+      const tag = parseVoiceTag(final)!;
+      speakers.observe(tag);
+      const ask = async (said: string) =>
+        (await (await routes(
+          post(
+            {
+              current: "local/w2:p2",
+              said,
+              sessions: [],
+              voice: withoutPrints(tag),
+              routes: ["current", "send", "self", "nobody"],
+            },
+            { "x-roamgate-voice": "1" },
+          ),
+          "/api/voice/route",
+        ))!.json()) as Record<string, unknown>;
+      // The naming is not passed on to the page.
+      expect(await ask("C'est Simon !")).toEqual({
+        to: "self",
+        reply: "Salut Simon !",
+      });
+      expect(heard[0]).toEqual({
+        voice: "voice C",
+        voices: "voices in it: C 100% | against this call's voices: C 0.70",
+      });
+      expect(library.byName("Simon")?.role).toBe("family");
+      reply = { to: "self", reply: "Oui ?" };
+      await ask("Tu m'entends ?");
+      expect(heard[1]!.voice).toMatch(/^Simon/);
+      expect(heard[1]!.voices).toContain("C 100% is Simon");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("lists what was routed to nobody, and routes a skipped sentence when the front recovers it", async () => {

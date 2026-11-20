@@ -445,7 +445,13 @@ Inspector state is scoped to each checkout; see
   (a radio, a TV, someone nearby), or both. It learns which voice is yours
   from the conversation (the voice it answers, or that tells it "c'est
   moi"), answers you, leaves background voices unless they clearly speak
-  to it, and asks briefly when unsure. Only your voice cuts a reply. For
+  to it, and asks briefly when unsure. Only your voice cuts a reply. The
+  voices heard often are kept across calls on this machine, as voice
+  prints, never audio: you are known from your first words, and the people
+  around you by the names you give them on a call ("c'est Simon qui
+  parle"), corrected the same way (voice profiles in
+  [deployment](docs/DEPLOYMENT.md#voice-chat): where they are kept and how
+  to delete them). For
   noisy places, `drop_other_voices` keeps only the first voice heard in a
   voice chat (its first two seconds of speech), other voices left out;
   with recordings of your voice (`speaker_reference`), yours is the one
