@@ -531,9 +531,13 @@ impl Tube {
         if let Some(duration) = pipeline.query_duration::<gst::ClockTime>() {
             at = at.min((duration.seconds_f64() - 1.0).max(0.0));
         }
+        // ACCURATE: matroskademux goes to the cluster before the target,
+        // then drops what comes before it. KEY_UNIT stopped on the
+        // cluster (YouTube's are ~10 s apart: 60 s answered 50 s). Every
+        // Opus packet is a key unit, so nothing is lost by it.
         pipeline
             .seek_simple(
-                gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
+                gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
                 gst::ClockTime::from_nseconds((at * 1e9) as u64),
             )
             .map_err(|_| "this video cannot seek".to_string())?;
@@ -715,6 +719,12 @@ mod tests {
 
     /// `seconds` of a `freq` sine as WebM with Opus, as YouTube serves it.
     fn webm(seconds: u32, freq: u32) -> Vec<u8> {
+        webm_clustered(seconds, freq, 1)
+    }
+
+    /// The same, in clusters of `cluster` seconds (YouTube's are ~10 s):
+    /// a seek's target may fall between them.
+    fn webm_clustered(seconds: u32, freq: u32, cluster: u64) -> Vec<u8> {
         init();
         static COUNT: AtomicU64 = AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
@@ -724,8 +734,9 @@ mod tests {
         ));
         let pipeline = gst::parse::launch(&format!(
             "audiotestsrc wave=sine freq={freq} volume=0.5 num-buffers={} samplesperbuffer=960 ! \
-             audio/x-raw,rate=48000,channels=2 ! opusenc ! webmmux ! filesink name=out",
-            seconds * 50
+             audio/x-raw,rate=48000,channels=2 ! opusenc ! webmmux max-cluster-duration={} ! filesink name=out",
+            seconds * 50,
+            cluster * 1_000_000_000
         ))
         .unwrap()
         .downcast::<gst::Pipeline>()
@@ -976,6 +987,26 @@ mod tests {
         let mut none = request("play");
         none.url = "file:///etc/passwd".into();
         assert!(ask(&call, &events, none, &no_pause()).is_err());
+    }
+
+    /// A seek lands where it was asked, not on the cluster before it, and
+    /// answers the position it went to.
+    #[test]
+    fn a_seek_between_clusters_lands_on_its_target() {
+        let (url, _seen) = serve(webm_clustered(20, 440, 5));
+        let (call, events) = start("");
+        let mut play = request("play");
+        play.url = format!("{url}/video.webm");
+        ask(&call, &events, play, &no_pause()).unwrap();
+        let mut seek = request("seek");
+        seek.position = Some(12.3);
+        let answer = ask(&call, &events, seek, &no_pause()).unwrap();
+        let at = answer["position"].as_f64().unwrap();
+        assert!((at - 12.3).abs() < 0.3, "answered {answer}");
+        std::thread::sleep(Duration::from_millis(500));
+        let status = ask(&call, &events, request("status"), &no_pause()).unwrap();
+        let now = status["position"].as_f64().unwrap();
+        assert!(now > 12.4 && now < 13.3, "then at {status}");
     }
 
     /// The background records the sink the Spotify app plays into: its
