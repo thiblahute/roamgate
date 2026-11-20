@@ -1,5 +1,6 @@
 import {
   Bot,
+  Check,
   ChevronDown,
   ChevronRight,
   HelpCircle,
@@ -7,6 +8,8 @@ import {
   Minimize2,
   Plus,
   RefreshCw,
+  Search,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 import {
@@ -24,46 +27,68 @@ import {
   WORK_STATES,
   type WorkItem,
   type WorkLink,
+  type WorkProject,
   type WorkState,
-  workTagsOf,
 } from "../../../shared/work";
 import { openAgentTask } from "../agentTasksOpen";
 import { useLayoutPreferences } from "../layoutPreferences";
 import { openMrReviews } from "../mrReviewsOpen";
 import { requestReviewShown, useReviewState } from "../review";
-import { TASK_NOTIFICATION_ACTIVATE_EVENT } from "../store";
+import {
+  shallowEqual,
+  type State,
+  TASK_NOTIFICATION_ACTIVATE_EVENT,
+  useStoreSelector,
+} from "../store";
+import { useSystemBack } from "../systemBack";
 import { useWorkBoard, workCall } from "../work";
+import {
+  projectForWorkspace,
+  readWorkScopeMemory,
+  rememberWorkScope,
+  WORK_SCOPE_ALL,
+  type WorkScope,
+  type WorkWorkspace,
+  workScopeFor,
+  workspaceScopeKey,
+  workTagCounts,
+  workTopTags,
+} from "../workScope";
+import { MobileSheetHandle } from "./MobileSheetHandle";
 import { WorkItemThreads } from "./WorkItemThreads";
 import "./WorkPanel.css";
 
 /**
  * The Work board: the user's work items in columns by state (For you,
- * Doing, Verify, Open, Done), one project at a time, filtered by tags.
- * Each card is an item: its title, tags, owner (a session or its
- * subagent, whose work opens from the card), links; the selected card
- * shows its actions and its thread, whose comments go to the owner. The
- * inbox's keys work here; columns side by side when the panel is wide,
- * one list on a phone.
+ * Doing, Verify, Open, Done), the project of the workspace the page shows
+ * (or the one chosen there, or all), filtered by tags and words. Each
+ * card is an item: its title, tags, owner (a session or its subagent,
+ * whose work opens from the card), links; the selected card shows its
+ * actions and its thread, whose comments go to the owner. The inbox's
+ * keys work here; columns side by side when the panel is wide, one list
+ * on a phone.
  */
 
 /** From this width the columns stand side by side. */
 const WIDE_MIN = 2 * 300 + 12 + 24;
-const PROJECT_KEY = "roamgate.work.project";
+const NO_ITEMS: WorkItem[] = [];
+const NO_PROJECTS: WorkProject[] = [];
 
-function remembered(): string | null {
-  try {
-    return localStorage.getItem(PROJECT_KEY);
-  } catch {
-    return null;
-  }
+function selectWorkWorkspace(state: State): WorkWorkspace | null {
+  const workspace = state.workspaces.find((each) => each.focused);
+  if (!workspace) return null;
+  return {
+    connectionId: state.activeConnectionId,
+    workspaceId: workspace.workspace_id,
+    label: workspace.label,
+    checkoutPath: workspace.worktree?.checkout_path ?? workspace.cwd ?? null,
+    repoRoot: workspace.worktree?.repo_root ?? null,
+  };
 }
 
-function remember(project: string) {
-  try {
-    localStorage.setItem(PROJECT_KEY, project);
-  } catch {
-    // Private mode: the first project next time.
-  }
+/** The workspace the page shows, as the board scopes by it. */
+export function useWorkWorkspace(): WorkWorkspace | null {
+  return useStoreSelector(selectWorkWorkspace, shallowEqual);
 }
 
 /** "3 min ago", "2 h ago", "4 d ago". */
@@ -160,6 +185,7 @@ const HELP: [string, string][] = [
   ["dd", "done"],
   ["a", "add an item"],
   ["/", "search"],
+  ["f", "the tag filters"],
   ["za", "fold the column"],
   ["Esc", "close"],
 ];
@@ -174,6 +200,7 @@ export function WorkPanel({
   const { mobile } = useLayoutPreferences();
   const { board, error, reload } = useWorkBoard();
   const reviews = useReviewState();
+  const workspace = useWorkWorkspace();
   const panelRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const stateRef = useRef<HTMLSelectElement>(null);
@@ -181,9 +208,17 @@ export function WorkPanel({
   const [maximized, setMaximized] = useState(false);
   const width = useWidth(panelRef, !mobile);
   const wide = !mobile && width >= WIDE_MIN;
-  const [project, setProject] = useState<string | null>(remembered);
+  const [memory, setMemory] = useState(() => readWorkScopeMemory());
+  /** The scope chosen on this board, for the workspace it was chosen in. */
+  const [choice, setChoice] = useState<{
+    key: string;
+    scope: WorkScope;
+  } | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [query, setQuery] = useState("");
+  /** The phone's search, opened from its icon: the head is the box then. */
+  const [searching, setSearching] = useState(false);
+  const [filters, setFilters] = useState(false);
   const [folded, setFolded] = useState<Set<WorkState>>(() => new Set(["done"]));
   const [selected, setSelected] = useState<string | null>(initialItem ?? null);
   const [compose, setCompose] = useState<"comment" | "reply" | null>(null);
@@ -191,25 +226,63 @@ export function WorkPanel({
   const [help, setHelp] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const pendingKey = useRef("");
+  // The phone's Back closes the filters, then the search, then the board.
+  useSystemBack(filters, () => setFilters(false), "popup");
+  const searchShown = !mobile || searching || query !== "";
+  const closeSearch = useCallback(() => {
+    setSearching(false);
+    setQuery("");
+  }, []);
+  useSystemBack(mobile && searchShown, closeSearch, "popup");
+  useEffect(() => {
+    if (searching) searchRef.current?.focus({ preventScroll: true });
+  }, [searching]);
+  useSystemBack(true, () => onClose(), "panel");
 
-  const projects = board?.projects ?? [];
-  const currentProject =
-    project && projects.some((each) => each.id === project)
-      ? project
-      : (projects[0]?.id ?? null);
+  const projects = board?.projects ?? NO_PROJECTS;
+  const boardItems = board?.items ?? NO_ITEMS;
+  const workspaceKey = workspace ? workspaceScopeKey(workspace) : "";
+  const openedOn = useMemo(
+    () =>
+      initialItem ? boardItems.find((each) => each.id === initialItem) : null,
+    [initialItem, boardItems],
+  );
+  const resolved = useMemo(
+    () => workScopeFor({ workspace, projects, memory, item: openedOn }),
+    [workspace, projects, memory, openedOn],
+  );
+  /** The project shown, or null for all of them. */
+  const scope: WorkScope =
+    choice && choice.key === workspaceKey ? choice.scope : resolved.scope;
+  const ownProject = useMemo(
+    () => projectForWorkspace(workspace, projects),
+    [workspace, projects],
+  );
+  const scopeProject = scope
+    ? (projects.find((each) => each.id === scope) ?? null)
+    : null;
+  const choose = (next: WorkScope) => {
+    setChoice({ key: workspaceKey, scope: next });
+    setMemory((current) => rememberWorkScope(current, workspace, next));
+    setTags([]);
+    setSelected(null);
+    setFilters(false);
+  };
   const projectItems = useMemo(
     () =>
-      (board?.items ?? []).filter(
-        (item) => !currentProject || item.project === currentProject,
-      ),
-    [board, currentProject],
+      scope ? boardItems.filter((item) => item.project === scope) : boardItems,
+    [boardItems, scope],
+  );
+  const tagCounts = useMemo(() => workTagCounts(projectItems), [projectItems]);
+  const topTags = useMemo(
+    () => workTopTags(tagCounts, tags),
+    [tagCounts, tags],
   );
   const tagChoices = useMemo(() => {
-    const used = workTagsOf(projectItems);
-    const suggested =
-      projects.find((each) => each.id === currentProject)?.tags ?? [];
+    const used = tagCounts.map(({ tag }) => tag);
+    const suggested = scopeProject?.tags ?? [];
     return [...used, ...suggested.filter((tag) => !used.includes(tag))];
-  }, [projectItems, projects, currentProject]);
+  }, [tagCounts, scopeProject]);
   const items = useMemo(
     () => filterWorkItems(projectItems, { tags, query }),
     [projectItems, tags, query],
@@ -219,19 +292,27 @@ export function WorkPanel({
     () => columns.filter((column) => !folded.has(column.state)),
     [columns, folded],
   );
-  const forYou = (board?.items ?? []).filter(
-    (item) => item.state === "you" && item.project === currentProject,
-  ).length;
+  const forYou = projectItems.filter((item) => item.state === "you").length;
+  const forYouAll = boardItems.filter((item) => item.state === "you").length;
+  const openCount = projectItems.filter((item) => item.state !== "done").length;
+  const projectName = (id: string) =>
+    projects.find((each) => each.id === id)?.name ?? id;
+  /** The scope's name in the head: the workspace's when it is its project. */
+  const scopeName = !board
+    ? null
+    : scope === null
+      ? projects.length > 1
+        ? "All projects"
+        : null
+      : workspace && ownProject?.id === scope
+        ? workspace.label
+        : projectName(scope);
 
   // An item asked for (a notification's link): its column unfolded, shown.
   useEffect(() => {
     if (!initialItem || !board) return;
     const item = board.items.find((each) => each.id === initialItem);
     if (!item) return;
-    if (item.project !== currentProject) {
-      setProject(item.project);
-      remember(item.project);
-    }
     setFolded((current) => {
       if (!current.has(item.state)) return current;
       const next = new Set(current);
@@ -243,7 +324,7 @@ export function WorkPanel({
         ?.querySelector(`[data-work-item="${item.id}"]`)
         ?.scrollIntoView({ block: "nearest" }),
     );
-  }, [initialItem, board, currentProject]);
+  }, [initialItem, board]);
 
   const back = useCallback(
     () =>
@@ -397,13 +478,18 @@ export function WorkPanel({
       markDone(selectedItem);
     else if (key === "za" && selectedItem) toggleFold(selectedItem.state);
     else if (key === "a") setAdding(true);
-    else if (key === "/") searchRef.current?.focus();
-    else if (key === "?") setHelp((current) => !current);
+    else if (key === "f") setFilters((current) => !current);
+    else if (key === "/") {
+      if (searchShown) searchRef.current?.focus();
+      else setSearching(true);
+    } else if (key === "?") setHelp((current) => !current);
     else if (key === "R") void reload();
     else if (key === "d" || key === "z" || key === "g") {
       pendingKey.current = key;
     } else if (key === "Escape") {
-      if (help) setHelp(false);
+      if (filters) setFilters(false);
+      else if (mobile && searchShown) closeSearch();
+      else if (help) setHelp(false);
       else if (adding) setAdding(false);
       else if (selected) setSelected(null);
       else onClose();
@@ -429,6 +515,8 @@ export function WorkPanel({
       ref={panelRef}
       className={`assistant-panel work-panel ${mobile ? "is-mobile" : maximized ? "is-maximized" : "is-floating"}${wide ? " is-wide" : ""}`}
       aria-label="Work"
+      data-workspace={workspaceKey || undefined}
+      data-scope={scope ?? WORK_SCOPE_ALL}
       tabIndex={-1}
       onKeyDown={onKey}
       onMouseDown={(event) => {
@@ -439,38 +527,101 @@ export function WorkPanel({
           );
       }}
     >
-      <header className="assistant-panel-head">
-        <div>
+      <header
+        className={`assistant-panel-head work-head${mobile && searchShown ? " is-searching" : ""}`}
+      >
+        <div className="work-title">
           <div className="assistant-panel-title">
             <strong>Work</strong>
+            {scopeName ? (
+              <span
+                className="work-scope-name"
+                title={
+                  scope
+                    ? `${projectName(scope)}${workspace && ownProject?.id === scope ? `: the project of ${workspace.label}` : ""}`
+                    : "Every project"
+                }
+              >
+                {scopeName}
+              </span>
+            ) : null}
           </div>
           <div className="work-status" role="status">
             {board
-              ? `${forYou} for you · ${projectItems.filter((item) => item.state !== "done").length} open`
+              ? `${forYou} for you · ${openCount} open${scope && forYouAll > forYou ? ` · ${forYouAll} for you in all` : ""}`
               : error
                 ? `Not loaded: ${error}`
                 : "Loading..."}
           </div>
         </div>
+        {searchShown ? (
+          <label className="work-search" aria-label="Search the items (/)">
+            <Search size={13} aria-hidden="true" />
+            <input
+              ref={searchRef}
+              type="search"
+              enterKeyHint="search"
+              placeholder="Search the items"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                  back();
+                }
+              }}
+            />
+          </label>
+        ) : null}
         <div className="work-head-actions">
-          <button
-            type="button"
-            className="assistant-icon-button"
-            aria-label="Add an item (a)"
-            title="Add an item (a)"
-            onClick={() => setAdding(true)}
-          >
-            <Plus size={16} />
-          </button>
-          <button
-            type="button"
-            className="assistant-icon-button"
-            aria-label="Read again (R)"
-            title="Read again (R)"
-            onClick={() => void reload()}
-          >
-            <RefreshCw size={15} />
-          </button>
+          {mobile && searchShown ? (
+            <button
+              type="button"
+              className="assistant-icon-button"
+              aria-label="Close the search"
+              title="Close the search"
+              onClick={() => {
+                closeSearch();
+                back();
+              }}
+            >
+              <X size={16} />
+            </button>
+          ) : null}
+          {mobile && !searchShown ? (
+            <button
+              type="button"
+              className="assistant-icon-button"
+              aria-label="Search the items"
+              title="Search the items"
+              onClick={() => setSearching(true)}
+            >
+              <Search size={16} />
+            </button>
+          ) : null}
+          {mobile && searchShown ? null : (
+            <button
+              type="button"
+              className="assistant-icon-button"
+              aria-label="Add an item (a)"
+              title="Add an item (a)"
+              onClick={() => setAdding(true)}
+            >
+              <Plus size={16} />
+            </button>
+          )}
+          {mobile && searchShown ? null : (
+            <button
+              type="button"
+              className="assistant-icon-button"
+              aria-label="Read again (R)"
+              title="Read again (R)"
+              onClick={() => void reload()}
+            >
+              <RefreshCw size={15} />
+            </button>
+          )}
           {mobile ? null : (
             <button
               type="button"
@@ -486,25 +637,29 @@ export function WorkPanel({
               {maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
           )}
-          <button
-            type="button"
-            className="assistant-icon-button"
-            aria-label="Keys (?)"
-            title="Keys (?)"
-            aria-pressed={help}
-            onClick={() => setHelp((current) => !current)}
-          >
-            <HelpCircle size={15} />
-          </button>
-          <button
-            type="button"
-            className="assistant-icon-button"
-            aria-label="Close (Esc)"
-            title="Close (Esc)"
-            onClick={() => onClose()}
-          >
-            <X size={16} />
-          </button>
+          {mobile ? null : (
+            <button
+              type="button"
+              className="assistant-icon-button"
+              aria-label="Keys (?)"
+              title="Keys (?)"
+              aria-pressed={help}
+              onClick={() => setHelp((current) => !current)}
+            >
+              <HelpCircle size={15} />
+            </button>
+          )}
+          {mobile && searchShown ? null : (
+            <button
+              type="button"
+              className="assistant-icon-button"
+              aria-label="Close (Esc)"
+              title="Close (Esc)"
+              onClick={() => onClose()}
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
       </header>
       <div className="work-body">
@@ -524,85 +679,107 @@ export function WorkPanel({
           </p>
         ) : null}
         <div className="work-filters">
-          {projects.length > 1 ? (
-            <div className="work-chips" role="group" aria-label="Project">
-              {projects.map((each) => (
-                <button
-                  key={each.id}
-                  type="button"
-                  className="work-chip"
-                  aria-pressed={each.id === currentProject}
-                  onClick={() => {
-                    setProject(each.id);
-                    remember(each.id);
-                    setTags([]);
-                    setSelected(null);
-                  }}
-                >
-                  {each.name}
-                  <small>
+          <div className="work-filter-row">
+            {projects.length > 1 ? (
+              <select
+                className="work-scope-select"
+                aria-label="Project"
+                title="The project shown: the workspace's, another, or all"
+                value={scope ?? WORK_SCOPE_ALL}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  choose(value === WORK_SCOPE_ALL ? null : value);
+                  back();
+                }}
+              >
+                <option value={WORK_SCOPE_ALL}>
+                  All projects (
+                  {boardItems.filter((item) => item.state !== "done").length})
+                </option>
+                {projects.map((each) => (
+                  <option key={each.id} value={each.id}>
+                    {each.name} (
                     {
-                      (board?.items ?? []).filter(
+                      boardItems.filter(
                         (item) =>
                           item.project === each.id && item.state !== "done",
                       ).length
                     }
-                  </small>
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {tagChoices.length ? (
-            <div className="work-chips" role="group" aria-label="Tags">
-              <span className="work-chips-label">Tags</span>
-              {tagChoices.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  className="work-chip"
-                  aria-pressed={tags.includes(tag)}
-                  onClick={() =>
-                    setTags((current) =>
-                      current.includes(tag)
-                        ? current.filter((each) => each !== tag)
-                        : [...current, tag],
                     )
-                  }
-                >
-                  {tag}
-                </button>
-              ))}
-              {tags.length ? (
-                <button
-                  type="button"
-                  className="work-chip"
-                  onClick={() => setTags([])}
-                >
-                  All
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          <label className="work-search">
-            <span className="work-chips-label">/</span>
-            <input
-              ref={searchRef}
-              type="search"
-              placeholder="Search the items"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  back();
-                }
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {tagCounts.length || tags.length ? (
+              <div className="work-tags-strip" role="group" aria-label="Tags">
+                {tags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    className="work-chip is-selected"
+                    aria-pressed="true"
+                    title={`Without ${tag}`}
+                    onClick={() =>
+                      setTags((current) =>
+                        current.filter((each) => each !== tag),
+                      )
+                    }
+                  >
+                    {tag}
+                    <X size={11} aria-hidden="true" />
+                  </button>
+                ))}
+                {topTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    className="work-chip"
+                    aria-pressed="false"
+                    onClick={() => setTags((current) => [...current, tag])}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {tagCounts.length ? (
+              <button
+                type="button"
+                className={`work-chip work-filters-button${tags.length ? " is-selected" : ""}`}
+                aria-expanded={filters}
+                aria-controls="work-filters-sheet"
+                title={`Every tag${mobile ? "" : " (f)"}`}
+                onClick={() => setFilters((current) => !current)}
+              >
+                <SlidersHorizontal size={12} aria-hidden="true" />
+                Filters
+                {tags.length ? <small>{tags.length}</small> : null}
+              </button>
+            ) : null}
+          </div>
+          {filters ? (
+            <TagFilters
+              counts={tagCounts}
+              selected={tags}
+              mobile={mobile}
+              onToggle={(tag) =>
+                setTags((current) =>
+                  current.includes(tag)
+                    ? current.filter((each) => each !== tag)
+                    : [...current, tag],
+                )
+              }
+              onClear={() => setTags([])}
+              onClose={() => {
+                setFilters(false);
+                back();
               }}
             />
-          </label>
+          ) : null}
         </div>
-        {adding && currentProject ? (
+        {adding && (scope ?? projects[0]?.id) ? (
           <AddItem
-            project={currentProject}
+            project={scope ?? projects[0]!.id}
             tags={tagChoices}
             onDone={() => {
               setAdding(false);
@@ -611,7 +788,7 @@ export function WorkPanel({
             onAdd={async (params) => {
               const ok = await act("add", {
                 ...params,
-                project: currentProject,
+                project: scope ?? projects[0]!.id,
               });
               if (ok) {
                 setAdding(false);
@@ -663,6 +840,7 @@ export function WorkPanel({
                       <WorkCard
                         key={item.id}
                         item={item}
+                        project={scope ? null : projectName(item.project)}
                         selected={item.id === selected}
                         onSelect={() => select(item.id)}
                         onOpenOwner={() => void openOwner(item)}
@@ -705,6 +883,7 @@ export function WorkPanel({
 
 function WorkCard({
   item,
+  project,
   selected,
   onSelect,
   onOpenOwner,
@@ -721,6 +900,8 @@ function WorkCard({
   tagsRef,
 }: {
   item: WorkItem;
+  /** Its project's name, when the board shows every project. */
+  project: string | null;
   selected: boolean;
   onSelect: () => void;
   onOpenOwner: () => void;
@@ -753,6 +934,7 @@ function WorkCard({
       >
         <span className="work-card-title">{item.title}</span>
         <span className="work-card-meta">
+          {project ? <span className="work-project">{project}</span> : null}
           {item.tags.map((tag) => (
             <span key={tag} className="work-tag">
               {tag}
@@ -876,6 +1058,116 @@ function WorkCard({
         </>
       ) : null}
     </li>
+  );
+}
+
+/**
+ * Every tag of the scope with its count, to pick several: a list under
+ * the Filters button, a bottom sheet on a phone, searched by typing.
+ */
+function TagFilters({
+  counts,
+  selected,
+  mobile,
+  onToggle,
+  onClear,
+  onClose,
+}: {
+  counts: readonly { tag: string; count: number }[];
+  selected: readonly string[];
+  mobile: boolean;
+  onToggle: (tag: string) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    // A phone's keyboard would cover the list: the list first there.
+    if (!mobile) searchRef.current?.focus();
+  }, [mobile]);
+  const words = search.trim().toLowerCase();
+  const shown = counts.filter(({ tag }) => !words || tag.includes(words));
+  return (
+    <>
+      <div
+        className="work-filters-backdrop"
+        aria-hidden="true"
+        onClick={onClose}
+      />
+      <div
+        id="work-filters-sheet"
+        className={`work-filters-sheet${mobile ? " is-sheet mobile-sheet" : ""}`}
+        role="dialog"
+        aria-label="Tag filters"
+        onKeyDown={(event) => {
+          // The board's keys stay out: letters search, Esc closes.
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onClose();
+          }
+          event.stopPropagation();
+        }}
+      >
+        {mobile ? (
+          <MobileSheetHandle
+            label="Pull down to close the tag filters"
+            onClose={onClose}
+          />
+        ) : null}
+        <div className="work-filters-head">
+          <label className="work-search">
+            <Search size={13} aria-hidden="true" />
+            <input
+              ref={searchRef}
+              type="search"
+              placeholder="Find a tag"
+              aria-label="Find a tag"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          {selected.length ? (
+            <button type="button" className="work-chip" onClick={onClear}>
+              Clear {selected.length}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="assistant-icon-button"
+            aria-label="Close the tag filters"
+            onClick={onClose}
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <ul className="work-filters-list">
+          {shown.map(({ tag, count }) => {
+            const on = selected.includes(tag);
+            return (
+              <li key={tag}>
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={on}
+                  className={on ? "is-selected" : ""}
+                  onClick={() => onToggle(tag)}
+                >
+                  <span className="work-filters-check" aria-hidden="true">
+                    {on ? <Check size={12} /> : null}
+                  </span>
+                  <span className="work-filters-tag">{tag}</span>
+                  <small>{count}</small>
+                </button>
+              </li>
+            );
+          })}
+          {!shown.length ? (
+            <li className="work-empty">No tag matches.</li>
+          ) : null}
+        </ul>
+      </div>
+    </>
   );
 }
 

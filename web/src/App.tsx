@@ -61,6 +61,7 @@ import {
   takeMrFileOpen,
 } from "./mrReviewsOpen";
 import { handleWorkShortcut, openWork, watchWorkHash } from "./workOpen";
+import { useWorkForYouCount } from "./work";
 import {
   CompanionChip,
   CompanionStrip,
@@ -130,6 +131,7 @@ import { appKeyInMessageBox } from "./messageBoxKeys";
 import {
   CheckCircle2,
   CircleAlert,
+  ClipboardList,
   Command,
   Compass,
   FileDiff,
@@ -1876,6 +1878,8 @@ export default function App() {
   const sidebarBeforeZenRef = useRef(false);
   const [mobileTabSheetOpen, setMobileTabSheetOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  // The phone menu's Work entry wears the For you count.
+  const workForYou = useWorkForYouCount(mobile);
   const [mobileInputTarget, setMobileInputTarget] =
     useState<HTMLDivElement | null>(null);
   useSystemBack(
@@ -6418,6 +6422,26 @@ export default function App() {
           >
             <GitPullRequestArrow size={16} />
             <span className="mobile-nav-label">Review</span>
+          </button>
+          <button
+            type="button"
+            title={shortcutTitle("Work", "work.board")}
+            aria-label="Open the Work board"
+            aria-description={
+              workForYou > 0 ? `${workForYou} for you` : undefined
+            }
+            onClick={() => {
+              setMobileMoreOpen(false);
+              openWork();
+            }}
+          >
+            <ClipboardList size={16} />
+            <span className="mobile-nav-label">Work</span>
+            {workForYou > 0 ? (
+              <span className="mobile-nav-badge" aria-hidden="true">
+                {workForYou}
+              </span>
+            ) : null}
           </button>
           <button
             type="button"

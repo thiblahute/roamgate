@@ -1001,9 +1001,17 @@
     white-space: nowrap;
   }
 
-  body .app[data-mobile-more] .mobile-controls-stack .assistant-entry-running {
+  body .app[data-mobile-more] .mobile-controls-stack .assistant-entry-running,
+  body .app[data-mobile-more] .mobile-controls-stack .mobile-nav-badge {
     position: static;
     margin-left: auto;
+  }
+
+  body .app[data-mobile-more] .mobile-controls-stack .mobile-nav-badge {
+    min-width: 18px;
+    height: 18px;
+    font-size: 11px;
+    line-height: 18px;
   }
 
   /* Tabs sits in the app bar; collapsing and dragging have no role here. */
@@ -1012,8 +1020,7 @@
     .mobile-controls-stack
     .mobile-nav
     button[aria-label="Show tabs"],
-  body .app[data-mobile-more] .mobile-controls-stack .mobile-controls-toggle,
-  body .app[data-mobile-more] .mobile-controls-stack .mobile-nav-badge {
+  body .app[data-mobile-more] .mobile-controls-stack .mobile-controls-toggle {
     display: none;
   }
 }

@@ -68,7 +68,7 @@ export function handleWorkShortcut(
 }
 
 /** The item a page's hash names, or null. */
-export function workItemInHash(hash = location.hash): string | null {
+export function workItemInHash(hash = window.location.hash): string | null {
   if (!hash.startsWith(WORK_HASH)) return null;
   const item = decodeURIComponent(hash.slice(WORK_HASH.length)).trim();
   return /^[0-9a-f]{8,16}$/.test(item) ? item : null;
@@ -83,7 +83,11 @@ export function watchWorkHash(open: (item: string) => void = openWork) {
   const check = () => {
     const item = workItemInHash();
     if (!item) return;
-    history.replaceState(null, "", location.pathname + location.search);
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + window.location.search,
+    );
     open(item);
   };
   check();

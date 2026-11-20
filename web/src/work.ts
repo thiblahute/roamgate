@@ -96,3 +96,31 @@ export function useWorkBoard(): {
 export function workForYouCount(board: WorkBoard | null = latest): number {
   return board ? board.items.filter((item) => item.state === "you").length : 0;
 }
+
+/**
+ * The For you count for a badge (the phone menu's Work entry): the board
+ * read once the socket is up, then kept by the pushes. Off when not
+ * `enabled`: nothing read.
+ */
+export function useWorkForYouCount(enabled = true): number {
+  const [count, setCount] = useState(() => (enabled ? workForYouCount() : 0));
+  useEffect(() => {
+    if (!enabled) return;
+    follow();
+    const listener = (board: WorkBoard) => setCount(workForYouCount(board));
+    listeners.add(listener);
+    setCount(workForYouCount());
+    const load = () => void loadWorkBoard().catch(() => {});
+    load();
+    // Before the socket is up the read fails; again once it is, and after
+    // a reconnect, whose pushes were missed.
+    const offStatus = bridge.onStatus((status) => {
+      if (status === "connected") load();
+    });
+    return () => {
+      listeners.delete(listener);
+      offStatus();
+    };
+  }, [enabled]);
+  return enabled ? count : 0;
+}

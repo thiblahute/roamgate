@@ -2190,14 +2190,23 @@ is kept, and hints for the suggestions.
 
 ## Work board
 
-**Menu > Work**, the command menu or `Option+W` (`Alt+W`) opens the Work
-board: your work items in columns by state, **For you** (waits on you),
+**Menu > Work**, the command menu, `Option+W` (`Alt+W`) or, on a phone,
+**More options > Work** (wearing the For you count) opens the Work board:
+your work items in columns by state, **For you** (waits on you),
 **Doing**, **Verify** (built, to be confirmed in real use), **Open** (nobody
-on it) and **Done** (folded until asked), one project at a time (chips at
-the top: `roamgate`, `gst2`...), filtered by tags (chips, several at once)
-and words (`/`). It sits beside the page as Reviews does; the whole-page
-button puts the columns side by side; a phone has the one list, the whole
-screen.
+on it) and **Done** (folded until asked). The board is the workspace's: it
+shows the project whose root holds the workspace's checkout (`roamgate` for
+a Roamgate worktree, `gst2` for the GStreamer 2.0 ones), the workspace's
+name in the head; the project menu on the filter row switches to another
+project or to **All projects** (each card then says its project), and that
+choice is remembered for the workspace; a page with no workspace in a
+project shows the last choice. The filter is one row: the project, the
+tags chosen (tap one to take it off), a few more tags by count, and
+**Filters** (`f`) for every tag of the scope with its count, searched by
+typing, several at once; the search box (`/`) is in the head. The first
+column comes right under. It sits beside the page as Reviews does; the
+whole-page button puts the columns side by side; a phone has the one list,
+the whole screen, and its Back closes the filters, then the board.
 
 Each card is an item: its title, tags, owner (the session or subagent
 working on it), when it moved, and its links (a review thread, an effort,

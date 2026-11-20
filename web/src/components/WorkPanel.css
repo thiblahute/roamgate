@@ -33,16 +33,65 @@
   border-radius: 0;
 }
 
-/* The head's buttons stay on one line at the right: not the head's grid
-   column the title's div is. */
+/* The head: the title and its scope, the search, the buttons; one row, the
+   title giving way to the search (not the head's own grid column). */
+.work-panel .assistant-panel-head > .work-title {
+  flex: 0 1 auto;
+  min-width: 72px;
+  max-width: 50%;
+}
+
 .work-panel .assistant-panel-head > .work-head-actions {
   flex: 0 0 auto;
   display: flex;
+  margin-left: 0;
+}
+
+.work-panel .assistant-panel-head > .work-search {
+  flex: 1 1 120px;
+  min-width: 0;
+  max-width: 420px;
+  margin-left: auto;
+}
+
+/* On a phone the search is its icon until tapped: then the head is the box. */
+.work-panel.is-mobile .work-head.is-searching > .work-title {
+  display: none;
+}
+
+.work-panel.is-mobile .work-head.is-searching > .work-search {
+  max-width: none;
+  margin-left: 0;
+}
+
+.work-panel.is-mobile .work-head > .work-search {
+  min-height: 36px;
+}
+
+.work-panel.is-mobile .work-head > .work-search input {
+  min-height: 0;
+  font-size: 16px;
+}
+
+.work-panel .assistant-panel-title {
+  flex-wrap: nowrap;
+}
+
+.work-panel .assistant-panel-head .work-scope-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .work-status {
+  overflow: hidden;
   color: var(--muted);
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .work-head-actions {
@@ -67,18 +116,193 @@
   max-width: 100%;
 }
 
-/* Project chips, then tag chips: the filter. */
+/* The filter, one row: the project, the tags chosen, a few more by count
+   (the strip scrolls sideways), then Filters for every tag. */
 .work-filters {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.work-chips {
+.work-filter-row {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+}
+
+.work-scope-select {
+  flex: 0 0 auto;
+  max-width: 45%;
+  border: 1px solid var(--viewer-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--viewer-code-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.is-mobile .work-scope-select {
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.work-tags-strip {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.work-tags-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.work-tags-strip > .work-chip {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.work-filters-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.work-chip.is-selected,
+.work-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft, rgba(88, 166, 255, 0.18));
+  color: var(--accent);
+}
+
+.work-chip.is-selected > svg {
+  margin-left: 2px;
+  vertical-align: -1px;
+}
+
+/* Every tag: a list under the button, a bottom sheet on a phone. */
+.work-filters-backdrop {
+  position: fixed;
+  z-index: 4;
+  inset: 0;
+}
+
+.is-mobile .work-filters-backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+.work-filters-sheet {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, 100%);
+  max-height: min(60vh, 420px);
+  border: 1px solid var(--viewer-border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+
+.work-filters-sheet.is-sheet {
+  position: fixed;
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: auto;
+  max-height: min(78dvh, 640px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border: 0;
+  border-top: 1px solid var(--viewer-border);
+  border-radius: 14px 14px 0 0;
+}
+
+.work-filters-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 4px;
+}
+
+.work-filters-head > .work-search {
+  flex: 1 1 auto;
+}
+
+.work-filters-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 6px 8px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.work-filters-list > li > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.is-sheet .work-filters-list > li > button {
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.work-filters-list > li > button:hover,
+.work-filters-list > li > button:focus-visible {
+  background: var(--accent-soft, rgba(88, 166, 255, 0.18));
+  outline: none;
+}
+
+.work-filters-list > li > button.is-selected {
+  color: var(--accent);
+}
+
+.work-filters-check {
+  flex: 0 0 14px;
+  text-align: center;
+}
+
+.work-filters-tag {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.work-filters-list small {
+  color: var(--muted);
+}
+
+.work-filters-list > .work-empty {
+  padding: 6px 8px;
 }
 
 .work-chips-label {
@@ -98,12 +322,6 @@
   cursor: pointer;
 }
 
-.work-chip[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft, rgba(88, 166, 255, 0.18));
-  color: var(--accent);
-}
-
 .work-chip > small {
   margin-left: 4px;
   color: var(--muted);
@@ -120,9 +338,14 @@
   align-items: center;
   gap: 6px;
   border: 1px solid var(--viewer-border);
-  border-radius: 6px;
-  padding: 4px 8px;
+  border-radius: 999px;
+  padding: 3px 10px;
   background: var(--viewer-code-bg);
+  color: var(--muted);
+}
+
+.is-mobile .work-search {
+  min-height: 32px;
 }
 
 .work-search input {
@@ -269,11 +492,17 @@
   font-size: 11px;
 }
 
-.work-tag {
+.work-tag,
+.work-project {
   border-radius: 999px;
   padding: 0 7px;
   background: var(--viewer-code-bg);
   color: var(--muted);
+}
+
+.work-project {
+  border: 1px solid var(--viewer-border);
+  color: var(--text);
 }
 
 .work-owner {
