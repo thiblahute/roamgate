@@ -308,12 +308,23 @@ function projectCodexTrajectory(
         metrics: tokenUsageToMetrics(tokenUsageFrom(payload.usage)),
       });
     } else if (type === "reasoning") {
-      const text = cleanMessageText(codexContentText(payload.summary));
+      // Mostly encrypted, with no summary: nothing to read, so no step. A
+      // summary reads as Claude's thinking does, one step per run of
+      // reasoning items.
+      const text = cleanMessageText(
+        codexContentText(payload.summary) || codexContentText(payload.content),
+      );
+      if (!text) return;
+      const last = steps[steps.length - 1];
+      if (last?.extra?.record_type === "reasoning" && last.reasoning_content) {
+        last.reasoning_content = `${last.reasoning_content}\n\n${text}`;
+        return;
+      }
       steps.push({
         timestamp,
         source: "agent",
-        message: text || "Reasoning",
-        reasoning_content: text || undefined,
+        message: "Reasoning",
+        reasoning_content: text,
         extra: { record_type: type },
       });
     } else if (type.includes("output") || type.includes("result")) {

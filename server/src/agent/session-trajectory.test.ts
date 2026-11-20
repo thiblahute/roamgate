@@ -211,6 +211,70 @@ describe("agent session trajectory projection", () => {
     });
   });
 
+  test("drops Codex's unreadable reasoning and keeps a summary as thinking", () => {
+    const item = (at: string, payload: Record<string, unknown>) => ({
+      type: "response_item",
+      timestamp: `2026-11-20T07:39:${at}.000Z`,
+      payload,
+    });
+    const encrypted = (at: string) =>
+      item(at, {
+        type: "reasoning",
+        summary: [],
+        content: null,
+        encrypted_content: "gAAAAABp8Oek",
+      });
+    const summary = (at: string, text: string) =>
+      item(at, {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text }],
+        content: null,
+        encrypted_content: "gAAAAABpkdl2",
+      });
+    const assistant = (at: string, text: string) =>
+      item(at, {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text }],
+      });
+    const trajectory = projectAgentTrajectory("codex", sessionFile, [
+      assistant("00", "The upgrade is committed."),
+      encrypted("01"),
+      encrypted("02"),
+      item("03", {
+        type: "custom_tool_call",
+        call_id: "call-1",
+        name: "exec",
+        input: 'text(await tools.exec_command({cmd:"df -h"}));\n',
+      }),
+      item("04", {
+        type: "custom_tool_call_output",
+        call_id: "call-1",
+        output: "ok",
+      }),
+      encrypted("05"),
+      summary("06", "**Checking backups**"),
+      encrypted("07"),
+      summary("08", "**Planning cleanup**"),
+      assistant("09", "Backups are fine."),
+    ]);
+
+    expect(
+      trajectory.steps.map((step) => [step.message, step.reasoning_content]),
+    ).toEqual([
+      ["The upgrade is committed.", undefined],
+      ["Tool call: exec", undefined],
+      ["ok", undefined],
+      ["Reasoning", "**Checking backups**\n\n**Planning cleanup**"],
+      ["Backups are fine.", undefined],
+    ]);
+    expect(
+      historyEntriesFromTrajectory(sessionFile, trajectory)
+        .filter((entry) => entry.kind === "message")
+        .map((entry) => entry.text),
+    ).toEqual(["The upgrade is committed.", "Backups are fine."]);
+  });
+
   test("keeps what Codex writes in a user message out of the user's words", () => {
     const user = (
       at: string,
