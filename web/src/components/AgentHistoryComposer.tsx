@@ -907,32 +907,6 @@ export function AgentHistoryComposer({
             <ImagePlus size={17} aria-hidden="true" />
           </button>
         ) : null}
-        {voice?.state === "off" ? (
-          // A running call is controlled from over the chat.
-          <button
-            type="button"
-            className={`agent-history-composer-attach agent-history-composer-voice is-off${voice.listen ? "" : " is-unavailable"}`}
-            aria-label={
-              voice.listen
-                ? voiceFronting()
-                  ? "Call the companion"
-                  : "Start a voice call with the agent"
-                : "Voice calls need the server's voice engine"
-            }
-            aria-pressed={false}
-            title={
-              voice.listen
-                ? voiceFronting()
-                  ? "Call the companion: this session is where work goes by default"
-                  : "Start a voice call with the agent"
-                : "Voice calls cannot listen: the server has no voice engine"
-            }
-            onMouseDown={keepTextareaFocus}
-            onClick={voice.onToggle}
-          >
-            <PhoneCall size={17} aria-hidden="true" />
-          </button>
-        ) : null}
         {vimKeys && touch ? (
           // Phone keyboards have no Esc key, and Vim needs one.
           <button
@@ -949,7 +923,15 @@ export function AgentHistoryComposer({
         ) : null}
         {/* The box, with Dictate's microphone on it, at its right edge. */}
         <div
-          className={`agent-history-composer-field${mentions ? " has-mention" : ""}${dictateHere ? " has-voice" : ""}${voice && voice.state !== "off" ? " has-mute" : ""}${ghost ? " has-next-prompt" : ""}`}
+          className={`agent-history-composer-field${mentions ? " has-mention" : ""}${dictateHere ? " has-voice" : ""}${voice?.state === "off" ? " has-call" : ""}${ghost ? " has-next-prompt" : ""}`}
+          style={
+            {
+              "--composer-inline-buttons":
+                Number(!!mentions) +
+                Number(dictateHere) +
+                Number(voice?.state === "off"),
+            } as React.CSSProperties
+          }
         >
           {picker.popup}
           {vimKeys ? (
@@ -1227,6 +1209,34 @@ export function AgentHistoryComposer({
               >
                 Tab
               </span>
+            ) : null}
+            {voice?.state === "off" ? (
+              // On the box, beside Dictate: one tap away, taking no width
+              // from the box. A running call is controlled from over the
+              // chat.
+              <button
+                type="button"
+                className={`agent-history-composer-voice agent-history-composer-call is-off${voice.listen ? "" : " is-unavailable"}`}
+                aria-label={
+                  voice.listen
+                    ? voiceFronting()
+                      ? "Call the companion"
+                      : "Start a voice call with the agent"
+                    : "Voice calls need the server's voice engine"
+                }
+                aria-pressed={false}
+                title={
+                  voice.listen
+                    ? voiceFronting()
+                      ? "Call the companion: this session is where work goes by default"
+                      : "Start a voice call with the agent"
+                    : "Voice calls cannot listen: the server has no voice engine"
+                }
+                onMouseDown={keepTextareaFocus}
+                onClick={voice.onToggle}
+              >
+                <PhoneCall size={17} aria-hidden="true" />
+              </button>
             ) : null}
             {dictateHere ? (
               // Never during a voice call: the helper listens to one at a time.

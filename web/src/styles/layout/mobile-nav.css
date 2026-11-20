@@ -459,14 +459,14 @@
   }
 
   /* Not writing, and nothing in the box: the box alone beside the
-     navigation, and the voice call button, a tap away as it was on the box. */
+     navigation; the voice call is on the box, with the microphone. */
   .mobile-bottom-input
     > .agent-history-composer:not(
       :focus-within,
       :has(.agent-history-composer-send:not(:disabled))
     )
     :is(
-      .agent-history-composer-attach:not(.agent-history-composer-voice),
+      .agent-history-composer-attach,
       .agent-history-composer-escape,
       .agent-history-composer-send:disabled
     ) {
@@ -543,19 +543,12 @@
     padding: 11px 14px;
   }
 
-  /* The microphone on the box: the text keeps clear of it. */
+  /* The call and the microphone on the box: the text keeps clear. */
   .mobile-bottom-input
     > .agent-history-composer
-    .agent-history-composer-field.has-voice
+    .agent-history-composer-field:is(.has-mention, .has-voice, .has-call)
     :is(textarea, .cm-content) {
-    padding-right: 40px;
-  }
-
-  .mobile-bottom-input
-    > .agent-history-composer
-    .agent-history-composer-field.has-voice.has-mute
-    :is(textarea, .cm-content) {
-    padding-right: 70px;
+    padding-right: calc(var(--composer-inline-buttons, 1) * 30px + 10px);
   }
 
   .mobile-bottom-input

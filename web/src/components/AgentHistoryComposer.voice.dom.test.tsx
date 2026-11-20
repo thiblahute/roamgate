@@ -99,7 +99,7 @@ if (process.env.ROAMGATE_COMPOSER_VOICE_DOM_TEST !== "1") {
       );
     const call = () =>
       container.querySelector<HTMLButtonElement>(
-        ".agent-history-composer-row > .agent-history-composer-voice",
+        ".agent-history-composer-inline .agent-history-composer-call",
       );
     try {
       await render("off");
@@ -110,6 +110,22 @@ if (process.env.ROAMGATE_COMPOSER_VOICE_DOM_TEST !== "1") {
         "Start a voice call with the agent",
       );
       expect(call()?.querySelector(".lucide-phone-call")).not.toBeNull();
+      // On the box, just before the microphone, not ahead of the box: the
+      // box keeps its width, and the call is where the voice controls are.
+      expect(
+        container.querySelector(
+          ".agent-history-composer-row > .agent-history-composer-voice",
+        ),
+      ).toBeNull();
+      expect(call()?.nextElementSibling).toBe(dictate());
+      const field = container.querySelector<HTMLElement>(
+        ".agent-history-composer-field",
+      )!;
+      expect(field.classList.contains("has-call")).toBe(true);
+      // The text keeps clear of both buttons.
+      expect(field.style.getPropertyValue("--composer-inline-buttons")).toBe(
+        "2",
+      );
       // Nothing else listens: no second dictate or call button.
       expect(
         container.querySelectorAll(".agent-history-composer-dictate").length,

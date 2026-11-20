@@ -365,41 +365,16 @@
   flex: 1 1 auto;
 }
 
-.agent-history-composer-field.has-voice textarea,
-.agent-history-composer-field.has-voice .cm-content {
-  padding-right: 36px;
-}
-
-.agent-history-composer-field.has-voice.has-mute textarea,
-.agent-history-composer-field.has-voice.has-mute .cm-content {
-  padding-right: 66px;
-}
-
-/* The @ button (Ranger's mention picker), beside the microphone. */
-.agent-history-composer-field.has-mention textarea,
-.agent-history-composer-field.has-mention .cm-content {
-  padding-right: 36px;
-}
-
-.agent-history-composer-field.has-mention.has-voice textarea,
-.agent-history-composer-field.has-mention.has-voice .cm-content {
-  padding-right: 66px;
-}
-
-.agent-history-composer-field.has-mention.has-voice.has-mute textarea,
-.agent-history-composer-field.has-mention.has-voice.has-mute .cm-content {
-  padding-right: 96px;
+/* The buttons on the box (the @ of Ranger's mention picker, the call,
+   the microphone), 30px each, counted in --composer-inline-buttons. */
+.agent-history-composer-field:is(.has-mention, .has-voice, .has-call)
+  :is(textarea, .cm-content) {
+  padding-right: calc(var(--composer-inline-buttons, 1) * 30px + 6px);
 }
 
 /* A predicted next message: grey text in the empty box, Tab takes it. */
-.agent-history-composer-field.has-next-prompt textarea,
-.agent-history-composer-field.has-next-prompt .cm-content {
-  padding-right: 44px;
-}
-
-.agent-history-composer-field.has-voice.has-next-prompt textarea,
-.agent-history-composer-field.has-voice.has-next-prompt .cm-content {
-  padding-right: 76px;
+.agent-history-composer-field.has-next-prompt :is(textarea, .cm-content) {
+  padding-right: calc(var(--composer-inline-buttons, 0) * 30px + 44px);
 }
 
 .agent-history-composer-next-key {
