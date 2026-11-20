@@ -18,6 +18,7 @@ import {
   waitingHeldCall,
   webAck,
 } from "./companionWeb";
+import { wordsWithImages } from "./companionImages";
 import { forgeStore } from "./forgeStore";
 import { forgetCompanionLocally } from "./companionMemory";
 import { setPaneView } from "./paneView";
@@ -74,6 +75,8 @@ export type CompanionTextDeps = {
   /** Where work goes by default, and the sessions the user may name. */
   context: () => { current: string; sessions: VoiceSessionInfo[] };
   show: (connectionId: string, paneId: string) => void;
+  /** The words for a session, with the images given (wordsWithImages). */
+  withImages: typeof wordsWithImages;
 };
 
 const defaults: CompanionTextDeps = {
@@ -96,6 +99,7 @@ const defaults: CompanionTextDeps = {
     setPaneView(connectionId, paneId, "chat");
     void store.jumpToConnectionPane(connectionId, paneId);
   },
+  withImages: wordsWithImages,
 };
 
 /** Roamgate's state for the front, as a call gives it, typed this time. */
@@ -181,7 +185,11 @@ export async function sendCompanionText(
       ...(given !== said ? { said } : {}),
       status: "running",
     });
-    const started = await deps.forward(action.pane, given);
+    // The images given go with the words, wherever the session runs.
+    const started = await deps.forward(
+      action.pane,
+      await deps.withImages(given, said, action.pane),
+    );
     const job = started?.job ?? null;
     if (!job) {
       updateCompanionJob(logged, { status: "not started" });

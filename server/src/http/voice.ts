@@ -38,6 +38,7 @@ import { parseVoiceTag } from "../voice/voice-speakers";
 import { SurprisePicker } from "../voice/voice-surprise";
 import { toolsContext, type VoiceTools } from "../voice/voice-tools";
 import { turnCauses, turnContext } from "../voice/turn-causes";
+import { serveVoiceImage, uploadedImages } from "../voice/voice-images";
 
 /** Sent with voice requests: a page from elsewhere cannot add it. */
 export const VOICE_REQUEST_HEADER = "x-roamgate-voice";
@@ -49,6 +50,8 @@ const MAX_EVENT_CHARS = 1000;
 const MAX_ANSWER_CHARS = 12000;
 /** What the page gives of the call lately, for the front (companionRecent). */
 const MAX_RECENT_CHARS = 4000;
+/** A typed turn with images: the model looks at them before it answers. */
+const FRONT_IMAGE_TIMEOUT_MS = 45_000;
 
 /**
  * An event about a session (`pane`: `<connection>/<pane>`) with what
@@ -393,6 +396,8 @@ export function createVoiceRoutes(
       }
       return Response.json({ speech_rate: helper.speechRate() });
     }
+    if (pathname === "/api/voice/image" && req.method === "GET")
+      return serveVoiceImage(new URL(req.url));
     if (pathname === "/api/voice/forward" && req.method === "POST") {
       if (req.headers.get(VOICE_REQUEST_HEADER) !== "1")
         return Response.json(
@@ -640,9 +645,15 @@ export function createVoiceRoutes(
         const started = performance.now();
         const timing: FrontTiming = {};
         const researching = fronting ? research() : null;
+        // Images pasted with typed words: the front sees them.
+        const images =
+          fronting && body?.typed === true ? await uploadedImages(said) : [];
         let route: FrontReply = fronting
           ? await fronting.turn({
               timing,
+              ...(images.length
+                ? { images, timeoutMs: FRONT_IMAGE_TIMEOUT_MS }
+                : {}),
               onReply: (early) => tellEarly?.(early),
               current,
               said,

@@ -45,6 +45,8 @@ import {
 import { openAssistant } from "../assistant";
 import { openMrReviews } from "../mrReviewsOpen";
 import { sendCompanionText } from "../companionText";
+import { uploadCompanionImage } from "../companionImages";
+import { CompanionLineText } from "./CompanionLineText";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
 import { answerCompanionTool } from "../companionWeb";
 import { subscribeVoiceFronting, voiceFronting } from "../voiceFrontFlag";
@@ -276,6 +278,8 @@ function CompanionComposer({
         placeholder={`Ask ${name} anything`}
         sendTo={name}
         enterSends
+        // Pasted, dropped or picked (a phone's camera too): the model sees it.
+        onUploadImage={uploadCompanionImage}
         onSend={async (text) => {
           const typed = text.trim();
           if (!typed) return;
@@ -560,7 +564,10 @@ export function CompanionPanel({
                       {JOB_STATUS[entry.status]}
                     </span>
                   </div>
-                  <p className="companion-panel-words">{entry.words}</p>
+                  <CompanionLineText
+                    className="companion-panel-words"
+                    text={entry.words}
+                  />
                   {entry.said ? (
                     <p className="companion-panel-said">
                       <span>You said:</span> {entry.said}
@@ -572,7 +579,10 @@ export function CompanionPanel({
                     </p>
                   ) : null}
                   {entry.answer ? (
-                    <p className="companion-panel-answer">{entry.answer}</p>
+                    <CompanionLineText
+                      className="companion-panel-answer"
+                      text={entry.answer}
+                    />
                   ) : null}
                 </li>
               ) : (
@@ -592,7 +602,7 @@ export function CompanionPanel({
                   {reading && isBeingSaid(reading, entry.id) ? (
                     <SayingText reading={reading} />
                   ) : (
-                    <p>{entry.text}</p>
+                    <CompanionLineText text={entry.text} />
                   )}
                 </li>
               ),

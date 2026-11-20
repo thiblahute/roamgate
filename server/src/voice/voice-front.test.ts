@@ -652,6 +652,54 @@ describe("VoiceFront", () => {
     expect(written[1]).toBe('Current: local/w2:p2\nSaid: "Merci."');
   });
 
+  test("images typed with the words reach the model as image blocks", async () => {
+    const sent: unknown[] = [];
+    const claude = fakeClaude(() => '{"to": "self", "reply": "Un chat."}');
+    const front = new VoiceFront(() => {
+      const process = claude.spawn();
+      return {
+        ...process,
+        write: (line) => {
+          const { content } = JSON.parse(line).message;
+          sent.push(content);
+          // The fake answers words: the text block's.
+          process.write(
+            JSON.stringify({
+              message: {
+                content: Array.isArray(content) ? content.at(-1).text : content,
+              },
+            }),
+          );
+        },
+      };
+    });
+    const image = { media_type: "image/png", data: "iVBORw0K" };
+    expect(
+      await front.turn({
+        current: "local/w2:p2",
+        said: "C'est quoi ? /tmp/roamgate-uploads-1/upload-a/img.png",
+        sessions,
+        images: [image],
+      }),
+    ).toEqual({ to: "self", reply: "Un chat." });
+    const content = sent[0] as {
+      type: string;
+      source?: unknown;
+      text?: string;
+    }[];
+    expect(content[0]).toEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "iVBORw0K" },
+    });
+    expect(content[1]!.type).toBe("text");
+    expect(content[1]!.text).toEndWith(
+      `Said: ${JSON.stringify("C'est quoi ? /tmp/roamgate-uploads-1/upload-a/img.png")}`,
+    );
+    // Without images, the words alone, as before.
+    await front.turn({ current: "local/w2:p2", said: "Merci.", sessions });
+    expect(sent[1]).toBe('Current: local/w2:p2\nSaid: "Merci."');
+  });
+
   test("a new session gets the memory once, on its first request", async () => {
     const claude = fakeClaude(() => '{"to": "self", "reply": "Oui."}');
     let memory = "Summary:\non parlait des tests";

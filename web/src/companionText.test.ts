@@ -161,6 +161,19 @@ describe("typing to the companion", () => {
     expect(how).toEqual(["typed", undefined]);
   });
 
+  test("an image given with work goes to the session, the front's words or not", async () => {
+    const { calls, deps } = setup({
+      to: "send",
+      pane: "local/w2:p2",
+      reply: "Je lui envoie.",
+      words: "corrige ce bug",
+    } as VoiceRoute);
+    const image = "/tmp/roamgate-uploads-1000/upload-ab12/img-1.png";
+    await sendCompanionText(`Dis à roamgate de corriger ce bug ${image}`, deps);
+    await settle();
+    expect(calls[1]).toBe(`forward local/w2:p2: corrige ce bug\n\n${image}`);
+  });
+
   test("work that could not be started is said so", async () => {
     const { calls, deps } = setup({ to: "current", reply: "Je lance ça." });
     deps.forward = async (pane, words) => {

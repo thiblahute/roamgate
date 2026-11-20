@@ -78,6 +78,25 @@
   color: var(--muted);
 }
 
+/* Images given or named in the conversation, small; a click opens one. */
+.companion-panel-images {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0;
+}
+
+.companion-panel-images img {
+  display: block;
+  max-width: min(220px, 100%);
+  max-height: 160px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--panel-2);
+}
+
 /* What the user says now, written as it is heard: a caption under the
    last line, not a message yet. */
 .companion-panel-hearing {

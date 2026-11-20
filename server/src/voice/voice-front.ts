@@ -6,7 +6,12 @@ import {
   commandKey,
   helperCommand,
 } from "../profiles/profiles";
-import { type ClaudeProcess, spawnClaude, Worker } from "./voice-cleaner";
+import {
+  type ClaudeProcess,
+  type PromptImage,
+  spawnClaude,
+  Worker,
+} from "./voice-cleaner";
 import type { VoiceConfig } from "./voice-helper";
 import type { CompanionMemoryFiles } from "./voice-memory-files";
 import type { VoiceRole } from "./voice-profiles";
@@ -846,6 +851,8 @@ class FrontSession {
     request: string,
     onText?: (soFar: string) => void,
     timing?: FrontTiming,
+    /** Images the user gave with it (typed turns), for the model to see. */
+    images?: readonly PromptImage[],
   ): Promise<string> {
     const askedAt = performance.now();
     const asked = this.chain.then(async () => {
@@ -859,6 +866,7 @@ class FrontSession {
             ? `${this.memoryText(fresh)}State:\n${state}\n\n${request}`
             : request,
           onText,
+          images,
         );
         if (timing && (!running || this.worker.generation !== generation))
           timing.cold = true;
@@ -936,6 +944,8 @@ export class VoiceFront {
     timeoutMs?: number;
     onReply?: (early: { to: string; reply: string }) => void;
     timing?: FrontTiming;
+    /** Images given with the words (pasted in a typed turn). */
+    images?: readonly PromptImage[];
   }): Promise<FrontReply> {
     const ids = new Set(request.sessions.map((session) => session.id));
     const { timing, onReply } = request;
@@ -957,6 +967,7 @@ export class VoiceFront {
         turnText(request),
         onText,
         timing,
+        request.images,
       )
       .then((answer) => {
         if (timing) timing.totalMs = Math.round(performance.now() - started);

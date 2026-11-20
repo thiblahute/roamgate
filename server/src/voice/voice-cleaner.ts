@@ -327,6 +327,27 @@ export function spawnClaude(
   };
 }
 
+/** An image given with a request: what the model sees beside its words. */
+export type PromptImage = { media_type: string; data: string };
+
+/**
+ * A request's message content: its words, after its images when it has
+ * some (image content blocks, as Claude Code's stream-json takes them).
+ */
+export function promptContent(
+  prompt: string,
+  images: readonly PromptImage[] = [],
+): string | unknown[] {
+  if (!images.length) return prompt;
+  return [
+    ...images.map((image) => ({
+      type: "image",
+      source: { type: "base64", ...image },
+    })),
+    { type: "text", text: prompt },
+  ];
+}
+
 /** Requests on one session make its context grow: past this, a new one. */
 const REQUESTS_PER_PROCESS = 40;
 
@@ -406,10 +427,15 @@ export class Worker {
   }
 
   /**
-   * The answer to `prompt`; `onText` hears it as it is written, whole so
-   * far, when the session streams partial messages (spawnClaude).
+   * The answer to `prompt`, and the `images` given with it; `onText` hears
+   * it as it is written, whole so far, when the session streams partial
+   * messages (spawnClaude).
    */
-  async ask(prompt: string, onText?: (soFar: string) => void): Promise<string> {
+  async ask(
+    prompt: string,
+    onText?: (soFar: string) => void,
+    images?: readonly PromptImage[],
+  ): Promise<string> {
     this.busy = true;
     try {
       const process = this.start();
@@ -420,7 +446,7 @@ export class Worker {
         process.write(
           `${JSON.stringify({
             type: "user",
-            message: { role: "user", content: prompt },
+            message: { role: "user", content: promptContent(prompt, images) },
           })}\n`,
         );
       });
