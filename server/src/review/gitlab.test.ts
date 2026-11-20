@@ -173,6 +173,75 @@ test("a draft on an unchanged line carries both line numbers", async () => {
   expect(fields).toContain(`position[head_sha]=${"h".repeat(40)}`);
 });
 
+test("a draft's pasted images are uploaded to the project and linked", async () => {
+  const folder = mkdtempSync(join(tmpdir(), "gitlab-image-"));
+  try {
+    const image = join(folder, "shot one.png");
+    writeFileSync(image, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2]));
+    let body = "";
+    const { context, calls } = fakeGlab({
+      "merge_requests/42/draft_notes": { id: 9, note: "n", position: null },
+      uploads: { url: "/uploads/0123/image-1.png" },
+      "merge_requests/42": mrJson,
+    });
+    const run = context.runProcessWithCodeTimeout;
+    context.runProcessWithCodeTimeout = async (raw, timeout, options) => {
+      const argv = withoutGateFlags(raw);
+      const input = argv.indexOf("--input");
+      if (input >= 0) body = (await Bun.file(argv[input + 1]!).text()) ?? "";
+      return run(raw, timeout, options);
+    };
+    const mr = await readMergeRequest(context, url);
+    await createDraftNote(
+      context,
+      mr,
+      {},
+      `See ![screenshot](<${image}>) and ![web](https://x.example/a.png)`,
+    );
+    const upload = calls.find((argv) =>
+      argv.includes("projects/gst%2Fgstreamer/uploads"),
+    )!;
+    expect(upload).toContain("--input");
+    expect(
+      upload[upload.indexOf("--header") + 1]!.startsWith(
+        "Content-Type: multipart/form-data; boundary=",
+      ),
+    ).toBe(true);
+    expect(body).toContain('name="file"; filename="image-1.png"');
+    expect(body).toContain("Content-Type: image/png");
+    const fields = calls.at(-1)!;
+    expect(fields).toContain(
+      "note=See ![screenshot](/uploads/0123/image-1.png) and ![web](https://x.example/a.png)",
+    );
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("a pasted image refuses a GitHub draft, said plainly", async () => {
+  const { context, calls } = fakeGlab({});
+  await expect(
+    createDraftNote(
+      context,
+      {
+        host: "github.com",
+        project: "o/r",
+        iid: 1,
+        forge: "github",
+        url: "https://github.com/o/r/pull/1",
+        title: "t",
+        state: "opened",
+        baseSha: "b",
+        startSha: "b",
+        headSha: "h",
+      },
+      {},
+      "![screenshot](</tmp/x/shot.png>)",
+    ),
+  ).rejects.toThrow("GitHub takes no images");
+  expect(calls).toEqual([]);
+});
+
 test("replies refuse odd discussion ids; the API diff is rebuilt", async () => {
   const { context } = fakeGlab({
     "merge_requests/42/diffs": [

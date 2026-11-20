@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { forgeGate } from "../workspace/forge-calls";
 import { enterCheckout, reviewScriptError } from "../workspace/review-patch";
 import type {
@@ -244,7 +247,13 @@ export async function glab(
    * Who asks and what, for the forge gate's log; reuseMs shares an
    * identical read's answer that long.
    */
-  call: { feature?: string; kind?: string; reuseMs?: number } = {},
+  call: {
+    feature?: string;
+    kind?: string;
+    reuseMs?: number;
+    /** A body sent from a file of this host, of this type (an upload). */
+    input?: { file: string; type: string };
+  } = {},
 ): Promise<unknown> {
   if (ref.ownLogin === undefined)
     ref = { host: ref.host, ...(await glabHostAccess(context, ref.host)) };
@@ -259,6 +268,14 @@ export async function glab(
     "--method",
     method,
     ...(paginate ? ["--paginate"] : []),
+    ...(call.input
+      ? [
+          "--header",
+          `Content-Type: ${call.input.type}`,
+          "--input",
+          call.input.file,
+        ]
+      : []),
     path,
     ...fields.flatMap(([key, value, kind]) => [
       kind === "raw" ? "-f" : "-F",
@@ -669,14 +686,107 @@ function positionFields(
   return fields;
 }
 
+/**
+ * Markdown images in a comment: `![alt](<path>)` or `![alt](path)`, the
+ * source in group 2 or 3.
+ */
+const MARKDOWN_IMAGE = /!\[([^\]\n]*)\]\((?:<([^>\n]+)>|([^)\s]+))\)/g;
+const LOCAL_IMAGE = /^\/(?!\/|uploads\/)[^?#\0]*\.(png|jpe?g|gif|webp)$/i;
+const IMAGE_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+
+/** The images of a comment that are files of this host (pasted ones). */
+export function localImages(note: string): string[] {
+  const found = new Set<string>();
+  for (const match of note.matchAll(MARKDOWN_IMAGE)) {
+    const source = match[2] ?? match[3] ?? "";
+    if (LOCAL_IMAGE.test(source)) found.add(source);
+  }
+  return [...found];
+}
+
+/**
+ * A comment as it goes to the forge: its images that are files of this
+ * host (pasted in Roamgate, read by agents from there) uploaded to the
+ * merge request's project and linked from there. GitHub has no upload for
+ * them, and a checkout on another host cannot send this host's files:
+ * refused then, said plainly, rather than sent with broken images.
+ */
+export async function forgeNote(
+  context: GlabContext,
+  mr: MergeRequestInfo,
+  note: string,
+  read: (path: string) => Promise<Uint8Array> = (path) =>
+    readFile(path).then((data) => new Uint8Array(data)),
+): Promise<string> {
+  const images = localImages(note);
+  if (!images.length) return note;
+  if (mr.forge === "github")
+    throw new Error(
+      "GitHub takes no images from Roamgate: remove them from the comment, or add them on GitHub",
+    );
+  if (context.host)
+    throw new Error(
+      "images go to GitLab only from a checkout on this machine: remove them from the comment, or add them on GitLab",
+    );
+  const urls = new Map<string, string>();
+  const folder = await mkdtemp(join(tmpdir(), "roamgate-forge-image-"));
+  try {
+    for (const [index, path] of images.entries()) {
+      const extension = (LOCAL_IMAGE.exec(path)?.[1] ?? "png").toLowerCase();
+      const name = `image-${index + 1}.${extension}`;
+      const boundary = `roamgate${createHash("sha256").update(path).digest("hex").slice(0, 24)}`;
+      const body = Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\nContent-Type: ${IMAGE_TYPES[extension]}\r\n\r\n`,
+        ),
+        Buffer.from(await read(path)),
+        Buffer.from(`\r\n--${boundary}--\r\n`),
+      ]);
+      const file = join(folder, `${index}.body`);
+      await writeFile(file, body, { mode: 0o600 });
+      const uploaded = (await glab(
+        context,
+        mr,
+        "POST",
+        `projects/${encodeURIComponent(mr.project)}/uploads`,
+        [],
+        false,
+        {
+          kind: "post",
+          input: {
+            file,
+            type: `multipart/form-data; boundary=${boundary}`,
+          },
+        },
+      )) as { url?: unknown } | null;
+      if (typeof uploaded?.url !== "string")
+        throw new Error("GitLab did not take an image of the comment");
+      urls.set(path, uploaded.url);
+    }
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+  return note.replace(MARKDOWN_IMAGE, (whole, alt: string, angled, bare) => {
+    const url = urls.get(angled ?? bare ?? "");
+    return url ? `![${alt}](${url})` : whole;
+  });
+}
+
 export async function createDraftNote(
   context: GlabContext,
   mr: MergeRequestInfo,
   anchor: ReviewAnchor,
-  note: string,
+  text: string,
   /** The diff the anchor is on, to place ranges and unchanged lines. */
   diff?: ReviewDiff,
 ): Promise<GitLabDraft> {
+  const note = await forgeNote(context, mr, text);
   if (mr.forge === "github") return createPullDraft(context, mr, anchor, note);
   return (await glab(context, mr, "POST", `${mrPath(mr)}/draft_notes`, [
     ["note", note, "raw"],
@@ -689,8 +799,9 @@ export async function createDraftReply(
   context: GlabContext,
   mr: MergeRequestInfo,
   discussionId: string,
-  note: string,
+  text: string,
 ): Promise<GitLabDraft> {
+  const note = await forgeNote(context, mr, text);
   if (mr.forge === "github")
     return createPullDraftReply(context, mr, discussionId, note);
   if (!/^[0-9a-f]+$/.test(discussionId))
@@ -705,8 +816,9 @@ export async function updateDraftNote(
   context: GlabContext,
   mr: MergeRequestInfo,
   id: number,
-  note: string,
+  text: string,
 ): Promise<GitLabDraft> {
+  const note = await forgeNote(context, mr, text);
   if (mr.forge === "github") return updatePullDraft(context, mr, id, note);
   return (await glab(context, mr, "PUT", `${mrPath(mr)}/draft_notes/${id}`, [
     ["note", note, "raw"],

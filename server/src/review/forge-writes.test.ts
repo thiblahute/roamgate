@@ -22,7 +22,7 @@ function sources(): [string, string][] {
   );
 }
 
-test("the only GitLab writes are draft notes", () => {
+test("the only GitLab writes are draft notes, and their images", () => {
   const writes: string[] = [];
   for (const [name, text] of sources())
     for (const match of text.matchAll(
@@ -30,7 +30,12 @@ test("the only GitLab writes are draft notes", () => {
     ))
       writes.push(`${name} ${match[1]} ${match[2]!.trim()}`);
   expect(writes.length).toBeGreaterThan(0);
-  for (const write of writes) expect(write).toMatch(/draft_notes|"graphql"/);
+  // An image of a draft is uploaded to its project as the draft is written:
+  // seen by nobody until the user submits a review naming it.
+  for (const write of writes)
+    expect(write).toMatch(
+      /draft_notes|"graphql"|^gitlab\.ts POST `projects\/\$\{encodeURIComponent\(mr\.project\)\}\/uploads`$/,
+    );
 });
 
 test("the only GitHub mutations are the pending review's drafts", () => {
