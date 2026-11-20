@@ -82,18 +82,24 @@ import {
   webAck,
 } from "../companionWeb";
 import {
+  type AgentAnswer,
   answerDelivery,
+  answerSentences,
   answersContext,
   askCompanionAgent,
   companionRouteAction,
+  cutReading,
+  followReading,
   sessionLabel,
   answerText,
   type FrontMode,
   isReadWholeRequest,
+  isResumeRequest,
   isDismissRequest,
   matchAnswer,
   modeRequest,
   noteAgentAnswer,
+  noteAnswerFile,
   type QuestionAnswer,
   relayText,
   type VoiceQuestion,
@@ -614,8 +620,31 @@ export function useVoiceChat({
         pane?: string;
         turnMs?: number;
         looking?: boolean;
+        /** An answer's id (noteAgentAnswer), for the file it is put in. */
+        answerId?: string;
       };
       let tellFront: (item: Telling) => void = () => {};
+      /**
+       * Reads a kept answer aloud from its sentence `from`, noting each
+       * sentence heard: a reading cut (by speaking up, the call ending, a
+       * reload) goes on from there when asked (cutReading).
+       */
+      const readKept = (answer: AgentAnswer, from: number) => {
+        if (!front) return Promise.resolve();
+        const sentences = answerSentences(answer);
+        const start = Math.max(0, Math.min(from, sentences.length - 1));
+        const rest = sentences.slice(start);
+        const heard = followReading(answer, start, sentences.length);
+        if (start)
+          voiceTrace(
+            `companion: reads ${answer.agent}'s answer on from sentence ${start + 1} of ${sentences.length}: ${rest[0]?.slice(0, 80)}`,
+          );
+        return front.say(rest.join(" "), signal, {
+          answer: { agent: answer.agent, ids: answer.ids },
+          sentences: rest,
+          onHeard: heard,
+        });
+      };
       /** An agent's answer: kept, and given to the companion to tell. */
       const tellAnswer = (text: string, ids: string[], agent = agentName()) => {
         const clean = answerText(text);
@@ -623,7 +652,7 @@ export function useVoiceChat({
           voiceTrace(`companion: ${agent}'s turn ended with no text to tell`);
           return;
         }
-        noteAgentAnswer({
+        const noted = noteAgentAnswer({
           agent,
           text: clean,
           ids,
@@ -633,27 +662,54 @@ export function useVoiceChat({
         if (!companion()) {
           if (front) {
             voiceTrace(`companion: reads ${agent}'s answer whole`);
-            void front.say(`${agent} : ${markdownToSpeech(clean)}`, signal, {
-              answer: { agent, ids },
-            });
+            void readKept(noted, 0);
           }
           return;
         }
         voiceTrace(
           `companion: answer captured from ${agent} (${clean.length} chars): ${clean.slice(0, 80)}`,
         );
-        tellFront({ text: clean, at: Date.now(), kind: "answer", agent });
+        tellFront({
+          text: clean,
+          at: Date.now(),
+          kind: "answer",
+          agent,
+          answerId: noted.id,
+        });
       };
       // The agent's question the companion relayed, answered by voice.
       let relayed: VoiceQuestion | null = null;
       // Sessions given work on this call, whose answer comes back as such:
       // their "done" notification is not told apart.
       const working = new Map<string, number>();
-      /** Reads an agent's answer kept on the call, word for word. */
-      const readAnswer = (agent: string | undefined, said: string) => {
+      /**
+       * Reads an agent's answer kept on the call, word for word; with
+       * `resume`, its reading that was cut, from where it stopped.
+       */
+      const readAnswer = (
+        agent: string | undefined,
+        said: string,
+        resume = false,
+      ) => {
         if (!front) return;
-        const answer = actions.lastAnswer(agent);
         const french = ackLanguage(said) === "fr";
+        if (resume) {
+          const cut = cutReading(agent) ?? (agent ? cutReading() : null);
+          if (cut) {
+            note(cut.answer.text, cut.answer.agent);
+            void readKept(cut.answer, cut.from);
+            return;
+          }
+          voiceTrace("companion: no cut reading to go on with");
+          void front.say(
+            french
+              ? "Je n'ai pas de lecture coupée à reprendre."
+              : "No reading was cut: there is nothing to go on with.",
+            signal,
+          );
+          return;
+        }
+        const answer = actions.lastAnswer(agent);
         if (!answer) {
           void front.say(
             french
@@ -664,11 +720,7 @@ export function useVoiceChat({
           return;
         }
         note(answer.text, answer.agent);
-        void front.say(
-          `${answer.agent}: ${markdownToSpeech(answer.text)}`,
-          signal,
-          { answer: { agent: answer.agent, ids: answer.ids } },
-        );
+        void readKept(answer, 0);
       };
       const switchMode = (mode: FrontMode, said: string, reply?: string) => {
         if (!front) return;
@@ -786,6 +838,12 @@ export function useVoiceChat({
           if (isReadWholeRequest(heard.text)) {
             setHeard("");
             readAnswer(undefined, heard.text);
+            return "nobody";
+          }
+          // "Reprends la lecture": the reading cut goes on, at once.
+          if (isResumeRequest(heard.text) && cutReading()) {
+            setHeard("");
+            readAnswer(undefined, heard.text, true);
             return "nobody";
           }
         }
@@ -962,7 +1020,7 @@ export function useVoiceChat({
             return "here";
           case "read":
             if (!front) return "here";
-            readAnswer(route.agent, heard.text);
+            readAnswer(route.agent, heard.text, route.resume === true);
             return "nobody";
           case "reset":
             // Forgotten on the server already; said, then forgotten here.
@@ -1284,7 +1342,7 @@ export function useVoiceChat({
               voiceTrace(
                 `companion: ${item.kind} of ${item.agent ?? "Roamgate"} sent to the front`,
               );
-              const reply = await tellVoiceEvent(
+              const { reply, file } = await tellVoiceEvent(
                 item.text,
                 context?.current ?? "",
                 context?.sessions ?? [],
@@ -1306,6 +1364,10 @@ export function useVoiceChat({
               voiceTrace(
                 `companion: the front's reply to the ${item.kind} in ${Math.round(performance.now() - started)} ms: ${JSON.stringify(reply)}`,
               );
+              if (file && item.answerId) {
+                voiceTrace(`companion: the answer is whole in ${file}`);
+                noteAnswerFile(item.answerId, file);
+              }
               if (!reply || signal.aborted) continue;
               // An answer is told once the user is not talking, however
               // long that takes; an event only if nothing else goes on.

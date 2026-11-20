@@ -38,8 +38,11 @@ export type VoiceRoute = (
   | { to: "ask"; panes: string[]; question: string }
   /** The front answered it itself, in `reply`: nothing is sent. */
   | { to: "self" }
-  /** Read an agent's answer (the last, or `agent`'s) word for word. */
-  | { to: "read"; agent?: string }
+  /**
+   * Read an agent's answer (the last, or `agent`'s) word for word; with
+   * `resume`, its reading that was cut, from where it stopped.
+   */
+  | { to: "read"; agent?: string; resume?: boolean }
   /** Answers read whole from now on ("relay"), or told ("companion"). */
   | { to: "mode"; mode: "companion" | "relay" }
   /** Forget everything and start over; the server has done it (voice-memory.ts). */
@@ -342,9 +345,10 @@ export async function streamedRoute(
 }
 
 /**
- * What the front tells of `event` now; "" to stay quiet. `kind` "answer"
- * gives it an agent's whole answer, "progress" what one wrote while it
- * works; `agent` names who wrote it.
+ * What the front tells of `event` now (`reply`); "" to stay quiet. `kind`
+ * "answer" gives it an agent's whole answer (a long one is written to
+ * `file`, where it reads it), "progress" what one wrote while it works;
+ * `agent` names who wrote it.
  */
 export async function tellVoiceEvent(
   event: string,
@@ -361,18 +365,25 @@ export async function tellVoiceEvent(
     turn_ms?: number;
     looking?: boolean;
   } = {},
-): Promise<string> {
+): Promise<{ reply: string; file?: string }> {
   try {
     const response = await fetch("/api/voice/event", {
       method: "POST",
       headers: { ...VOICE_HEADERS, "content-type": "application/json" },
       body: JSON.stringify({ event, current, sessions, context, ...about }),
     });
-    if (!response.ok) return "";
-    const { reply } = (await response.json()) as { reply?: unknown };
-    return typeof reply === "string" ? reply : "";
+    if (!response.ok) return { reply: "" };
+    const { reply, file } = (await response.json()) as {
+      reply?: unknown;
+      file?: unknown;
+    };
+    return {
+      reply: typeof reply === "string" ? reply : "",
+      // A long answer's file, where the front reads it whole.
+      ...(typeof file === "string" && file ? { file } : {}),
+    };
   } catch {
-    return "";
+    return { reply: "" };
   }
 }
 

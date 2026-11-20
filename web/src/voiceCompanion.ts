@@ -5,6 +5,8 @@ import type {
 import type { AgentPrompt } from "./agentPrompt";
 import { logCompanion, updateCompanionJob } from "./companionCall";
 import { BLOCKED_NOTICE } from "./components/voiceStream";
+import { markdownToSpeech } from "./markdownToSpeech";
+import { spokenSentences } from "./voiceFront";
 import {
   plainText,
   RANGER_VOICE_SESSION,
@@ -31,6 +33,8 @@ export function answerDelivery(mode: FrontMode | null): "read" | "tell" {
 
 /** An agent's answer heard on a call, kept for the front and for reading. */
 export type AgentAnswer = {
+  /** Kept with it across a reload: its reading is noted by it. */
+  id: string;
   /** Who wrote it, as said aloud ("Roamgate", "Ranger"). */
   agent: string;
   text: string;
@@ -39,6 +43,8 @@ export type AgentAnswer = {
   at: number;
   /** `<connection>/<pane>`, when it is a session's. */
   session?: string;
+  /** A long answer's file on the server, where the front reads it whole. */
+  file?: string;
 };
 
 /**
@@ -132,28 +138,180 @@ export async function askCompanionAgent(
 const KEPT = 8;
 /** What of each answer the front's state gives (the answer itself went whole). */
 const CONTEXT_CHARS = 1200;
+/** A reading cut longer ago than this is not gone on with. */
+export const RESUME_MAX_AGE_MS = 6 * 60 * 60_000;
+/** Where the answers and their readings are kept across a reload. */
+const ANSWERS_KEY = "roamgate.voiceAnswers";
+const READINGS_KEY = "roamgate.voiceReadings";
+
+type KeptStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+function sessionStore(): KeptStorage | null {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+let storage: KeptStorage | null = sessionStore();
+
+function load<T>(key: string, fallback: T): T {
+  try {
+    const kept = storage?.getItem(key);
+    return kept ? (JSON.parse(kept) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function keep(key: string, value: unknown) {
+  try {
+    storage?.setItem(key, JSON.stringify(value));
+  } catch {
+    // Not kept across a reload (storage full): still kept here.
+  }
+}
 
 let answers: AgentAnswer[] = [];
+let readings: Record<string, AnswerReading> = {};
+let counter = 0;
+
+/** The answers and readings kept before the page reloaded. */
+function restore() {
+  const kept = load<unknown>(ANSWERS_KEY, []);
+  answers = Array.isArray(kept)
+    ? kept.filter(
+        (answer): answer is AgentAnswer =>
+          typeof answer?.id === "string" &&
+          typeof answer.agent === "string" &&
+          typeof answer.text === "string" &&
+          Array.isArray(answer.ids) &&
+          typeof answer.at === "number",
+      )
+    : [];
+  const positions = load<unknown>(READINGS_KEY, {});
+  readings =
+    positions && typeof positions === "object"
+      ? (positions as Record<string, AnswerReading>)
+      : {};
+}
+restore();
+
+/**
+ * Where reading an answer aloud got to: `next` is its first sentence not
+ * heard to its end (of `total`, as answerSentences splits it): the one cut,
+ * or `total` once it was read through.
+ */
+export type AnswerReading = { next: number; total: number; at: number };
 
 export function noteAgentAnswer(
-  answer: Omit<AgentAnswer, "at"> & { at?: number },
+  answer: Omit<AgentAnswer, "at" | "id"> & { at?: number },
 ): AgentAnswer {
-  const noted = { ...answer, at: answer.at ?? Date.now() };
+  const at = answer.at ?? Date.now();
+  const same = answers.find((kept) => kept.text === answer.text);
+  const noted: AgentAnswer = {
+    ...answer,
+    at,
+    // The same answer again keeps where its reading was.
+    id: same?.id ?? `${at.toString(36)}-${(counter++).toString(36)}`,
+  };
   answers = [
     ...answers.filter((kept) => kept.text !== noted.text),
     noted,
   ].slice(-KEPT);
+  keepAnswers();
   return noted;
+}
+
+function keepAnswers() {
+  const ids = new Set(answers.map((answer) => answer.id));
+  readings = Object.fromEntries(
+    Object.entries(readings).filter(([id]) => ids.has(id)),
+  );
+  keep(ANSWERS_KEY, answers);
+  keep(READINGS_KEY, readings);
+}
+
+/** Notes the file the server wrote a long answer to (voice-answers.ts). */
+export function noteAnswerFile(id: string, file: string) {
+  const answer = answers.find((kept) => kept.id === id);
+  if (!answer || answer.file === file) return;
+  answer.file = file;
+  keepAnswers();
 }
 
 /** Forgets the agents' answers (the companion started over). */
 export function forgetAgentAnswers() {
   answers = [];
+  readings = {};
+  try {
+    storage?.removeItem(ANSWERS_KEY);
+    storage?.removeItem(READINGS_KEY);
+  } catch {
+    // Gone here, at least.
+  }
 }
 
 /** The answers kept, oldest first. */
 export function recentAnswers(): readonly AgentAnswer[] {
   return answers;
+}
+
+/**
+ * An answer as it is read aloud, a sentence at a time: who wrote it, then
+ * its words as speech.
+ */
+export function answerSentences(answer: AgentAnswer): string[] {
+  return spokenSentences(`${answer.agent}: ${markdownToSpeech(answer.text)}`);
+}
+
+/** Where reading `answer` aloud got to, when it was read. */
+export function answerReading(answer: AgentAnswer): AnswerReading | null {
+  return readings[answer.id] ?? null;
+}
+
+/**
+ * Notes a reading of `answer` starting at its sentence `from`, then each
+ * sentence heard: what is kept is where it stopped, across a reload too.
+ */
+export function followReading(
+  answer: AgentAnswer,
+  from: number,
+  total: number,
+  now: () => number = Date.now,
+): (heard: number) => void {
+  const note = (next: number) => {
+    readings = { ...readings, [answer.id]: { next, total, at: now() } };
+    keep(READINGS_KEY, readings);
+  };
+  note(from);
+  return (heard) => note(Math.min(total, from + heard + 1));
+}
+
+/**
+ * The last answer (of `agent`, named loosely) whose reading aloud was cut
+ * before its end, lately: what "go on" reads on from.
+ */
+export function cutReading(
+  agent?: string,
+  now = Date.now(),
+): { answer: AgentAnswer; from: number } | null {
+  const wanted = agent ? folded(agent) : "";
+  const cut = answers
+    .map((answer) => ({ answer, reading: answerReading(answer) }))
+    .filter(
+      ({ answer, reading }) =>
+        reading &&
+        reading.next < reading.total &&
+        now - reading.at <= RESUME_MAX_AGE_MS &&
+        (!wanted ||
+          folded(answer.agent).includes(wanted) ||
+          wanted.includes(folded(answer.agent))),
+    )
+    .sort((a, b) => a.reading!.at - b.reading!.at)
+    .pop();
+  return cut ? { answer: cut.answer, from: cut.reading!.next } : null;
 }
 
 const folded = (text: string) =>
@@ -181,24 +339,73 @@ function ago(at: number, now: number) {
   return minutes < 1 ? "just now" : `${minutes} min ago`;
 }
 
+/** What the front is told of an answer's reading aloud; "" unread. */
+function readingLine(answer: AgentAnswer, now: number): string {
+  const reading = answerReading(answer);
+  if (!reading) return "";
+  if (reading.next >= reading.total) return " Read aloud whole.";
+  const heard = reading.next
+    ? answerSentences(answer)[reading.next - 1]?.slice(0, 120)
+    : "";
+  return ` Read aloud, cut ${ago(reading.at, now)} after sentence ${reading.next} of ${reading.total} (${Math.round((100 * reading.next) / reading.total)}%)${heard ? `, the last heard: ${JSON.stringify(heard)}` : ", before its first sentence"}: "read" with "resume" goes on from there.`;
+}
+
 /** The answers, shortened, for the front's state (voiceFront.ts). */
 export function answersContext(now = Date.now()): string {
   if (!answers.length) return "";
   return [
-    "Recent answers (oldest first; the user only heard what you said of them):",
+    "Recent answers (oldest first; the user only heard what you said of them, and what was read aloud):",
     ...answers.slice(-5).map((answer) => {
       const text = answer.text.replace(/\s+/g, " ").trim();
       const shown =
         text.length > CONTEXT_CHARS
-          ? `${text.slice(0, CONTEXT_CHARS)}... (${text.length} characters, cut)`
+          ? `${text.slice(0, CONTEXT_CHARS)}... (${text.length} characters, cut${answer.file ? `; whole in ${answer.file}` : ""})`
           : text;
-      return `- ${answer.agent}, ${ago(answer.at, now)}: ${shown}`;
+      return `- ${answer.agent}, ${ago(answer.at, now)}: ${shown}${readingLine(answer, now)}`;
     }),
   ].join("\n");
 }
 
-export function __resetAnswersForTests() {
-  answers = [];
+export function __resetAnswersForTests(
+  kept: KeptStorage | null = sessionStore(),
+  { reload = false }: { reload?: boolean } = {},
+) {
+  storage = kept;
+  if (reload) restore();
+  else {
+    answers = [];
+    readings = {};
+  }
+}
+
+/**
+ * Whether `said` plainly asks to go on with a reading that was cut ("reprends
+ * la lecture", "continue où tu t'étais arrêté", "keep reading"): taken by
+ * the page at once when one was. Shorter words ("continue", "la suite")
+ * are the front's to tell from work for an agent.
+ */
+export function isResumeRequest(said: string): boolean {
+  const text = folded(said);
+  // "Go on", and where the reading stopped.
+  const goOn =
+    /\b(reprends|reprend|reprenez|reprendre|continue|continuez|continuer|poursuis|relis|relire|redis|redire|lis|lire)\b/.test(
+      text,
+    );
+  const stopped =
+    /\bou (tu (t )?(en )?etais|t en etais|tu t (es|etais) (arrete|arretee)|ca (s est |a )?coupe|on en etait|je t ai coupe)\b/.test(
+      text,
+    );
+  return (
+    (goOn && stopped) ||
+    /\b(reprends|reprend|reprenez|continue|continuez|poursuis) (la |ta )?lecture\b/.test(
+      text,
+    ) ||
+    /\b(keep|go on|continue|carry on) reading\b/.test(text) ||
+    /\bresume (the |your )?reading\b/.test(text) ||
+    /\b(pick up|continue|go on) (from )?where (you|it) (left off|stopped|got cut|were cut)\b/.test(
+      text,
+    )
+  );
 }
 
 /** Whether `said` asks to hear an answer whole, word for word. */

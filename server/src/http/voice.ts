@@ -8,6 +8,7 @@ import {
   SAMPLE_SENTENCES,
 } from "../../../shared/voiceLibrary";
 import { voiceMessage } from "../../../shared/voiceMessage";
+import { answerForFront, MAX_ANSWER_CHARS } from "../voice/voice-answers";
 import type { VoiceErrands } from "../voice/voice-errands";
 import { serverLogger } from "../utils/logger";
 import {
@@ -45,9 +46,13 @@ export const VOICE_REQUEST_HEADER = "x-roamgate-voice";
 const MAX_SPOKEN_CHARS = 4000;
 /** The state a page gives the front beyond the sessions (voice-front.ts). */
 const MAX_CONTEXT_CHARS = 12000;
-/** An event's words; an agent's answer is given whole, up to this. */
+/**
+ * An event's words, and what an agent wrote while it works. An agent's
+ * answer is taken whole (up to voice-answers.ts MAX_ANSWER_CHARS): a long
+ * one reaches the front as its start and a file (answerForFront).
+ */
 const MAX_EVENT_CHARS = 1000;
-const MAX_ANSWER_CHARS = 12000;
+const MAX_PROGRESS_CHARS = 12000;
 /** What the page gives of the call lately, for the front (companionRecent). */
 const MAX_RECENT_CHARS = 4000;
 /** A typed turn with images: the model looks at them before it answers. */
@@ -127,8 +132,9 @@ export function withTurnContext(
  * agent?, pane?, turn_ms?, looking?}` in, `{reply}` out: what the front
  * tells of it now ("" to stay quiet); an event about a session (`pane`)
  * says what started its turn (withTurnContext); `kind` "answer" gives it
- * an agent's whole answer, "progress" what one wrote while it works,
- * `agent` who. GET /api/voice reports
+ * an agent's whole answer (a long one as its start and the file where it
+ * is whole, which `file` in the reply names: voice-answers.ts),
+ * "progress" what one wrote while it works, `agent` who. GET /api/voice reports
  * `front_mode`: "companion" (answers told by the front, the default) or
  * "relay" (every answer read), which POST /api/voice/settings
  * `{front_mode}` keeps in voice.json.
@@ -552,13 +558,22 @@ export function createVoiceRoutes(
         typeof body?.event === "string"
           ? body.event
               .trim()
-              .slice(0, kind === "event" ? MAX_EVENT_CHARS : MAX_ANSWER_CHARS)
+              .slice(
+                0,
+                kind === "event"
+                  ? MAX_EVENT_CHARS
+                  : kind === "progress"
+                    ? MAX_PROGRESS_CHARS
+                    : MAX_ANSWER_CHARS,
+              )
           : "";
       const agent =
         typeof body?.agent === "string" ? body.agent.trim().slice(0, 80) : "";
       const current = typeof body?.current === "string" ? body.current : "";
       if (!event) return Response.json({ reply: "" });
-      const told = kind === "event" ? withTurnContext(event, body) : event;
+      // A long answer: its start, and the file where it is whole.
+      const given = kind === "answer" ? answerForFront(event) : { text: event };
+      const told = kind === "event" ? withTurnContext(event, body) : given.text;
       const started = performance.now();
       const reply = await fronting.event({
         current,
@@ -569,7 +584,7 @@ export function createVoiceRoutes(
       if (kind === "answer")
         memory?.record({
           kind: "answer",
-          text: event,
+          text: given.text,
           ...(agent ? { who: agent } : {}),
         });
       if (reply) memory?.record({ kind: "said", text: reply });
@@ -582,7 +597,9 @@ export function createVoiceRoutes(
         front_ms: Math.round(performance.now() - started),
         said: reply ? "yes" : "no",
       });
-      return Response.json({ reply });
+      return Response.json(
+        given.file ? { reply, file: given.file } : { reply },
+      );
     }
     if (pathname === "/api/voice/route" && req.method === "POST") {
       const fronting = front();

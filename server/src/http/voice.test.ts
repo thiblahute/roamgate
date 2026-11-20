@@ -1002,6 +1002,65 @@ describe("the voice front", () => {
     expect(told).toEqual([{ text: answer, kind: "answer", agent: "Roamgate" }]);
   });
 
+  test("gives a long answer as its start and the file where it is whole", async () => {
+    const told: { text: string }[] = [];
+    const front = {
+      event: async (request: { event: { text: string } }) => {
+        told.push(request.event);
+        return "gst a refait tout le récit.";
+      },
+    } as unknown as VoiceFront;
+    const routes = createVoiceRoutes(
+      helper,
+      () => null,
+      null,
+      () => undefined,
+      null,
+      () => front,
+    );
+    // The 21k-character answer of 2026-11-20, cut at 12000 then.
+    const answer = Array.from(
+      { length: 50 },
+      (_, at) => `Partie ${at}. ${"Nicolas répond à slomo. ".repeat(18)}`,
+    ).join("\n\n");
+    const before = process.env.TMPDIR;
+    const temp = mkdtempSync(join(tmpdir(), "voice-event-"));
+    process.env.TMPDIR = temp;
+    try {
+      const response = await routes(
+        new Request("http://roamgate.test/api/voice/event", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-roamgate-voice": "1",
+          },
+          body: JSON.stringify({
+            current: "local/w2:p2",
+            sessions: [session],
+            event: answer,
+            kind: "answer",
+            agent: "gst",
+          }),
+        }),
+        "/api/voice/event",
+      );
+      const { reply, file } = (await response!.json()) as {
+        reply: string;
+        file: string;
+      };
+      expect(reply).toBe("gst a refait tout le récit.");
+      expect(file).toStartWith(`${temp}/roamgate-uploads-`);
+      expect(await Bun.file(file).text()).toBe(answer.trim());
+      expect(told[0]!.text).toStartWith("Partie 0.");
+      expect(told[0]!.text.length).toBeLessThan(4000);
+      expect(told[0]!.text).toContain(`It is whole in ${file}`);
+    } finally {
+      if (before === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = before;
+      rmSync(temp, { recursive: true });
+    }
+  });
+
   test("starts the companion's work on a session, its words as said", async () => {
     const started: string[] = [];
     const errands = {

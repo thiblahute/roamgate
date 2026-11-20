@@ -1,4 +1,8 @@
 import { describe, expect, jest, test } from "bun:test";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { BackgroundMemoryLaunch } from "../conversation/drivers/types";
 import type { ClaudeProcess } from "./voice-cleaner";
 import {
   callLines,
@@ -17,6 +21,7 @@ import {
   skippedWords,
   turnText,
   VoiceFront,
+  withAnswerFiles,
 } from "./voice-front";
 import type { VoiceSessionInfo } from "./voice-router";
 
@@ -85,6 +90,13 @@ describe("parseFrontReply", () => {
     expect(parseFrontReply('{"to": "read", "agent": "IGA-184"}', ids)).toEqual({
       to: "read",
       agent: "IGA-184",
+    });
+    // A reading cut, gone on with from where it stopped.
+    expect(
+      parseFrontReply('{"to": "read", "agent": "gst", "resume": true}', ids),
+    ).toEqual({ to: "read", agent: "gst", resume: true });
+    expect(parseFrontReply('{"to": "read", "resume": "yes"}', ids)).toEqual({
+      to: "read",
     });
     expect(
       parseFrontReply(
@@ -865,6 +877,59 @@ describe("VoiceFront", () => {
       expect(await told).toBe("");
     } finally {
       jest.useRealTimers();
+    }
+  });
+
+  test("its sessions may Read the long answers' files, and nothing else", () => {
+    const launches: (BackgroundMemoryLaunch | undefined)[] = [];
+    const dir = mkdtempSync(join(tmpdir(), "front-answers-"));
+    try {
+      const answers = join(dir, "voice-answers");
+      const get = configuredFront(
+        () => ({ helper: "/bin/true", front_model: "opus" }),
+        (_model, _command, launch) => {
+          launches.push(launch);
+          return fakeClaude(() => "{}").spawn();
+        },
+        undefined,
+        undefined,
+        answers,
+      );
+      get()!.warm();
+      expect(launches).toEqual([
+        {
+          args: [
+            "--safe-mode",
+            "--setting-sources",
+            "",
+            "--permission-mode",
+            "dontAsk",
+          ],
+          tools: "Read",
+          cwd: answers,
+        },
+      ]);
+      expect(statSync(answers).mode & 0o777).toBe(0o700);
+      // With the memory reader's launch, its own settings are kept.
+      expect(
+        withAnswerFiles(
+          { args: ["--setting-sources", "", "--settings", "{}"], tools: "" },
+          answers,
+        ),
+      ).toEqual({
+        args: [
+          "--setting-sources",
+          "",
+          "--settings",
+          "{}",
+          "--permission-mode",
+          "dontAsk",
+        ],
+        tools: "Read",
+        cwd: answers,
+      });
+    } finally {
+      rmSync(dir, { recursive: true });
     }
   });
 

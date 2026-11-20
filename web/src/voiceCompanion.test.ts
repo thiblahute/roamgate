@@ -19,22 +19,29 @@ import {
   __resetAnswersForTests,
   answerDelivery,
   answerPromptByVoice,
+  answerReading,
+  answerSentences,
   answersContext,
   answerText,
   askCompanionAgent,
   companionRouteAction,
+  cutReading,
   findAnswer,
+  followReading,
   isReadWholeRequest,
+  isResumeRequest,
   isDismissRequest,
   matchAnswer,
   modeRequest,
   noteAgentAnswer,
+  noteAnswerFile,
   questionFromPermission,
   questionFromPrompt,
   relayText,
   sessionLabel,
 } from "./voiceCompanion";
 import { BLOCKED_NOTICE } from "./components/voiceStream";
+import { createFrontVoice } from "./voiceFront";
 
 afterEach(() => __resetAnswersForTests());
 
@@ -68,12 +75,129 @@ describe("answers on a call", () => {
     expect(context).not.toContain("y".repeat(1300));
   });
 
+  test("a reading cut goes on from the sentence cut, after a reload too", async () => {
+    // A page's session storage: kept across a reload, not across tabs.
+    const kept = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => kept.get(key) ?? null,
+      setItem: (key: string, value: string) => void kept.set(key, value),
+      removeItem: (key: string) => void kept.delete(key),
+    };
+    __resetAnswersForTests(storage);
+    const text = [
+      "## Le décor",
+      "Les boîtes CENC portent la clé.",
+      "La MR 12149 ajoute memory:Restricted.",
+      "## Le clash",
+      "Le 16 novembre, slomo s'énerve.",
+      "Nicolas répond point par point.",
+      "Tout se calme le 17.",
+    ].join("\n\n");
+    const answer = noteAgentAnswer({ agent: "gst", text, ids: ["e1"] });
+    const sentences = answerSentences(answer);
+    expect(sentences.slice(0, 2)).toEqual([
+      "gst:",
+      "Le décor\n\nLes boîtes CENC portent la clé.",
+    ]);
+    // Played as voiceFront plays it: speaking up cuts the third sentence.
+    const played: string[] = [];
+    let finish = () => {};
+    const voice = createFrontVoice({
+      fetchAudio: async (sentence) => sentence,
+      playAudio: (audio, signal) => {
+        played.push(audio);
+        return new Promise<void>((resolve) => {
+          finish = resolve;
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+    });
+    const flush = async () => {
+      for (let tick = 0; tick < 5; tick++) await Promise.resolve();
+    };
+    const read = (from: number) =>
+      voice.say(sentences.slice(from).join(" "), new AbortController().signal, {
+        sentences: sentences.slice(from),
+        onHeard: followReading(answer, from, sentences.length),
+      });
+    const first = read(0);
+    await flush();
+    finish();
+    await flush();
+    finish();
+    await flush();
+    expect(played).toEqual(sentences.slice(0, 3));
+    voice.hush();
+    await first;
+    expect(answerReading(answer)?.next).toBe(2);
+    // The page reloads: the answer and where its reading stopped are back.
+    __resetAnswersForTests(storage, { reload: true });
+    expect(findAnswer("gst")?.text).toBe(text);
+    const cut = cutReading("gst");
+    expect(cut?.from).toBe(2);
+    expect(answersContext()).toContain(
+      `cut just now after sentence 2 of ${sentences.length}`,
+    );
+    // Going on: from the sentence cut, nothing heard before it again.
+    played.length = 0;
+    const rest = read(cut!.from);
+    for (let left = sentences.length - 2; left > 0; left--) {
+      await flush();
+      finish();
+    }
+    await rest;
+    expect(played).toEqual(sentences.slice(2));
+    expect(cutReading()).toBeNull();
+    expect(answersContext()).toContain("Read aloud whole.");
+  });
+
+  test("an answer's reading is found again only lately, and its file named", () => {
+    const answer = noteAgentAnswer({
+      agent: "gst",
+      text: `${"Une phrase. ".repeat(200)}`,
+      ids: [],
+      at: 0,
+    });
+    noteAnswerFile(answer.id, "/tmp/roamgate-uploads-1/voice-answers/a.md");
+    followReading(answer, 0, 200, () => 1000)(9);
+    expect(cutReading(undefined, 2000)?.from).toBe(10);
+    expect(cutReading("roamgate", 2000)).toBeNull();
+    expect(cutReading(undefined, 1000 + 7 * 60 * 60_000)).toBeNull();
+    expect(answersContext(60_000)).toContain(
+      "whole in /tmp/roamgate-uploads-1/voice-answers/a.md",
+    );
+    // The same answer again keeps where it was read.
+    expect(
+      noteAgentAnswer({ agent: "gst", text: answer.text, ids: [] }).id,
+    ).toBe(answer.id);
+    expect(cutReading(undefined, 2000)?.from).toBe(10);
+  });
+
   test("the notice that a question waits is not part of an answer", () => {
     expect(answerText(`Done.\n\n${BLOCKED_NOTICE}\n\n`)).toBe("Done.");
   });
 });
 
 describe("what the user says to the companion", () => {
+  test("asking to go on with a reading that was cut", () => {
+    for (const said of [
+      "Reprends la lecture.",
+      "Continue où ça s'est coupé.",
+      "Vas-y, reprends là où tu t'étais arrêté.",
+      "Tu peux me relire à partir de là où tu en étais ?",
+      "Keep reading.",
+      "Pick up where you left off.",
+    ])
+      expect(isResumeRequest(said)).toBe(true);
+    for (const said of [
+      "Continue.",
+      "Reprends le rebase.",
+      "Continue les tests sur gst.",
+      "Lis le README.",
+    ])
+      expect(isResumeRequest(said)).toBe(false);
+  });
+
   test("asking to hear an answer whole", () => {
     for (const said of [
       "Read me the whole answer.",

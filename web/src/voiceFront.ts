@@ -128,6 +128,13 @@ export type SayOptions = {
    * whoever shows the reading (a companion call highlights it in its chat).
    */
   answer?: { agent: string; ids: readonly string[] };
+  /** The sentences to say, as split already (a reading going on). */
+  sentences?: readonly string[];
+  /**
+   * Hears each sentence once it was heard to its end: played whole, not
+   * stopped (a call's sentence once its end is heard on the phone).
+   */
+  onHeard?: (index: number) => void;
 };
 
 export function createFrontVoice<Speech>(
@@ -153,7 +160,9 @@ export function createFrontVoice<Speech>(
       // ready and what is said before it ends: a long answer starts early.
       // Where the reading is shown (companionReading.ts) these same
       // sentences mark it, one per piece of speech.
-      const sentences = spokenSentences(text);
+      const sentences = options?.sentences?.length
+        ? [...options.sentences]
+        : spokenSentences(text);
       let started = false;
       const turnOver = turn(stop);
       turnOver.catch(() => {});
@@ -179,6 +188,7 @@ export function createFrontVoice<Speech>(
             started = true;
             options?.onSentence?.(index, sentences);
             await speech.playAudio(ready, owner.signal);
+            if (!owner.signal.aborted) options?.onHeard?.(index);
           }
         } catch {
           // Unsaid: voice chat goes on.

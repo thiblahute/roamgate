@@ -87,6 +87,32 @@ function fakeSpeech() {
 }
 
 describe("createFrontVoice", () => {
+  test("says the sentences given, and hears which ones were heard whole", async () => {
+    const speech = fakeSpeech();
+    const signal = new AbortController().signal;
+    const heard: number[] = [];
+    const sentences = ["Phase deux : la", "réponse de Nicolas.", "Puis slomo."];
+    const said = speech.voice.say(sentences.join(" "), signal, {
+      sentences,
+      onHeard: (index) => heard.push(index),
+    });
+    await flush();
+    // As given, not split again (a colon would end a sentence).
+    expect(speech.played).toEqual(["fr:Phase deux : la"]);
+    speech.finish();
+    await flush();
+    expect(heard).toEqual([0]);
+    expect(speech.played).toEqual([
+      "fr:Phase deux : la",
+      "fr:réponse de Nicolas.",
+    ]);
+    // Cut halfway through the second: it is not heard.
+    speech.voice.hush();
+    await said;
+    expect(heard).toEqual([0]);
+    expect(speech.played).toHaveLength(2);
+  });
+
   test("says one thing after the other, in its language", async () => {
     const speech = fakeSpeech();
     const signal = new AbortController().signal;
