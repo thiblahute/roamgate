@@ -211,6 +211,116 @@ describe("agent session trajectory projection", () => {
     });
   });
 
+  test("keeps what Codex writes in a user message out of the user's words", () => {
+    const user = (
+      at: string,
+      texts: string[],
+      meta?: Record<string, unknown>,
+    ) => ({
+      type: "response_item",
+      timestamp: `2026-11-20T07:27:${at}.000Z`,
+      payload: {
+        type: "message",
+        role: "user",
+        content: texts.map((text) => ({ type: "input_text", text })),
+        ...(meta ? { internal_chat_message_metadata_passthrough: meta } : {}),
+      },
+    });
+    const environment = (date: string) =>
+      `<environment_context>\n  <cwd>/srv/app</cwd>\n  <shell>zsh</shell>\n  <current_date>${date}</current_date>\n  <timezone>America/Santiago</timezone>\n  <filesystem><workspace_roots><root>/srv/app</root></workspace_roots><permission_profile type="managed"><file_system type="restricted"><entry access="read"><special>:root</special></entry></file_system></permission_profile></filesystem>\n</environment_context>`;
+    const trajectory = projectAgentTrajectory("codex", sessionFile, [
+      // Older rollouts: told apart by the item's leading tag.
+      user("00", [
+        "# AGENTS.md instructions for /srv/app\n\n<INSTRUCTIONS>\nBe terse.\n</INSTRUCTIONS>",
+        environment("2026-11-19"),
+      ]),
+      user("01", ["Hi"]),
+      user("02", [
+        "<turn_aborted>\nThe user interrupted the previous turn on purpose.\n</turn_aborted>",
+      ]),
+      // The same environment again: said once.
+      user("03", [environment("2026-11-19")]),
+      user("04", [
+        "<user_instructions>\nAlways test.\n</user_instructions>\nAnd the words after it",
+      ]),
+      user("05", [
+        "<user_shell_command>\n<command>\necho $TAG\n</command>\n<result>\nExit code: 0\nDuration: 0.03 seconds\nOutput:\nv1\n\n</result>\n</user_shell_command>",
+      ]),
+      user("06", [
+        `<subagent_notification>\n{"agent_path":"019e-a","status":{"completed":"Found the cause."}}\n</subagent_notification>`,
+      ]),
+      user("07", [
+        `<subagent_notification>\n{"agent_path":"019e-a","status":"shutdown"}\n</subagent_notification>`,
+      ]),
+      // Newer rollouts say which item is whose.
+      user(
+        "08",
+        [
+          "<recommended_plugins>\n- Airtable\n</recommended_plugins>",
+          environment("2026-11-20"),
+        ],
+        {
+          content_item_kinds: [
+            "plugins.recommendations",
+            "environments.environment_context",
+          ],
+          content_item_metadata: [
+            { provenance: { type: "harness" } },
+            { provenance: { type: "harness", hook: false } },
+          ],
+        },
+      ),
+      user("09", ["<unknown_harness_note>x</unknown_harness_note>"], {
+        content_item_kinds: ["harness.unknown"],
+      }),
+      user("10", ["Sure, go ahead"], {
+        content_item_kinds: ["user.text"],
+        content_item_metadata: [{ provenance: { type: "user" } }],
+      }),
+      // The user's own text that starts like a tag stays theirs.
+      user("11", ["<environment_context> is what Codex writes"], {
+        content_item_kinds: ["user.text"],
+      }),
+      // The frame around an attached image: its placeholder only.
+      user(
+        "12",
+        [
+          '<image name=[Image #1] path="/tmp/a.png">',
+          "</image>",
+          "[Image #1] look",
+        ],
+        {
+          content_item_kinds: ["user.text", "user.text", "user.text"],
+        },
+      ),
+    ]);
+    const entries = historyEntriesFromTrajectory(sessionFile, trajectory);
+    expect(
+      entries.map((entry) => [
+        entry.role,
+        entry.injected?.kind ?? "text",
+        entry.injected?.label ?? entry.text,
+      ]),
+    ).toEqual([
+      ["user", "context", "Environment: cwd /srv/app, date 2026-11-19"],
+      ["user", "text", "Hi"],
+      ["user", "text", "And the words after it"],
+      ["user", "context", "You ran: echo $TAG"],
+      ["user", "report", "Report from a subagent"],
+      ["user", "context", "Environment: cwd /srv/app, date 2026-11-20"],
+      ["user", "text", "Sure, go ahead"],
+      ["user", "text", "<environment_context> is what Codex writes"],
+      ["user", "text", "[Image #1] look"],
+    ]);
+    expect(entries[0]!.text).toContain("- workspace: `/srv/app`");
+    expect(entries[3]!.text).toBe("```\n$ echo $TAG\nv1\n```");
+    expect(entries[4]!.text).toBe("Found the cause.");
+    for (const entry of entries)
+      expect(entry.text).not.toMatch(
+        /AGENTS\.md|turn_aborted|Airtable|<filesystem>/,
+      );
+  });
+
   test("projects assistant messages from older Codex event-only sessions", () => {
     const trajectory = projectAgentTrajectory("codex", sessionFile, [
       {

@@ -6,6 +6,11 @@ import {
   parseSlashCommand,
   slashCommandText,
 } from "../../../shared/slashCommand";
+import {
+  type CodexInjectedState,
+  codexInjectedState,
+  codexUserParts,
+} from "./codex-injected";
 import { grokReasoningText, grokUserMessageText } from "./grok-session";
 import { REWOUND_PROMPT } from "./session-rewind";
 import type { AtifStep, AtifTrajectory, SessionFile } from "./session-types";
@@ -201,6 +206,37 @@ function piTokenUsageToMetrics(value: unknown) {
   return metrics;
 }
 
+/**
+ * A Codex user message as steps: the user's words, and what Codex wrote
+ * there itself (codex-injected.ts) as a collapsed notice, or nothing.
+ */
+function codexUserSteps(
+  steps: Omit<AtifStep, "step_id">[],
+  payload: Record<string, unknown>,
+  timestamp: string,
+  state: CodexInjectedState,
+) {
+  for (const part of codexUserParts(payload, state)) {
+    if (part.type === "text") {
+      const text = cleanMessageText(part.text);
+      if (text)
+        steps.push({
+          timestamp,
+          source: "user",
+          message: text,
+          metrics: tokenUsageToMetrics(tokenUsageFrom(payload.usage)),
+        });
+    } else {
+      steps.push({
+        timestamp,
+        source: "user",
+        message: part.body.trim() || part.label,
+        extra: { injected: { kind: part.kind, label: part.label } },
+      });
+    }
+  }
+}
+
 function projectCodexTrajectory(
   file: SessionFile,
   records: Record<string, unknown>[],
@@ -220,6 +256,7 @@ function projectCodexTrajectory(
       record.payload.type === "message" &&
       record.payload.role === "assistant",
   );
+  const codexState = codexInjectedState();
   records.forEach((record, index) => {
     const timestamp = messageTime(record, file.mtimeMs, index);
     if (record.type === "event_msg" && isRecord(record.payload)) {
@@ -257,6 +294,10 @@ function projectCodexTrajectory(
     const type = stringValue(payload.type);
     if (type === "message") {
       const role = stringValue(payload.role);
+      if (role === "user") {
+        codexUserSteps(steps, payload, timestamp, codexState);
+        return;
+      }
       const text = cleanMessageText(codexContentText(payload.content));
       if (!text) return;
       steps.push({

@@ -6,14 +6,18 @@
  * them, and none counts as the user's own message.
  */
 
-/** Also "rewound": the history's notice of the user's messages a rewind cut. */
+/**
+ * Also "rewound": the history's notice of the user's messages a rewind cut;
+ * "context": what Codex says of its environment (codex-injected.ts).
+ */
 export type InjectedKind =
   | "report"
   | "agent"
   | "session"
   | "teammate"
   | "task"
-  | "rewound";
+  | "rewound"
+  | "context";
 
 export type InjectedNotice = {
   kind: InjectedKind;
