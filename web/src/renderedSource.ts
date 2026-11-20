@@ -1,4 +1,5 @@
 import { marked, type Token, type Tokens, type TokensList } from "marked";
+import { NOT_WORDS, quoteWords, wordUnit } from "../../shared/fileAnchors";
 import type { ReviewAnchor, ReviewRegion } from "../../shared/review";
 
 /*
@@ -101,27 +102,8 @@ export type SourceStop = {
   text: string;
 };
 
-/** A space, or a mark Markdown puts around words: not what a quote says. */
-const NOT_WORDS = /[\s`*_~#>|\\]/;
-
-/** One UTF-16 unit as quotes are compared: lower case, when that keeps it one. */
-function wordUnit(unit: string): string {
-  const lower = unit.toLowerCase();
-  return lower.length === 1 ? lower : unit;
-}
-
-/**
- * The words a quote is found by, as the chat finds a part's words in its
- * message: a link's text without its target, no spaces nor Markdown marks
- * (inline code's backticks, emphasis), lower case. A quote that starts
- * or ends mid-word is found all the same.
- */
-export function quoteWords(text: string): string {
-  let words = "";
-  for (const unit of text.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1"))
-    if (!NOT_WORDS.test(unit)) words += wordUnit(unit);
-  return words;
-}
+/** The words a quote is found by (shared/fileAnchors.ts, the server's too). */
+export { quoteWords };
 
 /** A quote's first line with words: what a stop of its line is found by. */
 function firstWords(quote: string): string {

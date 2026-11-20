@@ -54,6 +54,11 @@ import { ReviewGoneError } from "../workspace/review-patch";
 import type { ReviewFileRequest } from "../workspace/review-files";
 import { combinedAnchor, entryAnchored } from "./changes-anchors";
 import {
+  anchorInFile,
+  anchoredInFile,
+  writtenInFile,
+} from "../../../shared/fileAnchors";
+import {
   lineInFile,
   movedAnchor,
   rewrittenCommit,
@@ -1599,7 +1604,10 @@ export function createReviewService(args: {
             params.chats === true),
       )
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    for (const each of shown) migrateEntryAnchors(each);
+    for (const each of shown) {
+      migrateEntryAnchors(each);
+      void reanchorFile(each);
+    }
     return shown.map(snapshot);
   }
 
@@ -1671,6 +1679,111 @@ export function createReviewService(args: {
           : undefined,
       );
     migrating.set(target.id, task);
+    return task;
+  }
+
+  /** Passes over a review's threads on files running, by review. */
+  const reanchoringFile = new Map<string, Promise<void>>();
+  const reanchorFileAgain = new Set<string>();
+  /** When a read of the review (not asked to look) may read its files again. */
+  const fileReadAt = new Map<string, number>();
+  const FILE_REANCHOR_EVERY_MS = 30_000;
+
+  /**
+   * The reviews whose threads on files follow the files: a rendered
+   * file's (all its threads), the checkout's worktree and branch reviews
+   * (those written in the Files preview, which the review in Changes
+   * shows with its own).
+   */
+  function followsFiles(target: ReviewSession): boolean {
+    const { kind } = target.target;
+    return (
+      !!renderedFile(target) ||
+      kind === "worktree" ||
+      (kind === "range" && !target.target.compare)
+    );
+  }
+
+  /** A thread of the review that follows its file, on `path` when given. */
+  function followsFile(
+    target: ReviewSession,
+    thread: ReviewThread,
+    path?: string,
+  ): boolean {
+    const { anchor } = thread;
+    if (!anchor.path || (path !== undefined && anchor.path !== path))
+      return false;
+    const rendered = renderedFile(target);
+    return (
+      (rendered ? anchor.path === rendered : writtenInFile(anchor)) &&
+      anchoredInFile(anchor)
+    );
+  }
+
+  /**
+   * The threads of a review on its files' lines placed again where their
+   * lines are in each file as it reads now (shared/fileAnchors.ts): each
+   * stays while its line reads as written and holds its words, else moves
+   * to the line reading so, or holding most of its first words, else is
+   * taken off its lines (listed, drawn on no line). Run in the background
+   * when the review is opened, written on, told of an update by its agent
+   * or that the Files preview read a file again (`asked`, on `path`), and
+   * on a read of the review at most every half minute. Each thread moved
+   * is written back; the review is published when one was. A file that
+   * cannot be read is tried again on the next read.
+   */
+  function reanchorFile(
+    target: ReviewSession,
+    asked = false,
+    path?: string,
+  ): Promise<void> {
+    const { loadFile } = args;
+    if (!followsFiles(target) || !loadFile) return Promise.resolve();
+    const running = reanchoringFile.get(target.id);
+    if (running) {
+      if (asked) reanchorFileAgain.add(target.id);
+      return running;
+    }
+    if (!asked && (fileReadAt.get(target.id) ?? 0) > clock())
+      return Promise.resolve();
+    const byPath = new Map<string, ReviewThread[]>();
+    for (const thread of threadsOf(target.id).values())
+      if (followsFile(target, thread, path)) {
+        const file = thread.anchor.path!;
+        byPath.set(file, [...(byPath.get(file) ?? []), thread]);
+      }
+    if (!byPath.size) return Promise.resolve();
+    if (path === undefined)
+      fileReadAt.set(target.id, clock() + FILE_REANCHOR_EVERY_MS);
+    const task = (async () => {
+      let moved = false;
+      for (const [file, todo] of byPath) {
+        const text = await fromCheckout(target, () =>
+          loadFile(target, "", file),
+        ).catch(() => undefined);
+        if (!live(target)) return;
+        if (text === undefined) continue;
+        const lines = text.replace(/\r\n|\r/g, "\n").split("\n");
+        for (const thread of todo) {
+          // Edited, moved or deleted meanwhile: left for the next pass.
+          if (threadsOf(target.id).get(thread.id) !== thread) continue;
+          const anchor = anchorInFile(thread.anchor, lines);
+          if (!anchor) continue;
+          // Not a user edit: its updatedAt stays.
+          thread.anchor = anchor;
+          storage.saveThread(thread);
+          moved = true;
+        }
+      }
+      if (moved) publishSession(target);
+    })()
+      .finally(() => reanchoringFile.delete(target.id))
+      .then(() =>
+        reanchorFileAgain.delete(target.id)
+          ? reanchorFile(target, true)
+          : undefined,
+      );
+    reanchoringFile.set(target.id, task);
     return task;
   }
 
@@ -1967,6 +2080,7 @@ export function createReviewService(args: {
       bindPane(found, paneId);
     changed(found);
     void migrateEntryAnchors(found);
+    void reanchorFile(found, true);
     if (params.raise !== false)
       args.publish({
         type: "open",
@@ -2495,6 +2609,9 @@ export function createReviewService(args: {
         : {}),
     };
     saveThread(target, thread);
+    // Written on a file as it was read: placed where that is now.
+    if (followsFile(target, thread))
+      void reanchorFile(target, true, thread.anchor.path);
     if (kind === "draft") notePendingFor(target, thread);
     if (forAgent(thread, target) && author(params.author) === REVIEW_USER)
       scheduleDelivery(target);
@@ -2853,6 +2970,8 @@ export function createReviewService(args: {
       throw new ReviewError("invalid agent state");
     }
     changed(target);
+    // The agent may have changed the file it reviews: its threads follow.
+    if (params.state !== "working") void reanchorFile(target, true);
     return snapshot(target);
   }
 
@@ -4228,6 +4347,7 @@ export function createReviewService(args: {
     get: (params: Record<string, unknown>) => {
       const target = session(params.sessionId);
       void migrateEntryAnchors(target);
+      void reanchorFile(target);
       // An agent reading the review: its threads off rewritten commits
       // too, at most every half minute.
       if ((rewriteReadAt.get(target.id) ?? 0) <= clock()) {
@@ -4242,6 +4362,22 @@ export function createReviewService(args: {
     /** The migration of one review's Changes anchors (tests await it). */
     migrateEntryAnchors: (params: Record<string, unknown>) =>
       migrateEntryAnchors(session(params.sessionId)),
+    /**
+     * The review's threads on its files (on `path` alone, when given)
+     * placed again as the files read now (the Files preview read one
+     * again; tests await it): the review after.
+     */
+    reanchorFile: async (
+      params: Record<string, unknown>,
+    ): Promise<ReviewSnapshot> => {
+      const target = session(params.sessionId);
+      await reanchorFile(
+        target,
+        true,
+        optionalText(params.path, "path", 4096) || undefined,
+      );
+      return snapshot(target);
+    },
     open,
     equivalentTarget,
     update,

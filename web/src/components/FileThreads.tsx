@@ -16,7 +16,13 @@ import {
   type ReviewThread,
   unheardComments,
 } from "../../../shared/review";
-import { reviewCall, useReviewState } from "../review";
+import {
+  anchorAt,
+  anchorDetached,
+  anchoredInFile,
+  placeInFile,
+} from "../../../shared/fileAnchors";
+import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
 import { writeReviewSession } from "../reviewSessionCall";
 import {
   cellPlacement,
@@ -133,48 +139,27 @@ export function codeReviewThreadsOn(
 }
 
 /**
- * Where a thread is in the file as it reads now: on its line while that
- * still reads as written, else on the nearest line that does (it moved),
- * else, written on the rendered file (whose older anchors keep the words
- * quoted rather than the line), on its line; otherwise, and on a removed
- * line (the old side), on no line: listed with the comments, not drawn.
+ * Where a thread is in the file as it reads now (shared/fileAnchors.ts, as
+ * the server moves stored anchors): on its lines while they still read as
+ * written and hold its words, else on the lines that do now (it moved, or
+ * was reworded), else, as on a removed line (the old side), on no line:
+ * listed with the comments, drawn on no line, never on whatever is on its
+ * old lines now. One off its lines whose words are back is placed again.
  */
 export function placedInSource(
   thread: ReviewThread,
   lines: readonly string[],
 ): ReviewThread {
-  const { line, endLine, text, side } = thread.anchor;
-  if (line === undefined) return thread;
-  const unplaced = () => {
-    const anchor = { ...thread.anchor };
-    delete anchor.line;
-    delete anchor.endLine;
-    return { ...thread, anchor };
-  };
-  if (side === "old") return unplaced();
-  if (!lines.length || text === undefined) return thread;
-  const target = endLine ?? line;
-  if (lines[target - 1] === text) return thread;
-  let best = -1;
-  lines.forEach((each, index) => {
-    if (
-      each === text &&
-      (best < 0 || Math.abs(index + 1 - target) < Math.abs(best + 1 - target))
-    )
-      best = index;
-  });
-  if (best >= 0) {
-    const delta = best + 1 - target;
-    return {
-      ...thread,
-      anchor: {
-        ...thread.anchor,
-        line: line + delta,
-        ...(endLine !== undefined ? { endLine: endLine + delta } : {}),
-      },
-    };
-  }
-  return thread.anchor.render ? thread : unplaced();
+  const { anchor } = thread;
+  if (!lines.length) return thread;
+  const detached = () => ({ ...thread, anchor: anchorDetached(anchor) });
+  if (anchor.side === "old")
+    return anchor.line === undefined ? thread : detached();
+  if (!anchoredInFile(anchor)) return thread;
+  const place = placeInFile(anchor, lines);
+  if (!place) return anchor.line === undefined ? thread : detached();
+  if (place.how === "kept") return thread;
+  return { ...thread, anchor: anchorAt(anchor, place) };
 }
 
 /**
@@ -249,6 +234,32 @@ export function useFileThreads(
       return owner ? [owner] : [];
     });
   }, [all, snapshot, sessions]);
+  // The file read again and changed (a reload, after "Changed on disk"):
+  // each review with threads on it moves them to where their words are
+  // now, and keeps that (the agent reads the same lines).
+  const read = useRef<{ absolute?: string; source?: string | null }>({});
+  useEffect(() => {
+    const previous = read.current;
+    read.current = { absolute, source };
+    if (
+      !absolute ||
+      !source ||
+      previous.absolute !== absolute ||
+      !previous.source ||
+      previous.source === source
+    )
+      return;
+    for (const owner of owners) {
+      const root = owner.session.root.replace(/\/+$/, "");
+      if (!absolute.startsWith(`${root}/`)) continue;
+      void reviewCall<ReviewSnapshot>(connectionId, "review.reanchor", {
+        session_id: owner.session.id,
+        path: absolute.slice(root.length + 1),
+      })
+        .then(rememberReviewSnapshot)
+        .catch(() => {});
+    }
+  }, [connectionId, absolute, owners, source]);
   const writes = useMemo(() => threadWrites(connectionId), [connectionId]);
   return {
     threads: top,
@@ -423,6 +434,7 @@ export function FileThread({
   nested,
   review,
   top = false,
+  placeNote,
   onMessage = false,
 }: {
   thread: ReviewThread;
@@ -434,6 +446,8 @@ export function FileThread({
   review?: ReviewThreadLook;
   /** Listed above the diff, with the review's general comments. */
   top?: boolean;
+  /** Said first in the card's head: where it was written, when not drawn there. */
+  placeNote?: string;
   /** Drawn under the message it is on (a thread on the whole of it): its head says so. */
   onMessage?: boolean;
 }) {
@@ -608,9 +622,9 @@ export function FileThread({
       head={
         <>
           {onMessage ? <OnMessageHead /> : null}
-          {where || moment ? (
+          {placeNote || where || moment ? (
             <div className="chat-thread-count">
-              {[where, moment ? `paused at ${moment}` : ""]
+              {[placeNote, where, moment ? `paused at ${moment}` : ""]
                 .filter(Boolean)
                 .join(" · ")}
             </div>
@@ -848,6 +862,58 @@ export function SlotThreads({
     </div>
   ) : (
     <>{cards}</>
+  );
+}
+
+/**
+ * The threads of the Files preview drawn on no line: written on the whole
+ * file, or whose lines are gone from it (deleted, or reworded past
+ * finding), each with the words it was written on, listed above the file
+ * as the review in Changes lists its general comments, rather than drawn
+ * on whatever is on their old lines now.
+ */
+export function DetachedFileThreads({
+  threads,
+  api,
+  view,
+  undelivered,
+  nested,
+}: {
+  threads: readonly ReviewThread[];
+  api: ThreadWrites;
+  view: FileThreadView;
+  undelivered?: Undelivered;
+  /** Threads on parts of messages, by the message. */
+  nested?: ReadonlyMap<string, ReviewThread[]>;
+}) {
+  const shown = threads.filter(
+    (thread) =>
+      thread.anchor.line === undefined &&
+      thread.kind !== "merge-request" &&
+      !(view.openOnly && thread.resolved),
+  );
+  if (!shown.length) return null;
+  return (
+    <div
+      className="diff-review-general file-preview-detached"
+      data-testid="file-preview-detached"
+    >
+      <section className="diff-review-general-part">
+        <h3>Comments on the review, or on code not shown here</h3>
+        {shown.map((thread) => (
+          <div key={thread.id} className="chat-review diff-review-thread">
+            <FileThread
+              thread={thread}
+              api={api}
+              view={view}
+              undelivered={undelivered}
+              nested={nested}
+              placeNote={renderedWhere(thread.anchor)}
+            />
+          </div>
+        ))}
+      </section>
+    </div>
   );
 }
 

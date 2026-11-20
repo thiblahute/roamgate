@@ -60,6 +60,7 @@ import {
 import { isAnimatedSvg, markdownSource, pointQuote } from "../renderedSource";
 import { DiagramFrameContext } from "./DiagramBlock";
 import {
+  DetachedFileThreads,
   fileStopAnchor,
   fileThreadKeys,
   fileThreadOrder,
@@ -2529,6 +2530,17 @@ export function FilePreviewContent({
                   <code className="file-preview-search-snippet">{snippet}</code>
                 ) : null}
               </div>
+            ) : null}
+            {!loading && !error && canComment && hasPreviewText ? (
+              // The threads on no line of the file: listed, not drawn on
+              // whatever is on their old lines now (FileThreads.tsx).
+              <DetachedFileThreads
+                threads={fileThreads.threads}
+                api={fileThreads}
+                view={threadView}
+                undelivered={undelivered}
+                nested={fileThreads.nested}
+              />
             ) : null}
             {!loading && !error && hasMarkdownPreview && renderRichPreview ? (
               <DiagramFrameContext.Provider value={diagramFrames}>

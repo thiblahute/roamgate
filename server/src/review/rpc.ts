@@ -55,6 +55,7 @@ export type RenderedPageAddress = {
 
 const SESSION_METHODS = new Set([
   "review.get",
+  "review.reanchor",
   "review.update",
   "review.remove",
   "review.diff",
@@ -238,6 +239,9 @@ export async function handleReviewRpc(
     }
     case "review.get":
       return service.get(params);
+    case "review.reanchor":
+      // The Files preview read a file again: its threads follow it.
+      return service.reanchorFile({ ...params, path: raw.path });
     case "review.update":
       return service.update({ ...params, paneId: raw.agent_pane });
     case "review.remove":
