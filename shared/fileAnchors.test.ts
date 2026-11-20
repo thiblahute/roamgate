@@ -191,6 +191,61 @@ describe("placeInFile", () => {
     });
   });
 
+  test("a thread on a heading follows the heading, never a sentence saying its word", () => {
+    // A list kept as one thread per section heading (plans/todo.md).
+    const lines = [
+      "# TODO",
+      "",
+      "A resolved thread is done and moves to the Done section.",
+      "",
+      "## Reviews and Files",
+      "",
+      "## Done",
+      "",
+      "Resolved threads sit here.",
+    ];
+    const onHeading = (line: number, quote: string): ReviewAnchor => ({
+      path: "todo.md",
+      line,
+      side: "new",
+      text: lines[line - 1]!,
+      render: { quote },
+    });
+    const done = onHeading(7, "Done");
+    const reviews = onHeading(5, "Reviews and Files");
+    expect(placeInFile(done, lines)).toMatchObject({ line: 7, how: "kept" });
+    // The headings swapped: each found by its text.
+    const swapped = [...lines];
+    swapped[4] = "## Done";
+    swapped[6] = "## Reviews and Files";
+    expect(placeInFile(done, swapped)).toMatchObject({ line: 5, how: "text" });
+    expect(placeInFile(reviews, swapped)).toMatchObject({
+      line: 7,
+      how: "text",
+    });
+    // "## Done" renamed: not on the sentence saying "done" (line 3), nor
+    // on "Resolved threads": off its lines.
+    const renamed = [...lines];
+    renamed[6] = "## Finished";
+    expect(placeInFile(done, renamed)).toBeNull();
+    // A heading of a few words reworded with more: found while all its
+    // words read on in their order, else not.
+    renamed[4] = "## Reviews, and the Files preview";
+    expect(placeInFile(reviews, renamed)).toMatchObject({
+      line: 5,
+      how: "words",
+      quote: "Reviews, and the Files preview",
+    });
+    renamed[4] = "## Reviews and comments";
+    expect(placeInFile(reviews, renamed)).toBeNull();
+    // Two words: a line of just those.
+    const forYou = onHeading(5, "For you");
+    expect(
+      placeInFile(forYou, ["Nothing for you here yet.", "", "## For you"]),
+    ).toMatchObject({ line: 3, how: "words" });
+    expect(placeInFile(forYou, ["Nothing for you here yet."])).toBeNull();
+  });
+
   test("a last line read on another item does not keep the thread there", () => {
     const lines = [
       "- [ ] Review search on desktop: N does nothing, n must wrap",

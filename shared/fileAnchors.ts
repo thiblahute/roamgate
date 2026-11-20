@@ -43,6 +43,10 @@ export const QUOTE_HEAD_UNITS = 48;
 export const QUOTE_HEAD_WORDS = 8;
 /** This many of them (rounded up), in their order, must read on a line. */
 const HEAD_SHARE = 0.6;
+/** A quote of fewer words than this must read whole (a heading's). */
+const SHORT_HEAD_WORDS = 4;
+/** One of this many words or fewer must be all the line's words. */
+const LINE_HEAD_WORDS = 2;
 /** A line continues a moved quote when this many of its units are in it. */
 const CONTINUES_UNITS = 12;
 
@@ -162,9 +166,11 @@ export function renderedWords(lines: readonly string[]): string {
  * its last line did, its lines holding those words; else on the line
  * where the longest run of the quote's first words (QUOTE_HEAD_WORDS) is
  * read in their order, the nearest among equals, when that is most of
- * them (HEAD_SHARE), the lines after it that still read as the quote's
- * going with it. Null when none does: the words are gone or too changed.
- * A thread with no line, found by its text or words, is placed again.
+ * them (HEAD_SHARE; all of a short quote's, a heading's, which one or two
+ * words must be the line's whole words), the lines after it that still
+ * read as the quote's going with it. Null when none does: the words are
+ * gone or too changed. A thread with no line, found by its text or words,
+ * is placed again.
  */
 export function placeInFile(
   anchor: ReviewAnchor,
@@ -216,11 +222,17 @@ export function placeInFile(
   if (!head) return null;
   const headWords = tokensOf(quote!).slice(0, QUOTE_HEAD_WORDS);
   if (!headWords.length) return null;
-  const needed = Math.ceil(headWords.length * HEAD_SHARE);
+  const needed =
+    headWords.length < SHORT_HEAD_WORDS
+      ? headWords.length
+      : Math.ceil(headWords.length * HEAD_SHARE);
   const tokens = lines.map(tokensOf);
   let best: { start: number; matched: number; distance: number } | null = null;
   tokens.forEach((own, index) => {
     if (!own.length) return;
+    // A word or two ("Done"): a line of just those, not one saying them.
+    if (headWords.length <= LINE_HEAD_WORDS && own.length !== headWords.length)
+      return;
     // Its words may run on to the next lines; the run starts on this one.
     const window = [
       ...own,
