@@ -78,6 +78,9 @@ function fakeConnection(options: { conversation?: boolean } = {}) {
         return { code: 0, stdout: "NAME gcc-fix\n", stderr: "" };
       if (script.includes("reset -q --keep"))
         return { code: 0, stdout: "AT abc1234\n", stderr: "" };
+      // The clone is a checkout: its worktrees start from it.
+      if (script.includes('printf "TOP'))
+        return { code: 0, stdout: "TOP\t/src/gstreamer\n", stderr: "" };
       if (script.includes("rev-parse --show-toplevel")) {
         const dir = /cd '([^']+)'/.exec(script)?.[1] ?? "";
         return {

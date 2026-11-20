@@ -104,6 +104,88 @@ export function parseHomeRoot(stdout: string): {
   return { top, remotes };
 }
 
+/**
+ * The clone's own checkout, where its worktrees start from. Herdr's
+ * worktree actions, and Roamgate's worktree path before them, run
+ * work-tree commands there (`git rev-parse --show-toplevel`), which a
+ * repository directory refuses: "this operation must be run in a work
+ * tree". A checkout is its own, and so is the work tree `core.worktree`
+ * gives a repository directory. A repository directory such as
+ * gstreamer.git (the first entry of `git worktree list`, with no work tree
+ * of its own) has the checkout its `gitdir` file names, or the directory
+ * beside it without `.git`, when that checkout's repository is this one.
+ * Prints `TOP\t<checkout>`, empty when there is none.
+ */
+export function homeSourceScript(clone: string): string {
+  const beside = clone.replace(/\/+$/, "").replace(/\.git$/, "");
+  return [
+    `cd ${shQuote(clone)} 2>/dev/null || exit 2`,
+    "t=$(git rev-parse --show-toplevel 2>/dev/null)",
+    'if [ -z "$t" ]; then',
+    '  c=$(cd "$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)',
+    `  for d in "$(sed -n 's,/\\.git$,,p' gitdir 2>/dev/null)" ${shQuote(beside)}; do`,
+    '    [ -n "$d" ] && [ -d "$d" ] || continue',
+    '    d=$(cd "$d" 2>/dev/null && pwd -P) || continue',
+    '    [ -n "$c" ] && [ "$(cd "$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)" = "$c" ] || continue',
+    '    t=$(git -C "$d" rev-parse --show-toplevel 2>/dev/null) && [ -n "$t" ] && break',
+    "  done",
+    "fi",
+    'printf "TOP\\t%s\\n" "$t"',
+    "exit 0",
+  ].join("\n");
+}
+
+/** The checkout `homeSourceScript` printed; empty when there is none. */
+export function parseHomeSource(stdout: string): string {
+  const line = stdout.split("\n").find((each) => each.startsWith("TOP\t"));
+  const top = line?.slice(4).trim() ?? "";
+  return top.startsWith("/") ? top : "";
+}
+
+/**
+ * Makes the home's worktree with git, from an existing worktree of the
+ * repository (`git worktree add` needs no work tree of the clone), on a new
+ * branch at the request's head. Prints `MADE <path>`; the exit code says
+ * which step failed (homeWorktreeError).
+ */
+export function homeWorktreeScript(
+  from: string,
+  path: string,
+  branch: string,
+  sha: string,
+): string {
+  return [
+    `cd ${shQuote(from)} 2>/dev/null || exit 2`,
+    `mkdir -p "$(dirname ${shQuote(path)})" || exit 3`,
+    `git worktree add -q -b ${shQuote(branch)} ${shQuote(path)} ${shQuote(sha)} >&2 || exit 4`,
+    `printf "MADE %s\\n" "$(cd ${shQuote(path)} && pwd -P)"`,
+  ].join("\n");
+}
+
+/** Why homeWorktreeScript failed: the command and directory, with git's words. */
+export function homeWorktreeError(
+  result: { code: number; stdout: string; stderr: string },
+  from: string,
+  path: string,
+  branch: string,
+  sha: string,
+): string {
+  const said = (result.stderr || result.stdout).trim().slice(-300);
+  const command = `git -C ${from} worktree add -b ${branch} ${path} ${sha.slice(0, 12)}`;
+  if (result.code === 2) return `cannot enter ${from}`;
+  if (result.code === 3) return `cannot create the directory of ${path}`;
+  return `${command} failed${said ? `: ${said}` : ""}`;
+}
+
+/** Where a home made with git goes: beside the review worktree. */
+export function homeWorktreePath(
+  reviewWorktree: string,
+  branch: string,
+): string {
+  const name = branch.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+/, "");
+  return `${reviewWorktree.replace(/\/+$/, "").replace(/\/[^/]*$/, "")}/${name || "home"}`;
+}
+
 /** Control characters out of text from a forge, before it reaches an agent. */
 function plain(text: string): string {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them
@@ -394,13 +476,13 @@ export function createMrHomes(deps: {
   }
 
   /**
-   * The workspace of the project's clone itself: a new worktree starts from
+   * The workspace of the clone's own checkout: a new worktree starts from
    * the repository's parent workspace (Herdr refuses a linked worktree's,
-   * such as the review workspace). Opened on the clone when none is.
+   * such as the review workspace). Opened on the checkout when none is.
    */
   async function cloneWorkspace(
     conn: MrConnection,
-    clone: string,
+    checkout: string,
     item: MrItem,
   ): Promise<string> {
     const trim = (path: unknown) =>
@@ -410,8 +492,8 @@ export function createMrHomes(deps: {
       Array.isArray(listed?.workspaces) ? listed.workspaces : []
     ).find(
       (each: any) =>
-        trim(each?.worktree?.checkout_path) === trim(clone) ||
-        (!each?.worktree?.checkout_path && trim(each?.cwd) === trim(clone)),
+        trim(each?.worktree?.checkout_path) === trim(checkout) ||
+        (!each?.worktree?.checkout_path && trim(each?.cwd) === trim(checkout)),
     );
     if (typeof found?.workspace_id === "string") return found.workspace_id;
     // Herdr's list may give no folder: a pane working in the clone says it.
@@ -419,12 +501,12 @@ export function createMrHomes(deps: {
     const pane = (Array.isArray(panes?.panes) ? panes.panes : []).find(
       (each: any) =>
         typeof each?.workspace_id === "string" &&
-        (trim(each?.cwd) === trim(clone) ||
-          trim(each?.foreground_cwd) === trim(clone)),
+        (trim(each?.cwd) === trim(checkout) ||
+          trim(each?.foreground_cwd) === trim(checkout)),
     );
     if (pane) return pane.workspace_id as string;
     const created = await conn.herdr("workspace.create", {
-      cwd: clone,
+      cwd: checkout,
       label: item.project.split("/").pop() ?? item.project,
       focus: false,
     });
@@ -435,6 +517,50 @@ export function createMrHomes(deps: {
         "herdr",
       );
     return id;
+  }
+
+  /**
+   * The home's worktree made with git when the clone is a repository
+   * directory with no checkout of its own: Herdr starts no worktree there
+   * (not a work tree), nor from its linked worktrees, so git makes it from
+   * the project's review worktree, beside it, and Herdr opens it as a
+   * workspace. The user's worktree path is not run.
+   */
+  async function gitWorktree(
+    conn: MrConnection,
+    record: MrProjectRecord,
+    branch: string,
+    sha: string,
+    key: string,
+  ): Promise<{ path: string; workspaceId: string }> {
+    const path = homeWorktreePath(record.worktree, branch);
+    const made = await conn.run(
+      homeWorktreeScript(record.worktree, path, branch, sha),
+      120_000,
+    );
+    const at = /^MADE (\/.*)$/m.exec(made.stdout)?.[1]?.trim();
+    if (made.code !== 0 || !at)
+      throw new MrReviewsError(
+        `cannot make the home's worktree on ${conn.label}: ${homeWorktreeError(made, record.worktree, path, branch, sha)}`,
+        "worktree",
+      );
+    logger.info("home worktree made with git: the clone has no checkout", {
+      mr: key,
+      clone: record.clone,
+      path: at,
+    });
+    const created = await conn.herdr("workspace.create", {
+      cwd: at,
+      label: branch,
+      focus: false,
+    });
+    const id = created?.workspace?.workspace_id;
+    if (typeof id !== "string" || !id)
+      throw new MrReviewsError(
+        `Herdr did not open the home's worktree ${at}`,
+        "herdr",
+      );
+    return { path: at, workspaceId: id };
   }
 
   /** Whether a recorded home's workspace is still there. */
@@ -502,11 +628,26 @@ export function createMrHomes(deps: {
     )?.[1];
     if (!named)
       throw new MrReviewsError("cannot name the home's branch", "worktree");
-    const made = await deps.createWorktree({
-      connectionId: conn.id,
-      workspaceId: await cloneWorkspace(conn, record.clone, item),
-      branch: named,
-    });
+    // Where the worktree starts from: the clone's own checkout, never the
+    // repository directory itself (no work tree: Herdr and the worktree
+    // path fail there with "this operation must be run in a work tree").
+    const source = parseHomeSource(
+      (await conn.run(homeSourceScript(record.clone), 30_000)).stdout,
+    );
+    const made = source
+      ? await deps
+          .createWorktree({
+            connectionId: conn.id,
+            workspaceId: await cloneWorkspace(conn, source, item),
+            branch: named,
+          })
+          .catch((error) => {
+            throw new MrReviewsError(
+              `cannot make the home's worktree from ${source} on ${conn.label}: ${error instanceof Error ? error.message : String(error)}`,
+              "worktree",
+            );
+          })
+      : await gitWorktree(conn, record, named, item.headSha, key);
     const workspaceId = made.workspaceId;
     if (!workspaceId)
       throw new MrReviewsError(

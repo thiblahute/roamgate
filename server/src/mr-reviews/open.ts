@@ -436,19 +436,25 @@ export function createMrOpener(deps: MrOpenerDeps) {
       path: string;
     }) {
       const conn = connection(params.connectionId);
-      const result = await conn.run(
-        `cd ${shQuote(params.path)} 2>/dev/null && git rev-parse --show-toplevel`,
-        30_000,
-      );
-      if (result.code !== 0)
-        throw new MrReviewsError(
-          `${params.path} is not a Git checkout there`,
-          "invalid",
-        );
+      // A clone of the project there, a checkout or a repository directory
+      // such as gstreamer.git (no work tree of its own); else any checkout.
       const found = await deps.clones.check(conn, params.path, params);
+      let path = found?.path;
+      if (!path) {
+        const result = await conn.run(
+          `cd ${shQuote(params.path)} 2>/dev/null && git rev-parse --show-toplevel`,
+          30_000,
+        );
+        if (result.code !== 0)
+          throw new MrReviewsError(
+            `${params.path} is not a Git checkout there`,
+            "invalid",
+          );
+        path = result.stdout.trim();
+      }
       await deps.saveClone(mrProjectKey(params), {
         connectionId: conn.id,
-        path: found?.path ?? result.stdout.trim(),
+        path,
       });
       deps.clones.forget(conn.id);
       return { ok: true, remote: found?.remote ?? null };
