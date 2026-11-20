@@ -47,6 +47,12 @@ export type WorkProject = {
   done: WorkDoneRule;
   /** Tags it suggests (the ones its items used are suggested too). */
   tags?: string[];
+  /**
+   * The session that takes the project's items nobody owns: an item added
+   * or reopened with no owner is its, and told to it as a review comment
+   * is; so is a comment on an item whose owner is gone.
+   */
+  coordinator?: { session: string };
 };
 
 /** Who works on an item: a session, or one of its background subagents. */
@@ -245,4 +251,31 @@ export function describeWorkOwner(owner: WorkOwner): string {
   return owner.task
     ? `${owner.session} (task ${owner.task.slice(0, 8)})`
     : owner.session;
+}
+
+/**
+ * The thread that holds an item's description: the one made with the item
+ * (anchor `work.description`), whose first comment is the text it was
+ * added with; for an item made before that mark, the earliest thread on
+ * the item itself (no quote, not adopted) written within a minute of it.
+ */
+export function workDescriptionThread<
+  T extends {
+    anchor: { work?: { description?: true; quote?: string; from?: unknown } };
+    createdAt: string;
+  },
+>(threads: readonly T[], item: Pick<WorkItem, "createdAt">): T | null {
+  const marked = threads.find((thread) => thread.anchor.work?.description);
+  if (marked) return marked;
+  const made = new Date(item.createdAt).getTime();
+  if (Number.isNaN(made)) return null;
+  const early = threads
+    .filter((thread) => {
+      const work = thread.anchor.work;
+      if (!work || work.quote || work.from) return false;
+      const at = new Date(thread.createdAt).getTime();
+      return at >= made - 1_000 && at <= made + 60_000;
+    })
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return early[0] ?? null;
 }

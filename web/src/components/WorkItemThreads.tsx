@@ -185,23 +185,30 @@ export function useWorkItemThreads(item: string): WorkItemThreadsApi {
 }
 
 /**
- * An item's threads under its card, and a box for a new comment: `reply`
- * opens the box on the last thread, `compose` a new thread's box.
+ * An item's threads in its detail, and a box for a new comment: `reply`
+ * opens the box on the last thread, `compose` a new thread's box. The
+ * description thread (the item's text when it was added, shown as the
+ * detail's description) is drawn from its answers on: its first comment
+ * is the description.
  */
 export function WorkItemThreads({
   item,
+  api,
+  description,
   compose,
   onComposeDone,
   onLeave,
 }: {
   item: string;
+  api: WorkItemThreadsApi;
+  /** The thread holding the item's description, shown above. */
+  description?: ReviewThread | null;
   /** The box to open now: a new comment, or a reply to the last thread. */
   compose: "comment" | "reply" | null;
   onComposeDone: () => void;
   /** Esc in a box: the keys go back to the board. */
   onLeave: () => void;
 }) {
-  const api = useWorkItemThreads(item);
   const [replying, setReplying] = useState<string | null>(null);
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const [composing, setComposing] = useState(false);
@@ -231,7 +238,13 @@ export function WorkItemThreads({
           {api.error}
         </p>
       ) : null}
-      {api.threads.map((thread) => {
+      {api.threads.map((shown) => {
+        // The description's own thread: its answers, under the description.
+        const thread =
+          shown.id === description?.id
+            ? { ...shown, comments: shown.comments.slice(1) }
+            : shown;
+        if (!thread.comments.length) return null;
         const isFolded =
           folded.has(thread.id) ||
           (thread.resolved && !folded.has(`open:${thread.id}`));
@@ -261,18 +274,24 @@ export function WorkItemThreads({
                 <blockquote className="work-thread-quote">
                   {thread.anchor.work.quote}
                 </blockquote>
+              ) : thread.id === description?.id ? (
+                <p className="work-thread-on">On the description</p>
               ) : undefined
             }
             messageClass={(message, index) =>
               (api.pendingById.get(message.id) ??
-              (index === 0 ? api.pendingById.get(thread.id) : undefined))
+              (index === 0 && thread === shown
+                ? api.pendingById.get(thread.id)
+                : undefined))
                 ? " is-pending"
                 : ""
             }
             authorExtra={(message, index) => {
               const pending =
                 api.pendingById.get(message.id) ??
-                (index === 0 ? api.pendingById.get(thread.id) : undefined);
+                (index === 0 && thread === shown
+                  ? api.pendingById.get(thread.id)
+                  : undefined);
               if (pending)
                 return (
                   <span
@@ -366,8 +385,12 @@ export function WorkItemThreads({
         </div>
       ) : (
         <div className="work-threads-bar">
-          <button type="button" onClick={() => setComposing(true)}>
-            {api.threads.length ? "Comment" : "Start the thread"}
+          <button
+            type="button"
+            className="primary"
+            onClick={() => setComposing(true)}
+          >
+            Comment (c)
           </button>
           {api.waiting ? (
             <span className="work-threads-waiting" role="status">

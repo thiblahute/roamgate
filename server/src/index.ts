@@ -278,6 +278,7 @@ import {
   localImageFile,
   pruneReviewImages,
   reviewImageFile,
+  saveReviewImage,
 } from "./review/images";
 import { openReviewStorage, reviewDirectory } from "./review/storage";
 import { isHostPath, ReviewGoneError } from "./workspace/review-patch";
@@ -1461,6 +1462,9 @@ function getWorkService(): WorkService {
           threadId: input.threadId,
           anchor: input.anchor,
         }),
+      // An image an item is added with: stored as a pasted one is.
+      addImage: (sessionId, type, data) =>
+        saveReviewImage(reviewDirectory(), sessionId, type, data),
     },
     notifications: {
       publish: (item) => {

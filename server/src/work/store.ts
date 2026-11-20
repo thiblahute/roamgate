@@ -111,6 +111,14 @@ export function parseWorkOwner(value: unknown): WorkOwner | undefined {
   return { session, ...(task ? { task } : {}) };
 }
 
+/** A project's coordinator: a session's address, or nothing. */
+export function parseWorkCoordinator(
+  value: unknown,
+): { session: string } | undefined {
+  const owner = parseWorkOwner(value);
+  return owner ? { session: owner.session } : undefined;
+}
+
 const SHA = /^[0-9a-f]{7,64}$/i;
 
 export function parseWorkLink(value: unknown): WorkLink {
@@ -344,6 +352,12 @@ function normalProject(raw: unknown): WorkProject | null {
           : [],
       )
     : [];
+  let coordinator: { session: string } | undefined;
+  try {
+    coordinator = parseWorkCoordinator(raw.coordinator);
+  } catch {
+    coordinator = undefined;
+  }
   return {
     id: raw.id.slice(0, 64),
     name: oneLine(raw.name, 80),
@@ -356,6 +370,7 @@ function normalProject(raw: unknown): WorkProject | null {
           ),
         }
       : {}),
+    ...(coordinator ? { coordinator } : {}),
   };
 }
 

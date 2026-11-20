@@ -137,6 +137,61 @@ function fakeReviews(): WorkReviews & {
   };
 }
 
+/** The real review service, as the server gives it to the work service. */
+function realReviews(
+  review: ReturnType<typeof reviewServiceForTest>["service"],
+): WorkReviews {
+  return {
+    find: (itemId) =>
+      review
+        .list({ chats: true })
+        .find(
+          ({ session }) =>
+            session.target.kind === "work" && session.target.item === itemId,
+        ) ?? null,
+    open: (input) =>
+      review.open({
+        connectionId: input.connectionId,
+        root: input.root,
+        target: { kind: "work", item: input.item },
+        title: input.title,
+        agent: "Claude",
+        raise: false,
+      }),
+    get: (reviewId) =>
+      review
+        .list({ chats: true })
+        .find(({ session }) => session.id.startsWith(reviewId)) ?? null,
+    sessionOfComment: (ref) =>
+      review
+        .list({ chats: true })
+        .find(({ threads }) =>
+          threads.some(
+            (thread) =>
+              thread.id === ref ||
+              thread.id.startsWith(ref) ||
+              thread.comments.some(
+                (comment) => comment.id === ref || comment.id.startsWith(ref),
+              ),
+          ),
+        )?.session ?? null,
+    addThread: (input) =>
+      review.addThread({
+        sessionId: input.sessionId,
+        author: input.author,
+        text: input.text,
+        anchor: input.anchor,
+        kind: "discussion",
+      }),
+    moveThread: (input) =>
+      review.moveThread({
+        sessionId: input.sessionId,
+        threadId: input.threadId,
+        anchor: input.anchor,
+      }),
+  };
+}
+
 function setup(over: Partial<WorkServiceDeps> = {}) {
   const pushes: WorkPush[] = [];
   const notified: string[] = [];
@@ -210,20 +265,20 @@ function todoReview(resolved = false): ReviewSnapshot {
 }
 
 describe("work service", () => {
-  test("seeds the roamgate project and adds, moves, finishes and reopens items", () => {
+  test("seeds the roamgate project and adds, moves, finishes and reopens items", async () => {
     const { service, pushes, notified, cleared } = setup();
     const board = service.board();
     expect(board.projects.map((p) => p.id)).toEqual(["roamgate"]);
     expect(board.projects[0]!.done).toEqual({ kind: "deployed" });
 
-    const item = service.add(
+    const item = await service.add(
       { title: "  Fix the keys  ", tags: ["Reviews"], owner: "desktop/w35:p1" },
       { by: "agent", caller: "Claude in roamgate" },
     );
     expect(item.state).toBe("open");
     expect(item.tags).toEqual(["reviews"]);
     expect(item.owner).toEqual({ session: "desktop/w35:p1" });
-    expect(pushes.at(-1)).toMatchObject({
+    expect(pushes.find((push) => push.summary)).toMatchObject({
       changed: ["items"],
       item: item.id,
       by: "agent",
@@ -259,15 +314,15 @@ describe("work service", () => {
     expect(done.links).toEqual([
       { kind: "commit", sha: "abcdef1234", subject: "Fix the keys" },
     ]);
-    const back = service.reopen(
+    const back = await service.reopen(
       { item: item.id, state: "verify" },
       { by: "user" },
     );
     expect(back.state).toBe("verify");
     expect(back.doneAt).toBeUndefined();
-    expect(() =>
+    await expect(
       service.reopen({ item: item.id, state: "done" }, { by: "user" }),
-    ).toThrow(WorkError);
+    ).rejects.toThrow(WorkError);
     expect(() =>
       service.update({ item: "ffffffff", state: "open" }, { by: "user" }),
     ).toThrow(/no work item/);
@@ -278,9 +333,9 @@ describe("work service", () => {
     expect(service.list({ tags: ["voice"] })).toEqual([]);
   });
 
-  test("an import keeps its dates and its source, and the same source changes the item", () => {
+  test("an import keeps its dates and its source, and the same source changes the item", async () => {
     const { service } = setup();
-    const first = service.add(
+    const first = await service.add(
       {
         title: "Headset muting after each turn",
         state: "done",
@@ -295,7 +350,7 @@ describe("work service", () => {
     expect(first.doneAt).toBe("2026-11-19T18:30:00.000Z");
     expect(first.source).toBe("imported from plans/todo.md line 107");
     // Run again with a better title and a tag: the same item, changed.
-    const again = service.add(
+    const again = await service.add(
       {
         title: "Headset (boom mic) muting after each turn",
         state: "done",
@@ -312,7 +367,7 @@ describe("work service", () => {
     expect(service.board().items.length).toBe(1);
     // Another project may hold the same source: its own item.
     service.projectSet({ name: "gst2", roots: ["/g"] }, { by: "user" });
-    const other = service.add(
+    const other = await service.add(
       {
         project: "gst2",
         title: "Other",
@@ -321,12 +376,12 @@ describe("work service", () => {
       { by: "agent" },
     );
     expect(other.id).not.toBe(first.id);
-    expect(() =>
+    await expect(
       service.add({ title: "x", created_at: "yesterday" }, { by: "user" }),
-    ).toThrow(/created_at/);
+    ).rejects.toThrow(/created_at/);
   });
 
-  test("declares a project with a branch rule and scopes items to it", () => {
+  test("declares a project with a branch rule and scopes items to it", async () => {
     const { service } = setup();
     const project = service.projectSet(
       {
@@ -355,7 +410,7 @@ describe("work service", () => {
       branch: "main",
       connectionId: "desktop",
     });
-    const item = service.add(
+    const item = await service.add(
       {
         project: "gst2",
         title: "Phase 6: landing-review fixes",
@@ -376,9 +431,9 @@ describe("work service", () => {
     expect(service.list({ project: "gst2" }).map((i) => i.id)).toEqual([
       item.id,
     ]);
-    expect(() =>
+    await expect(
       service.add({ project: "nope", title: "x" }, { by: "user" }),
-    ).toThrow(/no project nope/);
+    ).rejects.toThrow(/no project nope/);
   });
 
   test("the done rule: a commit on the deployed build finishes the item, a rebased one by its subject", async () => {
@@ -399,7 +454,7 @@ describe("work service", () => {
     };
     let deployed: string | null = null;
     const { service, pushes } = setup({ git, deployed: () => deployed });
-    const landed = service.add(
+    const landed = await service.add(
       {
         title: "Landed",
         state: "verify",
@@ -407,7 +462,7 @@ describe("work service", () => {
       },
       { by: "user" },
     );
-    const rebased = service.add(
+    const rebased = await service.add(
       {
         title: "Rebased",
         state: "doing",
@@ -415,7 +470,7 @@ describe("work service", () => {
       },
       { by: "user" },
     );
-    const unrelated = service.add(
+    const unrelated = await service.add(
       {
         title: "No commit",
         state: "open",
@@ -423,7 +478,7 @@ describe("work service", () => {
       },
       { by: "user" },
     );
-    const lost = service.add(
+    const lost = await service.add(
       {
         title: "Lost",
         state: "open",
@@ -471,7 +526,7 @@ describe("work service", () => {
       },
       { by: "user" },
     );
-    const item = service.add(
+    const item = await service.add(
       {
         project: "gst2",
         title: "P6",
@@ -513,7 +568,7 @@ describe("work service", () => {
       },
       { by: "user" },
     );
-    const ticked = service.add(
+    const ticked = await service.add(
       {
         project: "gst2",
         title: "D1",
@@ -521,7 +576,7 @@ describe("work service", () => {
       },
       { by: "user" },
     );
-    const open = service.add(
+    const open = await service.add(
       {
         project: "gst2",
         title: "D13",
@@ -535,35 +590,48 @@ describe("work service", () => {
 
   test("an item's threads are a review of the item, its comments going to the owner's pane", async () => {
     const { service, reviews } = setup();
-    const item = service.add(
+    // An agent's own item: no review until someone comments.
+    const own = await service.add(
+      { title: "Mine", owner: "desktop/w35:p1" },
+      { by: "agent", caller: "Claude in roamgate", address: "desktop/w35:p1" },
+    );
+    expect(service.threads({ item: own.id })).toBeNull();
+    // The user's item for a session: its review, with the item as a thread
+    // by the user, so that the session hears of it.
+    const item = await service.add(
       { title: "Talk", owner: { session: "desktop/w35:p1", task: "a1b2c3" } },
       { by: "user" },
     );
-    expect(service.threads({ item: item.id })).toBeNull();
-    const snapshot = service.threads({ item: item.id, open: true })!;
+    const snapshot = service.threads({ item: item.id })!;
     expect(snapshot.session.target).toEqual({ kind: "work", item: item.id });
     expect(snapshot.session.connectionId).toBe("desktop");
     expect(service.store.item(item.id)!.review).toBe(snapshot.session.id);
+    expect(reviews.added).toEqual([
+      { sessionId: snapshot.session.id, author: "you", text: "Talk" },
+    ]);
+    expect(snapshot.threads[0]!.anchor.work).toEqual({ item: item.id });
     // The same review again.
     expect(service.threads({ item: item.id, open: true })!.session.id).toBe(
       snapshot.session.id,
     );
-    expect(service.ownerPane(item.id, "desktop")).toBe("w35:p1");
-    expect(service.ownerPane(item.id, "mac")).toBeNull();
+    expect(await service.ownerPane(item.id, "desktop")).toBe("w35:p1");
+    expect(await service.ownerPane(item.id, "mac")).toBeNull();
     const thread = await service.comment(
       { item: item.id, text: "Take it" },
       "Claude",
     );
-    expect(reviews.added).toEqual([
-      { sessionId: snapshot.session.id, author: "Claude", text: "Take it" },
-    ]);
+    expect(reviews.added.at(-1)).toEqual({
+      sessionId: snapshot.session.id,
+      author: "Claude",
+      text: "Take it",
+    });
     expect(thread.anchor.work).toEqual({ item: item.id });
     expect(await service.ownerTarget({ item: item.id })).toBeNull();
     const withPanes = setup({
       panes: async () => [{ pane_id: "w35:p1", workspace_id: "w35" }],
       generation: () => 3,
     });
-    const owned = withPanes.service.add(
+    const owned = await withPanes.service.add(
       { title: "Owned", owner: { session: "desktop/w35:p1", task: "a1b2c3" } },
       { by: "user" },
     );
@@ -584,7 +652,7 @@ describe("work service", () => {
       agentSearchMs: 600_000,
       sessionPane: async (connectionId, sessionId) => {
         if (!sessionId.startsWith(WORK_SESSION_PREFIX)) return null;
-        const paneId = service.ownerPane(
+        const paneId = await service.ownerPane(
           sessionId.slice(WORK_SESSION_PREFIX.length),
           connectionId,
         );
@@ -592,62 +660,13 @@ describe("work service", () => {
       },
       paneSession: async () => null,
     });
-    const reviews: WorkReviews = {
-      find: (itemId) =>
-        kit.service
-          .list({ chats: true })
-          .find(
-            ({ session }) =>
-              session.target.kind === "work" && session.target.item === itemId,
-          ) ?? null,
-      open: (input) =>
-        kit.service.open({
-          connectionId: input.connectionId,
-          root: input.root,
-          target: { kind: "work", item: input.item },
-          title: input.title,
-          agent: "Claude",
-          raise: false,
-        }),
-      get: (reviewId) =>
-        kit.service
-          .list({ chats: true })
-          .find(({ session }) => session.id.startsWith(reviewId)) ?? null,
-      sessionOfComment: (ref) =>
-        kit.service
-          .list({ chats: true })
-          .find(({ threads }) =>
-            threads.some(
-              (thread) =>
-                thread.id === ref ||
-                thread.id.startsWith(ref) ||
-                thread.comments.some(
-                  (comment) => comment.id === ref || comment.id.startsWith(ref),
-                ),
-            ),
-          )?.session ?? null,
-      addThread: (input) =>
-        kit.service.addThread({
-          sessionId: input.sessionId,
-          author: input.author,
-          text: input.text,
-          anchor: input.anchor,
-          kind: "discussion",
-        }),
-      moveThread: (input) =>
-        kit.service.moveThread({
-          sessionId: input.sessionId,
-          threadId: input.threadId,
-          anchor: input.anchor,
-        }),
-    };
     const service = createWorkService({
       store: openWorkStore(dir()),
-      reviews,
+      reviews: realReviews(kit.service),
       defaultConnection: () => "desktop",
       ownRoot: () => "/home/me/roamgate",
     });
-    const item = service.add({ title: "Deliver me" }, { by: "user" });
+    const item = await service.add({ title: "Deliver me" }, { by: "user" });
     const snapshot = service.threads({ item: item.id, open: true })!;
     // The user comments: no owner yet, the comment waits and says why.
     await kit.service.addThread({
@@ -689,7 +708,7 @@ describe("work service", () => {
       anchor: { path: "plans/todo.md", line: 3, text: "## For you" },
       kind: "discussion",
     });
-    const promoted = service.promote({ thread: old.id }, { by: "user" });
+    const promoted = await service.promote({ thread: old.id }, { by: "user" });
     expect(promoted.title).toBe("An old TODO item");
     expect(promoted.source).toBe(`thread ${old.id}`);
     const own = kit.service.get({ sessionId: promoted.review! });
@@ -706,11 +725,11 @@ describe("work service", () => {
     expect(kit.prompts.length).toBe(1);
   });
 
-  test("promotes a review thread into an item that adopts it: title and state from the first line, ids kept", () => {
+  test("promotes a review thread into an item that adopts it: title and state from the first line, ids kept", async () => {
     const { service, reviews } = setup();
     const todo = todoReview();
     reviews.sessions.set(todo.session.id, todo);
-    const item = service.promote({ thread: "b057f8a2" }, { by: "user" });
+    const item = await service.promote({ thread: "b057f8a2" }, { by: "user" });
     expect(item.title).toBe("Fold a reviewed chunk again");
     expect(item.state).toBe("doing");
     expect(item.source).toBe("thread b057f8a2129c74bc");
@@ -734,25 +753,26 @@ describe("work service", () => {
     expect(todo.threads).toEqual([]);
     // Promoting the thread again answers the same item (it is the item's now).
     expect(
-      service.promote({ thread: "b057f8a2129c74bc" }, { by: "user" }).id,
+      (await service.promote({ thread: "b057f8a2129c74bc" }, { by: "user" }))
+        .id,
     ).toBe(item.id);
-    expect(() =>
+    await expect(
       service.promote({ thread: "nope0000" }, { by: "user" }),
-    ).toThrow(/no such thread/);
+    ).rejects.toThrow(/no such thread/);
     // A resolved thread makes a done item with the thread's dates.
     reviews.sessions.set("d22a2f86bc540f34", todoReview(true));
-    const done = service.promote(
+    const done = await service.promote(
       { thread: "b057f8a2129c74bc", project: "roamgate" },
       { by: "user" },
     );
     expect(done.id).toBe(item.id);
   });
 
-  test("adopts a thread into an existing item, once", () => {
+  test("adopts a thread into an existing item, once", async () => {
     const { service, reviews, pushes } = setup();
     const todo = todoReview();
     reviews.sessions.set(todo.session.id, todo);
-    const item = service.add({ title: "Already here" }, { by: "user" });
+    const item = await service.add({ title: "Already here" }, { by: "user" });
     const adopted = service.adopt(
       { item: item.id, thread: "c2c2c2c2" },
       { by: "agent", caller: "Claude" },
@@ -772,12 +792,238 @@ describe("work service", () => {
     expect(pushes.length).toBe(before);
     // work_add with adopt_thread does both at once.
     reviews.sessions.set("d22a2f86bc540f34", todoReview());
-    const added = service.add(
+    const added = await service.add(
       { title: "Imported", adopt_thread: "b057f8a2129c74bc" },
       { by: "agent" },
     );
     expect(reviews.find(added.id)!.threads.length).toBe(1);
   });
+});
+
+test("an item nobody owns is the project's coordinator's, told of it as a review comment", async () => {
+  const panes = [{ pane_id: "w35:p1", workspace_id: "w35" }];
+  const stored: { sessionId: string; type: string; bytes: number }[] = [];
+  const { service, reviews, pushes } = setup({
+    panes: async () => panes,
+  });
+  reviews.addImage = (sessionId, type, data) => {
+    stored.push({ sessionId, type, bytes: data.length });
+    return `/images/${sessionId}/${stored.length}.png`;
+  };
+  // The coordinator: set and changed by work_project, kept.
+  const project = service.projectSet(
+    { name: "roamgate", coordinator: "desktop/w35:p1" },
+    { by: "user" },
+  );
+  expect(project.coordinator).toEqual({ session: "desktop/w35:p1" });
+  expect(
+    service.projectSet({ name: "roamgate", tags: ["voice"] }, { by: "user" })
+      .coordinator,
+  ).toEqual({ session: "desktop/w35:p1" });
+  expect(() =>
+    service.projectSet(
+      { name: "roamgate", coordinator: "w35" },
+      { by: "user" },
+    ),
+  ).toThrow(/address/);
+
+  // The user's item, no owner: the coordinator's, and a thread by the
+  // user holds its text (its description) with its images stored.
+  const png = Buffer.from("fakepng");
+  const item = await service.add(
+    {
+      title: "Copy a picture",
+      text: "Like this one: ![shot](<work-image:1>)",
+      images: [
+        {
+          token: "<work-image:1>",
+          type: "image/png",
+          data: png.toString("base64"),
+        },
+      ],
+    },
+    { by: "user" },
+  );
+  expect(item.owner).toEqual({ session: "desktop/w35:p1" });
+  expect(item.review).toBeTruthy();
+  expect(stored).toEqual([
+    { sessionId: item.review!, type: "image/png", bytes: png.length },
+  ]);
+  expect(reviews.added).toEqual([
+    {
+      sessionId: item.review!,
+      author: "you",
+      text: `Like this one: ![shot](/images/${item.review}/1.png)`,
+    },
+  ]);
+  const thread = reviews.sessions.get(item.review!)!.threads[0]!;
+  expect(thread.anchor.work).toEqual({ item: item.id, description: true });
+  expect(pushes.find((push) => push.changed.includes("items"))).toMatchObject({
+    item: item.id,
+    by: "user",
+  });
+  // Its comments go to the coordinator's pane.
+  expect(await service.ownerPane(item.id, "desktop")).toBe("w35:p1");
+
+  // Nothing but a title: the title is the thread, no description.
+  const bare = await service.add({ title: "Just a title" }, { by: "user" });
+  expect(bare.owner).toEqual({ session: "desktop/w35:p1" });
+  expect(reviews.added.at(-1)).toEqual({
+    sessionId: bare.review!,
+    author: "you",
+    text: "Just a title",
+  });
+  expect(reviews.sessions.get(bare.review!)!.threads[0]!.anchor.work).toEqual({
+    item: bare.id,
+  });
+
+  // The user's own For you item: nobody's, nothing told, its comments
+  // wait for nobody.
+  const mine = await service.add(
+    { title: "Remember the milk", state: "you" },
+    { by: "user" },
+  );
+  expect(mine.owner).toBeUndefined();
+  expect(mine.review).toBeUndefined();
+  expect(reviews.added.length).toBe(2);
+  expect(await service.ownerPane(mine.id, "desktop")).toBeNull();
+
+  // An agent's item for another session, with its text: told to it as
+  // the agent, by name.
+  const given = await service.add(
+    { title: "For the coordinator", text: "Please do this." },
+    { by: "agent", caller: "Claude in gst2", address: "desktop/w32:p1" },
+  );
+  expect(given.owner).toEqual({ session: "desktop/w35:p1" });
+  expect(reviews.added.at(-1)).toEqual({
+    sessionId: given.review!,
+    author: "Claude in gst2",
+    text: "Please do this.",
+  });
+  // The agent's own item with text: its own words, as itself.
+  const own = await service.add(
+    { title: "My own", text: "Notes.", owner: "desktop/w32:p1" },
+    { by: "agent", caller: "Claude in gst2", address: "desktop/w32:p1" },
+  );
+  expect(reviews.added.at(-1)).toEqual({
+    sessionId: own.review!,
+    author: "Claude",
+    text: "Notes.",
+  });
+
+  // An owner whose pane is gone: the coordinator's pane; a coordinator
+  // gone too: nobody.
+  const orphan = await service.add(
+    { title: "Orphan", owner: "desktop/w9:p1" },
+    { by: "user" },
+  );
+  expect(await service.ownerPane(orphan.id, "desktop")).toBe("w35:p1");
+  panes.splice(0, 1);
+  expect(await service.ownerPane(orphan.id, "desktop")).toBeNull();
+  panes.push({ pane_id: "w35:p1", workspace_id: "w35" });
+
+  // A done item nobody owns, reopened: the coordinator's, told so.
+  const old = await service.add(
+    { title: "Old one", state: "done", done_at: "2026-11-01T10:00:00Z" },
+    { by: "agent", caller: "Claude in roamgate" },
+  );
+  expect(old.owner).toBeUndefined();
+  expect(reviews.added.length).toBe(5);
+  const back = await service.reopen({ item: old.id }, { by: "user" });
+  expect(back.owner).toEqual({ session: "desktop/w35:p1" });
+  expect(reviews.added.at(-1)).toEqual({
+    sessionId: back.review!,
+    author: "you",
+    text: "Reopened.",
+  });
+  // Too many images, or a bad one.
+  await expect(
+    service.add(
+      { title: "x", text: "y", images: [{ token: "t", type: "image/png" }] },
+      { by: "user" },
+    ),
+  ).rejects.toThrow(/an image is/);
+});
+
+test("the real review service tells the coordinator of the user's new item, and sends it the comments of an item whose owner is gone", async () => {
+  let panes = ["w35:p1"];
+  const kit = reviewServiceForTest({
+    deliveryDelayMs: 1,
+    retryDelayMs: 1,
+    agentSearchMs: 600_000,
+    sessionPane: async (connectionId, sessionId) => {
+      if (!sessionId.startsWith(WORK_SESSION_PREFIX)) return null;
+      return service.ownerPane(
+        sessionId.slice(WORK_SESSION_PREFIX.length),
+        connectionId,
+      );
+    },
+    paneSession: async () => null,
+  });
+  const service = createWorkService({
+    store: openWorkStore(dir()),
+    reviews: realReviews(kit.service),
+    defaultConnection: () => "desktop",
+    ownRoot: () => "/home/me/roamgate",
+    panes: async () => panes.map((pane_id) => ({ pane_id })),
+  });
+  service.projectSet(
+    { name: "roamgate", coordinator: "desktop/w35:p1" },
+    { by: "user" },
+  );
+  const item = await service.add(
+    { title: "Copy a picture", text: "When adding a task, paste one." },
+    { by: "user" },
+  );
+  expect(item.owner).toEqual({ session: "desktop/w35:p1" });
+  await Bun.sleep(80);
+  expect(kit.prompts.length).toBe(1);
+  expect(kit.prompts[0]!.paneId).toBe("w35:p1");
+  expect(kit.prompts[0]!.text).toContain("work item you own");
+  expect(kit.prompts[0]!.text).toContain("Copy a picture");
+  expect(kit.prompts[0]!.text).toContain(item.id);
+  expect(kit.prompts[0]!.text).toContain("its text when it was added");
+  expect(kit.prompts[0]!.text).toContain("When adding a task, paste one.");
+  expect(kit.prompts[0]!.text).toContain("yours to do");
+  expect(kit.prompts[0]!.text).toContain("work_update");
+
+  // An item whose owner's pane is gone: the user's comment goes to the
+  // coordinator instead of waiting.
+  const orphan = await service.add(
+    { title: "Orphan", owner: "desktop/w9:p1" },
+    { by: "agent", caller: "Claude in roamgate", address: "desktop/w9:p1" },
+  );
+  const snapshot = service.threads({ item: orphan.id, open: true })!;
+  await kit.service.addThread({
+    sessionId: snapshot.session.id,
+    author: "you",
+    text: "Anyone there?",
+    anchor: { work: { item: orphan.id } },
+    kind: "discussion",
+  });
+  await Bun.sleep(80);
+  expect(kit.prompts.length).toBe(2);
+  expect(kit.prompts[1]!.paneId).toBe("w35:p1");
+  expect(kit.prompts[1]!.text).toContain("Anyone there?");
+  // The user's own For you item: its comment waits for nobody to answer.
+  panes = [];
+  const mine = await service.add(
+    { title: "Remember", state: "you" },
+    { by: "user" },
+  );
+  const own = service.threads({ item: mine.id, open: true })!;
+  await kit.service.addThread({
+    sessionId: own.session.id,
+    author: "you",
+    text: "A note to myself",
+    anchor: { work: { item: mine.id } },
+    kind: "discussion",
+  });
+  await Bun.sleep(80);
+  expect(kit.prompts.length).toBe(2);
+  expect(
+    kit.service.get({ sessionId: own.session.id }).session.deliveryError,
+  ).toBe(WORK_NO_OWNER);
 });
 
 describe("work tools and rpc", () => {
@@ -818,7 +1064,33 @@ describe("work tools and rpc", () => {
         await workTool(service, "work_list", { item: parsed.item.id }, "Claude")
       ).split("\n")[1]!,
     );
+    expect(one.description).toBe("First words");
+    expect(one.comments[0].comments[0].author).toBe("Claude");
     expect(one.comments[0].comments[0].text).toBe("First words");
+    // The project's coordinator, set and shown by work_project.
+    const project = JSON.parse(
+      (
+        await workTool(
+          service,
+          "work_project",
+          { name: "roamgate", coordinator: { session: "desktop/w35:p1" } },
+          "Claude",
+        )
+      ).split("\n")[1]!,
+    );
+    expect(project.project.coordinator).toBe("desktop/w35:p1");
+    expect(
+      JSON.parse(
+        (
+          await workTool(
+            service,
+            "work_project",
+            { name: "roamgate", coordinator: null },
+            "Claude",
+          )
+        ).split("\n")[1]!,
+      ).project.coordinator,
+    ).toBeUndefined();
     await expect(
       workTool(service, "work_update", { item: "x" }, "Claude"),
     ).rejects.toThrow(/invalid work_update/);

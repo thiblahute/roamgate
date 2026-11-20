@@ -51,21 +51,41 @@ function loadRoot() {
   );
 }
 
-/** Opens the reviews panel (loaded on first use), or its chat. */
+/** Opens the board view on the reviews inbox (loaded on first use), or its chat. */
 export function openMrReviews(select?: string, view?: "chat") {
   void loadRoot().then((module) =>
-    module.showMrReviews(select, undefined, view),
+    module.showMrReviews(select, undefined, view, undefined, { mode: "mr" }),
   );
 }
 
 /** Opens a request's review, through the panel (it asks what it needs). */
 export function openMrReviewByKey(key: string) {
-  void loadRoot().then((module) => module.showMrReviews(key, key));
+  void loadRoot().then((module) =>
+    module.showMrReviews(key, key, undefined, undefined, { mode: "mr" }),
+  );
 }
 
-/** Opens the panel, or closes it when it is open. */
+/**
+ * The view's modes: the reviews inbox and the Work board, one panel. Opens
+ * the view on a mode (the Work board on an item when given).
+ */
+export function openBoard(board: { mode: "mr" | "work"; item?: string }) {
+  void loadRoot().then((module) =>
+    module.showMrReviews(undefined, undefined, undefined, undefined, board),
+  );
+}
+
+/**
+ * A mode's shortcut: opens the view on it; open on it, closes the view;
+ * open on the other mode, switches.
+ */
+export function toggleBoard(mode: "mr" | "work") {
+  void loadRoot().then((module) => module.toggleMrReviews(mode));
+}
+
+/** Opens the view on the inbox, or closes it when it shows the inbox. */
 export function toggleMrReviews() {
-  void loadRoot().then((module) => module.toggleMrReviews());
+  toggleBoard("mr");
 }
 
 /** The global shortcut (Option+M, Alt+M), Zen mode included. */

@@ -44,3 +44,9 @@ test("the review keeps its own keys and leaves for another workspace", () => {
     "leave",
   );
 });
+
+test("Option-W and Option-M reach the board view's toggles from inside it", () => {
+  // Option-W types "∑" and Option-M "µ" on a Mac; their codes name them.
+  expect(reviewKeyRoute(press("∑", "KeyW", { alt: true }), false)).toBe("app");
+  expect(reviewKeyRoute(press("µ", "KeyM", { alt: true }), false)).toBe("app");
+});

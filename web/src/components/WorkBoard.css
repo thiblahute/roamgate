@@ -1,0 +1,411 @@
+/* The board view's Work mode: what its cards, filter row, detail and form
+   add to the view's own styles (MrReviewsPanel.css draws the panel, the
+   columns and the card frame for both modes). */
+
+/* The head's second line: the scope beside the counts. */
+.work-scope-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The Work tab's For you count. */
+.mr-reviews-modes .mr-reviews-mode-badge {
+  margin-left: 4px;
+  border-radius: 8px;
+  padding: 0 5px;
+  background: var(--accent);
+  color: var(--bg, #fff);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+/* The filter row: the project, the tags chosen, a few more by count (the
+   strip scrolls sideways), then Filters for every tag. */
+.work-filter-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.work-scope-select {
+  flex: 0 0 auto;
+  max-width: 45%;
+  border: 1px solid var(--viewer-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--viewer-code-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.is-mobile .work-scope-select {
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.work-tags-strip {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.work-tags-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.work-tags-strip > .work-chip {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.work-filters-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.work-chip {
+  border: 1px solid var(--viewer-border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: var(--viewer-code-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.work-chip > small {
+  margin-left: 4px;
+  color: var(--muted);
+}
+
+.work-chip.is-selected,
+.work-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft, rgba(88, 166, 255, 0.18));
+  color: var(--accent);
+}
+
+.work-chip.is-selected > svg {
+  margin-left: 2px;
+  vertical-align: -1px;
+}
+
+.is-mobile .work-chip {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+/* Every tag: a list under the button, a bottom sheet on a phone. */
+.work-filters-backdrop {
+  position: fixed;
+  z-index: 4;
+  inset: 0;
+}
+
+.is-mobile .work-filters-backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+.work-filters-sheet {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, 100%);
+  max-height: min(60vh, 420px);
+  border: 1px solid var(--viewer-border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+
+.work-filters-sheet.is-sheet {
+  position: fixed;
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: auto;
+  max-height: min(78dvh, 640px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border: 0;
+  border-top: 1px solid var(--viewer-border);
+  border-radius: 14px 14px 0 0;
+}
+
+.work-filters-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 4px;
+}
+
+.work-filters-head > .work-search {
+  flex: 1 1 auto;
+}
+
+.work-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--viewer-border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--viewer-code-bg);
+  color: var(--muted);
+}
+
+.work-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.work-filters-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 6px 8px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.work-filters-list > li > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.is-sheet .work-filters-list > li > button {
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.work-filters-list > li > button:hover,
+.work-filters-list > li > button:focus-visible {
+  background: var(--accent-soft, rgba(88, 166, 255, 0.18));
+  outline: none;
+}
+
+.work-filters-list > li > button.is-selected {
+  color: var(--accent);
+}
+
+.work-filters-check {
+  flex: 0 0 14px;
+  text-align: center;
+}
+
+.work-filters-tag {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.work-filters-list small {
+  color: var(--muted);
+}
+
+.work-filters-list > .assistant-hint {
+  padding: 6px 8px;
+}
+
+/* The columns' titles by state, as the inbox's lanes are coloured. */
+.mr-reviews-lane.is-you > .mr-reviews-lane-title {
+  color: var(--accent);
+}
+
+.mr-reviews-lane.is-verify > .mr-reviews-lane-title {
+  color: var(--warning-text, #d29922);
+}
+
+/* A card: its title wraps; its chips and links follow. */
+.work-card.is-done > .mr-reviews-row {
+  opacity: 0.75;
+}
+
+.work-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.work-link,
+.is-mobile .work-link {
+  min-height: 0;
+  max-width: 100%;
+  padding: 0 6px;
+  overflow: hidden;
+  background: none;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.6;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mr-reviews-own > .work-link {
+  font-size: 11px;
+}
+
+/* The detail: the description full width, its images scaled to it. */
+.work-description {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--viewer-border);
+  border-radius: 8px;
+  background: var(--viewer-panel-bg);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.work-description img,
+.work-detail-threads img {
+  max-width: 100%;
+  height: auto;
+}
+
+.work-detail .assistant-task-metadata select,
+.work-detail .assistant-task-metadata input,
+.work-add input,
+.work-add select {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--viewer-border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  background: var(--viewer-code-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.work-detail .assistant-task-metadata input {
+  width: 100%;
+}
+
+.is-mobile .work-detail .assistant-task-metadata select,
+.is-mobile .work-detail .assistant-task-metadata input,
+.is-mobile .work-add input,
+.is-mobile .work-add select {
+  min-height: 36px;
+  font-size: 14px;
+}
+
+/* The thread, under the detail: full width, its box always whole. */
+.work-detail-threads {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.work-threads {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.work-threads-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-threads-waiting,
+.work-threads-error {
+  margin: 0;
+  color: var(--warning, #d29922);
+  font-size: 11px;
+}
+
+.work-threads-error {
+  color: var(--danger, #f85149);
+}
+
+.work-thread-quote {
+  margin: 0 0 4px;
+  padding: 2px 8px;
+  border-left: 3px solid var(--viewer-border);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.work-thread-on {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* Adding an item: the title, the description editor, state and tags. */
+.work-add {
+  gap: 10px;
+}
+
+.work-add-title {
+  width: 100%;
+  font-size: 13px;
+}
+
+.work-add-text {
+  min-width: 0;
+}
+
+.work-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.work-add-row > * {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.work-deployed {
+  font-size: 11px;
+}

@@ -36,6 +36,7 @@ export function reviewKeyRoute(
     matches("overlay.toggle") ||
     matches("activity.open") ||
     matches("reviews.inbox") ||
+    matches("work.board") ||
     // Only while the overlay shows; otherwise the key stays the review's.
     (overlayOpen && matches("overlay.fullscreen"))
   )

@@ -54,6 +54,7 @@ import {
   mrBotLabel,
   mrMergeTime,
 } from "../../../shared/mrReviewsMerge";
+import { nextColumn, nextRow } from "../boardNavigation";
 import { roamgateLocalStorage } from "../browserStorage";
 import { useLayoutPreferences } from "../layoutPreferences";
 import {
@@ -89,6 +90,7 @@ import {
   mrPastedRequest,
   orderMrEntries,
 } from "../mrReviewsOrder";
+import { WORK_KEYS } from "../mrReviewsKeys";
 import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
 import {
   keepFoldedLanes,
@@ -110,18 +112,39 @@ import {
   MrEffortView,
 } from "./MrEffortView";
 import { MrReviewsSettingsView } from "./MrReviewsSettings";
+import { BoardCard } from "./BoardCard";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { useWorkMode } from "./WorkBoard";
 import "./AssistantPanel.css";
 import "./AssistantTasks.css";
 import "./AgentTasksSheet.css";
 import "./MrReviewsPanel.css";
 
 /**
- * The reviews inbox, Ranger's sibling: the same right-hand panel, head,
- * list rows and state chips, list/detail split and Escape order. Two
- * sections: the requests that are the user's (review requested, assigned,
- * mentioned) and Claude's suggestions from the followed projects.
+ * The board view, Ranger's sibling: the same right-hand panel, head, list
+ * rows and state chips, list/detail split and Escape order, in two modes
+ * switched from its head ([ ], the Work and Reviews shortcuts): the
+ * reviews inbox (two sections: the requests that are the user's, review
+ * requested, assigned, mentioned, and Claude's suggestions from the
+ * followed projects, one's own requests in lanes) and the Work board (the
+ * user's work items in columns by state, WorkBoard.tsx). The columns, the
+ * card frame, the keys and the detail flow are one code path.
  */
+
+/** The view's modes: the reviews inbox, the Work board. */
+export type BoardMode = "mr" | "work";
+const MODE_KEY = "mrReviewsMode";
+
+/** The mode the view was last shown in (the inbox at first). */
+export function storedBoardMode(): BoardMode {
+  try {
+    return roamgateLocalStorage.getItem(MODE_KEY) === "work" ? "work" : "mr";
+  } catch {
+    return "mr";
+  }
+}
+
+const MODE_TITLE: Record<BoardMode, string> = { mr: "Reviews", work: "Work" };
 
 type View = "list" | "settings" | "chat";
 
@@ -1053,181 +1076,193 @@ export function MrReviewRow({
     !entry.branch;
   const pin = selected && onTogglePin && !entry.unavailable && !entry.branch;
   const remove = onRemove && !entry.branch && (selected || entry.unavailable);
+  const classes = [
+    go || (remove && entry.unavailable) ? "has-action" : "",
+    drag?.dragging ? "is-dragging" : "",
+    drag?.drop ? `is-drop-${drag.drop}` : "",
+    depth ? "is-child" : "",
+    tree?.last ? "is-last-child" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <li
-      {...itemProps}
-      className={`mr-reviews-item${selected ? " is-selected" : ""}${go || (remove && entry.unavailable) ? " has-action" : ""}${drag?.dragging ? " is-dragging" : ""}${drag?.drop ? ` is-drop-${drag.drop}` : ""}${depth ? " is-child" : ""}${tree?.last ? " is-last-child" : ""}`}
+    <BoardCard
+      selected={selected}
+      unread={!!unread}
+      className={classes}
       style={
         depth
           ? ({ "--mr-depth": depth } as unknown as CSSProperties)
           : undefined
       }
-      draggable={drag ? true : undefined}
-      onDragStart={drag?.onDragStart}
-      onDragOver={drag?.onDragOver}
-      onDragLeave={drag?.onDragLeave}
-      onDrop={drag?.onDrop}
-      onDragEnd={drag?.onDragEnd}
-    >
-      {/* The card: a link to the forge inside, so not a <button>. */}
-      <div
-        role="button"
-        tabIndex={0}
-        className={`assistant-task-row mr-reviews-row${selected ? " is-selected" : ""}${unread ? " is-unread" : ""}`}
-        aria-current={selected ? "true" : undefined}
-        data-mr-key={entry.key}
-        onFocus={onSelect}
-        // Enter, as every key, is the panel's (the Board's).
-        onClick={onOpen}
-      >
-        {dense ? (
-          <MrDenseRow
-            entry={entry}
-            chips={chips}
-            tree={tree}
-            unread={unread}
-            drafts={drafts}
-            {...(extra ? { extra } : {})}
-          />
-        ) : (
-          <MrRowBody
-            entry={entry}
-            chips={chips}
-            unread={unread}
-            drafts={drafts}
-          />
-        )}
-      </div>
-      {tree?.children ? (
-        <span className="mr-reviews-fold-place">
-          <button
-            type="button"
-            className="assistant-icon-button mr-reviews-fold"
-            aria-label={
-              tree.collapsed
-                ? "Show the requests after it"
-                : "Fold the requests after it"
-            }
-            aria-expanded={!tree.collapsed}
-            title={`${tree.collapsed ? "Show" : "Fold"} the ${tree.children} request${tree.children === 1 ? "" : "s"} waiting for it (za)`}
-            onClick={onToggleChildren}
-          >
-            {tree.collapsed ? (
-              <ChevronRight size={14} />
-            ) : (
-              <ChevronDown size={14} />
-            )}
-          </button>
-        </span>
-      ) : null}
-      {/* Its actions, over the card's top right corner: never beside it,
-          so a card keeps its width selected or not. Its home stays; the
-          others show on hover and on the selected card. */}
-      <span className="mr-reviews-actions">
-        {drag ? (
-          <span
-            className="mr-reviews-grip mr-reviews-action-more"
-            title="Drag to reorder (J / K)"
-            aria-hidden="true"
-          >
-            <GripVertical size={13} />
+      // The card: a link to the forge inside, so not a <button>. Enter, as
+      // every key, is the panel's (the Board's).
+      data={{ "data-mr-key": entry.key }}
+      item={{
+        ...itemProps,
+        draggable: drag ? true : undefined,
+        onDragStart: drag?.onDragStart,
+        onDragOver: drag?.onDragOver,
+        onDragLeave: drag?.onDragLeave,
+        onDrop: drag?.onDrop,
+        onDragEnd: drag?.onDragEnd,
+      }}
+      onSelect={onSelect}
+      onOpen={onOpen}
+      extra={
+        tree?.children ? (
+          <span className="mr-reviews-fold-place">
+            <button
+              type="button"
+              className="assistant-icon-button mr-reviews-fold"
+              aria-label={
+                tree.collapsed
+                  ? "Show the requests after it"
+                  : "Fold the requests after it"
+              }
+              aria-expanded={!tree.collapsed}
+              title={`${tree.collapsed ? "Show" : "Fold"} the ${tree.children} request${tree.children === 1 ? "" : "s"} waiting for it (za)`}
+              onClick={onToggleChildren}
+            >
+              {tree.collapsed ? (
+                <ChevronRight size={14} />
+              ) : (
+                <ChevronDown size={14} />
+              )}
+            </button>
           </span>
-        ) : null}
-        {url ? (
-          <a
-            className="assistant-icon-button mr-reviews-forge mr-reviews-action-more"
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            tabIndex={selected ? 0 : -1}
-            aria-label={`Open on ${mrForgeName(entry)} (o)`}
-            title={`Open on ${mrForgeName(entry)} (o)`}
-          >
-            <ExternalLink size={14} />
-          </a>
-        ) : null}
-        {startHome ? (
-          <button
-            type="button"
-            className="assistant-icon-button mr-reviews-action-more"
-            aria-label="Start a review with a home (gH)"
-            title="Start a review with a home (gH): a workspace of its own with a Claude session told its job"
-            onClick={onStartHome}
-          >
-            <HousePlus size={14} />
-          </button>
-        ) : null}
-        {pin ? (
-          <button
-            type="button"
-            className="assistant-icon-button mr-reviews-action-more"
-            aria-label={entry.section === "pinned" ? "Unpin (P)" : "Pin (P)"}
-            title={
-              entry.section === "pinned" ? "Unpin (P)" : "Pin it on top (P)"
-            }
-            aria-pressed={entry.section === "pinned"}
-            onClick={onTogglePin}
-          >
-            {entry.section === "pinned" ? (
-              <PinOff size={14} />
-            ) : (
-              <Pin size={14} />
-            )}
-          </button>
-        ) : null}
-        {remove ? (
-          <button
-            type="button"
-            className={`assistant-icon-button${entry.unavailable && !selected ? "" : " mr-reviews-action-more"}`}
-            aria-label={entry.section === "pinned" ? "Unpin (dd)" : "Hide (dd)"}
-            title={
-              entry.section === "pinned"
-                ? "Unpin (dd)"
-                : "Hide it from the view (dd, u undoes)"
-            }
-            onClick={onRemove}
-          >
-            <EyeOff size={14} />
-          </button>
-        ) : null}
-        {selected && move?.onStep ? (
-          <>
+        ) : null
+      }
+      // Its actions, over the card's top right corner: never beside it, so
+      // a card keeps its width selected or not. Its home stays; the others
+      // show on hover and on the selected card.
+      actions={
+        <>
+          {drag ? (
+            <span
+              className="mr-reviews-grip mr-reviews-action-more"
+              title="Drag to reorder (J / K)"
+              aria-hidden="true"
+            >
+              <GripVertical size={13} />
+            </span>
+          ) : null}
+          {url ? (
+            <a
+              className="assistant-icon-button mr-reviews-forge mr-reviews-action-more"
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              tabIndex={selected ? 0 : -1}
+              aria-label={`Open on ${mrForgeName(entry)} (o)`}
+              title={`Open on ${mrForgeName(entry)} (o)`}
+            >
+              <ExternalLink size={14} />
+            </a>
+          ) : null}
+          {startHome ? (
             <button
               type="button"
               className="assistant-icon-button mr-reviews-action-more"
-              aria-label="Move up (K)"
-              title="Move up (K)"
-              disabled={!move.canUp}
-              onClick={() => move.onStep?.(-1)}
+              aria-label="Start a review with a home (gH)"
+              title="Start a review with a home (gH): a workspace of its own with a Claude session told its job"
+              onClick={onStartHome}
             >
-              <ArrowUp size={14} />
+              <HousePlus size={14} />
             </button>
+          ) : null}
+          {pin ? (
             <button
               type="button"
               className="assistant-icon-button mr-reviews-action-more"
-              aria-label="Move down (J)"
-              title="Move down (J)"
-              disabled={!move.canDown}
-              onClick={() => move.onStep?.(1)}
+              aria-label={entry.section === "pinned" ? "Unpin (P)" : "Pin (P)"}
+              title={
+                entry.section === "pinned" ? "Unpin (P)" : "Pin it on top (P)"
+              }
+              aria-pressed={entry.section === "pinned"}
+              onClick={onTogglePin}
             >
-              <ArrowDown size={14} />
+              {entry.section === "pinned" ? (
+                <PinOff size={14} />
+              ) : (
+                <Pin size={14} />
+              )}
             </button>
-          </>
-        ) : null}
-        {go ? (
-          <button
-            type="button"
-            className="assistant-icon-button mr-reviews-workspace"
-            aria-label={goTitle(go, homes.length > 0, links!.length)}
-            title={goTitle(go, homes.length > 0, links!.length)}
-            onClick={() => onGoWorkspace!(go)}
-          >
-            <House size={14} />
-            {links!.length > 1 ? <small>{links!.length}</small> : null}
-          </button>
-        ) : null}
-      </span>
-    </li>
+          ) : null}
+          {remove ? (
+            <button
+              type="button"
+              className={`assistant-icon-button${entry.unavailable && !selected ? "" : " mr-reviews-action-more"}`}
+              aria-label={
+                entry.section === "pinned" ? "Unpin (dd)" : "Hide (dd)"
+              }
+              title={
+                entry.section === "pinned"
+                  ? "Unpin (dd)"
+                  : "Hide it from the view (dd, u undoes)"
+              }
+              onClick={onRemove}
+            >
+              <EyeOff size={14} />
+            </button>
+          ) : null}
+          {selected && move?.onStep ? (
+            <>
+              <button
+                type="button"
+                className="assistant-icon-button mr-reviews-action-more"
+                aria-label="Move up (K)"
+                title="Move up (K)"
+                disabled={!move.canUp}
+                onClick={() => move.onStep?.(-1)}
+              >
+                <ArrowUp size={14} />
+              </button>
+              <button
+                type="button"
+                className="assistant-icon-button mr-reviews-action-more"
+                aria-label="Move down (J)"
+                title="Move down (J)"
+                disabled={!move.canDown}
+                onClick={() => move.onStep?.(1)}
+              >
+                <ArrowDown size={14} />
+              </button>
+            </>
+          ) : null}
+          {go ? (
+            <button
+              type="button"
+              className="assistant-icon-button mr-reviews-workspace"
+              aria-label={goTitle(go, homes.length > 0, links!.length)}
+              title={goTitle(go, homes.length > 0, links!.length)}
+              onClick={() => onGoWorkspace!(go)}
+            >
+              <House size={14} />
+              {links!.length > 1 ? <small>{links!.length}</small> : null}
+            </button>
+          ) : null}
+        </>
+      }
+    >
+      {dense ? (
+        <MrDenseRow
+          entry={entry}
+          chips={chips}
+          tree={tree}
+          unread={unread}
+          drafts={drafts}
+          {...(extra ? { extra } : {})}
+        />
+      ) : (
+        <MrRowBody
+          entry={entry}
+          chips={chips}
+          unread={unread}
+          drafts={drafts}
+        />
+      )}
+    </BoardCard>
   );
 }
 
@@ -1615,9 +1650,21 @@ export function MrReviewsPanel({
   initialDeclare,
   renderActions,
   onOpenEntry,
+  mode: modeAsked,
+  modeAt,
+  initialWorkItem,
+  onMode,
 }: {
   /** keepFocus: a review was shown; the focus is the review's now. */
   onClose: (options?: { keepFocus?: boolean }) => void;
+  /** The mode to show (the last one otherwise); with modeAt, asked again. */
+  mode?: BoardMode;
+  /** A new value: the mode asked is taken, whatever is shown. */
+  modeAt?: number;
+  /** The Work board: an item to open on (a notification's link). */
+  initialWorkItem?: string;
+  /** Told the mode shown, as it changes. */
+  onMode?: (mode: BoardMode) => void;
   /** A request to open at once (the command menu). */
   initialOpen?: string;
   /** The request to show selected (from a review: the one shown). */
@@ -1650,6 +1697,26 @@ export function MrReviewsPanel({
       keep(MAXIMIZED_KEY, value ? "1" : "0");
       return value;
     });
+  // The mode: Work or Reviews, the last one shown kept in the browser.
+  const [mode, setModeState] = useState<BoardMode>(
+    () => modeAsked ?? (initialWorkItem ? "work" : storedBoardMode()),
+  );
+  const setMode = (next: BoardMode) => setModeState(next);
+  const modeAtSeen = useRef(modeAt);
+  useEffect(() => {
+    if (modeAt === modeAtSeen.current) return;
+    modeAtSeen.current = modeAt;
+    if (modeAsked) setMode(modeAsked);
+    // The mode asked for with a new modeAt is the whole request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modeAt]);
+  const onModeRef = useRef(onMode);
+  onModeRef.current = onMode;
+  // The mode shown, however it came (a switch, a shortcut), comes back.
+  useEffect(() => {
+    keep(MODE_KEY, mode);
+    onModeRef.current?.(mode);
+  }, [mode]);
   const [storedChoice, setFilterState] = useState<MrFilter>(storedFilter);
   const views = useMemo(() => inbox?.views ?? [], [inbox]);
   const filters: MrFilter[] = [
@@ -1859,6 +1926,15 @@ export function MrReviewsPanel({
   const panelWidth = usePanelWidth(panelRef, !mobile);
   const board = !mobile && panelWidth >= MR_BOARD_MIN_WIDTH;
   const boardRef = useRef<HTMLDivElement>(null);
+  /** The Work mode's content and keys, live while shown. */
+  const work = useWorkMode({
+    enabled: mode === "work",
+    mobile,
+    board,
+    panelRef,
+    onClose,
+    ...(initialWorkItem ? { initialItem: initialWorkItem } : {}),
+  });
   /** The sections drawn: an empty Suggested takes no column on the board. */
   const drawnSections = board
     ? visibleSections.filter(
@@ -1873,26 +1949,11 @@ export function MrReviewsPanel({
           : [shown[section]],
       )
     : [];
-  const columnOf = (key: string | null) =>
-    key === null
-      ? -1
-      : columns.findIndex((rows) => rows.some((entry) => entry.key === key));
+  const columnKeys = columns.map((rows) => rows.map((entry) => entry.key));
   /** h / l, Tab: the column on the left or right, at the same height. */
   const moveColumn = (step: number) => {
-    if (!columns.length) return false;
-    const at = columnOf(selected);
-    const row =
-      at < 0 ? 0 : columns[at]!.findIndex((entry) => entry.key === selected);
-    for (
-      let next = at < 0 ? (step > 0 ? 0 : columns.length - 1) : at + step;
-      next >= 0 && next < columns.length;
-      next += step
-    ) {
-      const rows = columns[next]!;
-      if (!rows.length) continue;
-      setSelected(rows[Math.min(row, rows.length - 1)]!.key);
-      return true;
-    }
+    const next = nextColumn(columnKeys, selected, step);
+    if (next) setSelected(next);
     return true;
   };
 
@@ -2141,24 +2202,14 @@ export function MrReviewsPanel({
     }).then(() => reload());
 
   const move = (step: number) => {
-    if (!ordered.length) return;
     // On the board, j / k stay in the column.
-    const column = board ? columns[columnOf(selected)] : undefined;
-    if (column) {
-      const at = column.findIndex((entry) => entry.key === selected);
-      setSelected(
-        column[Math.min(column.length - 1, Math.max(0, at + step))]!.key,
-      );
-      return;
-    }
-    const at = ordered.findIndex((entry) => entry.key === selected);
-    const next =
-      at < 0
-        ? step > 0
-          ? Math.min(ordered.length - 1, step - 1)
-          : Math.max(0, ordered.length + step)
-        : Math.min(ordered.length - 1, Math.max(0, at + step));
-    setSelected(ordered[next]!.key);
+    const next = nextRow(
+      board ? columnKeys : null,
+      ordered.map((entry) => entry.key),
+      selected,
+      step,
+    );
+    if (next) setSelected(next);
   };
 
   /**
@@ -2957,10 +3008,44 @@ export function MrReviewsPanel({
     else say(`Not a command: ${[name, ...rest].join(" ")}`);
   };
 
+  /** The other mode's key: [ or ], outside a box. */
+  const modeKey = (event: KeyboardEvent, typing: boolean): boolean => {
+    if (
+      typing ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      (event.key !== "[" && event.key !== "]")
+    )
+      return false;
+    setMode(mode === "work" ? "mr" : "work");
+    return true;
+  };
+
   /** One key in the panel; true when the panel took it. */
   const onKey = (event: KeyboardEvent): boolean => {
     // The help takes its own keys (ShortcutHelp).
-    if (helpOpen) return false;
+    if (event.isComposing || helpOpen) return false;
+    if (mode === "work") {
+      const typing =
+        event.target instanceof HTMLElement &&
+        (event.target.closest(
+          "input, textarea, select, [contenteditable], .cm-editor",
+        ) ?? null) !== null;
+      if (modeKey(event, typing)) return true;
+      if (work.onKey(event)) return true;
+      if (typing || event.metaKey || event.ctrlKey || event.altKey)
+        return false;
+      if (event.key === "Escape") {
+        onClose();
+        return true;
+      }
+      if (event.key === "?") {
+        setHelpOpen((open) => !open);
+        return true;
+      }
+      return false;
+    }
     // An effort's view, or the declaration, has its own keys.
     if ((effortView || declaring) && view === "list") return false;
     // An effort's card has the focus: Enter, i and c are its own.
@@ -3110,6 +3195,7 @@ export function MrReviewsPanel({
       return true;
     }
     if (typing || view !== "list" || detail || prompt) return false;
+    if (modeKey(event, typing)) return true;
     if (
       event.altKey &&
       !event.metaKey &&
@@ -3348,8 +3434,8 @@ export function MrReviewsPanel({
     <aside
       ref={panelRef}
       tabIndex={-1}
-      className={`assistant-panel mr-reviews-panel ${mobile ? "is-mobile" : maximized ? "is-maximized" : "is-floating"}${board ? " is-board" : ""}`}
-      aria-label="Reviews"
+      className={`assistant-panel mr-reviews-panel ${mobile ? "is-mobile" : maximized ? "is-maximized" : "is-floating"}${board ? " is-board" : ""} is-${mode}`}
+      aria-label={MODE_TITLE[mode]}
       style={
         surface && !mobile
           ? ({
@@ -3376,7 +3462,7 @@ export function MrReviewsPanel({
       }}
       onPaste={(event) => {
         // A URL pasted into the panel (not into a box) is added.
-        if (view !== "list") return;
+        if (view !== "list" || mode !== "mr") return;
         const target = event.target as HTMLElement;
         if (target.closest("input, textarea, select, [contenteditable]"))
           return;
@@ -3399,57 +3485,97 @@ export function MrReviewsPanel({
       <header className="assistant-panel-head">
         <div>
           <div className="assistant-panel-title">
-            <strong>Reviews</strong>
-          </div>
-          <div className="assistant-panel-meta">
-            <nav className="assistant-primary-nav" aria-label="Reviews views">
+            <nav className="mr-reviews-modes" aria-label="Board">
               <button
                 type="button"
-                className="ghost"
-                aria-pressed={view === "list"}
-                onClick={() => setView("list")}
+                aria-pressed={mode === "work"}
+                title={`The Work board: your work items by state ([ ], ${shortcutLabel("work.board")})`}
+                onClick={() => setMode("work")}
               >
-                Inbox
+                Work
+                {work.forYou ? (
+                  <span
+                    className="mr-reviews-mode-badge"
+                    aria-label={`${work.forYou} for you`}
+                  >
+                    {work.forYou}
+                  </span>
+                ) : null}
               </button>
               <button
                 type="button"
-                className="ghost"
-                aria-pressed={view === "chat"}
-                title="Ask the reviews agent (a)"
-                onClick={showChat}
+                aria-pressed={mode === "mr"}
+                title={`The reviews inbox: merge and pull requests ([ ], ${shortcutLabel("reviews.inbox")})`}
+                onClick={() => setMode("mr")}
               >
-                Chat
+                Reviews
               </button>
             </nav>
-            <span
-              className={`assistant-panel-status${inbox?.refreshing ? " is-busy" : ""}`}
-            >
-              {status}
-            </span>
+          </div>
+          <div className="assistant-panel-meta">
+            {mode === "work" ? (
+              work.meta
+            ) : (
+              <>
+                <nav
+                  className="assistant-primary-nav"
+                  aria-label="Reviews views"
+                >
+                  <button
+                    type="button"
+                    className="ghost"
+                    aria-pressed={view === "list"}
+                    onClick={() => setView("list")}
+                  >
+                    Inbox
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    aria-pressed={view === "chat"}
+                    title="Ask the reviews agent (a)"
+                    onClick={showChat}
+                  >
+                    Chat
+                  </button>
+                </nav>
+                <span
+                  className={`assistant-panel-status${inbox?.refreshing ? " is-busy" : ""}`}
+                >
+                  {status}
+                </span>
+              </>
+            )}
           </div>
         </div>
-        {mobile && view === "list" ? (
-          // No keys on a phone: the prompt p opens, from the head.
-          <button
-            type="button"
-            className="assistant-icon-button"
-            aria-label="Add a request"
-            title="Add a request: paste its URL"
-            onClick={() => setAddText("")}
-          >
-            <Plus size={16} />
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="assistant-icon-button"
-          aria-label="Refresh (r)"
-          title="Refresh (r)"
-          disabled={inbox?.refreshing}
-          onClick={() => void reload(true)}
-        >
-          <RefreshCw size={16} />
-        </button>
+        {mode === "work" ? (
+          work.actions
+        ) : (
+          <>
+            {mobile && view === "list" ? (
+              // No keys on a phone: the prompt p opens, from the head.
+              <button
+                type="button"
+                className="assistant-icon-button"
+                aria-label="Add a request"
+                title="Add a request: paste its URL"
+                onClick={() => setAddText("")}
+              >
+                <Plus size={16} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="assistant-icon-button"
+              aria-label="Refresh (r)"
+              title="Refresh (r)"
+              disabled={inbox?.refreshing}
+              onClick={() => void reload(true)}
+            >
+              <RefreshCw size={16} />
+            </button>
+          </>
+        )}
         {!mobile ? (
           <button
             type="button"
@@ -3459,7 +3585,7 @@ export function MrReviewsPanel({
                 ? "Restore: back to a floating window"
                 : "Maximize: fill the window"
             }
-            aria-label={maximized ? "Restore Reviews" : "Maximize Reviews"}
+            aria-label={`${maximized ? "Restore" : "Maximize"} ${MODE_TITLE[mode]}`}
             aria-pressed={maximized}
             onClick={() => setMaximized((current) => !current)}
           >
@@ -3476,25 +3602,27 @@ export function MrReviewsPanel({
         >
           <Keyboard size={16} />
         </button>
+        {mode === "mr" ? (
+          <button
+            type="button"
+            className="assistant-icon-button"
+            aria-label="Reviews settings"
+            title={
+              view === "settings"
+                ? "Back to the list (Esc)"
+                : "Settings: hosts, followed projects, checkout"
+            }
+            aria-pressed={view === "settings"}
+            onClick={() => setView(view === "settings" ? "list" : "settings")}
+          >
+            <Settings size={16} />
+          </button>
+        ) : null}
         <button
           type="button"
           className="assistant-icon-button"
-          aria-label="Reviews settings"
-          title={
-            view === "settings"
-              ? "Back to the list (Esc)"
-              : "Settings: hosts, followed projects, checkout"
-          }
-          aria-pressed={view === "settings"}
-          onClick={() => setView(view === "settings" ? "list" : "settings")}
-        >
-          <Settings size={16} />
-        </button>
-        <button
-          type="button"
-          className="assistant-icon-button"
-          aria-label="Close Reviews (Esc)"
-          title={closeTitle()}
+          aria-label={`Close ${MODE_TITLE[mode]} (Esc)`}
+          title={mode === "work" ? "Close (Esc)" : closeTitle()}
           onClick={() => onClose()}
         >
           <X size={16} />
@@ -3517,7 +3645,22 @@ export function MrReviewsPanel({
           </button>
         </div>
       ) : null}
-      {view === "chat" ? (
+      {mode === "work" ? (
+        <div className="assistant-tasks mr-reviews-body is-work">
+          {work.inner ? null : (
+            <input
+              ref={work.searchRef}
+              type="search"
+              className="mr-reviews-search"
+              aria-label="Search the items"
+              placeholder="Search (/): words, tags, owner"
+              value={work.query}
+              onChange={(event) => work.setQuery(event.target.value)}
+            />
+          )}
+          {work.body}
+        </div>
+      ) : view === "chat" ? (
         <div className="mr-reviews-chat">
           {prompt ? (
             <MrPrompt
@@ -4205,8 +4348,8 @@ export function MrReviewsPanel({
       ) : null}
       {helpOpen ? (
         <ShortcutHelp
-          title="Reviews keys"
-          rows={MR_REVIEWS_KEYS}
+          title={`${MODE_TITLE[mode]} keys`}
+          rows={mode === "work" ? WORK_KEYS : MR_REVIEWS_KEYS}
           command={runCommand}
           target={() => panelRef.current}
           onClose={() => setHelpOpen(false)}

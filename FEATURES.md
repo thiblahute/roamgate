@@ -1736,7 +1736,11 @@ rate limit stops two sessions answering each other in a loop.
 **Menu > Reviews**, the command menu or `Option+M` (`Alt+M`) opens the
 merge and pull requests waiting for you, from every GitLab and GitHub host
 glab and gh are signed in to on the Roamgate machine (or the hosts listed in
-its settings); the same key hides it again. It sits beside the page as
+its settings); the same key hides it again. It is one mode of the board
+view, the other being the [Work board](#work-board): the view's head says
+**Work** | **Reviews**, a click or `[` / `]` switches, and each mode's
+shortcut opens the view on it (or switches to it when the view shows the
+other); the mode last shown comes back. It sits beside the page as
 Ranger does, as tall as Ranger's panel, with the same head, list and detail.
 Maximized (its head's button) it covers the workspace; Esc hides it as it is,
 and it comes back maximized until you restore it (kept in the browser). **To
@@ -2191,35 +2195,65 @@ is kept, and hints for the suggestions.
 ## Work board
 
 **Menu > Work**, the command menu, `Option+W` (`Alt+W`) or, on a phone,
-**More options > Work** (wearing the For you count) opens the Work board:
-your work items in columns by state, **For you** (waits on you),
-**Doing**, **Verify** (built, to be confirmed in real use), **Open** (nobody
-on it) and **Done** (folded until asked). The board is the workspace's: it
-shows the project whose root holds the workspace's checkout (`roamgate` for
-a Roamgate worktree, `gst2` for the GStreamer 2.0 ones), the workspace's
-name in the head; the project menu on the filter row switches to another
-project or to **All projects** (each card then says its project), and that
-choice is remembered for the workspace; a page with no workspace in a
-project shows the last choice. The filter is one row: the project, the
-tags chosen (tap one to take it off), a few more tags by count, and
-**Filters** (`f`) for every tag of the scope with its count, searched by
-typing, several at once; the search box (`/`) is in the head. The first
-column comes right under. It sits beside the page as Reviews does; the
-whole-page button puts the columns side by side; a phone has the one list,
-the whole screen, and its Back closes the filters, then the board.
+**More options > Work** (wearing the For you count) opens the board view
+on the Work board: your work items in columns by state, **For you** (waits
+on you), **Doing**, **Verify** (built, to be confirmed in real use),
+**Open** (nobody on it) and **Done** (folded until asked). The Work board
+and the [Reviews inbox](#reviews-inbox) are the two modes of one view: the
+same panel beside the page (floating, or the whole page with its head's
+button, full screen on a phone), the same head, where **Work** |
+**Reviews** switches (a click, `[` / `]`; the Work tab wears the For you
+count), the same columns (side by side on a wide pane, each scrolling on
+its own, the row scrolling sideways when more are shown than fit; one
+list on a narrow pane or a phone), the same cards and keys (`j`/`k`,
+`h`/`l`, `gg`/`G`, `za`, `/`, `?`, Esc). `Option+W` opens the view on
+Work, closes it when it shows Work, and switches to Work when it shows
+Reviews; `Option+M` does the same for Reviews; the mode last shown comes
+back next time. The board is the workspace's: it shows the project whose
+root holds the workspace's checkout (`roamgate` for a Roamgate worktree,
+`gst2` for the GStreamer 2.0 ones), the workspace's name in the head; the
+project menu on the filter row switches to another project or to **All
+projects** (each card then says its project), and that choice is
+remembered for the workspace; a page with no workspace in a project shows
+the last choice. Under the search box (`/`: words, tags, an owner) the
+filter is one row: the project, the tags chosen (tap one to take it off),
+a few more tags by count, and **Filters** (`f`) for every tag of the scope
+with its count, searched by typing, several at once; the columns come
+right under. A phone's Back closes the filters, then the item's detail,
+then the view.
 
-Each card is an item: its title, tags, owner (the session or subagent
-working on it), when it moved, and its links (a review thread, an effort,
-a request, a commit, a branch, an RFC's decision, another item it waits
-for). Select a card (a tap, `j`/`k`, `h`/`l` between columns) for its
-actions and its thread: a state menu (`s`), **Done** (`dd`), **Open the
-agent's work** (`o`: the owner's pane, and its subagent's task in the
-Background tasks sheet), tags (`t`), **Delete**, and the comments below,
-**Comment** (`c`) and **Reply** (`r`) for the owner session, which answers
-in the thread as it does a review's. A comment with no owner running waits
-and says so, sent once one runs. `a` (or **+**) adds an item; `za` folds a
-column; `?` lists the keys. An item entering For you notifies you once; the
-notification opens the board on it.
+Each card is an item: its title (wrapping, the card as wide as its
+column), tags, owner (the session or subagent working on it), its links
+(a review thread, an effort, a request, a commit, a branch, an RFC's
+decision, another item it waits for) and when it moved; the selected card
+offers **Open the agent's work** and **Done** over its corner. A card
+never grows in its column: opening it (`Enter`, `i`, a tap or a click)
+shows the item's detail in the view, as a request's detail is shown, with
+**All items** to go back (Esc too): its title and state, its
+**description** (the text it was added with, images at the detail's
+width), a state menu (`s`), tags (`t`), its owner with **Open the agent's
+work** (`o`: the owner's pane, and its subagent's task in the Background
+tasks sheet), its project, links and dates, **Done** (`dd`) or
+**Reopen**, **Delete**, then its thread: the comments, each with Reply,
+and **Comment** (`c`; `r` replies to the last thread) in the review
+comment editor (images pasted, dropped or added with its button are kept
+with the comment), whose Send and Cancel are always in view. The thread
+goes to the owner session, which answers in it as it does a review's; a
+comment with no owner running waits and says so, sent once one runs. `a`
+(or **+**) adds an item in the view: a title, a description in the same
+editor (paste, drop or add images; they are stored with the item's thread
+once it is added), its state and tags; Cmd+Enter or **Add** adds it. `za`
+folds a column; `?` lists the keys. An item entering For you notifies you
+once; the notification opens the view on the item's detail.
+
+An item you add without an owner (any state but For you) goes to the
+project's **coordinator** session: it owns the item, and the item is
+told to it as your comments are (the title, the description, the images),
+so that it picks the work up; so is an item reopened with no owner, and a
+comment on an item whose owner session is gone. A For you item of yours
+with no owner is a note for you alone. An agent sets a project's
+coordinator with `work_project` (`coordinator: CONNECTION/PANE`), when you
+ask.
 
 Agents keep the board true with their `work_*` tools (`work_list`,
 `work_add`, `work_update`, `work_done`, `work_reopen`, `work_adopt`,

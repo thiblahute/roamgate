@@ -5,7 +5,7 @@ import {
   type ShortcutId,
   type ShortcutPlatform,
 } from "./shortcutBindings";
-import { MR_REVIEWS_KEYS } from "./mrReviewsKeys";
+import { MR_REVIEWS_KEYS, WORK_KEYS } from "./mrReviewsKeys";
 import { SHORTCUT_CATALOG } from "./shortcutCatalog";
 import { normalizeSearchText } from "./searchText";
 
@@ -118,26 +118,37 @@ export function shortcutCheatSheet(
       `${item.label} ${keyText(bindings[item.id])}`,
     );
   }
-  // The reviews inbox's own keys, while it has the focus (not rebindable).
-  for (const [keys, label] of MR_REVIEWS_KEYS) {
-    const combos = keys
-      .split(" ")
-      .filter((key) => key && key !== "/")
-      .map((key) =>
-        key.includes("+") ? shortcutKeyCaps(key, platform) : [key],
+  // The board view's own keys, while it has the focus (not rebindable):
+  // the reviews inbox's, and the Work board's.
+  const panelKeys = (
+    group: string,
+    prefix: string,
+    list: [string, string][],
+  ) => {
+    for (const [keys, label] of list) {
+      const combos = keys
+        .split(" ")
+        .filter((key) => key && key !== "/")
+        .map((key) =>
+          key.includes("+") ? shortcutKeyCaps(key, platform) : [key],
+        );
+      add(
+        group,
+        {
+          key: `${prefix}:${keys}`,
+          label: label.charAt(0).toUpperCase() + label.slice(1),
+          combos,
+        },
+        `${label} ${keys}`,
       );
-    add(
-      REVIEWS_INBOX_GROUP,
-      {
-        key: `reviews-inbox:${keys}`,
-        label: label.charAt(0).toUpperCase() + label.slice(1),
-        combos,
-      },
-      `${label} ${keys}`,
-    );
-  }
+    }
+  };
+  panelKeys(REVIEWS_INBOX_GROUP, "reviews-inbox", MR_REVIEWS_KEYS);
+  panelKeys(WORK_BOARD_GROUP, "work-board", WORK_KEYS);
   return [...groups].map(([group, rows]) => ({ group, rows }));
 }
 
 /** The cheat sheet's group of the reviews inbox's keys. */
 export const REVIEWS_INBOX_GROUP = "Reviews inbox (in the panel)";
+/** The cheat sheet's group of the Work board's keys. */
+export const WORK_BOARD_GROUP = "Work board (in the panel)";

@@ -232,6 +232,11 @@ export type ReviewWorkPart = {
   item: string;
   from?: { review: string; thread: string };
   quote?: string;
+  /**
+   * The thread made with the item: its first comment is the item's
+   * description (the text given when it was added), shown as such.
+   */
+  description?: true;
 };
 
 /**

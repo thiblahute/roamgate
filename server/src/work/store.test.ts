@@ -6,6 +6,7 @@ import {
   filterWorkItems,
   normalizeWorkTags,
   parseWorkTitle,
+  workDescriptionThread,
   workTagsOf,
 } from "../../../shared/work";
 import {
@@ -28,6 +29,37 @@ afterEach(() => {
     rmSync(each, { recursive: true, force: true });
 });
 
+describe("work description thread", () => {
+  test("the thread made with the item, else the earliest bare one within a minute", () => {
+    const item = { createdAt: "2026-11-20T10:00:00.000Z" };
+    const thread = (
+      id: string,
+      createdAt: string,
+      work: Record<string, unknown>,
+    ) => ({ id, createdAt, anchor: { work } });
+    const marked = thread("m", "2026-11-20T12:00:00.000Z", {
+      item: "x",
+      description: true,
+    });
+    const early = thread("e", "2026-11-20T10:00:03.000Z", { item: "x" });
+    const quoted = thread("q", "2026-11-20T10:00:01.000Z", {
+      item: "x",
+      quote: "words",
+    });
+    const adopted = thread("a", "2026-11-20T09:59:30.000Z", {
+      item: "x",
+      from: { review: "r", thread: "t" },
+    });
+    const late = thread("l", "2026-11-20T10:02:00.000Z", { item: "x" });
+    expect(workDescriptionThread([late, early, marked], item)?.id).toBe("m");
+    expect(
+      workDescriptionThread([late, quoted, adopted, early], item)?.id,
+    ).toBe("e");
+    expect(workDescriptionThread([late, quoted, adopted], item)).toBeNull();
+    expect(workDescriptionThread([early], { createdAt: "nope" })).toBeNull();
+  });
+});
+
 describe("work store", () => {
   test("keeps items and projects across reopen, with a history line per change", () => {
     const where = dir();
@@ -37,6 +69,7 @@ describe("work store", () => {
       name: "roamgate",
       roots: [{ connectionId: "local", path: "/r" }],
       done: { kind: "deployed" },
+      coordinator: { session: "desktop/w35:p1" },
     });
     store.saveItem(
       {
@@ -54,6 +87,9 @@ describe("work store", () => {
     );
     const again = openWorkStore(where);
     expect(again.projects().map((p) => p.id)).toEqual(["roamgate"]);
+    expect(again.project("roamgate")?.coordinator).toEqual({
+      session: "desktop/w35:p1",
+    });
     expect(again.item("0123456789abcdef")?.title).toBe("Fix the thing");
     expect(again.find("01234567")?.id).toBe("0123456789abcdef");
     expect(again.find("0123")).toBeUndefined();

@@ -2,8 +2,9 @@ import { expect, spyOn, test } from "bun:test";
 
 /**
  * The Work board on a phone, at the app level: More options has a Work
- * entry wearing the For you count, which opens the board full screen and
- * closes the sheet; the board's close returns to the page.
+ * entry wearing the For you count, which opens the board view on its Work
+ * mode, full screen, and closes the sheet; the view's close returns to
+ * the page.
  */
 if (process.env.ROAMGATE_APP_WORK_PHONE_TEST !== "1") {
   test("the Work board on a phone, in an isolated DOM runtime", async () => {
@@ -100,11 +101,20 @@ if (process.env.ROAMGATE_APP_WORK_PHONE_TEST !== "1") {
       await app.click(work());
       await app.settle(100);
       expect(more().getAttribute("aria-expanded")).toBe("false");
+      // The board view, on its Work mode, full screen.
       const panel = () =>
-        document.querySelector<HTMLElement>(".work-root .work-panel");
+        document.querySelector<HTMLElement>(
+          ".mr-reviews-root .mr-reviews-panel",
+        );
       expect(panel()).not.toBeNull();
       expect(panel()!.classList.contains("is-mobile")).toBe(true);
+      expect(panel()!.classList.contains("is-work")).toBe(true);
       expect(panel()!.getAttribute("aria-label")).toBe("Work");
+      expect(
+        panel()!
+          .querySelector(".mr-reviews-modes button[aria-pressed='true']")
+          ?.textContent?.startsWith("Work"),
+      ).toBe(true);
       // Scoped to the page's workspace: its checkout is the project's root.
       expect(panel()!.querySelector(".work-scope-name")?.textContent).toBe(
         "Workspace 1",
@@ -115,7 +125,7 @@ if (process.env.ROAMGATE_APP_WORK_PHONE_TEST !== "1") {
       // The board's close: the panel goes, the page stays.
       await app.click(
         panel()!.querySelector<HTMLButtonElement>(
-          'button[aria-label="Close (Esc)"]',
+          'button[aria-label="Close Work (Esc)"]',
         )!,
       );
       await app.settle(50);

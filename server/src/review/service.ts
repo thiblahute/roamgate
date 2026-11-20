@@ -211,6 +211,7 @@ function workPart(value: unknown): ReviewWorkPart | undefined {
   }
   const quote = optionalText(raw.quote, "quote", 4000)?.trim();
   if (quote) part.quote = quote;
+  if (raw.description === true) part.description = true;
   return part;
 }
 
@@ -3401,7 +3402,9 @@ export function createReviewService(args: {
     if (anchor.work)
       return anchor.work.quote
         ? `the work item, about "${oneLine(anchor.work.quote, 120)}"`
-        : "the work item";
+        : anchor.work.description
+          ? "the work item, its text when it was added"
+          : "the work item";
     if (!anchor.path && anchor.render?.url)
       return oneLine(anchor.render.url, 300);
     if (!anchor.path) return "the whole change";
@@ -3568,7 +3571,9 @@ export function createReviewService(args: {
     else if (due.length && work)
       lines.push(
         "",
-        `These are threads on a work item of the Work board, not on code: read the item with your work_list tool (item: its id) when you need more, and move it with work_update, work_done or work_reopen as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`,
+        due.some((thread) => thread.anchor.work?.description)
+          ? `The item is yours to do (it was added or reopened with you as its owner): take it with work_update (state: doing, owner: your session, or the subagent you give it to), or give it to another session. These are threads on a work item of the Work board, not on code: read the item with your work_list tool (item: its id) when you need more, and move it with work_update, work_done or work_reopen as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`
+          : `These are threads on a work item of the Work board, not on code: read the item with your work_list tool (item: its id) when you need more, and move it with work_update, work_done or work_reopen as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`,
       );
     else if (due.length && chat)
       lines.push(

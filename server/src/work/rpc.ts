@@ -36,19 +36,19 @@ export async function handleWorkRpc(
     case "bridge.work.project.set":
       return { project: service.projectSet(params, meta) };
     case "bridge.work.add":
-      return { item: service.add(params, meta) };
+      return { item: await service.add(params, meta) };
     case "bridge.work.update":
       return { item: service.update(params, meta) };
     case "bridge.work.done":
       return { item: service.done(params, meta) };
     case "bridge.work.reopen":
-      return { item: service.reopen(params, meta) };
+      return { item: await service.reopen(params, meta) };
     case "bridge.work.remove":
       return { item: service.remove(params, meta) };
     case "bridge.work.threads":
       return { snapshot: service.threads(params) };
     case "bridge.work.promote":
-      return { item: service.promote(params, meta) };
+      return { item: await service.promote(params, meta) };
     case "bridge.work.owner_target":
       return { target: await service.ownerTarget(params) };
     case "bridge.work.adopt":

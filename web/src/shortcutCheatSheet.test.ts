@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { MR_REVIEWS_KEYS } from "./mrReviewsKeys";
+import { MR_REVIEWS_KEYS, WORK_KEYS } from "./mrReviewsKeys";
 import { defaultShortcutBindings } from "./shortcutBindings";
 import { SHORTCUT_CATALOG } from "./shortcutCatalog";
 import {
@@ -36,7 +36,7 @@ test("numbered tab and command shortcuts collapse into ranges", () => {
   ]);
   expect(sheet.some((row) => /^(tab|command)\.\d$/.test(row.key))).toBe(false);
   expect(sheet).toHaveLength(
-    SHORTCUT_CATALOG.length - 16 + MR_REVIEWS_KEYS.length,
+    SHORTCUT_CATALOG.length - 16 + MR_REVIEWS_KEYS.length + WORK_KEYS.length,
   );
 });
 

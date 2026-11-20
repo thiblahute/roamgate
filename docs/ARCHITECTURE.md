@@ -1747,20 +1747,38 @@ $0.002).
 
 ## Work board
 
-The Work board (`server/src/work/`, `web/src/components/WorkPanel.tsx`) is
+The Work board (`server/src/work/`, `web/src/components/WorkBoard.tsx`) is
 the user's list of work items on a kanban by state, one project at a time,
 built on the effort model: a project is an effort with no git source, its
 items its parts, their threads a review delivered to the item's owner as an
 effort's are to its leader. The store is this server's, machine-wide, and
 every page shows it.
 
+Page: the Work board is a mode of the board view, the reviews inbox's
+panel (`web/src/components/MrReviewsPanel.tsx`, one root,
+`MrReviewsRoot.tsx`): one shell (floating, maximized, full screen on a
+phone, the surface rect followed), one head with the mode switch
+(`mr-reviews-modes`, `[` / `]`, the mode kept as `mrReviewsMode`), one
+key capture, one help, the inbox's columns (`mr-reviews-board` /
+`mr-reviews-lane`, side by side from `MR_BOARD_MIN_WIDTH`) and card frame
+(`BoardCard.tsx`) and walk (`boardNavigation.ts`: `nextRow`,
+`nextColumn`, used by both modes). `useWorkMode` (WorkBoard.tsx) gives the
+view the mode's head line, buttons, body (the filter row and the state
+columns, the item's detail with its thread, the add form) and key handler;
+the view takes `[` `]`, `?` and the closing Esc itself. `mrReviewsOpen.ts`
+(`openBoard`, `toggleBoard`) and `workOpen.ts` open the view on a mode: a
+mode's shortcut opens the view on it, closes it when it shows that mode,
+switches when it shows the other.
+
 Store: `<data>/work/work.json` (`ROAMGATE_WORK_DIR`), written whole on each
-change: `projects` (`{id, name, roots: [{connectionId, path}], done, tags?}`,
-at most 50; `done` is `{kind: "deployed"}`, this Roamgate's running build,
-or `{kind: "branch", root, branch, connectionId?}`, a commit reachable from
-that branch in that checkout) and `items` (at most 2000: `{id` (8 to 16 hex
-characters), `project, title, state, tags[], owner?: {session, task?},
-source?, links[], createdAt, updatedAt, doneAt?, by, review?}`). States are
+change: `projects` (`{id, name, roots: [{connectionId, path}], done, tags?,
+coordinator?: {session}}`, at most 50; `done` is `{kind: "deployed"}`, this
+Roamgate's running build, or `{kind: "branch", root, branch,
+connectionId?}`, a commit reachable from that branch in that checkout;
+`coordinator` the session that takes the items nobody owns) and `items`
+(at most 2000: `{id` (8 to 16 hex characters), `project, title, state,
+tags[], owner?: {session, task?}, source?, links[], createdAt, updatedAt,
+doneAt?, by, review?}`). States are
 `you` (For you: waits on the user), `doing`, `verify` (built, to be
 confirmed in real use), `open` (nobody on it) and `done`. Tags are free
 words (lower case, spaces as dashes, 40 characters, 12 per item). The owner
@@ -1778,12 +1796,35 @@ its root.
 
 Threads: an item's comments are a review of the item (target `{kind:
 "work", item}`, one review per item, made by the first comment or an
-adoption, anchor `work: {item, from?: {review, thread}, quote?}`). Its
-agent session is `work:<item id>`, resolved by `sessionPane` to the
-owner's pane when the owner is on the review's connection, else the
-comments wait with `WORK_NO_OWNER` and go once an owner runs (the review
-service's retries). The delivered prompt names the item and the `work_*`
-tools. A review thread adopted by an item (`moveThread`) keeps its id,
+adoption, anchor `work: {item, from?: {review, thread}, quote?,
+description?}`). Its agent session is `work:<item id>`, resolved by
+`sessionPane` (`ownerPane`, async) to the owner's pane when the owner is
+on the review's connection and its pane is still listed, else to the
+project's coordinator's pane on that connection (not for the user's own
+For you item with no owner), else the comments wait with `WORK_NO_OWNER`
+and go once an owner runs (the review service's retries). The delivered
+prompt names the item and the `work_*` tools.
+
+Owner and announcement: `add` gives an item added with no owner the
+project's coordinator (`ownerFor`; not a For you item, the user's own, nor
+a done one, history), and `reopen` does the same for a done item nobody
+owns. An item added with `text` gets a thread by its author (the user,
+`you`; an agent, by its caller name) anchored `work: {item, description:
+true}`: its first comment is the item's description, which the detail
+shows as such and `work_list {item}` answers as `description`
+(`workDescriptionThread`, shared/work.ts; an item made before the mark
+counts its earliest bare thread written within a minute of it). `images`
+(`[{token, type, data (base64)}]`, 8 at most, 10 MiB each) are stored with
+the item's review (`saveReviewImage`) and their tokens in the text
+replaced by the paths, as a pasted image's are. Without `text`, an item
+given to another session (the coordinator, or any owner but the agent
+that added it, known by `WorkMeta.address`) still gets a thread by its
+author holding the title, so that the review service tells the session of
+it as it tells a comment (the prompt says the item is theirs to take with
+`work_update`); an agent's own item without text gets no review until
+someone comments. `add`, `reopen` and `promote` are async for it.
+
+A review thread adopted by an item (`moveThread`) keeps its id,
 comments and timestamps, takes the item's anchor, is marked handed (nothing
 is delivered again) and leaves its review; the thread's review is linked
 from the item. Lists of a checkout's reviews leave work reviews out, as
@@ -1806,9 +1847,10 @@ the file on the rule's branch (`- [x] **Dn**`); a hit moves the item to
 
 RPCs `bridge.work.*` (machine-wide; `by: "agent"` with a `summary` says an
 agent wrote): `board`, `list {project?, state?, open?, tags?, owner?,
-query?}`, `project.set {name, roots?, done?, tags?}`, `add {title,
-project?, state?, tags?, owner?, links?, source?, created_at?, updated_at?,
-done_at?, adopt_thread?}`, `update {item, title?, state?, project?, tags?,
+query?}`, `project.set {name, roots?, done?, tags?, coordinator?}`, `add
+{title, project?, state?, tags?, owner?, links?, text?, images?, source?,
+created_at?, updated_at?, done_at?, adopt_thread?}`, `update {item,
+title?, state?, project?, tags?,
 add_tags?, remove_tags?, owner?, links?, add_links?, remove_links?,
 source?, created_at?, done_at?, adopt_thread?}`, `done {item, landed?:
 {commit?, subject?, root?, pr?, branch?}, done_at?}`, `reopen {item,

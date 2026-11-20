@@ -1,8 +1,9 @@
 import { parseAgentAddress } from "../../../shared/agentMessage";
-import type {
-  ReviewSession,
-  ReviewSnapshot,
-  ReviewThread,
+import {
+  REVIEW_USER,
+  type ReviewSession,
+  type ReviewSnapshot,
+  type ReviewThread,
 } from "../../../shared/review";
 import {
   describeWorkLink,
@@ -21,6 +22,7 @@ import {
   newWorkId,
   oneLine,
   parseDoneRule,
+  parseWorkCoordinator,
   parseWorkLinks,
   parseWorkOwner,
   parseWorkSource,
@@ -52,8 +54,14 @@ export type WorkMeta = {
   by: "user" | "agent";
   /** The agent's name, in what the user is told. */
   caller?: string;
+  /** The agent's session address, when known: its own items need no telling. */
+  address?: string;
   summary?: string;
 };
+
+/** The most images an item is added with, and their tokens in its text. */
+export const WORK_ADD_IMAGES = 8;
+export const WORK_TEXT_CHARS = 20_000;
 
 export type WorkGit = (
   root: string,
@@ -91,6 +99,8 @@ export type WorkReviews = {
     threadId: string;
     anchor: Record<string, unknown>;
   }): ReviewThread;
+  /** Stores an image of the review (as a pasted one is); its path. */
+  addImage?(sessionId: string, type: string, data: Uint8Array): string;
 };
 
 export type WorkNotifications = {
@@ -127,6 +137,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function given(value: unknown): boolean {
   return value !== undefined && value !== null && value !== "";
 }
+
+/** An image an item is added with: its token in the text, its bytes. */
+type AddImage = { token: string; type: string; data: Uint8Array };
 
 /** The summary the user sees of an agent's change, when it gave none. */
 function summaryOf(meta: WorkMeta, what: string): string {
@@ -271,6 +284,10 @@ export function createWorkService(deps: WorkServiceDeps) {
         roots.find((root) => root.path === done.root)?.connectionId ??
         deps.defaultConnection?.() ??
         undefined;
+    const coordinator =
+      params.coordinator !== undefined
+        ? parseWorkCoordinator(params.coordinator)
+        : existing?.coordinator;
     const project: WorkProject = {
       id: existing?.id ?? name.replace(/[^a-z0-9._-]+/g, "-"),
       name,
@@ -281,6 +298,7 @@ export function createWorkService(deps: WorkServiceDeps) {
         : existing?.tags
           ? { tags: existing.tags }
           : {}),
+      ...(coordinator ? { coordinator } : {}),
     };
     store.saveProject(project);
     push({
@@ -304,7 +322,110 @@ export function createWorkService(deps: WorkServiceDeps) {
    * `done_at` keep an imported item's dates; `adopt_thread` makes an
    * existing review thread the item's own.
    */
-  function add(params: Record<string, unknown>, meta: WorkMeta): WorkItem {
+  /**
+   * The owner an item gets when given none: the project's coordinator,
+   * unless the item is For you (the user's own, nothing to deliver).
+   */
+  function ownerFor(
+    project: WorkProject,
+    state: WorkItem["state"],
+    given: WorkOwner | undefined,
+  ): WorkOwner | undefined {
+    if (given) return given;
+    // For you is the user's own; a done item is history, nobody's to do.
+    if (state === "you" || state === "done" || !project.coordinator)
+      return undefined;
+    return { session: project.coordinator.session };
+  }
+
+  /** The text an item is added with, and the images it holds. */
+  function parseAddText(params: Record<string, unknown>): {
+    text: string | undefined;
+    images: AddImage[];
+  } {
+    const raw = params.text;
+    if (raw !== undefined && raw !== null && typeof raw !== "string")
+      throw new WorkError("text must be words");
+    const text = typeof raw === "string" ? raw.replace(/\r\n?/g, "\n") : "";
+    if (text.length > WORK_TEXT_CHARS) throw new WorkError("text is too long");
+    const list = params.images;
+    if (list === undefined || list === null)
+      return { text: text.trim() ? text.trim() : undefined, images: [] };
+    if (!Array.isArray(list)) throw new WorkError("images must be a list");
+    if (list.length > WORK_ADD_IMAGES)
+      throw new WorkError(`at most ${WORK_ADD_IMAGES} images`);
+    const images = list.map((each) => {
+      if (
+        !isRecord(each) ||
+        typeof each.token !== "string" ||
+        !each.token ||
+        typeof each.type !== "string" ||
+        typeof each.data !== "string"
+      )
+        throw new WorkError("an image is {token, type, data (base64)}");
+      return {
+        token: each.token.slice(0, 80),
+        type: each.type,
+        data: new Uint8Array(Buffer.from(each.data, "base64")),
+      };
+    });
+    return { text: text.trim() ? text.trim() : undefined, images };
+  }
+
+  /**
+   * Tells the item's owner of it, as a review comment is told: the item's
+   * review is opened and a thread added, by its author (the user, or the
+   * agent that added it), holding the text it was added with (its
+   * description; the title alone when it has none), with its images
+   * stored as pasted ones are. An agent's own item (it owns what it added)
+   * needs no telling: the thread is its own words.
+   */
+  async function announce(
+    item: WorkItem,
+    meta: WorkMeta,
+    given: { text: string | undefined; images: AddImage[] },
+    what: "added" | "reopened",
+  ): Promise<ReviewThread | null> {
+    if (!deps.reviews) return null;
+    const own =
+      meta.by === "agent" &&
+      !!meta.address &&
+      item.owner?.session === meta.address;
+    // Nothing to tell: no text, and no owner but the agent that added it.
+    if (!given.text && (!item.owner || own)) return null;
+    const author =
+      meta.by === "user"
+        ? REVIEW_USER
+        : own
+          ? (meta.caller ?? "Claude").split(" in ")[0] || "Claude"
+          : (meta.caller ?? "Claude");
+    const snapshot = threads({ item: item.id, open: true });
+    if (!snapshot) throw new WorkError("the item's review could not be opened");
+    let text = given.text ?? (what === "added" ? item.title : "Reopened.");
+    for (const image of given.images) {
+      if (!deps.reviews.addImage)
+        throw new WorkError("images are unavailable", "unavailable");
+      const path = deps.reviews.addImage(
+        snapshot.session.id,
+        image.type,
+        image.data,
+      );
+      text = text.split(image.token).join(path);
+    }
+    return deps.reviews.addThread({
+      sessionId: snapshot.session.id,
+      author,
+      text,
+      anchor: {
+        work: { item: item.id, ...(given.text ? { description: true } : {}) },
+      },
+    });
+  }
+
+  async function add(
+    params: Record<string, unknown>,
+    meta: WorkMeta,
+  ): Promise<WorkItem> {
     seed();
     const project = projectOf(
       typeof params.project === "string" ? params.project : undefined,
@@ -319,16 +440,20 @@ export function createWorkService(deps: WorkServiceDeps) {
       const rest: Record<string, unknown> = { ...params, item: existing.id };
       delete rest.source;
       delete rest.project;
+      delete rest.text;
+      delete rest.images;
       return update(rest, meta);
     }
     const at = now();
     const created = parseWorkTime(params.created_at, "created_at") ?? at;
-    const owner = parseWorkOwner(params.owner);
+    const state = given(params.state) ? parseWorkState(params.state) : "open";
+    const owner = ownerFor(project, state, parseWorkOwner(params.owner));
+    const text = parseAddText(params);
     const item: WorkItem = {
       id: newWorkId(),
       project: project.id,
       title: parseWorkTitle(params.title),
-      state: given(params.state) ? parseWorkState(params.state) : "open",
+      state,
       tags: parseWorkTags(params.tags),
       ...(owner ? { owner } : {}),
       ...(source ? { source } : {}),
@@ -352,6 +477,9 @@ export function createWorkService(deps: WorkServiceDeps) {
     );
     if (given(params.adopt_thread))
       adopt(made, String(params.adopt_thread), meta);
+    // An adopted thread is the item's words already; an imported done item
+    // is history, nobody's to do.
+    else if (item.state !== "done") await announce(made, meta, text, "added");
     return store.item(made.id) ?? made;
   }
 
@@ -485,19 +613,39 @@ export function createWorkService(deps: WorkServiceDeps) {
     );
   }
 
-  function reopen(params: Record<string, unknown>, meta: WorkMeta): WorkItem {
+  async function reopen(
+    params: Record<string, unknown>,
+    meta: WorkMeta,
+  ): Promise<WorkItem> {
     const before = itemOf(params.item);
     const state = given(params.state) ? parseWorkState(params.state) : "open";
     if (state === "done") throw new WorkError("reopen to a live state");
-    const next: WorkItem = { ...before, state, updatedAt: now(), by: meta.by };
+    const project = store.project(before.project);
+    const owner = project
+      ? ownerFor(project, state, before.owner)
+      : before.owner;
+    const next: WorkItem = {
+      ...before,
+      state,
+      ...(owner ? { owner } : {}),
+      updatedAt: now(),
+      by: meta.by,
+    };
     delete next.doneAt;
-    return commit(
+    const made = commit(
       before,
       next,
       meta,
-      { state },
+      {
+        state,
+        ...(owner && !before.owner ? { owner } : {}),
+      },
       `reopened "${oneLine(next.title, 60)}" as ${state}`,
     );
+    // Given to the coordinator now: told of it, as of a new item.
+    if (owner && !before.owner)
+      await announce(made, meta, { text: undefined, images: [] }, "reopened");
+    return store.item(made.id) ?? made;
   }
 
   function remove(params: Record<string, unknown>, meta: WorkMeta): WorkItem {
@@ -638,13 +786,34 @@ export function createWorkService(deps: WorkServiceDeps) {
 
   /**
    * The pane an item's comments go to: its owner's, when that owner is on
-   * the connection asked (the review's), else none (they wait).
+   * the connection asked (the review's) and its pane is still there; else
+   * the project's coordinator's, on that connection; else none (they
+   * wait).
    */
-  function ownerPane(itemId: string, connectionId: string): string | null {
+  async function ownerPane(
+    itemId: string,
+    connectionId: string,
+  ): Promise<string | null> {
     const item = store.item(itemId);
-    const owner = item?.owner ? parseAgentAddress(item.owner.session) : null;
-    if (!owner || owner.connectionId !== connectionId) return null;
-    return owner.paneId;
+    if (!item) return null;
+    const panes = deps.panes
+      ? await deps.panes(connectionId).catch(() => null)
+      : null;
+    const here = (session: string | undefined): string | null => {
+      const address = session ? parseAgentAddress(session) : null;
+      if (!address || address.connectionId !== connectionId) return null;
+      if (panes && !panes.some((pane) => pane.pane_id === address.paneId))
+        return null;
+      return address.paneId;
+    };
+    const own = here(item.owner?.session);
+    if (own) return own;
+    // The user's own For you item (nobody's): its comments are notes.
+    if (item.state === "you" && !item.owner) return null;
+    const coordinator = store.project(item.project)?.coordinator;
+    if (!coordinator || coordinator.session === item.owner?.session)
+      return null;
+    return here(coordinator.session);
   }
 
   /** Where the owner is, for the page to open its chat or its task. */
@@ -679,7 +848,10 @@ export function createWorkService(deps: WorkServiceDeps) {
    * thread's id (so the same thread never makes two items), the project the
    * one whose root holds the review's checkout.
    */
-  function promote(params: Record<string, unknown>, meta: WorkMeta): WorkItem {
+  async function promote(
+    params: Record<string, unknown>,
+    meta: WorkMeta,
+  ): Promise<WorkItem> {
     seed();
     const { session, thread } = threadRef(
       typeof params.thread === "string" ? params.thread : "",

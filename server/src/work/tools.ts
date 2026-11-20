@@ -7,6 +7,7 @@ import {
   WORK_STATES,
   type WorkItem,
   type WorkProject,
+  workDescriptionThread,
 } from "../../../shared/work";
 import type { WorkMeta, WorkService } from "./service";
 import { WorkError } from "./store";
@@ -228,6 +229,12 @@ export const workToolSchemas = {
         ]),
       ),
       tags: Type.Optional(tagsParam),
+      coordinator: Type.Optional(
+        Type.Union([Type.String({ maxLength: 200 }), ownerParam, Type.Null()], {
+          description:
+            "The session (CONNECTION/PANE) that takes the project's items nobody owns: an item added or reopened without an owner is its and told to it; so is a comment on an item whose owner is gone. null clears it.",
+        }),
+      ),
     },
     { additionalProperties: false },
   ),
@@ -239,7 +246,7 @@ export const WORK_DESCRIPTIONS: Record<WorkToolName, string> = {
   work_list:
     'The Work board: work items by project (roamgate by default) with id, title, state (you: waits on the user, doing, verify, open, done), tags, owner (a session address and its subagent task), source, links (review threads, efforts, requests, commits, branches, decisions, other items) and times; filter by state, open, tags (all), owner, words. item: one item with its comments. Use it before changing the board, and to answer "what is on the list".',
   work_add:
-    "Add a work item: a title, its project, a state (open by default; you when it waits on the user, doing when you take it), tags, an owner {session, task?} (yours from agent_sessions; the agent id of a subagent you spawned), links (a review thread it came from, the commit its fix landed in, an RFC's decision). text: a first comment. Importing: source names where it came from (the same source again changes that item instead of adding one), created_at / done_at keep its dates, adopt_thread makes an existing review thread the item's own (comments and ids kept). The user sees it on the Work board; a For you item notifies them once.",
+    "Add a work item: a title, its project, a state (open by default; you when it waits on the user, doing when you take it), tags, an owner {session, task?} (yours from agent_sessions; the agent id of a subagent you spawned; without one, the project's coordinator session owns it and is told of it), links (a review thread it came from, the commit its fix landed in, an RFC's decision). text: its description, the first comment of its thread. Importing: source names where it came from (the same source again changes that item instead of adding one), created_at / done_at keep its dates, adopt_thread makes an existing review thread the item's own (comments and ids kept). The user sees it on the Work board; a For you item notifies them once.",
   work_update:
     "Change a work item: title, state, project, tags (tags replaces, add_tags and remove_tags edit), owner (null clears), links (links replaces, add_links and remove_links edit), source, created_at / done_at, adopt_thread (an existing review thread becomes the item's). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. The user sees it on the board.",
   work_done:
@@ -248,7 +255,7 @@ export const WORK_DESCRIPTIONS: Record<WorkToolName, string> = {
   work_adopt:
     "An existing review thread (its id, or a comment's) becomes a work item's own thread: moved into the item's review with its comments and ids, its old anchor dropped, the review it came from linked. Idempotent: a thread the item has already changes nothing.",
   work_project:
-    "Declare or change a project of the Work board: its name, the checkouts it spans (roots), its done rule ({kind: deployed}: this Roamgate's running build holds the commit; {kind: branch, root, branch}: the commit is reachable from that branch in that checkout, gstreamer2/main say), suggested tags. Only when the user asked.",
+    "Declare or change a project of the Work board: its name, the checkouts it spans (roots), its done rule ({kind: deployed}: this Roamgate's running build holds the commit; {kind: branch, root, branch}: the commit is reachable from that branch in that checkout, gstreamer2/main say), suggested tags, its coordinator (the session that takes and is told of the items nobody owns). Only when the user asked.",
 };
 
 /** The tools that change the board. */
@@ -271,6 +278,9 @@ function projectLine(project: WorkProject): Record<string, unknown> {
         ? "deployed build"
         : `${project.done.branch} in ${project.done.root}`,
     ...(project.tags?.length ? { tags: project.tags } : {}),
+    ...(project.coordinator
+      ? { coordinator: project.coordinator.session }
+      : {}),
   };
 }
 
@@ -335,7 +345,11 @@ export async function workTool(
     );
   }
   const input = params as Record<string, unknown>;
-  const meta: WorkMeta = { by: "agent", caller };
+  const meta: WorkMeta = {
+    by: "agent",
+    caller,
+    ...(address ? { address } : {}),
+  };
   const answer = (value: unknown) => `${UNTRUSTED}\n${JSON.stringify(value)}`;
   switch (name) {
     case "work_list": {
@@ -343,8 +357,15 @@ export async function workTool(
         const item = service.store.find(input.item);
         if (!item) throw new WorkError("no such item", "not_found");
         const snapshot = service.threads({ item: item.id });
+        const description = workDescriptionThread(
+          snapshot?.threads ?? [],
+          item,
+        );
         return answer({
           item: itemLine(item),
+          ...(description?.comments[0]
+            ? { description: description.comments[0].body }
+            : {}),
           comments: (snapshot?.threads ?? []).map((thread) => ({
             thread: thread.id,
             resolved: thread.resolved,
@@ -370,20 +391,17 @@ export async function workTool(
       });
     }
     case "work_add": {
-      void address;
-      const item = service.add(input, meta);
-      let thread: string | undefined;
-      if (typeof input.text === "string" && input.text.trim())
-        thread = (
-          await service.comment(
-            { item: item.id, text: input.text },
-            caller.split(" in ")[0] || "Claude",
-          )
-        ).id;
+      // Its text is its description thread, told to its owner when that
+      // is another session (the coordinator's, say).
+      const item = await service.add(input, meta);
       const made = service.store.item(item.id) ?? item;
+      const thread = workDescriptionThread(
+        service.threads({ item: made.id })?.threads ?? [],
+        made,
+      );
       return answer({
         item: itemLine(made),
-        ...(thread ? { thread } : {}),
+        ...(thread ? { thread: thread.id } : {}),
       });
     }
     case "work_update":
@@ -391,7 +409,7 @@ export async function workTool(
     case "work_done":
       return answer({ item: itemLine(service.done(input, meta)) });
     case "work_reopen":
-      return answer({ item: itemLine(service.reopen(input, meta)) });
+      return answer({ item: itemLine(await service.reopen(input, meta)) });
     case "work_adopt":
       return answer({ item: itemLine(service.adopt(input, meta)) });
     case "work_project":
