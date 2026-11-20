@@ -211,6 +211,9 @@ import {
 import { type ActiveFilePreviewSelection } from "./components/FilePreviewContent";
 import { AnnotationPanel } from "./components/AnnotationPanel";
 import { WorkspaceConversations } from "./components/FileThreads";
+import { FileLinksContext, type FileLinks } from "./components/ReviewNoteBody";
+import { onFileLinkOpen } from "./fileLinkOpen";
+import { fileLinkAt } from "./reviewFileLinks";
 import {
   assistantActionExecuting,
   onAssistantOpenRequest,
@@ -4254,10 +4257,68 @@ export default function App() {
     },
     [setActiveFilePreview],
   );
+  /**
+   * `filePath` of repository `at.root` (the checkout's without one) in the
+   * workspace's Files: at a line in its source, rendered, or as Files opens
+   * a file; with `newTab`, the file shown keeps a tab of its own.
+   */
+  const openWorkspaceFile = useCallback(
+    (
+      workspaceId: string,
+      filePath: string,
+      at: {
+        line?: number;
+        rendered?: boolean;
+        root?: string;
+        newTab?: boolean;
+      },
+    ) => {
+      const workspace = store
+        .get()
+        .workspaces.find((candidate) => candidate.workspace_id === workspaceId);
+      if (!workspace) return;
+      // The file of the repository Changes shows, which may not be the
+      // workspace's checkout (another repository's review shown here).
+      const path = pathInRepository(
+        filePath,
+        at.root,
+        workspace.worktree?.checkout_path,
+      );
+      if (at.newTab) {
+        // The file shown is pinned: the new one takes the preview tab.
+        const scope = resourceScopeForWorkspace(
+          connectionClient.connectionId,
+          workspace,
+        );
+        const tabs = readResourceFileTabs(roamgateLocalStorage, scope);
+        if (tabs.previewPath)
+          writeResourceFileTabs(roamgateLocalStorage, scope, {
+            ...tabs,
+            previewPath: null,
+          });
+      }
+      // At the review's line, rendered, as the review's Open.
+      if (at.line !== undefined || at.rendered)
+        openInspector("files", workspaceId, {
+          entry: inspectorFileEntry(path),
+          path,
+          ...(at.line !== undefined ? { line: at.line } : {}),
+          ...(at.rendered ? { rendered: true } : {}),
+          focusInspector: true,
+        });
+      else openFileExplorerFile(workspaceId, inspectorFileEntry(path));
+    },
+    [connectionClient.connectionId, openFileExplorerFile, openInspector],
+  );
   const openDiffFileInExplorer = useCallback(
     (
       entry: ActiveDiffSelection["entry"],
-      at?: { line?: number; rendered?: boolean; root?: string },
+      at?: {
+        line?: number;
+        rendered?: boolean;
+        root?: string;
+        newTab?: boolean;
+      },
     ) => {
       const current = inspectorStateRef.current;
       if (!entry || !current) return;
@@ -4271,26 +4332,35 @@ export default function App() {
       void import("./mrReviewFlow").then(({ checkoutForBrowsing }) =>
         checkoutForBrowsing(workspace.workspace_id),
       );
-      // The file of the repository Changes shows, which may not be the
-      // workspace's checkout (another repository's review shown here).
-      const path = pathInRepository(
-        entry.path,
-        at?.root,
-        workspace.worktree?.checkout_path,
-      );
-      // At the review's line, rendered, as the review's Open.
-      if (at?.line !== undefined || at?.rendered)
-        openInspector("files", workspace.workspace_id, {
-          entry: inspectorFileEntry(path),
-          path,
-          ...(at.line !== undefined ? { line: at.line } : {}),
-          ...(at.rendered ? { rendered: true } : {}),
-          focusInspector: true,
-        });
-      else
-        openFileExplorerFile(workspace.workspace_id, inspectorFileEntry(path));
+      openWorkspaceFile(workspace.workspace_id, entry.path, at ?? {});
     },
-    [openFileExplorerFile, openInspector],
+    [openWorkspaceFile],
+  );
+  // The files the workspace's conversations link to (Review feedback's
+  // threads panel): opened in its Files.
+  const conversationFileLinks = useMemo<FileLinks | null>(() => {
+    if (!annotationWorkspace) return null;
+    const workspaceId = annotationWorkspace.workspace_id;
+    const root =
+      annotationWorkspace.worktree?.checkout_path ?? annotationWorkspace.cwd;
+    return {
+      ...(root ? { root, checkouts: [root] } : {}),
+      open: (link, how) =>
+        openWorkspaceFile(workspaceId, link.path, fileLinkAt(link, how)),
+    };
+  }, [annotationWorkspace, openWorkspaceFile]);
+  // A chat's comments link to files too (AgentHistoryDrawer, in its pane).
+  useEffect(
+    () =>
+      onFileLinkOpen((request) => {
+        if (request.connectionId !== connectionClient.connectionId) return;
+        openWorkspaceFile(
+          request.workspaceId,
+          request.link.path,
+          fileLinkAt(request.link, request),
+        );
+      }),
+    [connectionClient.connectionId, openWorkspaceFile],
   );
   const browseFilesForPane = useCallback(
     (pane: Pane) => {
@@ -7027,12 +7097,14 @@ export default function App() {
               }
               conversations={
                 annotationWorkspace && s.activeConnectionId ? (
-                  <WorkspaceConversations
-                    connectionId={s.activeConnectionId}
-                    workspaceId={annotationWorkspace.workspace_id}
-                    onGo={goToWorkspaceThread}
-                    onClose={closeAnnotations}
-                  />
+                  <FileLinksContext.Provider value={conversationFileLinks}>
+                    <WorkspaceConversations
+                      connectionId={s.activeConnectionId}
+                      workspaceId={annotationWorkspace.workspace_id}
+                      onGo={goToWorkspaceThread}
+                      onClose={closeAnnotations}
+                    />
+                  </FileLinksContext.Provider>
                 ) : null
               }
               onGo={(id) => {

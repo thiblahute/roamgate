@@ -43,6 +43,7 @@ export function MrThreadCard({
   flipped = false,
   focusedComment,
   newLines,
+  root,
   replying,
   editing,
   onDraftReply,
@@ -52,6 +53,8 @@ export function MrThreadCard({
   thread: ReviewThread;
   /** "GitLab" or "GitHub". */
   forge: string;
+  /** The repository the thread is on: where its links to files lead. */
+  root?: string;
   /** Listed with the review's general comments: open unless resolved. */
   top?: boolean;
   /** Found again in today's file: the line it was written on. */
@@ -76,6 +79,7 @@ export function MrThreadCard({
       newLines={newLines}
       line={thread.anchor.line}
       path={thread.anchor.path}
+      root={root}
     />
   );
   return (

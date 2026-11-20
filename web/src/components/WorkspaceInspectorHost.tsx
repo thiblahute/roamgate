@@ -69,8 +69,10 @@ import {
   type InspectorView,
   type WorkspaceInspectorState,
 } from "../workspaceResource";
+import { fileLinkAt } from "../reviewFileLinks";
 import { AgentHistoryDrawer } from "./AgentHistoryDrawer";
 import { paneHasAgentHistory } from "./agentSession";
+import { FileLinksContext, type FileLinks } from "./ReviewNoteBody";
 import {
   type ActiveDiffSelection,
   DiffViewerPanel,
@@ -278,11 +280,12 @@ export function WorkspaceInspectorHost({
   /**
    * A changed file in Files: at a line, rendered (the review's Open);
    * `root`, the repository its path is in when Changes shows another one
-   * than the checkout's.
+   * than the checkout's; `newTab`, in a tab of its own (a comment's link
+   * middle-clicked).
    */
   onOpenDiffFile: (
     entry: ActiveDiffSelection["entry"],
-    at?: { line?: number; rendered?: boolean; root?: string },
+    at?: { line?: number; rendered?: boolean; root?: string; newTab?: boolean },
   ) => void;
   annotations: readonly ReviewAnnotation[];
   /** The threads the annotations written as comments are, by their id. */
@@ -620,6 +623,43 @@ export function WorkspaceInspectorHost({
       onOpenDiffFile(entry, diffFileRoot ? { ...at, root: diffFileRoot } : at),
     [onOpenDiffFile, diffFileRoot],
   );
+  /*
+   * The files comments link to (ReviewNoteBody) open in Files: from the
+   * repository the comment's review is on, else the one the view shows
+   * (Changes' review's, or the checkout); by their absolute path, from any
+   * of those.
+   */
+  const workspaceCheckout = workspace?.worktree?.checkout_path;
+  const previewRoot = fileSelection.preview?.root;
+  const fileLinks = useMemo<FileLinks>(() => {
+    const viewRoot =
+      (state.view === "changes" ? shownFilesRoot : undefined) ??
+      workspaceCheckout ??
+      previewRoot;
+    return {
+      ...(viewRoot ? { root: viewRoot } : {}),
+      checkouts: [shownFilesRoot, workspaceCheckout, previewRoot].filter(
+        (each): each is string => !!each,
+      ),
+      open: (link, how) =>
+        onOpenDiffFile(
+          {
+            path: link.path,
+            kind: "unstaged",
+            status: "M",
+            additions: 0,
+            deletions: 0,
+          } as GitDiffEntry,
+          fileLinkAt(link, how),
+        ),
+    };
+  }, [
+    state.view,
+    shownFilesRoot,
+    workspaceCheckout,
+    previewRoot,
+    onOpenDiffFile,
+  ]);
   /** The review's view Changes shows when not the scope's own files. */
   const [viewTree, setViewTree] = useState<{
     label: string;
@@ -1341,7 +1381,7 @@ export function WorkspaceInspectorHost({
     return () => observer.disconnect();
   }, []);
 
-  return (
+  const body = (
     <aside
       ref={hostRef}
       className={`workspace-inspector workspace-inspector-${state.dock} ${
@@ -2017,5 +2057,11 @@ export function WorkspaceInspectorHost({
         {commandFrame.overlays}
       </InspectorCommandsContext.Provider>
     </aside>
+  );
+  // Around the views, not in them: their comments' links to files.
+  return (
+    <FileLinksContext.Provider value={fileLinks}>
+      {body}
+    </FileLinksContext.Provider>
   );
 }

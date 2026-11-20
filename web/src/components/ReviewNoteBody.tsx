@@ -1,6 +1,8 @@
 import {
   type CSSProperties,
+  createContext,
   type ReactNode,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -8,6 +10,7 @@ import {
 } from "react";
 import { endsInOpenFence } from "../diagramSource";
 import { useForgeSlots } from "../forgeSlots";
+import type { FileLink, FileLinkScope } from "../reviewFileLinks";
 import {
   looseText,
   type MessageBlock,
@@ -15,7 +18,7 @@ import {
   tableCells,
 } from "../reviewMessageParts";
 import { Diagram, useDiagramSlots } from "./DiagramSlots";
-import { renderInlineMarkdown, renderMarkdown } from "./markdown";
+import { fileLinkOf, renderInlineMarkdown, renderMarkdown } from "./markdown";
 import { highlightSnippetTokens } from "./syntaxHighlighting";
 import "./ReviewNoteBody.css";
 
@@ -433,8 +436,31 @@ export type MessageLayout = {
 
 const messageLayouts = new Map<string, MessageLayout>();
 
-export function messageLayout(text: string): MessageLayout {
-  const known = messageLayouts.get(text);
+/**
+ * The files comments link to, and where those links lead: the review's
+ * repository (`root`) and the checkouts around it, and how to open one in
+ * Files (`open`: at its line in the source, else rendered; `newTab` for a
+ * middle or Ctrl click). Set by the view the comments are read in; without
+ * it, links to files are left as written.
+ */
+export type FileLinks = {
+  root?: string;
+  checkouts?: readonly string[];
+  open: (link: FileLink, how: { newTab: boolean }) => void;
+};
+
+export const FileLinksContext = createContext<FileLinks | null>(null);
+
+/**
+ * A message's layout, its links to files read in `fileLinks` (a comment's
+ * review and the file it is on), when the view opens them.
+ */
+export function messageLayout(
+  text: string,
+  fileLinks?: FileLinkScope,
+): MessageLayout {
+  const key = fileLinks ? `${JSON.stringify(fileLinks)}\u0000${text}` : text;
+  const known = messageLayouts.get(key);
   if (known) return known;
   const blocks = messageBlocks(text);
   const html = blocks.map((block) =>
@@ -442,13 +468,17 @@ export function messageLayout(text: string): MessageLayout {
       ? renderMarkdown(block.source, {
           breaks: true,
           imageUrlResolver: reviewImageUrl,
+          fileLinks,
         })
       : "",
   );
   const cells = blocks.map((block) =>
     block.kind === "table"
       ? tableCells(block).map((cell) =>
-          renderInlineMarkdown(cell, { imageUrlResolver: reviewImageUrl }),
+          renderInlineMarkdown(cell, {
+            imageUrlResolver: reviewImageUrl,
+            fileLinks,
+          }),
         )
       : null,
   );
@@ -470,7 +500,7 @@ export function messageLayout(text: string): MessageLayout {
     texts: quotes.map(looseText),
   };
   if (messageLayouts.size > 500) messageLayouts.clear();
-  messageLayouts.set(text, layout);
+  messageLayouts.set(key, layout);
   return layout;
 }
 
@@ -582,17 +612,58 @@ export function NoteBody({
   newLines,
   line,
   path,
+  root,
   parts,
 }: {
   text: string;
   newLines?: ReadonlyMap<number, string>;
   line?: number;
-  /** The file commented on: the language of fences that name none. */
+  /**
+   * The file commented on: the language of fences that name none, and
+   * where its `./` links lead.
+   */
   path?: string;
+  /**
+   * The repository of the file commented on (its review's root): where
+   * the comment's links to files lead. The view's (FileLinksContext)
+   * otherwise.
+   */
+  root?: string;
   parts?: MessageParts;
 }) {
-  const layout = messageLayout(text);
+  const links = useContext(FileLinksContext);
+  const linkScope = useMemo<FileLinkScope | undefined>(() => {
+    if (!links) return undefined;
+    const reviewRoot = root ?? links.root;
+    const checkouts = [reviewRoot, links.root, ...(links.checkouts ?? [])];
+    return {
+      ...(reviewRoot ? { root: reviewRoot } : {}),
+      checkouts: [
+        ...new Set(checkouts.filter((each): each is string => !!each)),
+      ],
+      ...(path && !/^(?:\/|[a-z]:[\\/])/i.test(path)
+        ? { documentPath: path }
+        : {}),
+    };
+  }, [links, root, path]);
+  const layout = messageLayout(text, linkScope);
   const { blocks, html, quotes } = layout;
+  /** A click on a link to a file: the file in Files, the part not selected. */
+  const openFileLink = (event: React.MouseEvent<HTMLElement>) => {
+    if (!links) return;
+    const anchor =
+      event.target instanceof Element
+        ? event.target.closest("a[data-file-path]")
+        : null;
+    if (!anchor || !event.currentTarget.contains(anchor)) return;
+    const link = fileLinkOf(anchor);
+    if (!link) return;
+    event.preventDefault();
+    event.stopPropagation();
+    links.open(link, {
+      newTab: event.button === 1 || event.ctrlKey || event.metaKey,
+    });
+  };
   // Diagrams in a part (a list item's ```mermaid): a block not closed yet
   // stays code.
   const rootRef = useRef<HTMLDivElement>(null);
@@ -710,7 +781,18 @@ export function NoteBody({
     );
   });
   return (
-    <div ref={rootRef} className="rc-text rich">
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the links are keyboard reachable themselves
+    // biome-ignore lint/a11y/noStaticElementInteractions: opens the file links in it
+    <div
+      ref={rootRef}
+      className="rc-text rich"
+      // Before the part's own click (which selects it): a link to a file
+      // opens the file instead.
+      onClickCapture={openFileLink}
+      onAuxClickCapture={(event) => {
+        if (event.button === 1) openFileLink(event);
+      }}
+    >
       {out}
       {diagrams}
       {forgeChips}

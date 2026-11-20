@@ -740,7 +740,10 @@ export function FilePreviewContent({
   }, [entry?.path, placeScope]);
 
   useEffect(() => {
+    // Opened at a line: its source; opened rendered (a comment's link, the
+    // review's Rendered): the page, whatever the tab was left on.
     if (line && !renderedAtLine) setPreviewMode("raw");
+    else if (renderedAtLine) setPreviewMode("rendered");
   }, [entry?.path, line, renderedAtLine]);
 
   useEffect(() => {

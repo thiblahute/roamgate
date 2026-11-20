@@ -258,4 +258,70 @@ async function registerTests() {
     await act(async () => buttons[1]!.click());
     expect(onComment).toHaveBeenCalledWith("a + 1;");
   });
+
+  test("a comment's links to files open them in Files, at their line", async () => {
+    const { FileLinksContext } = await import("./ReviewNoteBody");
+    const open = mock<(link: unknown, how: unknown) => void>(() => {});
+    const onSelect = mock<(index: number) => void>(() => {});
+    const repo = "/home/u/devel/roamgate.worktrees";
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () =>
+      root!.render(
+        h(
+          FileLinksContext.Provider,
+          { value: { root: repo, checkouts: [repo], open } },
+          h(NoteBody, {
+            text: `See [the plan](${repo}/plans/work-view.md) and plans/work-view.md:1, not [the web](https://example.com/a.md).`,
+            path: "plans/todo.md",
+            parts: { notes: [], focused: null, onSelect },
+          }),
+        ),
+      ),
+    );
+    const anchors = [...container.querySelectorAll("a")];
+    expect(anchors.map((a) => a.getAttribute("data-file-path"))).toEqual([
+      "plans/work-view.md",
+      "plans/work-view.md",
+      null,
+    ]);
+    // A click: the file, rendered; the part is not selected by it.
+    await act(async () => anchors[0]!.click());
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0]).toEqual([
+      { root: repo, path: "plans/work-view.md" },
+      { newTab: false },
+    ]);
+    expect(onSelect).not.toHaveBeenCalled();
+    // The plain reference: its source at the line; Ctrl: in a new tab.
+    await act(async () =>
+      anchors[1]!.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          ctrlKey: true,
+        }),
+      ),
+    );
+    expect(open.mock.calls[1]).toEqual([
+      { root: repo, path: "plans/work-view.md", line: 1 },
+      { newTab: true },
+    ]);
+    // A middle click too.
+    await act(async () =>
+      anchors[1]!.dispatchEvent(
+        new MouseEvent("auxclick", {
+          bubbles: true,
+          cancelable: true,
+          button: 1,
+        }),
+      ),
+    );
+    expect(open.mock.calls[2]?.[1]).toEqual({ newTab: true });
+    // A link to the web is left to the browser.
+    await act(async () => anchors[2]!.click());
+    expect(open).toHaveBeenCalledTimes(3);
+    expect(anchors[2]!.getAttribute("target")).toBe("_blank");
+  });
 }

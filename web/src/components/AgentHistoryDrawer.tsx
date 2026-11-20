@@ -8,6 +8,7 @@ import {
 import { ShellCommandBlock } from "./AgentChatShell";
 import {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useId,
@@ -238,6 +239,8 @@ import {
 } from "../voiceCompanion";
 import { setPaneView } from "../paneView";
 import { ChatThreadsProvider } from "./ChatThreads";
+import { FileLinksContext, type FileLinks } from "./ReviewNoteBody";
+import { requestFileLinkOpen } from "../fileLinkOpen";
 import { paneChatSource } from "../chatSource";
 import { LimitPauseNotice } from "./LimitPauseChip";
 import { chatPlaceKey } from "../chatPlace";
@@ -350,6 +353,28 @@ export function AgentHistoryDrawer({
   const activeConnectionId = useStoreSelector(
     (state) => state.activeConnectionId,
   );
+  // The chat's comments link to files of the workspace, opened in its
+  // Files (App); in the inspector, as its own views open them.
+  const outerFileLinks = useContext(FileLinksContext);
+  const chatWorkspace = workspaces.find(
+    (workspace) => workspace.workspace_id === pane.workspace_id,
+  );
+  const chatRoot = chatWorkspace?.worktree?.checkout_path ?? chatWorkspace?.cwd;
+  const fileLinks = useMemo<FileLinks | null>(() => {
+    if (outerFileLinks || !activeConnectionId) return outerFileLinks;
+    const connectionId = activeConnectionId;
+    const workspaceId = pane.workspace_id;
+    return {
+      ...(chatRoot ? { root: chatRoot, checkouts: [chatRoot] } : {}),
+      open: (link, how) =>
+        requestFileLinkOpen({
+          connectionId,
+          workspaceId,
+          link,
+          newTab: how.newTab,
+        }),
+    };
+  }, [outerFileLinks, activeConnectionId, chatRoot, pane.workspace_id]);
   const connectionGeneration = useStoreSelector(
     (state) => state.connectionGeneration,
   );
@@ -3768,7 +3793,7 @@ export function AgentHistoryDrawer({
 
   // The chat's chips, its header's and its list of requests share one
   // context: where to ask, and what `!12` means here.
-  return (
+  const body = (
     <ForgeChatProvider chat={forgeChat}>
       {paneChat && rewindOpen ? (
         <AgentRewindSheet
@@ -4198,6 +4223,11 @@ export function AgentHistoryDrawer({
         onClose={closeSessionPreview}
       />
     </ForgeChatProvider>
+  );
+  return (
+    <FileLinksContext.Provider value={fileLinks}>
+      {body}
+    </FileLinksContext.Provider>
   );
 }
 

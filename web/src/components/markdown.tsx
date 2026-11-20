@@ -1,5 +1,14 @@
 import { resolveWorkspaceMarkdownLink } from "../workspaceFileUrl";
 import {
+  bareFileReference,
+  type FileLink,
+  type FileLinkScope,
+  fileLinkLabel,
+  fileLinkTitle,
+  findFileReferences,
+  resolveFileLink,
+} from "../reviewFileLinks";
+import {
   type ReactNode,
   useCallback,
   useEffect,
@@ -158,6 +167,12 @@ type MarkdownRenderOptions = {
   imageUrlResolver?: (source: string) => string | null;
   documentPath?: string;
   linkUrlResolver?: (path: string) => string;
+  /**
+   * A review comment: its links to files of the review's repository (and
+   * plain `path:line` references) become file links (reviewFileLinks),
+   * marked `data-file-path` for the comment's view to open in Files.
+   */
+  fileLinks?: FileLinkScope;
   /** Each top-level block wrapped with its source lines, a slot after it. */
   sourceBlocks?: boolean;
   /** Raw HTML blocks left out, for a frame to draw (scripts on). */
@@ -300,8 +315,20 @@ export function sanitizeMarkdownHtml(
       element.setAttribute("disabled", "");
     }
 
+    // A comment's link to a file here: kept as that file, whatever its
+    // form (a `file://` URL is no web address).
+    let fileLink: FileLink | null = null;
     for (const attr of Array.from(element.attributes)) {
       const name = attr.name.toLowerCase();
+      if (name === "href" && tag === "a" && options.fileLinks) {
+        fileLink = resolveFileLink(attr.value, options.fileLinks);
+        if (fileLink) {
+          const text = element.textContent?.trim();
+          if (text === attr.value.trim() || text === decodedUrl(attr.value))
+            element.textContent = fileLinkLabel(fileLink, options.fileLinks);
+          continue;
+        }
+      }
       if (
         name === "class" &&
         tag === "code" &&
@@ -344,7 +371,9 @@ export function sanitizeMarkdownHtml(
       }
     }
 
-    if (tag === "a" && element.hasAttribute("href")) {
+    if (fileLink) {
+      markFileLink(element, fileLink);
+    } else if (tag === "a" && element.hasAttribute("href")) {
       const href = element.getAttribute("href")!;
       const destination = options.documentPath
         ? resolveWorkspaceMarkdownLink(href, options.documentPath)
@@ -364,6 +393,7 @@ export function sanitizeMarkdownHtml(
       }
     }
   }
+  if (options.fileLinks) linkFileReferences(doc.body, options.fileLinks);
 
   const headingIds = new Set<string>();
   for (const heading of doc.body.querySelectorAll("h1, h2, h3, h4, h5, h6")) {
@@ -379,6 +409,94 @@ export function sanitizeMarkdownHtml(
     heading.setAttribute("id", id);
   }
   return doc.body.innerHTML;
+}
+
+function decodedUrl(value: string): string {
+  try {
+    return decodeURIComponent(value.trim());
+  } catch {
+    return value.trim();
+  }
+}
+
+/**
+ * The anchor as a file link: the file by its repository and path there,
+ * its lines and heading, for the comment's view to open (NoteBody); its
+ * href goes nowhere by itself.
+ */
+function markFileLink(element: Element, link: FileLink) {
+  element.setAttribute("href", "#");
+  element.setAttribute("class", "file-link");
+  element.setAttribute("data-file-root", link.root);
+  element.setAttribute("data-file-path", link.path);
+  if (link.line !== undefined)
+    element.setAttribute("data-file-line", String(link.line));
+  if (link.endLine !== undefined)
+    element.setAttribute("data-file-end", String(link.endLine));
+  if (link.fragment) element.setAttribute("data-file-fragment", link.fragment);
+  element.setAttribute("title", fileLinkTitle(link));
+  element.removeAttribute("target");
+  element.removeAttribute("rel");
+}
+
+/** The file an anchor marked by markFileLink names. */
+export function fileLinkOf(element: Element): FileLink | null {
+  const root = element.getAttribute("data-file-root");
+  const path = element.getAttribute("data-file-path");
+  if (!root || !path) return null;
+  const line = Number(element.getAttribute("data-file-line"));
+  const endLine = Number(element.getAttribute("data-file-end"));
+  const fragment = element.getAttribute("data-file-fragment");
+  return {
+    root,
+    path,
+    ...(line ? { line } : {}),
+    ...(line && endLine ? { endLine } : {}),
+    ...(fragment ? { fragment } : {}),
+  };
+}
+
+/**
+ * Plain `path:line` references in the text (in backticks too) as file
+ * links, the path review-relative; those in a link or a code block stay.
+ */
+function linkFileReferences(body: HTMLElement, scope: FileLinkScope) {
+  const doc = body.ownerDocument;
+  const walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  const texts: Text[] = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    if (!node.parentElement?.closest("a, pre")) texts.push(node);
+  }
+  for (const node of texts) {
+    const text = node.data;
+    const references = findFileReferences(text);
+    // Backticks around a bare name with its line (`Makefile:3`) say it is
+    // a file; in prose it would be any word.
+    if (
+      !references.length &&
+      node.parentElement?.tagName === "CODE" &&
+      bareFileReference(text)
+    )
+      references.push({ start: 0, end: text.length, text });
+    if (!references.length) continue;
+    const parts: Node[] = [];
+    let at = 0;
+    for (const reference of references) {
+      const link = resolveFileLink(reference.text, scope);
+      if (!link) continue;
+      if (reference.start > at)
+        parts.push(doc.createTextNode(text.slice(at, reference.start)));
+      const anchor = doc.createElement("a");
+      anchor.textContent = fileLinkLabel(link, scope);
+      markFileLink(anchor, link);
+      parts.push(anchor);
+      at = reference.end;
+    }
+    if (!parts.length) continue;
+    if (at < text.length) parts.push(doc.createTextNode(text.slice(at)));
+    node.replaceWith(...parts);
+  }
 }
 
 /** A raw HTML block with something to draw (not a comment). */

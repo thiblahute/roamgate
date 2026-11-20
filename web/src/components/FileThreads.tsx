@@ -486,6 +486,7 @@ export function FileThread({
       <MrThreadCard
         thread={thread}
         forge={forgeOf(sessions, thread)}
+        root={sessions.get(thread.sessionId)?.session.root}
         {...(forge
           ? {
               top,
@@ -681,6 +682,7 @@ export function FileThread({
             <NoteBody
               text={message.body}
               path={thread.anchor.path}
+              root={sessions.get(thread.sessionId)?.session.root}
               parts={partsOf(message.id)}
               {...(review?.newLines && thread.anchor.path
                 ? {
@@ -1402,6 +1404,7 @@ export function ThreadsList({
   editor?: (thread: ReviewThread, close: () => void) => ReactNode;
 }) {
   const [replying, setReplying] = useState<string | null>(null);
+  const { sessions } = useReviewState();
   const byId = useMemo(
     () => new Map(threads.map((thread) => [thread.id, thread])),
     [threads],
@@ -1460,9 +1463,16 @@ export function ThreadsList({
             }
           : null
       }
-      renderBody={(thread, body) => (
-        <NoteBody text={body} path={byId.get(thread.id)?.anchor.path} />
-      )}
+      renderBody={(thread, body) => {
+        const own = byId.get(thread.id);
+        return (
+          <NoteBody
+            text={body}
+            path={own?.anchor.path}
+            root={own ? sessions.get(own.sessionId)?.session.root : undefined}
+          />
+        );
+      }}
     />
   );
 }
