@@ -46,6 +46,7 @@ import { openAssistant } from "../assistant";
 import { openMrReviews } from "../mrReviewsOpen";
 import { sendCompanionText } from "../companionText";
 import { uploadCompanionImage } from "../companionImages";
+import { mentionWaitingInConversation } from "../voiceWaiting";
 import { CompanionLineText } from "./CompanionLineText";
 import { AgentHistoryComposer } from "./AgentHistoryComposer";
 import { answerCompanionTool } from "../companionWeb";
@@ -361,6 +362,11 @@ export function CompanionPanel({
   const microphonePaused = useMicrophonePausedByPhone();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
+  // Opened without a call: the answers that came while the user was away
+  // are mentioned here, in writing, once (a call mentions them itself).
+  useEffect(() => {
+    if (!companionCallState().open) void mentionWaitingInConversation();
+  }, []);
   useEffect(() => {
     if (!ask || !composerRef.current)
       return focusDialogElement(dialogRef.current);

@@ -63,9 +63,12 @@ describe("the companion's jobs", () => {
         interruptedAt: null,
       }),
     ).toEqual({ job: "job-1" });
+    // The user's words alone go too: kept with the answer, for a page gone
+    // before it comes (voiceWaiting.ts).
     expect(bodies[0]).toEqual({
       pane: "local/w2:p2",
       words: "[Voice] check out his last messages",
+      question: "check out his last messages",
     });
     // The chat shows it as said by voice.
     expect(parseVoiceMessage(String(bodies[0]!.words))).toEqual({
@@ -114,10 +117,17 @@ describe("the companion's jobs", () => {
 
   test("words typed in its text box go as typed", async () => {
     const bodies = recordBodies();
-    await forwardWork("local/w2:p2", "Lance les tests du serveur.");
+    await forwardWork(
+      "local/w2:p2",
+      "Lance les tests du serveur.",
+      undefined,
+      "roamgate",
+    );
     expect(bodies[0]).toEqual({
       pane: "local/w2:p2",
       words: "Lance les tests du serveur.",
+      question: "Lance les tests du serveur.",
+      label: "roamgate",
     });
   });
 

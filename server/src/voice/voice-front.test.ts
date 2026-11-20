@@ -98,6 +98,28 @@ describe("parseFrontReply", () => {
     expect(parseFrontReply('{"to": "read", "resume": "yes"}', ids)).toEqual({
       to: "read",
     });
+    // An answer waiting since the user was away, by its job; or dropped.
+    expect(
+      parseFrontReply('{"to": "read", "reply": "", "job": "b01a370e"}', ids),
+    ).toEqual({ to: "read", job: "b01a370e" });
+    expect(
+      parseFrontReply(
+        '{"to": "dismiss", "reply": "D\'accord, je la laisse.", "job": "b01a370e"}',
+        ids,
+      ),
+    ).toEqual({
+      to: "dismiss",
+      job: "b01a370e",
+      reply: "D'accord, je la laisse.",
+    });
+    expect(parseFrontReply('{"to": "dismiss", "reply": "OK."}', ids)).toEqual({
+      to: "dismiss",
+      reply: "OK.",
+    });
+    expect(FRONT_SYSTEM_PROMPT).toContain("Answers waiting:");
+    expect(FRONT_SYSTEM_PROMPT).toContain(
+      '{"to": "read", "job": "<its job id>"}',
+    );
     expect(
       parseFrontReply(
         '{"to": "mode", "mode": "relay", "reply": "Je lis tout."}',

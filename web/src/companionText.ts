@@ -33,6 +33,7 @@ import {
 } from "./voiceCompanion";
 import { recentVoiceEvents } from "./voiceEvents";
 import { frontContext } from "./voiceFront";
+import { takeWaiting, type WaitingDeps, waitingDeps } from "./voiceWaiting";
 import { focusedPaneIdForSnapshot } from "./paneJump";
 import {
   followErrand,
@@ -77,11 +78,14 @@ export type CompanionTextDeps = {
   show: (connectionId: string, paneId: string) => void;
   /** The words for a session, with the images given (wordsWithImages). */
   withImages: typeof wordsWithImages;
+  /** The answers that came while the user was away (voiceWaiting.ts). */
+  waiting: WaitingDeps;
 };
 
 const defaults: CompanionTextDeps = {
   route: routeSpeech,
   forward: forwardWork,
+  waiting: waitingDeps,
   follow: followErrand,
   followWeb: followCompanionWeb,
   followTool: followCompanionTool,
@@ -185,10 +189,13 @@ export async function sendCompanionText(
       ...(given !== said ? { said } : {}),
       status: "running",
     });
-    // The images given go with the words, wherever the session runs.
+    // The images given go with the words, wherever the session runs. The
+    // session's name goes too, kept with its answer (voiceWaiting.ts).
     const started = await deps.forward(
       action.pane,
       await deps.withImages(given, said, action.pane),
+      undefined,
+      label,
     );
     const job = started?.job ?? null;
     if (!job) {
@@ -223,7 +230,20 @@ export async function sendCompanionText(
       if (reply) say(reply);
       return route;
     case "read": {
-      const answer = findAnswer(route.agent);
+      const own = findAnswer(route.agent);
+      // An answer that came while the user was away: the one named, the
+      // agent's, or the latest when none was kept here. Taken, it is heard.
+      const taken =
+        route.job || route.agent || !own
+          ? await takeWaiting(
+              { job: route.job, agent: route.agent, last: !own },
+              route.job ? [] : await deps.waiting.list().catch(() => []),
+              deps.waiting,
+            )
+          : null;
+      const answer = taken
+        ? { agent: taken.label, text: plainText(taken.answer) }
+        : own;
       say(
         answer
           ? `${answer.agent}: ${answer.text}`
@@ -233,6 +253,12 @@ export async function sendCompanionText(
       );
       return route;
     }
+    case "dismiss":
+      // The server dropped the answer waiting already: said here.
+      say(
+        reply || (french ? "D'accord, je la laisse." : "Okay, I'll leave it."),
+      );
+      return route;
     case "ranger":
     case "reviews": {
       // Shown as work given to a session is: asked, then its answer or

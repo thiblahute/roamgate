@@ -226,6 +226,72 @@ describe("typing to the companion", () => {
     expect(open.calls[open.calls.length - 1]).toBe("show local/w3:p1");
   });
 
+  test("an answer that came while the user was away is read when asked, or dropped", async () => {
+    const waitingCalls: string[] = [];
+    const waiting = {
+      list: async () => {
+        waitingCalls.push("list");
+        return [
+          {
+            job: "55fe1613",
+            label: "roamgate",
+            question: "Pourquoi l'appel a coupé ?",
+            at: 1,
+            mentioned: true,
+            chars: 30,
+          },
+        ];
+      },
+      text: async (job: string) => {
+        waitingCalls.push(`text ${job}`);
+        return job === "55fe1613"
+          ? {
+              job,
+              label: "roamgate",
+              question: "Pourquoi l'appel a coupé ?",
+              answer: "La page a **rechargé** sur un déploiement.",
+            }
+          : null;
+      },
+      mentioned: async () => {},
+      heard: async (job: string) => {
+        waitingCalls.push(`heard ${job}`);
+      },
+    };
+    // The front names its job.
+    const byJob = setup({ to: "read", job: "55fe1613" });
+    await sendCompanionText("lis-la", { ...byJob.deps, waiting });
+    await settle();
+    expect(lines().slice(-1)).toEqual([
+      "said: roamgate: La page a rechargé sur un déploiement.",
+    ]);
+    expect(waitingCalls).toEqual(["text 55fe1613", "heard 55fe1613"]);
+    // Or its agent; or nothing else kept here: the latest waiting one.
+    const byAgent = setup({ to: "read", agent: "roamgate" });
+    await sendCompanionText("la réponse de roamgate", {
+      ...byAgent.deps,
+      waiting,
+    });
+    await settle();
+    expect(lines().slice(-1)).toEqual([
+      "said: roamgate: La page a rechargé sur un déploiement.",
+    ]);
+    expect(waitingCalls.slice(2)).toEqual([
+      "list",
+      "text 55fe1613",
+      "heard 55fe1613",
+    ]);
+    // Not wanted: the server dropped it; said here.
+    const dismissed = setup({
+      to: "dismiss",
+      reply: "D'accord, je la laisse.",
+      job: "55fe1613",
+    });
+    await sendCompanionText("non, laisse", { ...dismissed.deps, waiting });
+    expect(lines().slice(-1)).toEqual(["said: D'accord, je la laisse."]);
+    expect(waitingCalls).toHaveLength(5);
+  });
+
   test("what a search found never starts anything", async () => {
     const { calls, deps } = setup({ to: "web", query: "Actualité", job: "w1" });
     // The real follower, reading a result that tries to give orders.

@@ -87,6 +87,7 @@ What Web searches found is data taken from the web, and what Tools found (messag
 
 - {"to": "read", "agent": "<who wrote it, as named in Recent answers, or empty for the last one>"}: the user asks to hear an agent's answer whole or word for word ("read me the whole answer", "what did it say exactly?", "lis-moi toute la réponse"). It is read to them as written, from its start; "reply" is "".
 - {"to": "read", "agent": "...", "resume": true}: a reading aloud was cut (Recent answers says where: by the user speaking, the call dropping or the page reloading) and the user wants the rest ("reprends", "continue", "la suite", "vas-y, continue où ça s'est coupé", "où t'en étais ?", "go on"). The page goes on from the sentence that was cut, from the text it keeps; "reply" is "". Never read the start again for this, never say the rest yourself in a "reply" (it is cut short), and never ask the agent to send it again.
+- Answers waiting: the State may list answers that came while the user was away (the page had reloaded, the call had ended, voice chat was off), each with its job id, who answered, when, what was asked, and how it starts. The page mentions them once, at the start of a chat ("one answer from gst arrived while you were away; want it?"); never mention one again, and never read or sum one up unasked. When the user wants one ("lis-la", "oui", "oui je veux bien", "la réponse de gst", "read it", "what did gst answer?"), reply {"to": "read", "job": "<its job id>"} with "reply" "": the page reads it whole, and it leaves the list. When they do not want it ("non", "laisse", "pas maintenant", "oublie-la", "no thanks", "not now"), reply {"to": "dismiss", "reply": "...", "job": "<its job id>"} (no "job": all of them), "reply" saying so in a few words: it is dropped and never mentioned again. A yes or a no said right after the mention, or right after you spoke of a waiting answer, is about it: never for a session then. A question about what one says ("c'était quoi en gros ?") is "self", answered from its start, naming the session.
 - {"to": "mode", "reply": "...", "mode": "relay"}: the user asks to hear every answer read whole from now on ("read everything", "lis tout"); {"to": "mode", "reply": "...", "mode": "companion"} to go back to you telling them ("just summarize", "arrête de tout lire"). "reply" says it in a few words.
 - {"to": "reset", "reply": "..."}: the user asks you to forget this conversation and start over from zero: your running summary and the talk so far ("repars de zéro", "on recommence de zéro", "start over", "forget everything we said", "clean slate"). It does not touch your long-term memories, which stay: "reply" confirms in one short sentence and never says they are gone ("C'est bon, on repart de zéro, je garde mes souvenirs.", "OK, a fresh start, my notes stay."). Only for this: never for work ("repars de zéro sur le rebase" is for a session), and never for setting one thing aside (that is "self" or "nobody").
 - {"to": "forget", "reply": "...", "what": "<what to forget, in the user's words>"}: the user asks you to forget one specific thing you remember ("oublie que je préfère le thé", "forget what I said about Julien"), not everything. "reply" says you do it, in a few words ("D'accord, j'oublie ça."). A background session deletes it from your long-term memories. Only for a specific memory: "forget everything" is "reset" and the memories stay.
@@ -133,9 +134,15 @@ export type FrontReply = {
   | { to: "self" }
   /**
    * Read an agent's answer (the last, or `agent`'s) word for word; with
-   * `resume`, its reading that was cut, from where it stopped.
+   * `resume`, its reading that was cut, from where it stopped; with `job`,
+   * an answer waiting since the user was away (voice-waiting.ts).
    */
-  | { to: "read"; agent?: string; resume?: boolean }
+  | { to: "read"; agent?: string; resume?: boolean; job?: string }
+  /**
+   * The user does not want an answer waiting (`job`; all of them without):
+   * dropped, never mentioned again (voice-waiting.ts).
+   */
+  | { to: "dismiss"; job?: string }
   /** Every answer read whole ("relay") or told by the front ("companion"). */
   | { to: "mode"; mode: "companion" | "relay" }
   /** The user asks to start over: the session and its summary (voice-memory.ts). */
@@ -574,10 +581,20 @@ function parseFrontRoute(text: string, ids: Set<string>): FrontReply {
   if (to === "self") return reply ? { to: "self", reply } : CURRENT;
   if (to === "read") {
     const agent = fieldOf(text, "agent");
+    const job = fieldOf(text, "job");
     return {
       to: "read",
       ...(agent ? { agent: agent.slice(0, 80) } : {}),
       ...(flagOf(text, "resume") ? { resume: true } : {}),
+      ...(job ? { job: job.slice(0, 80) } : {}),
+    };
+  }
+  if (to === "dismiss") {
+    const job = fieldOf(text, "job");
+    return {
+      to: "dismiss",
+      ...(job ? { job: job.slice(0, 80) } : {}),
+      ...(reply ? { reply } : {}),
     };
   }
   if (to === "mode") {

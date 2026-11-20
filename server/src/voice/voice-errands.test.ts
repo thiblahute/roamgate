@@ -4,6 +4,7 @@ import {
   type ErrandEntry,
   type ErrandSessionStatus,
   type ErrandState,
+  type KeptAnswer,
   VoiceErrands,
 } from "./voice-errands";
 
@@ -165,6 +166,61 @@ describe("VoiceErrands", () => {
     await sleep(30);
     expect(errands.state(first)!.notice?.kind).toBe("working");
     expect(errands.state(second)!.notice).toBeNull();
+  });
+
+  test("an answer nobody follows is kept, with the session's name and the question", async () => {
+    let entries: ErrandEntry[] = [];
+    let turn = 0;
+    const kept: KeptAnswer[] = [];
+    const errands = new VoiceErrands(
+      {
+        read: async () => entries,
+        prompt: async (_connectionId, _paneId, text) => {
+          const n = ++turn;
+          entries = [{ id: `q${n}`, role: "user", kind: "message", text }];
+          setTimeout(() => {
+            entries = [
+              ...entries,
+              {
+                id: `a${n}`,
+                role: "assistant",
+                kind: "message",
+                text: "We use pyannote.",
+              },
+            ];
+          }, 30);
+        },
+        keep: (answer) => kept.push(answer),
+      },
+      timing,
+    );
+    // The page reloaded right after: nothing polls the job's state.
+    const job = await errands.start(
+      "local/w3:p1",
+      "[Voice] What speaker recognition tool do we use?",
+      { label: "gst", question: "What speaker recognition tool do we use?" },
+    );
+    await until(() => kept.length > 0);
+    expect(kept).toEqual([
+      {
+        job,
+        pane: "local/w3:p1",
+        label: "gst",
+        question: "What speaker recognition tool do we use?",
+        answer: "We use pyannote.",
+      },
+    ]);
+    // Kept before the job shows as done: a page following it marks it
+    // heard once told.
+    expect(errands.state(job)?.done).toBe(true);
+    // Without a name or the words, the pane and the text sent stand in.
+    const bare = await errands.start("local/w3:p1", "[Voice] Again?");
+    await until(() => kept.length > 1);
+    expect(kept[1]).toMatchObject({
+      job: bare,
+      label: "local/w3:p1",
+      question: "[Voice] Again?",
+    });
   });
 
   test("the turn an errand starts is noted as the companion's", async () => {

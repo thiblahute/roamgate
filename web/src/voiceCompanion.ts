@@ -314,7 +314,8 @@ export function cutReading(
   return cut ? { answer: cut.answer, from: cut.reading!.next } : null;
 }
 
-const folded = (text: string) =>
+/** `text` as words are compared: lower case, no accents, no punctuation. */
+export const folded = (text: string) =>
   text
     .normalize("NFD")
     .replace(/\p{M}/gu, "")

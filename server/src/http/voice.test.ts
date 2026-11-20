@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CompanionMemoryFiles } from "../voice/voice-memory-files";
 import { parseVoiceTag, withoutPrints } from "../voice/voice-speakers";
+import { WaitingAnswers } from "../voice/voice-waiting";
 import { callMusic, createVoiceRoutes } from "./voice";
 
 const helper = {
@@ -1097,6 +1098,174 @@ describe("the voice front", () => {
       (await forward({ pane: "local/w2:p2", words }, {} as never))!.status,
     ).toBe(403);
     expect(started).toHaveLength(2);
+  });
+
+  test("keeps a job's answer that came while the user was away, mentioned once, read or dropped", async () => {
+    let now = Date.parse("2026-11-19T16:03:00Z");
+    const waiting = new WaitingAnswers(null, () => now);
+    const started: unknown[] = [];
+    const errands = {
+      start: async (pane: string, text: string, about: unknown) => {
+        started.push([pane, text, about]);
+        return "55fe1613";
+      },
+    } as unknown as VoiceErrands;
+    const turns: { context?: string }[] = [];
+    const front = {
+      warm: () => {},
+      turn: async (request: { context?: string; said: string }) => {
+        turns.push(request);
+        return request.said === "non, laisse"
+          ? { to: "dismiss", reply: "D'accord, je la laisse.", job: "55fe1613" }
+          : { to: "self", reply: "Rien à dire." };
+      },
+    } as unknown as VoiceFront;
+    const routes = createVoiceRoutes(
+      helper,
+      () => null,
+      errands,
+      () => undefined,
+      null,
+      () => front,
+      () => null,
+      () => {},
+      () => null,
+      () => null,
+      () => null,
+      null,
+      null,
+      waiting,
+    );
+    const voice = { "x-roamgate-voice": "1" };
+    const call = (path: string, init?: RequestInit) =>
+      routes(
+        new Request(`http://roamgate.test${path}`, init),
+        path.replace(/\?.*$/, ""),
+      );
+    const postJson = (path: string, body: unknown, headers = voice) =>
+      call(path, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(body),
+      });
+    // The companion's job carries who answers what, for its answer to be
+    // kept with.
+    const forwarded = await postJson("/api/voice/forward", {
+      pane: "local/w5:p2",
+      words: "[Voice] Why did the call cut?",
+      label: "roamgate",
+      question: "Why did the call cut?",
+    });
+    expect(await forwarded!.json()).toEqual({ job: "55fe1613" });
+    expect(started).toEqual([
+      [
+        "local/w5:p2",
+        "[Voice] Why did the call cut?",
+        { label: "roamgate", question: "Why did the call cut?" },
+      ],
+    ]);
+    // The answer settles with no page following the job (it reloaded).
+    waiting.keep({
+      job: "55fe1613",
+      pane: "local/w5:p2",
+      label: "roamgate",
+      question: "Why did the call cut?",
+      answer: "The page reloaded on a deploy.",
+    });
+    now += 10 * 60_000;
+    // The next chat's start lists it, not mentioned yet, without the text.
+    const listed = await call("/api/voice/answers", { headers: voice });
+    expect(await listed!.json()).toEqual({
+      answers: [
+        {
+          job: "55fe1613",
+          label: "roamgate",
+          question: "Why did the call cut?",
+          at: now - 10 * 60_000,
+          mentioned: false,
+          chars: 30,
+        },
+      ],
+    });
+    // Mentioned once: so marked.
+    expect(
+      await (await postJson("/api/voice/answers/mentioned", {
+        jobs: ["55fe1613", "none"],
+      }))!.json(),
+    ).toEqual({ mentioned: 1 });
+    expect(
+      await (await postJson("/api/voice/answers/mentioned", {
+        jobs: ["55fe1613"],
+      }))!.json(),
+    ).toEqual({ mentioned: 0 });
+    // The front's state tells it, so "lis-la" or "la réponse de roamgate"
+    // reads it by its job.
+    await postJson("/api/voice/route", {
+      current: "local/w2:p2",
+      said: "t'es là ?",
+      sessions: [],
+      context: "Lately:\n- nothing",
+    });
+    expect(turns[0]!.context).toBe(
+      ["Lately:\n- nothing", waiting.context()].join("\n\n"),
+    );
+    expect(turns[0]!.context).toContain(
+      '- job 55fe1613: roamgate, 10 min ago, asked "Why did the call cut?", mentioned.',
+    );
+    // Asked for, it comes whole, with its session.
+    const one = await call("/api/voice/answers?job=55fe1613", {
+      headers: voice,
+    });
+    expect(await one!.json()).toMatchObject({
+      job: "55fe1613",
+      pane: "local/w5:p2",
+      answer: "The page reloaded on a deploy.",
+    });
+    expect(
+      (await call("/api/voice/answers?job=none", { headers: voice }))!.status,
+    ).toBe(404);
+    // Without the voice header, nothing of it.
+    expect((await call("/api/voice/answers"))!.status).toBe(403);
+    // Dismissed by voice: the server drops it, the page only says so.
+    const dismissed = await postJson("/api/voice/route", {
+      current: "local/w2:p2",
+      said: "non, laisse",
+      sessions: [],
+      routes: ["self", "dismiss", "current", "nobody"],
+    });
+    expect(await dismissed!.json()).toEqual({
+      to: "dismiss",
+      reply: "D'accord, je la laisse.",
+      job: "55fe1613",
+    });
+    expect(waiting.list()).toEqual([]);
+    expect(
+      (await postJson("/api/voice/answers/heard", { job: "55fe1613" }))!.status,
+    ).toBe(404);
+    // Heard (told or read): forgotten; never mentioned again.
+    waiting.keep({
+      job: "b01a370e",
+      pane: "local/w3:p1",
+      label: "gst",
+      question: "What speaker recognition tool do we use?",
+      answer: "pyannote.",
+    });
+    expect(
+      await (await postJson("/api/voice/answers/heard", {
+        job: "b01a370e",
+      }))!.json(),
+    ).toEqual({ heard: "b01a370e" });
+    expect(
+      (await (await call("/api/voice/answers", { headers: voice }))!.json())
+        .answers,
+    ).toEqual([]);
+    // A page of an older build hears a dismissal said, never as work.
+    const older = await postJson("/api/voice/route", {
+      current: "local/w2:p2",
+      said: "non, laisse",
+      sessions: [],
+    });
+    expect(await older!.json()).toEqual({ to: "nobody" });
   });
 
   test("keeps what the front does with answers, reported with it", async () => {

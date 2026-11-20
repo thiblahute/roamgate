@@ -40,9 +40,15 @@ export type VoiceRoute = (
   | { to: "self" }
   /**
    * Read an agent's answer (the last, or `agent`'s) word for word; with
-   * `resume`, its reading that was cut, from where it stopped.
+   * `resume`, its reading that was cut, from where it stopped; with `job`,
+   * an answer that came while the user was away (voiceWaiting.ts).
    */
-  | { to: "read"; agent?: string; resume?: boolean }
+  | { to: "read"; agent?: string; resume?: boolean; job?: string }
+  /**
+   * An answer waiting the user does not want (`job`; all without): the
+   * server dropped it already, the page says so (voiceWaiting.ts).
+   */
+  | { to: "dismiss"; job?: string }
   /** Answers read whole from now on ("relay"), or told ("companion"). */
   | { to: "mode"; mode: "companion" | "relay" }
   /** Forget everything and start over; the server has done it (voice-memory.ts). */
@@ -98,6 +104,7 @@ export const KNOWN_ROUTES: readonly VoiceRoute["to"][] = [
   "reset",
   "web",
   "tool",
+  "dismiss",
 ];
 
 /**
@@ -392,12 +399,14 @@ export async function tellVoiceEvent(
  * whose answer followErrand follows; null when it could not be sent. Words `spoken`
  * go marked `[Voice]` as voice chat sends them, with the sentence the user
  * cut off and the front's note of what they refer to; words typed go as
- * typed.
+ * typed. `label`, the session's name as said aloud, is kept with its
+ * answer along with the words, for a page gone meanwhile (voiceWaiting.ts).
  */
 export async function forwardWork(
   pane: string,
   words: string,
   spoken?: { interruptedAt?: string | null; context?: string | null },
+  label?: string,
 ): Promise<{ job: string } | null> {
   try {
     const response = await fetch("/api/voice/forward", {
@@ -408,6 +417,8 @@ export async function forwardWork(
         words: spoken
           ? voiceMessage(words, spoken.interruptedAt, spoken.context)
           : words,
+        question: words,
+        ...(label ? { label } : {}),
       }),
     });
     const body = (await response.json().catch(() => null)) as {

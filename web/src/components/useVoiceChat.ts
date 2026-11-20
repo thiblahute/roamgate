@@ -105,6 +105,14 @@ import {
   type VoiceQuestion,
 } from "../voiceCompanion";
 import { forgetCompanionLocally } from "../companionMemory";
+import {
+  markAnswerHeard,
+  mentionWaitingAnswers,
+  pickWaiting,
+  readItRequest,
+  takeWaiting,
+  type WaitingAnswer,
+} from "../voiceWaiting";
 import { onVoiceEvent, recentVoiceEvents } from "../voiceEvents";
 import {
   earlyReplySaid,
@@ -622,6 +630,13 @@ export function useVoiceChat({
         looking?: boolean;
         /** An answer's id (noteAgentAnswer), for the file it is put in. */
         answerId?: string;
+        /**
+         * The job an answer came from: heard (voiceWaiting.ts) once the
+         * front was given it, so it is not mentioned at the next start.
+         */
+        job?: string;
+        /** Hears that a line said as written was said to its end. */
+        onSaid?: () => void;
       };
       let tellFront: (item: Telling) => void = () => {};
       /**
@@ -645,11 +660,20 @@ export function useVoiceChat({
           onHeard: heard,
         });
       };
-      /** An agent's answer: kept, and given to the companion to tell. */
-      const tellAnswer = (text: string, ids: string[], agent = agentName()) => {
+      /**
+       * An agent's answer: kept, and given to the companion to tell. One a
+       * job gave (`job`) is heard then, server-side (voiceWaiting.ts).
+       */
+      const tellAnswer = (
+        text: string,
+        ids: string[],
+        agent = agentName(),
+        job?: string,
+      ) => {
         const clean = answerText(text);
         if (!clean) {
           voiceTrace(`companion: ${agent}'s turn ended with no text to tell`);
+          if (job) void markAnswerHeard(job);
           return;
         }
         const noted = noteAgentAnswer({
@@ -662,6 +686,7 @@ export function useVoiceChat({
         if (!companion()) {
           if (front) {
             voiceTrace(`companion: reads ${agent}'s answer whole`);
+            if (job) void markAnswerHeard(job);
             void readKept(noted, 0);
           }
           return;
@@ -675,6 +700,7 @@ export function useVoiceChat({
           kind: "answer",
           agent,
           answerId: noted.id,
+          ...(job ? { job } : {}),
         });
       };
       // The agent's question the companion relayed, answered by voice.
@@ -682,14 +708,20 @@ export function useVoiceChat({
       // Sessions given work on this call, whose answer comes back as such:
       // their "done" notification is not told apart.
       const working = new Map<string, number>();
+      // Answers to jobs that came while the user was away (the page
+      // reloaded, a call ended: voiceWaiting.ts), mentioned once at the
+      // start; read when asked for, by voice or through the front.
+      let waiting: WaitingAnswer[] = [];
       /**
        * Reads an agent's answer kept on the call, word for word; with
-       * `resume`, its reading that was cut, from where it stopped.
+       * `resume`, its reading that was cut, from where it stopped; with
+       * `job`, an answer that came while the user was away.
        */
-      const readAnswer = (
+      const readAnswer = async (
         agent: string | undefined,
         said: string,
         resume = false,
+        job?: string,
       ) => {
         if (!front) return;
         const french = ackLanguage(said) === "fr";
@@ -709,8 +741,31 @@ export function useVoiceChat({
           );
           return;
         }
-        const answer = actions.lastAnswer(agent);
-        if (!answer) {
+        const own = actions.lastAnswer(agent);
+        // An answer that came while the user was away: the one named, the
+        // agent's, or the latest when the call has none of its own. Taken,
+        // it is heard: never mentioned again.
+        const taken =
+          job || agent || !own
+            ? await takeWaiting({ job, agent, last: !own }, waiting)
+            : null;
+        if (signal.aborted) return;
+        if (taken) {
+          waiting = waiting.filter((answer) => answer.job !== taken.job);
+          const noted = noteAgentAnswer({
+            agent: taken.label,
+            text: answerText(plainText(taken.answer)) || taken.answer,
+            ids: [],
+            ...(taken.pane ? { session: taken.pane } : {}),
+          });
+          voiceTrace(
+            `companion: reads ${taken.label}'s answer that waited (job ${taken.job})`,
+          );
+          note(noted.text, noted.agent);
+          void readKept(noted, 0);
+          return;
+        }
+        if (!own) {
           void front.say(
             french
               ? "Je n'ai pas encore de réponse à lire."
@@ -719,8 +774,8 @@ export function useVoiceChat({
           );
           return;
         }
-        note(answer.text, answer.agent);
-        void readKept(answer, 0);
+        note(own.text, own.agent);
+        void readKept(own, 0);
       };
       const switchMode = (mode: FrontMode, said: string, reply?: string) => {
         if (!front) return;
@@ -835,15 +890,24 @@ export function useVoiceChat({
             switchMode(mode, heard.text);
             return "nobody";
           }
+          // "Lis-la", "la réponse de gst": an answer that came while the
+          // user was away, mentioned at the start, read now.
+          const wanted = waiting.length ? readItRequest(heard.text) : null;
+          const kept = wanted ? pickWaiting(waiting, wanted.agent) : null;
+          if (kept) {
+            setHeard("");
+            void readAnswer(wanted?.agent, heard.text, false, kept.job);
+            return "nobody";
+          }
           if (isReadWholeRequest(heard.text)) {
             setHeard("");
-            readAnswer(undefined, heard.text);
+            void readAnswer(undefined, heard.text);
             return "nobody";
           }
           // "Reprends la lecture": the reading cut goes on, at once.
           if (isResumeRequest(heard.text) && cutReading()) {
             setHeard("");
-            readAnswer(undefined, heard.text, true);
+            void readAnswer(undefined, heard.text, true);
             return "nobody";
           }
         }
@@ -959,10 +1023,12 @@ export function useVoiceChat({
             // Marked as said, as voice chat sends it: the session knows the
             // user talks live, where the reading was cut, and what the
             // words refer to on the call.
-            const started = await forwardWork(action.pane, given, {
-              interruptedAt,
-              context: route.context,
-            });
+            const started = await forwardWork(
+              action.pane,
+              given,
+              { interruptedAt, context: route.context },
+              label,
+            );
             interruptedAt = null;
             const job = started?.job ?? null;
             voiceTrace(
@@ -992,6 +1058,9 @@ export function useVoiceChat({
               const left = (working.get(action.pane) ?? 1) - 1;
               if (left > 0) working.set(action.pane, left);
               else working.delete(action.pane);
+              // Voice chat over meanwhile: the answer is not dropped, the
+              // server keeps it (voiceWaiting.ts) for the next start to
+              // mention.
               if (signal.aborted) return;
               voiceTrace(
                 `companion: job ${job} on ${label} ${answer ? "answered" : "gave no answer"}`,
@@ -1002,7 +1071,7 @@ export function useVoiceChat({
                   ? { status: "answered", answer: plainText(answer) }
                   : { status: "no answer" },
               );
-              if (answer) tellAnswer(plainText(answer), [], label);
+              if (answer) tellAnswer(plainText(answer), [], label, job);
               else
                 tellFront({
                   text: `${label} gave no answer to: ${given}`,
@@ -1020,7 +1089,26 @@ export function useVoiceChat({
             return "here";
           case "read":
             if (!front) return "here";
-            readAnswer(route.agent, heard.text, route.resume === true);
+            void readAnswer(
+              route.agent,
+              heard.text,
+              route.resume === true,
+              route.job,
+            );
+            return "nobody";
+          case "dismiss":
+            // An answer waiting the user does not want: the server dropped
+            // it already; gone here, and said.
+            if (!front) return "here";
+            waiting = route.job
+              ? waiting.filter((answer) => answer.job !== route.job)
+              : [];
+            sayReply(
+              reply ||
+                (ackLanguage(heard.text) === "fr"
+                  ? "D'accord, je la laisse."
+                  : "Okay, I'll leave it."),
+            );
             return "nobody";
           case "reset":
             // Forgotten on the server already; said, then forgotten here.
@@ -1092,10 +1180,14 @@ export function useVoiceChat({
                 "Roamgate",
                 session ?? undefined,
               );
+              // Over meanwhile: kept on the server (voiceWaiting.ts).
               if (signal.aborted) return;
               if (answer && companion())
-                tellAnswer(plainText(answer), [], name);
-              else void speak(plainText(said), signal).catch(() => {});
+                tellAnswer(plainText(answer), [], name, route.job);
+              else {
+                if (route.job) void markAnswerHeard(route.job);
+                void speak(plainText(said), signal).catch(() => {});
+              }
             });
             return "nobody";
           }
@@ -1335,6 +1427,7 @@ export function useVoiceChat({
                 note(item.text, item.agent);
                 await front.say(item.text, signal);
                 voiceTrace("companion: relayed");
+                if (!signal.aborted) item.onSaid?.();
                 continue;
               }
               const context = routeContextRef.current?.();
@@ -1368,6 +1461,9 @@ export function useVoiceChat({
                 voiceTrace(`companion: the answer is whole in ${file}`);
                 noteAnswerFile(item.answerId, file);
               }
+              // The front has the job's answer now (it tells it, or keeps
+              // it for a question): heard, not mentioned at the next start.
+              if (item.job && !signal.aborted) void markAnswerHeard(item.job);
               if (!reply || signal.aborted) continue;
               // An answer is told once the user is not talking, however
               // long that takes; an event only if nothing else goes on.
@@ -1393,6 +1489,32 @@ export function useVoiceChat({
           else told.push(item);
           void tell();
         };
+        // Answers to jobs that came while the user was away: mentioned
+        // once, in one line, before anything else; marked so once said.
+        void mentionWaitingAnswers({
+          got: (list) => {
+            waiting = list;
+            if (list.length)
+              voiceTrace(
+                `companion: ${list.length} answer(s) waited since the user was away: ${list
+                  .map(
+                    (answer) =>
+                      `${answer.job} (${answer.label}${answer.mentioned ? ", mentioned" : ""})`,
+                  )
+                  .join(", ")}`,
+              );
+          },
+          say: (line) =>
+            new Promise<void>((resolve) => {
+              tellFront({
+                text: line,
+                at: Date.now(),
+                kind: "event",
+                verbatim: true,
+                onSaid: resolve,
+              });
+            }),
+        });
         // A web search's result, said as it was written for the voice
         // (server voice-research.ts), once the user is not talking. It is
         // web data: told, never routed.

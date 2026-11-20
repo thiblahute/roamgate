@@ -10,6 +10,7 @@ import {
 import { voiceMessage } from "../../../shared/voiceMessage";
 import { answerForFront, MAX_ANSWER_CHARS } from "../voice/voice-answers";
 import type { VoiceErrands } from "../voice/voice-errands";
+import type { WaitingAnswers } from "../voice/voice-waiting";
 import { serverLogger } from "../utils/logger";
 import {
   callLines,
@@ -125,9 +126,21 @@ export function withTurnContext(
  * The page lists the routes it knows (`routes`): one it does not (a page
  * from an older build, not reloaded yet) gets the nearest older one
  * instead (legacyRoute).
- * POST /api/voice/forward: `{pane, words}` in, `{job}` out: the voice
- * companion's call gives the words, as said, to that session, and follows
- * its answer as an errand's (GET /api/voice/errand?job=).
+ * POST /api/voice/forward: `{pane, words, label?, question?}` in, `{job}`
+ * out: the voice companion's call gives the words, as said, to that
+ * session (`label` its name as said aloud, `question` the user's words
+ * alone), and follows its answer as an errand's (GET
+ * /api/voice/errand?job=).
+ * Answers nobody heard (voice-waiting.ts): a job's answer is kept when it
+ * settles, with the session's name and the question, until a page marks
+ * it heard. GET /api/voice/answers lists those waiting (`answers`, each
+ * with `job`, `label`, `question`, `at`, `mentioned`, `chars`); ?job=
+ * gives one with its `answer` and `pane`. POST /api/voice/answers/mentioned
+ * `{jobs}` marks them mentioned to the user (`{mentioned}` how many); POST
+ * /api/voice/answers/heard `{job}` forgets one told, read or dismissed
+ * (`{heard}`; 404 when none). The front's state lists them, and its "read"
+ * route may name one by `job`; its "dismiss" route drops one (or all)
+ * here, said in `reply`.
  * POST /api/voice/event: `{current, sessions, context, event, kind?,
  * agent?, pane?, turn_ms?, looking?}` in, `{reply}` out: what the front
  * tells of it now ("" to stay quiet); an event about a session (`pane`)
@@ -202,7 +215,7 @@ export function legacyRoute(route: FrontReply, routes: unknown): FrontReply {
     return known.has("self") && route.reply
       ? { to: "self", reply: route.reply }
       : { to: "nobody" };
-  if (route.to === "reset")
+  if (route.to === "reset" || route.to === "dismiss")
     return known.has("self") && route.reply
       ? { to: "self", reply: route.reply }
       : { to: "nobody" };
@@ -229,7 +242,12 @@ export function createVoiceRoutes(
   memory: CompanionMemory | null = null,
   /** Its long-term memory files, shown and deleted in its panel. */
   memoryFiles: CompanionMemoryFiles | null = null,
+  /** The jobs' answers nobody heard yet (voice-waiting.ts). */
+  waiting: WaitingAnswers | null = null,
 ) {
+  /** The state a page gave the front, with the answers waiting. */
+  const withWaiting = (context: string) =>
+    [context, waiting?.context() ?? ""].filter(Boolean).join("\n\n");
   /** Forgets everything the companion knows, by voice or from its button. */
   const resetCompanion = (fronting: VoiceFront | null) => {
     const epoch = memory?.reset() ?? 0;
@@ -413,6 +431,8 @@ export function createVoiceRoutes(
       const body = (await req.json().catch(() => null)) as {
         pane?: unknown;
         words?: unknown;
+        label?: unknown;
+        question?: unknown;
       } | null;
       const pane = typeof body?.pane === "string" ? body.pane : "";
       const words =
@@ -425,7 +445,15 @@ export function createVoiceRoutes(
       if (!errands)
         return Response.json({ error: "No jobs here." }, { status: 404 });
       try {
-        const job = await errands.start(pane, words);
+        // Who answers what: kept with the answer, for a page gone meanwhile.
+        const job = await errands.start(pane, words, {
+          ...(typeof body?.label === "string"
+            ? { label: body.label.trim().slice(0, 80) }
+            : {}),
+          ...(typeof body?.question === "string"
+            ? { question: body.question.trim().slice(0, 2000) }
+            : {}),
+        });
         if (debug)
           console.error(
             `[voice] companion job ${job} on ${pane}: ${words.slice(0, 200)}`,
@@ -532,6 +560,58 @@ export function createVoiceRoutes(
             { status: 503 },
           );
     }
+    if (pathname.startsWith("/api/voice/answers")) {
+      if (req.headers.get(VOICE_REQUEST_HEADER) !== "1")
+        return Response.json(
+          { error: "Voice requests need their header." },
+          { status: 403 },
+        );
+      if (!waiting)
+        return Response.json(
+          { error: "No answers kept here." },
+          { status: 404 },
+        );
+      if (pathname === "/api/voice/answers" && req.method === "GET") {
+        const job = new URL(req.url).searchParams.get("job");
+        if (job === null)
+          return Response.json({
+            answers: waiting.list().map((kept) => ({
+              job: kept.job,
+              label: kept.label,
+              question: kept.question,
+              at: kept.at,
+              mentioned: kept.mentioned,
+              chars: kept.answer.length,
+            })),
+          });
+        const kept = waiting.get(job);
+        return kept
+          ? Response.json(kept)
+          : Response.json({ error: "No such answer." }, { status: 404 });
+      }
+      if (
+        pathname === "/api/voice/answers/mentioned" &&
+        req.method === "POST"
+      ) {
+        const body = (await req.json().catch(() => null)) as {
+          jobs?: unknown;
+        } | null;
+        const jobs = Array.isArray(body?.jobs)
+          ? body.jobs.filter((job): job is string => typeof job === "string")
+          : [];
+        return Response.json({ mentioned: waiting.mention(jobs) });
+      }
+      if (pathname === "/api/voice/answers/heard" && req.method === "POST") {
+        const body = (await req.json().catch(() => null)) as {
+          job?: unknown;
+        } | null;
+        const job = typeof body?.job === "string" ? body.job : "";
+        return job && waiting.heard(job)
+          ? Response.json({ heard: job })
+          : Response.json({ error: "No such answer." }, { status: 404 });
+      }
+      return new Response(null, { status: 405 });
+    }
     if (pathname === "/api/voice/errand" && req.method === "GET") {
       const job = new URL(req.url).searchParams.get("job") ?? "";
       const state = errands?.state(job);
@@ -579,7 +659,9 @@ export function createVoiceRoutes(
         current,
         event: { text: told, kind, ...(agent ? { agent } : {}) },
         sessions: routeSessions(body?.sessions),
-        context: withSearches(contextOf(body?.context), research(), tools()),
+        context: withWaiting(
+          withSearches(contextOf(body?.context), research(), tools()),
+        ),
       });
       if (kind === "answer")
         memory?.record({
@@ -677,12 +759,14 @@ export function createVoiceRoutes(
               sessions,
               voice,
               voices,
-              context: withSearches(
-                [contextOf(body?.context), skippedContext(skipped)]
-                  .filter(Boolean)
-                  .join("\n\n"),
-                researching,
-                fronting ? tools() : null,
+              context: withWaiting(
+                withSearches(
+                  [contextOf(body?.context), skippedContext(skipped)]
+                    .filter(Boolean)
+                    .join("\n\n"),
+                  researching,
+                  fronting ? tools() : null,
+                ),
               ),
               ...callOf(
                 callLines({
@@ -730,6 +814,13 @@ export function createVoiceRoutes(
         if (route.to === "reset" && fronting) resetCompanion(fronting);
         const forgetting = route.to === "forget";
         if (route.to === "forget") route = forgetRoute(route, said, memory);
+        // An answer waiting the user does not want: dropped here, so a page
+        // of any build has it gone; said by the page.
+        if (route.to === "dismiss" && waiting) {
+          const gone = waiting.dismiss(route.job);
+          if (debug)
+            console.error(`[voice] answers dismissed: ${gone.join(", ")}`);
+        }
         if (route.to === "errand") {
           try {
             if (!errands) throw new Error("no errands set up");
@@ -741,6 +832,7 @@ export function createVoiceRoutes(
                 body?.typed === true
                   ? asSaid
                   : voiceMessage(asSaid, interruptedAt, route.context),
+                { label: route.say, question: asSaid },
               ),
             };
           } catch (error) {

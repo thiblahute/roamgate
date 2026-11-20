@@ -190,6 +190,7 @@ import { configuredResearch } from "./voice/voice-research";
 import { configuredTools } from "./voice/voice-tools";
 import { configuredRouter } from "./voice/voice-router";
 import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
+import { WaitingAnswers } from "./voice/voice-waiting";
 import {
   callBackground,
   frontMode,
@@ -382,9 +383,13 @@ const webPush = createWebPushService({
 const voiceHelper = new VoiceHelper(() => readVoiceConfig());
 // The people whose voices calls know again (voice-profiles.ts).
 voiceHelper.speakers.useLibrary(new VoiceProfiles(voiceProfilesDir()));
+// A job's answer nobody heard (the page reloaded, the call ended): kept
+// for the next voice chat to mention (voice-waiting.ts).
+const waitingAnswers = new WaitingAnswers();
 // Work said by voice on sessions (errands): their processes stay up
 // while it runs (idle stop).
 const voiceErrands = new VoiceErrands({
+  keep: (answer) => waitingAnswers.keep(answer),
   read: async (connectionId, paneId) => {
     const runtime = connectionManager.readyRuntime(connectionId);
     if (!runtime) throw new Error(`${connectionId} is not connected`);
@@ -498,6 +503,7 @@ const handleVoice = createVoiceRoutes(
   voiceTools,
   companionMemory,
   companionMemoryFiles,
+  waitingAnswers,
 );
 const voiceSocket = createVoiceSocket(
   voiceHelper,

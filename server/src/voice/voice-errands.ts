@@ -33,6 +33,32 @@ export type ErrandDeps = {
   ) => Promise<ErrandSessionStatus | null>;
   /** Where the turns a job starts are noted as the companion's. */
   causes?: Pick<TurnCauses, "note">;
+  /**
+   * Keeps a job's answer the moment it settles, whoever follows the job
+   * (voice-waiting.ts): a page gone meanwhile (reloaded, its call ended)
+   * finds it there at its next start.
+   */
+  keep?: (answer: KeptAnswer) => void;
+};
+
+/** A job's answer as it is kept: who answered what, and the answer. */
+export type KeptAnswer = {
+  job: string;
+  /** `<connection>/<pane>`. */
+  pane: string;
+  /** The session's name, as said aloud. */
+  label: string;
+  /** What the user asked, as said or typed. */
+  question: string;
+  answer: string;
+};
+
+/** What a job is about, for its answer to be kept with. */
+export type ErrandAbout = {
+  /** The session's name, as said aloud; its pane without one. */
+  label?: string;
+  /** The user's words; the text sent without them. */
+  question?: string;
 };
 
 /**
@@ -97,8 +123,15 @@ export class VoiceErrands {
     },
   ) {}
 
-  /** Sends `text` to `pane` (`<connection>/<pane>`); its job's id back. */
-  async start(pane: string, text: string): Promise<string> {
+  /**
+   * Sends `text` to `pane` (`<connection>/<pane>`); its job's id back. Its
+   * answer is kept (deps.keep) as `about` says who answered what.
+   */
+  async start(
+    pane: string,
+    text: string,
+    about: ErrandAbout = {},
+  ): Promise<string> {
     const slash = pane.indexOf("/");
     const connectionId = pane.slice(0, slash);
     const paneId = pane.slice(slash + 1);
@@ -111,14 +144,22 @@ export class VoiceErrands {
     const state: ErrandState = { done: false, answer: null, notice: null };
     this.jobs.set(id, state);
     this.panes.set(id, pane);
-    void this.watch(id, state, connectionId, paneId, before).finally(() => {
-      // Over (answered, or given up): the session may idle-stop again.
-      state.done = true;
-      setTimeout(() => {
-        this.jobs.delete(id);
-        this.panes.delete(id);
-      }, KEPT_MS);
-    });
+    const kept: Omit<KeptAnswer, "answer"> = {
+      job: id,
+      pane,
+      label: about.label?.trim() || pane,
+      question: about.question?.trim() || text,
+    };
+    void this.watch(id, state, connectionId, paneId, before, kept).finally(
+      () => {
+        // Over (answered, or given up): the session may idle-stop again.
+        state.done = true;
+        setTimeout(() => {
+          this.jobs.delete(id);
+          this.panes.delete(id);
+        }, KEPT_MS);
+      },
+    );
     return id;
   }
 
@@ -146,6 +187,7 @@ export class VoiceErrands {
     connectionId: string,
     paneId: string,
     before: ErrandEntry[],
+    kept: Omit<KeptAnswer, "answer">,
   ) {
     const pane = `${connectionId}/${paneId}`;
     const seen = new Set(before.map((entry) => entry.id));
@@ -179,6 +221,9 @@ export class VoiceErrands {
           .filter(isAnswer)
           .map((entry) => (entry.text as string).trim())
           .join("\n\n");
+        // Kept before anyone can see the job done: a page that follows it
+        // marks it heard once told; one gone finds it at its next start.
+        this.deps.keep?.({ ...kept, answer: state.answer });
         state.done = true;
         return;
       }
