@@ -645,13 +645,60 @@ export function useDiffCursor({
     },
     [rootRef, scroller],
   );
+  /**
+   * Roughly where a row of a file Pierre has not drawn yet (far off the
+   * screen, so it knows none of its lines) is: its file's top and a line
+   * for each row before it. Null when its file is not laid out either.
+   */
+  const roughRowTop = useCallback(
+    (index: number): number | null => {
+      const current = modelRef.current;
+      const row = current.rows[index];
+      const file = row ? current.files[row.file] : undefined;
+      const top = row ? fileTops().get(row.key) : undefined;
+      if (!row || !file || top === undefined) return null;
+      // Side by side, a removed line and the added one facing it are one.
+      const before = splitRef.current
+        ? current.splitLines.filter((line) => {
+            const first = line.left ?? line.right ?? -1;
+            return (
+              first >= file.start &&
+              first < index &&
+              line.left !== index &&
+              line.right !== index
+            );
+          }).length
+        : index - file.start;
+      const line =
+        rootRef.current
+          ?.querySelector("diffs-container")
+          ?.shadowRoot?.querySelector("[data-line]")
+          ?.getBoundingClientRect().height || 20;
+      return top + before * line;
+    },
+    [fileTops, rootRef],
+  );
   /** Where a go-to puts its line: this far below the view's top. */
   const pinnedOffset = useRef<{ offset: number; at: number } | null>(null);
+  /**
+   * Shows a row as `mode` asks. False while its file is not drawn: the
+   * screen goes roughly there, which draws it, to be asked again.
+   */
   const scrollToRow = useCallback(
-    (index: number, mode: ScrollTo) => {
-      if (mode === "none") return;
+    (index: number, mode: ScrollTo): boolean => {
+      if (mode === "none") return true;
       const box = scroller();
       const place = rowBox(index);
+      if (box && !place) {
+        const rough = roughRowTop(index);
+        if (rough === null) return true;
+        const next = Math.max(0, rough - box.clientHeight / 2);
+        if (Math.abs(next - box.scrollTop) >= 1) {
+          onScrollToRef.current?.();
+          box.scrollTo({ top: next });
+        }
+        return false;
+      }
       // Asked just now: a go-to that moved nothing leaves no stale one.
       const pinned =
         pinnedOffset.current &&
@@ -659,7 +706,7 @@ export function useDiffCursor({
           ? pinnedOffset.current.offset
           : null;
       pinnedOffset.current = null;
-      if (!box || !place) return;
+      if (!box || !place) return true;
       const wanted =
         pinned === null
           ? null
@@ -679,11 +726,12 @@ export function useDiffCursor({
               insetFor(index),
               SEARCH_MARGIN_LINES * place.height,
             );
-      if (next === null) return;
+      if (next === null) return true;
       onScrollToRef.current?.();
       box.scrollTo({ top: next });
+      return true;
     },
-    [insetFor, rowBox, scroller],
+    [insetFor, roughRowTop, rowBox, scroller],
   );
 
   /**
@@ -692,18 +740,18 @@ export function useDiffCursor({
    * when it is not.
    */
   const settleRow = useCallback(
-    (index: number, mode: ScrollTo) => {
-      if (mode === "none") return;
+    (index: number, mode: ScrollTo): boolean => {
+      if (mode === "none") return true;
       const box = scroller();
       const current = modelRef.current.rows[index];
-      if (!box || !current || cursorRef.current.at !== index) return;
+      if (!box || !current || cursorRef.current.at !== index) return true;
       const line = shadowOf(current.key)?.querySelector<HTMLElement>(
         "[data-line][data-editor-active-line]",
       );
-      if (!line) return;
+      if (!line) return false;
       const drawn = line.getBoundingClientRect();
       const frame = box.getBoundingClientRect();
-      if (!drawn.height || !frame.height) return;
+      if (!drawn.height || !frame.height) return false;
       const next = scrollTarget(
         {
           top: box.scrollTop + drawn.top - frame.top,
@@ -714,26 +762,36 @@ export function useDiffCursor({
         insetFor(index),
         SEARCH_MARGIN_LINES * drawn.height,
       );
-      if (next === null) return;
+      if (next === null) return true;
       onScrollToRef.current?.();
       box.scrollTo({ top: next });
+      return true;
     },
     [insetFor, scroller, shadowOf],
   );
 
   useEffect(() => {
-    if (!enabled) return;
-    scrollToRow(at, cursor.scroll);
-    if (cursor.scroll === "none") return;
+    if (!enabled || cursor.scroll === "none") return;
     const mode = cursor.scroll;
-    let second = 0;
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => settleRow(at, mode));
-    });
-    return () => {
-      cancelAnimationFrame(first);
-      cancelAnimationFrame(second);
+    let frame = 0;
+    let tries = 0;
+    const settle = (frames: number) => {
+      frame = requestAnimationFrame(() =>
+        frames > 1 ? settle(frames - 1) : settleRow(at, mode),
+      );
     };
+    // A row of a file not drawn yet (n to a hit far off): the screen goes
+    // near it, which draws it, then on it once it is drawn; a second at
+    // most.
+    const place = () => {
+      if (scrollToRow(at, mode) || ++tries > 60) settle(2);
+      else
+        frame = requestAnimationFrame(() => {
+          if (!settleRow(at, mode)) place();
+        });
+    };
+    place();
+    return () => cancelAnimationFrame(frame);
   }, [enabled, at, cursor, scrollToRow, settleRow]);
 
   // ---- Search -----------------------------------------------------------

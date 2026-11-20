@@ -356,6 +356,80 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
+      test("n and N go to a match in a file far off, not drawn yet: the screen goes there, round to the top and back to the bottom too", async () => {
+        const files = ["a.ts", "b.ts", "c.ts", "d.ts"].map((path) =>
+          added(
+            path,
+            Array.from({ length: 30 }, (_, index) =>
+              index === 15 ? `foo in ${path}` : `${path} line ${index + 1}`,
+            ),
+          ),
+        );
+        const review = await mount({ files, viewport: 12 });
+        // As Pierre's virtualizer: a file far off the screen is not drawn,
+        // so neither Pierre nor its lines know where they are (the kit
+        // draws every file, laid out a screen tall).
+        const screen = 12 * 20;
+        const far = (top: number) => top < -screen || top > 2 * screen;
+        const proto = Element.prototype as unknown as {
+          getBoundingClientRect: () => DOMRect;
+        };
+        const laidOut = proto.getBoundingClientRect;
+        proto.getBoundingClientRect = function (this: Element) {
+          const rect = laidOut.call(this);
+          return this.hasAttribute("data-line") && far(rect.top)
+            ? ({ top: 0, bottom: 0, left: 0, right: 0, height: 0 } as DOMRect)
+            : rect;
+        };
+        const { VirtualizedFileDiff } = await import("@pierre/diffs");
+        const pierre = VirtualizedFileDiff.prototype as unknown as {
+          getLinePosition: (
+            this: { fileContainer?: HTMLElement },
+            ...args: unknown[]
+          ) => { top: number; height: number } | undefined;
+        };
+        const positions = pierre.getLinePosition;
+        pierre.getLinePosition = function (...args) {
+          const position = positions.apply(this, args);
+          const top = this.fileContainer
+            ?.closest("[data-diff-entry-key]")
+            ?.querySelector(".pierre-diff-surface")
+            ?.getBoundingClientRect().top;
+          return position && top !== undefined && far(top + position.top)
+            ? undefined
+            : position;
+        };
+        try {
+          const at = () => review.cursorLine()?.text;
+          /** The cursor's line is on the screen. */
+          const shown = () =>
+            review.screenLines().some((line) => line.text === at());
+          await review.search("foo");
+          expect(at()).toBe("foo in a.ts");
+          expect(shown()).toBe(true);
+          for (const [key, text, match] of [
+            ["n", "foo in b.ts", 2],
+            ["n", "foo in c.ts", 3],
+            ["n", "foo in d.ts", 4],
+            // Round to the top, far from where the screen is.
+            ["n", "foo in a.ts", 1],
+            // And back to the bottom.
+            ["N", "foo in d.ts", 4],
+            ["N", "foo in c.ts", 3],
+          ] as const) {
+            await review.press(key);
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            expect(at()).toBe(text);
+            expect(review.searchLine()).toContain(`match ${match} of 4`);
+            expect(shown()).toBe(true);
+          }
+        } finally {
+          proto.getBoundingClientRect = laidOut;
+          pierre.getLinePosition = positions;
+          await review.unmount();
+        }
+      });
+
       testWith(surface, "commits")(
         "a search with no match in this commit finds a file of another commit by its path, and goes there",
         async () => {
