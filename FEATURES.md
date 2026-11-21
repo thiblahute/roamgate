@@ -1260,8 +1260,9 @@ of a word or across inline code; words said twice are told apart by the
 thread's line. j / k step through the stops and the threads'
 messages; in a table they move as in a grid, h / l along a row and j / k down
 and up a column. n / N and gn / gN go thread to thread, c comments on a stop,
-R answers, r resolves, za folds, dd deletes, gH shows only the unresolved
-ones, `g;` goes to the comment written last, T lists them, and a page's frame
+R answers (on a thread's message, Reply on it or R answers that message in a
+thread on the whole of it, drawn under it), r resolves, za folds, dd deletes,
+gH shows only the unresolved ones, `g;` goes to the comment written last, T lists them, and a page's frame
 hands these keys on.
 
 A file's threads are shared with the code reviews of its checkout (the

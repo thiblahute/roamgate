@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import {
   REVIEW_USER,
   type ReviewComment,
@@ -27,6 +26,16 @@ import {
 } from "../renderedSource";
 import { markdownSelectionTarget, type SlotWhere } from "./markdown";
 import { MrThreadCard } from "./MrThreadCard";
+import {
+  isMessageStop,
+  MessageNotes,
+  messagePartsOf,
+  messageStopKey,
+  OnMessageHead,
+  replyOnMessage,
+  SelectionOffer,
+  splitMessageThreads,
+} from "./MessageThreads";
 import { type MessageParts, NoteBody } from "./ReviewNoteBody";
 import { ThreadCard } from "./ThreadCard";
 import { ThreadEditor } from "./ThreadEditor";
@@ -361,6 +370,7 @@ export function FileThread({
   view,
   undelivered,
   nested,
+  onMessage = false,
 }: {
   thread: ReviewThread;
   api: ThreadWrites;
@@ -368,6 +378,8 @@ export function FileThread({
   undelivered?: Undelivered;
   /** Threads on parts of messages, by the message. */
   nested?: ReadonlyMap<string, ReviewThread[]>;
+  /** Drawn under the message it is on (a thread on the whole of it): its head says so. */
+  onMessage?: boolean;
 }) {
   const { sessions } = useReviewState();
   const close = () => {
@@ -417,61 +429,82 @@ export function FileThread({
   // deleted, as in the review pane, not answered there.
   const forgeDraft = thread.gitlab?.draftId !== undefined;
   const first = thread.comments[0];
-  const partsOf = (comment: string): MessageParts | undefined => {
-    if (!api.addPart || forgeDraft) return undefined;
-    const addPart = api.addPart;
-    const notes = (nested?.get(comment) ?? [])
-      .filter((note) => !(view.openOnly && note.resolved))
-      .map((note) => ({
-        key: note.id,
-        quote: note.anchor.message?.quote ?? "",
-        node: (
-          <FileThread
-            thread={note}
-            api={api}
-            view={view}
-            undelivered={undelivered}
-            nested={nested}
-          />
-        ),
-      }));
+  // The threads on this thread's messages: on their parts, under the words
+  // they quote; on the whole of one, under it after them (Reply on it).
+  const canAddPart = !!api.addPart && !forgeDraft;
+  const nestedThread = (note: ReviewThread, onWhole = false) => (
+    <FileThread
+      key={note.id}
+      thread={note}
+      api={api}
+      view={view}
+      undelivered={undelivered}
+      nested={nested}
+      onMessage={onWhole}
+    />
+  );
+  const shownOf = (notes: readonly ReviewThread[]) =>
+    notes.filter((note) => !(view.openOnly && note.resolved));
+  /** The thread being written on a message of this thread, if any. */
+  const draftOn = (comment: string): ReviewMessagePart | null => {
     const draft = view.partDraft;
-    if (draft?.comment === comment && draft.thread === thread.id)
-      notes.push({
-        key: "draft",
-        quote: draft.quote ?? "",
-        node: (
-          <div className="chat-thread is-draft">
-            <ThreadEditor
-              placeholder="Comment..."
-              onLeave={view.backToKeys}
-              onClose={() => {
-                view.setPartDraft(null);
-                view.backToKeys();
-              }}
-              onSave={(text, id) =>
-                addPart(thread, draft, text, id).then(() => {
-                  view.setPartDraft(null);
-                  view.backToKeys();
-                })
-              }
-            />
-          </div>
-        ),
-      });
-    return {
-      notes,
-      focused: view.cursor?.startsWith(`q:${comment}:`)
-        ? Number(view.cursor.slice(comment.length + 3))
+    return canAddPart &&
+      draft?.comment === comment &&
+      draft.thread === thread.id
+      ? draft
+      : null;
+  };
+  /** Its box. */
+  const draftBox = (draft: ReviewMessagePart, placeholder: string) => {
+    const addPart = api.addPart;
+    if (!addPart) return null;
+    const done = () => {
+      view.setPartDraft(null);
+      view.backToKeys();
+    };
+    return (
+      <div className="chat-thread is-draft">
+        <ThreadEditor
+          placeholder={placeholder}
+          onLeave={view.backToKeys}
+          onClose={done}
+          onSave={(text, id) => addPart(thread, draft, text, id).then(done)}
+        />
+      </div>
+    );
+  };
+  const partsOf = (comment: string): MessageParts | undefined => {
+    if (!canAddPart) return undefined;
+    const draft = draftOn(comment);
+    return messagePartsOf({
+      key: `q:${comment}`,
+      threads: shownOf(splitMessageThreads(nested?.get(comment)).onParts),
+      renderThread: (note) => nestedThread(note),
+      draft: draft?.quote
+        ? { quote: draft.quote, node: draftBox(draft, "Comment...") }
         : null,
+      cursor: view.cursor,
+      setCursor: view.setCursor,
       onComment: (quote) =>
         view.setPartDraft({
           thread: thread.id,
           comment,
           quote: quote.trim().slice(0, 4000),
         }),
-      onSelect: (part) => view.setCursor(`q:${comment}:${part}`),
-    };
+      messageStop: `m:${comment}`,
+    });
+  };
+  /** The threads on the whole of a message, and the one being written. */
+  const notesOn = (comment: string) => {
+    if (!canAddPart) return null;
+    const draft = draftOn(comment);
+    return (
+      <MessageNotes
+        threads={shownOf(splitMessageThreads(nested?.get(comment)).onMessage)}
+        renderThread={(note) => nestedThread(note, true)}
+        draft={draft && !draft.quote ? draftBox(draft, "Reply...") : null}
+      />
+    );
   };
   return (
     <ThreadCard
@@ -480,10 +513,17 @@ export function FileThread({
       cursor={view.cursor}
       onToggleFold={() => view.toggleFold(thread)}
       onReply={() => view.setReplying(thread.id)}
+      {...(canAddPart
+        ? {
+            onReplyMessage: (message: ReviewComment) =>
+              view.setPartDraft({ thread: thread.id, comment: message.id }),
+          }
+        : {})}
       onResolve={() => api.resolve(thread)}
       onDelete={() => api.remove(thread)}
       head={
         <>
+          {onMessage ? <OnMessageHead /> : null}
           {where || moment ? (
             <div className="chat-thread-count">
               {[where, moment ? `paused at ${moment}` : ""]
@@ -536,34 +576,23 @@ export function FileThread({
             path={thread.anchor.path}
             parts={partsOf(message.id)}
           />
+          {notesOn(message.id)}
           {view.partSelection?.comment === message.id &&
-          view.partSelection.thread === thread.id
-            ? createPortal(
-                <button
-                  type="button"
-                  className="chat-thread-select"
-                  style={{
-                    left: view.partSelection.x,
-                    top: view.partSelection.y,
-                  }}
-                  // Keeps the selection while the button is pressed.
-                  onPointerDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    const { quote } = view.partSelection!;
-                    view.setPartSelection(null);
-                    window.getSelection()?.removeAllRanges();
-                    view.setPartDraft({
-                      thread: thread.id,
-                      comment: message.id,
-                      quote: quote.trim().slice(0, 4000),
-                    });
-                  }}
-                >
-                  Comment
-                </button>,
-                document.body,
-              )
-            : null}
+          view.partSelection.thread === thread.id ? (
+            <SelectionOffer
+              at={view.partSelection}
+              onClick={() => {
+                const { quote } = view.partSelection!;
+                view.setPartSelection(null);
+                window.getSelection()?.removeAllRanges();
+                view.setPartDraft({
+                  thread: thread.id,
+                  comment: message.id,
+                  quote: quote.trim().slice(0, 4000),
+                });
+              }}
+            />
+          ) : null}
         </div>
       )}
       footer={
@@ -818,24 +847,10 @@ export function useFileThreadView(
  * cell: b:<line>:<column>), as j / k's cursor holds it.
  */
 export function fileStopKey(stop: HTMLElement): string {
-  if (stop.dataset.chatStop) return stop.dataset.chatStop;
   // A part of a thread's message (q:<comment>:<part>), as in a chat.
-  const message =
-    stop.dataset.part !== undefined
-      ? stop.closest<HTMLElement>(".chat-thread-body")?.dataset.messageId
-      : undefined;
-  if (message) return `q:${message}:${stop.dataset.part}`;
-  return stop.dataset.stop ?? `b:${stop.dataset.line}`;
-}
-
-/** A part of a thread's message in several parts: a stop, as in a chat. */
-function partOfLongMessage(stop: HTMLElement): boolean {
-  const body = stop.closest<HTMLElement>(".chat-thread-body");
-  return (
-    !!body &&
-    body.querySelectorAll(":scope [data-part]").length -
-      body.querySelectorAll(":scope .rc-part-notes [data-part]").length >
-      1
+  return messageStopKey(
+    stop,
+    (block) => block.dataset.stop ?? `b:${block.dataset.line}`,
   );
 }
 
@@ -851,11 +866,11 @@ export function fileStops(root: HTMLElement): HTMLElement[] {
     ),
   ).filter(
     (stop) =>
-      // A list or table: its items are the stops.
-      (stop.dataset.chatStop !== undefined ||
+      // A list or table: its items are the stops; a thread's message in
+      // several parts, each part, as in a chat.
+      (isMessageStop(stop) ||
         stop.classList.contains("md-source-item") ||
-        stop.dataset.stop !== undefined ||
-        (stop.dataset.part !== undefined && partOfLongMessage(stop))) &&
+        stop.dataset.stop !== undefined) &&
       stop.getClientRects().length > 0,
   );
 }
@@ -994,6 +1009,9 @@ export function fileThreadKeys({
     resolve: api.resolve,
     remove: api.remove,
     reply: (thread) => view.setReplying(thread.id),
+    // R on a thread's message: a thread on the whole of it.
+    replyMessage: (here, thread) =>
+      replyOnMessage(null, here, thread, view.setPartDraft),
     // c on a part of a thread's message: a thread on it, quoting it.
     commentFirst: (here, thread) => {
       if (here?.dataset.part === undefined || !thread) return false;
