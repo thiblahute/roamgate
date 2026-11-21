@@ -556,7 +556,8 @@ export function workVoiceTools(service: () => WorkService): RangerTool[] {
  * neither has any.
  */
 export function workStateLine(service: WorkService): string {
-  const count = (state: "you" | "verify") => service.list({ state }).length;
+  const count = (state: "you" | "verify") =>
+    service.board().items.filter((item) => item.state === state).length;
   const you = count("you");
   const verify = count("verify");
   if (!you && !verify) return "";

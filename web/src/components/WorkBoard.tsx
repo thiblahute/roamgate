@@ -10,6 +10,7 @@ import {
   GitCommitHorizontal,
   GitPullRequest,
   Hand,
+  LayoutGrid,
   Link2,
   ListChecks,
   LoaderCircle,
@@ -19,6 +20,7 @@ import {
   RefreshCw,
   Rocket,
   Route,
+  X,
 } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
@@ -35,6 +37,7 @@ import type { ReviewThread } from "../../../shared/review";
 import {
   describeWorkLink,
   filterWorkItems,
+  isWorkWorkspaceTag,
   readableWorkLink,
   summarizeWorkLinks,
   WORK_STATE_TITLE,
@@ -49,8 +52,11 @@ import {
   type WorkState,
   workDescriptionThread,
   workDoneWhen,
+  workProjectFamily,
+  workProjectTree,
   workQueryWithTag,
   workTagCompletions,
+  workTagLabel,
 } from "../../../shared/work";
 import { openAgentTask } from "../agentTasksOpen";
 import { nextColumn, nextRow } from "../boardNavigation";
@@ -71,12 +77,14 @@ import {
   projectForWorkspace,
   readWorkScopeMemory,
   rememberWorkScope,
+  rememberWorkWide,
   WORK_SCOPE_ALL,
   type WorkScope,
   type WorkWorkspace,
   workScopeFor,
   workspaceScopeKey,
   workTagCounts,
+  workWorkspaceFilter,
 } from "../workScope";
 import { BoardCard } from "./BoardCard";
 import { ThreadEditor, type ThreadBox } from "./ThreadEditor";
@@ -107,21 +115,46 @@ const NO_ITEMS: WorkItem[] = [];
 const NO_PROJECTS: WorkProject[] = [];
 const FOLDED_KEY = "mrReviewsWorkFolded";
 
-function selectWorkWorkspace(state: State): WorkWorkspace | null {
+/** The focused workspace, its panes' directories and ids as lines. */
+type WorkWorkspaceSelection = Omit<WorkWorkspace, "cwds" | "paneIds"> & {
+  cwds: string;
+  paneIds: string;
+};
+
+function selectWorkWorkspace(state: State): WorkWorkspaceSelection | null {
   const workspace = state.workspaces.find((each) => each.focused);
   if (!workspace) return null;
+  const panes = state.panes.filter(
+    (pane) => pane.workspace_id === workspace.workspace_id,
+  );
   return {
     connectionId: state.activeConnectionId,
     workspaceId: workspace.workspace_id,
     label: workspace.label,
     checkoutPath: workspace.worktree?.checkout_path ?? workspace.cwd ?? null,
     repoRoot: workspace.worktree?.repo_root ?? null,
+    cwds: panes
+      .map((pane) => pane.cwd ?? "")
+      .filter(Boolean)
+      .join("\n"),
+    paneIds: panes.map((pane) => pane.pane_id).join("\n"),
   };
 }
 
 /** The workspace the page shows, as the board scopes by it. */
 export function useWorkWorkspace(): WorkWorkspace | null {
-  return useStoreSelector(selectWorkWorkspace, shallowEqual);
+  const selected = useStoreSelector(selectWorkWorkspace, shallowEqual);
+  return useMemo(
+    () =>
+      selected
+        ? {
+            ...selected,
+            cwds: selected.cwds ? selected.cwds.split("\n") : [],
+            paneIds: selected.paneIds ? selected.paneIds.split("\n") : [],
+          }
+        : null,
+    [selected],
+  );
 }
 
 /** "3 min ago", "2 h ago", "4 d ago". */
@@ -505,11 +538,33 @@ export function useWorkMode({
     setQuery("");
     setSelected(null);
   };
+  /** The project shown and its subprojects: their items show. */
+  const family = useMemo(
+    () => (scope ? workProjectFamily(projects, scope) : null),
+    [projects, scope],
+  );
   const projectItems = useMemo(
     () =>
-      scope ? boardItems.filter((item) => item.project === scope) : boardItems,
-    [boardItems, scope],
+      family
+        ? boardItems.filter((item) => family.includes(item.project))
+        : boardItems,
+    [boardItems, family],
   );
+  /**
+   * Opened from a workspace of the project that is not its coordinator's:
+   * the board keeps that workspace's items (its tag) until the chip is
+   * removed, which that workspace remembers.
+   */
+  const workspaceFilter = useMemo(
+    () => workWorkspaceFilter({ workspace, projects, scope, memory }),
+    [workspace, projects, scope, memory],
+  );
+  const workspaceTag = workspaceFilter?.on ? workspaceFilter.tag : null;
+  const widen = (wide: boolean) => {
+    if (!workspace) return;
+    setMemory((current) => rememberWorkWide(current, workspace, wide));
+    setSelected(null);
+  };
   const tagCounts = useMemo(() => workTagCounts(projectItems), [projectItems]);
   const completions = useMemo(
     () =>
@@ -533,8 +588,12 @@ export function useWorkMode({
     setSelected(null);
   };
   const items = useMemo(
-    () => filterWorkItems(projectItems, { query }),
-    [projectItems, query],
+    () =>
+      filterWorkItems(projectItems, {
+        query,
+        ...(workspaceTag ? { tags: [workspaceTag] } : {}),
+      }),
+    [projectItems, query, workspaceTag],
   );
   const columns = useMemo(() => workColumns(items), [items]);
   /** The columns as drawn: folded ones hold nothing the keys walk. */
@@ -1043,6 +1102,16 @@ export function useWorkMode({
               const { item } = await workCall<{ item: WorkItem }>("add", {
                 ...params,
                 project: scope ?? projects[0]!.id,
+                // Where it was added: that workspace's tag, when it is one
+                // of the project's.
+                ...(workspace
+                  ? {
+                      workspace: {
+                        connectionId: workspace.connectionId,
+                        workspaceId: workspace.workspaceId,
+                      },
+                    }
+                  : {}),
               });
               // Its detail, until the owner has sorted it (or the user
               // leaves): the coordinator's title, tags, state and reply
@@ -1063,7 +1132,11 @@ export function useWorkMode({
       ) : detailItem ? (
         <WorkDetail
           item={detailItem}
-          project={scope ? null : projectName(detailItem.project)}
+          project={
+            detailItem.project === scope
+              ? null
+              : projectName(detailItem.project)
+          }
           doneWhen={workDoneWhen(
             detailItem,
             projects.find((each) => each.id === detailItem.project),
@@ -1109,36 +1182,68 @@ export function useWorkMode({
         />
       ) : (
         <>
-          {projects.length > 1 ? (
+          {projects.length > 1 || workspaceFilter ? (
             <div className="work-filter-row">
-              <select
-                className="work-scope-select"
-                aria-label="Project"
-                title="The project shown: the workspace's, another, or all"
-                value={scope ?? WORK_SCOPE_ALL}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  choose(value === WORK_SCOPE_ALL ? null : value);
-                  back();
-                }}
-              >
-                <option value={WORK_SCOPE_ALL}>
-                  All projects (
-                  {boardItems.filter((item) => item.state !== "done").length})
-                </option>
-                {projects.map((each) => (
-                  <option key={each.id} value={each.id}>
-                    {each.name} (
-                    {
-                      boardItems.filter(
-                        (item) =>
-                          item.project === each.id && item.state !== "done",
-                      ).length
-                    }
-                    )
+              {projects.length > 1 ? (
+                <select
+                  className="work-scope-select"
+                  aria-label="Project"
+                  title="The project shown (with its subprojects): the workspace's, another, or all"
+                  value={scope ?? WORK_SCOPE_ALL}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    choose(value === WORK_SCOPE_ALL ? null : value);
+                    back();
+                  }}
+                >
+                  <option value={WORK_SCOPE_ALL}>
+                    All projects (
+                    {boardItems.filter((item) => item.state !== "done").length})
                   </option>
-                ))}
-              </select>
+                  {workProjectTree(projects).map(({ project: each, depth }) => {
+                    const ids = workProjectFamily(projects, each.id);
+                    const open = boardItems.filter(
+                      (item) =>
+                        ids.includes(item.project) && item.state !== "done",
+                    ).length;
+                    return (
+                      <option key={each.id} value={each.id}>
+                        {"\u00a0\u00a0".repeat(depth)}
+                        {each.name} ({open})
+                      </option>
+                    );
+                  })}
+                </select>
+              ) : null}
+              {workspaceFilter ? (
+                workspaceFilter.on ? (
+                  <button
+                    type="button"
+                    className="mr-reviews-chip is-label work-workspace-filter"
+                    aria-label={`Remove the filter: only the items of ${workspaceFilter.label}`}
+                    title={`Only the items added from ${workspaceFilter.label} (#${workspaceFilter.tag}): remove to see the whole project`}
+                    onClick={() => {
+                      widen(true);
+                      back();
+                    }}
+                  >
+                    <span>{workspaceFilter.label}</span>
+                    <X size={11} aria-hidden="true" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="mr-reviews-chip work-workspace-filter is-off"
+                    title={`Only the items added from ${workspaceFilter.label} (#${workspaceFilter.tag})`}
+                    onClick={() => {
+                      widen(false);
+                      back();
+                    }}
+                  >
+                    Only {workspaceFilter.label}
+                  </button>
+                )
+              ) : null}
             </div>
           ) : null}
           {data && !items.length ? (
@@ -1185,7 +1290,11 @@ export function useWorkMode({
                         <WorkCard
                           key={item.id}
                           item={item}
-                          project={scope ? null : projectName(item.project)}
+                          project={
+                            item.project === scope
+                              ? null
+                              : projectName(item.project)
+                          }
                           selected={item.id === selected}
                           dragging={drag?.item.id === item.id}
                           onDragStart={dragStart(item)}
@@ -1562,14 +1671,21 @@ function WorkCard({
             <button
               key={tag}
               type="button"
-              className="mr-reviews-chip is-label work-tag"
-              title={`Only the items tagged ${tag} (#${tag} in the search)`}
+              className={`mr-reviews-chip is-label work-tag${isWorkWorkspaceTag(tag) ? " is-workspace" : ""}`}
+              title={
+                isWorkWorkspaceTag(tag)
+                  ? `Added from the workspace ${workTagLabel(tag)}: only its items (#${tag} in the search)`
+                  : `Only the items tagged ${tag} (#${tag} in the search)`
+              }
               onClick={(event) => {
                 event.stopPropagation();
                 onTag(tag);
               }}
             >
-              {tag}
+              {isWorkWorkspaceTag(tag) ? (
+                <LayoutGrid size={10} aria-hidden="true" />
+              ) : null}
+              {workTagLabel(tag)}
             </button>
           ))}
           {item.owner ? <OwnerChip owner={item.owner} /> : null}

@@ -415,6 +415,9 @@ function normalProject(raw: unknown): WorkProject | null {
         }
       : {}),
     ...(coordinator ? { coordinator } : {}),
+    ...(typeof raw.parent === "string" && raw.parent && raw.parent !== raw.id
+      ? { parent: raw.parent.slice(0, 64) }
+      : {}),
   };
 }
 

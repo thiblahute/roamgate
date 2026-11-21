@@ -277,8 +277,15 @@ sees each change with Undo.
 
 Roamgate's Work panel is the user's list of work items on a kanban: For
 you (waits on the user), Doing, Verify (built, to be confirmed in real
-use), Open and Done, one project at a time (roamgate, gst2...), filtered by
-tags. Each item is a thread for the session or subagent that owns it, and
+use), Open and Done, one project at a time (roamgate, gstreamer...; a
+project made of several shows its subprojects' items too, gst2 in
+gstreamer), filtered by tags. Every workspace of a project has a tag,
+\`ws:\` and its name (\`ws:gst2-video\`): an item you add gets your
+workspace's (unless you are in the project's coordinator's workspace, or
+you pass \`"workspace": false\` for an item that is not about your
+workspace's work), and the board opened from that workspace shows its
+items, one tap from the whole project; \`work_list
+{"workspace": "self"}\` lists yours. Each item is a thread for the session or subagent that owns it, and
 links to what it is about (a review thread, an effort part, a request, a
 commit, a decision of an RFC or plan):
 

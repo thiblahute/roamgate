@@ -102,12 +102,16 @@ if (
     label: string;
     checkoutPath: string | null;
     repoRoot: string | null;
+    /** Its panes: the coordinator's makes it the coordinator's workspace. */
+    panes?: { pane_id: string; cwd?: string }[];
   } | null = {
     connectionId: "desktop",
     workspaceId: "w1",
     label: "gst2-caps",
     checkoutPath: "/home/me/gstreamer/2.0/gst2-caps",
     repoRoot: null,
+    // The gst2 coordinator's workspace: its board is the whole project.
+    panes: [{ pane_id: "w32:p1" }],
   };
   const calls: [string, Record<string, unknown>][] = [];
   /** The board's readers: a push (an agent's change) draws them again. */
@@ -167,6 +171,10 @@ if (
               },
             ]
           : [],
+        panes: (workspace?.panes ?? []).map((pane) => ({
+          ...pane,
+          workspace_id: workspace?.workspaceId,
+        })),
       }),
   }));
   const threadsModule = await import("./WorkItemThreads");
@@ -562,6 +570,8 @@ if (
         {
           text: "Copy a picture\nPaste one here.",
           project: "gst2",
+          // Where it was added (the server tags it, unless a coordinator's).
+          workspace: { connectionId: "desktop", workspaceId: "w1" },
         },
       ]);
       expect(form()).toBeNull();
@@ -870,6 +880,11 @@ if (
     const other = await mount();
     try {
       expect(other.text(".work-scope-name")).toBe("work-view");
+      // Not its coordinator's: the items added from it, a chip to widen.
+      expect(other.cards()).toEqual([]);
+      await other.click(
+        other.panel.querySelector(".work-filter-row .work-workspace-filter"),
+      );
       expect(other.cards()).toEqual(["2100000000000000", "2200000000000000"]);
     } finally {
       await other.unmount();
@@ -900,7 +915,113 @@ if (
       byWorkspace: {
         "desktop:/home/me/gstreamer/2.0/gst2-caps": "all",
       },
+      wide: ["desktop:/home/me/misc/roamgate.worktrees/work-view"],
     });
+  });
+
+  test("a worktree's board keeps its workspace's items (a chip widens it, remembered there); a parent shows its subprojects'; an item added there says where", async () => {
+    localStorage.clear();
+    const saved = { ...board, items: board.items };
+    board.projects = [
+      ...board.projects.map((each) =>
+        each.id === "gst2" ? { ...each, parent: "gstreamer" } : each,
+      ),
+      {
+        id: "gstreamer",
+        name: "gstreamer",
+        roots: [{ connectionId: "desktop", path: "/home/me/gstreamer" }],
+        done: { kind: "deployed" },
+      },
+      // By name, as the server keeps them.
+    ].sort((a, b) =>
+      String(a.name).localeCompare(String(b.name)),
+    ) as typeof board.projects;
+    board.items = [
+      ...board.items.filter((each) => each.id !== "3300000000000000"),
+      item("1800000000000000", "gst2", "open", ["caps", "ws:gst2-video"]),
+      item("4100000000000000", "gstreamer", "open", ["ocio"]),
+    ];
+    const before = workspace;
+    // No checkout: its panes' directories say where it is.
+    workspace = {
+      connectionId: "desktop",
+      workspaceId: "w36",
+      label: "gst2-video",
+      checkoutPath: null,
+      repoRoot: null,
+      panes: [{ pane_id: "w36:p1", cwd: "/home/me/gstreamer/2.0/gst2-video" }],
+    };
+    const view = await mount();
+    try {
+      const select = view.panel.querySelector<HTMLSelectElement>(
+        ".work-filter-row .work-scope-select",
+      )!;
+      expect(select.value).toBe("gst2");
+      // The tree: a subproject under its parent, counted in it.
+      expect([...select.options].map((option) => option.textContent)).toEqual([
+        "All projects (10)",
+        "gstreamer (8)",
+        "\u00a0\u00a0gst2 (7)",
+        "roamgate (2)",
+      ]);
+      const chip = () =>
+        view.panel.querySelector<HTMLElement>(".work-workspace-filter");
+      expect(chip()?.textContent).toBe("gst2-video");
+      expect(view.cards()).toEqual(["1800000000000000"]);
+      // Its tag reads as the workspace's name.
+      expect(
+        view.text('[data-work-item="1800000000000000"] .work-tag.is-workspace'),
+      ).toBe("gst2-video");
+      // One tap: the whole project.
+      await view.click(chip());
+      expect(view.cards()).toHaveLength(7);
+      expect(chip()?.classList.contains("is-off")).toBe(true);
+      // The parent: its own items and its subproject's, each card naming
+      // its subproject; still this workspace's until widened.
+      await act(async () => {
+        select.value = "gstreamer";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(view.cards()).toHaveLength(8);
+      expect(
+        view.text(
+          '[data-work-item="1800000000000000"] .mr-reviews-chip.is-tree',
+        ),
+      ).toBe("gst2");
+      expect(
+        view.panel.querySelector(
+          '[data-work-item="4100000000000000"] .mr-reviews-chip.is-tree',
+        ),
+      ).toBeNull();
+      await view.click(chip());
+      expect(view.cards()).toEqual(["1800000000000000"]);
+      // Added from here: the form says which workspace.
+      await view.key("a");
+      const form = view.panel.querySelector<HTMLFormElement>("form.work-add")!;
+      await view.type(
+        form.querySelector<HTMLTextAreaElement>("textarea")!,
+        "From the video worktree",
+      );
+      await act(async () => {
+        form.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      const adds = calls.filter(([method]) => method === "add");
+      const added = adds[adds.length - 1];
+      expect(added?.[1]).toMatchObject({
+        project: "gstreamer",
+        workspace: { connectionId: "desktop", workspaceId: "w36" },
+      });
+    } finally {
+      await view.unmount();
+      workspace = before;
+      board.projects = saved.projects;
+      board.items = saved.items;
+    }
   });
 
   test("a For you or Verify card says what the user has to do; an answer's tap is the user's comment; the detail says it first", async () => {

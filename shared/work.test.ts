@@ -13,6 +13,15 @@ import {
   workAskOf,
   workStateAsks,
   workTagCompletions,
+  type WorkProject,
+  workPlaceScope,
+  workPlaceTagFor,
+  workProjectFamily,
+  workProjectForPaths,
+  workProjectTree,
+  workTagLabel,
+  workTopProject,
+  workWorkspaceTag,
 } from "./work";
 
 const item = (id: string, title: string, tags: string[]): WorkItem => ({
@@ -225,4 +234,126 @@ test("answers: one line each, short, no empty nor repeated ones, 6 at most", () 
   expect(
     normalizeWorkAnswers(["1", "2", "3", "4", "5", "6", "7", "8"]),
   ).toHaveLength(6);
+});
+
+const project = (
+  id: string,
+  roots: string[],
+  extra: Partial<WorkProject> = {},
+): WorkProject => ({
+  id,
+  name: id,
+  roots: roots.map((path) => ({ connectionId: "desktop", path })),
+  done: { kind: "deployed" },
+  ...extra,
+});
+
+const projects = [
+  project("gst2", ["/g/2.0"], {
+    parent: "gstreamer",
+    coordinator: { session: "desktop/w32:p1" },
+  }),
+  project("gstreamer", ["/g/gstreamer", "/g"]),
+  project("roamgate", ["/r"], { coordinator: { session: "desktop/w35:p1" } }),
+  project("gst2-docs", ["/g/2.0/docs"], { parent: "gst2" }),
+];
+
+test("a project's family: itself and its subprojects at any depth", () => {
+  expect(workProjectFamily(projects, "gstreamer")).toEqual([
+    "gstreamer",
+    "gst2",
+    "gst2-docs",
+  ]);
+  expect(workProjectFamily(projects, "gst2")).toEqual(["gst2", "gst2-docs"]);
+  expect(workProjectFamily(projects, "nope")).toEqual(["nope"]);
+  expect(workTopProject(projects, "gst2-docs")).toBe("gstreamer");
+  expect(workTopProject(projects, "roamgate")).toBe("roamgate");
+  // A cycle stops.
+  const cycle = [
+    project("a", [], { parent: "b" }),
+    project("b", [], { parent: "a" }),
+  ];
+  expect(workProjectFamily(cycle, "a")).toEqual(["a", "b"]);
+  expect(["a", "b"]).toContain(workTopProject(cycle, "a"));
+  expect(
+    workProjectTree(cycle)
+      .map((each) => each.project.id)
+      .sort(),
+  ).toEqual(["a", "b"]);
+  expect(
+    workProjectTree(projects).map(
+      ({ project, depth }) => `${depth}${project.id}`,
+    ),
+  ).toEqual(["0gstreamer", "1gst2", "2gst2-docs", "0roamgate"]);
+});
+
+test("a path's project: the closest root", () => {
+  const at = (path: string) =>
+    workProjectForPaths(projects, "desktop", [path])?.id ?? null;
+  expect(at("/g/2.0/gst2-video")).toBe("gst2");
+  expect(at("/g/2.0/docs/x")).toBe("gst2-docs");
+  expect(at("/g/upstreaming/ocio")).toBe("gstreamer");
+  expect(at("/g2")).toBeNull();
+  expect(workProjectForPaths(projects, "mac", ["/g/2.0"])).toBeNull();
+  // The first path a project holds decides.
+  expect(
+    workProjectForPaths(projects, "desktop", [null, "/x", "/r/w", "/g"])?.id,
+  ).toBe("roamgate");
+});
+
+test("a workspace's tag: its name as a slug", () => {
+  expect(workWorkspaceTag("gst2-video")).toBe("ws:gst2-video");
+  expect(workWorkspaceTag("Reviews \u00b7 OpenColorIO")).toBe(
+    "ws:reviews-opencolorio",
+  );
+  expect(workWorkspaceTag("!7031 ges: timeline: synchronize flushing")).toBe(
+    "ws:7031-ges-timeline-synchronize-flushin",
+  );
+  expect(workWorkspaceTag("\u00e9t\u00e9")).toBe("ws:ete");
+  expect(workWorkspaceTag("!!")).toBeNull();
+  expect(workTagLabel("ws:gst2-video")).toBe("gst2-video");
+  expect(workTagLabel("voice")).toBe("voice");
+  // Searchable as any tag.
+  expect(parseWorkQuery("#ws:gst2-video ").tags).toEqual(["ws:gst2-video"]);
+});
+
+test("a workspace's place: coordinator, project, the tag its items get", () => {
+  const place = (paneIds: string[], paths: string[], label = "w") => ({
+    connectionId: "desktop",
+    label,
+    paths,
+    paneIds,
+  });
+  const coordinator = workPlaceScope(
+    place(["w32:p1"], ["/elsewhere"]),
+    projects,
+  );
+  expect(coordinator?.project.id).toBe("gst2");
+  expect(coordinator?.coordinator).toBe(true);
+  const video = place(["w36:p1"], ["/g/2.0/gst2-video"], "gst2-video");
+  expect(workPlaceScope(video, projects)).toMatchObject({
+    project: { id: "gst2" },
+    tag: "ws:gst2-video",
+    coordinator: false,
+  });
+  expect(workPlaceScope(place(["x"], ["/nowhere"]), projects)).toBeNull();
+  expect(workPlaceTagFor(video, projects, "gst2")).toBe("ws:gst2-video");
+  expect(workPlaceTagFor(video, projects, "gstreamer")).toBe("ws:gst2-video");
+  expect(workPlaceTagFor(video, projects, "roamgate")).toBeNull();
+  expect(
+    workPlaceTagFor(place(["w32:p1"], [], "gst2"), projects, "gst2"),
+  ).toBeNull();
+});
+
+test("a filter by a project's tree", () => {
+  const items = [
+    { ...item("a", "A", []), project: "gst2" },
+    { ...item("b", "B", []), project: "gstreamer" },
+    { ...item("c", "C", []), project: "roamgate" },
+  ];
+  expect(
+    filterWorkItems(items, {
+      projects: workProjectFamily(projects, "gstreamer"),
+    }).map((each) => each.id),
+  ).toEqual(["a", "b"]);
 });

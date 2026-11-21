@@ -4,7 +4,9 @@ import {
   projectForWorkspace,
   readWorkScopeMemory,
   rememberWorkScope,
+  rememberWorkWide,
   type WorkWorkspace,
+  workWorkspaceFilter,
   workScopeFor,
   workTagCounts,
   workspaceScopeKey,
@@ -202,4 +204,105 @@ test("the tags by count, most used first (the search completes them)", () => {
     { tag: "docs", count: 1 },
     { tag: "rfc-0047", count: 1 },
   ]);
+});
+
+test("the workspace filter: a worktree's board opens on its tag, a coordinator's on all", () => {
+  const family: WorkProject[] = [
+    {
+      ...projects[0]!,
+      parent: "gstreamer",
+      coordinator: { session: "desktop/w32:p1" },
+    },
+    {
+      id: "gstreamer",
+      name: "gstreamer",
+      roots: [{ connectionId: "desktop", path: "/home/me/gstreamer" }],
+      done: { kind: "deployed" },
+    },
+  ];
+  const video: WorkWorkspace = {
+    connectionId: "desktop",
+    workspaceId: "w36",
+    label: "gst2-video",
+    checkoutPath: null,
+    repoRoot: null,
+    cwds: ["/home/me/gstreamer/2.0/gst2-video"],
+    paneIds: ["w36:p1"],
+  };
+  // No checkout: its panes' directories place it, the closest root wins.
+  expect(projectForWorkspace(video, family)?.id).toBe("gst2");
+  const memory = { byWorkspace: {} };
+  expect(
+    workWorkspaceFilter({
+      workspace: video,
+      projects: family,
+      scope: "gst2",
+      memory,
+    }),
+  ).toEqual({ tag: "ws:gst2-video", label: "gst2-video", on: true });
+  // The parent's board narrows the same; another project's does not.
+  expect(
+    workWorkspaceFilter({
+      workspace: video,
+      projects: family,
+      scope: "gstreamer",
+      memory,
+    })?.tag,
+  ).toBe("ws:gst2-video");
+  expect(
+    workWorkspaceFilter({
+      workspace: video,
+      projects: family,
+      scope: null,
+      memory,
+    }),
+  ).toBeNull();
+  // The coordinator's workspace: everything.
+  const coordinator: WorkWorkspace = {
+    ...video,
+    workspaceId: "w32",
+    label: "gst2",
+    cwds: ["/home/me/gstreamer/2.0"],
+    paneIds: ["w32:p1"],
+  };
+  expect(projectForWorkspace(coordinator, family)?.id).toBe("gst2");
+  expect(
+    workWorkspaceFilter({
+      workspace: coordinator,
+      projects: family,
+      scope: "gst2",
+      memory,
+    }),
+  ).toBeNull();
+  // Removed there, it stays removed there (and is remembered).
+  const saved: Record<string, string> = {};
+  const storage = {
+    setItem: (key: string, value: string) => {
+      saved[key] = value;
+    },
+    getItem: (key: string) => saved[key] ?? null,
+  };
+  const wide = rememberWorkWide(memory, video, true, storage);
+  expect(
+    workWorkspaceFilter({
+      workspace: video,
+      projects: family,
+      scope: "gst2",
+      memory: wide,
+    })?.on,
+  ).toBe(false);
+  expect(readWorkScopeMemory(storage).wide).toEqual([workspaceScopeKey(video)]);
+  // Choosing a scope keeps it.
+  expect(rememberWorkScope(wide, video, "gst2", storage).wide).toEqual(
+    wide.wide,
+  );
+  const back = rememberWorkWide(wide, video, false, storage);
+  expect(
+    workWorkspaceFilter({
+      workspace: video,
+      projects: family,
+      scope: "gst2",
+      memory: back,
+    })?.on,
+  ).toBe(true);
 });

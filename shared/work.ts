@@ -7,6 +7,8 @@
  * an effort with no git source, its items its parts (plans/work-view.md).
  */
 
+import { parseAgentAddress } from "./agentMessage";
+
 export const WORK_STATES = ["you", "doing", "verify", "open", "done"] as const;
 export type WorkState = (typeof WORK_STATES)[number];
 
@@ -53,6 +55,11 @@ export type WorkProject = {
    * is; so is a comment on an item whose owner is gone.
    */
   coordinator?: { session: string };
+  /**
+   * The project it is a part of (its id): a subproject's items show on
+   * its parent's board too, each card naming its subproject.
+   */
+  parent?: string;
 };
 
 /** Who works on an item: a session, or one of its background subagents. */
@@ -242,6 +249,190 @@ export function provisionalWorkTitle(text: string): string {
 
 export { WORK_NO_OWNER, WORK_SESSION_PREFIX } from "./review";
 
+/**
+ * A project and its subprojects, at any depth, the project first: what
+ * its board shows. An unknown id is itself alone; a cycle stops.
+ */
+export function workProjectFamily(
+  projects: readonly Pick<WorkProject, "id" | "parent">[],
+  id: string,
+): string[] {
+  const family = [id];
+  for (let at = 0; at < family.length; at++)
+    for (const project of projects)
+      if (project.parent === family[at] && !family.includes(project.id))
+        family.push(project.id);
+  return family;
+}
+
+/** The project a project is part of at the top (itself when none). */
+export function workTopProject(
+  projects: readonly Pick<WorkProject, "id" | "parent">[],
+  id: string,
+): string {
+  const seen = new Set<string>();
+  let current = id;
+  while (!seen.has(current)) {
+    seen.add(current);
+    const parent = projects.find((each) => each.id === current)?.parent;
+    if (!parent || !projects.some((each) => each.id === parent)) break;
+    current = parent;
+  }
+  return current;
+}
+
+/**
+ * The projects as a tree, for a picker: each parent followed by its
+ * subprojects (by name), with their depth.
+ */
+export function workProjectTree<T extends Pick<WorkProject, "id" | "parent">>(
+  projects: readonly T[],
+): { project: T; depth: number }[] {
+  const known = new Set(projects.map((each) => each.id));
+  const out: { project: T; depth: number }[] = [];
+  const placed = new Set<string>();
+  const walk = (project: T, depth: number) => {
+    if (placed.has(project.id)) return;
+    placed.add(project.id);
+    out.push({ project, depth });
+    for (const child of projects)
+      if (child.parent === project.id) walk(child, depth + 1);
+  };
+  for (const project of projects)
+    if (!project.parent || !known.has(project.parent)) walk(project, 0);
+  // A cycle has no top: its projects stand at the top.
+  for (const project of projects) walk(project, 0);
+  return out;
+}
+
+/** What a workspace's tag starts with: `ws:gst2-video`. */
+export const WORK_WORKSPACE_TAG_PREFIX = "ws:";
+
+/**
+ * A workspace's tag: `ws:` and its name as a slug (lower case, words
+ * joined by dashes, 40 characters at most); null for a name with no
+ * letter nor digit. Stable while the workspace keeps its name.
+ */
+export function workWorkspaceTag(label: string): string | null {
+  const room = WORK_LIMITS.tagChars - WORK_WORKSPACE_TAG_PREFIX.length;
+  const slug = label
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .slice(0, room)
+    .replace(/-+$/, "");
+  return slug ? `${WORK_WORKSPACE_TAG_PREFIX}${slug}` : null;
+}
+
+export function isWorkWorkspaceTag(tag: string): boolean {
+  return (
+    tag.startsWith(WORK_WORKSPACE_TAG_PREFIX) &&
+    tag.length > WORK_WORKSPACE_TAG_PREFIX.length
+  );
+}
+
+/** A tag as a chip shows it: a workspace's as its name's slug. */
+export function workTagLabel(tag: string): string {
+  return isWorkWorkspaceTag(tag)
+    ? tag.slice(WORK_WORKSPACE_TAG_PREFIX.length)
+    : tag;
+}
+
+/** A workspace, as the board places it: where it is, and its panes. */
+export type WorkPlace = {
+  connectionId: string;
+  /** Its name, as Herdr shows it. */
+  label: string;
+  /** Its checkout and its panes' working directories, the checkout first. */
+  paths: readonly string[];
+  /** Its panes' ids (the coordinator's pane is one of them, or not). */
+  paneIds: readonly string[];
+};
+
+function pathUnder(path: string, root: string): boolean {
+  const base = root.replace(/\/+$/, "");
+  return !!base && (path === base || path.startsWith(`${base}/`));
+}
+
+/**
+ * The project whose root holds a path the most closely (the longest
+ * root, so a subproject's checkout inside its parent's is the
+ * subproject's), trying the paths in order; null when none does.
+ */
+export function workProjectForPaths<
+  T extends Pick<WorkProject, "id" | "roots">,
+>(
+  projects: readonly T[],
+  connectionId: string,
+  paths: readonly (string | null | undefined)[],
+): T | null {
+  for (const path of paths) {
+    if (!path) continue;
+    let best: { project: T; length: number } | null = null;
+    for (const project of projects)
+      for (const root of project.roots)
+        if (
+          root.connectionId === connectionId &&
+          pathUnder(path, root.path) &&
+          (!best || root.path.length > best.length)
+        )
+          best = { project, length: root.path.length };
+    if (best) return best.project;
+  }
+  return null;
+}
+
+/**
+ * Where a workspace stands on the board: its project (the one whose
+ * coordinator is one of its panes, else the one whose root holds it),
+ * its tag, and whether it is that project's coordinator's workspace (the
+ * board is then the whole project's, and its items are nobody's
+ * workspace's); null when no project holds it.
+ */
+export function workPlaceScope<T extends WorkProject>(
+  place: WorkPlace,
+  projects: readonly T[],
+): { project: T; tag: string | null; coordinator: boolean } | null {
+  const tag = workWorkspaceTag(place.label);
+  const coordinating = projects.find((project) => {
+    const address = project.coordinator
+      ? parseAgentAddress(project.coordinator.session)
+      : null;
+    return (
+      !!address &&
+      address.connectionId === place.connectionId &&
+      place.paneIds.includes(address.paneId)
+    );
+  });
+  if (coordinating) return { project: coordinating, tag, coordinator: true };
+  const project = workProjectForPaths(
+    projects,
+    place.connectionId,
+    place.paths,
+  );
+  return project ? { project, tag, coordinator: false } : null;
+}
+
+/**
+ * The tag an item added from a workspace gets: the workspace's, when the
+ * workspace belongs to a project of the item's project's tree and is not
+ * its project's coordinator's (whose board is the whole project).
+ */
+export function workPlaceTagFor(
+  place: WorkPlace,
+  projects: readonly WorkProject[],
+  itemProject: string,
+): string | null {
+  const scope = workPlaceScope(place, projects);
+  if (!scope?.tag || scope.coordinator) return null;
+  return workTopProject(projects, scope.project.id) ===
+    workTopProject(projects, itemProject)
+    ? scope.tag
+    : null;
+}
+
 /** A tag as stored: lower case, spaces as dashes, 40 characters at most. */
 export function normalizeWorkTag(tag: string): string {
   return tag
@@ -344,11 +535,15 @@ export function workQueryWithTag(query: string, tag: string): string {
   return `${base ? `${base} ` : ""}#${tag} `;
 }
 
-/** The items of a board that a filter keeps: project, tags (all), states. */
+/**
+ * The items of a board that a filter keeps: project (or one of
+ * `projects`: a project's tree), tags (all), states.
+ */
 export function filterWorkItems(
   items: readonly WorkItem[],
   filter: {
     project?: string;
+    projects?: readonly string[];
     tags?: readonly string[];
     states?: readonly WorkState[];
     owner?: string;
@@ -359,6 +554,8 @@ export function filterWorkItems(
   const tags = [...(filter.tags ?? []), ...named];
   return items.filter((item) => {
     if (filter.project && item.project !== filter.project) return false;
+    if (filter.projects && !filter.projects.includes(item.project))
+      return false;
     if (tags.length && !tags.every((t) => item.tags.includes(t))) return false;
     if (partial && !item.tags.some((t) => t.startsWith(partial))) return false;
     if (filter.states?.length && !filter.states.includes(item.state))

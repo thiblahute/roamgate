@@ -32,7 +32,7 @@ export async function handleWorkRpc(
     case "bridge.work.board":
       return service.board();
     case "bridge.work.list":
-      return { items: service.list(params) };
+      return { items: await service.list(params) };
     case "bridge.work.project.set":
       return { project: service.projectSet(params, meta) };
     case "bridge.work.add": {

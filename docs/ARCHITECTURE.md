@@ -1772,10 +1772,11 @@ switches when it shows the other.
 
 Store: `<data>/work/work.json` (`ROAMGATE_WORK_DIR`), written whole on each
 change: `projects` (`{id, name, roots: [{connectionId, path}], done, tags?,
-coordinator?: {session}}`, at most 50; `done` is `{kind: "deployed"}`, this
+coordinator?: {session}, parent?}`, at most 50; `done` is `{kind: "deployed"}`, this
 Roamgate's running build, or `{kind: "branch", root, branch,
 connectionId?}`, a commit reachable from that branch in that checkout;
-`coordinator` the session that takes the items nobody owns) and `items`
+`coordinator` the session that takes the items nobody owns; `parent` the
+project it is part of, so its board shows inside its parent's) and `items`
 (at most 2000: `{id` (8 to 16 hex characters), `project, title, state,
 tags[], owner?: {session, task?}, source?, links[], createdAt, updatedAt,
 doneAt?, by, review?, needsTriage?, ask?, answers?}`). States are
@@ -1809,6 +1810,32 @@ branch?}` (set by the done rule). `history.jsonl` appends one line per
 change of an item (`{at, item, by, change}`), never capped. The
 `roamgate` project is seeded on the deployed rule with this checkout as
 its root.
+
+Projects and workspaces (shared/work.ts, one implementation for the
+server and the page): `workProjectFamily` is a project and its
+subprojects at any depth (what its board and `list {project}` keep),
+`workTopProject` the top of its tree, `workProjectTree` the picker's
+order. `workProjectForPaths` places a path in the project whose root holds
+it the most closely (the longest root: a subproject's checkout inside its
+parent's root is the subproject's; `promote` uses it too).
+`workPlaceScope` places a workspace (`WorkPlace`: connection, name, its
+checkout and its panes' working directories, its pane ids): the project
+whose coordinator's pane is one of its panes (then `coordinator: true`),
+else the one holding its paths, with its tag `workWorkspaceTag(name)`
+(`ws:` and the name as a slug, 40 characters). `add` with `workspace:
+{connectionId, workspaceId | paneId}` (the board's add form, a
+conversation's pane), or from an agent (`WorkMeta.address`), adds that tag
+besides the others (`workPlaceTagFor`: not from a coordinator's
+workspace, nor for a project of another tree; `workspace: false` leaves it
+out); the server reads the connection's `pane.list` and `workspace.list`
+for it, waiting `WORK_PLACE_MS` (3 s) at most, and adds the item untagged
+otherwise. Auto-tags never give a workspace tag. `list {workspace}` keeps
+a workspace's items (its name, its tag, or `self`, the caller's). On the
+page, `web/src/workScope.ts` builds the focused workspace's place from the
+store (its checkout, its panes' directories and ids), `workWorkspaceFilter`
+says whether the board opens on the workspace's tag (a workspace of the
+project shown, not its coordinator's), and the workspaces widened to the
+whole project are kept with the scopes (`roamgate.work.scope`, `wide`).
 
 Threads: an item's comments are a review of the item (target `{kind:
 "work", item}`, one review per item, made by the first comment or an
@@ -1926,9 +1953,10 @@ when** in the item's detail.
 
 RPCs `bridge.work.*` (machine-wide; `by: "agent"` with a `summary` says an
 agent wrote): `board`, `list {project?, state?, open?, tags?, owner?,
-query?}`, `project.set {name, roots?, done?, tags?, coordinator?}`, `add
-{title, project?, state?, tags?, owner?, links?, text?, images?, source?,
-created_at?, updated_at?, done_at?, adopt_thread?}`, `update {item,
+query?, workspace?}`, `project.set {name, roots?, done?, tags?,
+coordinator?, parent?}`, `add {title, project?, state?, tags?, owner?,
+links?, text?, images?, source?, created_at?, updated_at?, done_at?,
+adopt_thread?, workspace?}`, `update {item,
 title?, state?, project?, tags?,
 add_tags?, remove_tags?, owner?, links?, add_links?, remove_links?,
 source?, created_at?, done_at?, adopt_thread?}`, `done {item, landed?:

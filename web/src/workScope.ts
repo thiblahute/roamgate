@@ -1,4 +1,9 @@
-import type { WorkItem, WorkProject } from "../../shared/work";
+import {
+  type WorkItem,
+  type WorkProject,
+  workPlaceScope,
+  workProjectFamily,
+} from "../../shared/work";
 
 /**
  * What the Work board shows: the project of the workspace it was opened
@@ -16,6 +21,10 @@ export type WorkWorkspace = {
   checkoutPath: string | null;
   /** The repository's main checkout, for a linked worktree. */
   repoRoot: string | null;
+  /** Its panes' working directories (a workspace with no checkout). */
+  cwds?: readonly string[];
+  /** Its panes' ids: the coordinator's pane may be one. */
+  paneIds?: readonly string[];
 };
 
 /** A project id, or null for every project. */
@@ -29,6 +38,11 @@ export type WorkScopeMemory = {
   last?: string;
   /** The scope chosen in each workspace (its key). */
   byWorkspace: Record<string, string>;
+  /**
+   * The workspaces whose board was widened to the whole project (their
+   * workspace filter removed): their keys.
+   */
+  wide?: string[];
 };
 
 /** The workspace as remembered: its checkout on its connection. */
@@ -36,29 +50,79 @@ export function workspaceScopeKey(workspace: WorkWorkspace): string {
   return `${workspace.connectionId}:${workspace.checkoutPath ?? workspace.workspaceId}`;
 }
 
-function under(path: string, root: string): boolean {
-  return path === root || path.startsWith(`${root.replace(/\/+$/, "")}/`);
+/** The workspace as the board places it. */
+function placeOf(workspace: WorkWorkspace) {
+  return {
+    connectionId: workspace.connectionId,
+    label: workspace.label,
+    paths: [
+      workspace.checkoutPath,
+      workspace.repoRoot,
+      ...(workspace.cwds ?? []),
+    ].filter((path): path is string => !!path),
+    paneIds: workspace.paneIds ?? [],
+  };
 }
 
-/** The project whose root holds the workspace's checkout, or null. */
+/**
+ * The workspace's project: the one its coordinator's pane is in, else
+ * the one whose root holds its checkout (or its panes' directories) the
+ * most closely; null when none.
+ */
 export function projectForWorkspace(
   workspace: WorkWorkspace | null,
   projects: readonly WorkProject[],
 ): WorkProject | null {
   if (!workspace) return null;
-  const paths = [workspace.checkoutPath, workspace.repoRoot].filter(
-    (path): path is string => !!path,
-  );
-  if (!paths.length) return null;
-  return (
-    projects.find((project) =>
-      project.roots.some(
-        (root) =>
-          root.connectionId === workspace.connectionId &&
-          paths.some((path) => under(path, root.path)),
-      ),
-    ) ?? null
-  );
+  return workPlaceScope(placeOf(workspace), projects)?.project ?? null;
+}
+
+/**
+ * The workspace filter the board opens with: the workspace's tag, when
+ * the workspace belongs to the project shown (or one of its subprojects)
+ * and is not its project's coordinator's (whose board is the whole
+ * project). `on` says whether it applies: not once it was removed there.
+ */
+export function workWorkspaceFilter(options: {
+  workspace: WorkWorkspace | null;
+  projects: readonly WorkProject[];
+  scope: WorkScope;
+  memory: WorkScopeMemory;
+}): { tag: string; label: string; on: boolean } | null {
+  const { workspace, projects, scope, memory } = options;
+  if (!workspace || !scope) return null;
+  const place = workPlaceScope(placeOf(workspace), projects);
+  if (!place?.tag || place.coordinator) return null;
+  if (!workProjectFamily(projects, scope).includes(place.project.id))
+    return null;
+  return {
+    tag: place.tag,
+    label: workspace.label,
+    on: !memory.wide?.includes(workspaceScopeKey(workspace)),
+  };
+}
+
+/** The workspace filter removed (wide) or put back, for that workspace. */
+export function rememberWorkWide(
+  memory: WorkScopeMemory,
+  workspace: WorkWorkspace,
+  wide: boolean,
+  storage: Pick<Storage, "setItem"> | null = typeof localStorage !== "undefined"
+    ? localStorage
+    : null,
+): WorkScopeMemory {
+  const key = workspaceScopeKey(workspace);
+  const rest = (memory.wide ?? []).filter((each) => each !== key);
+  const next: WorkScopeMemory = {
+    ...memory,
+    wide: wide ? [...rest, key].slice(-200) : rest,
+  };
+  try {
+    storage?.setItem(WORK_SCOPE_KEY, JSON.stringify(next));
+  } catch {
+    // Private mode: this page only.
+  }
+  return next;
 }
 
 function valid(
@@ -113,9 +177,13 @@ export function readWorkScopeMemory(
     if (value?.byWorkspace && typeof value.byWorkspace === "object")
       for (const [key, scope] of Object.entries(value.byWorkspace))
         if (typeof scope === "string") byWorkspace[key] = scope;
+    const wide = Array.isArray(value?.wide)
+      ? value.wide.filter((key): key is string => typeof key === "string")
+      : [];
     return {
       ...(typeof value?.last === "string" ? { last: value.last } : {}),
       byWorkspace,
+      ...(wide.length ? { wide } : {}),
     };
   } catch {
     return { byWorkspace: {} };
@@ -133,6 +201,7 @@ export function rememberWorkScope(
 ): WorkScopeMemory {
   const value = scope ?? WORK_SCOPE_ALL;
   const next: WorkScopeMemory = {
+    ...memory,
     last: value,
     byWorkspace: workspace
       ? { ...memory.byWorkspace, [workspaceScopeKey(workspace)]: value }

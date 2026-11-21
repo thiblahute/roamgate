@@ -8,8 +8,11 @@ import {
 import {
   describeWorkLink,
   filterWorkItems,
+  isWorkWorkspaceTag,
+  normalizeWorkTag,
   parseWorkTitle as parseTitleLine,
   provisionalWorkTitle,
+  WORK_LIMITS,
   WORK_OPEN_STATES,
   type WorkBoard,
   workStateAsks,
@@ -17,7 +20,12 @@ import {
   type WorkLink,
   type WorkOwner,
   type WorkProject,
+  type WorkPlace,
   type WorkPush,
+  workPlaceTagFor,
+  workProjectFamily,
+  workProjectForPaths,
+  workWorkspaceTag,
 } from "../../../shared/work";
 import {
   mergeWorkLinks,
@@ -154,9 +162,25 @@ export type WorkServiceDeps = {
   /** The default connection's id, where no other is known. */
   defaultConnection?: () => string | null;
   /** The panes of a connection, for the owner's workspace. */
-  panes?: (
-    connectionId: string,
-  ) => Promise<{ pane_id: string; workspace_id?: string }[]>;
+  panes?: (connectionId: string) => Promise<
+    {
+      pane_id: string;
+      workspace_id?: string;
+      cwd?: string;
+      foreground_cwd?: string;
+    }[]
+  >;
+  /**
+   * The workspaces of a connection: their names and checkouts, to place
+   * an item added from one (its tag).
+   */
+  workspaces?: (connectionId: string) => Promise<
+    {
+      workspace_id: string;
+      label?: string;
+      worktree?: { checkout_path?: string; repo_root?: string } | null;
+    }[]
+  >;
   /** A connection's runtime generation (its notification targets). */
   generation?: (connectionId: string) => number | null;
   log?: (message: string, fields?: Record<string, unknown>) => void;
@@ -165,6 +189,9 @@ export type WorkServiceDeps = {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
+
+/** How long placing a workspace may wait on its connection. */
+export const WORK_PLACE_MS = 3_000;
 
 function given(value: unknown): boolean {
   return value !== undefined && value !== null && value !== "";
@@ -375,7 +402,15 @@ export function createWorkService(deps: WorkServiceDeps) {
     };
   }
 
-  function list(params: Record<string, unknown>): WorkItem[] {
+  /**
+   * The items a filter keeps. A project keeps its subprojects' items too;
+   * `workspace` keeps a workspace's (its tag): a name, a tag, or `self`
+   * (the caller's, from `address`).
+   */
+  async function list(
+    params: Record<string, unknown>,
+    address?: string,
+  ): Promise<WorkItem[]> {
     seed();
     const states = given(params.state)
       ? [parseWorkState(params.state)]
@@ -386,10 +421,37 @@ export function createWorkService(deps: WorkServiceDeps) {
       typeof params.project === "string" && params.project.trim()
         ? projectOf(params.project).id
         : undefined;
+    const tags = parseWorkTags(params.tags);
+    if (typeof params.workspace === "string" && params.workspace.trim()) {
+      const named = params.workspace.trim();
+      let tag: string | null;
+      if (named === "self") {
+        const parsed = address ? parseAgentAddress(address) : null;
+        const place = parsed
+          ? await placeOf({
+              connectionId: parsed.connectionId,
+              paneId: parsed.paneId,
+            })
+          : null;
+        if (!place)
+          throw new WorkError(
+            "workspace self: your session's workspace is not known",
+            "not_found",
+          );
+        tag = workWorkspaceTag(place.label);
+      } else
+        tag = isWorkWorkspaceTag(named.toLowerCase())
+          ? normalizeWorkTag(named)
+          : workWorkspaceTag(named);
+      if (!tag) throw new WorkError("workspace: a workspace's name or tag");
+      if (!tags.includes(tag)) tags.push(tag);
+    }
     return filterWorkItems(store.items(), {
-      ...(project ? { project } : {}),
+      ...(project
+        ? { projects: workProjectFamily(store.projects(), project) }
+        : {}),
       ...(states ? { states } : {}),
-      tags: parseWorkTags(params.tags),
+      tags,
       ...(typeof params.owner === "string" && params.owner
         ? { owner: params.owner }
         : {}),
@@ -436,8 +498,28 @@ export function createWorkService(deps: WorkServiceDeps) {
       params.coordinator !== undefined
         ? parseWorkCoordinator(params.coordinator)
         : existing?.coordinator;
+    const id = existing?.id ?? name.replace(/[^a-z0-9._-]+/g, "-");
+    let parent = existing?.parent;
+    if (params.parent === null || params.parent === "") parent = undefined;
+    else if (params.parent !== undefined) {
+      if (typeof params.parent !== "string")
+        throw new WorkError("parent is a project's name or id, or null");
+      const found = store.project(params.parent.trim());
+      if (!found)
+        throw new WorkError(
+          `no project ${params.parent.slice(0, 40)} to be part of`,
+          "not_found",
+        );
+      // A project cannot be part of itself, nor of one of its own parts.
+      if (workProjectFamily(store.projects(), id).includes(found.id))
+        throw new WorkError(
+          `${found.name} is ${found.id === id ? "this project" : "one of its subprojects"}: a project cannot be part of it`,
+          "conflict",
+        );
+      parent = found.id;
+    }
     const project: WorkProject = {
-      id: existing?.id ?? name.replace(/[^a-z0-9._-]+/g, "-"),
+      id,
       name,
       roots,
       done,
@@ -447,6 +529,7 @@ export function createWorkService(deps: WorkServiceDeps) {
           ? { tags: existing.tags }
           : {}),
       ...(coordinator ? { coordinator } : {}),
+      ...(parent ? { parent } : {}),
     };
     store.saveProject(project);
     push({
@@ -484,7 +567,94 @@ export function createWorkService(deps: WorkServiceDeps) {
     const used = [...counts.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([tag]) => tag);
-    return autoWorkTags(words, [...(project.tags ?? []), ...used]);
+    // A workspace's tag says where an item was added, not what it is about.
+    return autoWorkTags(
+      words,
+      [...(project.tags ?? []), ...used].filter(
+        (tag) => !isWorkWorkspaceTag(tag),
+      ),
+    );
+  }
+
+  /**
+   * A workspace as the board places it (its name, checkout, panes' working
+   * directories and ids), by its id or one of its panes'; null when its
+   * connection does not answer in time or does not know it.
+   */
+  async function placeOf(where: {
+    connectionId: string;
+    workspaceId?: string;
+    paneId?: string;
+  }): Promise<WorkPlace | null> {
+    if (!deps.panes || !deps.workspaces) return null;
+    const read = Promise.all([
+      deps.panes(where.connectionId),
+      deps.workspaces(where.connectionId),
+    ]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), WORK_PLACE_MS);
+    });
+    try {
+      const listed = await Promise.race([read, late]).catch(() => null);
+      if (!listed) return null;
+      const [panes, workspaces] = listed;
+      const workspaceId =
+        where.workspaceId ??
+        panes.find((pane) => pane.pane_id === where.paneId)?.workspace_id;
+      const workspace = workspaceId
+        ? workspaces.find((each) => each.workspace_id === workspaceId)
+        : undefined;
+      if (!workspace?.label) return null;
+      const own = panes.filter((pane) => pane.workspace_id === workspaceId);
+      const paths = [
+        workspace.worktree?.checkout_path,
+        workspace.worktree?.repo_root,
+        ...own.map((pane) => pane.cwd),
+        ...own.map((pane) => pane.foreground_cwd),
+      ].filter((path): path is string => !!path);
+      return {
+        connectionId: where.connectionId,
+        label: workspace.label,
+        paths: [...new Set(paths)],
+        paneIds: own.map((pane) => pane.pane_id),
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * The workspace tag of an item added from a workspace: the board's add
+   * form says which (`workspace: {connectionId, workspaceId}`, or a pane
+   * of it: a conversation's), an agent is where its session is. None from
+   * a coordinator's workspace, nor for a project of another tree.
+   */
+  async function addedFromTag(
+    project: WorkProject,
+    params: Record<string, unknown>,
+    meta: WorkMeta,
+  ): Promise<string | null> {
+    if (params.workspace === false) return null;
+    let where: { connectionId: string; workspaceId?: string; paneId?: string };
+    if (isRecord(params.workspace)) {
+      const { connectionId, workspaceId, paneId } = params.workspace;
+      if (typeof connectionId !== "string" || !connectionId) return null;
+      where = {
+        connectionId,
+        ...(typeof workspaceId === "string" && workspaceId
+          ? { workspaceId }
+          : {}),
+        ...(typeof paneId === "string" && paneId ? { paneId } : {}),
+      };
+      if (!where.workspaceId && !where.paneId) return null;
+    } else if (meta.by === "agent" && meta.address) {
+      const parsed = parseAgentAddress(meta.address);
+      if (!parsed) return null;
+      where = parsed;
+    } else return null;
+    const place = await placeOf(where);
+    return place ? workPlaceTagFor(place, store.projects(), project.id) : null;
   }
 
   /**
@@ -698,6 +868,10 @@ export function createWorkService(deps: WorkServiceDeps) {
           typeof params.tag_text === "string" ? params.tag_text : "",
         ].join("\n"),
       );
+    // Where it was added from: that workspace's tag, besides the others.
+    const from = await addedFromTag(project, params, meta);
+    if (from && !item.tags.includes(from))
+      item.tags = [...item.tags.slice(0, WORK_LIMITS.tagsPerItem - 1), from];
     if (item.state === "done")
       item.doneAt = parseWorkTime(params.done_at, "done_at") ?? at;
     const asked: Record<string, unknown> = {};
@@ -1241,15 +1415,8 @@ export function createWorkService(deps: WorkServiceDeps) {
 
   /** The project whose root holds this checkout, else the first. */
   function projectForRoot(connectionId: string, root: string): string {
-    const found = store
-      .projects()
-      .find((project) =>
-        project.roots.some(
-          (each) =>
-            each.connectionId === connectionId &&
-            (root === each.path || root.startsWith(`${each.path}/`)),
-        ),
-      );
+    // The closest root: a subproject's checkout inside its parent's root.
+    const found = workProjectForPaths(store.projects(), connectionId, [root]);
     return found?.id ?? projectOf(undefined).id;
   }
 

@@ -2217,10 +2217,24 @@ list on a narrow pane or a phone), the same cards and keys (`j`/`k`,
 Work, closes it when it shows Work, and switches to Work when it shows
 Reviews; `Option+M` does the same for Reviews; the mode last shown comes
 back next time. The board is the workspace's: it shows the project whose
-root holds the workspace's checkout (`roamgate` for a Roamgate worktree,
-`gst2` for the GStreamer 2.0 ones), the workspace's name in the head; the
-project menu on the filter row switches to another project or to **All
-projects** (each card then says its project), and that choice is
+root holds the workspace's checkout, or its panes' directories, the most
+closely (`roamgate` for a Roamgate worktree, `gst2` for the GStreamer 2.0
+ones, `gstreamer` for the other GStreamer checkouts), or the project whose
+coordinator runs in the workspace, the workspace's name in the head. A
+project can be made of several (**subprojects**: `gst2` is part of
+`gstreamer`): a parent's board shows its own items and its subprojects',
+each card naming its subproject, and the project menu lists the
+subprojects under their parent. Every workspace of a project has a tag,
+`ws:` and its name (`ws:gst2-video`, shown on a card as the workspace's
+name with a workspace mark): an item added from the workspace, with the
+board's **+** or by an agent working there, gets it besides the tags read
+from its words. Opened from the project's coordinator's workspace, the
+board shows the whole project; opened from any other of its workspaces, it
+shows that workspace's items, with the workspace's name as a chip on the
+filter row: one tap on the chip widens the board to the whole project, and
+**Only** with the name narrows it again; each workspace remembers its
+choice. The project menu on the filter row switches to another project or
+to **All projects** (each card then says its project), and that choice is
 remembered for the workspace; a page with no workspace in a project shows
 the last choice. The search box (`/`) takes words, an owner, and tags as
 `#voice` or `tag:voice` (each one named, all of them): typing `#` offers
@@ -2295,14 +2309,17 @@ told to it as your comments are (the title, the description, the images),
 so that it picks the work up; so is an item reopened with no owner, and a
 comment on an item whose owner session is gone. A For you item of yours
 with no owner is a note for you alone. An agent sets a project's
-coordinator with `work_project` (`coordinator: CONNECTION/PANE`), when you
-ask.
+coordinator with `work_project` (`coordinator: CONNECTION/PANE`), and its
+parent project (`parent`), when you ask.
 
 Agents keep the board true with their `work_*` tools (`work_list`,
 `work_add`, `work_update`, `work_done`, `work_reopen`, `work_adopt`,
 `work_comment_edit`, `work_comment_delete`, `work_project`; the review
 client's `roamgate-review work` does the same for a session without
-them): an item they take says `doing` with them as owner (a session a
+them; `work_list {"workspace": "self"}` lists the items of their own
+workspace, and an item they add gets their workspace's tag unless they
+coordinate the project or pass `"workspace": false`): an item they take
+says `doing` with them as owner (a session a
 connection knows, else refused; a subagent's task id when one does the
 work), a fix waiting for a deploy says `verify` with its commit linked,
 and becomes **done by itself** once that commit is on dogfood's deployed

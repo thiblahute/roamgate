@@ -135,6 +135,13 @@ export const workToolSchemas = {
         Type.String({ maxLength: 200, description: "An owner's address." }),
       ),
       query: Type.Optional(Type.String({ maxLength: 200 })),
+      workspace: Type.Optional(
+        Type.String({
+          maxLength: 200,
+          description:
+            "Only the items added from a workspace (its tag, ws:NAME): its name, its tag, or self (yours).",
+        }),
+      ),
       item: Type.Optional(
         Type.String({
           maxLength: 16,
@@ -151,6 +158,12 @@ export const workToolSchemas = {
         Type.String({
           maxLength: 80,
           description: "Its name or id; the roamgate project by default.",
+        }),
+      ),
+      workspace: Type.Optional(
+        Type.Literal(false, {
+          description:
+            "false: no workspace tag (the item is not about your workspace's work).",
         }),
       ),
       state: Type.Optional(stateParam),
@@ -290,6 +303,12 @@ export const workToolSchemas = {
         ]),
       ),
       tags: Type.Optional(tagsParam),
+      parent: Type.Optional(
+        Type.Union([Type.String({ maxLength: 80 }), Type.Null()], {
+          description:
+            "The project it is a part of (its name or id): a subproject's items show on its parent's board too. null: a project of its own.",
+        }),
+      ),
       coordinator: Type.Optional(
         Type.Union([Type.String({ maxLength: 200 }), ownerParam, Type.Null()], {
           description:
@@ -304,15 +323,15 @@ export const workToolSchemas = {
 export type WorkToolName = keyof typeof workToolSchemas;
 
 export const WORK_DESCRIPTIONS: Record<WorkToolName, string> = {
-  work_list: `The Work board: work items by project (roamgate by default) with id, title, state (you: waits on the user, doing, verify, open, done), tags, owner (a session address and its subagent task), source, links (review threads, efforts, requests, commits, branches, decisions, other items), done_when (how it becomes done by itself), ask and answers (what the user has to do on a you or verify item) and times; filter by state, open, tags (all), owner, words. item: one item with its comments (a thread on one of the comments is listed under that comment as its threads, with on.quote the words it quotes; answer it with review_reply on its own thread id). Use it before changing the board, and to answer "what is on the list". ${WORK_CLI_NOTE}`,
-  work_add: `Add a work item: a title, its project, a state (open by default; you when it waits on the user, doing when you take it), tags, an owner {session, task?} (session: yours from agent_sessions, refused when no connection knows it; task: the agent id of a subagent you spawned, taken as given; without an owner, the project's coordinator session owns it and is told of it), links (a review thread it came from, the commit its fix landed in, an RFC's decision: an item whose links are all decisions is done once every one is ticked). text: its description, the first comment of its thread. Importing: source names where it came from (the same source again changes that item instead of adding one: the answer says updated: true and what changed, the text is left aside, and a different title is refused unless replace: true), created_at / done_at keep its dates, adopt_thread makes an existing review thread the item's own (comments and ids kept). Answers the item, its review, thread (its description's) and adopted_thread. The user sees it on the Work board; a For you item notifies them once. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences ("Choose: media to the car with the phone mic, or no music on car links", "Dictate once after 10 idle minutes; text should appear"), and for a decision answers, a few short one-tap choices (each tap is the user's comment on the item, reaching its owner; the user can also reply in their own words, so no "Something else" answer); without an ask the move is refused. Leaving those states clears them unless given. ${WORK_CLI_NOTE}`,
+  work_list: `The Work board: work items by project (roamgate by default) with id, title, state (you: waits on the user, doing, verify, open, done), tags, owner (a session address and its subagent task), source, links (review threads, efforts, requests, commits, branches, decisions, other items), done_when (how it becomes done by itself), ask and answers (what the user has to do on a you or verify item) and times; filter by state, open, tags (all), owner, words, workspace (the items added from a workspace: its name, its ws:NAME tag, or self for yours). A project lists its subprojects' items too (each item says its project). item: one item with its comments (a thread on one of the comments is listed under that comment as its threads, with on.quote the words it quotes; answer it with review_reply on its own thread id). Use it before changing the board, and to answer "what is on the list". ${WORK_CLI_NOTE}`,
+  work_add: `Add a work item: a title, its project, a state (open by default; you when it waits on the user, doing when you take it), tags, an owner {session, task?} (session: yours from agent_sessions, refused when no connection knows it; task: the agent id of a subagent you spawned, taken as given; without an owner, the project's coordinator session owns it and is told of it), links (a review thread it came from, the commit its fix landed in, an RFC's decision: an item whose links are all decisions is done once every one is ticked). text: its description, the first comment of its thread. Importing: source names where it came from (the same source again changes that item instead of adding one: the answer says updated: true and what changed, the text is left aside, and a different title is refused unless replace: true), created_at / done_at keep its dates, adopt_thread makes an existing review thread the item's own (comments and ids kept). An item you add gets your workspace's tag (ws:NAME, the workspace's name) when your workspace belongs to the project's tree and is not its coordinator's: the board opened from that workspace shows its items; workspace: false leaves it out when the item is not about your workspace's work. Answers the item, its review, thread (its description's) and adopted_thread. The user sees it on the Work board; a For you item notifies them once. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences ("Choose: media to the car with the phone mic, or no music on car links", "Dictate once after 10 idle minutes; text should appear"), and for a decision answers, a few short one-tap choices (each tap is the user's comment on the item, reaching its owner; the user can also reply in their own words, so no "Something else" answer); without an ask the move is refused. Leaving those states clears them unless given. ${WORK_CLI_NOTE}`,
   work_update: `Change a work item: title, state, project, tags (tags replaces, add_tags and remove_tags edit), owner (null clears; a session no connection knows is refused), links (links replaces, add_links and remove_links edit), source, created_at / done_at, adopt_thread (an existing review thread becomes the item's), needs_triage (false once an item the user added as free text is sorted: a clear title, tags, a state, split into items when it held several tasks). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences ("Choose: media to the car with the phone mic, or no music on car links", "Dictate once after 10 idle minutes; text should appear"), and for a decision answers, a few short one-tap choices (each tap is the user's comment on the item, reaching its owner; the user can also reply in their own words, so no "Something else" answer); without an ask the move is refused. Leaving those states clears them unless given. The user sees it on the board. ${WORK_CLI_NOTE}`,
   work_done: `Mark a work item done, saying what landed when known (landed.commit with its subject, landed.pr, landed.branch): the link is kept with the item. An item with a commit link and a live state becomes done by itself once the commit reaches where its project says (dogfood's deployed build, or the project's branch). ${WORK_CLI_NOTE}`,
   work_reopen: `Reopen a done work item (open by default, or the state given; to you or verify with ask, and answers for a decision). ${WORK_CLI_NOTE}`,
   work_adopt: `An existing review thread (its id, or a comment's) becomes a work item's own thread: moved into the item's review with its comments and ids, its old anchor dropped, the review it came from linked. Idempotent: a thread the item has already changes nothing. ${WORK_CLI_NOTE}`,
   work_comment_edit: `Rewrite one of your own comments on a work item (its id from work_list {item}): to correct or complete it, rather than adding another. The user's and other agents' comments are refused. review_edit does the same on the same id when the item's review is on your connection. ${WORK_CLI_NOTE}`,
   work_comment_delete: `Delete one of your own comments on a work item (its id from work_list {item}); the first comment of a thread takes the thread with it. The user's and other agents' comments are refused. ${WORK_CLI_NOTE}`,
-  work_project: `Declare or change a project of the Work board: its name, the checkouts it spans (roots), its done rule ({kind: deployed}: this Roamgate's running build holds the commit; {kind: branch, root, branch}: the commit is reachable from that branch in that checkout, gstreamer2/main say), suggested tags, its coordinator (the session that takes and is told of the items nobody owns). Only when the user asked. ${WORK_CLI_NOTE}`,
+  work_project: `Declare or change a project of the Work board: its name, the checkouts it spans (roots), its done rule ({kind: deployed}: this Roamgate's running build holds the commit; {kind: branch, root, branch}: the commit is reachable from that branch in that checkout, gstreamer2/main say), suggested tags, its coordinator (the session that takes and is told of the items nobody owns), its parent (a project made of several, GStreamer say: a subproject's items show on the parent's board too; the closest root decides which project holds a checkout). Only when the user asked. ${WORK_CLI_NOTE}`,
 };
 
 /** The tools that change the board. */
@@ -340,6 +359,7 @@ function projectLine(project: WorkProject): Record<string, unknown> {
     ...(project.coordinator
       ? { coordinator: project.coordinator.session }
       : {}),
+    ...(project.parent ? { parent: project.parent } : {}),
   };
 }
 
@@ -527,7 +547,7 @@ export async function workTool(
         });
       }
       const board = service.board();
-      const items = service.list(input);
+      const items = await service.list(input, address);
       return answer({
         projects: board.projects.map(projectLine),
         ...(board.deployed ? { deployed: board.deployed } : {}),

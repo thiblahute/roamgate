@@ -1564,9 +1564,27 @@ function getWorkService(): WorkService {
       const runtime = connectionManager.readyRuntime(connectionId);
       if (!runtime) return [];
       const listed = (await runtime.herdr.call("pane.list", {})) as {
-        panes?: { pane_id: string; workspace_id?: string }[];
+        panes?: {
+          pane_id: string;
+          workspace_id?: string;
+          cwd?: string;
+          foreground_cwd?: string;
+        }[];
       };
       return listed?.panes ?? [];
+    },
+    // A workspace's name and checkout: an item added from it gets its tag.
+    workspaces: async (connectionId) => {
+      const runtime = connectionManager.readyRuntime(connectionId);
+      if (!runtime) return [];
+      const listed = (await runtime.herdr.call("workspace.list", {})) as {
+        workspaces?: {
+          workspace_id: string;
+          label?: string;
+          worktree?: { checkout_path?: string; repo_root?: string } | null;
+        }[];
+      };
+      return listed?.workspaces ?? [];
     },
     generation: (connectionId) =>
       connectionManager.list().find((each) => each.id === connectionId)

@@ -363,6 +363,49 @@ button.work-link-open:focus-visible {
   color: var(--accent);
 }
 
+/* A workspace's tag: where the item was added, with the workspace mark. */
+.mr-reviews-chip.work-tag.is-workspace {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* The workspace filter the board opened with: one tap widens it to the
+   whole project; widened, a dashed chip narrows it again. */
+.mr-reviews-chip.work-workspace-filter {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 50%;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mr-reviews-chip.work-workspace-filter > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mr-reviews-chip.work-workspace-filter.is-off {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.mr-reviews-chip.work-workspace-filter:hover,
+.mr-reviews-chip.work-workspace-filter:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.is-mobile .mr-reviews-chip.work-workspace-filter {
+  min-height: 32px;
+  font-size: 12px;
+}
+
 /* The detail: the description full width, its images scaled to it. */
 .work-description {
   min-width: 0;

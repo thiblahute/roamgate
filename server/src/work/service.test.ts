@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, jest, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,7 @@ import {
   type WorkGit,
   type WorkReviews,
   type WorkServiceDeps,
+  WORK_PLACE_MS,
 } from "./service";
 import { openWorkStore, WorkError } from "./store";
 import { WORK_USER_WRITING, workTool, workUserTool } from "./tools";
@@ -358,11 +359,13 @@ describe("work service", () => {
     await expect(
       service.update({ item: "ffffffff", state: "open" }, { by: "user" }),
     ).rejects.toThrow(/no work item/);
-    expect(service.list({ open: true }).map((i) => i.id)).toEqual([item.id]);
-    expect(service.list({ tags: ["phone"] }).map((i) => i.id)).toEqual([
+    expect((await service.list({ open: true })).map((i) => i.id)).toEqual([
       item.id,
     ]);
-    expect(service.list({ tags: ["voice"] })).toEqual([]);
+    expect((await service.list({ tags: ["phone"] })).map((i) => i.id)).toEqual([
+      item.id,
+    ]);
+    expect(await service.list({ tags: ["voice"] })).toEqual([]);
   });
 
   test("an import keeps its dates and its source, and the same source changes the item", async () => {
@@ -497,8 +500,8 @@ describe("work service", () => {
       { by: "user" },
     );
     expect(item.project).toBe("gst2");
-    expect(service.list({ project: "roamgate" })).toEqual([]);
-    expect(service.list({ project: "gst2" }).map((i) => i.id)).toEqual([
+    expect(await service.list({ project: "roamgate" })).toEqual([]);
+    expect((await service.list({ project: "gst2" })).map((i) => i.id)).toEqual([
       item.id,
     ]);
     await expect(
@@ -2013,5 +2016,216 @@ describe("work tools and rpc", () => {
     })) as { item: WorkItem };
     expect(removed.item.id).toBe(added.item.id);
     expect(service.board().items).toEqual([]);
+  });
+});
+
+describe("projects of projects and workspace tags", () => {
+  /** A desktop with the GStreamer workspaces: a coordinator, a worktree. */
+  function gstreamer(over: Partial<WorkServiceDeps> = {}) {
+    const made = setup({
+      sessions: async () => ["desktop/w32:p1", "desktop/w36:p1"],
+      panes: async () => [
+        { pane_id: "w32:p1", workspace_id: "w32", cwd: "/g/2.0" },
+        { pane_id: "w36:p1", workspace_id: "w36", cwd: "/g/2.0/gst2-video" },
+        { pane_id: "w3E:p1", workspace_id: "w3E", cwd: "/g/upstreaming" },
+        { pane_id: "w35:p1", workspace_id: "w35", cwd: "/home/me/roamgate" },
+      ],
+      workspaces: async () => [
+        { workspace_id: "w32", label: "gst2" },
+        { workspace_id: "w36", label: "gst2-video" },
+        {
+          workspace_id: "w3E",
+          label: "gst-upstreaming",
+          worktree: { checkout_path: "/g/upstreaming/ocio" },
+        },
+        { workspace_id: "w35", label: "roamgate" },
+      ],
+      ...over,
+    });
+    const meta = { by: "user" as const };
+    made.service.projectSet(
+      { name: "gstreamer", roots: ["/g/gstreamer", "/g"] },
+      meta,
+    );
+    made.service.projectSet(
+      {
+        name: "gst2",
+        roots: ["/g/2.0"],
+        coordinator: "desktop/w32:p1",
+        parent: "gstreamer",
+      },
+      meta,
+    );
+    return made;
+  }
+
+  test("a parent's list holds its subprojects' items; cycles are refused", async () => {
+    const { service } = gstreamer();
+    const meta = { by: "user" as const };
+    const own = await service.add(
+      { project: "gstreamer", title: "Upstream OCIO" },
+      meta,
+    );
+    const sub = await service.add({ project: "gst2", title: "Caps" }, meta);
+    expect(service.store.project("gst2")?.parent).toBe("gstreamer");
+    expect(
+      (await service.list({ project: "gstreamer" })).map((i) => i.id).sort(),
+    ).toEqual([own.id, sub.id].sort());
+    expect((await service.list({ project: "gst2" })).map((i) => i.id)).toEqual([
+      sub.id,
+    ]);
+    expect(() =>
+      service.projectSet({ name: "gstreamer", parent: "gst2" }, meta),
+    ).toThrow(/cannot be part of it/);
+    expect(() =>
+      service.projectSet({ name: "gst2", parent: "nope" }, meta),
+    ).toThrow(/no project nope/);
+    // Changing another field keeps the parent; null clears it.
+    expect(
+      service.projectSet({ name: "gst2", tags: ["caps"] }, meta).parent,
+    ).toBe("gstreamer");
+    expect(
+      service.projectSet({ name: "gst2", parent: null }, meta).parent,
+    ).toBeUndefined();
+  });
+
+  test("an item added from a workspace gets its tag, besides the auto-tags", async () => {
+    const { service } = gstreamer();
+    const fromForm = await service.add(
+      {
+        project: "gst2",
+        title: "Fix the caps negotiation on the phone",
+        workspace: { connectionId: "desktop", workspaceId: "w36" },
+      },
+      { by: "user" },
+    );
+    expect(fromForm.tags).toContain("ws:gst2-video");
+    expect(fromForm.tags).toContain("phone");
+    // A conversation says its pane.
+    const fromChat = await service.add(
+      {
+        project: "gst2",
+        title: "From a chat",
+        tags: ["caps"],
+        workspace: { connectionId: "desktop", paneId: "w36:p1" },
+      },
+      { by: "user" },
+    );
+    expect(fromChat.tags).toEqual(["caps", "ws:gst2-video"]);
+    // An agent is where its session is.
+    const fromAgent = JSON.parse(
+      (
+        await workTool(
+          service,
+          "work_add",
+          {
+            project: "gst2",
+            title: "Agent item",
+            owner: { session: "desktop/w36:p1" },
+          },
+          "Claude in gst2-video",
+          "desktop/w36:p1",
+        )
+      )
+        .split("\n")
+        .slice(1)
+        .join("\n"),
+    ) as { item: { tags: string[] } };
+    expect(fromAgent.item.tags).toContain("ws:gst2-video");
+    // workspace: false leaves it out.
+    const opted = await service.add(
+      { project: "gst2", title: "Not about here", workspace: false },
+      { by: "agent", address: "desktop/w36:p1" },
+    );
+    expect(opted.tags).not.toContain("ws:gst2-video");
+  });
+
+  test("no tag from the coordinator's workspace, nor for another tree", async () => {
+    const { service } = gstreamer();
+    service.projectSet(
+      { name: "roamgate", roots: ["/home/me/roamgate"] },
+      { by: "user" },
+    );
+    const coordinator = await service.add(
+      { project: "gst2", title: "Plan the next phase" },
+      { by: "agent", address: "desktop/w32:p1" },
+    );
+    expect(coordinator.tags.some((t) => t.startsWith("ws:"))).toBe(false);
+    const elsewhere = await service.add(
+      {
+        project: "roamgate",
+        title: "Unrelated",
+        workspace: { connectionId: "desktop", workspaceId: "w36" },
+      },
+      { by: "user" },
+    );
+    expect(elsewhere.tags.some((t) => t.startsWith("ws:"))).toBe(false);
+    // A subproject's workspace tags its parent's items too: one tree.
+    const parent = await service.add(
+      {
+        project: "gstreamer",
+        title: "Shared",
+        workspace: { connectionId: "desktop", workspaceId: "w36" },
+      },
+      { by: "user" },
+    );
+    expect(parent.tags).toContain("ws:gst2-video");
+    // The parent's own worktree workspace: its checkout decides.
+    const upstreaming = await service.add(
+      {
+        project: "gstreamer",
+        title: "OCIO",
+        workspace: { connectionId: "desktop", workspaceId: "w3E" },
+      },
+      { by: "user" },
+    );
+    expect(upstreaming.tags).toContain("ws:gst-upstreaming");
+  });
+
+  test("a connection that does not answer adds the item untagged", async () => {
+    const { service } = gstreamer({
+      panes: () => new Promise(() => {}),
+    });
+    jest.useFakeTimers();
+    try {
+      const added = service.add(
+        {
+          project: "gst2",
+          title: "Slow",
+          workspace: { connectionId: "desktop", workspaceId: "w36" },
+        },
+        { by: "user" },
+      );
+      // The add waits on the connection, then gives up on the tag.
+      await Promise.resolve();
+      jest.advanceTimersByTime(WORK_PLACE_MS);
+      const item = await added;
+      expect(item.tags.some((t) => t.startsWith("ws:"))).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("work_list keeps a workspace's items: its name, its tag, or self", async () => {
+    const { service } = gstreamer();
+    const here = await service.add(
+      {
+        project: "gst2",
+        title: "Here",
+        workspace: { connectionId: "desktop", workspaceId: "w36" },
+      },
+      { by: "user" },
+    );
+    await service.add({ project: "gst2", title: "Not here" }, { by: "user" });
+    const ids = async (params: Record<string, unknown>, address?: string) =>
+      (await service.list(params, address)).map((i) => i.id);
+    expect(await ids({ workspace: "gst2-video" })).toEqual([here.id]);
+    expect(await ids({ workspace: "ws:gst2-video" })).toEqual([here.id]);
+    expect(await ids({ workspace: "self" }, "desktop/w36:p1")).toEqual([
+      here.id,
+    ]);
+    await expect(service.list({ workspace: "self" })).rejects.toThrow(
+      /not known/,
+    );
   });
 });
