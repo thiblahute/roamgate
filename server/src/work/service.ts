@@ -1338,6 +1338,32 @@ export function createWorkService(deps: WorkServiceDeps) {
     return here(coordinator.session);
   }
 
+  /**
+   * Where a session (its address) runs, for the page to open its chat;
+   * null when no pane of its connection holds it now.
+   */
+  async function addressTarget(address: string): Promise<{
+    connectionId: string;
+    runtimeGeneration: number;
+    workspaceId: string;
+    paneId: string;
+  } | null> {
+    const at = parseAgentAddress(address);
+    if (!at) return null;
+    const generation = deps.generation?.(at.connectionId);
+    if (generation === null || generation === undefined) return null;
+    const panes = await deps.panes?.(at.connectionId).catch(() => []);
+    const workspaceId =
+      panes?.find((pane) => pane.pane_id === at.paneId)?.workspace_id ?? "";
+    if (!workspaceId) return null;
+    return {
+      connectionId: at.connectionId,
+      runtimeGeneration: generation,
+      workspaceId,
+      paneId: at.paneId,
+    };
+  }
+
   /** Where the owner is, for the page to open its chat or its task. */
   async function ownerTarget(params: Record<string, unknown>): Promise<{
     connectionId: string;
@@ -1347,21 +1373,17 @@ export function createWorkService(deps: WorkServiceDeps) {
     task?: string;
   } | null> {
     const item = itemOf(params.item);
-    const owner = item.owner ? parseAgentAddress(item.owner.session) : null;
-    if (!owner) return null;
-    const generation = deps.generation?.(owner.connectionId);
-    if (generation === null || generation === undefined) return null;
-    const panes = await deps.panes?.(owner.connectionId).catch(() => []);
-    const workspaceId =
-      panes?.find((pane) => pane.pane_id === owner.paneId)?.workspace_id ?? "";
-    if (!workspaceId) return null;
-    return {
-      connectionId: owner.connectionId,
-      runtimeGeneration: generation,
-      workspaceId,
-      paneId: owner.paneId,
-      ...(item.owner?.task ? { task: item.owner.task } : {}),
-    };
+    if (!item.owner) return null;
+    const target = await addressTarget(item.owner.session);
+    if (!target) return null;
+    return { ...target, ...(item.owner.task ? { task: item.owner.task } : {}) };
+  }
+
+  /** Where a session runs (a chat link's), for the page to open its chat. */
+  function sessionTarget(params: Record<string, unknown>) {
+    if (typeof params.session !== "string" || !params.session)
+      throw new WorkError("session must be a session's address");
+    return addressTarget(params.session);
   }
 
   /**
@@ -1650,6 +1672,7 @@ export function createWorkService(deps: WorkServiceDeps) {
       adopt(itemOf(params.item), String(params.thread ?? ""), meta).item,
     ownerPane,
     ownerTarget,
+    sessionTarget,
     promote,
     check,
     start,

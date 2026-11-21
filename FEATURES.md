@@ -2236,7 +2236,8 @@ filter row: one tap on the chip widens the board to the whole project, and
 choice. The project menu on the filter row switches to another project or
 to **All projects** (each card then says its project), and that choice is
 remembered for the workspace; a page with no workspace in a project shows
-the last choice. The search box (`/`) takes words, an owner, and tags as
+the last choice. The search box (`/`) takes words, an owner (`owner:desktop/w36:p2` keeps
+that session's items, its subagents' too), and tags as
 `#voice` or `tag:voice` (each one named, all of them): typing `#` offers
 the scope's tags, most used first, narrowed as you type (Tab, the arrows
 and Enter take one, Esc puts them away), and tapping a tag on a card puts
@@ -2302,6 +2303,17 @@ adds without tags gets them from its words the same way. `za`
 folds a column; `?` lists the keys. An item entering For you notifies you
 once; the notification, on the page, on your phone's Web Push or in the
 Android app, opens the view on the item's detail.
+
+**Add to Work** from an agent's chat: the conversation's header (the list
+icon), a message's own buttons (beside Copy: the whole message quoted) and
+the `+` beside a part of a message, which offers **Comment** and **Add to
+Work** (the arrows or `j`/`k`, Enter, Esc), open the board's add form for
+that session, its words quoted and the message linked (a **message** link:
+opening it shows the session's chat on that message). The item lands in
+the project holding the session's workspace, owned by that session, which
+sorts it as the coordinator sorts yours (a clear title, its tags, its
+state). The header says how many live items the session owns ("3 items");
+a tap opens the board on them, in every project.
 
 An item you add without an owner (any state but For you) goes to the
 project's **coordinator** session: it owns the item, and the item is

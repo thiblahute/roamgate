@@ -1,6 +1,8 @@
+import type { WorkLink } from "../../shared/work";
 import { focusBeforeMrReviews, openBoard, toggleBoard } from "./mrReviewsOpen";
 import type { ShortcutEvent } from "./shortcutBindings";
 import { shortcutMatches } from "./shortcutPreferences";
+import type { WorkWorkspace } from "./workScope";
 
 /** The Work entry, in the application menu and the command menu. */
 export const WORK_ENTRY = {
@@ -22,11 +24,33 @@ export function focusBeforeWork(): HTMLElement | null {
 }
 
 /**
- * Opens the board view on the Work board (loaded on first use), on an
- * item when given.
+ * An item added from a session's chat, as the board's add form starts
+ * it: the words quoted, the session that owns and sorts it, the message
+ * it came from, and the session's workspace (whose project it lands in).
  */
-export function openWork(item?: string) {
-  openBoard({ mode: "work", ...(item ? { item } : {}) });
+export type WorkAddDraft = {
+  text: string;
+  owner: string;
+  /** The session's name, for the form's head. */
+  ownerName?: string;
+  workspace: WorkWorkspace | null;
+  links?: WorkLink[];
+};
+
+/**
+ * What the Work board opens on: an item (a notification's link), the
+ * items a session owns (`owner`, a chat's count), or its add form
+ * started for a session (`add`).
+ */
+export type WorkOpen = { item?: string; owner?: string; add?: WorkAddDraft };
+
+/**
+ * Opens the board view on the Work board (loaded on first use), on an
+ * item, a session's items or an add form when given.
+ */
+export function openWork(open?: string | WorkOpen) {
+  const what = typeof open === "string" ? { item: open } : (open ?? {});
+  openBoard({ mode: "work", ...what });
 }
 
 /**

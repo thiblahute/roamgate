@@ -1612,6 +1612,78 @@ test("the real review service asks the coordinator to triage the user's free-tex
   expect(prompt).not.toContain("yours to do");
 });
 
+test("free text the user adds from a session's chat is that session's to sort, not the coordinator's", async () => {
+  const kit = reviewServiceForTest({
+    deliveryDelayMs: 1,
+    retryDelayMs: 1,
+    agentSearchMs: 600_000,
+    sessionPane: async (connectionId, sessionId) =>
+      sessionId.startsWith(WORK_SESSION_PREFIX)
+        ? service.ownerPane(
+            sessionId.slice(WORK_SESSION_PREFIX.length),
+            connectionId,
+          )
+        : null,
+    paneSession: async () => null,
+  });
+  const service = createWorkService({
+    store: openWorkStore(dir()),
+    reviews: realReviews(kit.service),
+    defaultConnection: () => "desktop",
+    ownRoot: () => "/home/me/roamgate",
+    panes: async () => [
+      { pane_id: "w35:p1", workspace_id: "w35" },
+      { pane_id: "w36:p2", workspace_id: "w36" },
+    ],
+    generation: () => 4,
+  });
+  service.projectSet(
+    { name: "roamgate", coordinator: "desktop/w35:p1" },
+    { by: "user" },
+  );
+  const item = await service.add(
+    {
+      text: "> the header scrolls away\n\nkeep it put",
+      owner: { session: "desktop/w36:p2" },
+      links: [
+        {
+          kind: "chat",
+          session: "desktop/w36:p2",
+          chat: "c0ffee",
+          entry: "msg-7",
+        },
+      ],
+    },
+    { by: "user" },
+  );
+  expect(item.owner).toEqual({ session: "desktop/w36:p2" });
+  expect(item.needsTriage).toBe(true);
+  expect(item.links).toEqual([
+    { kind: "chat", session: "desktop/w36:p2", chat: "c0ffee", entry: "msg-7" },
+  ]);
+  await Bun.sleep(80);
+  expect(kit.prompts.length).toBe(1);
+  expect(kit.prompts[0]!.paneId).toBe("w36:p2");
+  const prompt = kit.prompts[0]!.text;
+  expect(prompt).toContain("the header scrolls away");
+  expect(prompt).toContain("yours to sort");
+  expect(prompt).toContain("needs_triage: false");
+  // The chat's message: where the session finds it again, and the page.
+  expect(await service.sessionTarget({ session: "desktop/w36:p2" })).toEqual({
+    connectionId: "desktop",
+    runtimeGeneration: 4,
+    workspaceId: "w36",
+    paneId: "w36:p2",
+  });
+  expect(await service.sessionTarget({ session: "desktop/w99:p9" })).toBeNull();
+  await expect(
+    service.add(
+      { text: "x", links: [{ kind: "chat", session: "not an address" }] },
+      { by: "user" },
+    ),
+  ).rejects.toThrow(/session's address/);
+});
+
 describe("work tools and rpc", () => {
   test("the user's tools write in their name: words for its owner to sort, comments and answers that reach it", async () => {
     const { service, reviews } = setup();

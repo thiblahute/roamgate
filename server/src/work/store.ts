@@ -184,6 +184,19 @@ export function parseWorkLink(value: unknown): WorkLink {
       const branch = optionalText(value.branch, "link.branch", 300);
       return { kind: "deploy", sha, ...(branch ? { branch } : {}) };
     }
+    case "chat": {
+      const session = text(value.session, "link.session", 200);
+      if (!parseAgentAddress(session))
+        throw new WorkError("link.session must be a session's address");
+      const chat = optionalText(value.chat, "link.chat", 200);
+      const entry = optionalText(value.entry, "link.entry", 200);
+      return {
+        kind: "chat",
+        session,
+        ...(chat ? { chat } : {}),
+        ...(entry ? { entry } : {}),
+      };
+    }
   }
 }
 
@@ -214,6 +227,8 @@ export function workLinkKey(link: WorkLink): string {
       return `item:${link.id}`;
     case "deploy":
       return `deploy:${link.sha}`;
+    case "chat":
+      return `chat:${link.session}:${link.chat ?? ""}:${link.entry ?? ""}`;
   }
 }
 

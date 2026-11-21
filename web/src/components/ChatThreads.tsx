@@ -71,6 +71,7 @@ import {
   useSelectedWords,
 } from "./MessageThreads";
 import { ThreadEditor, type ThreadBox } from "./ThreadEditor";
+import { useChatWork } from "./ChatWork";
 import { reviewImageMarkdown } from "../workspaceFeedback";
 import { useThreadKeys } from "./useThreadKeys";
 export { ThreadEditor };
@@ -532,6 +533,7 @@ function ChatThreadsScope({
     keepKey ? keptThreadsFor(keepKey) : threadsKeep(),
   );
   const view = useSyncExternalStore(keep.subscribe, keep.get);
+  const work = useChatWork();
   // The boxes open when the chat is drawn again do not take the focus:
   // the message box has it, and the place the reader was is kept.
   const [restored] = useState(() => new Set(boxKeys(keep.get())));
@@ -815,7 +817,7 @@ function ChatThreadsScope({
 
   const partsFor = (entry: HistoryEntry): MessageParts => {
     entries.current.set(entry.id, entry);
-    return messagePartsOf({
+    const parts = messagePartsOf({
       key: `p:${entry.id}`,
       threads: byEntry.get(entry.id),
       hidden,
@@ -857,6 +859,19 @@ function ChatThreadsScope({
       onComment: (quote) => comment(entry, quote),
       single: true,
     });
+    // Add to Work beside Comment: the + opens their menu.
+    return work
+      ? {
+          ...parts,
+          onMenu: (quote, at) =>
+            work.menu({
+              quote,
+              at,
+              entry: entry.id,
+              comment: () => comment(entry, quote),
+            }),
+        }
+      : parts;
   };
 
   /**

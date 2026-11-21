@@ -76,11 +76,14 @@ const linkParam = Type.Object(
     name: Type.Optional(Type.String({ maxLength: 300 })),
     path: Type.Optional(Type.String({ maxLength: 4096 })),
     branch: Type.Optional(Type.String({ maxLength: 300 })),
+    session: Type.Optional(Type.String({ maxLength: 200 })),
+    chat: Type.Optional(Type.String({ maxLength: 200 })),
+    entry: Type.Optional(Type.String({ maxLength: 200 })),
   },
   {
     additionalProperties: false,
     description:
-      "review {id, thread?}, effort {id, part?}, pr {url}, commit {sha, subject?, root?} (the done rule watches it), branch {name, root?}, decision {path, id} (an RFC or plan's Dn), item {id} (waits for it).",
+      "review {id, thread?}, effort {id, part?}, pr {url}, commit {sha, subject?, root?} (the done rule watches it), branch {name, root?}, decision {path, id} (an RFC or plan's Dn), item {id} (waits for it), chat {session, chat?, entry?} (the message of an agent's chat it came from).",
   },
 );
 const linksParam = Type.Array(linkParam, { maxItems: 30 });

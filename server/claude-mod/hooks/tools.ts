@@ -502,6 +502,7 @@ function workTools(): RoamgateTool[] {
             "branch",
             "decision",
             "item",
+            "chat",
           ],
         },
         id: { type: "string" },
@@ -513,12 +514,15 @@ function workTools(): RoamgateTool[] {
         root: { type: "string" },
         name: { type: "string" },
         path: { type: "string" },
+        session: { type: "string" },
+        chat: { type: "string" },
+        entry: { type: "string" },
       },
       required: ["kind"],
       additionalProperties: false,
     },
     description:
-      "review {id, thread?}, effort {id, part?}, pr {url}, commit {sha, subject?, root?} (the done rule watches it), branch {name, root?}, decision {path, id} (an RFC or plan's Dn), item {id} (waits for it).",
+      "review {id, thread?}, effort {id, part?}, pr {url}, commit {sha, subject?, root?} (the done rule watches it), branch {name, root?}, decision {path, id} (an RFC or plan's Dn), item {id} (waits for it), chat {session, chat?, entry?} (the message of an agent's chat it came from).",
   };
   const ITEM = {
     type: "string",

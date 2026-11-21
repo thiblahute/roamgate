@@ -240,6 +240,7 @@ import {
 } from "../voiceCompanion";
 import { setPaneView } from "../paneView";
 import { ChatThreadsProvider } from "./ChatThreads";
+import { ChatWorkHeader, ChatWorkProvider, useChatWorkAdd } from "./ChatWork";
 import { FileLinksContext, type FileLinks } from "./ReviewNoteBody";
 import { requestFileLinkOpen } from "../fileLinkOpen";
 import { paneChatSource } from "../chatSource";
@@ -2180,6 +2181,15 @@ export function AgentHistoryDrawer({
     claimsVoice: !!paneChat,
   });
   const threadsTarget = chatSource.threads;
+  // Add to Work from the conversation: items the session owns and sorts.
+  const chatWork = useChatWorkAdd({
+    connectionId: activeConnectionId,
+    paneId: pane.pane_id,
+    workspaceId: pane.workspace_id,
+    chat: threadsTarget?.chat,
+    path: history?.path,
+    name: sessionTitle ?? workspaceLabel,
+  });
   // Where the reader is in the pane's chat is kept per connection, pane and
   // session: the chat comes back there when shown again.
   const placeKey =
@@ -3807,433 +3817,445 @@ export function AgentHistoryDrawer({
   // context: where to ask, and what `!12` means here.
   const body = (
     <ForgeChatProvider chat={forgeChat}>
-      {paneChat && rewindOpen ? (
-        <AgentRewindSheet
-          entries={messages}
-          onRewind={rewindEntry}
-          onClose={() => setRewindOpen(false)}
-          check={rewindCheck}
-        />
-      ) : null}
-      {modelOpen ? (
-        <AgentModelSheet
-          load={loadModels}
-          onPick={pickModel}
-          onClose={() => setModelOpen(false)}
-        />
-      ) : null}
-      {mcpOpen ? (
-        <AgentMcpSheet
-          load={loadMcp}
-          act={actOnMcp}
-          onClose={() => setMcpOpen(false)}
-        />
-      ) : null}
-      {/* Once it is known which session's place to open on. */}
-      {paneChat && tasksOpen && tasksLoaded ? (
-        <AgentTasksSheet
-          key={openTaskId ?? ""}
-          pane={pane}
-          tasks={tasks}
-          runningNow={runningNow}
-          session={tasksSession}
-          initialTaskId={openTaskId}
-          onStop={canBackground ? stopTask : undefined}
-          onClose={() => setTasksOpen(false)}
-        />
-      ) : null}
-      <aside
-        ref={drawerRef}
-        className={`agent-history-drawer ${open ? "is-open" : ""} ${
-          embedded ? "is-embedded" : ""
-        } ${wide ? "is-wide" : ""}${paneChat ? " is-pane-chat" : ""}`}
-        data-view={detailsOpen ? "details" : view}
-        aria-label="Agent session"
-        aria-hidden={!open}
-        inert={!open}
-        onKeyDownCapture={onComposerKeyCapture}
-      >
-        {mobile && !paneChat ? (
-          <div className="agent-history-mobile-head">
-            <button
-              type="button"
-              className="agent-history-session-toggle"
-              aria-expanded={headerExpanded}
-              aria-controls={headerId}
-              onClick={() => setHeaderExpanded((current) => !current)}
-            >
-              <ChevronDown size={14} aria-hidden="true" />
-              <span>Session</span>
-              <span className="agent-history-count">{messages.length}</span>
-              <span className="agent-history-mobile-agent">
-                {pane.agent ?? "Agent"}
-              </span>
-            </button>
-            <span
-              className={`agent-history-status is-${pane.agent_status.toLowerCase()}`}
-            >
-              {pane.agent_status}
-            </span>
-            {mobileProfileChip}
-            {chatViewToggle}
-            <button
-              ref={searchToggleRef}
-              type="button"
-              className="agent-history-icon"
-              aria-label="Search history messages"
-              title="Search history messages"
-              aria-expanded={mobileSearchOpen}
-              aria-controls={mobileSearchOpen ? searchId : undefined}
-              onClick={() => {
-                if (mobileSearchOpen) closeSearch();
-                else {
-                  setDetailsOpen(false);
-                  setSearchOpen(true);
-                }
-              }}
-            >
-              <Search size={16} />
-            </button>
-            <button
-              type="button"
-              className="agent-history-icon"
-              aria-label="Close session"
-              title="Close"
-              onClick={() => onOpenChange(false)}
-            >
-              <X size={16} />
-            </button>
-          </div>
+      <ChatWorkProvider work={chatWork}>
+        {paneChat && rewindOpen ? (
+          <AgentRewindSheet
+            entries={messages}
+            onRewind={rewindEntry}
+            onClose={() => setRewindOpen(false)}
+            check={rewindCheck}
+          />
         ) : null}
-        <div
-          className="agent-history-drawer-head"
-          id={headerId}
-          hidden={mobile && !paneChat && !headerExpanded}
-        >
-          {paneChat ? (
-            <>
-              <AgentIcon agent={pane.agent} />
-              {/* The workspace names it until its title is read. */}
-              <span
-                className={`agent-chat-title${sessionTitle ? "" : " is-placeholder"}`}
-                title={sessionTitle ?? workspaceLabel}
-              >
-                {sessionTitle ?? workspaceLabel}
-              </span>
-            </>
-          ) : (
-            <div className="agent-history-identity">
-              <AgentIcon agent={pane.agent} />
-              <div className="agent-history-title">
-                <strong>
-                  {sessionTitle ?? "Session"}
-                  {messages.length > 0 ? (
-                    <span
-                      className="agent-history-count"
-                      aria-label={`${visibleMessages.length} of ${messages.length} history entries`}
-                      title="Most recent 200 messages with their tool entries"
-                    >
-                      {visibleMessages.length === messages.length
-                        ? messages.length
-                        : `${visibleMessages.length}/${messages.length}`}
-                    </span>
-                  ) : null}
-                </strong>
-                <span title={workspaceLabel}>
-                  {workspaceLabel} · {pane.agent ?? "Agent"} ·{" "}
-                  {shortId(pane.pane_id)}
-                </span>
-              </div>
-            </div>
-          )}
-          {ownerChip}
-          <ForgeHeaderChips branches={forgeBranches} />
-          <AgentStatusChip
-            status={paneChat ? chatAgentStatus : pane.agent_status}
+        {modelOpen ? (
+          <AgentModelSheet
+            load={loadModels}
+            onPick={pickModel}
+            onClose={() => setModelOpen(false)}
+          />
+        ) : null}
+        {mcpOpen ? (
+          <AgentMcpSheet
+            load={loadMcp}
+            act={actOnMcp}
+            onClose={() => setMcpOpen(false)}
+          />
+        ) : null}
+        {/* Once it is known which session's place to open on. */}
+        {paneChat && tasksOpen && tasksLoaded ? (
+          <AgentTasksSheet
+            key={openTaskId ?? ""}
+            pane={pane}
             tasks={tasks}
-            onOpenTasks={() => openTask(null)}
+            runningNow={runningNow}
+            session={tasksSession}
+            initialTaskId={openTaskId}
+            onStop={canBackground ? stopTask : undefined}
+            onClose={() => setTasksOpen(false)}
           />
-          <ModelChip
-            client={connectionClient}
-            paneId={pane.pane_id}
-            enabled={!!pane.agent}
-            agentStatus={paneChat ? chatAgentStatus : pane.agent_status}
-          />
-          <div className="agent-history-actions">
-            {paneChat ? mobileProfileChip : null}
-            {paneChat ? (
-              <>
-                <AgentArtifactsMenu artifacts={artifacts} />
-                <ForgeRequestsMenu groups={forgeGroups} />
-                {tasks.length ? (
-                  <button
-                    type="button"
-                    className={`agent-history-icon agent-chat-tasks-button${runningTasks ? " is-running" : ""}`}
-                    aria-label={`Background tasks: ${runningTasks} running`}
-                    title={shortcutTitle(
-                      "Background commands, subagents and workflows",
-                      "pane.tasks",
-                    )}
-                    onClick={() => openTask(null)}
-                  >
-                    <ListChecks size={14} />
-                    {runningTasks ? <span>{runningTasks}</span> : null}
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="agent-history-icon"
-                  aria-label="Search the conversation"
-                  aria-pressed={searchOpen}
-                  title="Search"
-                  onClick={() => {
-                    if (searchOpen) changeFilters(filters, "");
-                    setSearchOpen(!searchOpen);
-                  }}
-                >
-                  <Search size={14} />
-                </button>
-                {/* Ctrl+Z: suspended as a job of the pane's shell; fg there
-                    brings it back. Also on a phone, which has no Ctrl+Z. */}
-                {paneChat.onSuspend && paneChat.modeBound ? (
-                  <button
-                    type="button"
-                    className="agent-history-icon"
-                    aria-label="Suspend"
-                    title="Suspend to the shell (Ctrl+Z): fg brings it back"
-                    disabled={!suspendHere}
-                    onClick={() => suspendHere?.()}
-                  >
-                    <Pause size={14} />
-                  </button>
-                ) : null}
-                {/* A phone's way to the terminal is its bottom bar's. */}
-                {!mobile ? (
-                  <button
-                    type="button"
-                    className="agent-history-icon"
-                    aria-label={
-                      paneChat.modeBound
-                        ? "Open in terminal"
-                        : "Show the terminal"
-                    }
-                    title={
-                      paneChat.modeBound
-                        ? "Open in terminal: hand the session back to Claude in the terminal"
-                        : "Show the terminal"
-                    }
-                    disabled={paneChat.modeBound && !inConversation}
-                    onClick={paneChat.onShowTerminal}
-                  >
-                    <SquareTerminal size={14} />
-                  </button>
-                ) : null}
-              </>
-            ) : (
-              <>
-                {!mobile ? chatViewToggle : null}
-                <ForgeRequestsMenu groups={forgeGroups} />
-                <button
-                  type="button"
-                  className="agent-history-icon"
-                  aria-label="Session details"
-                  aria-pressed={detailsOpen}
-                  title={detailsOpen ? "Show history" : "Show session details"}
-                  onClick={() => setDetailsOpen((current) => !current)}
-                  disabled={!hasSessionData}
-                >
-                  <Info size={14} />
-                </button>
-              </>
-            )}
-            {paneChat ? null : sessionActions}
-            <button
-              type="button"
-              className={`agent-history-icon ${loading ? "is-loading" : ""}`}
-              onClick={() => loadHistory(true)}
-              aria-label="Refresh session"
-              title="Refresh"
-              disabled={loading}
-            >
-              <RefreshCw size={14} />
-            </button>
-            {!embedded && !mobile ? (
+        ) : null}
+        <aside
+          ref={drawerRef}
+          className={`agent-history-drawer ${open ? "is-open" : ""} ${
+            embedded ? "is-embedded" : ""
+          } ${wide ? "is-wide" : ""}${paneChat ? " is-pane-chat" : ""}`}
+          data-view={detailsOpen ? "details" : view}
+          aria-label="Agent session"
+          aria-hidden={!open}
+          inert={!open}
+          onKeyDownCapture={onComposerKeyCapture}
+        >
+          {mobile && !paneChat ? (
+            <div className="agent-history-mobile-head">
+              <button
+                type="button"
+                className="agent-history-session-toggle"
+                aria-expanded={headerExpanded}
+                aria-controls={headerId}
+                onClick={() => setHeaderExpanded((current) => !current)}
+              >
+                <ChevronDown size={14} aria-hidden="true" />
+                <span>Session</span>
+                <span className="agent-history-count">{messages.length}</span>
+                <span className="agent-history-mobile-agent">
+                  {pane.agent ?? "Agent"}
+                </span>
+              </button>
+              <span
+                className={`agent-history-status is-${pane.agent_status.toLowerCase()}`}
+              >
+                {pane.agent_status}
+              </span>
+              {mobileProfileChip}
+              {chatViewToggle}
+              <button
+                ref={searchToggleRef}
+                type="button"
+                className="agent-history-icon"
+                aria-label="Search history messages"
+                title="Search history messages"
+                aria-expanded={mobileSearchOpen}
+                aria-controls={mobileSearchOpen ? searchId : undefined}
+                onClick={() => {
+                  if (mobileSearchOpen) closeSearch();
+                  else {
+                    setDetailsOpen(false);
+                    setSearchOpen(true);
+                  }
+                }}
+              >
+                <Search size={16} />
+              </button>
               <button
                 type="button"
                 className="agent-history-icon"
-                onClick={() => onOpenChange(false)}
                 aria-label="Close session"
                 title="Close"
+                onClick={() => onOpenChange(false)}
               >
-                <X size={14} />
+                <X size={16} />
               </button>
-            ) : null}
-            {/* A pane's chat: its header ends with the pane's own buttons,
-                which take Zen's way out (TerminalView). */}
-            {paneChat ? null : <ZenDock buttonClassName="agent-history-icon" />}
-          </div>
-        </div>
-
-        {unavailable && !paneChat ? (
-          <div className="agent-history-unavailable" role="status">
-            <strong>Session unavailable</strong>
-            <p>{unavailableDetail}</p>
-            {unavailableCommand ? (
-              <div className="agent-history-command-row">
-                <code>{unavailableCommand}</code>
+            </div>
+          ) : null}
+          <div
+            className="agent-history-drawer-head"
+            id={headerId}
+            hidden={mobile && !paneChat && !headerExpanded}
+          >
+            {paneChat ? (
+              <>
+                <AgentIcon agent={pane.agent} />
+                {/* The workspace names it until its title is read. */}
+                <span
+                  className={`agent-chat-title${sessionTitle ? "" : " is-placeholder"}`}
+                  title={sessionTitle ?? workspaceLabel}
+                >
+                  {sessionTitle ?? workspaceLabel}
+                </span>
+              </>
+            ) : (
+              <div className="agent-history-identity">
+                <AgentIcon agent={pane.agent} />
+                <div className="agent-history-title">
+                  <strong>
+                    {sessionTitle ?? "Session"}
+                    {messages.length > 0 ? (
+                      <span
+                        className="agent-history-count"
+                        aria-label={`${visibleMessages.length} of ${messages.length} history entries`}
+                        title="Most recent 200 messages with their tool entries"
+                      >
+                        {visibleMessages.length === messages.length
+                          ? messages.length
+                          : `${visibleMessages.length}/${messages.length}`}
+                      </span>
+                    ) : null}
+                  </strong>
+                  <span title={workspaceLabel}>
+                    {workspaceLabel} · {pane.agent ?? "Agent"} ·{" "}
+                    {shortId(pane.pane_id)}
+                  </span>
+                </div>
+              </div>
+            )}
+            {ownerChip}
+            <ForgeHeaderChips branches={forgeBranches} />
+            <AgentStatusChip
+              status={paneChat ? chatAgentStatus : pane.agent_status}
+              tasks={tasks}
+              onOpenTasks={() => openTask(null)}
+            />
+            <ModelChip
+              client={connectionClient}
+              paneId={pane.pane_id}
+              enabled={!!pane.agent}
+              agentStatus={paneChat ? chatAgentStatus : pane.agent_status}
+            />
+            <div className="agent-history-actions">
+              <ChatWorkHeader work={chatWork} />
+              {paneChat ? mobileProfileChip : null}
+              {paneChat ? (
+                <>
+                  <AgentArtifactsMenu artifacts={artifacts} />
+                  <ForgeRequestsMenu groups={forgeGroups} />
+                  {tasks.length ? (
+                    <button
+                      type="button"
+                      className={`agent-history-icon agent-chat-tasks-button${runningTasks ? " is-running" : ""}`}
+                      aria-label={`Background tasks: ${runningTasks} running`}
+                      title={shortcutTitle(
+                        "Background commands, subagents and workflows",
+                        "pane.tasks",
+                      )}
+                      onClick={() => openTask(null)}
+                    >
+                      <ListChecks size={14} />
+                      {runningTasks ? <span>{runningTasks}</span> : null}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="agent-history-icon"
+                    aria-label="Search the conversation"
+                    aria-pressed={searchOpen}
+                    title="Search"
+                    onClick={() => {
+                      if (searchOpen) changeFilters(filters, "");
+                      setSearchOpen(!searchOpen);
+                    }}
+                  >
+                    <Search size={14} />
+                  </button>
+                  {/* Ctrl+Z: suspended as a job of the pane's shell; fg there
+                    brings it back. Also on a phone, which has no Ctrl+Z. */}
+                  {paneChat.onSuspend && paneChat.modeBound ? (
+                    <button
+                      type="button"
+                      className="agent-history-icon"
+                      aria-label="Suspend"
+                      title="Suspend to the shell (Ctrl+Z): fg brings it back"
+                      disabled={!suspendHere}
+                      onClick={() => suspendHere?.()}
+                    >
+                      <Pause size={14} />
+                    </button>
+                  ) : null}
+                  {/* A phone's way to the terminal is its bottom bar's. */}
+                  {!mobile ? (
+                    <button
+                      type="button"
+                      className="agent-history-icon"
+                      aria-label={
+                        paneChat.modeBound
+                          ? "Open in terminal"
+                          : "Show the terminal"
+                      }
+                      title={
+                        paneChat.modeBound
+                          ? "Open in terminal: hand the session back to Claude in the terminal"
+                          : "Show the terminal"
+                      }
+                      disabled={paneChat.modeBound && !inConversation}
+                      onClick={paneChat.onShowTerminal}
+                    >
+                      <SquareTerminal size={14} />
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  {!mobile ? chatViewToggle : null}
+                  <ForgeRequestsMenu groups={forgeGroups} />
+                  <button
+                    type="button"
+                    className="agent-history-icon"
+                    aria-label="Session details"
+                    aria-pressed={detailsOpen}
+                    title={
+                      detailsOpen ? "Show history" : "Show session details"
+                    }
+                    onClick={() => setDetailsOpen((current) => !current)}
+                    disabled={!hasSessionData}
+                  >
+                    <Info size={14} />
+                  </button>
+                </>
+              )}
+              {paneChat ? null : sessionActions}
+              <button
+                type="button"
+                className={`agent-history-icon ${loading ? "is-loading" : ""}`}
+                onClick={() => loadHistory(true)}
+                aria-label="Refresh session"
+                title="Refresh"
+                disabled={loading}
+              >
+                <RefreshCw size={14} />
+              </button>
+              {!embedded && !mobile ? (
                 <button
                   type="button"
                   className="agent-history-icon"
-                  onClick={() => void copyTextWithFeedback(unavailableCommand)}
-                  aria-label="Copy integration command"
-                  title="Copy command"
+                  onClick={() => onOpenChange(false)}
+                  aria-label="Close session"
+                  title="Close"
                 >
-                  <Copy size={13} />
+                  <X size={14} />
                 </button>
-              </div>
-            ) : null}
-            <button
-              type="button"
-              className="secondary-btn"
-              onClick={() => loadHistory(true)}
-            >
-              <RefreshCw size={13} />
-              Retry
-            </button>
+              ) : null}
+              {/* A pane's chat: its header ends with the pane's own buttons,
+                which take Zen's way out (TerminalView). */}
+              {paneChat ? null : (
+                <ZenDock buttonClassName="agent-history-icon" />
+              )}
+            </div>
           </div>
-        ) : null}
-        {/* A pane's chat still types into the agent, and answers its
+
+          {unavailable && !paneChat ? (
+            <div className="agent-history-unavailable" role="status">
+              <strong>Session unavailable</strong>
+              <p>{unavailableDetail}</p>
+              {unavailableCommand ? (
+                <div className="agent-history-command-row">
+                  <code>{unavailableCommand}</code>
+                  <button
+                    type="button"
+                    className="agent-history-icon"
+                    onClick={() =>
+                      void copyTextWithFeedback(unavailableCommand)
+                    }
+                    aria-label="Copy integration command"
+                    title="Copy command"
+                  >
+                    <Copy size={13} />
+                  </button>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => loadHistory(true)}
+              >
+                <RefreshCw size={13} />
+                Retry
+              </button>
+            </div>
+          ) : null}
+          {/* A pane's chat still types into the agent, and answers its
             questions, without its transcript: its message box stays where
             it is, so a transcript appearing or going away keeps the focus
             and what is being typed. */}
-        {unavailable && !paneChat ? null : (
-          <>
-            {/* Without a transcript, a pane's chat gives the reason once it lasted. */}
-            {error && !paneWaiting ? (
-              <div className="agent-history-error">{error}</div>
-            ) : null}
-            {!detailsOpen ? (
-              chatView ? (
-                historyChat
-              ) : wide ? (
-                wideMessagesPanel
+          {unavailable && !paneChat ? null : (
+            <>
+              {/* Without a transcript, a pane's chat gives the reason once it lasted. */}
+              {error && !paneWaiting ? (
+                <div className="agent-history-error">{error}</div>
+              ) : null}
+              {!detailsOpen ? (
+                chatView ? (
+                  historyChat
+                ) : wide ? (
+                  wideMessagesPanel
+                ) : (
+                  <div
+                    className="agent-history-messages"
+                    role="region"
+                    aria-label="History messages"
+                  >
+                    {historyFilters}
+                    {historyMinimap("horizontal")}
+                    {historyTimeline}
+                  </div>
+                )
               ) : (
                 <div
-                  className="agent-history-messages"
+                  className="agent-history-details"
                   role="region"
-                  aria-label="History messages"
+                  aria-label="Session details"
                 >
-                  {historyFilters}
-                  {historyMinimap("horizontal")}
-                  {historyTimeline}
+                  {sessionReady ? (
+                    <section
+                      className="agent-history-overview"
+                      aria-label="Session overview"
+                    >
+                      <div>
+                        <strong>{formatCount(session.stats.turns)}</strong>
+                        <span>Turns</span>
+                      </div>
+                      <div>
+                        <strong>{formatTokenTotal(session)}</strong>
+                        <span>Tokens</span>
+                      </div>
+                      <div>
+                        <strong
+                          title={
+                            updatedAt ? formatUiDateTime(updatedAt) : undefined
+                          }
+                        >
+                          {updatedAt ? formatRelativeTime(updatedAt) : "-"}
+                        </strong>
+                        <span>Updated</span>
+                      </div>
+                      <p>
+                        Input {formatOptionalCompact(usage?.input_tokens)}
+                        <span>·</span>
+                        Cached{" "}
+                        {formatOptionalCompact(usage?.cached_input_tokens)}
+                        <span>·</span>
+                        Output {formatOptionalCompact(usage?.output_tokens)}
+                      </p>
+                    </section>
+                  ) : null}
+                  <DetailRow label="Workspace" value={workspaceLabel} />
+                  <DetailRow label="Agent" value={pane.agent ?? "-"} />
+                  <DetailRow label="Pane" value={shortId(pane.pane_id)} />
+                  <DetailRow
+                    label="Session ID"
+                    value={session?.session?.value || "-"}
+                    copyable={!!session?.session?.value}
+                  />
+                  <DetailRow
+                    label="Session file"
+                    value={session?.path || history?.path || "-"}
+                    copyable={!!(session?.path || history?.path)}
+                  />
+                  <DetailRow
+                    label="Records"
+                    value={
+                      sessionReady ? formatCount(session.stats.records) : "-"
+                    }
+                  />
+                  <DetailRow
+                    label="File size"
+                    value={sessionReady ? formatBytes(session.file?.size) : "-"}
+                  />
+                  <DetailRow
+                    label="Reasoning"
+                    value={formatOptionalCompact(
+                      usage?.reasoning_output_tokens,
+                    )}
+                  />
+                  <DetailRow
+                    label="Updated"
+                    value={updatedAt ? formatUiDateTime(updatedAt) : "-"}
+                  />
                 </div>
-              )
-            ) : (
-              <div
-                className="agent-history-details"
-                role="region"
-                aria-label="Session details"
-              >
-                {sessionReady ? (
-                  <section
-                    className="agent-history-overview"
-                    aria-label="Session overview"
-                  >
-                    <div>
-                      <strong>{formatCount(session.stats.turns)}</strong>
-                      <span>Turns</span>
-                    </div>
-                    <div>
-                      <strong>{formatTokenTotal(session)}</strong>
-                      <span>Tokens</span>
-                    </div>
-                    <div>
-                      <strong
-                        title={
-                          updatedAt ? formatUiDateTime(updatedAt) : undefined
-                        }
-                      >
-                        {updatedAt ? formatRelativeTime(updatedAt) : "-"}
-                      </strong>
-                      <span>Updated</span>
-                    </div>
-                    <p>
-                      Input {formatOptionalCompact(usage?.input_tokens)}
-                      <span>·</span>
-                      Cached {formatOptionalCompact(usage?.cached_input_tokens)}
-                      <span>·</span>
-                      Output {formatOptionalCompact(usage?.output_tokens)}
-                    </p>
-                  </section>
-                ) : null}
-                <DetailRow label="Workspace" value={workspaceLabel} />
-                <DetailRow label="Agent" value={pane.agent ?? "-"} />
-                <DetailRow label="Pane" value={shortId(pane.pane_id)} />
-                <DetailRow
-                  label="Session ID"
-                  value={session?.session?.value || "-"}
-                  copyable={!!session?.session?.value}
-                />
-                <DetailRow
-                  label="Session file"
-                  value={session?.path || history?.path || "-"}
-                  copyable={!!(session?.path || history?.path)}
-                />
-                <DetailRow
-                  label="Records"
-                  value={
-                    sessionReady ? formatCount(session.stats.records) : "-"
-                  }
-                />
-                <DetailRow
-                  label="File size"
-                  value={sessionReady ? formatBytes(session.file?.size) : "-"}
-                />
-                <DetailRow
-                  label="Reasoning"
-                  value={formatOptionalCompact(usage?.reasoning_output_tokens)}
-                />
-                <DetailRow
-                  label="Updated"
-                  value={updatedAt ? formatUiDateTime(updatedAt) : "-"}
-                />
-              </div>
-            )}
-          </>
-        )}
-      </aside>
-      <ConfirmDialog
-        open={open && retryConfirmation?.context === retryContext}
-        title="Send this message again?"
-        message={retryWarning ?? "Send the message to the agent's terminal."}
-        confirmLabel="Send anyway"
-        onClose={() => setRetryConfirmation(null)}
-        onConfirm={() => {
-          if (retryConfirmation?.context !== retryContext) return;
-          const message = readOutbox(outboxKey).find(
-            (each) =>
-              each.id === retryConfirmation.message.id &&
-              each.state === "failed",
-          );
-          if (message) resendMessage(message);
-          setRetryConfirmation(null);
-        }}
-      />
-      <AgentMessageDialog
-        message={
-          !masterDetail && expandedMessage
-            ? hydrateEntry(expandedMessage)
-            : null
-        }
-        onClose={closeExpandedMessage}
-      />
-      <AgentSessionPreviewDialog
-        pane={previewPane}
-        summary={previewSummary}
-        loading={previewLoading}
-        error={previewError}
-        onClose={closeSessionPreview}
-      />
+              )}
+            </>
+          )}
+        </aside>
+        <ConfirmDialog
+          open={open && retryConfirmation?.context === retryContext}
+          title="Send this message again?"
+          message={retryWarning ?? "Send the message to the agent's terminal."}
+          confirmLabel="Send anyway"
+          onClose={() => setRetryConfirmation(null)}
+          onConfirm={() => {
+            if (retryConfirmation?.context !== retryContext) return;
+            const message = readOutbox(outboxKey).find(
+              (each) =>
+                each.id === retryConfirmation.message.id &&
+                each.state === "failed",
+            );
+            if (message) resendMessage(message);
+            setRetryConfirmation(null);
+          }}
+        />
+        <AgentMessageDialog
+          message={
+            !masterDetail && expandedMessage
+              ? hydrateEntry(expandedMessage)
+              : null
+          }
+          onClose={closeExpandedMessage}
+        />
+        <AgentSessionPreviewDialog
+          pane={previewPane}
+          summary={previewSummary}
+          loading={previewLoading}
+          error={previewError}
+          onClose={closeSessionPreview}
+        />
+      </ChatWorkProvider>
     </ForgeChatProvider>
   );
   return (

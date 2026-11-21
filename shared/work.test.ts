@@ -51,11 +51,13 @@ test("the search names tags as #tag or tag:tag, all of them kept; the rest are w
   expect(parseWorkQuery("#Voice tag:phone header # ")).toEqual({
     words: ["header"],
     tags: ["voice", "phone"],
+    owners: [],
   });
   // The tag still being typed: the tags it begins.
   expect(parseWorkQuery("header #vo")).toEqual({
     words: ["header"],
     tags: [],
+    owners: [],
     partial: "vo",
   });
   const items = [
@@ -72,6 +74,51 @@ test("the search names tags as #tag or tag:tag, all of them kept; the rest are w
   // A word still finds a tag's name; #voice only the tag.
   expect(ids("voice")).toEqual(["1", "2", "3"]);
   expect(ids("#voice header")).toEqual(["1"]);
+});
+
+test("owner:ADDRESS keeps the items that session owns, its subagents' too", () => {
+  expect(parseWorkQuery("owner:desktop/w36:p2 header").owners).toEqual([
+    "desktop/w36:p2",
+  ]);
+  const items: WorkItem[] = [
+    { ...item("1", "Header", []), owner: { session: "desktop/w36:p2" } },
+    {
+      ...item("2", "Footer", []),
+      owner: { session: "desktop/w36:p2", task: "a1b2" },
+    },
+    { ...item("3", "Header", []), owner: { session: "desktop/w35:p1" } },
+    item("4", "Header", []),
+  ];
+  const ids = (query: string) =>
+    filterWorkItems(items, { query }).map((each) => each.id);
+  expect(ids("owner:desktop/w36:p2 ")).toEqual(["1", "2"]);
+  expect(ids("owner:desktop/w36:p2 header")).toEqual(["1"]);
+  // The address, not a word: w36 alone is only searched for.
+  expect(ids("owner:w36 ")).toEqual([]);
+});
+
+test("a chat link: a message chip, and the message it came from", () => {
+  const link: WorkLink = {
+    kind: "chat",
+    session: "desktop/w36:p2",
+    chat: "c0ffee",
+    entry: "msg-7",
+  };
+  expect(summarizeWorkLinks([link])).toEqual([
+    {
+      kind: "chat",
+      label: "message",
+      count: 1,
+      title: "a message in desktop/w36:p2's chat",
+    },
+  ]);
+  expect(readableWorkLink(link, { session: () => "Fix the header" })).toEqual({
+    label: "The message it came from",
+    detail: "Agent chat of Fix the header (desktop/w36:p2)",
+  });
+  expect(
+    readableWorkLink({ kind: "chat", session: "desktop/w36:p2" }).label,
+  ).toBe("The chat it came from");
 });
 
 test("the search's last #word completes to the tags, those it begins first", () => {

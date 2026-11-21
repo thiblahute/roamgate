@@ -1,6 +1,7 @@
 import { importWithReload } from "./lazyWithReload";
 import type { ShortcutEvent } from "./shortcutBindings";
 import { shortcutMatches } from "./shortcutPreferences";
+import type { WorkOpen } from "./workOpen";
 
 /** The Reviews entry, in the application menu and the command menu. */
 export const MR_REVIEWS_ENTRY = {
@@ -69,7 +70,7 @@ export function openMrReviewByKey(key: string) {
  * The view's modes: the reviews inbox and the Work board, one panel. Opens
  * the view on a mode (the Work board on an item when given).
  */
-export function openBoard(board: { mode: "mr" | "work"; item?: string }) {
+export function openBoard(board: { mode: "mr" | "work" } & WorkOpen) {
   void loadRoot().then((module) =>
     module.showMrReviews(undefined, undefined, undefined, undefined, board),
   );

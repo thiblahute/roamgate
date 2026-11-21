@@ -271,7 +271,11 @@ if (
   const { createRoot } = await import("react-dom/client");
 
   async function mount(
-    props: { initialWorkItem?: string; mode?: "work" | "mr" } = {},
+    props: {
+      initialWorkItem?: string;
+      mode?: "work" | "mr";
+      initialWork?: import("../workOpen").WorkOpen;
+    } = {},
   ) {
     const container = document.createElement("div");
     document.body.append(container);
@@ -287,6 +291,7 @@ if (
           {...(props.initialWorkItem
             ? { initialWorkItem: props.initialWorkItem }
             : {})}
+          {...(props.initialWork ? { initialWork: props.initialWork } : {})}
         />,
       ),
     );
@@ -1373,6 +1378,119 @@ if (
         (each) => each.id !== "1800000000000000",
       );
       await view.unmount();
+    }
+  });
+
+  test("from a session's chat: the add form starts quoted, for that session, in its workspace's project; its count opens the board on its items", async () => {
+    localStorage.clear();
+    calls.length = 0;
+    const chat = {
+      kind: "chat" as const,
+      session: "desktop/w36:p2",
+      chat: "c0ffee",
+      entry: "msg-7",
+    };
+    // The page shows a gst2 workspace; the session runs in Roamgate's.
+    const view = await mount({
+      initialWork: {
+        add: {
+          text: "> the header scrolls away\n\n",
+          owner: "desktop/w36:p2",
+          ownerName: "Fix the header",
+          workspace: {
+            connectionId: "desktop",
+            workspaceId: "w36",
+            label: "roamgate-header",
+            checkoutPath: "/home/me/misc/roamgate/../roamgate/header",
+            repoRoot: "/home/me/misc/roamgate",
+          },
+          links: [chat],
+        },
+      },
+    });
+    try {
+      const form = view.panel.querySelector<HTMLFormElement>("form.work-add");
+      expect(form).not.toBeNull();
+      expect(form!.getAttribute("aria-label")).toBe("Add an item to roamgate");
+      expect(form!.querySelector("h3")?.textContent).toBe(
+        "New item for Fix the header",
+      );
+      // The quote is what it says already: Add sends it, the session as
+      // its owner (which sorts it) and the message linked.
+      await act(async () => {
+        form!.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      expect(calls[calls.length - 1]).toEqual([
+        "add",
+        {
+          text: "> the header scrolls away",
+          project: "roamgate",
+          owner: { session: "desktop/w36:p2" },
+          links: [chat],
+          workspace: { connectionId: "desktop", paneId: "w36:p2" },
+        },
+      ]);
+      expect(view.panel.querySelector("form.work-add")).toBeNull();
+    } finally {
+      await view.unmount();
+    }
+
+    // The header's count: the session's items, in every project.
+    board.items = [
+      ...board.items,
+      item("2300000000000000", "roamgate", "open", ["chat"], {
+        owner: { session: "desktop/w36:p2" },
+        links: [chat],
+      }),
+      item("1900000000000000", "gst2", "doing", ["caps"], {
+        owner: { session: "desktop/w36:p2", task: "a1b2c3d4" },
+      }),
+    ];
+    calls.length = 0;
+    const items = await mount({ initialWork: { owner: "desktop/w36:p2" } });
+    try {
+      expect(
+        items.panel.querySelector<HTMLInputElement>("input[type=search]")
+          ?.value ??
+          items.panel.querySelector<HTMLInputElement>(
+            ".mr-reviews-search input",
+          )?.value,
+      ).toBe("owner:desktop/w36:p2 ");
+      expect(items.cards().sort()).toEqual([
+        "1900000000000000",
+        "2300000000000000",
+      ]);
+      // Its chat link: the message it came from, opening its chat.
+      await items.click(
+        items.panel.querySelector("[data-work-item='2300000000000000']"),
+      );
+      const row = items.panel.querySelector<HTMLElement>(
+        ".work-detail .work-link-row",
+      )!;
+      expect(row.querySelector(".work-link-label")?.textContent).toBe(
+        "The message it came from",
+      );
+      await items.click(row.querySelector("button.work-link-open"));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      expect(calls).toEqual([
+        ["session_target", { session: "desktop/w36:p2" }],
+      ]);
+      expect(items.panel.textContent).toContain(
+        "desktop/w36:p2 is not running in any pane right now",
+      );
+    } finally {
+      board.items = board.items.filter(
+        (each) =>
+          each.id !== "2300000000000000" && each.id !== "1900000000000000",
+      );
+      await items.unmount();
     }
   });
 }

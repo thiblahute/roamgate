@@ -1,5 +1,6 @@
 import { createRoot, type Root } from "react-dom/client";
 import { focusBeforeMrReviews } from "../mrReviewsOpen";
+import type { WorkOpen } from "../workOpen";
 import type { MrDeclarePrefill } from "./MrEffortView";
 import {
   type BoardMode,
@@ -30,8 +31,11 @@ function close(options: { keepFocus?: boolean } = {}) {
   previousFocus = null;
 }
 
-/** What the view is opened on: its mode, and the Work item to show. */
-export type BoardOpen = { mode?: BoardMode; item?: string };
+/**
+ * What the view is opened on: its mode, and for the Work board the item
+ * to show, the session whose items to show, or the add form to start.
+ */
+export type BoardOpen = { mode?: BoardMode } & WorkOpen;
 
 let renders = 0;
 let modeRequests = 0;
@@ -48,7 +52,11 @@ function render(
   if (mode) modeRequests++;
   root?.render(
     <MrReviewsPanel
-      key={open || view || board?.item ? `open-${++renders}` : "panel"}
+      key={
+        open || view || board?.item || board?.owner || board?.add
+          ? `open-${++renders}`
+          : "panel"
+      }
       onClose={close}
       initialSelect={open ?? select}
       initialOpen={open}
@@ -56,6 +64,14 @@ function render(
       {...(declare ? { initialDeclare: declare } : {})}
       {...(mode ? { mode, modeAt: modeRequests } : {})}
       {...(board?.item ? { initialWorkItem: board.item } : {})}
+      {...(board?.owner || board?.add
+        ? {
+            initialWork: {
+              ...(board.owner ? { owner: board.owner } : {}),
+              ...(board.add ? { add: board.add } : {}),
+            },
+          }
+        : {})}
       onMode={(shown) => {
         shownMode = shown;
       }}

@@ -5,6 +5,7 @@ import {
   type ShortcutId,
   type ShortcutPlatform,
 } from "./shortcutBindings";
+import type { ShortcutRow } from "./components/ShortcutHelp";
 import { MR_REVIEWS_KEYS, WORK_KEYS } from "./mrReviewsKeys";
 import { SHORTCUT_CATALOG } from "./shortcutCatalog";
 import { normalizeSearchText } from "./searchText";
@@ -123,7 +124,7 @@ export function shortcutCheatSheet(
   const panelKeys = (
     group: string,
     prefix: string,
-    list: [string, string][],
+    list: readonly ShortcutRow[],
   ) => {
     for (const [keys, label] of list) {
       const combos = keys

@@ -34,6 +34,7 @@ import {
   X,
 } from "lucide-react";
 import { useChatSpeech } from "../useChatSpeech";
+import { ChatMessageWorkButton } from "./ChatWork";
 import { copyTextWithFeedback } from "../copyText";
 import { heardAs, parseVoiceMessage } from "../voiceChat";
 import {
@@ -511,6 +512,13 @@ const ChatBubble = memo(function ChatBubble({
         >
           <Copy size={12} />
         </button>
+        {entry.kind === "message" && !entry.queued ? (
+          <ChatMessageWorkButton
+            text={entry.text}
+            entry={entry.id}
+            className="agent-history-copy agent-history-chat-work"
+          />
+        ) : null}
         {onRewind &&
         entry.role === "user" &&
         entry.kind === "message" &&

@@ -58,17 +58,24 @@ export async function workAddPayload(
  * their own words (images pasted, dropped or picked go with it, stored as
  * a review's are once it is added). Nothing else to fill: the item is
  * the project's coordinator's to sort (a clear title, tags, a state,
- * split when it holds several tasks). Cmd+Enter, or Add, adds it; Esc or
- * Cancel leaves.
+ * split when it holds several tasks), or the session's it is added for
+ * (`owner`: from its chat, the words quoted in `initialText`). Cmd+Enter,
+ * or Add, adds it; Esc or Cancel leaves.
  */
 export function WorkAddForm({
   project,
   projectName,
+  initialText = "",
+  owner,
   onAdd,
   onCancel,
 }: {
   project: string;
   projectName: string;
+  /** The words it starts with (a chat's quote). */
+  initialText?: string;
+  /** The session it is added for, which owns and sorts it: its name. */
+  owner?: string;
   onAdd: (params: {
     text?: string;
     images?: { token: string; type: string; data: string }[];
@@ -77,7 +84,7 @@ export function WorkAddForm({
 }) {
   const [waiting, setWaiting] = useState("");
   const [busy, setBusy] = useState(false);
-  const text = useRef("");
+  const text = useRef(initialText);
   const images = useRef<WorkAddImage[]>([]);
   const handle = useRef<CommentEditorHandle | null>(null);
   const [vim] = useState(vimKeys);
@@ -137,16 +144,16 @@ export function WorkAddForm({
         }}
       >
         <div className="assistant-task-heading">
-          <h3>New item</h3>
+          <h3>{owner ? `New item for ${owner}` : "New item"}</h3>
           <span className="assistant-task-state">{projectName}</span>
         </div>
         <div className="chat-thread-editor work-add-text">
           <Suspense fallback={null}>
             <ReviewCommentEditorLazy
-              value=""
+              value={initialText}
               vimMode={vim}
               autoFocus
-              placeholder="What needs doing, in your own words: what, why, where; paste or drop images, or add them. It gets sorted into a title, tags and a state for you."
+              placeholder={`What needs doing, in your own words: what, why, where; paste or drop images, or add them. ${owner ? `${owner} sorts it` : "It gets sorted"} into a title, tags and a state for you.`}
               label="What needs doing"
               handleRef={handle}
               onPasteImage={keepImage}

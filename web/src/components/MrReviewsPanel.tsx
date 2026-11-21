@@ -114,6 +114,7 @@ import {
 import { MrReviewsSettingsView } from "./MrReviewsSettings";
 import { BoardCard } from "./BoardCard";
 import { ShortcutHelp } from "./ShortcutHelp";
+import type { WorkOpen } from "../workOpen";
 import { useWorkMode } from "./WorkBoard";
 import "./AssistantPanel.css";
 import "./AssistantTasks.css";
@@ -1653,6 +1654,7 @@ export function MrReviewsPanel({
   mode: modeAsked,
   modeAt,
   initialWorkItem,
+  initialWork,
   onMode,
 }: {
   /** keepFocus: a review was shown; the focus is the review's now. */
@@ -1663,6 +1665,8 @@ export function MrReviewsPanel({
   modeAt?: number;
   /** The Work board: an item to open on (a notification's link). */
   initialWorkItem?: string;
+  /** The Work board: a session's items, or its add form started. */
+  initialWork?: Pick<WorkOpen, "owner" | "add">;
   /** Told the mode shown, as it changes. */
   onMode?: (mode: BoardMode) => void;
   /** A request to open at once (the command menu). */
@@ -1699,7 +1703,9 @@ export function MrReviewsPanel({
     });
   // The mode: Work or Reviews, the last one shown kept in the browser.
   const [mode, setModeState] = useState<BoardMode>(
-    () => modeAsked ?? (initialWorkItem ? "work" : storedBoardMode()),
+    () =>
+      modeAsked ??
+      (initialWorkItem || initialWork ? "work" : storedBoardMode()),
   );
   const setMode = (next: BoardMode) => setModeState(next);
   const modeAtSeen = useRef(modeAt);
@@ -1934,6 +1940,8 @@ export function MrReviewsPanel({
     panelRef,
     onClose,
     ...(initialWorkItem ? { initialItem: initialWorkItem } : {}),
+    ...(initialWork?.owner ? { initialOwner: initialWork.owner } : {}),
+    ...(initialWork?.add ? { initialAdd: initialWork.add } : {}),
     efforts: inbox?.efforts,
     requests: inbox?.entries,
     // An item's effort link: the inbox mode's view of that effort.

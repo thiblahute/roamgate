@@ -1806,7 +1806,9 @@ true`. Links:
 `review {id, thread?}`, `effort {id, part?}`, `pr {url}`, `commit {sha,
 subject?, root?}`, `branch {name, root?}`, `decision {path, id}` (an RFC
 or plan file and its `Dn`), `item {id}` (waits for it), `deploy {sha,
-branch?}` (set by the done rule). `history.jsonl` appends one line per
+branch?}` (set by the done rule), `chat {session, chat?, entry?}` (the
+message of an agent's chat it came from: the session's address, its
+session id and the message's entry id). `history.jsonl` appends one line per
 change of an item (`{at, item, by, change}`), never capped. The
 `roamgate` project is seeded on the deployed rule with this checkout as
 its root.
@@ -1896,6 +1898,24 @@ it as it tells a comment (the prompt says the item is theirs to take with
 `work_update`); an agent's own item without text gets no review until
 someone comments. `add`, `reopen` and `promote` are async for it.
 
+From a chat (`web/src/components/ChatWork.tsx`): `useChatWorkAdd` gives a
+pane's conversation its session's address and `add(quote?, entry?)`,
+which opens the board on its add form (`openWork({add})`, a
+`WorkAddDraft`: the words quoted as Markdown, the owner, the session's
+workspace, a `chat` link); the board puts the item in
+`projectForWorkspace(draft.workspace)` (else the scope shown) and sends
+`add {text, project, owner, links}` through `workAddParams`
+(`web/src/work.ts`, the one way every add form builds its call). A free
+text item with an owner other than the agent that added it is
+`needsTriage`, so the owner session, not the coordinator, gets the
+triage prompt. `ChatWorkProvider` hands the chat's parts their menu: the
+`+` of a part (`NoteBody`'s `MessageParts.onMenu`, set by
+`ChatThreads.tsx`'s `partsFor`) opens `ChatPartMenuView` on the page
+(Comment, Add to Work), a message's meta row draws
+`ChatMessageWorkButton`, and the header `ChatWorkHeader` (the session's
+live items, `useWorkOwnedCount`, opening `openWork({owner})`: the search
+`owner:ADDRESS`, every project).
+
 A review thread adopted by an item (`moveThread`) keeps its id,
 comments and timestamps, takes the item's anchor, is marked handed (nothing
 is delivered again) and leaves its review; the thread's review is linked
@@ -1966,7 +1986,10 @@ snapshot, made when `open`), `promote {thread, project?, title?, state?,
 tags?, owner?}` (a review thread becomes an item that adopts it, source
 `thread <id>`), `adopt {item, thread}`, `owner_target {item}` (the owner's
 connection, generation, workspace, pane and task, for the page to open its
-chat or its Background tasks sheet), `check`. Every change is pushed to
+chat or its Background tasks sheet), `session_target {session}` (the same
+for any session's address: a `chat` link's, whose page shows the pane and
+then scrolls to `[data-entry-id]`, `openWorkChat` in `web/src/work.ts`),
+`check`. Every change is pushed to
 every page as `{work: {changed: ["items" | "item" | "projects"], item?,
 by, summary?}}`. On the page, a card dragged to another column
 (`useWorkDrag`, WorkBoard.tsx: pointer events, a mouse after 6 px, a

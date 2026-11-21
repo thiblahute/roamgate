@@ -81,7 +81,13 @@ export type WorkLink =
   /** Another item this one waits for. */
   | { kind: "item"; id: string }
   /** Set when the done rule found the commit: where it landed. */
-  | { kind: "deploy"; sha: string; branch?: string };
+  | { kind: "deploy"; sha: string; branch?: string }
+  /**
+   * A message of an agent's chat it came from: the session's address
+   * (`connection/pane`), its chat (the session id) and the message's
+   * entry, when known.
+   */
+  | { kind: "chat"; session: string; chat?: string; entry?: string };
 
 export const WORK_LINK_KINDS = [
   "review",
@@ -92,6 +98,7 @@ export const WORK_LINK_KINDS = [
   "decision",
   "item",
   "deploy",
+  "chat",
 ] as const;
 
 export type WorkItem = {
@@ -476,21 +483,29 @@ export function parseWorkTitle(line: string): {
 
 /**
  * A search of the board: `#voice` or `tag:voice` keeps the items with
- * that tag (each one named, all of them), the other words are searched
- * for in titles, tags and owners. The tag still being typed (the last
- * word, no space after it) is `partial`: the tags it begins.
+ * that tag (each one named, all of them), `owner:ADDRESS` those that
+ * session owns (its subagents' too), the other words are searched for in
+ * titles, tags and owners. The tag still being typed (the last word, no
+ * space after it) is `partial`: the tags it begins.
  */
 export function parseWorkQuery(query: string): {
   words: string[];
   tags: string[];
+  owners: string[];
   partial?: string;
 } {
   const words: string[] = [];
   const tags: string[] = [];
+  const owners: string[] = [];
   let partial: string | undefined;
   const all = query.toLowerCase().split(/\s+/).filter(Boolean);
   const typing = !/\s$/.test(query);
   all.forEach((word, at) => {
+    const owner = /^owner:(.+)$/.exec(word)?.[1];
+    if (owner) {
+      if (!owners.includes(owner)) owners.push(owner);
+      return;
+    }
     const tag = /^(?:#|tag:)(.+)$/.exec(word)?.[1];
     if (tag) {
       const normal = normalizeWorkTag(tag);
@@ -499,7 +514,7 @@ export function parseWorkQuery(query: string): {
       else if (!tags.includes(normal)) tags.push(normal);
     } else if (word !== "#" && word !== "tag:") words.push(word);
   });
-  return { words, tags, ...(partial ? { partial } : {}) };
+  return { words, tags, owners, ...(partial ? { partial } : {}) };
 }
 
 /**
@@ -550,7 +565,12 @@ export function filterWorkItems(
     query?: string;
   },
 ): WorkItem[] {
-  const { words, tags: named, partial } = parseWorkQuery(filter.query ?? "");
+  const {
+    words,
+    tags: named,
+    owners,
+    partial,
+  } = parseWorkQuery(filter.query ?? "");
   const tags = [...(filter.tags ?? []), ...named];
   return items.filter((item) => {
     if (filter.project && item.project !== filter.project) return false;
@@ -561,6 +581,11 @@ export function filterWorkItems(
     if (filter.states?.length && !filter.states.includes(item.state))
       return false;
     if (filter.owner && item.owner?.session !== filter.owner) return false;
+    if (
+      owners.length &&
+      !owners.includes(item.owner?.session.toLowerCase() ?? "")
+    )
+      return false;
     if (words.length) {
       const hay = [item.title, ...item.tags, item.owner?.session ?? ""]
         .join("\n")
@@ -603,6 +628,8 @@ export function describeWorkLink(link: WorkLink): string {
       if (link.sha === "decision")
         return `decisions ${link.branch ?? "ticked"}`;
       return `landed ${link.sha.slice(0, 10)}${link.branch ? ` on ${link.branch}` : ""}`;
+    case "chat":
+      return `message in ${link.session}${link.entry ? ` ${link.entry.slice(0, 12)}` : ""}`;
   }
 }
 
@@ -625,6 +652,7 @@ export const WORK_LINK_GROUPS = [
   "decision",
   "item",
   "deploy",
+  "chat",
 ] as const;
 export type WorkLinkGroupKind = (typeof WORK_LINK_GROUPS)[number];
 
@@ -648,6 +676,7 @@ const WORK_LINK_WORDS: Record<WorkLinkGroupKind, [string, string]> = {
   decision: ["decision", "decisions"],
   item: ["after an item", "items before"],
   deploy: ["landed", "landings"],
+  chat: ["message", "messages"],
 };
 
 /** The group a link's chip counts it in. */
@@ -677,6 +706,8 @@ function workLinkHint(link: WorkLink): string {
       return link.sha === "decision"
         ? "its decisions ticked"
         : `landed${link.branch ? ` on ${link.branch}` : ""}`;
+    case "chat":
+      return `a message in ${link.session}'s chat`;
   }
 }
 
@@ -722,6 +753,8 @@ export type WorkLinkNames = {
   ) => { title?: string; thread?: string } | undefined;
   /** Another item's title. */
   item?: (id: string) => string | undefined;
+  /** A session's name (its title, or its workspace's), by its address. */
+  session?: (address: string) => string | undefined;
 };
 
 /**
@@ -794,6 +827,15 @@ export function readableWorkLink(
             label: `Landed${link.branch ? ` on ${link.branch}` : ""}`,
             detail: `Commit ${link.sha.slice(0, 10)}`,
           };
+    case "chat": {
+      const name = names.session?.(link.session);
+      return {
+        label: link.entry
+          ? "The message it came from"
+          : "The chat it came from",
+        detail: `Agent chat${name ? ` of ${name}` : ""} (${link.session})`,
+      };
+    }
   }
 }
 

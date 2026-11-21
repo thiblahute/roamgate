@@ -16,6 +16,7 @@ import {
   LoaderCircle,
   type LucideIcon,
   MessageSquare,
+  MessageSquareQuote,
   Plus,
   RefreshCw,
   Rocket,
@@ -33,6 +34,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { parseAgentAddress } from "../../../shared/agentMessage";
 import type { ReviewThread } from "../../../shared/review";
 import {
   describeWorkLink,
@@ -72,7 +74,8 @@ import {
 } from "../store";
 import { useSystemBack } from "../systemBack";
 import { formatUiDateTime } from "../uiLocale";
-import { useWorkBoard, workCall } from "../work";
+import { openWorkChat, useWorkBoard, workAddParams, workCall } from "../work";
+import type { WorkAddDraft } from "../workOpen";
 import {
   projectForWorkspace,
   readWorkScopeMemory,
@@ -139,6 +142,26 @@ function selectWorkWorkspace(state: State): WorkWorkspaceSelection | null {
       .join("\n"),
     paneIds: panes.map((pane) => pane.pane_id).join("\n"),
   };
+}
+
+/**
+ * Where an item added from a chat was added: its session's pane (the
+ * server finds its workspace, and that workspace's tag).
+ */
+function draftPlace(draft: WorkAddDraft): {
+  connectionId: string;
+  paneId?: string;
+  workspaceId?: string;
+} {
+  const pane = parseAgentAddress(draft.owner);
+  return pane
+    ? { connectionId: pane.connectionId, paneId: pane.paneId }
+    : {
+        connectionId: draft.workspace?.connectionId ?? "",
+        ...(draft.workspace
+          ? { workspaceId: draft.workspace.workspaceId }
+          : {}),
+      };
 }
 
 /** The workspace the page shows, as the board scopes by it. */
@@ -421,6 +444,10 @@ export type WorkModeOptions = {
   requests?: readonly { url: string; title: string }[] | undefined;
   /** Shows an effort's view (the inbox mode's). */
   onOpenEffort?: (id: string) => void;
+  /** The items this session owns (a chat's count): `owner:` searched. */
+  initialOwner?: string;
+  /** The add form started for a session (a chat's Add to Work). */
+  initialAdd?: WorkAddDraft;
 };
 
 export type WorkMode = {
@@ -459,6 +486,8 @@ export function useWorkMode({
   efforts,
   requests,
   onOpenEffort,
+  initialOwner,
+  initialAdd,
 }: WorkModeOptions): WorkMode {
   const { board: data, error, reload } = useWorkBoard();
   const reviews = useReviewState();
@@ -467,12 +496,21 @@ export function useWorkMode({
   const stateRef = useRef<HTMLSelectElement>(null);
   const tagsRef = useRef<HTMLInputElement>(null);
   const [memory, setMemory] = useState(() => readWorkScopeMemory());
-  /** The scope chosen on this board, for the workspace it was chosen in. */
+  /**
+   * The scope chosen on this board, for the workspace it was chosen in.
+   * A session's items are looked for in every project.
+   */
   const [choice, setChoice] = useState<{
     key: string;
     scope: WorkScope;
-  } | null>(null);
-  const [query, setQueryState] = useState("");
+  } | null>(() =>
+    initialOwner
+      ? { key: workspace ? workspaceScopeKey(workspace) : "", scope: null }
+      : null,
+  );
+  const [query, setQueryState] = useState(() =>
+    initialOwner ? `owner:${initialOwner} ` : "",
+  );
   // The search completes a tag as it is typed (#vo, tag:vo): Tab, the
   // arrows and Enter take one, Esc puts them away, as the reviews' do.
   const [searchFocused, setSearchFocused] = useState(false);
@@ -489,7 +527,13 @@ export function useWorkMode({
   const [compose, setCompose] = useState<"comment" | "reply" | null>(null);
   /** The detail's list, where its keys are (the chat threads' keys). */
   const detailListRef = useRef<HTMLDivElement>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAddingState] = useState(!!initialAdd);
+  /** The add form started from a chat: its words, owner and link. */
+  const [draft, setDraft] = useState<WorkAddDraft | null>(initialAdd ?? null);
+  const setAdding = (next: boolean) => {
+    setAddingState(next);
+    if (!next) setDraft(null);
+  };
   /**
    * The item just added, as the add answered it: its detail stays open
    * while its owner sorts it (until the user leaves it), drawn from this
@@ -532,6 +576,15 @@ export function useWorkMode({
     () => projectForWorkspace(workspace, projects),
     [workspace, projects],
   );
+  /**
+   * Where an added item goes: a chat's to its session's project (the one
+   * holding its workspace), else the scope shown, else the first.
+   */
+  const addProject =
+    (draft ? projectForWorkspace(draft.workspace, projects)?.id : undefined) ??
+    scope ??
+    projects[0]?.id ??
+    null;
   const choose = (next: WorkScope) => {
     setChoice({ key: workspaceKey, scope: next });
     setMemory((current) => rememberWorkScope(current, workspace, next));
@@ -774,6 +827,18 @@ export function useWorkMode({
           return;
         case "deploy":
           void navigator.clipboard?.writeText(link.sha).catch(() => {});
+          return;
+        case "chat":
+          void openWorkChat(link)
+            .then((why) => {
+              if (why) setFailure(why);
+              else if (mobile) onClose({ keepFocus: true });
+            })
+            .catch((cause) =>
+              setFailure(
+                cause instanceof Error ? cause.message : String(cause),
+              ),
+            );
           return;
         default:
           return;
@@ -1088,10 +1153,16 @@ export function useWorkMode({
           </button>
         </div>
       ) : null}
-      {adding && (scope ?? projects[0]?.id) ? (
+      {adding && addProject ? (
         <WorkAddForm
-          project={scope ?? projects[0]!.id}
-          projectName={projectName(scope ?? projects[0]!.id)}
+          project={addProject}
+          projectName={projectName(addProject)}
+          {...(draft
+            ? {
+                initialText: draft.text,
+                owner: draft.ownerName ?? draft.owner,
+              }
+            : {})}
           onCancel={() => {
             setAdding(false);
             back();
@@ -1099,23 +1170,34 @@ export function useWorkMode({
           onAdd={async (params) => {
             setFailure(null);
             try {
-              const { item } = await workCall<{ item: WorkItem }>("add", {
-                ...params,
-                project: scope ?? projects[0]!.id,
-                // Where it was added: that workspace's tag, when it is one
-                // of the project's.
-                ...(workspace
-                  ? {
-                      workspace: {
-                        connectionId: workspace.connectionId,
-                        workspaceId: workspace.workspaceId,
-                      },
-                    }
-                  : {}),
-              });
+              const { item } = await workCall<{ item: WorkItem }>(
+                "add",
+                workAddParams({
+                  ...params,
+                  project: addProject,
+                  ...(draft
+                    ? {
+                        owner: draft.owner,
+                        ...(draft.links ? { links: draft.links } : {}),
+                      }
+                    : {}),
+                  // Where it was added: that workspace's tag, when it is
+                  // one of the project's (a chat's: its pane's).
+                  ...(draft
+                    ? { workspace: draftPlace(draft) }
+                    : workspace
+                      ? {
+                          workspace: {
+                            connectionId: workspace.connectionId,
+                            workspaceId: workspace.workspaceId,
+                          },
+                        }
+                      : {}),
+                }),
+              );
               // Its detail, until the owner has sorted it (or the user
-              // leaves): the coordinator's title, tags, state and reply
-              // show up there as they come.
+              // leaves): the owner's title, tags, state and reply show up
+              // there as they come.
               watchSeen.current = false;
               setWatching(item);
               setNotice(null);
@@ -1736,6 +1818,7 @@ const WORK_LINK_ICONS: Record<WorkLinkGroupKind, LucideIcon> = {
   decision: ListChecks,
   item: Link2,
   deploy: Rocket,
+  chat: MessageSquareQuote,
 };
 
 /** What a link's button does, said on it; null: it does nothing. */
@@ -1757,6 +1840,10 @@ function workLinkAction(link: WorkLink, canOpenEffort: boolean): string | null {
       return link.sha === "decision" ? null : "Copy the commit's sha";
     case "decision":
       return null;
+    case "chat":
+      return link.entry
+        ? "Open the message in its session's chat"
+        : "Open its session's chat";
   }
 }
 
