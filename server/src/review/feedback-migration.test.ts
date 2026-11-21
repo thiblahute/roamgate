@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -133,7 +133,17 @@ test("a note read back compiles word for word as it did", async () => {
   const { call, snapshots } = server();
   const notes = [fileNote("f1", "On the file"), diffNote, terminalNote];
   let held = 100;
-  for (const note of notes) await writeFeedback(call, note, place, held++);
+  // Written a millisecond apart, as the user wrote them: in the same one,
+  // threads of different reviews would read back in the reviews' order.
+  let now = Date.parse("2026-01-01T00:00:00Z");
+  try {
+    for (const note of notes) {
+      setSystemTime(new Date(now++));
+      await writeFeedback(call, note, place, held++);
+    }
+  } finally {
+    setSystemTime();
+  }
   // The view's threads, and the terminal's held one.
   const read = [
     ...workspaceFeedback(snapshots(), "local", "w1").map(
