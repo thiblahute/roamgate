@@ -1899,7 +1899,7 @@ describe("bridge-global assistant", () => {
     expect(error).not.toBeInstanceOf(AssistantRecoveryNotReadyError);
     expect(error.cause).toBeUndefined();
     expect(error.message).toBe(
-      "The workspace scope or provider connection is unavailable",
+      "A workspace Ranger may read could not be opened: its server may be offline or restarting. Try again.",
     );
     expect(f.service.peek().running).toBe(false);
     expect(JSON.stringify(f.snapshots)).not.toContain(
@@ -1909,6 +1909,107 @@ describe("bridge-global assistant", () => {
     await f.service.handle("send", params);
     await until(() => !f.service.peek().running);
     expect(f.service.peek().messages.at(-1)?.text).toBe("Hello");
+  });
+
+  // 2026-11-21: questions said on a call failed in 20 ms while the Mac was
+  // offline. Voice asks with the saved grant, which held the Mac's
+  // workspaces; reading them refused the whole turn.
+  test("a turn runs without the workspaces of a connection it cannot reach", async () => {
+    const inputs: Parameters<AssistantDriver["run"]>[0][] = [];
+    const f = setup({
+      run: async (input) => {
+        inputs.push(input);
+        input.message("Hello");
+        return [{ persisted: true }];
+      },
+    });
+    const mac = { connection_id: "mac", workspace_id: "w2" };
+    const macWorkspace = { ...workspace, ...mac, connection_label: "Mac" };
+    let macOnline = true;
+    f.context.catalog = async () =>
+      macOnline
+        ? {
+            workspaces: [workspace, macWorkspace],
+            errors: [],
+            connection_ids: ["local", "mac"],
+            complete_connection_ids: ["local", "mac"],
+          }
+        : {
+            workspaces: [workspace],
+            errors: ["Unable to list workspaces for connection Mac"],
+            connection_ids: ["local", "mac"],
+            complete_connection_ids: ["local"],
+          };
+    f.context.captureScope = async (scope) =>
+      scope.map((ref) => {
+        if (ref.connection_id === "mac" && !macOnline)
+          throw new Error("Connection mac is not ready");
+        return structuredClone(
+          ref.connection_id === "mac" ? macWorkspace : workspace,
+        );
+      });
+    const allowed = [...configured.allowed_workspaces, mac];
+    await f.service.handle("configure", {
+      ...configured,
+      allowed_workspaces: allowed,
+    });
+    macOnline = false;
+    await f.service.handle("send", {
+      request_id: "offline-mac",
+      text: "Find the blog session",
+      scope: allowed,
+    });
+    await until(() => !f.service.peek().running);
+    expect(f.service.peek().messages.at(-1)?.text).toBe("Hello");
+    expect(inputs[0]?.text).toContain(
+      'Unreachable now, left out of this turn: 1 workspace on connection "mac"',
+    );
+    // The grant keeps the Mac's workspaces for when it is back.
+    expect(f.service.peek().config.allowed_workspaces).toEqual(allowed);
+
+    // Nothing reachable: say so, not a generic failure.
+    const error = await f.service
+      .handle("send", {
+        request_id: "only-mac",
+        text: "Find the blog session",
+        scope: [mac],
+      })
+      .catch((error) => error);
+    expect(error.message).toBe(
+      "None of the workspaces Ranger may read can be reached now: their server is offline. Reconnect it and try again.",
+    );
+    expect(f.service.peek().running).toBe(false);
+  });
+
+  test("a refused turn names the step that failed, never what a provider said", async () => {
+    let failModels = false;
+    const f = setup({
+      catalog: async () => {
+        if (failModels) throw new Error("401 SECRET_TOKEN");
+        return structuredClone(catalog);
+      },
+    });
+    await f.service.handle("configure", configured);
+    failModels = true;
+    const error = await f.service
+      .handle("send", { request_id: "models", text: "Inspect" })
+      .catch((error) => error);
+    expect(error.message).toBe(
+      "The models of test could not be listed. Check its sign-in in Ranger's settings.",
+    );
+    expect(error.message).not.toContain("SECRET");
+    expect(error.cause).toBeUndefined();
+    failModels = false;
+    f.context.catalog = async () => {
+      throw new Error("ENOENT /private/socket");
+    };
+    const listing = await f.service
+      .handle("send", { request_id: "listing", text: "Inspect" })
+      .catch((error) => error);
+    expect(listing.message).toBe(
+      "Ranger could not list the workspaces. Check the server connections and try again.",
+    );
+    expect(f.service.peek().running).toBe(false);
   });
 
   test("operation receipts from another workspace or runtime are excluded from model context", async () => {
@@ -3325,7 +3426,7 @@ describe("bridge-global assistant", () => {
     };
     await expect(
       service.handle("send", { request_id: "retry", text: "Hello" }),
-    ).rejects.toThrow("unavailable");
+    ).rejects.toThrow("could not be opened");
     context.captureScope = capture;
     await service.handle("send", { request_id: "retry", text: "Hello" });
     await until(() => snapshots.at(-1)?.running === false);
@@ -4000,7 +4101,7 @@ describe("Ranger quick chat selection", () => {
     f.driver.catalog = async () => structuredClone(catalog);
     await expect(
       f.service.handle("send", { text: "Hello", request_id: "unsupported" }),
-    ).rejects.toThrow("unavailable");
+    ).rejects.toThrow("thinking effort is not supported");
     expect(runs).toBe(0);
     expect(f.service.peek().running).toBe(false);
     expect(f.service.peek().config.thinking_level).toBe("high");
@@ -5218,7 +5319,7 @@ describe("High workspace permission", () => {
       await entered.promise;
       await f.service.handle("configure_approval", { approval_mode: "manual" });
       release.resolve();
-      await expect(send).rejects.toThrow("unavailable");
+      await expect(send).rejects.toThrow("workspace permissions changed");
       expect(runs).toBe(0);
       expect(f.service.peek().messages).toEqual([]);
     },
@@ -7793,7 +7894,7 @@ describe("a task over a connection down for now", () => {
     run = await latest();
     expect(run?.status).toBe("failed");
     expect(run?.error).toBe(
-      "The task could not safely start: Ranger could not start the run: The workspace scope or provider connection is unavailable.",
+      "The task could not safely start: Ranger could not start the run: A workspace Ranger may read could not be opened: its server may be offline or restarting. Try again.",
     );
     expect(f.service.peek().error).toBeNull();
   });

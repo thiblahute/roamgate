@@ -436,6 +436,15 @@ state; sends are never replayed.
   over all of its workspaces. A run that cannot start names the workspace,
   connection, provider or step that failed; messages that may carry transport
   or credential details stay masked.
+- **Chat turns over unreachable connections:** a chat turn, typed or said on
+  a call, runs without the workspaces of a connection the current workspace
+  list could not fully list (offline, connecting, its listing failed) and tells
+  the model how many it left out per connection; the grant keeps them for when
+  the connection is back. It fails, saying the server is offline, only when
+  none of its workspaces can be reached. A turn that cannot start names the
+  step that refused it (workspace list, permissions, model listing, model,
+  thinking effort, workspace read, references, start) with a fixed message,
+  and the server logs that step with the error's class only.
 
 ## Reviews
 
