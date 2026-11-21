@@ -1276,7 +1276,9 @@ export function withSearches(
   const using = tools
     ? toolsContext(tools.configured(), tools.list(), tools.heldJob())
     : "";
-  return [context, searches, using].filter(Boolean).join("\n\n");
+  // What the user listens to lately, for "qu'est-ce que j'écoute en ce moment".
+  const taste = tools?.tasteLine() ?? "";
+  return [context, searches, using, taste].filter(Boolean).join("\n\n");
 }
 
 const looksFrench = (text: string) =>

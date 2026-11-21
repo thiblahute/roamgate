@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createVoiceRoutes, toolRoute } from "../http/voice";
 import type { VoiceHelper } from "./voice-helper";
 import { parseFrontReply } from "./voice-front";
@@ -17,6 +20,8 @@ import {
   toolDecision,
   toolsContext,
   type ToolProcess,
+  pickOf,
+  toolPrompt,
   VoiceTools,
   writesByName,
   YOUTUBE_PROMPT,
@@ -28,6 +33,7 @@ import {
   type YoutubeHelper,
   type YoutubeStatus,
 } from "./voice-youtube";
+import { VoiceTaste } from "./voice-taste";
 
 const SEND = "mcp__claude_ai_WhatsApp__send_message";
 const LIST = "mcp__claude_ai_WhatsApp__list_chats";
@@ -1201,5 +1207,235 @@ describe("YouTube for the call's music", () => {
     expect(args[args.indexOf("--mcp-config") + 1]).toBe('{"mcpServers":{}}');
     expect(args).not.toContain("--strict-mcp-config");
     expect(toolArgs("sonnet", "claude", POLICY)).not.toContain("--mcp-config");
+  });
+});
+
+describe("the user's taste", () => {
+  const SAVED = JSON.stringify({
+    items: [{ name: "Liked", artists: ["Band"], uri: "spotify:track:liked" }],
+  });
+  const PLAYLISTS = JSON.stringify({
+    items: [
+      { name: "Focus", owner: "Me", items: 3, uri: "spotify:playlist:focus" },
+      { name: "Run", owner: "Me", items: 5, uri: "spotify:playlist:run" },
+    ],
+  });
+
+  function tasteTools(policy: CompanionMcpConfig = POLICY) {
+    const dir = mkdtempSync(join(tmpdir(), "taste-tools-"));
+    const taste = new VoiceTaste(join(dir, "taste.json"));
+    const spawned: { process: Fake; system?: string }[] = [];
+    const using = new VoiceTools(
+      (_mcp, system) => {
+        const process = fakeProcess();
+        spawned.push({ process, system });
+        return process as ToolProcess;
+      },
+      () => policy,
+      { limit: 60_000, kept: 60_000, held: 60_000 },
+      () => new Date("2026-11-21T09:30:00Z"),
+      undefined,
+      undefined,
+      () => taste,
+    );
+    const done = () => rmSync(dir, { recursive: true, force: true });
+    return { using, spawned, taste, done };
+  }
+
+  const userPrompt = (process: Fake) =>
+    (
+      process.written.find((each) => each.type === "user") as {
+        message: { content: string };
+      }
+    ).message.content;
+
+  const toolUse = (id: string, name: string, input: unknown) => ({
+    type: "assistant",
+    message: { content: [{ type: "tool_use", id, name, input }] },
+  });
+  const toolResult = (id: string, text: string, isError = false) => ({
+    type: "user",
+    message: {
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: id,
+          content: [{ type: "text", text }],
+          ...(isError ? { is_error: true } : {}),
+        },
+      ],
+    },
+  });
+
+  /** Runs the taste job through a fake Claude Code; Spotify refuses top. */
+  async function gathered(
+    using: VoiceTools,
+    spawned: { process: Fake; system?: string }[],
+  ) {
+    const calls = using.gather();
+    const { process, system } = spawned.at(-1)!;
+    expect(system).toContain("Spotify MCP tools");
+    expect(userPrompt(process)).toContain("recently_played");
+    process.push(asks("c1", "mcp__spotify__top", { kind: "artists" }));
+    process.push(asks("c2", "mcp__spotify__saved", { limit: 50 }));
+    process.push(asks("c3", "mcp__spotify__my_playlists", { limit: 50 }));
+    process.push(asks("c4", "mcp__spotify__play", { query: "x" }));
+    process.push(asks("c5", "mcp__claude_ai_Youtube__search_videos", {}));
+    await settle();
+    expect(process.answer("c1")?.behavior).toBe("allow");
+    expect(process.answer("c2")?.behavior).toBe("allow");
+    // Nothing but Spotify's read tools, even allowed ones.
+    expect(process.answer("c4")?.behavior).toBe("deny");
+    expect(process.answer("c5")?.behavior).toBe("deny");
+    process.push(toolUse("u1", "mcp__spotify__top", { kind: "artists" }));
+    process.push(toolUse("u2", "mcp__spotify__saved", { limit: 50 }));
+    process.push(toolUse("u3", "mcp__spotify__my_playlists", { limit: 50 }));
+    process.push(
+      toolResult("u1", "403: insufficient scope, log in again", true),
+    );
+    process.push(toolResult("u2", SAVED));
+    process.push(toolResult("u3", PLAYLISTS));
+    process.push(result("done"));
+    return calls;
+  }
+
+  test("the taste job gathers Spotify's answers, hidden from the companion", async () => {
+    const { using, spawned, done } = tasteTools();
+    try {
+      const calls = await gathered(using, spawned);
+      expect(calls.map((call) => [call.tool, call.error])).toEqual([
+        ["mcp__spotify__top", true],
+        ["mcp__spotify__saved", false],
+        ["mcp__spotify__my_playlists", false],
+      ]);
+      expect(calls[1]!.output).toBe(SAVED);
+      expect(using.list()).toEqual([]);
+      expect(spawned[0]!.process.killed).toBe(true);
+    } finally {
+      done();
+    }
+  });
+
+  test("a refresh folds them; Spotify's 403 leaves a partial profile", async () => {
+    const { using, spawned, taste, done } = tasteTools();
+    try {
+      expect(using.refreshTaste()).toBe(true);
+      // One at a time.
+      expect(using.refreshTaste()).toBe(false);
+      const { process } = spawned[0]!;
+      process.push(toolUse("u2", "mcp__spotify__saved", { limit: 50 }));
+      process.push(toolResult("u2", SAVED));
+      process.push(toolUse("u1", "mcp__spotify__top", { kind: "artists" }));
+      process.push(toolResult("u1", "403 Forbidden: log in again", true));
+      process.push(result("done"));
+      await settle();
+      await settle();
+      await settle();
+      expect(taste.profile()!.liked[0]!.name).toBe("Liked");
+      expect(taste.read().needs_login).toBe(true);
+      expect(using.tasteLine()).toContain('"Liked"');
+    } finally {
+      done();
+    }
+  });
+
+  test("never refreshed while a request runs", () => {
+    const { using, spawned, done } = tasteTools();
+    try {
+      using.start("mets de la musique");
+      expect(using.refreshTaste()).toBe(false);
+      expect(spawned.length).toBe(1);
+    } finally {
+      done();
+    }
+  });
+
+  test("a music request gets the taste block; others and no profile do not", async () => {
+    const { using, spawned, taste, done } = tasteTools();
+    try {
+      using.start("mets de la musique");
+      // No profile yet: as today.
+      expect(userPrompt(spawned[0]!.process)).not.toContain("Taste:");
+      spawned[0]!.process.end();
+      await taste.refresh(async () => [
+        {
+          tool: "mcp__spotify__my_playlists",
+          input: {},
+          output: PLAYLISTS,
+          error: false,
+        },
+      ]);
+      using.start("mets de la musique calme");
+      const prompt = userPrompt(spawned[1]!.process);
+      expect(prompt).toContain("Taste: when the request is open");
+      expect(prompt).toContain('"Focus" spotify:playlist:focus');
+      using.start("qu'a écrit Marie ?");
+      expect(userPrompt(spawned[2]!.process)).not.toContain("Taste:");
+    } finally {
+      done();
+    }
+  });
+
+  test("what an open request plays is a pick; turning it down avoids it", async () => {
+    const { using, spawned, taste, done } = tasteTools();
+    try {
+      await taste.refresh(async () => [
+        {
+          tool: "mcp__spotify__my_playlists",
+          input: {},
+          output: PLAYLISTS,
+          error: false,
+        },
+      ]);
+      using.start("mets un truc pour bosser");
+      const { process } = spawned[0]!;
+      process.push(
+        asks("r1", "mcp__spotify__play", { uri: "spotify:playlist:focus" }),
+      );
+      await settle();
+      process.push(result("Ta playlist Focus."));
+      await settle();
+      await settle();
+      expect(taste.read().picks).toMatchObject([
+        { what: "spotify:playlist:focus", label: "Ta playlist Focus." },
+      ]);
+      using.start("non, pas ça, autre chose");
+      const prompt = userPrompt(spawned[1]!.process);
+      expect(prompt).toContain("The user just turned down");
+      expect(prompt).toContain(
+        'Never pick (the user turned these down): "Ta playlist Focus. (spotify:playlist:focus)"',
+      );
+      expect(taste.avoidList()).toHaveLength(1);
+    } finally {
+      done();
+    }
+  });
+
+  test("a pick is a play's URI or words, Spotify's or YouTube's", () => {
+    expect(pickOf("mcp__spotify__play", { uri: "spotify:album:x" })).toBe(
+      "spotify:album:x",
+    );
+    expect(
+      pickOf("mcp__claude_ai_spotify__play", { query: "Nils Frahm" }),
+    ).toBe("Nils Frahm");
+    expect(pickOf("mcp__roamgate_youtube__play", { query: "lofi" })).toBe(
+      "lofi",
+    );
+    expect(pickOf("mcp__spotify__pause", {})).toBeUndefined();
+    expect(pickOf("mcp__claude_ai_Youtube__play", { query: "x" })).toBe(
+      undefined,
+    );
+  });
+
+  test("the block goes after the request", () => {
+    const prompt = toolPrompt(
+      "mets de la musique",
+      new Date(),
+      undefined,
+      false,
+      "Taste: x",
+    );
+    expect(prompt.endsWith("\n\nTaste: x")).toBe(true);
+    expect(toolPrompt("mets de la musique")).not.toContain("Taste:");
   });
 });

@@ -1376,6 +1376,39 @@ there also sets that device's volume to 100, since the call sets the
 music's level and Spotify can fall back to 0 after a pause;
 `"call_music_full_volume": false` leaves the device's volume alone.
 
+#### Your music taste
+
+With the Spotify connector's read tools allowed in `companion_mcp`
+(`top`, `recently_played`, `saved` and `my_playlists`, for example
+`"mcp__claude_ai_Spotify*__top"` and `"mcp__claude_ai_Spotify*__recently_played"`
+beside the others), Roamgate keeps a small profile of what the user listens
+to in `taste.json`, in its data directory (next to `companion-memories`):
+genres weighted from the top artists, the top artists of the last weeks,
+months and all time, a few top tracks, the user's own playlists (those of
+the owner of most of them) and followed ones, the latest liked songs, the
+playlists and albums played lately, the last days' plays and the hours
+most played at. Only names and URIs, a few hundred tokens. A background
+job, the companion's tool job (`server/src/voice/voice-taste.ts`) allowed
+only those four tools, makes the calls, and Roamgate folds what they
+return. It is refreshed when older than a day, as a call starts or the
+companion goes idle, never while a tool job runs; a stale one is still
+used. When Spotify refuses some calls (a 403 asking to log in again, until
+the connector is authorized for the new scopes), what came is kept, the
+companion's state says Spotify needs a new login when nothing came, and it
+is tried again after six hours; without any profile, music requests work as
+without one.
+
+A tool job asked about music is given the profile as quoted data, never
+instructions: an open request picks from it, preferring the user's
+playlists and liked songs, never one of the last eight picks, and says what
+it picked and why; a request that names what to play ignores it. What a
+pick played (its URI or search words) is kept with it; "pas ça" or "autre
+chose" within five minutes of it puts it on the avoid list for 30 days.
+Lasting dislikes are companion memories whose file name starts with
+`music-avoid-` (the memory's writer keeps them so), their descriptions
+read into the same list. The front's state has one `Taste:` line, so it
+can say what the user listens to lately.
+
 #### YouTube
 
 With `call_background` set, the companion can also play a YouTube video's

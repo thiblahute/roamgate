@@ -175,6 +175,7 @@ import {
   TERMINAL_UPLOAD_TIMEOUT_MS,
   terminalUploadRequestBodyLimit,
 } from "./http/terminal-upload";
+import { tastePath, VoiceTaste } from "./voice/voice-taste";
 import { createVoiceRoutes, withSearches } from "./http/voice";
 import { createVoiceSocket } from "./http/voice-socket";
 import { configuredCleaner } from "./voice/voice-cleaner";
@@ -455,19 +456,22 @@ function conversationKeepAwake(
   return null;
 }
 const voiceResearch = configuredResearch(() => readVoiceConfig());
+const companionMemoryFiles = new CompanionMemoryFiles();
 const voiceTools = configuredTools(
   () => readVoiceConfig(),
   undefined,
   undefined,
   voiceHelper,
+  new VoiceTaste(tastePath(), companionMemoryFiles.dir),
 );
-const companionMemoryFiles = new CompanionMemoryFiles();
 const companionMemory = new CompanionMemory({
   path: companionMemoryPath(),
   compact: frontCompaction(() => readVoiceConfig(), companionMemoryFiles),
   files: companionMemoryFiles,
   jobs: () => withSearches("", voiceResearch(), voiceTools()),
   onCompacted: (reason) => {
+    // The companion went quiet: a good time to refresh the music taste.
+    if (reason === "idle" || reason === "end") voiceTools()?.refreshTaste();
     // Quietly, between calls only: the next call starts from the summary.
     if (reason === "size" || voiceSocket.currentCall()) return;
     const front = voiceFront();
@@ -513,6 +517,8 @@ const voiceSocket = createVoiceSocket(
     return "error" in config ? undefined : config.max_pause_ms;
   },
   () => {
+    // Read as a call starts: the music taste is refreshed then, when due.
+    voiceTools()?.refreshTaste();
     const config = readVoiceConfig();
     return "error" in config ? null : callBackground(config);
   },

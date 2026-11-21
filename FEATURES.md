@@ -642,6 +642,15 @@ Inspector state is scoped to each checkout; see
   whatever the reading speed. A call starts without it: ask the companion
   to put the music on, then to turn it down, up or off
   ([setup](docs/DEPLOYMENT.md#music-under-a-call)).
+  An open request ("mets de la musique", "something calm", "un truc pour
+  bosser") is picked from your Spotify taste: your own playlists and liked
+  songs first, then your top artists and genres, never the same pick twice
+  in a row, and the companion says in a few words what it picked and why.
+  "Pas ça" or "autre chose" right after a pick puts it aside for a month;
+  a lasting dislike said on a call ("plus jamais de jazz") is remembered.
+  A request that names what to play ignores it, and the companion can say
+  what you listen to lately
+  ([setup](docs/DEPLOYMENT.md#your-music-taste)).
   The sentence being read is highlighted. What is said goes to the agent
   marked `[Voice]`, with the sentence it cut short when it interrupted the
   reading, so the agent knows it talks live and what was heard; the chat

@@ -18,6 +18,15 @@ import {
   researchPrompt,
 } from "./voice-research";
 import {
+  type GatheredCall,
+  musicRequest,
+  TASTE_SYSTEM_PROMPT,
+  tasteRequest,
+  tasteTool,
+  turnsDown,
+  type VoiceTaste,
+} from "./voice-taste";
+import {
   resolveYoutube,
   type YoutubeHelper,
   youtubeConfig,
@@ -246,6 +255,8 @@ export type ToolJob = {
   heldOutcome?: "confirmed" | "declined";
   /** The job whose held call this one makes, once. */
   confirms?: string;
+  /** It was given the user's taste: what it plays is a pick (VoiceTaste). */
+  picks?: boolean;
   /** Always true: a tool job, not a web search (for the page). */
   tool: true;
 };
@@ -295,6 +306,8 @@ export function toolArgs(
   policy: CompanionMcpConfig = {},
   /** Roamgate's own servers for the job (the YouTube player's). */
   mcpConfig?: string,
+  /** Another system prompt (the taste job's); TOOLS_SYSTEM_PROMPT by default. */
+  systemPrompt = TOOLS_SYSTEM_PROMPT,
 ): string[] {
   return [
     asCommand(command).program,
@@ -329,7 +342,7 @@ export function toolArgs(
     "--no-session-persistence",
     ...(mcpConfig ? ["--mcp-config", mcpConfig] : []),
     "--system-prompt",
-    TOOLS_SYSTEM_PROMPT,
+    systemPrompt,
   ];
 }
 
@@ -376,14 +389,18 @@ export function spawnTools(
   command: string | AgentCommand | undefined,
   policy: CompanionMcpConfig,
   mcpConfig?: string,
+  systemPrompt?: string,
 ): ToolProcess {
-  const child = Bun.spawn(toolArgs(model, command, policy, mcpConfig), {
-    cwd: tmpdir(),
-    env: commandEnv(asCommand(command), backgroundClaudeEnv()),
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "ignore",
-  });
+  const child = Bun.spawn(
+    toolArgs(model, command, policy, mcpConfig, systemPrompt),
+    {
+      cwd: tmpdir(),
+      env: commandEnv(asCommand(command), backgroundClaudeEnv()),
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "ignore",
+    },
+  );
   async function* lines() {
     const decoder = new TextDecoder();
     let buffered = "";
@@ -469,11 +486,13 @@ export function toolPrompt(
   musicDevice?: CallMusicDevice,
   /** Whether the job has the YouTube player (YOUTUBE_MCP_SERVER). */
   youtube = false,
+  /** The user's taste, for an open music request (VoiceTaste.promptBlock). */
+  taste = "",
 ): string {
   const prompt = `${researchPrompt(task, now).replace(
     "\n\nQuestion: ",
     "\n\nRequest: ",
-  )}${youtube ? `\n\n${YOUTUBE_PROMPT}` : ""}`;
+  )}${youtube ? `\n\n${YOUTUBE_PROMPT}` : ""}${taste ? `\n\n${taste}` : ""}`;
   if (!musicDevice) return prompt;
   const device = JSON.stringify(musicDevice.name);
   const volume = musicDevice.fullVolume
@@ -639,6 +658,26 @@ export function startsSpotify(
   return !!music && named?.trim().toLowerCase() === music;
 }
 
+/**
+ * What an allowed call plays, when it is Spotify's or YouTube's play: its
+ * URI, or the words it searches; undefined for any other call.
+ */
+export function pickOf(
+  tool: string,
+  input: Record<string, unknown>,
+): string | undefined {
+  if (!tool.startsWith("mcp__")) return undefined;
+  const split = tool.indexOf("__", 5);
+  if (split < 0 || tool.slice(split + 2) !== "play") return undefined;
+  const server = tool.slice(5, split);
+  if (!/spotify/i.test(server) && server !== YOUTUBE_MCP_SERVER)
+    return undefined;
+  const what = [input.uri, input.query].find(
+    (each): each is string => typeof each === "string" && !!each.trim(),
+  );
+  return what?.trim();
+}
+
 /** A job's YouTube player: its MCP server, and Spotify's start. */
 export type JobYoutube = {
   /** Serves the player's tools to one job until closed. */
@@ -663,10 +702,18 @@ export class VoiceTools {
   private jobs = new Map<string, ToolJob>();
   private running = new Map<string, ToolProcess>();
   private count = 0;
+  /** The taste job's process while it runs. */
+  private gathering: ToolProcess | null = null;
 
   constructor(
-    /** Starts a job's Claude Code, given Roamgate's own MCP servers. */
-    private readonly spawn: (mcpConfig?: string) => ToolProcess,
+    /**
+     * Starts a job's Claude Code, given Roamgate's own MCP servers, and
+     * another system prompt for the taste job.
+     */
+    private readonly spawn: (
+      mcpConfig?: string,
+      systemPrompt?: string,
+    ) => ToolProcess,
     private readonly policy: () => CompanionMcpConfig,
     private readonly timing = { limit: LIMIT_MS, kept: KEPT_MS, held: HELD_MS },
     private readonly now: () => Date = () => new Date(),
@@ -675,17 +722,30 @@ export class VoiceTools {
       undefined,
     /** The YouTube player, when voice.json gives one (read per job). */
     private readonly youtube: () => JobYoutube | null = () => null,
+    /** The user's music taste (voice-taste.ts), when kept. */
+    private readonly taste: () => VoiceTaste | null = () => null,
   ) {}
 
   /**
    * Starts carrying out `task`; null when empty or too many run. Asked
    * on a call with music (`onCall`), music plays on call_music_device.
+   * A request about music is given the user's taste (VoiceTaste), and one
+   * turning down the pick just made ("pas ça", "autre chose") puts that
+   * pick on the avoid list.
    */
   start(task: string, onCall = false): ToolJob | null {
     const asked = task.trim().slice(0, MAX_TASK_CHARS);
     if (!asked || this.running.size >= MAX_RUNNING) return null;
     const device = onCall ? this.musicDevice() : undefined;
     const name = device?.name.trim();
+    const taste = musicRequest(asked) ? this.taste() : null;
+    let rejected: string | undefined;
+    const last = taste && turnsDown(asked) ? taste.lastPick() : null;
+    if (taste && last) {
+      taste.avoid(last.what, last.label);
+      rejected = last.label ? `${last.label} (${last.what})` : last.what;
+    }
+    const block = taste?.promptBlock(rejected) ?? "";
     return this.run(
       asked,
       toolPrompt(
@@ -693,8 +753,11 @@ export class VoiceTools {
         this.now(),
         device && name ? { name, fullVolume: device.fullVolume } : undefined,
         this.youtube() !== null,
+        block,
       ),
       null,
+      undefined,
+      block !== "",
     );
   }
 
@@ -753,6 +816,7 @@ export class VoiceTools {
     prompt: string,
     approved: (HeldCall & { used?: boolean }) | null,
     confirms?: string,
+    picks = false,
   ): ToolJob | null {
     this.count += 1;
     const job: ToolJob = {
@@ -763,6 +827,7 @@ export class VoiceTools {
       started: Date.now(),
       tool: true,
       ...(confirms ? { confirms } : {}),
+      ...(picks ? { picks } : {}),
     };
     this.jobs.set(job.id, job);
     this.forgetOld();
@@ -792,29 +857,35 @@ export class VoiceTools {
     return { ...job };
   }
 
-  private async follow(
-    job: ToolJob,
+  /**
+   * Drives a job's Claude Code: gives it `prompt`, answers each permission
+   * prompt with `decide`, shows `seen` every other event, until its result
+   * or `active` says to stop.
+   */
+  private async converse(
+    id: string,
     process: ToolProcess,
     prompt: string,
-    approved: (HeldCall & { used?: boolean }) | null,
-    youtube: JobYoutube | null = null,
-  ) {
+    active: () => boolean,
+    decide: (
+      tool: string,
+      input: Record<string, unknown>,
+    ) => { behavior: "allow" } | { behavior: "deny"; message: string },
+    seen: (event: Record<string, unknown>) => void = () => {},
+  ): Promise<{ result: string | null; failed: string | null }> {
     const send = (message: unknown) =>
       process.write(`${JSON.stringify(message)}\n`);
     send({
       type: "control_request",
-      request_id: `init-${job.id}`,
+      request_id: `init-${id}`,
       request: { subtype: "initialize" },
     });
     send({ type: "user", message: { role: "user", content: prompt } });
     let result: string | null = null;
     let failed: string | null = null;
-    const step = (text: string) => {
-      job.steps = [...job.steps, text].slice(-20);
-    };
     try {
       for await (const line of process.lines) {
-        if (job.status !== "searching") break;
+        if (!active()) break;
         let event: Record<string, unknown>;
         try {
           event = JSON.parse(line);
@@ -823,61 +894,39 @@ export class VoiceTools {
         }
         if (event.type === "control_request") {
           const request = (event.request ?? {}) as Record<string, unknown>;
-          const id = event.request_id;
+          const requestId = event.request_id;
           if (request.subtype !== "can_use_tool") {
             send({
               type: "control_response",
               response: {
                 subtype: "error",
-                request_id: id,
+                request_id: requestId,
                 error: "Not supported here.",
               },
             });
             continue;
           }
-          const tool = String(request.tool_name ?? "");
           const input = (
             request.input && typeof request.input === "object"
               ? request.input
               : {}
           ) as Record<string, unknown>;
-          let decision = toolDecision(tool, input, this.policy(), approved);
-          // One call held per job: the user is asked about one thing.
-          if (decision.behavior === "hold" && job.held)
-            decision = {
-              behavior: "deny",
-              message: "Another call already waits for confirmation. Stop.",
-            };
-          if (decision.behavior === "allow") {
-            if (approved && approved.tool === tool) approved.used = true;
-            // Spotify and YouTube never play together.
-            if (youtube && startsSpotify(tool, input, this.musicDevice()?.name))
-              youtube.spotifyStarted();
-            step(`Using ${toolLabel(tool)}`);
-          } else if (decision.behavior === "hold") {
-            job.held = { tool, input };
-            step(`Waiting for your OK: ${toolLabel(tool)}`);
-          } else step(`Refused: ${toolLabel(tool)}`);
+          const decision = decide(String(request.tool_name ?? ""), input);
           send({
             type: "control_response",
             response: {
               subtype: "success",
-              request_id: id,
+              request_id: requestId,
               response:
                 decision.behavior === "allow"
                   ? { behavior: "allow", updatedInput: input }
-                  : {
-                      behavior: "deny",
-                      message:
-                        decision.behavior === "hold"
-                          ? HELD_MESSAGE
-                          : decision.message,
-                    },
+                  : { behavior: "deny", message: decision.message },
             },
           });
           continue;
         }
-        for (const logged of toolCallLog(job.id, event)) console.error(logged);
+        for (const logged of toolCallLog(id, event)) console.error(logged);
+        seen(event);
         if (event.type !== "result") continue;
         if (event.is_error) failed = String(event.result ?? "It failed.");
         else result = String(event.result ?? "");
@@ -886,9 +935,56 @@ export class VoiceTools {
     } catch (error) {
       failed = (error as Error).message;
     }
+    return { result, failed };
+  }
+
+  private async follow(
+    job: ToolJob,
+    process: ToolProcess,
+    prompt: string,
+    approved: (HeldCall & { used?: boolean }) | null,
+    youtube: JobYoutube | null = null,
+  ) {
+    const step = (text: string) => {
+      job.steps = [...job.steps, text].slice(-20);
+    };
+    /** What a job given the user's taste played: its pick. */
+    let played: string | undefined;
+    const { result, failed } = await this.converse(
+      job.id,
+      process,
+      prompt,
+      () => job.status === "searching",
+      (tool, input) => {
+        let decision = toolDecision(tool, input, this.policy(), approved);
+        // One call held per job: the user is asked about one thing.
+        if (decision.behavior === "hold" && job.held)
+          decision = {
+            behavior: "deny",
+            message: "Another call already waits for confirmation. Stop.",
+          };
+        if (decision.behavior === "allow") {
+          if (approved && approved.tool === tool) approved.used = true;
+          // Spotify and YouTube never play together.
+          if (youtube && startsSpotify(tool, input, this.musicDevice()?.name))
+            youtube.spotifyStarted();
+          if (job.picks) played = pickOf(tool, input) ?? played;
+          step(`Using ${toolLabel(tool)}`);
+          return decision;
+        }
+        if (decision.behavior === "hold") {
+          job.held = { tool, input };
+          step(`Waiting for your OK: ${toolLabel(tool)}`);
+          return { behavior: "deny", message: HELD_MESSAGE };
+        }
+        step(`Refused: ${toolLabel(tool)}`);
+        return decision;
+      },
+    );
     if (job.status !== "searching") return;
     if (result !== null && result.trim()) {
       const parsed = parseResearchResult(result);
+      if (played) this.taste()?.picked(played, parsed.spoken);
       this.end(job, {
         status: "done",
         ...parsed,
@@ -903,6 +999,106 @@ export class VoiceTools {
         status: "failed",
         error: (failed ?? "No answer came back.").slice(0, 300),
       });
+  }
+
+  /**
+   * Runs the taste job: a headless Claude Code as the tool jobs', with
+   * TASTE_SYSTEM_PROMPT, allowed only Spotify's read tools (tasteTool)
+   * that `companion_mcp` allows too, never holding a call. It is not a
+   * job of the companion's (not listed, not told). Returns each call made
+   * and what it returned; [] when it could not run.
+   */
+  async gather(): Promise<GatheredCall[]> {
+    if (this.gathering) return [];
+    this.count += 1;
+    const id = `taste${this.count}`;
+    let process: ToolProcess;
+    try {
+      process = this.spawn(undefined, TASTE_SYSTEM_PROMPT);
+    } catch (error) {
+      console.error(`[voice] taste job: ${(error as Error).message}`);
+      return [];
+    }
+    this.gathering = process;
+    let stopped = false;
+    const limit = setTimeout(() => {
+      stopped = true;
+      process.kill();
+    }, this.timing.limit);
+    const asked = new Map<
+      string,
+      { tool: string; input: Record<string, unknown> }
+    >();
+    const calls: GatheredCall[] = [];
+    try {
+      await this.converse(
+        id,
+        process,
+        tasteRequest(),
+        () => !stopped,
+        (tool, input) => {
+          const decision = tasteTool(tool)
+            ? toolDecision(tool, input, this.policy())
+            : null;
+          return decision?.behavior === "allow"
+            ? decision
+            : {
+                behavior: "deny",
+                message:
+                  "Only Spotify's top, recently_played, saved and my_playlists may run here.",
+              };
+        },
+        (event) => {
+          const message = event.message as { content?: unknown } | undefined;
+          if (!Array.isArray(message?.content)) return;
+          for (const part of message.content as Record<string, unknown>[]) {
+            if (event.type === "assistant" && part?.type === "tool_use")
+              asked.set(String(part.id), {
+                tool: String(part.name),
+                input: (part.input ?? {}) as Record<string, unknown>,
+              });
+            else if (event.type === "user" && part?.type === "tool_result") {
+              const call = asked.get(String(part.tool_use_id));
+              if (!call || !tasteTool(call.tool)) continue;
+              calls.push({
+                ...call,
+                output: Array.isArray(part.content)
+                  ? (part.content as { text?: unknown }[])
+                      .map((each) =>
+                        typeof each?.text === "string" ? each.text : "",
+                      )
+                      .join("")
+                  : String(part.content ?? ""),
+                error: part.is_error === true,
+              });
+            }
+          }
+        },
+      );
+    } finally {
+      clearTimeout(limit);
+      this.gathering = null;
+      process.kill();
+    }
+    return calls;
+  }
+
+  /**
+   * Refreshes the taste profile when due (VoiceTaste.due), never while a
+   * job runs: a music request waiting is not slowed by it. Called as a
+   * call starts and when the companion goes idle.
+   */
+  refreshTaste(): boolean {
+    const taste = this.taste();
+    if (!taste || this.running.size > 0 || this.gathering || !taste.due())
+      return false;
+    void taste.refresh(() => this.gather());
+    return true;
+  }
+
+  /** The front's line on the user's taste; "" without a profile. */
+  tasteLine(): string {
+    return this.taste()?.stateLine() ?? "";
   }
 
   private end(job: ToolJob, update: Partial<ToolJob>) {
@@ -960,6 +1156,7 @@ export class VoiceTools {
 
   stop() {
     for (const id of [...this.running.keys()]) this.cancel(id);
+    this.gathering?.kill();
   }
 }
 
@@ -1005,7 +1202,8 @@ export function toolsContext(
  * read when each starts; null otherwise. With a call's music
  * (call_background) and `youtube` not false, the jobs also have the
  * YouTube player (YOUTUBE_MCP_SERVER), always allowed, playing in the
- * voice helper's call (`helper`).
+ * voice helper's call (`helper`). With `taste`, requests about music are
+ * given the user's taste, and the jobs keep it fresh (refreshTaste).
  */
 export function configuredTools(
   config: () => VoiceConfig | { error: string },
@@ -1014,9 +1212,12 @@ export function configuredTools(
     command: string | AgentCommand | undefined,
     policy: CompanionMcpConfig,
     mcpConfig?: string,
+    systemPrompt?: string,
   ) => ToolProcess = spawnTools,
   player?: YoutubeControls,
   helper?: YoutubeHelper,
+  /** The user's music taste, kept for open music requests. */
+  taste: VoiceTaste | null = null,
 ): () => VoiceTools | null {
   const youtubeOn = () => {
     if (!player && !helper) return null;
@@ -1039,7 +1240,7 @@ export function configuredTools(
       : mcp;
   };
   const tools = new VoiceTools(
-    (mcpConfig) => {
+    (mcpConfig, systemPrompt) => {
       const read = config();
       if ("error" in read) throw new Error(read.error);
       const mcp = policy();
@@ -1048,6 +1249,7 @@ export function configuredTools(
         helperCommand(read.claude_command),
         mcp,
         mcpConfig,
+        systemPrompt,
       );
     },
     policy,
@@ -1075,6 +1277,7 @@ export function configuredTools(
             spotifyStarted: () => void controls().spotifyStarted(),
           }
         : null,
+    () => taste,
   );
   return () => {
     const read = config();
