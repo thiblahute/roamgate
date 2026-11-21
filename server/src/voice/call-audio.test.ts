@@ -567,6 +567,26 @@ describe("call music", () => {
     expect(changes.at(-1)).toEqual({ muted: false });
   });
 
+  test("each change is logged, the music before and after", async () => {
+    const { call } = handle();
+    const logged: string[] = [];
+    const error = jest
+      .spyOn(console, "error")
+      .mockImplementation((line: unknown) => {
+        logged.push(String(line));
+      });
+    try {
+      await musicRoute({ to: "music", music: "up" }, call);
+      await musicRoute({ to: "music", music: "off" }, call);
+    } finally {
+      error.mockRestore();
+    }
+    expect(logged).toEqual([
+      "[voice] the call's music up: volume 0.60 -> volume 0.96",
+      "[voice] the call's music off: volume 0.96 -> off",
+    ]);
+  });
+
   test("with no music, it says so", async () => {
     expect(
       await musicRoute(

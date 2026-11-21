@@ -531,8 +531,18 @@ export async function musicRoute(
                   ? Math.max(MUSIC_FLOOR, now.volume / MUSIC_STEP)
                   : Math.min(1, Math.max(MUSIC_FLOOR, now.volume) * MUSIC_STEP),
             };
-    await call.music_level(change);
+    const after = await call.music_level(change);
+    // As the log tells it: "volume 0.60" or "off".
+    const musicState = (music: { volume: number; muted: boolean }) =>
+      music.muted ? "off" : `volume ${music.volume.toFixed(2)}`;
+    // The route is logged as what was said ("self"): the change is told here.
+    console.error(
+      `[voice] the call's music ${route.music}: ${musicState(now)} -> ${musicState(after)}`,
+    );
   } catch (error) {
+    console.error(
+      `[voice] the call's music ${route.music} failed: ${(error as Error).message}`,
+    );
     return { to: "self", reply: `The music: ${(error as Error).message}` };
   }
   return route.reply ? { to: "self", reply: route.reply } : { to: "nobody" };
