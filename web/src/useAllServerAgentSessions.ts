@@ -117,7 +117,7 @@ let lastVersion: string | undefined;
  * Agents' events come in bursts; the sessions are read again at most this
  * often, which also bounds what a slow link carries.
  */
-const SESSIONS_REFRESH_GAP_MS = 2_000;
+export const SESSIONS_REFRESH_GAP_MS = 2_000;
 
 export function useAllServerAgentSessions(enabled: boolean) {
   const state = useStoreSelector(

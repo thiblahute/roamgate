@@ -23,7 +23,10 @@ import {
   AGENT_LIST_SCOPE_STORAGE_KEY,
   WORKSPACE_AGENT_LAYOUT_STORAGE_KEY,
 } from "../workspaceAgentLayout";
-import type { ConnectionAgentSessions } from "../useAllServerAgentSessions";
+import {
+  type ConnectionAgentSessions,
+  SESSIONS_REFRESH_GAP_MS,
+} from "../useAllServerAgentSessions";
 import { WorkspaceTree } from "./WorkspaceTree";
 
 // Isolate browser globals and React's module graph from other Bun tests.
@@ -373,7 +376,8 @@ if (process.env.ROAMGATE_WORKSPACE_STORAGE_DOM_TEST !== "1") {
             event: "pane.agent_status_changed",
             data: {},
           });
-          jest.advanceTimersByTime(150);
+          // Reads are spaced: the next one once the gap since the last.
+          jest.advanceTimersByTime(SESSIONS_REFRESH_GAP_MS);
         });
       snapshots = snapshots.map((snapshot) =>
         snapshot.connection_id === "beta"
