@@ -14,6 +14,7 @@ import {
   type ReviewEffortItemKind,
   type ReviewEffortPart,
   type ReviewEffortTab,
+  type ReviewMessagePart,
   type ReviewSnapshot,
   type ReviewThread,
 } from "../../../shared/review";
@@ -30,6 +31,13 @@ import {
   undeliveredComments,
   writeThenReadBack,
 } from "./ChatThreads";
+import {
+  MessageNotes,
+  MessageReplyButton,
+  OnMessageHead,
+  selectedWords,
+  useSelectedWords,
+} from "./MessageThreads";
 import { NoteBody } from "./ReviewNoteBody";
 
 /**
@@ -114,6 +122,12 @@ export type EffortThreads = {
   draft: Draft | null;
   comment: (point: EffortPoint, quote?: string) => void;
   cancel: () => void;
+  /** Threads on the whole of a thread's message (Reply on it), by the message. */
+  byMessage: ReadonlyMap<string, ReviewThread[]>;
+  /** The thread being written on a message: an answer to the whole of it. */
+  messageDraft: ReviewMessagePart | null;
+  /** Reply on a message: opens its box. */
+  replyMessage: (part: ReviewMessagePart) => void;
   write: (method: string, params: Record<string, unknown>) => Promise<boolean>;
   send: (next: Omit<PendingWrite, "sessionId" | "at">) => Promise<boolean>;
   pendingById: Map<string, PendingWrite>;
@@ -180,17 +194,41 @@ export function useEffortThreads(
       ),
     [snapshot, pendingWrites],
   );
+  // A thread on a message of another (Reply on it) is drawn in that one,
+  // not at its place.
+  const { roots, byMessage } = useMemo(() => {
+    const comments = new Set(
+      threads.flatMap((thread) => thread.comments.map((each) => each.id)),
+    );
+    const roots: ReviewThread[] = [];
+    const byMessage = new Map<string, ReviewThread[]>();
+    for (const thread of threads) {
+      const part = thread.anchor.message;
+      if (part && comments.has(part.comment))
+        byMessage.set(part.comment, [
+          ...(byMessage.get(part.comment) ?? []),
+          thread,
+        ]);
+      else roots.push(thread);
+    }
+    for (const list of byMessage.values())
+      list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return { roots, byMessage };
+  }, [threads]);
   const byPlace = useMemo(() => {
     const places = new Map<string, ReviewThread[]>();
-    for (const thread of threads) {
+    for (const thread of roots) {
       const key = pointKey(partPoint(thread.anchor.effort!));
       places.set(key, [...(places.get(key) ?? []), thread]);
     }
     for (const list of places.values())
       list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     return places;
-  }, [threads]);
+  }, [roots]);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [messageDraft, setMessageDraft] = useState<ReviewMessagePart | null>(
+    null,
+  );
   const [error, setError] = useState("");
 
   const write = useCallback(
@@ -274,10 +312,20 @@ export function useEffortThreads(
     draft,
     comment: (point, quote) => {
       const words = quote?.trim().slice(0, 4000);
+      setMessageDraft(null);
       setDraft({ point, ...(words ? { quote: words } : {}) });
       window.getSelection()?.removeAllRanges();
     },
-    cancel: () => setDraft(null),
+    cancel: () => {
+      setDraft(null);
+      setMessageDraft(null);
+    },
+    byMessage,
+    messageDraft,
+    replyMessage: (part) => {
+      setDraft(null);
+      setMessageDraft(part);
+    },
     write,
     send,
     pendingById,
@@ -288,13 +336,19 @@ export function useEffortThreads(
   };
 }
 
-/** A thread on the effort's view: its messages, then Reply and Resolve. */
+/**
+ * A thread on the effort's view: its messages (Reply on each: a thread on
+ * the whole of it, drawn under it), then Reply and Resolve. `onMessage`:
+ * drawn under the message it is on, its head says so.
+ */
 function EffortThreadCard({
   thread,
   api,
+  onMessage = false,
 }: {
   thread: ReviewThread;
   api: EffortThreads;
+  onMessage?: boolean;
 }) {
   const [folded, setFolded] = useState(thread.resolved);
   const [replying, setReplying] = useState(false);
@@ -360,6 +414,7 @@ function EffortThreadCard({
         }
       }}
     >
+      {onMessage ? <OnMessageHead /> : null}
       {quote ? (
         <blockquote className="mr-effort-quote">{quote}</blockquote>
       ) : null}
@@ -367,39 +422,72 @@ function EffortThreadCard({
         const pending =
           api.pendingById.get(message.id) ??
           (index === 0 ? api.pendingById.get(thread.id) : undefined);
+        const replyDraft = api.messageDraft;
         return (
           <div
             key={message.id}
             className={`chat-thread-message${message.author === REVIEW_USER ? "" : " from-agent"}${pending ? " is-pending" : ""}`}
           >
-            <span className="chat-thread-author">
-              {message.author === REVIEW_USER ? "You" : message.author}
-              {pending ? (
-                <span
-                  className={`chat-thread-pending${pending.error ? " is-failed" : ""}`}
-                  role={pending.error ? "alert" : "status"}
-                >
-                  {pending.error ? "Not saved: Send tries again" : "Sending..."}
-                </span>
-              ) : api.undelivered.has(message.id) && api.waiting ? (
-                <>
-                  <span className="chat-thread-pending is-failed" role="status">
-                    {api.waiting.noLeader
-                      ? "Waiting for the leader session"
-                      : `Not delivered: ${api.waiting.reason}`}
-                  </span>
-                  <button
-                    type="button"
-                    className="chat-thread-retry"
-                    onClick={() => void api.write("review.retry", {})}
+            <div className="chat-thread-message-head">
+              <span className="chat-thread-author">
+                {message.author === REVIEW_USER ? "You" : message.author}
+                {pending ? (
+                  <span
+                    className={`chat-thread-pending${pending.error ? " is-failed" : ""}`}
+                    role={pending.error ? "alert" : "status"}
                   >
-                    Retry
-                  </button>
-                </>
-              ) : null}
-            </span>
+                    {pending.error
+                      ? "Not saved: Send tries again"
+                      : "Sending..."}
+                  </span>
+                ) : api.undelivered.has(message.id) && api.waiting ? (
+                  <>
+                    <span
+                      className="chat-thread-pending is-failed"
+                      role="status"
+                    >
+                      {api.waiting.noLeader
+                        ? "Waiting for the leader session"
+                        : `Not delivered: ${api.waiting.reason}`}
+                    </span>
+                    <button
+                      type="button"
+                      className="chat-thread-retry"
+                      onClick={() => void api.write("review.retry", {})}
+                    >
+                      Retry
+                    </button>
+                  </>
+                ) : null}
+              </span>
+              <MessageReplyButton
+                onClick={() =>
+                  api.replyMessage({ thread: thread.id, comment: message.id })
+                }
+              />
+            </div>
             <div className="chat-thread-body">
               <NoteBody text={message.body} />
+              <MessageNotes
+                threads={api.byMessage.get(message.id) ?? []}
+                renderThread={(note) => (
+                  <EffortThreadCard
+                    key={note.id}
+                    thread={note}
+                    api={api}
+                    onMessage
+                  />
+                )}
+                draft={
+                  replyDraft?.comment === message.id ? (
+                    <EffortMessageReply
+                      thread={thread}
+                      draft={replyDraft}
+                      api={api}
+                    />
+                  ) : null
+                }
+              />
             </div>
           </div>
         );
@@ -446,6 +534,45 @@ function EffortThreadCard({
           ) : null}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The box of a thread on the whole of a thread's message (Reply on it). */
+function EffortMessageReply({
+  thread,
+  draft,
+  api,
+}: {
+  thread: ReviewThread;
+  draft: ReviewMessagePart;
+  api: EffortThreads;
+}) {
+  const effort = thread.anchor.effort;
+  return (
+    <div className="chat-thread is-draft mr-effort-thread">
+      <ThreadEditor
+        placeholder="Reply..."
+        onLeave={api.back}
+        onClose={() => {
+          api.cancel();
+          api.back();
+        }}
+        onSave={(text, id) =>
+          api
+            .send({
+              id,
+              kind: "discussion",
+              anchor: { ...(effort ? { effort } : {}), message: draft },
+              text,
+            })
+            .then((ok) => {
+              if (!ok) return;
+              api.cancel();
+              api.back();
+            })
+        }
+      />
     </div>
   );
 }
@@ -516,64 +643,21 @@ export function EffortThreadsAt({
 export function useEffortSelection(
   root: React.RefObject<HTMLElement | null>,
 ): { quote: string; element: Element; x: number; y: number } | null {
-  const [selection, setSelection] = useState<{
-    quote: string;
-    element: Element;
-    x: number;
-    y: number;
-  } | null>(null);
-  useEffect(() => {
-    let timer = 0;
-    const onChange = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(
-        () => setSelection(selectedIn(root.current)),
-        200,
-      );
-    };
-    document.addEventListener("selectionchange", onChange);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener("selectionchange", onChange);
-    };
-  }, [root]);
-  return selection;
+  return useSelectedWords(wordsIn(root.current))[0];
 }
 
 /** The words selected in an element (not in a thread or a box). */
 export function selectedIn(
   root: HTMLElement | null,
 ): { quote: string; element: Element; x: number; y: number } | null {
-  const current = window.getSelection();
-  const range =
-    current && !current.isCollapsed && current.rangeCount === 1
-      ? current.getRangeAt(0)
-      : null;
-  const start =
-    range?.startContainer instanceof Element
-      ? range.startContainer
-      : range?.startContainer.parentElement;
-  const quote = current?.toString().trim() ?? "";
-  if (
-    !range ||
-    !start ||
-    !quote ||
-    !root?.contains(start) ||
-    start.closest(".mr-effort-thread, input, textarea")
-  )
-    return null;
-  const rect = range.getBoundingClientRect();
-  const touch = window.matchMedia?.("(pointer: coarse)").matches;
-  return {
-    quote,
-    element: start,
-    x: Math.max(8, Math.min(rect.left, window.innerWidth - 120)),
-    y: Math.max(
-      8,
-      Math.min(
-        rect.bottom + (touch ? 32 : 8),
-        window.innerHeight - (touch ? 52 : 44),
-      ),
-    ),
-  };
+  return selectedWords(wordsIn(root));
 }
+
+/** Where words selected in `root` are: their element, when they count. */
+const wordsIn =
+  (root: HTMLElement | null) =>
+  (start: Element): { element: Element } | null =>
+    root?.contains(start) &&
+    !start.closest(".mr-effort-thread, input, textarea")
+      ? { element: start }
+      : null;

@@ -13,7 +13,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import type { MrEffortColumn } from "../../../shared/mrEffortBoard";
 import type { ReviewThread } from "../../../shared/review";
 import {
@@ -51,6 +50,7 @@ import {
   useEffortSelection,
   useEffortThreads,
 } from "./EffortThreads";
+import { SelectionOffer } from "./MessageThreads";
 import { ConfirmDialog } from "./ModalDialogs";
 import {
   type BoardCard,
@@ -1688,27 +1688,15 @@ export function MrEffortView({
             </dl>
           </div>
         ) : null}
-        {selection
-          ? createPortal(
-              <button
-                type="button"
-                className="chat-thread-select mr-effort-select"
-                style={{ left: selection.x, top: selection.y }}
-                // Keeps the selection while the button is pressed.
-                onPointerDown={(event) => event.preventDefault()}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  threads.comment(
-                    pointOf(selection.element, tab),
-                    selection.quote,
-                  );
-                }}
-              >
-                Comment
-              </button>,
-              document.body,
-            )
-          : null}
+        {selection ? (
+          <SelectionOffer
+            at={selection}
+            className="mr-effort-select"
+            onClick={() =>
+              threads.comment(pointOf(selection.element, tab), selection.quote)
+            }
+          />
+        ) : null}
         {command !== null ? (
           <div className="mr-reviews-command">
             <span aria-hidden="true">:</span>
