@@ -250,6 +250,8 @@ Inspector button, shortcuts, or workspace/agent menus.
   message, before going on to the next line (`k` up onto a line lands on its
   last message); `n` / `N` go message to message, `gl` to the thread's last
   message, `c` on a message answers it (on a part, comments on that part),
+  **Reply** on a message (or `R` on it) answers that message in a thread on
+  the whole of it, drawn under it after the threads on its parts,
   `u` brings back the comment `dd` deleted, and the `+` in a message's margin
   comments on its part. A comment on its way shows "Sending..." under its
   line, then "Not saved" with Retry and Discard if the server refused it
