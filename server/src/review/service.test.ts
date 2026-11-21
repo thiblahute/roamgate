@@ -1110,13 +1110,27 @@ test("a comment on a part of a message reaches the agent with its quote", async 
   );
   expect(prompt).toContain("  > Option B, which I lean to.");
   expect(prompt).toContain("Why B?");
+  // No words quoted: a thread on the whole message, told as such.
+  const whole = await service.addThread({
+    sessionId: session.id,
+    anchor: { ...anchor, message: { ...message, quote: " " } },
+    text: "No quote",
+  });
+  expect(whole.anchor.message).toEqual({
+    thread: plan.id,
+    comment: plan.comments[0]!.id,
+  });
+  await Bun.sleep(60);
+  expect(prompts.join("\n")).toContain(
+    `on a message in thread [${plan.id.slice(0, 8)}] (on plan.md:3)`,
+  );
   await expect(
     service.addThread({
       sessionId: session.id,
-      anchor: { ...anchor, message: { ...message, quote: " " } },
-      text: "No quote",
+      anchor: { ...anchor, message: { thread: plan.id } },
+      text: "No comment",
     }),
-  ).rejects.toThrow("a message part needs its thread, comment and quote");
+  ).rejects.toThrow("a message part needs its thread and comment");
 });
 
 test("a chat's threads: no diff, kept out of the reviews, sent with context", async () => {

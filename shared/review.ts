@@ -75,7 +75,8 @@ export type ReviewChatPart = {
 export type ReviewMessagePart = {
   thread: string;
   comment: string;
-  quote: string;
+  /** The words quoted from it; none for an answer to the whole message. */
+  quote?: string;
 };
 
 export type ReviewCommit = {

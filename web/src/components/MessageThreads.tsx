@@ -7,11 +7,15 @@ import type { MessageParts } from "./ReviewNoteBody";
  * Messages with threads on their parts, as an agent chat's messages
  * (ChatThreads) draw them: a message is drawn by NoteBody in parts, the +
  * beside a part opens a thread on it quoting it, and the threads on a
- * part are drawn under it, their own messages in parts too. j / k stop on
- * the parts (`q:COMMENT:PART` for a thread's message, the list's own key
- * for another message), the threads' messages (`m:COMMENT`) and folded
- * threads (`t:THREAD`); a thread's message in one part is that message's
- * stop. Words selected in a message offer Comment, a thread quoting them.
+ * part are drawn under it, their own messages in parts too. Reply on a
+ * thread's message (or R on it) opens a thread on the whole message,
+ * quoting nothing (`message: {thread, comment}`): such threads are drawn
+ * under the message after those on its parts (MessageNotes), their head
+ * saying "On this message". j / k stop on the parts (`q:COMMENT:PART` for
+ * a thread's message, the list's own key for another message), the
+ * threads' messages (`m:COMMENT`) and folded threads (`t:THREAD`); a
+ * thread's message in one part is that message's stop. Words selected in
+ * a message offer Comment, a thread quoting them.
  */
 
 /**
@@ -38,10 +42,13 @@ export function messageStopKey(
  */
 export function partOfLongMessage(stop: HTMLElement): boolean {
   const body = stop.closest<HTMLElement>(".chat-thread-body");
+  // Not the parts of the threads drawn in it: on its parts, on the whole.
   return (
     !!body &&
     body.querySelectorAll(":scope [data-part]").length -
-      body.querySelectorAll(":scope .rc-part-notes [data-part]").length >
+      body.querySelectorAll(
+        ":scope .rc-part-notes [data-part], :scope .chat-message-notes [data-part]",
+      ).length >
       1
   );
 }
@@ -109,6 +116,113 @@ export function commentOnPart(
   if (!message || !owner) return false;
   setPartDraft({ thread: owner, comment: message, quote: partQuote(here) });
   return true;
+}
+
+/**
+ * R on a thread's message (its stop, or its first part): a thread on the
+ * whole message, quoting nothing, its answer drawn under it after the
+ * threads on its parts. A comment being written in `list` is taken up
+ * again instead. The message's thread is `thread`, else what `threadOf`
+ * names (a work item's description). False lets the key go on (R answers
+ * the thread).
+ */
+export function replyOnMessage(
+  list: HTMLElement | null,
+  here: HTMLElement | undefined,
+  thread: ReviewThread | undefined,
+  setPartDraft: (part: ReviewMessagePart) => void,
+  threadOf?: (here: HTMLElement) => string | undefined,
+): boolean {
+  const draft = list?.querySelector<HTMLElement>(
+    ".chat-thread.is-draft .cm-content",
+  );
+  if (draft) {
+    draft.focus();
+    return true;
+  }
+  if (!here) return false;
+  const stop = here.dataset.chatStop;
+  const message = stop?.startsWith("m:")
+    ? stop.slice(2)
+    : here.dataset.part === "0"
+      ? here.closest<HTMLElement>("[data-message-id]")?.dataset.messageId
+      : undefined;
+  const owner = thread?.id ?? threadOf?.(here);
+  if (!message || !owner) return false;
+  setPartDraft({ thread: owner, comment: message });
+  return true;
+}
+
+/** A thread on the whole of a message: on it, quoting none of its words. */
+export function onWholeMessage(thread: ReviewThread): boolean {
+  const part = thread.anchor.message;
+  return !!part && !part.quote;
+}
+
+/**
+ * The threads on a message: those on its parts, drawn under the words
+ * they quote, and those on the whole of it, drawn under it after them.
+ */
+export function splitMessageThreads(threads: readonly ReviewThread[] = []): {
+  onParts: ReviewThread[];
+  onMessage: ReviewThread[];
+} {
+  const onParts: ReviewThread[] = [];
+  const onMessage: ReviewThread[] = [];
+  for (const thread of threads)
+    (onWholeMessage(thread) ? onMessage : onParts).push(thread);
+  return { onParts, onMessage };
+}
+
+/** Said first of a thread on the whole of a message, drawn under it. */
+export function OnMessageHead() {
+  return <p className="chat-thread-on">On this message</p>;
+}
+
+/**
+ * The threads on the whole of a message, under it after the threads on
+ * its parts, and the box of one being written (`draft`).
+ */
+export function MessageNotes({
+  threads,
+  hidden,
+  renderThread,
+  draft,
+}: {
+  threads: readonly ReviewThread[];
+  hidden?: ReadonlySet<string>;
+  renderThread: (thread: ReviewThread) => ReactNode;
+  draft?: ReactNode;
+}) {
+  const shown = threads.filter((thread) => !hidden?.has(thread.id));
+  if (!shown.length && !draft) return null;
+  return (
+    <div className="chat-message-notes">
+      {shown.map(renderThread)}
+      {draft}
+    </div>
+  );
+}
+
+/**
+ * Reply on a message of a thread: a thread on the whole of it, drawn under
+ * it. At the right of the author's row; shown as the pointer is over the
+ * message or j / k are on it, always on a phone.
+ */
+export function MessageReplyButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="chat-thread-message-reply"
+      title="Reply to this message (R)"
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+    >
+      Reply
+    </button>
+  );
 }
 
 /**

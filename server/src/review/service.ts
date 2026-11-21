@@ -299,11 +299,10 @@ function parseAnchor(value: unknown): ReviewAnchor {
     const thread = optionalText(part.thread, "message thread", 64);
     const comment = optionalText(part.comment, "message comment", 64);
     const quote = optionalText(part.quote, "quote", 4000)?.trim();
-    if (!thread || !comment || !quote)
-      throw new ReviewError(
-        "a message part needs its thread, comment and quote",
-      );
-    anchor.message = { thread, comment, quote };
+    if (!thread || !comment)
+      throw new ReviewError("a message part needs its thread and comment");
+    // No words quoted: on the whole message, an answer to it under it.
+    anchor.message = { thread, comment, ...(quote ? { quote } : {}) };
   }
   if (raw.chat !== undefined && raw.chat !== null) {
     if (typeof raw.chat !== "object")
@@ -2335,9 +2334,9 @@ export function createReviewService(args: {
         said
           ? `- [${thread.id.slice(0, 8)}] on your message${said.at ? ` of ${chatTime(said.at)}` : ""}${said.excerpt ? ` that starts "${said.excerpt}"` : ""}, about this part:`
           : part
-            ? `- [${thread.id.slice(0, 8)}] on a part of a message in thread [${part.thread.slice(0, 8)}]${chat ? "" : ` (on ${describeAnchor(thread.anchor)})`}:`
+            ? `- [${thread.id.slice(0, 8)}] on ${part.quote ? "a part of " : ""}a message in thread [${part.thread.slice(0, 8)}]${chat ? "" : ` (on ${describeAnchor(thread.anchor)})`}:`
             : `- [${thread.id.slice(0, 8)}] on ${describeAnchor(thread.anchor)}${thread.anchor.commitSubject ? ` in "${oneLine(thread.anchor.commitSubject, 200)}"` : ""}${code}:`,
-        ...((said ?? part)?.quote.split("\n").map((line) => `  > ${line}`) ??
+        ...((said ?? part)?.quote?.split("\n").map((line) => `  > ${line}`) ??
           []),
       );
       // What changed since the agent last heard: new comments, and earlier

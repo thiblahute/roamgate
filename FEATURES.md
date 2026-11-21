@@ -578,7 +578,9 @@ again, and comments follow their code or show as outdated.
   Vim's normal mode, or Alt+Up) goes up into the conversation: `j`/`k` step through the
   parts of Claude's messages and the threads under them, `gg`/`G` to the
   first or last, `zz`/`zt`/`zb` place the one you are on, `c` or Enter
-  comments on a part or answers a thread, `r` resolves, `za` folds, `dd`
+  comments on a part or answers a thread, **Reply** on a thread's message
+  (or `R` on it) answers that message in a thread on the whole of it,
+  drawn under it, `r` resolves, `za` folds, `dd`
   deletes your own comment, `J`/`K` go message by message, `n`/`N` go
   to the next or previous thread, `gn`/`gN` (or the arrows beside the
   comments chip, with "2 of 5 unresolved") to the next or previous

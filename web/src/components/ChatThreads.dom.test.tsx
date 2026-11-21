@@ -228,7 +228,12 @@ if (process.env.ROAMGATE_CHAT_THREADS_DOM_TEST !== "1") {
       [...host.querySelectorAll("button")].find((element) =>
         label.test(element.textContent ?? ""),
       );
-    await act(async () => button(/^Reply$/)!.click());
+    // The thread's Reply (in its bar), not the one on its message.
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>(".chat-thread-bar button")]
+        .find((element) => element.textContent === "Reply")!
+        .click(),
+    );
     for (let i = 0; i < 50 && !host.querySelector(".cm-content"); i++)
       await act(settle);
     const view = EditorView.findFromDOM(
@@ -443,6 +448,177 @@ if (process.env.ROAMGATE_CHAT_THREADS_DOM_TEST !== "1") {
     expect(localStorage.getItem("roamgate:threads.openOnly")).toBe("1");
     await act(async () => root.unmount());
     chatReview.threads = kept;
+    localStorage.clear();
+  });
+
+  test("Reply on a thread's message opens a thread on the whole message, drawn under it; R on the message too", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { EditorView } = await import("@codemirror/view");
+    const { ChatThreadsProvider, useChatParts } = await import("./ChatThreads");
+    localStorage.clear();
+    writes.length = 0;
+    const kept = chatReview.threads;
+    const entry = {
+      id: "e1",
+      kind: "message",
+      role: "assistant",
+      text: "The review series",
+    };
+    function Message() {
+      const parts = useChatParts(entry as never);
+      return (
+        <div className="agent-history-chat" data-entry-id={entry.id}>
+          {parts?.notes.map((note) => (
+            <div key={note.key}>{note.node}</div>
+          ))}
+        </div>
+      );
+    }
+    const host = document.createElement("div");
+    host.className = "agent-history-messages";
+    const composer = document.createElement("div");
+    composer.className = "agent-history-composer";
+    composer.append(document.createElement("textarea"));
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <ChatThreadsProvider
+          connectionId="local"
+          workspaceId="w1"
+          chat="chat-1"
+          path="/repo"
+          agent="claude"
+          paneId="w1:p1"
+          entries={[entry] as never}
+        >
+          <div className="agent-history-chat-frame">
+            <Message />
+          </div>
+        </ChatThreadsProvider>,
+      ),
+    );
+    host.append(composer);
+    await act(settle);
+    const body = () =>
+      host.querySelector<HTMLElement>('[data-message-id="0516d7d030590dda"]')!;
+    // Reply at the right of the author's row.
+    const head = body().previousElementSibling!;
+    expect(head.classList.contains("chat-thread-message-head")).toBe(true);
+    expect(head.querySelector(".chat-thread-author")?.textContent).toBe("You");
+    const reply = head.querySelector<HTMLButtonElement>(
+      ".chat-thread-message-reply",
+    )!;
+    expect(reply?.textContent).toBe("Reply");
+    await act(async () => reply.click());
+    for (
+      let i = 0;
+      i < 50 &&
+      !body().querySelector(".chat-message-notes .is-draft .cm-content");
+      i++
+    )
+      await act(settle);
+    // A box under the message, after its text; the thread's own Reply stays.
+    const box = body().querySelector<HTMLElement>(
+      ":scope > .chat-message-notes > .chat-thread.is-draft",
+    )!;
+    expect(box).not.toBeNull();
+    expect(
+      [...host.querySelectorAll(".chat-thread-bar button")].map(
+        (button) => button.textContent,
+      ),
+    ).toContain("Reply");
+    const view = EditorView.findFromDOM(
+      box.querySelector<HTMLElement>(".cm-content")!,
+    );
+    await act(async () =>
+      view!.dispatch({
+        changes: { from: 0, insert: "Because one is enough." },
+      }),
+    );
+    const send = [...box.querySelectorAll("button")].find(
+      (button) => button.textContent === "Send",
+    )!;
+    await act(async () => send.click());
+    await act(settle);
+    // A thread on the message alone: no words quoted.
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({
+      method: "review.thread.add",
+      params: {
+        kind: "discussion",
+        text: "Because one is enough.",
+        anchor: {
+          message: { thread: "8f60120002bd9a0a", comment: "0516d7d030590dda" },
+        },
+      },
+    });
+    const anchor = writes[0]!.params.anchor as {
+      message: Record<string, unknown>;
+    };
+    expect(Object.keys(anchor)).toEqual(["message"]);
+    expect("quote" in anchor.message).toBe(false);
+    // Saved: drawn under the message, its head saying where it is.
+    const id = writes[0]!.params.new_thread_id as string;
+    shownReview = {
+      ...chatReview,
+      threads: [
+        ...kept,
+        {
+          ...kept[0]!,
+          id,
+          anchor: {
+            message: {
+              thread: "8f60120002bd9a0a",
+              comment: "0516d7d030590dda",
+            },
+          },
+          comments: [
+            {
+              ...kept[0]!.comments[0]!,
+              id: `${id}c`,
+              body: "Because one is enough.",
+            },
+          ],
+        },
+      ],
+    } as unknown as typeof chatReview;
+    await act(async () => answerWrite!());
+    await act(settle);
+    const nested = body().querySelector<HTMLElement>(
+      `:scope > .chat-message-notes > [data-thread-id="${id}"]`,
+    );
+    expect(nested).not.toBeNull();
+    expect(nested!.querySelector(".chat-thread-on")?.textContent).toBe(
+      "On this message",
+    );
+    expect(body().querySelector(".is-draft")).toBeNull();
+    // R on the message's stop opens the same box.
+    const list = host.querySelector<HTMLElement>(".agent-history-chat")!;
+    list.focus();
+    const key = (name: string) =>
+      act(async () => {
+        list.dispatchEvent(
+          new KeyboardEvent("keydown", { key: name, bubbles: true }),
+        );
+        await settle();
+      });
+    await key("j");
+    expect(
+      host
+        .querySelector(".chat-thread-message.is-focused [data-message-id]")
+        ?.getAttribute("data-message-id"),
+    ).toBe("0516d7d030590dda");
+    await key("R");
+    expect(
+      body().querySelector(
+        ":scope > .chat-message-notes > .chat-thread.is-draft",
+      ),
+    ).not.toBeNull();
+    await act(async () => root.unmount());
+    host.remove();
+    shownReview = chatReview;
     localStorage.clear();
   });
 

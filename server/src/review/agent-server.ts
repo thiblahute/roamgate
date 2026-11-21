@@ -115,7 +115,7 @@ export function threadOutput(thread: ReviewThread) {
           on_message: {
             thread: thread.anchor.message.thread,
             comment: thread.anchor.message.comment,
-            quote: thread.anchor.message.quote,
+            quote: thread.anchor.message.quote ?? null,
           },
         }
       : {}),

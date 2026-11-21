@@ -1,5 +1,6 @@
 import {
   createContext,
+  Fragment,
   type ReactNode,
   Suspense,
   useCallback,
@@ -49,10 +50,15 @@ import { formatUiDateTime } from "../uiLocale";
 import { CHAT_PARTS_EVENT } from "./chatPaging";
 import {
   commentOnPart,
+  MessageNotes,
+  MessageReplyButton,
   messagePartsOf,
   messageStopKey,
   messageStops,
+  OnMessageHead,
+  replyOnMessage,
   SelectionOffer,
+  splitMessageThreads,
   useSelectedWords,
 } from "./MessageThreads";
 import "./ChatThreads.css";
@@ -593,7 +599,11 @@ export function ChatThreadsProvider({
       return next;
     });
 
-  const renderThread = (thread: ReviewThread): ReactNode => {
+  /**
+   * A thread drawn where it is; `onMessage`: drawn under the message it is
+   * on (Reply on it), its head says so.
+   */
+  const renderThread = (thread: ReviewThread, onMessage = false): ReactNode => {
     const folded = thread.resolved !== flipped.has(thread.id);
     const first = thread.comments[0];
     if (folded)
@@ -623,6 +633,7 @@ export function ChatThreadsProvider({
         className={`chat-thread${thread.resolved ? " is-resolved" : ""}`}
         data-thread-id={thread.id}
       >
+        {onMessage ? <OnMessageHead /> : null}
         {thread.comments.map((message, index) => {
           const pending =
             pendingById.get(message.id) ??
@@ -633,40 +644,63 @@ export function ChatThreadsProvider({
               className={`chat-thread-message${message.author === REVIEW_USER ? "" : " from-agent"}${cursor === `m:${message.id}` ? " is-focused" : ""}${pending ? " is-pending" : ""}`}
               data-chat-stop={`m:${message.id}`}
             >
-              <span className="chat-thread-author">
-                {message.author === REVIEW_USER ? "You" : message.author}
-                {pending ? (
-                  <span
-                    className={`chat-thread-pending${pending.error ? " is-failed" : ""}`}
-                    role={pending.error ? "alert" : "status"}
-                  >
-                    {pending.error
-                      ? "Not saved: Send tries again"
-                      : "Sending..."}
-                  </span>
-                ) : undelivered?.ids.has(message.id) ? (
-                  <>
+              <div className="chat-thread-message-head">
+                <span className="chat-thread-author">
+                  {message.author === REVIEW_USER ? "You" : message.author}
+                  {pending ? (
                     <span
-                      className="chat-thread-pending is-failed"
-                      role="status"
+                      className={`chat-thread-pending${pending.error ? " is-failed" : ""}`}
+                      role={pending.error ? "alert" : "status"}
                     >
-                      Not delivered: {undelivered.reason}
+                      {pending.error
+                        ? "Not saved: Send tries again"
+                        : "Sending..."}
                     </span>
-                    <button
-                      type="button"
-                      className="chat-thread-retry"
-                      onClick={() => void write("review.retry", {})}
-                    >
-                      Retry
-                    </button>
-                  </>
-                ) : null}
-              </span>
+                  ) : undelivered?.ids.has(message.id) ? (
+                    <>
+                      <span
+                        className="chat-thread-pending is-failed"
+                        role="status"
+                      >
+                        Not delivered: {undelivered.reason}
+                      </span>
+                      <button
+                        type="button"
+                        className="chat-thread-retry"
+                        onClick={() => void write("review.retry", {})}
+                      >
+                        Retry
+                      </button>
+                    </>
+                  ) : null}
+                </span>
+                <MessageReplyButton
+                  onClick={() =>
+                    setPartDraft({ thread: thread.id, comment: message.id })
+                  }
+                />
+              </div>
               {/* Its parts take comments too, drawn under them. */}
               <div className="chat-thread-body" data-message-id={message.id}>
                 <NoteBody
                   text={message.body}
                   parts={messageParts(thread, message.id)}
+                />
+                <MessageNotes
+                  threads={
+                    splitMessageThreads(byMessage.get(message.id)).onMessage
+                  }
+                  hidden={hidden}
+                  renderThread={(nested) => (
+                    <Fragment key={nested.id}>
+                      {renderThread(nested, true)}
+                    </Fragment>
+                  )}
+                  draft={
+                    partDraft?.comment === message.id && !partDraft.quote
+                      ? partEditor(partDraft, "Reply...")
+                      : null
+                  }
                 />
               </div>
             </div>
@@ -730,43 +764,52 @@ export function ChatThreadsProvider({
     );
   };
 
-  /** The parts of a thread's message, and the threads on them. */
+  /**
+   * The box of a thread being written on a part of a thread's message, or
+   * on the whole of it (Reply on it, `placeholder` says so).
+   */
+  const partEditor = (
+    part: ReviewMessagePart,
+    placeholder = `Comment for ${agent}...`,
+  ) => (
+    <div className="chat-thread is-draft">
+      <ThreadEditor
+        placeholder={placeholder}
+        onLeave={backToConversation}
+        onClose={(id) => {
+          dropFailed(id);
+          setPartDraft(null);
+          backToConversation();
+        }}
+        onSave={(text, id) =>
+          send({
+            id,
+            kind: "discussion",
+            anchor: { message: part },
+            text,
+          }).then((ok) => {
+            if (!ok) return;
+            setPartDraft(null);
+            backToConversation();
+          })
+        }
+      />
+    </div>
+  );
+
+  /**
+   * The parts of a thread's message, and the threads on them (those on
+   * the whole message are drawn after it).
+   */
   const messageParts = (thread: ReviewThread, comment: string): MessageParts =>
     messagePartsOf({
       key: `q:${comment}`,
-      threads: byMessage.get(comment),
+      threads: splitMessageThreads(byMessage.get(comment)).onParts,
       hidden,
       renderThread,
       draft:
-        partDraft?.comment === comment
-          ? {
-              quote: partDraft.quote,
-              node: (
-                <div className="chat-thread is-draft">
-                  <ThreadEditor
-                    placeholder={`Comment for ${agent}...`}
-                    onLeave={backToConversation}
-                    onClose={(id) => {
-                      dropFailed(id);
-                      setPartDraft(null);
-                      backToConversation();
-                    }}
-                    onSave={(text, id) =>
-                      send({
-                        id,
-                        kind: "discussion",
-                        anchor: { message: partDraft },
-                        text,
-                      }).then((ok) => {
-                        if (!ok) return;
-                        setPartDraft(null);
-                        backToConversation();
-                      })
-                    }
-                  />
-                </div>
-              ),
-            }
+        partDraft?.comment === comment && partDraft.quote
+          ? { quote: partDraft.quote, node: partEditor(partDraft) }
           : null,
       cursor,
       setCursor,
@@ -1351,6 +1394,11 @@ export function ChatThreadsProvider({
         commentOnPart(list, here, thread, keys.current.setPartDraft)
       ) {
         /* Taken up or commented on. */
+      } else if (
+        key === "R" &&
+        replyOnMessage(list, here, thread, keys.current.setPartDraft)
+      ) {
+        /* A thread on the whole message. */
       } else if ((key === "c" || key === "Enter" || key === "R") && thread) {
         // An answer being written in that thread: back into it.
         const open = list.querySelector<HTMLElement>(

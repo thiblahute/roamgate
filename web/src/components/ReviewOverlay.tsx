@@ -5096,7 +5096,7 @@ export function ReviewOverlay({
     )
       notes.push({
         key: "new-part",
-        quote: editor.anchor.message.quote,
+        quote: editor.anchor.message.quote ?? "",
         node: editorFor(editor),
       });
     return {

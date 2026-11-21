@@ -379,3 +379,87 @@
     visibility: hidden;
   }
 }
+
+/* Reply on a message of a thread: a thread on the whole of it, drawn under
+   it after the threads on its parts (MessageThreads). The button sits at
+   the right of the author's row and shows as the pointer is over the
+   message, j / k are on it, or a box in it has the focus. */
+.chat-thread-message-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.chat-thread-message-head > .chat-thread-author {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-thread-message-reply {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+  opacity: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.chat-thread-message:hover .chat-thread-message-reply,
+.chat-thread-message.is-focused .chat-thread-message-reply,
+.chat-thread-message:focus-within .chat-thread-message-reply,
+.chat-thread-message-reply:focus-visible,
+.chat-thread-message-actions .chat-thread-message-reply {
+  opacity: 1;
+}
+
+.chat-thread-message-reply:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* A message with no author's row (a work item's description): Reply in a
+   row of its own under it, always shown. */
+.chat-thread-message-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+/* The threads on the whole of a message, under it: after those on its
+   parts, indented as they are. */
+.chat-message-notes {
+  margin: 4px 0 0 14px;
+}
+
+.chat-thread-on {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* A phone: Reply always shown, a finger high through a transparent
+   border, as the comments' buttons are. */
+@media (hover: none) and (pointer: coarse) {
+  .chat-thread-message-reply {
+    position: relative;
+    opacity: 1;
+  }
+
+  .chat-thread-message-reply::before {
+    content: "";
+    position: absolute;
+    inset: -14px -8px;
+  }
+
+  .chat-thread-message-actions {
+    min-height: 44px;
+    align-items: center;
+  }
+}
