@@ -49,6 +49,9 @@ if (process.env.ROAMGATE_FORGE_CHIP_DOM_TEST !== "1") {
   const { forgeStore } = await import("../forgeStore");
   const { ForgeStreamingContext } = await import("../forgeSlots");
   const { createRoot } = await import("react-dom/client");
+  // The hover card's chunk, loaded ahead: a hover then shows it once its
+  // delay is over, however long compiling the module takes under load.
+  await import("./ForgeHoverCard");
   type ForgeStatus = import("../../../shared/forge").ForgeStatus;
   type ForgeRef = import("../../../shared/forge").ForgeRef;
 
