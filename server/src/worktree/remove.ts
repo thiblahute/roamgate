@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { realpath, rename } from "node:fs/promises";
+import { readdir, readlink, realpath, rename } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { sshCommandArgv } from "../bridge/ssh-command";
 import { serverLogger } from "../utils/logger";
@@ -378,6 +378,34 @@ export async function removeWorktreeWithRecovery({
   }
 }
 
+/**
+ * This machine's processes and their working directories, as the scan
+ * script prints them (`p<pid>` then `n<cwd>`), read from /proc here: the
+ * script forks a readlink per process, seconds on a busy desktop. Null
+ * without /proc (macOS, Windows): the script's lsof answers then.
+ */
+async function localProcessCwds(): Promise<string | null> {
+  let entries: string[];
+  try {
+    entries = await readdir("/proc");
+  } catch {
+    return null;
+  }
+  const found = await Promise.all(
+    entries
+      .filter((entry) => /^[0-9]+$/.test(entry))
+      .map(async (pid) => {
+        try {
+          return `p${pid}\nn${await readlink(`/proc/${pid}/cwd`)}\n`;
+        } catch {
+          // Gone since, or not ours to read.
+          return "";
+        }
+      }),
+  );
+  return found.join("");
+}
+
 export function createWorktreeRemovalRuntime({
   host,
   runProcessWithCodeTimeout,
@@ -435,6 +463,11 @@ fi
     } else {
       canonicalPath = await realpath(path).catch(() => path);
     }
+    const local = host ? null : await localProcessCwds();
+    if (local !== null)
+      return parseCheckoutProcessIds(local, canonicalPath).filter(
+        (processId) => processId !== process.pid,
+      );
     const script = `
 if [ -d /proc ]; then
   for link in /proc/[0-9]*/cwd; do
