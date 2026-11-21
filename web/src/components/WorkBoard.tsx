@@ -9,6 +9,7 @@ import {
   GitBranch,
   GitCommitHorizontal,
   GitPullRequest,
+  Hand,
   Link2,
   ListChecks,
   type LucideIcon,
@@ -36,6 +37,7 @@ import {
   summarizeWorkLinks,
   WORK_STATE_TITLE,
   WORK_STATES,
+  workAskOf,
   type WorkItem,
   type WorkLink,
   type WorkLinkGroupKind,
@@ -77,6 +79,7 @@ import {
 import { BoardCard } from "./BoardCard";
 import { WorkAddForm } from "./WorkAddForm";
 import {
+  postWorkItemComment,
   useWorkItemKeys,
   useWorkItemThreads,
   WorkDescription,
@@ -1193,6 +1196,87 @@ function OwnerChip({ owner }: { owner: NonNullable<WorkItem["owner"]> }) {
   );
 }
 
+/**
+ * What the user has to do on a For you or Verify item (its `ask`), as a
+ * highlighted line that wraps, with its answers as small buttons: a tap
+ * posts the answer as the user's comment on the item, which reaches its
+ * owner. Nothing in the other states or without an ask.
+ */
+export function WorkAsk({
+  item,
+  className = "",
+}: {
+  item: Pick<WorkItem, "id" | "state" | "ask" | "answers">;
+  className?: string;
+}) {
+  const [sending, setSending] = useState<string | null>(null);
+  const [said, setSaid] = useState<{ text: string; error?: true } | null>(null);
+  const asked = workAskOf(item);
+  if (!asked) return null;
+  const answer = (text: string) => {
+    setSending(text);
+    setSaid(null);
+    postWorkItemComment(item.id, text).then(
+      () => {
+        setSending(null);
+        setSaid({ text: `Sent: ${text}` });
+      },
+      (failure: unknown) => {
+        setSending(null);
+        setSaid({
+          text: `Not sent: ${failure instanceof Error ? failure.message : String(failure)}`,
+          error: true,
+        });
+      },
+    );
+  };
+  return (
+    <div
+      className={`work-ask is-${item.state}${className ? ` ${className}` : ""}`}
+      data-work-ask={item.id}
+    >
+      <p className="work-ask-text">
+        <Hand size={12} aria-hidden="true" />
+        <span>
+          <span className="sr-only">
+            {item.state === "you" ? "For you: " : "To verify: "}
+          </span>
+          {asked.ask}
+        </span>
+      </p>
+      {asked.answers.length ? (
+        <span className="work-ask-answers" aria-label="Answers">
+          {asked.answers.map((text) => (
+            <button
+              key={text}
+              type="button"
+              className="work-ask-answer"
+              disabled={sending !== null}
+              aria-busy={sending === text || undefined}
+              title={`Answer "${text}": a comment for the owner`}
+              onClick={(event) => {
+                event.stopPropagation();
+                answer(text);
+              }}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              {text}
+            </button>
+          ))}
+        </span>
+      ) : null}
+      {said ? (
+        <small
+          className={`work-ask-status${said.error ? " is-error" : ""}`}
+          role={said.error ? "alert" : "status"}
+        >
+          {said.text}
+        </small>
+      ) : null}
+    </div>
+  );
+}
+
 function WorkCard({
   item,
   project,
@@ -1262,6 +1346,7 @@ function WorkCard({
     >
       <div className="mr-reviews-dense-head">
         <strong>{item.title}</strong>
+        <WorkAsk item={item} />
         <span className="mr-reviews-dense-chips" aria-label="Tags and owner">
           {item.needsTriage ? (
             <span
@@ -1527,6 +1612,7 @@ function WorkDetail({
             {WORK_STATE_TITLE[item.state]}
           </span>
         </div>
+        <WorkAsk item={item} className="is-detail" />
         {description ? (
           <WorkDescription
             api={api}

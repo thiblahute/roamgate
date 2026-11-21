@@ -1778,9 +1778,18 @@ connectionId?}`, a commit reachable from that branch in that checkout;
 `coordinator` the session that takes the items nobody owns) and `items`
 (at most 2000: `{id` (8 to 16 hex characters), `project, title, state,
 tags[], owner?: {session, task?}, source?, links[], createdAt, updatedAt,
-doneAt?, by, review?}`). States are
+doneAt?, by, review?, needsTriage?, ask?, answers?}`). States are
 `you` (For you: waits on the user), `doing`, `verify` (built, to be
-confirmed in real use), `open` (nobody on it) and `done`. Tags are free
+confirmed in real use), `open` (nobody on it) and `done`. `ask` says
+what the user has to do on a `you` or `verify` item (one line, 400
+characters; the card shows it under the title, the For you notification
+as its body) and `answers` a decision's one-tap choices (6 at most, 80
+characters each; a tap is the user's comment on the item, through the
+item's review like the Comment box's). An agent's add, update or reopen
+that puts an item in those states, or clears its ask there, with no ask
+stored or given is refused; leaving them clears both unless given (the
+done rule and `done` clear them too). The user's own moves are never
+refused. Tags are free
 words (lower case, spaces as dashes, 40 characters, 12 per item). The owner
 is a session's address (`connection/pane`) and, for a background subagent,
 its task id; the session must be one the agent messenger lists

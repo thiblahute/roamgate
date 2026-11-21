@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   REVIEW_USER,
   type ReviewMessagePart,
+  type ReviewSession,
   type ReviewSnapshot,
   type ReviewThread,
   WORK_NO_OWNER,
 } from "../../../shared/review";
 import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
 import {
+  newClientId,
   type PendingWrite,
   pendingWriteCall,
   withPendingWrites,
@@ -39,6 +41,59 @@ import { useThreadKeys } from "./useThreadKeys";
  * there in the thread. Read once, then kept by the review pushes; made by
  * the first comment.
  */
+
+/** The item's review, made when it has none yet: its session. */
+export async function openWorkItemReview(item: string): Promise<ReviewSession> {
+  const answer = await workCall<{ snapshot: ReviewSnapshot | null }>(
+    "threads",
+    { item, open: true },
+  );
+  if (!answer?.snapshot)
+    throw new Error("the item's thread could not be opened");
+  rememberReviewSnapshot(answer.snapshot);
+  return answer.snapshot.session;
+}
+
+/** A write to the item's review, then read back: every comment's path. */
+export function writeWorkItemReview(
+  session: Pick<ReviewSession, "id" | "connectionId">,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<void> {
+  return writeThenReadBack(
+    (name, args) => reviewCall(session.connectionId, name, args),
+    session.id,
+    method,
+    params,
+    rememberReviewSnapshot,
+  );
+}
+
+/** A new comment on the item itself (the Comment box's): its owner's. */
+export function workCommentWrite(
+  item: string,
+  text: string,
+  id: string = newClientId(),
+): Omit<PendingWrite, "sessionId" | "at"> {
+  return { id, kind: "discussion", anchor: { work: { item } }, text };
+}
+
+/**
+ * The user's comment on an item from outside its detail (a card's answer):
+ * the Comment box's write, the review made first when the item has none.
+ */
+export async function postWorkItemComment(
+  item: string,
+  text: string,
+): Promise<void> {
+  const session = await openWorkItemReview(item);
+  const { method, params } = pendingWriteCall({
+    ...workCommentWrite(item, text),
+    sessionId: session.id,
+    at: new Date().toISOString(),
+  });
+  await writeWorkItemReview(session, method, params);
+}
 
 export type WorkItemThreadsApi = WorkItemView & {
   snapshot: ReviewSnapshot | undefined;
@@ -102,15 +157,9 @@ export function useWorkItemThreads(item: string): WorkItemThreadsApi {
   const openSession = useCallback(async () => {
     const known = snapshotRef.current?.session;
     if (known) return known;
-    const answer = await workCall<{ snapshot: ReviewSnapshot | null }>(
-      "threads",
-      { item, open: true },
-    );
-    if (!answer?.snapshot)
-      throw new Error("the item's thread could not be opened");
-    rememberReviewSnapshot(answer.snapshot);
-    setSessionId(answer.snapshot.session.id);
-    return answer.snapshot.session;
+    const session = await openWorkItemReview(item);
+    setSessionId(session.id);
+    return session;
   }, [item]);
   const addImage = useCallback(
     async (file: File) => {
@@ -127,15 +176,7 @@ export function useWorkItemThreads(item: string): WorkItemThreadsApi {
     async (method: string, params: Record<string, unknown>) => {
       setError("");
       try {
-        const session = await openSession();
-        const connectionId = session.connectionId;
-        await writeThenReadBack(
-          (name, args) => reviewCall(connectionId, name, args),
-          session.id,
-          method,
-          params,
-          rememberReviewSnapshot,
-        );
+        await writeWorkItemReview(await openSession(), method, params);
         return true;
       } catch (failure) {
         setError(failure instanceof Error ? failure.message : String(failure));
@@ -437,18 +478,11 @@ export function WorkItemThreads({
               onLeave();
             }}
             onSave={(text, id) =>
-              api
-                .send({
-                  id,
-                  kind: "discussion",
-                  anchor: { work: { item } },
-                  text,
-                })
-                .then((ok) => {
-                  if (!ok) return;
-                  setComposing(false);
-                  onLeave();
-                })
+              api.send(workCommentWrite(item, text, id)).then((ok) => {
+                if (!ok) return;
+                setComposing(false);
+                onLeave();
+              })
             }
           />
         </div>

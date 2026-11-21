@@ -116,6 +116,15 @@ export type WorkItem = {
    * clears this.
    */
   needsTriage?: true;
+  /**
+   * For you and Verify: what the user has to do, in one or two sentences
+   * ("Choose: media to the car with the phone mic, or no music on car
+   * links", "Dictate once after 10 idle minutes; text should appear").
+   * Cleared when the item leaves those states.
+   */
+  ask?: string;
+  /** For a decision: a few short answers, one tap each (a comment). */
+  answers?: string[];
 };
 
 export type WorkPushKind = "items" | "projects" | "item";
@@ -144,7 +153,49 @@ export const WORK_LIMITS = {
   tagChars: 40,
   tagsPerItem: 12,
   linksPerItem: 30,
+  askChars: 400,
+  answers: 6,
+  answerChars: 80,
 } as const;
+
+/** The states whose items say what the user has to do (`ask`). */
+export const WORK_ASK_STATES: readonly WorkState[] = ["you", "verify"];
+
+export function workStateAsks(state: WorkState): boolean {
+  return WORK_ASK_STATES.includes(state);
+}
+
+/**
+ * What a card shows as the user's to do: the ask of a For you or Verify
+ * item, with its answers; null in the other states or without an ask.
+ */
+export function workAskOf(
+  item: Pick<WorkItem, "state" | "ask" | "answers">,
+): { ask: string; answers: string[] } | null {
+  if (!workStateAsks(item.state) || !item.ask?.trim()) return null;
+  return { ask: item.ask.trim(), answers: item.answers ?? [] };
+}
+
+/**
+ * Answers as stored: one line each, trimmed to 80 characters, empty and
+ * repeated ones (whatever their case) dropped, 6 at most.
+ */
+export function normalizeWorkAnswers(answers: readonly string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of answers) {
+    const answer = raw.replace(/\s+/g, " ").trim();
+    const short =
+      answer.length > WORK_LIMITS.answerChars
+        ? `${answer.slice(0, WORK_LIMITS.answerChars - 1).trimEnd()}\u2026`
+        : answer;
+    const key = short.toLowerCase();
+    if (!short || seen.has(key)) continue;
+    seen.add(key);
+    out.push(short);
+  }
+  return out.slice(0, WORK_LIMITS.answers);
+}
 
 /** An item's or project's id: 8 to 16 hex characters, as review ids are. */
 export const WORK_ID = /^[0-9a-f]{8,16}$/;

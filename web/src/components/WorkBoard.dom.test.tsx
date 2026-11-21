@@ -146,8 +146,13 @@ if (
       }),
   }));
   const threadsModule = await import("./WorkItemThreads");
+  /** The answers tapped on a card: the item and the comment's words. */
+  const posted: [string, string][] = [];
   mock.module("./WorkItemThreads", () => ({
     ...threadsModule,
+    postWorkItemComment: async (item: string, text: string) => {
+      posted.push([item, text]);
+    },
     useWorkItemThreads: () => ({
       snapshot: undefined,
       threads: [
@@ -813,6 +818,69 @@ if (
         "desktop:/home/me/gstreamer/2.0/gst2-caps": "all",
       },
     });
+  });
+
+  test("a For you or Verify card says what the user has to do; an answer's tap is the user's comment; the detail says it first", async () => {
+    localStorage.clear();
+    const saved = board.items;
+    board.items = [
+      item("1900000000000000", "gst2", "you", ["car"], {
+        ask: "Choose: media to the car with the phone mic, or no music on car links",
+        answers: ["Media, phone mic", "No music"],
+      }),
+      item("1910000000000000", "gst2", "verify", ["dictation"], {
+        ask: "Dictate once after 10 idle minutes; text should appear",
+      }),
+      item("1920000000000000", "gst2", "doing", [], { ask: "Stale" }),
+    ];
+    const view = await mount();
+    try {
+      const card = (id: string) =>
+        view.panel.querySelector(`[data-work-item='${id}']`)!;
+      const you = card("1900000000000000");
+      // Under the title, before the tags.
+      const head = you.querySelector(".mr-reviews-dense-head")!;
+      expect(head.children[1]?.classList.contains("work-ask")).toBe(true);
+      expect(you.querySelector(".work-ask-text")?.textContent).toBe(
+        "For you: Choose: media to the car with the phone mic, or no music on car links",
+      );
+      const answers = [...you.querySelectorAll(".work-ask-answer")];
+      expect(answers.map((each) => each.textContent)).toEqual([
+        "Media, phone mic",
+        "No music",
+      ]);
+      expect(
+        card("1910000000000000").querySelector(".work-ask.is-verify")
+          ?.textContent,
+      ).toBe(
+        "To verify: Dictate once after 10 idle minutes; text should appear",
+      );
+      expect(
+        card("1910000000000000").querySelector(".work-ask-answer"),
+      ).toBeNull();
+      expect(card("1920000000000000").querySelector(".work-ask")).toBeNull();
+
+      // A tap posts the answer, and does not open the card.
+      await view.click(answers[1]!);
+      expect(posted).toEqual([["1900000000000000", "No music"]]);
+      expect(view.panel.querySelector(".work-detail")).toBeNull();
+      expect(you.querySelector(".work-ask-status")?.textContent).toBe(
+        "Sent: No music",
+      );
+
+      await view.click(you);
+      const detail = view.panel.querySelector(".work-detail")!;
+      expect(detail.querySelector(".work-ask.is-detail")).toBeTruthy();
+      expect(
+        detail
+          .querySelector(".assistant-task-heading")
+          ?.nextElementSibling?.classList.contains("work-ask"),
+      ).toBe(true);
+    } finally {
+      board.items = saved;
+      posted.length = 0;
+      await view.unmount();
+    }
   });
 
   test("a card's links are one line of small chips, a kind and a count each; the detail lists them with labels one reads, each its action", async () => {

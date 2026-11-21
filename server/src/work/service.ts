@@ -12,6 +12,7 @@ import {
   provisionalWorkTitle,
   WORK_OPEN_STATES,
   type WorkBoard,
+  workStateAsks,
   type WorkItem,
   type WorkLink,
   type WorkOwner,
@@ -23,6 +24,8 @@ import {
   newWorkId,
   oneLine,
   parseDoneRule,
+  parseWorkAnswers,
+  parseWorkAsk,
   parseWorkCoordinator,
   parseWorkLinks,
   parseWorkOwner,
@@ -218,6 +221,64 @@ export type WorkAdded = {
   /** The thread given as `adopt_thread`, now the item's own. */
   adopted?: string;
 };
+
+/** What an agent is told when it leaves the user nothing to do. */
+export const WORK_ASK_REQUIRED =
+  'an item in For you (you) or Verify (verify) says what the user has to do: give ask, one or two sentences from the item and its thread ("Choose: media to the car with the phone mic, or no music on car links", "Dictate once after 10 idle minutes; text should appear"), and for a decision answers, a few short one-tap choices';
+
+/**
+ * An item's ask and answers as a change leaves them, written on `next`
+ * and said in `change`: given ones taken (null or "" clears), cleared
+ * when the item leaves For you and Verify unless given then. An agent's
+ * change that puts or keeps the item in those states with no ask (none
+ * stored, none given, or cleared) is refused: the card says what the user
+ * has to do. The user's own moves are never refused.
+ */
+export function settleWorkAsk(
+  before: WorkItem | null,
+  next: WorkItem,
+  params: Record<string, unknown>,
+  meta: Pick<WorkMeta, "by">,
+  change: Record<string, unknown>,
+): void {
+  const askGiven = params.ask !== undefined;
+  const answersGiven = params.answers !== undefined;
+  if (askGiven) {
+    const ask = parseWorkAsk(params.ask);
+    if (ask) next.ask = ask;
+    else delete next.ask;
+  }
+  if (answersGiven) {
+    const answers = parseWorkAnswers(params.answers);
+    if (answers.length) next.answers = answers;
+    else delete next.answers;
+  }
+  const leaving = !workStateAsks(next.state);
+  if (leaving && !askGiven) delete next.ask;
+  if (leaving && !answersGiven) delete next.answers;
+  if (
+    meta.by === "agent" &&
+    !leaving &&
+    !next.ask &&
+    (!before || before.state !== next.state || askGiven)
+  )
+    throw new WorkError(WORK_ASK_REQUIRED);
+  if ((next.ask ?? null) !== (before?.ask ?? null))
+    change.ask = next.ask ?? null;
+  if (
+    JSON.stringify(next.answers ?? []) !== JSON.stringify(before?.answers ?? [])
+  )
+    change.answers = next.answers ?? null;
+}
+
+/** An item leaving For you and Verify (done, landed): its ask goes. */
+function withoutAsk(item: WorkItem): WorkItem {
+  if (workStateAsks(item.state)) return item;
+  const rest = { ...item };
+  delete rest.ask;
+  delete rest.answers;
+  return rest;
+}
 
 export function createWorkService(deps: WorkServiceDeps) {
   const { store } = deps;
@@ -639,6 +700,8 @@ export function createWorkService(deps: WorkServiceDeps) {
       );
     if (item.state === "done")
       item.doneAt = parseWorkTime(params.done_at, "done_at") ?? at;
+    const asked: Record<string, unknown> = {};
+    settleWorkAsk(null, item, params, meta, asked);
     const made = commit(
       null,
       item,
@@ -649,6 +712,7 @@ export function createWorkService(deps: WorkServiceDeps) {
         ...(owner ? { owner } : {}),
         ...(item.tags.length ? { tags: item.tags } : {}),
         ...(item.needsTriage ? { needs_triage: true } : {}),
+        ...asked,
       },
       `added "${oneLine(item.title, 60)}"`,
     );
@@ -755,6 +819,7 @@ export function createWorkService(deps: WorkServiceDeps) {
       if (!!next.needsTriage !== !!before.needsTriage)
         change.needs_triage = !!next.needsTriage;
     }
+    settleWorkAsk(before, next, params, meta, change);
     const linksChanged =
       JSON.stringify(next.links) !== JSON.stringify(before.links);
     if (linksChanged) change.links = next.links;
@@ -806,14 +871,14 @@ export function createWorkService(deps: WorkServiceDeps) {
         );
     }
     const at = now();
-    const next: WorkItem = {
+    const next: WorkItem = withoutAsk({
       ...before,
       state: "done",
       doneAt: parseWorkTime(params.done_at, "done_at") ?? at,
       updatedAt: at,
       by: meta.by,
       links: mergeWorkLinks(before.links, links),
-    };
+    });
     return commit(
       before,
       next,
@@ -845,6 +910,8 @@ export function createWorkService(deps: WorkServiceDeps) {
       by: meta.by,
     };
     delete next.doneAt;
+    const asked: Record<string, unknown> = {};
+    settleWorkAsk(before, next, params, meta, asked);
     const made = commit(
       before,
       next,
@@ -852,6 +919,7 @@ export function createWorkService(deps: WorkServiceDeps) {
       {
         state,
         ...(owner && !before.owner ? { owner } : {}),
+        ...asked,
       },
       `reopened "${oneLine(next.title, 60)}" as ${state}`,
     );
@@ -1158,6 +1226,8 @@ export function createWorkService(deps: WorkServiceDeps) {
           params.state ?? (thread.resolved ? "done" : (parsed.state ?? "open")),
         tags: params.tags,
         owner: params.owner,
+        ask: params.ask,
+        answers: params.answers,
         // Tags read from the whole thread's first comment, not its title.
         tag_text: thread.comments[0]?.body ?? "",
         source: `thread ${thread.id}`,
@@ -1237,14 +1307,14 @@ export function createWorkService(deps: WorkServiceDeps) {
       const at = now();
       const current = store.item(item.id);
       if (!current || !WORK_OPEN_STATES.includes(current.state)) continue;
-      const next: WorkItem = {
+      const next: WorkItem = withoutAsk({
         ...current,
         state: "done",
         doneAt: at,
         updatedAt: at,
         by: "agent",
         links: mergeWorkLinks(current.links, [where]),
-      };
+      });
       commit(
         current,
         next,

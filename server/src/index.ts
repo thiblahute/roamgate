@@ -1490,7 +1490,12 @@ function getWorkService(): WorkService {
             agent: "Work",
             workspaceLabel: "Work",
             title: `For you: ${item.title.slice(0, 120)}`,
-            body: item.tags.length ? item.tags.join(", ") : "On the Work board",
+            // What the user has to do, when the item says it.
+            body: item.ask
+              ? item.ask.slice(0, 240)
+              : item.tags.length
+                ? item.tags.join(", ")
+                : "On the Work board",
           },
           { kind: "work", path: `/#roamgate-work=${item.id}` },
         );

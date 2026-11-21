@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   isWorkState,
+  normalizeWorkAnswers,
   normalizeWorkTags,
   WORK_ID,
   WORK_LIMITS,
@@ -276,6 +277,31 @@ export function parseWorkTags(value: unknown): string[] {
   return normalizeWorkTags(list as string[]);
 }
 
+/**
+ * What the user has to do (For you, Verify): one or two sentences on one
+ * line; null, "" or none clears it (undefined).
+ */
+export function parseWorkAsk(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") throw new WorkError("ask must be words");
+  if (!value.trim()) return undefined;
+  if (value.trim().length > WORK_LIMITS.askChars)
+    throw new WorkError(
+      `ask is too long: one or two sentences, ${WORK_LIMITS.askChars} characters at most`,
+    );
+  return oneLine(value, WORK_LIMITS.askChars);
+}
+
+/** A decision's one-tap answers: a list of words; null or [] clears it. */
+export function parseWorkAnswers(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.some((each) => typeof each !== "string"))
+    throw new WorkError("answers must be a list of short answers");
+  if (value.length > WORK_LIMITS.answers)
+    throw new WorkError(`at most ${WORK_LIMITS.answers} answers`);
+  return normalizeWorkAnswers(value as string[]);
+}
+
 function normalItem(raw: unknown): WorkItem | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.id !== "string" || !WORK_ID.test(raw.id)) return null;
@@ -296,6 +322,16 @@ function normalItem(raw: unknown): WorkItem | null {
   }
   const source = typeof raw.source === "string" ? raw.source : undefined;
   const at = typeof raw.createdAt === "string" ? raw.createdAt : "";
+  const ask =
+    typeof raw.ask === "string" && raw.ask.trim()
+      ? oneLine(raw.ask, WORK_LIMITS.askChars)
+      : undefined;
+  const answers =
+    ask && Array.isArray(raw.answers)
+      ? normalizeWorkAnswers(
+          raw.answers.filter((a): a is string => typeof a === "string"),
+        )
+      : [];
   return {
     id: raw.id,
     project: raw.project,
@@ -315,6 +351,8 @@ function normalItem(raw: unknown): WorkItem | null {
     by: raw.by === "agent" ? "agent" : "user",
     ...(typeof raw.review === "string" ? { review: raw.review } : {}),
     ...(raw.needsTriage === true ? { needsTriage: true as const } : {}),
+    ...(ask ? { ask } : {}),
+    ...(answers.length ? { answers } : {}),
   };
 }
 

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   filterWorkItems,
+  normalizeWorkAnswers,
   parseWorkQuery,
   provisionalWorkTitle,
   readableWorkLink,
@@ -9,6 +10,8 @@ import {
   type WorkLink,
   workPrRef,
   workQueryWithTag,
+  workAskOf,
+  workStateAsks,
   workTagCompletions,
 } from "./work";
 
@@ -176,4 +179,38 @@ test("the detail's links: labels one reads, named from what the page knows", () 
       url: "https://gitlab.com/a/-/merge_requests/3",
     }),
   ).toEqual({ label: "Request !3", detail: "Merge request on gitlab.com" });
+});
+
+test("a card says what the user has to do only in For you and Verify", () => {
+  expect(["you", "verify"].every((s) => workStateAsks(s as never))).toBe(true);
+  expect(workStateAsks("doing")).toBe(false);
+  const asked = {
+    state: "you" as const,
+    ask: " Choose: A or B ",
+    answers: ["A", "B"],
+  };
+  expect(workAskOf(asked)).toEqual({
+    ask: "Choose: A or B",
+    answers: ["A", "B"],
+  });
+  expect(workAskOf({ ...asked, state: "verify", answers: undefined })).toEqual({
+    ask: "Choose: A or B",
+    answers: [],
+  });
+  expect(workAskOf({ ...asked, state: "doing" })).toBeNull();
+  expect(workAskOf({ state: "you", ask: "  " })).toBeNull();
+  expect(workAskOf({ state: "you" })).toBeNull();
+});
+
+test("answers: one line each, short, no empty nor repeated ones, 6 at most", () => {
+  expect(normalizeWorkAnswers([" Yes ", "yes", "", "No\nway"])).toEqual([
+    "Yes",
+    "No way",
+  ]);
+  const long = normalizeWorkAnswers(["x".repeat(200)])[0]!;
+  expect(long.length).toBe(80);
+  expect(long.endsWith("\u2026")).toBe(true);
+  expect(
+    normalizeWorkAnswers(["1", "2", "3", "4", "5", "6", "7", "8"]),
+  ).toHaveLength(6);
 });

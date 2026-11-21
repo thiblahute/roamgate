@@ -13,6 +13,8 @@ import {
   mergeWorkLinks,
   openWorkStore,
   parseWorkLink,
+  parseWorkAnswers,
+  parseWorkAsk,
   parseWorkOwner,
   parseWorkState,
   WorkError,
@@ -96,6 +98,52 @@ describe("work store", () => {
     const history = readFileSync(join(where, "history.jsonl"), "utf8");
     expect(JSON.parse(history.trim()).change).toEqual({ state: "open" });
     expect(existsSync(join(where, "work.json"))).toBe(true);
+  });
+
+  test("keeps an item's ask and answers, answers only with an ask", () => {
+    const where = dir();
+    const store = openWorkStore(where);
+    const base = {
+      project: "roamgate",
+      title: "Car",
+      state: "you" as const,
+      tags: [],
+      links: [],
+      createdAt: "2026-11-20T10:00:00.000Z",
+      updatedAt: "2026-11-20T10:00:00.000Z",
+      by: "agent" as const,
+    };
+    store.saveItem(
+      {
+        ...base,
+        id: "0123456789abcdef",
+        ask: "Choose: A or B",
+        answers: ["A", "B"],
+      },
+      {},
+    );
+    store.saveItem(
+      { ...base, id: "fedcba9876543210", answers: ["stray"] } as never,
+      {},
+    );
+    const again = openWorkStore(where);
+    expect(again.item("0123456789abcdef")).toMatchObject({
+      ask: "Choose: A or B",
+      answers: ["A", "B"],
+    });
+    expect(again.item("fedcba9876543210")?.answers).toBeUndefined();
+  });
+
+  test("parses an ask and answers, refusing what is not one", () => {
+    expect(parseWorkAsk(" Try it\n once. ")).toBe("Try it once.");
+    expect(parseWorkAsk(null)).toBeUndefined();
+    expect(parseWorkAsk("  ")).toBeUndefined();
+    expect(() => parseWorkAsk(3)).toThrow(WorkError);
+    expect(() => parseWorkAsk("x".repeat(401))).toThrow(/too long/);
+    expect(parseWorkAnswers(null)).toEqual([]);
+    expect(parseWorkAnswers(["A", " a "])).toEqual(["A"]);
+    expect(() => parseWorkAnswers("A")).toThrow(WorkError);
+    expect(() => parseWorkAnswers([1])).toThrow(WorkError);
   });
 
   test("a broken file reads as empty and is not overwritten until saved", () => {

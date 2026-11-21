@@ -308,7 +308,17 @@ link the commit its fix landed in and move it to verify (it becomes done
 by itself once the commit is on the deployed build or the project's
 branch; an item whose links are all decisions, once every decision is
 ticked in the file, committed or in the working tree), put it in For you
-when it needs the user. The user's comments on
+when it needs the user. An item in For you or Verify says what the user
+has to do, shown on its card: \`ask\`, one or two sentences ("Choose:
+media to the car with the phone mic, or no music on car links", "Dictate
+once after 10 idle minutes; text should appear"), and for a decision
+\`answers\`, a few short choices the user taps (each one their comment on
+the item); a move there without an ask is refused, and leaving those
+states clears them unless given:
+
+    roamgate-review work work_update '{"item": "0123abcd", "state": "you", "ask": "Choose: media to the car with the phone mic, or no music on car links", "answers": ["Media with the phone mic", "No music on car links"]}'
+
+The user's comments on
 an item reach its owner as review comments: answer them with
 \`review_reply\`. \`roamgate-review work help\` lists each tool's parameters.
 

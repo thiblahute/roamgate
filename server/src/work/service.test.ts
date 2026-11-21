@@ -319,7 +319,7 @@ describe("work service", () => {
     expect(notified).toEqual([]);
 
     const forYou = await service.update(
-      { item: item.id, state: "you" },
+      { item: item.id, state: "you", ask: "Try the keys on the phone." },
       { by: "agent" },
     );
     expect(forYou.state).toBe("you");
@@ -1610,6 +1610,55 @@ test("the real review service asks the coordinator to triage the user's free-tex
 });
 
 describe("work tools and rpc", () => {
+  test("the tools take an ask and answers, list them, and say how to give one", async () => {
+    const { service } = setup();
+    const made = JSON.parse(
+      (
+        await workTool(service, "work_add", { title: "Car audio" }, "Claude")
+      ).split("\n")[1]!,
+    );
+    await expect(
+      workTool(
+        service,
+        "work_update",
+        { item: made.item.id, state: "you" },
+        "Claude",
+      ),
+    ).rejects.toThrow(/give ask/);
+    const moved = JSON.parse(
+      (
+        await workTool(
+          service,
+          "work_update",
+          {
+            item: made.item.id,
+            state: "you",
+            ask: "Choose: media or no music",
+            answers: ["Media", "No music"],
+          },
+          "Claude",
+        )
+      ).split("\n")[1]!,
+    );
+    expect(moved.item.ask).toBe("Choose: media or no music");
+    expect(moved.item.answers).toEqual(["Media", "No music"]);
+    await expect(
+      workTool(
+        service,
+        "work_update",
+        { item: made.item.id, answers: ["x".repeat(81)] },
+        "Claude",
+      ),
+    ).rejects.toThrow(/invalid work_update/);
+    const help = JSON.parse(await workTool(service, "help", {}, "Claude"));
+    const update = help.tools.find(
+      (tool: { name: string }) => tool.name === "work_update",
+    );
+    expect(update.description).toMatch(/ask/);
+    expect(update.params.properties.ask).toBeTruthy();
+    expect(update.params.properties.answers).toBeTruthy();
+  });
+
   test("the tools validate their parameters and answer JSON after the untrusted line", async () => {
     const { service, pushes } = setup();
     const added = await workTool(
@@ -1770,6 +1819,89 @@ describe("work tools and rpc", () => {
     expect(done.item.links.at(-1).kind).toBe("pr");
   });
 
+  test("an item in For you or Verify says what the user has to do", async () => {
+    const { service } = setup();
+    const store = service.store;
+    const agent = { by: "agent" as const, caller: "Claude" };
+    const item = await service.add({ title: "Car audio" }, agent);
+    // An agent moving it there without an ask is refused, saying why.
+    await expect(
+      service.update({ item: item.id, state: "you" }, agent),
+    ).rejects.toThrow(/give ask/);
+    await expect(
+      service.add({ title: "Dictation", state: "verify" }, agent),
+    ).rejects.toThrow(/says what the user has to do/);
+    expect(store.item(item.id)!.state).toBe("open");
+
+    const asked = await service.update(
+      {
+        item: item.id,
+        state: "you",
+        ask: "  Choose: media to the car\nwith the phone mic, or no music  ",
+        answers: ["Media, phone mic", " No music ", "no music", ""],
+      },
+      agent,
+    );
+    expect(asked.ask).toBe(
+      "Choose: media to the car with the phone mic, or no music",
+    );
+    expect(asked.answers).toEqual(["Media, phone mic", "No music"]);
+    // A move between the two keeps it; other changes need none.
+    const verify = await service.update(
+      { item: item.id, state: "verify", add_tags: ["car"] },
+      agent,
+    );
+    expect(verify.ask).toBe(asked.ask);
+    // Clearing it while there is refused for an agent.
+    await expect(
+      service.update({ item: item.id, ask: null }, agent),
+    ).rejects.toThrow(/give ask/);
+    // Leaving clears it, unless given.
+    const doing = await service.update(
+      { item: item.id, state: "doing" },
+      agent,
+    );
+    expect(doing.ask).toBeUndefined();
+    expect(doing.answers).toBeUndefined();
+    const kept = await service.update(
+      { item: item.id, state: "you", ask: "Pick one.", answers: ["A", "B"] },
+      agent,
+    );
+    expect(kept.answers).toEqual(["A", "B"]);
+    const done = service.done({ item: item.id }, agent);
+    expect(done.ask).toBeUndefined();
+    expect(done.answers).toBeUndefined();
+    // Reopened there by an agent: it needs one again.
+    await expect(
+      service.reopen({ item: item.id, state: "verify" }, agent),
+    ).rejects.toThrow(/give ask/);
+    const reopened = await service.reopen(
+      { item: item.id, state: "verify", ask: "Dictate once; text appears." },
+      agent,
+    );
+    expect(reopened.ask).toBe("Dictate once; text appears.");
+    // The user's own moves are never refused.
+    const plain = await service.add({ title: "Mine" }, { by: "user" });
+    const mine = await service.update(
+      { item: plain.id, state: "you" },
+      { by: "user" },
+    );
+    expect(mine.state).toBe("you");
+    expect(mine.ask).toBeUndefined();
+    // An item added there with its ask keeps it; too many answers refused.
+    const added = await service.add(
+      { title: "Try it", state: "verify", ask: "Try it once." },
+      agent,
+    );
+    expect(store.item(added.id)!.ask).toBe("Try it once.");
+    await expect(
+      service.update(
+        { item: added.id, answers: ["1", "2", "3", "4", "5", "6", "7"] },
+        agent,
+      ),
+    ).rejects.toThrow(/at most 6 answers/);
+  });
+
   test("the bridge RPCs route to the service and say who wrote", async () => {
     const { service, pushes } = setup();
     expect(isWorkMethod("bridge.work.list")).toBe(true);
@@ -1781,6 +1913,7 @@ describe("work tools and rpc", () => {
     const moved = (await handleWorkRpc(service, "bridge.work.update", {
       item: added.item.id,
       state: "you",
+      ask: "Say which.",
       by: "agent",
       summary: "moved it",
     })) as { item: WorkItem };

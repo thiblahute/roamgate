@@ -79,6 +79,106 @@
   overflow-wrap: anywhere;
 }
 
+/* What the user has to do on a For you or Verify item: a highlighted
+   line under the title, the whole width of the card, wrapping (never cut
+   short on the phone), its answers as small buttons below it. */
+.work-ask {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 4px 8px;
+  background: var(--accent-soft);
+}
+
+.work-ask.is-verify {
+  border-left-color: var(--warning-text, #d29922);
+  background: var(--warning-soft);
+}
+
+.work-ask.is-detail {
+  margin: 4px 0 8px;
+  padding: 6px 10px;
+}
+
+.work-ask-text {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.work-ask-text > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.work-ask.is-verify .work-ask-text > svg {
+  color: var(--warning-text, #d29922);
+}
+
+.work-ask.is-detail .work-ask-text {
+  font-size: 13px;
+}
+
+.work-ask-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.work-ask-answer {
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: var(--viewer-code-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: normal;
+  text-align: left;
+  cursor: pointer;
+}
+
+.work-ask-answer:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.work-ask-answer:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.is-mobile .work-ask-answer {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.is-mobile .work-ask-text {
+  font-size: 13px;
+}
+
+.work-ask-status {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.work-ask-status.is-error {
+  color: var(--danger-text);
+}
+
 /* A card's links: one line of small chips, a kind and its count each,
    wrapping inside the card; the detail lists them. */
 .mr-reviews-dense-chips.work-link-chips {

@@ -2226,7 +2226,13 @@ detail, then the view.
 Each card is an item: its title (wrapping, the card as wide as its
 column), tags, owner (the session or subagent working on it), its links
 (a review thread, an effort, a request, a commit, a branch, an RFC's
-decision, another item it waits for) and when it moved; the selected card
+decision, another item it waits for) and when it moved. A For you or
+Verify card says what you have to do right under its title, as a
+highlighted line ("Choose: media to the car with the phone mic, or no
+music on car links", "Dictate once after 10 idle minutes; text should
+appear"); a decision offers its answers as small buttons, and a tap posts
+that answer as your comment on the item, which reaches its owner. The
+item's detail says it first too. The selected card
 offers **Open the agent's work** and **Done** over its corner. Drag a card
 to another column to change its state (a mouse moves it at once; a finger
 holds it a moment first, a swipe still scrolls the columns; the column
