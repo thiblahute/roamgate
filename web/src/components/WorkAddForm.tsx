@@ -1,10 +1,5 @@
 import { ChevronLeft } from "lucide-react";
-import { Suspense, useEffect, useRef, useState } from "react";
-import {
-  WORK_STATE_TITLE,
-  WORK_STATES,
-  type WorkState,
-} from "../../../shared/work";
+import { Suspense, useRef, useState } from "react";
 import { blobBase64 } from "../renderedCapture";
 import { vimKeys } from "../vimKeys";
 import { ImagePickButton } from "./ImagePickButton";
@@ -58,42 +53,34 @@ export async function workAddPayload(
 }
 
 /**
- * Adding an item, in the view as a request's detail is: its title, its
- * description in the review comment editor (images pasted, dropped or
- * picked go with it, stored as a review's are once it is added), its
- * state and tags. Cmd+Enter in the description, or Add, adds it; Esc or
+ * Adding an item, in the view as a request's detail is: one text box,
+ * the review comment editor, where the user says what needs doing in
+ * their own words (images pasted, dropped or picked go with it, stored as
+ * a review's are once it is added). Nothing else to fill: the item is
+ * the project's coordinator's to sort (a clear title, tags, a state,
+ * split when it holds several tasks). Cmd+Enter, or Add, adds it; Esc or
  * Cancel leaves.
  */
 export function WorkAddForm({
   project,
   projectName,
-  tags,
   onAdd,
   onCancel,
 }: {
   project: string;
   projectName: string;
-  tags: string[];
   onAdd: (params: {
-    title: string;
-    state: WorkState;
-    tags: string[];
     text?: string;
     images?: { token: string; type: string; data: string }[];
   }) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [title, setTitle] = useState("");
-  const [state, setState] = useState<WorkState>("open");
-  const [chosen, setChosen] = useState("");
   const [waiting, setWaiting] = useState("");
   const [busy, setBusy] = useState(false);
   const text = useRef("");
   const images = useRef<WorkAddImage[]>([]);
-  const titleRef = useRef<HTMLInputElement>(null);
   const handle = useRef<CommentEditorHandle | null>(null);
   const [vim] = useState(vimKeys);
-  useEffect(() => titleRef.current?.focus(), []);
   const keepImage = async (file: File): Promise<string> => {
     if (!file.type.startsWith("image/")) throw new Error("not an image");
     if (file.size > IMAGE_MAX_BYTES)
@@ -109,21 +96,15 @@ export function WorkAddForm({
   };
   const submit = async () => {
     if (busy) return;
-    if (!title.trim()) {
-      setWaiting("A title is needed");
-      titleRef.current?.focus();
+    if (!text.current.trim()) {
+      setWaiting("Say what needs doing");
       return;
     }
     if (imageUploadPending(text.current)) return setWaiting(IMAGE_UPLOADING);
     setWaiting("");
     setBusy(true);
     try {
-      await onAdd({
-        title: title.trim(),
-        state,
-        tags: chosen.split(/[\s,]+/).filter(Boolean),
-        ...(await workAddPayload(text.current, images.current)),
-      });
+      await onAdd(await workAddPayload(text.current, images.current));
     } finally {
       setBusy(false);
     }
@@ -159,27 +140,20 @@ export function WorkAddForm({
           <h3>New item</h3>
           <span className="assistant-task-state">{projectName}</span>
         </div>
-        <input
-          ref={titleRef}
-          className="work-add-title"
-          aria-label="Title"
-          placeholder="What needs doing"
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-        />
         <div className="chat-thread-editor work-add-text">
           <Suspense fallback={null}>
             <ReviewCommentEditorLazy
               value=""
               vimMode={vim}
-              autoFocus={false}
-              placeholder="Its description: what, why, where; paste or drop images, or add them"
-              label="Description"
+              autoFocus
+              placeholder="What needs doing, in your own words: what, why, where; paste or drop images, or add them. It gets sorted into a title, tags and a state for you."
+              label="What needs doing"
               handleRef={handle}
               onPasteImage={keepImage}
               onBlocked={setWaiting}
               onChange={(value) => {
                 text.current = value;
+                if (value.trim()) setWaiting("");
               }}
               onCommit={(explicit) => {
                 if (explicit) void submit();
@@ -200,27 +174,6 @@ export function WorkAddForm({
               onPick={(files) => handle.current?.addImages(files)}
             />
           </div>
-        </div>
-        <div className="work-add-row">
-          <select
-            aria-label="State"
-            value={state}
-            onChange={(event) => setState(event.target.value as WorkState)}
-          >
-            {WORK_STATES.filter((each) => each !== "done").map((each) => (
-              <option key={each} value={each}>
-                {WORK_STATE_TITLE[each]}
-              </option>
-            ))}
-          </select>
-          <input
-            aria-label="Tags"
-            placeholder={
-              tags.length ? `tags: ${tags.slice(0, 4).join(", ")}...` : "tags"
-            }
-            value={chosen}
-            onChange={(event) => setChosen(event.target.value)}
-          />
         </div>
         <div className="assistant-task-buttons">
           <button

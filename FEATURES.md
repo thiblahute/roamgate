@@ -2215,12 +2215,13 @@ root holds the workspace's checkout (`roamgate` for a Roamgate worktree,
 project menu on the filter row switches to another project or to **All
 projects** (each card then says its project), and that choice is
 remembered for the workspace; a page with no workspace in a project shows
-the last choice. Under the search box (`/`: words, tags, an owner) the
-filter is one row: the project, the tags chosen (tap one to take it off),
-a few more tags by count, and **Filters** (`f`) for every tag of the scope
-with its count, searched by typing, several at once; the columns come
-right under. A phone's Back closes the filters, then the item's detail,
-then the view.
+the last choice. The search box (`/`) takes words, an owner, and tags as
+`#voice` or `tag:voice` (each one named, all of them): typing `#` offers
+the scope's tags, most used first, narrowed as you type (Tab, the arrows
+and Enter take one, Esc puts them away), and tapping a tag on a card puts
+it in the search. Under the search, the project menu when there are
+several; the columns come right under. A phone's Back closes the item's
+detail, then the view.
 
 Each card is an item: its title (wrapping, the card as wide as its
 column), tags, owner (the session or subagent working on it), its links
@@ -2260,9 +2261,17 @@ a part comments on it, on a message answers its thread, `R` on a comment
 them as it does a review's (a thread on a part reaches it with the words
 quoted); a comment with no owner running waits and says so, sent once one
 runs. `a`
-(or **+**) adds an item in the view: a title, a description in the same
-editor (paste, drop or add images; they are stored with the item's thread
-once it is added), its state and tags; Cmd+Enter or **Add** adds it. `za`
+(or **+**) adds an item in the view: one text box, the review comment
+editor, where you say what needs doing in your own words (paste, drop or
+add images; they are stored with the item's thread once it is added);
+Cmd+Enter or **Add** adds it, open, in the board's project. Its title is
+your text's first line and its tags are read from its words (the
+project's tags it names, or a synonym of one, and the app's areas it
+names: the phone, reviews, voice, the Files pane...) until the project's
+coordinator sorts it: a clear short title, its tags set, its state, and
+split into several items when your text holds several tasks (linked to
+the first); its card says **being sorted** meanwhile. An item an agent
+adds without tags gets them from its words the same way. `za`
 folds a column; `?` lists the keys. An item entering For you notifies you
 once; the notification, on the page, on your phone's Web Push or in the
 Android app, opens the view on the item's detail.

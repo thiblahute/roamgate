@@ -3653,11 +3653,39 @@ export function MrReviewsPanel({
               type="search"
               className="mr-reviews-search"
               aria-label="Search the items"
-              placeholder="Search (/): words, tags, owner"
+              placeholder="Search (/): words, #tag, owner"
               value={work.query}
+              role="combobox"
+              aria-expanded={work.completions.length > 0}
+              aria-controls="work-completions"
+              aria-autocomplete="list"
+              onFocus={() => work.onSearchFocus(true)}
+              onBlur={() => work.onSearchFocus(false)}
               onChange={(event) => work.setQuery(event.target.value)}
             />
           )}
+          {!work.inner && work.completions.length ? (
+            <ul
+              id="work-completions"
+              className="mr-reviews-completions"
+              role="listbox"
+              aria-label="Tags"
+            >
+              {work.completions.map((each, index) => (
+                <li
+                  key={each.tag}
+                  role="option"
+                  aria-selected={index === work.completionAt}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    work.complete(index);
+                  }}
+                >
+                  #{each.tag}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {work.body}
         </div>
       ) : view === "chat" ? (

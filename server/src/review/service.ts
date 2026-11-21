@@ -212,6 +212,7 @@ function workPart(value: unknown): ReviewWorkPart | undefined {
   const quote = optionalText(raw.quote, "quote", 4000)?.trim();
   if (quote) part.quote = quote;
   if (raw.description === true) part.description = true;
+  if (raw.triage === true) part.triage = true;
   return part;
 }
 
@@ -3577,9 +3578,11 @@ export function createReviewService(args: {
     else if (due.length && work)
       lines.push(
         "",
-        due.some((thread) => thread.anchor.work?.description)
-          ? `The item is yours to do (it was added or reopened with you as its owner): take it with ${how.workUpdate} (state: doing, owner: your session, or the subagent you give it to), or give it to another session. These are threads on a work item of the Work board, not on code: read the item with ${how.workList} when you need more, and move it with ${how.workMove} as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`
-          : `These are threads on a work item of the Work board, not on code: read the item with ${how.workList} when you need more, and move it with ${how.workMove} as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`,
+        due.some((thread) => thread.anchor.work?.triage)
+          ? `The item is yours to sort: I added it as free text, and its title is only my text's first line. Triage it with ${how.workUpdate}: give it a clear short title, set its tags (it was given some from its words: add the missing ones, remove the wrong ones) and the state it is in (open, doing when you take it, you when it waits on me). When my text holds several tasks, keep one on this item and add each other one with ${how.workAdd}, a title, tags and its part of my text each, linking them to this one with an \`item\` link (add_links: [{"kind": "item", "id": "${target.target.kind === "work" ? target.target.item : ""}"}]). Then clear the mark with ${how.workUpdate} (needs_triage: false). Take it or give it to another session as any item of yours. These are threads on a work item of the Work board, not on code: read the item with ${how.workList} when you need more, and move it with ${how.workMove} as the work goes. Answer each in its thread with ${how.reply}, and say there how you sorted it.`
+          : due.some((thread) => thread.anchor.work?.description)
+            ? `The item is yours to do (it was added or reopened with you as its owner): take it with ${how.workUpdate} (state: doing, owner: your session, or the subagent you give it to), or give it to another session. These are threads on a work item of the Work board, not on code: read the item with ${how.workList} when you need more, and move it with ${how.workMove} as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`
+            : `These are threads on a work item of the Work board, not on code: read the item with ${how.workList} when you need more, and move it with ${how.workMove} as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`,
       );
     else if (due.length && chat)
       lines.push(
@@ -3763,11 +3766,13 @@ export function createReviewService(args: {
       ? {
           workList: `your work_list tool (item: ${item})`,
           workUpdate: "your work_update tool",
+          workAdd: "your work_add tool",
           workMove: "your work_update, work_done or work_reopen tools",
         }
       : {
           workList: `\`roamgate-review work work_list '{"item": "${item}"}'\``,
           workUpdate: `\`roamgate-review work work_update '{"item": "${item}", ...}'\``,
+          workAdd: `\`roamgate-review work work_add '{"title": ..., "text": ...}'\``,
           workMove: `\`roamgate-review work work_update\`, \`work_done\` or \`work_reopen\` the same way (\`roamgate-review work help\` lists the parameters)`,
         };
     if (args.agentTools?.(target.connectionId, paneId)) {

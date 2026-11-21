@@ -7,7 +7,6 @@ import {
   type WorkWorkspace,
   workScopeFor,
   workTagCounts,
-  workTopTags,
   workspaceScopeKey,
 } from "./workScope";
 
@@ -189,7 +188,7 @@ test("a choice is remembered for the workspace and as the last one", () => {
   expect(readWorkScopeMemory(storage)).toEqual({ byWorkspace: { b: "gst2" } });
 });
 
-test("the tags by count, and the row's top tags without the selected ones", () => {
+test("the tags by count, most used first (the search completes them)", () => {
   const items = [
     item("a", "gst2", ["caps", "pads", "docs"]),
     item("b", "gst2", ["caps", "rfc-0047"]),
@@ -203,14 +202,4 @@ test("the tags by count, and the row's top tags without the selected ones", () =
     { tag: "docs", count: 1 },
     { tag: "rfc-0047", count: 1 },
   ]);
-  expect(workTopTags(workTagCounts(items), ["pads"], 3)).toEqual([
-    "caps",
-    "bin",
-    "docs",
-  ]);
-  expect(workTopTags(workTagCounts(items), [])).toHaveLength(5);
-  const many = Array.from({ length: 20 }, (_, index) =>
-    item(`m${index}`, "gst2", [`tag-${index}`]),
-  );
-  expect(workTopTags(workTagCounts(many), [])).toHaveLength(8);
 });

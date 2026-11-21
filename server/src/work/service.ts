@@ -9,6 +9,7 @@ import {
   describeWorkLink,
   filterWorkItems,
   parseWorkTitle as parseTitleLine,
+  provisionalWorkTitle,
   WORK_OPEN_STATES,
   type WorkBoard,
   type WorkItem,
@@ -33,6 +34,7 @@ import {
   WorkError,
   type WorkStore,
 } from "./store";
+import { autoWorkTags } from "./tags";
 
 /**
  * The Work board's service: the items and projects of the store, their
@@ -408,6 +410,23 @@ export function createWorkService(deps: WorkServiceDeps) {
    * existing review thread the item's own.
    */
   /**
+   * The tags an item given none gets by itself, from its words: the
+   * project's own (its list, and its items', most used first) when the
+   * words name them, and the app's areas (tags.ts).
+   */
+  function autoTags(project: WorkProject, words: string): string[] {
+    const counts = new Map<string, number>();
+    for (const item of store.items())
+      if (item.project === project.id)
+        for (const tag of item.tags)
+          counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    const used = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([tag]) => tag);
+    return autoWorkTags(words, [...(project.tags ?? []), ...used]);
+  }
+
+  /**
    * The owner an item gets when given none: the project's coordinator,
    * unless the item is For you (the user's own, nothing to deliver).
    */
@@ -502,7 +521,11 @@ export function createWorkService(deps: WorkServiceDeps) {
       author,
       text,
       anchor: {
-        work: { item: item.id, ...(given.text ? { description: true } : {}) },
+        work: {
+          item: item.id,
+          ...(given.text ? { description: true } : {}),
+          ...(item.needsTriage ? { triage: true } : {}),
+        },
       },
     });
   }
@@ -569,12 +592,21 @@ export function createWorkService(deps: WorkServiceDeps) {
     await assertOwnerKnown(givenOwner);
     const owner = ownerFor(project, state, givenOwner);
     const text = parseAddText(params);
+    // Free text and no title (the board's add form): the text's first
+    // line stands for the title until its owner sorts the item.
+    const untitled =
+      (params.title === undefined ||
+        params.title === null ||
+        (typeof params.title === "string" && !params.title.trim())) &&
+      !!text.text;
     const item: WorkItem = {
       id: newWorkId(),
       project: project.id,
-      title: parseWorkTitle(params.title),
+      title: untitled
+        ? provisionalWorkTitle(text.text!)
+        : parseWorkTitle(params.title),
       state,
-      tags: parseWorkTags(params.tags),
+      tags: [],
       ...(owner ? { owner } : {}),
       ...(source ? { source } : {}),
       links: mergeWorkLinks([], parseWorkLinks(params.links)),
@@ -585,14 +617,39 @@ export function createWorkService(deps: WorkServiceDeps) {
           ? created
           : at,
       by: meta.by,
+      // Sorted by its owner: there is one to ask, and it is not the
+      // agent that added it.
+      ...(untitled &&
+      owner &&
+      !(meta.by === "agent" && meta.address === owner.session)
+        ? { needsTriage: true as const }
+        : {}),
     };
+    // Given none: read from its words (its title and text, or what
+    // promote hands as `tag_text`).
+    item.tags = parseWorkTags(params.tags);
+    if (!item.tags.length && params.tags === undefined)
+      item.tags = autoTags(
+        project,
+        [
+          untitled ? "" : item.title,
+          text.text ?? "",
+          typeof params.tag_text === "string" ? params.tag_text : "",
+        ].join("\n"),
+      );
     if (item.state === "done")
       item.doneAt = parseWorkTime(params.done_at, "done_at") ?? at;
     const made = commit(
       null,
       item,
       meta,
-      { state: item.state, title: item.title, ...(owner ? { owner } : {}) },
+      {
+        state: item.state,
+        title: item.title,
+        ...(owner ? { owner } : {}),
+        ...(item.tags.length ? { tags: item.tags } : {}),
+        ...(item.needsTriage ? { needs_triage: true } : {}),
+      },
       `added "${oneLine(item.title, 60)}"`,
     );
     let adopted: string | undefined;
@@ -689,6 +746,14 @@ export function createWorkService(deps: WorkServiceDeps) {
         parseWorkLinks(params.remove_links).map((link) => JSON.stringify(link)),
       );
       next.links = next.links.filter((link) => !gone.has(JSON.stringify(link)));
+    }
+    if (params.needs_triage !== undefined) {
+      if (typeof params.needs_triage !== "boolean")
+        throw new WorkError("needs_triage must be true or false");
+      if (params.needs_triage) next.needsTriage = true;
+      else delete next.needsTriage;
+      if (!!next.needsTriage !== !!before.needsTriage)
+        change.needs_triage = !!next.needsTriage;
     }
     const linksChanged =
       JSON.stringify(next.links) !== JSON.stringify(before.links);
@@ -1093,6 +1158,8 @@ export function createWorkService(deps: WorkServiceDeps) {
           params.state ?? (thread.resolved ? "done" : (parsed.state ?? "open")),
         tags: params.tags,
         owner: params.owner,
+        // Tags read from the whole thread's first comment, not its title.
+        tag_text: thread.comments[0]?.body ?? "",
         source: `thread ${thread.id}`,
         created_at: thread.createdAt,
         ...(thread.resolved ? { done_at: thread.updatedAt } : {}),

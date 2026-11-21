@@ -3,8 +3,8 @@ import type { WorkItem, WorkProject } from "../../shared/work";
 /**
  * What the Work board shows: the project of the workspace it was opened
  * from (the one whose root holds the workspace's checkout), or the one
- * chosen for that workspace, or all projects; and the tags as a filter
- * (a few by count, the rest behind Filters) rather than every tag at once.
+ * chosen for that workspace, or all projects; and the tags by count, the
+ * search's completions for `#tag`.
  */
 
 /** The workspace the page shows, as the board scopes by it. */
@@ -23,8 +23,6 @@ export type WorkScope = string | null;
 
 export const WORK_SCOPE_ALL = "all";
 export const WORK_SCOPE_KEY = "roamgate.work.scope";
-/** Tags shown on the row before Filters. */
-export const WORK_TOP_TAGS = 8;
 
 export type WorkScopeMemory = {
   /** The last scope chosen anywhere: the global entry points' default. */
@@ -158,16 +156,4 @@ export function workTagCounts(
   return [...counts]
     .map(([tag, count]) => ({ tag, count }))
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
-}
-
-/** The tags on the row: the most used ones not selected, a few. */
-export function workTopTags(
-  counts: readonly { tag: string; count: number }[],
-  selected: readonly string[],
-  limit = WORK_TOP_TAGS,
-): string[] {
-  return counts
-    .filter(({ tag }) => !selected.includes(tag))
-    .slice(0, limit)
-    .map(({ tag }) => tag);
 }

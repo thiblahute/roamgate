@@ -237,6 +237,11 @@ export type ReviewWorkPart = {
    * description (the text given when it was added), shown as such.
    */
   description?: true;
+  /**
+   * The item was added as free text and waits to be sorted: its owner is
+   * asked to retitle, tag, set its state and split it (needsTriage).
+   */
+  triage?: true;
 };
 
 /**

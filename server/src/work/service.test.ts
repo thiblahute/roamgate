@@ -1444,6 +1444,171 @@ test("the real review service tells the coordinator of the user's new item, and 
   ).toBe(WORK_NO_OWNER);
 });
 
+test("free text from the board: a provisional title from its first line, the coordinator's to sort, needs_triage until it clears it", async () => {
+  const { service, reviews } = setup({
+    panes: async () => [{ pane_id: "w35:p1", workspace_id: "w35" }],
+  });
+  service.projectSet(
+    { name: "roamgate", coordinator: "desktop/w35:p1" },
+    { by: "user" },
+  );
+  const long = `${"word ".repeat(30).trim()} end`;
+  const item = await service.add(
+    { text: `## ${long}\nand the details\n- a second task` },
+    { by: "user" },
+  );
+  expect(item.title.length).toBe(80);
+  expect(item.title.endsWith("\u2026")).toBe(true);
+  expect(item.title.startsWith("word word")).toBe(true);
+  expect(item.state).toBe("open");
+  expect(item.tags).toEqual([]);
+  expect(item.owner).toEqual({ session: "desktop/w35:p1" });
+  expect(item.needsTriage).toBe(true);
+  // Its text, whole, is its description, delivered marked for triage.
+  expect(reviews.added.at(-1)!.text).toBe(
+    `## ${long}\nand the details\n- a second task`,
+  );
+  expect(reviews.sessions.get(item.review!)!.threads[0]!.anchor.work).toEqual({
+    item: item.id,
+    description: true,
+    triage: true,
+  });
+  // A short first line is the title as it is; an image is not words.
+  const short = await service.add(
+    { text: "![shot](<work-image:1>)\nFix the header\nmore" },
+    { by: "user" },
+  );
+  expect(short.title).toBe("Fix the header");
+  // Kept across a restart of the store; listed by the tools.
+  expect(
+    openWorkStore(service.store.path.replace(/[/\\]work\.json$/, "")).item(
+      item.id,
+    )!.needsTriage,
+  ).toBe(true);
+  const listed = JSON.parse(
+    (
+      await workTool(
+        service,
+        "work_list",
+        { item: item.id },
+        "Claude in roamgate",
+      )
+    )
+      .split("\n")
+      .slice(1)
+      .join("\n"),
+  );
+  expect(listed.item.needs_triage).toBe(true);
+  // The coordinator sorts it: a title, tags, a state, and clears the mark.
+  const sorted = await service.update(
+    {
+      item: item.id,
+      title: "Words, sorted",
+      add_tags: ["board"],
+      state: "doing",
+      needs_triage: false,
+    },
+    { by: "agent", caller: "Claude in roamgate" },
+  );
+  expect(sorted.needsTriage).toBeUndefined();
+  expect(sorted.title).toBe("Words, sorted");
+  expect(sorted.tags).toEqual(["board"]);
+  await expect(
+    service.update(
+      { item: item.id, needs_triage: "no" },
+      { by: "agent", caller: "Claude" },
+    ),
+  ).rejects.toThrow(/needs_triage/);
+  // An item with a title, as agents add them, is not one to sort; nor is
+  // free text with nobody to sort it.
+  const titled = await service.add(
+    { title: "Has a title", text: "Body." },
+    { by: "user" },
+  );
+  expect(titled.needsTriage).toBeUndefined();
+  expect(titled.title).toBe("Has a title");
+  service.projectSet({ name: "roamgate", coordinator: null }, { by: "user" });
+  const alone = await service.add({ text: "Nobody here" }, { by: "user" });
+  expect(alone.title).toBe("Nobody here");
+  expect(alone.needsTriage).toBeUndefined();
+  // Neither a title nor text: refused.
+  await expect(service.add({}, { by: "user" })).rejects.toThrow(/title/);
+});
+
+test("an item given no tags gets them from its words: the project's own and the app's areas; given ones stand", async () => {
+  const { service } = setup();
+  service.projectSet({ name: "roamgate", tags: ["mobile"] }, { by: "user" });
+  await service.add(
+    { title: "Earlier", tags: ["rfc-0052"] },
+    { by: "agent", caller: "Claude" },
+  );
+  // The user's free text.
+  const free = await service.add(
+    { text: "On my phone the MR header scrolls away\nsee RFC-0052" },
+    { by: "user" },
+  );
+  expect(free.tags).toEqual(["mobile", "reviews", "rfc-0052"]);
+  // An agent's work_add without tags: its title and text.
+  const agent = await service.add(
+    { title: "Voice starts late", text: "In a call, TTS lags." },
+    { by: "agent", caller: "Claude" },
+  );
+  expect(agent.tags).toEqual(["voice"]);
+  // Tags given (even none, as a list) stand as given.
+  const given = await service.add(
+    { title: "Voice again", tags: ["x"] },
+    { by: "agent", caller: "Claude" },
+  );
+  expect(given.tags).toEqual(["x"]);
+  const none = await service.add(
+    { title: "Voice once more", tags: [] },
+    { by: "agent", caller: "Claude" },
+  );
+  expect(none.tags).toEqual([]);
+});
+
+test("the real review service asks the coordinator to triage the user's free-text item", async () => {
+  const kit = reviewServiceForTest({
+    deliveryDelayMs: 1,
+    retryDelayMs: 1,
+    agentSearchMs: 600_000,
+    sessionPane: async (connectionId, sessionId) =>
+      sessionId.startsWith(WORK_SESSION_PREFIX)
+        ? service.ownerPane(
+            sessionId.slice(WORK_SESSION_PREFIX.length),
+            connectionId,
+          )
+        : null,
+    paneSession: async () => null,
+  });
+  const service = createWorkService({
+    store: openWorkStore(dir()),
+    reviews: realReviews(kit.service),
+    defaultConnection: () => "desktop",
+    ownRoot: () => "/home/me/roamgate",
+    panes: async () => [{ pane_id: "w35:p1" }],
+  });
+  service.projectSet(
+    { name: "roamgate", coordinator: "desktop/w35:p1" },
+    { by: "user" },
+  );
+  const item = await service.add(
+    { text: "the phone header scrolls away\nand also the files pane" },
+    { by: "user" },
+  );
+  await Bun.sleep(80);
+  expect(kit.prompts.length).toBe(1);
+  const prompt = kit.prompts[0]!.text;
+  expect(prompt).toContain("the phone header scrolls away");
+  expect(prompt).toContain("yours to sort");
+  expect(prompt).toContain("clear short title");
+  expect(prompt).toContain("tags");
+  expect(prompt).toContain("work_add");
+  expect(prompt).toContain(`"kind": "item", "id": "${item.id}"`);
+  expect(prompt).toContain("needs_triage: false");
+  expect(prompt).not.toContain("yours to do");
+});
+
 describe("work tools and rpc", () => {
   test("the tools validate their parameters and answer JSON after the untrusted line", async () => {
     const { service, pushes } = setup();

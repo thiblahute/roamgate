@@ -596,7 +596,7 @@ function workTools(): RoamgateTool[] {
     ),
     tool(
       "work_update",
-      "Change a work item: title, state, project, tags (tags replaces; add_tags and remove_tags edit), owner (yours, a subagent's, or null to clear; a session no connection knows is refused), links (links replaces; add_links and remove_links edit), source, created_at and done_at (an imported item's dates), adopt_thread (an existing review thread becomes the item's own). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. Comments on the item reach its owner; answer them with review_reply.",
+      "Change a work item: title, state, project, tags (tags replaces; add_tags and remove_tags edit), owner (yours, a subagent's, or null to clear; a session no connection knows is refused), links (links replaces; add_links and remove_links edit), source, created_at and done_at (an imported item's dates), adopt_thread (an existing review thread becomes the item's own), needs_triage (false once an item the user added as free text is sorted). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. Comments on the item reach its owner; answer them with review_reply.",
       {
         item: ITEM,
         title: { type: "string" },
@@ -613,6 +613,11 @@ function workTools(): RoamgateTool[] {
         created_at: { type: "string" },
         done_at: { type: "string" },
         adopt_thread: ADOPT,
+        needs_triage: {
+          type: "boolean",
+          description:
+            "false once an item the user added as free text is sorted: a clear title, tags, a state, split into items when it held several tasks.",
+        },
       },
       ["item"],
     ),

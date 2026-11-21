@@ -109,6 +109,13 @@ export type WorkItem = {
   by: "user" | "agent";
   /** The item's review (its thread), once one was made. */
   review?: string;
+  /**
+   * Added as free text by the user and not sorted yet: its title is the
+   * text's first line until its owner (the coordinator) gives it a clear
+   * one, tags and a state, splits it when it holds several tasks, and
+   * clears this.
+   */
+  needsTriage?: true;
 };
 
 export type WorkPushKind = "items" | "projects" | "item";
@@ -141,6 +148,30 @@ export const WORK_LIMITS = {
 
 /** An item's or project's id: 8 to 16 hex characters, as review ids are. */
 export const WORK_ID = /^[0-9a-f]{8,16}$/;
+
+/** How long an item's provisional title (its text's first line) is. */
+export const WORK_PROVISIONAL_TITLE_CHARS = 80;
+
+/**
+ * The title an item added as free text has until it is sorted: the
+ * text's first line with words (no image, heading or list mark), trimmed
+ * to 80 characters with an ellipsis.
+ */
+export function provisionalWorkTitle(text: string): string {
+  for (const raw of text.split("\n")) {
+    const line = raw
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+      .replace(/^\s*#+\s*/, "")
+      .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!line) continue;
+    return line.length > WORK_PROVISIONAL_TITLE_CHARS
+      ? `${line.slice(0, WORK_PROVISIONAL_TITLE_CHARS - 1).trimEnd()}\u2026`
+      : line;
+  }
+  return "New item";
+}
 
 export { WORK_NO_OWNER, WORK_SESSION_PREFIX } from "./review";
 
@@ -185,6 +216,67 @@ export function parseWorkTitle(line: string): {
   };
 }
 
+/**
+ * A search of the board: `#voice` or `tag:voice` keeps the items with
+ * that tag (each one named, all of them), the other words are searched
+ * for in titles, tags and owners. The tag still being typed (the last
+ * word, no space after it) is `partial`: the tags it begins.
+ */
+export function parseWorkQuery(query: string): {
+  words: string[];
+  tags: string[];
+  partial?: string;
+} {
+  const words: string[] = [];
+  const tags: string[] = [];
+  let partial: string | undefined;
+  const all = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const typing = !/\s$/.test(query);
+  all.forEach((word, at) => {
+    const tag = /^(?:#|tag:)(.+)$/.exec(word)?.[1];
+    if (tag) {
+      const normal = normalizeWorkTag(tag);
+      if (!normal) return;
+      if (typing && at === all.length - 1) partial = normal;
+      else if (!tags.includes(normal)) tags.push(normal);
+    } else if (word !== "#" && word !== "tag:") words.push(word);
+  });
+  return { words, tags, ...(partial ? { partial } : {}) };
+}
+
+/**
+ * The tags the search's last word can be completed to, when it starts
+ * one (`#vo`, `tag:vo`): those beginning with what is typed first, then
+ * those holding it; each with the search it makes (the word replaced by
+ * `#tag` and a space).
+ */
+export function workTagCompletions(
+  query: string,
+  tags: readonly string[],
+): { tag: string; insert: string }[] {
+  const last = /(?:^|\s)((?:#|tag:)\S*)$/i.exec(query);
+  if (!last) return [];
+  const typed = normalizeWorkTag(last[1]!.replace(/^(?:#|tag:)/i, ""));
+  const head = query.slice(0, query.length - last[1]!.length);
+  const taken = new Set(parseWorkQuery(`${head} `).tags);
+  const open = tags.filter((tag) => !taken.has(tag) && tag !== typed);
+  const first = open.filter((tag) => tag.startsWith(typed));
+  const inside = typed
+    ? open.filter((tag) => !tag.startsWith(typed) && tag.includes(typed))
+    : [];
+  return [...first, ...inside].map((tag) => ({
+    tag,
+    insert: `${head}#${tag} `,
+  }));
+}
+
+/** The search with `#tag` added, unless it names that tag already. */
+export function workQueryWithTag(query: string, tag: string): string {
+  if (parseWorkQuery(`${query} `).tags.includes(tag)) return query;
+  const base = query.trimEnd();
+  return `${base ? `${base} ` : ""}#${tag} `;
+}
+
 /** The items of a board that a filter keeps: project, tags (all), states. */
 export function filterWorkItems(
   items: readonly WorkItem[],
@@ -196,11 +288,12 @@ export function filterWorkItems(
     query?: string;
   },
 ): WorkItem[] {
-  const words = (filter.query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+  const { words, tags: named, partial } = parseWorkQuery(filter.query ?? "");
+  const tags = [...(filter.tags ?? []), ...named];
   return items.filter((item) => {
     if (filter.project && item.project !== filter.project) return false;
-    if (filter.tags?.length && !filter.tags.every((t) => item.tags.includes(t)))
-      return false;
+    if (tags.length && !tags.every((t) => item.tags.includes(t))) return false;
+    if (partial && !item.tags.some((t) => t.startsWith(partial))) return false;
     if (filter.states?.length && !filter.states.includes(item.state))
       return false;
     if (filter.owner && item.owner?.session !== filter.owner) return false;

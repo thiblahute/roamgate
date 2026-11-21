@@ -7,7 +7,7 @@ import { inIsolatedChild } from "../testIsolated";
  * columns are the view's lanes (side by side on a wide pane), the cards
  * its card frame; j/k/h/l, Enter opens the item's detail (its
  * description, state, tags, thread) in the view, Esc goes back; a adds
- * an item with a description and images; the scope and filters: the
+ * an item from free text and images; the scope and the search (#tag): the
  * project of the workspace the page shows, remembered choices, the tags.
  */
 if (
@@ -85,7 +85,9 @@ if (
         owner: { session: "desktop/w32:p1", task: "abc12345" },
         links: [{ kind: "commit", sha: "abcdef1234", subject: "Fix caps" }],
       }),
-      item("1300000000000000", "gst2", "open", ["caps", "t1"]),
+      item("1300000000000000", "gst2", "open", ["caps", "t1"], {
+        needsTriage: true,
+      }),
       item("1400000000000000", "gst2", "open", ["t2", "t3"]),
       item("1500000000000000", "gst2", "open", ["t4", "t5"]),
       item("1600000000000000", "gst2", "open", ["t6", "t7"]),
@@ -276,10 +278,6 @@ if (
         input.dispatchEvent(new Event("input", { bubbles: true }));
       });
     };
-    const chips = () =>
-      [
-        ...panel.querySelectorAll<HTMLElement>(".work-tags-strip .work-chip"),
-      ].map((chip) => chip.textContent);
     const cards = () =>
       [...panel.querySelectorAll<HTMLElement>("[data-work-item]")].map(
         (card) => card.dataset.workItem,
@@ -293,7 +291,6 @@ if (
       click,
       key,
       type,
-      chips,
       cards,
       selected,
       closed: () => closed,
@@ -475,27 +472,40 @@ if (
       expect(view.panel.classList.contains("is-work")).toBe(true);
       expect(localStorage.getItem("roamgate:mrReviewsMode")).toBe("work");
 
-      // a opens the form in the view: a title, a description, state and
-      // tags; Add sends them (the description as the item's text).
+      // An item added as free text and not sorted yet says so on its card.
+      const sorting = (id: string) =>
+        view.panel
+          .querySelector(`[data-work-item="${id}"]`)
+          ?.querySelector(".work-triage")?.textContent ?? null;
+      expect(sorting("1300000000000000")).toBe("being sorted");
+      expect(sorting("1400000000000000")).toBeNull();
+
+      // a opens the form in the view: one text box, the user's own
+      // words, nothing else to fill; Add sends the text alone (the
+      // coordinator sorts it into a title, tags and a state).
       await view.key("a");
       const form = () =>
         view.panel.querySelector<HTMLFormElement>("form.work-add");
       expect(form()).not.toBeNull();
       expect(form()!.getAttribute("aria-label")).toBe("Add an item to gst2");
-      await view.type(
-        form()!.querySelector<HTMLInputElement>("input[aria-label='Title']")!,
-        "Copy a picture",
-      );
-      await view.type(
-        form()!.querySelector<HTMLTextAreaElement>(
-          "textarea[aria-label='Description']",
-        )!,
-        "Paste one here.",
-      );
-      await view.type(
-        form()!.querySelector<HTMLInputElement>("input[aria-label='Tags']")!,
-        "board, images",
-      );
+      expect(form()!.querySelectorAll("textarea").length).toBe(1);
+      // No title, state or tags fields (the image picker's file input aside).
+      expect(
+        form()!.querySelectorAll("input:not([type=file]), select").length,
+      ).toBe(0);
+      const box = form()!.querySelector<HTMLTextAreaElement>(
+        "textarea[aria-label='What needs doing']",
+      )!;
+      expect(box).not.toBeNull();
+      // Nothing said: not sent.
+      await act(async () => {
+        form()!.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
+      });
+      expect(calls.some(([method]) => method === "add")).toBe(false);
+      expect(form()!.textContent).toContain("Say what needs doing");
+      await view.type(box, "Copy a picture\nPaste one here.");
       await act(async () => {
         form()!.dispatchEvent(
           new Event("submit", { bubbles: true, cancelable: true }),
@@ -507,10 +517,7 @@ if (
       expect(calls[calls.length - 1]).toEqual([
         "add",
         {
-          title: "Copy a picture",
-          state: "open",
-          tags: ["board", "images"],
-          text: "Paste one here.",
+          text: "Copy a picture\nPaste one here.",
           project: "gst2",
         },
       ]);
@@ -674,7 +681,7 @@ if (
     }
   });
 
-  test("the scope and the filters: the workspace's project, the tags row, every tag; a choice is remembered; an item opens its project and its detail", async () => {
+  test("the scope and the search: the workspace's project, #tag from a card's chip or completed as typed; a choice is remembered; an item opens its project and its detail", async () => {
     localStorage.clear();
     // The board as given, without the item the first test added.
     board.items = board.items.filter((each) => each.id !== "3300000000000000");
@@ -689,68 +696,41 @@ if (
         "gst2 (6)",
         "roamgate (2)",
       ]);
-      expect(first.chips()).toEqual([
-        "caps",
-        "docs",
-        "pads",
-        "t1",
-        "t2",
-        "t3",
-        "t4",
-        "t5",
-      ]);
-      // A tag on the row filters; selected, it is removable and off the row.
+      // No tag row, no Filters: tags are chips on the cards, searched for.
+      expect(first.panel.querySelector(".work-tags-strip")).toBeNull();
+      expect(first.panel.querySelector(".work-filters-button")).toBeNull();
+      const search =
+        first.panel.querySelector<HTMLInputElement>(".mr-reviews-search")!;
+      // A card's tag chip puts #tag in the search, which keeps its items.
       await first.click(
-        [
-          ...first.panel.querySelectorAll<HTMLElement>(
-            ".work-tags-strip .work-chip",
-          ),
-        ].find((chip) => chip.textContent === "caps")!,
+        first.panel.querySelector<HTMLElement>(
+          '[data-work-item="1100000000000000"] .work-tag',
+        ),
       );
+      expect(search.value).toBe("#caps ");
       expect(first.cards()).toEqual([
         "1100000000000000",
         "1200000000000000",
         "1300000000000000",
       ]);
-      expect(first.text(".work-filters-button")).toBe("Filters1");
-      // Filters: every tag with its count, searched.
-      await first.click(first.panel.querySelector(".work-filters-button"));
-      const sheet = first.panel.querySelector<HTMLElement>(
-        "#work-filters-sheet",
-      )!;
-      expect(sheet.classList.contains("is-sheet")).toBe(false);
-      const rows = () =>
+      // Typing # offers the scope's tags as typed; Tab takes the first.
+      await act(async () => {
+        search.focus();
+      });
+      await first.type(search, "#caps #pa");
+      const offered = () =>
         [
-          ...sheet.querySelectorAll<HTMLElement>(".work-filters-list button"),
-        ].map(
-          (row) =>
-            `${row.getAttribute("aria-checked") === "true" ? "*" : ""}${row.textContent}`,
-        );
-      expect(rows().slice(0, 3)).toEqual(["*caps3", "docs1", "pads1"]);
-      await first.type(sheet.querySelector<HTMLInputElement>("input")!, "pad");
-      expect(rows()).toEqual(["pads1"]);
-      await first.click(sheet.querySelector(".work-filters-list button"));
+          ...first.panel.querySelectorAll<HTMLElement>(
+            "#work-completions [role='option']",
+          ),
+        ].map((each) => each.textContent);
+      expect(offered()).toEqual(["#pads"]);
+      await first.key("Tab");
+      expect(search.value).toBe("#caps #pads ");
       expect(first.cards()).toEqual(["1100000000000000"]);
-      await first.key("Escape");
-      expect(first.panel.querySelector("#work-filters-sheet")).toBeNull();
-      // The search box: words, then Enter selects the first found.
-      await first.click(
-        [
-          ...first.panel.querySelectorAll<HTMLElement>(
-            ".work-tags-strip .work-chip",
-          ),
-        ].find((chip) => chip.textContent?.startsWith("caps"))!,
-      );
-      await first.click(
-        [
-          ...first.panel.querySelectorAll<HTMLElement>(
-            ".work-tags-strip .work-chip",
-          ),
-        ].find((chip) => chip.textContent?.startsWith("pads"))!,
-      );
-      const search =
-        first.panel.querySelector<HTMLInputElement>(".mr-reviews-search")!;
-      await first.type(search, "13");
+      expect(offered()).toEqual([]);
+      // tag: names a tag too; the other words are searched for.
+      await first.type(search, "tag:caps 13");
       expect(first.cards()).toEqual(["1300000000000000"]);
       search.focus();
       await first.key("Enter");

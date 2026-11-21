@@ -314,6 +314,7 @@ function normalItem(raw: unknown): WorkItem | null {
     ...(typeof raw.doneAt === "string" ? { doneAt: raw.doneAt } : {}),
     by: raw.by === "agent" ? "agent" : "user",
     ...(typeof raw.review === "string" ? { review: raw.review } : {}),
+    ...(raw.needsTriage === true ? { needsTriage: true as const } : {}),
   };
 }
 

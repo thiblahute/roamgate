@@ -6,9 +6,6 @@ import {
   ChevronRight,
   Plus,
   RefreshCw,
-  Search,
-  SlidersHorizontal,
-  X,
 } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
@@ -32,6 +29,8 @@ import {
   type WorkState,
   workDescriptionThread,
   workDoneWhen,
+  workQueryWithTag,
+  workTagCompletions,
 } from "../../../shared/work";
 import { openAgentTask } from "../agentTasksOpen";
 import { nextColumn, nextRow } from "../boardNavigation";
@@ -57,10 +56,8 @@ import {
   workScopeFor,
   workspaceScopeKey,
   workTagCounts,
-  workTopTags,
 } from "../workScope";
 import { BoardCard } from "./BoardCard";
-import { MobileSheetHandle } from "./MobileSheetHandle";
 import { WorkAddForm } from "./WorkAddForm";
 import {
   useWorkItemKeys,
@@ -74,7 +71,8 @@ import "./WorkBoard.css";
  * The board view's Work mode: the user's work items in the view's columns
  * by state (For you, Doing, Verify, Open, Done), the project of the
  * workspace the page shows (or the one chosen there, or all), filtered by
- * tags and words. Each card is an item: its title, tags, owner (a session
+ * the search: words, and tags as `#tag` or `tag:tag` (completed as they
+ * are typed; a card's tag chip puts its tag there). Each card is an item: its title, tags, owner (a session
  * or its subagent), when it moved, its links. Opening a card (Enter, a
  * click) shows the item's detail in the view, as a request's is shown:
  * its description, state, tags, owner, links, then its thread with a
@@ -374,6 +372,11 @@ export type WorkMode = {
   query: string;
   setQuery: (next: string) => void;
   searchRef: RefObject<HTMLInputElement | null>;
+  /** The search's tag completions, the one chosen, and how to take one. */
+  completions: { tag: string; insert: string }[];
+  completionAt: number;
+  complete: (index: number) => boolean;
+  onSearchFocus: (focused: boolean) => void;
   /** The content under the head: the filter row and the columns, the item's detail, the form. */
   body: ReactNode;
   /** The detail or the form shows: no search box, no filter row. */
@@ -404,9 +407,17 @@ export function useWorkMode({
     key: string;
     scope: WorkScope;
   } | null>(null);
-  const [tags, setTags] = useState<string[]>([]);
-  const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState(false);
+  const [query, setQueryState] = useState("");
+  // The search completes a tag as it is typed (#vo, tag:vo): Tab, the
+  // arrows and Enter take one, Esc puts them away, as the reviews' do.
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [completionAt, setCompletionAt] = useState(-1);
+  const [completionsOff, setCompletionsOff] = useState(false);
+  const setQuery = (next: string) => {
+    setQueryState(next);
+    setCompletionAt(-1);
+    setCompletionsOff(false);
+  };
   const [folded, setFolded] = useState<Set<WorkState>>(storedFolded);
   const [selected, setSelected] = useState<string | null>(initialItem ?? null);
   const [detail, setDetail] = useState<string | null>(initialItem ?? null);
@@ -418,10 +429,9 @@ export function useWorkMode({
   const keyState = useRef(EMPTY_KEY_STATE);
   /** s or t on a card: the detail opens with that box focused. */
   const pendingFocus = useRef<"state" | "tags" | null>(null);
-  // The phone's Back closes the filters, then the detail, then the view.
-  useSystemBack(enabled && filters, () => setFilters(false), "popup");
+  // The phone's Back closes the detail, then the view.
   useSystemBack(
-    enabled && !filters && (detail !== null || adding),
+    enabled && (detail !== null || adding),
     () => {
       setDetail(null);
       setAdding(false);
@@ -448,15 +458,11 @@ export function useWorkMode({
     () => projectForWorkspace(workspace, projects),
     [workspace, projects],
   );
-  const scopeProject = scope
-    ? (projects.find((each) => each.id === scope) ?? null)
-    : null;
   const choose = (next: WorkScope) => {
     setChoice({ key: workspaceKey, scope: next });
     setMemory((current) => rememberWorkScope(current, workspace, next));
-    setTags([]);
+    setQuery("");
     setSelected(null);
-    setFilters(false);
   };
   const projectItems = useMemo(
     () =>
@@ -464,18 +470,30 @@ export function useWorkMode({
     [boardItems, scope],
   );
   const tagCounts = useMemo(() => workTagCounts(projectItems), [projectItems]);
-  const topTags = useMemo(
-    () => workTopTags(tagCounts, tags),
-    [tagCounts, tags],
+  const completions = useMemo(
+    () =>
+      searchFocused && !completionsOff
+        ? workTagCompletions(
+            query,
+            tagCounts.map(({ tag }) => tag),
+          ).slice(0, 12)
+        : [],
+    [query, tagCounts, searchFocused, completionsOff],
   );
-  const tagChoices = useMemo(() => {
-    const used = tagCounts.map(({ tag }) => tag);
-    const suggested = scopeProject?.tags ?? [];
-    return [...used, ...suggested.filter((tag) => !used.includes(tag))];
-  }, [tagCounts, scopeProject]);
+  const complete = (index: number) => {
+    const chosen = completions[Math.max(0, index)];
+    if (!chosen) return false;
+    setQuery(chosen.insert);
+    return true;
+  };
+  /** A tag's chip on a card: the search keeps that tag's items. */
+  const searchTag = (tag: string) => {
+    setQuery(workQueryWithTag(query, tag));
+    setSelected(null);
+  };
   const items = useMemo(
-    () => filterWorkItems(projectItems, { tags, query }),
-    [projectItems, tags, query],
+    () => filterWorkItems(projectItems, { query }),
+    [projectItems, query],
   );
   const columns = useMemo(() => workColumns(items), [items]);
   /** The columns as drawn: folded ones hold nothing the keys walk. */
@@ -684,8 +702,25 @@ export function useWorkMode({
       "input, textarea, select, [contenteditable], .cm-editor",
     );
     if (typing) {
-      // The tag filters' box has its own keys (Esc closes the sheet).
-      if (target?.closest("#work-filters-sheet")) return false;
+      // The search's tag completions: Tab, the arrows, Enter on one taken.
+      if (target === searchRef.current && completions.length) {
+        const key = event.ctrlKey ? `C-${event.key}` : event.key;
+        if (key === "Tab") return complete(completionAt);
+        if (key === "ArrowDown" || key === "C-n") {
+          setCompletionAt((at) => (at + 1) % completions.length);
+          return true;
+        }
+        if (key === "ArrowUp" || key === "C-p") {
+          setCompletionAt((at) => (at <= 0 ? completions.length : at) - 1);
+          return true;
+        }
+        if (key === "Enter" && completionAt >= 0) return complete(completionAt);
+        if (key === "Escape") {
+          setCompletionsOff(true);
+          setCompletionAt(-1);
+          return true;
+        }
+      }
       // A box keeps its keys; Esc leaves it (the comment editor takes its
       // own Esc: Vim's insert mode ends on it).
       if (event.key === "Escape" && !target?.closest(".cm-editor")) {
@@ -707,7 +742,6 @@ export function useWorkMode({
     if (event.key === "Escape") {
       keyState.current = EMPTY_KEY_STATE;
       if (drag) dragCancel();
-      else if (filters) setFilters(false);
       else if (adding) {
         setAdding(false);
         back();
@@ -792,7 +826,6 @@ export function useWorkMode({
     } else if (key === "za" || key === "zc" || key === "zo") {
       if (current) toggleFold(current.state);
     } else if (key === "a") setAdding(true);
-    else if (key === "f") setFilters((open) => !open);
     else if (key === "/") {
       searchRef.current?.focus();
       searchRef.current?.select();
@@ -873,7 +906,6 @@ export function useWorkMode({
         <WorkAddForm
           project={scope ?? projects[0]!.id}
           projectName={projectName(scope ?? projects[0]!.id)}
-          tags={tagChoices}
           onCancel={() => {
             setAdding(false);
             back();
@@ -930,8 +962,8 @@ export function useWorkMode({
         />
       ) : (
         <>
-          <div className="work-filter-row">
-            {projects.length > 1 ? (
+          {projects.length > 1 ? (
+            <div className="work-filter-row">
               <select
                 className="work-scope-select"
                 aria-label="Project"
@@ -960,73 +992,8 @@ export function useWorkMode({
                   </option>
                 ))}
               </select>
-            ) : null}
-            {tagCounts.length || tags.length ? (
-              <div className="work-tags-strip" role="group" aria-label="Tags">
-                {tags.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    className="work-chip is-selected"
-                    aria-pressed="true"
-                    title={`Without ${tag}`}
-                    onClick={() =>
-                      setTags((current) =>
-                        current.filter((each) => each !== tag),
-                      )
-                    }
-                  >
-                    {tag}
-                    <X size={11} aria-hidden="true" />
-                  </button>
-                ))}
-                {topTags.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    className="work-chip"
-                    aria-pressed="false"
-                    onClick={() => setTags((current) => [...current, tag])}
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {tagCounts.length ? (
-              <button
-                type="button"
-                className={`work-chip work-filters-button${tags.length ? " is-selected" : ""}`}
-                aria-expanded={filters}
-                aria-controls="work-filters-sheet"
-                title={`Every tag${mobile ? "" : " (f)"}`}
-                onClick={() => setFilters((current) => !current)}
-              >
-                <SlidersHorizontal size={12} aria-hidden="true" />
-                Filters
-                {tags.length ? <small>{tags.length}</small> : null}
-              </button>
-            ) : null}
-            {filters ? (
-              <TagFilters
-                counts={tagCounts}
-                selected={tags}
-                mobile={mobile}
-                onToggle={(tag) =>
-                  setTags((current) =>
-                    current.includes(tag)
-                      ? current.filter((each) => each !== tag)
-                      : [...current, tag],
-                  )
-                }
-                onClear={() => setTags([])}
-                onClose={() => {
-                  setFilters(false);
-                  back();
-                }}
-              />
-            ) : null}
-          </div>
+            </div>
+          ) : null}
           {data && !items.length ? (
             <p className="assistant-hint">
               {projectItems.length
@@ -1079,6 +1046,7 @@ export function useWorkMode({
                           onOpen={() => openDetail(item)}
                           onOpenOwner={() => void openOwner(item)}
                           onLink={openLink}
+                          onTag={searchTag}
                           onDone={() => markDone(item)}
                         />
                       ))}
@@ -1110,7 +1078,7 @@ export function useWorkMode({
             <p className="assistant-hint mr-reviews-keys">
               j/k move · h/l columns · Enter open · c comment · s state (or drag
               a card to a column) · t tags · o the agent's work · dd done · a
-              add · za fold · f filters · / search · [ ] Reviews · ? all keys
+              add · za fold · / search (#tag) · [ ] Reviews · ? all keys
             </p>
           ) : null}
         </>
@@ -1125,6 +1093,10 @@ export function useWorkMode({
     query,
     setQuery,
     searchRef,
+    completions,
+    completionAt,
+    complete,
+    onSearchFocus: setSearchFocused,
     body,
     inner,
     onKey,
@@ -1160,6 +1132,7 @@ function WorkCard({
   onOpen,
   onOpenOwner,
   onLink,
+  onTag,
   onDone,
 }: {
   item: WorkItem;
@@ -1173,6 +1146,8 @@ function WorkCard({
   onOpen: () => void;
   onOpenOwner: () => void;
   onLink: (link: WorkLink) => void;
+  /** A tag's chip: the search keeps that tag's items. */
+  onTag: (tag: string) => void;
   onDone: () => void;
 }) {
   return (
@@ -1219,13 +1194,30 @@ function WorkCard({
       <div className="mr-reviews-dense-head">
         <strong>{item.title}</strong>
         <span className="mr-reviews-dense-chips" aria-label="Tags and owner">
+          {item.needsTriage ? (
+            <span
+              className="mr-reviews-chip is-wait work-triage"
+              title="Added as free text: its owner gives it a clear title, tags and a state"
+            >
+              being sorted
+            </span>
+          ) : null}
           {project ? (
             <span className="mr-reviews-chip is-tree">{project}</span>
           ) : null}
           {item.tags.map((tag) => (
-            <span key={tag} className="mr-reviews-chip is-label">
+            <button
+              key={tag}
+              type="button"
+              className="mr-reviews-chip is-label work-tag"
+              title={`Only the items tagged ${tag} (#${tag} in the search)`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onTag(tag);
+              }}
+            >
               {tag}
-            </span>
+            </button>
           ))}
           {item.owner ? <OwnerChip owner={item.owner} /> : null}
         </span>
@@ -1535,115 +1527,5 @@ function WorkDetail({
         />
       </section>
     </div>
-  );
-}
-
-/**
- * Every tag of the scope with its count, to pick several: a list under
- * the Filters button, a bottom sheet on a phone, searched by typing.
- */
-function TagFilters({
-  counts,
-  selected,
-  mobile,
-  onToggle,
-  onClear,
-  onClose,
-}: {
-  counts: readonly { tag: string; count: number }[];
-  selected: readonly string[];
-  mobile: boolean;
-  onToggle: (tag: string) => void;
-  onClear: () => void;
-  onClose: () => void;
-}) {
-  const [search, setSearch] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    // A phone's keyboard would cover the list: the list first there.
-    if (!mobile) searchRef.current?.focus();
-  }, [mobile]);
-  const words = search.trim().toLowerCase();
-  const shown = counts.filter(({ tag }) => !words || tag.includes(words));
-  return (
-    <>
-      <div
-        className="work-filters-backdrop"
-        aria-hidden="true"
-        onClick={onClose}
-      />
-      <div
-        id="work-filters-sheet"
-        className={`work-filters-sheet${mobile ? " is-sheet mobile-sheet" : ""}`}
-        role="dialog"
-        aria-label="Tag filters"
-        onKeyDown={(event) => {
-          // The board's keys stay out: letters search, Esc closes.
-          if (event.key === "Escape") {
-            event.preventDefault();
-            onClose();
-          }
-          event.stopPropagation();
-        }}
-      >
-        {mobile ? (
-          <MobileSheetHandle
-            label="Pull down to close the tag filters"
-            onClose={onClose}
-          />
-        ) : null}
-        <div className="work-filters-head">
-          <label className="work-search">
-            <Search size={13} aria-hidden="true" />
-            <input
-              ref={searchRef}
-              type="search"
-              placeholder="Find a tag"
-              aria-label="Find a tag"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </label>
-          {selected.length ? (
-            <button type="button" className="work-chip" onClick={onClear}>
-              Clear {selected.length}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="assistant-icon-button"
-            aria-label="Close the tag filters"
-            onClick={onClose}
-          >
-            <X size={16} />
-          </button>
-        </div>
-        <ul className="work-filters-list">
-          {shown.map(({ tag, count }) => {
-            const on = selected.includes(tag);
-            return (
-              <li key={tag}>
-                <button
-                  type="button"
-                  role="checkbox"
-                  aria-checked={on}
-                  className={on ? "is-selected" : ""}
-                  onClick={() => onToggle(tag)}
-                >
-                  <span className="work-filters-check" aria-hidden="true">
-                    {on ? <Check size={12} /> : null}
-                  </span>
-                  <span className="work-filters-tag">{tag}</span>
-                  <small>{count}</small>
-                </button>
-              </li>
-            );
-          })}
-          {!shown.length ? (
-            <li className="assistant-hint">No tag matches.</li>
-          ) : null}
-        </ul>
-      </div>
-    </>
   );
 }
