@@ -70,6 +70,41 @@ async function registerTests() {
   });
   afterAll(async () => browser.happyDOM.close());
 
+  test("a part's + comments at once, or hands its words and itself to a menu", async () => {
+    const onComment = mock<(quote: string) => void>(() => {});
+    const onMenu = mock<(quote: string, at: HTMLElement) => void>(() => {});
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () =>
+      root!.render(
+        h(NoteBody, {
+          text: "First part.\n\nSecond part.",
+          parts: { notes: [], focused: null, onComment },
+        }),
+      ),
+    );
+    const plus = () =>
+      container.querySelectorAll<HTMLButtonElement>(".rc-part-add")[1]!;
+    expect(plus().getAttribute("aria-haspopup")).toBeNull();
+    await act(async () => plus().click());
+    expect(onComment).toHaveBeenCalledWith("Second part.");
+    await act(async () =>
+      root!.render(
+        h(NoteBody, {
+          text: "First part.\n\nSecond part.",
+          parts: { notes: [], focused: null, onComment, onMenu },
+        }),
+      ),
+    );
+    expect(plus().getAttribute("aria-haspopup")).toBe("menu");
+    await act(async () => plus().click());
+    expect(onComment).toHaveBeenCalledTimes(1);
+    expect(onMenu).toHaveBeenCalledTimes(1);
+    expect(onMenu.mock.calls[0]![0]).toBe("Second part.");
+    expect(onMenu.mock.calls[0]![1]).toBe(plus());
+  });
+
   test("a numbered list drawn in parts keeps its numbers", async () => {
     const container = document.createElement("div");
     document.body.append(container);

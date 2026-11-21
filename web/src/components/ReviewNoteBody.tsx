@@ -96,6 +96,12 @@ export type MessageParts = {
   focused: number | null;
   /** + beside a part: comment on it, quoting it. */
   onComment?: (quote: string) => void;
+  /**
+   * + beside a part offers more than a comment: called with the part's
+   * words and the +, the provider shows its choices there (Comment among
+   * them) instead of commenting at once.
+   */
+  onMenu?: (quote: string, at: HTMLElement) => void;
   /** A click on a part puts j / k on it. */
   onSelect?: (index: number) => void;
   /**
@@ -116,17 +122,21 @@ export function PartButton({
   quote: string;
   parts: MessageParts | undefined;
 }) {
-  if (!parts?.onComment) return null;
-  const onComment = parts.onComment;
+  if (!parts?.onComment && !parts?.onMenu) return null;
+  const { onComment, onMenu } = parts;
   return (
     <button
       type="button"
       className="rc-part-add"
-      title="Comment on this part"
-      aria-label="Comment on this part"
+      title={onMenu ? "Comment on this part, or more" : "Comment on this part"}
+      aria-label={
+        onMenu ? "Comment on this part, or more" : "Comment on this part"
+      }
+      {...(onMenu ? { "aria-haspopup": "menu" as const } : {})}
       onClick={(event) => {
         event.stopPropagation();
-        onComment(quote);
+        if (onMenu) onMenu(quote, event.currentTarget);
+        else onComment?.(quote);
       }}
     />
   );
