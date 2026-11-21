@@ -275,6 +275,7 @@ export function AgentMcpSheet({
             type="text"
             value={query}
             placeholder="Filter the servers"
+            data-dictation="off"
             aria-label="Filter the servers"
             autoComplete="off"
             autoCapitalize="off"
