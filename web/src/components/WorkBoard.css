@@ -334,15 +334,19 @@
   font-size: 14px;
 }
 
-/* The thread, under the detail: full width, its box always whole. */
+/* The thread, under the detail: full width, its box always whole. One
+   column with no minimum: an implicit column grows to its widest item, and
+   a thread card's longest line is wider than a phone. */
 .work-detail-threads {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
 }
 
 .work-threads {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   min-width: 0;
 }
@@ -385,6 +389,7 @@
    comments) are on the list of its sections, laid out as the body is. */
 .work-detail-keys {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   min-width: 0;
   outline: none;
