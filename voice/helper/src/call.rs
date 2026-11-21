@@ -97,6 +97,10 @@ const MUTE_FADE: std::time::Duration = std::time::Duration::from_millis(600);
 const MUSIC_AUDIBLE: f32 = 1e-5;
 /// The music counts as heard this long after its last audible block.
 const MUSIC_HEARD_FOR: std::time::Duration = std::time::Duration::from_millis(500);
+/// The music held down this long while its source plays, with nobody
+/// talking and no reply playing, is told (music_watch): a duck that never
+/// let go.
+const HELD_DOWN_TOLD_AFTER: std::time::Duration = std::time::Duration::from_secs(15);
 
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -243,6 +247,13 @@ struct Mix {
     /// A YouTube video's envelope (youtube.rs): ducked as the background,
     /// at the same level.
     youtube_duck: Duck,
+    /// Whether the background's source was last told sounding or silent
+    /// (music_watch); None until it first sounds once made.
+    source_told: Option<bool>,
+    /// Since when the music is held down while its source plays, with
+    /// nobody talking and no reply playing; whether that was told.
+    held_since: Option<std::time::Instant>,
+    held_told: bool,
 }
 
 impl Mix {
@@ -274,6 +285,36 @@ pub type OnSamples = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
 pub const ICE_PORTS: (u32, u32) = (40_000, 40_999);
 /// The microphone as the listener takes it (listen.rs).
 const MICROPHONE_RATE: i32 = 16_000;
+
+/// What the call's music did, as Call::music_watch tells it.
+#[derive(Debug, PartialEq)]
+pub enum MusicChange {
+    /// Its source went silent: nothing plays into it now.
+    SourceSilent,
+    /// Its source carries sound again.
+    SourceSounds,
+    /// Held down while its source plays, nobody talking and no reply
+    /// playing, for HELD_DOWN_TOLD_AFTER: the duck's state.
+    HeldDown(String),
+    /// Back up after being told held down.
+    BackUp,
+}
+
+impl std::fmt::Display for MusicChange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SourceSilent => {
+                write!(f, "the music's source went silent (nothing plays into it)")
+            }
+            Self::SourceSounds => write!(f, "the music's source sounds"),
+            Self::HeldDown(state) => write!(
+                f,
+                "the music is held down while its source plays, nobody talking and no reply playing: {state}"
+            ),
+            Self::BackUp => write!(f, "the music is back up"),
+        }
+    }
+}
 
 /// Whether the helper traces (ROAMGATE_VOICE_DEBUG).
 fn tracing() -> bool {
@@ -803,6 +844,9 @@ impl Call {
                 settings.ducked,
                 settings.release_ms,
             ),
+            source_told: None,
+            held_since: None,
+            held_told: false,
         }));
         let music_frames = Arc::new(AtomicU64::new(0));
         if let Err(err) = pipeline.set_state(gst::State::Playing) {
@@ -1209,6 +1253,62 @@ impl Call {
             && mix
                 .music_heard
                 .is_some_and(|heard| heard.elapsed() < MUSIC_HEARD_FOR)
+    }
+
+    /// What changed in the call's music since last asked, told once: its
+    /// source going silent or sounding again (a player pausing, or its
+    /// stream going elsewhere), or the music held down while its source
+    /// plays with nobody talking and no reply playing, and what holds it.
+    /// Nothing while the music is off.
+    pub fn music_watch(&self) -> Option<MusicChange> {
+        let at = self.now();
+        let mut mix = self.mix.lock().unwrap();
+        if mix.background_since.is_none() {
+            mix.source_told = None;
+            mix.held_since = None;
+            mix.held_told = false;
+            return None;
+        }
+        let sounds = mix
+            .background_heard
+            .is_some_and(|heard| heard.elapsed() < MUSIC_HEARD_FOR);
+        // A source just made is silent until its player plays: not told.
+        let told = mix.source_told;
+        if told != Some(sounds) && (told.is_some() || sounds) {
+            mix.source_told = Some(sounds);
+            return Some(if sounds {
+                MusicChange::SourceSounds
+            } else {
+                MusicChange::SourceSilent
+            });
+        }
+        let expected = mix.level();
+        let down = sounds && expected > 0.0 && mix.duck.gain * mix.duck.level < expected * 0.5;
+        let explained = mix
+            .user_talking
+            .is_some_and(|since| at < since + USER_TALKING_MAX)
+            || mix.voice_next.is_some_and(|next| next > at);
+        if !down || explained {
+            mix.held_since = None;
+            return std::mem::take(&mut mix.held_told).then_some(MusicChange::BackUp);
+        }
+        let since = *mix.held_since.get_or_insert_with(std::time::Instant::now);
+        if mix.held_told || since.elapsed() < HELD_DOWN_TOLD_AFTER {
+            return None;
+        }
+        mix.held_told = true;
+        let making = match (mix.pending, mix.made_at) {
+            (0, _) => String::new(),
+            (pending, Some(made)) => format!(
+                ", {pending} sentence(s) being made, the last start or audio {:.1} s ago",
+                at.saturating_sub(made).seconds_f64()
+            ),
+            (pending, None) => format!(", {pending} sentence(s) being made"),
+        };
+        Some(MusicChange::HeldDown(format!(
+            "gain {:.2}, level {:.2} of {:.2}{making}",
+            mix.duck.gain, mix.duck.level, expected
+        )))
     }
 
     /// A `call_youtube` request: a YouTube video's sound played into the
@@ -1713,6 +1813,79 @@ mod tests {
             start_with("audiotestsrc is-live=true wave=sine freq=440", true);
         std::thread::sleep(Duration::from_millis(300));
         assert!(!off.music_audible());
+    }
+
+    /// The watch tells the music's source going silent (a player paused)
+    /// and sounding again, once each, but not a source just made silent.
+    #[test]
+    fn the_music_watch_tells_its_source_going_silent_and_back() {
+        let (call, _mixed, _errors) =
+            start("audiotestsrc name=player is-live=true wave=sine freq=440 volume=0");
+        let player = call.pipeline.by_name("player").unwrap();
+        std::thread::sleep(Duration::from_millis(800));
+        assert_eq!(call.music_watch(), None, "a source silent from the start");
+        player.set_property("volume", 0.5f64);
+        let sounds = wait_for(5, || call.music_watch());
+        assert_eq!(sounds, MusicChange::SourceSounds);
+        assert_eq!(call.music_watch(), None, "told once");
+        player.set_property("volume", 0.0f64);
+        let silent = wait_for(5, || call.music_watch());
+        assert_eq!(silent, MusicChange::SourceSilent);
+        assert!(silent.to_string().contains("went silent"));
+        player.set_property("volume", 0.5f64);
+        assert_eq!(
+            wait_for(5, || call.music_watch()),
+            MusicChange::SourceSounds
+        );
+        // Off: nothing told, and once back on (its source made again,
+        // silent until it plays), the source sounding is told anew.
+        call.set_music(None, Some(true));
+        assert_eq!(call.music_watch(), None);
+        call.set_music(None, Some(false));
+        std::thread::sleep(Duration::from_millis(800));
+        assert_eq!(call.music_watch(), None, "made again silent");
+        call.pipeline
+            .by_name("player")
+            .unwrap()
+            .set_property("volume", 0.5f64);
+        assert_eq!(
+            wait_for(5, || call.music_watch()),
+            MusicChange::SourceSounds
+        );
+    }
+
+    /// The music held down while its source plays, with nobody talking and
+    /// no reply playing (a sentence being made that never comes), is told
+    /// with what holds it, then its coming back up; a reply playing or the
+    /// user talking explains it.
+    #[test]
+    fn the_music_watch_tells_a_duck_that_does_not_let_go() {
+        let (call, _mixed, _errors) = start("audiotestsrc is-live=true wave=sine freq=440");
+        assert_eq!(
+            wait_for(5, || call.music_watch()),
+            MusicChange::SourceSounds
+        );
+        let sentence = call.sentence();
+        std::thread::sleep(Duration::from_millis(600));
+        assert_eq!(call.music_watch(), None, "not yet held for long");
+        // Held for longer than HELD_DOWN_TOLD_AFTER.
+        call.mix.lock().unwrap().held_since =
+            Some(std::time::Instant::now() - HELD_DOWN_TOLD_AFTER);
+        let Some(MusicChange::HeldDown(state)) = call.music_watch() else {
+            panic!("the held music is told");
+        };
+        assert!(state.contains("1 sentence(s) being made"), "{state}");
+        assert_eq!(call.music_watch(), None, "told once");
+        drop(sentence);
+        assert_eq!(wait_for(10, || call.music_watch()), MusicChange::BackUp);
+
+        // The user talking explains the music held down.
+        call.set_user_talking(true);
+        std::thread::sleep(Duration::from_millis(600));
+        call.mix.lock().unwrap().held_since =
+            Some(std::time::Instant::now() - HELD_DOWN_TOLD_AFTER);
+        assert_eq!(call.music_watch(), None);
+        call.set_user_talking(false);
     }
 
     /// A Linux background can record a sound server's device (pulsesrc,

@@ -1022,6 +1022,17 @@ fn main() {
                     .map_or(learns, |listener| listener.learning_voice());
                 learning.store(learning_now, Ordering::SeqCst);
                 let call = calls.lock().unwrap().clone();
+                // The music's source going silent, or the music held down
+                // with nobody talking: told with what the media players say
+                // (asked aside, a player may take seconds to answer).
+                if let Some(call) = call.as_ref()
+                    && let Some(change) = call.music_watch()
+                {
+                    let id = call.id;
+                    std::thread::spawn(move || {
+                        eprintln!("call {id}: {change}; media players: {}", mpris::describe());
+                    });
+                }
                 if let Some(call) = call
                     && let Some(waiting) = call.wait_for_voice(learning_now)
                 {
