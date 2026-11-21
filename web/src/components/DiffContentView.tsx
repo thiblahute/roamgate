@@ -1411,6 +1411,7 @@ function DiffContentViewInner({
   selectionRevision = 0,
   cursorGoTo = null,
   scopeControls,
+  headStart,
   headEnd,
   errorBack,
   entry,
@@ -1473,6 +1474,11 @@ function DiffContentViewInner({
   scopeControls?: ReactNode;
   /** A scope that cannot load: the way back to the review it replaced. */
   errorBack?: { label: string; run: () => void };
+  /**
+   * At the toolbar's start, in reach without scrolling its row: the frame's
+   * own (the changed files hidden or shown, Review only).
+   */
+  headStart?: ReactNode;
   /** At the toolbar's end (Review only: Show all, Zen's way out). */
   headEnd?: ReactNode;
   /** Files' Review: the cursor to that file and line. */
@@ -6616,12 +6622,14 @@ function DiffContentViewInner({
     >
       <div className={`diff-content-head${reviewEditor ? " is-review" : ""}`}>
         {phoneRow ? null : headBack}
+        {phoneRow ? null : headStart}
         {headTitle}
         {phoneRow ? (
           // A phone's review head: the review on its own line above, every
           // control on one row under it (Back first), scrolled, never wrapped.
           <div className="diff-review-row">
             {headBack}
+            {headStart}
             {headControls}
           </div>
         ) : (

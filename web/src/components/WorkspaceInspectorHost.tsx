@@ -96,6 +96,7 @@ import { PullRequestCard } from "./PullRequestCard";
 import { InspectorSplitResizer } from "./InspectorSplitResizer";
 import { useInspectorCommandFrame } from "./useInspectorCommandFrame";
 import {
+  ChangesFrameButtons,
   changesFrameCommands,
   InspectorZenEnd,
   ReviewOnlyEnd,
@@ -1099,6 +1100,20 @@ export function WorkspaceInspectorHost({
   // Compact layouts show the tree or the file, never both.
   const treeHideable = !compact && !!fileSelection.entry;
   const changesTreeHideable = !compact;
+  /** Changes' tree hidden or shown (`:files`, the head's button): the keys
+   * go to the diff when they were in the tree that goes. */
+  const changesTreeToggle = changesTreeHideable
+    ? () => {
+        const navigation = document.getElementById(navigationIds.changes);
+        const leaving =
+          !changesTreeHidden && !!navigation?.contains(document.activeElement);
+        toggleChangesTree();
+        if (leaving)
+          document
+            .getElementById(detailIds.changes)
+            ?.focus({ preventScroll: true });
+      }
+    : null;
   const fileChangesEntries = fileSelection.entry
     ? fileDiffEntries.filter(
         (entry) => entry.path === fileSelection.entry?.path,
@@ -1278,21 +1293,7 @@ export function WorkspaceInspectorHost({
         : []),
       ...(state.view === "changes"
         ? changesFrameCommands({
-            toggleTree: changesTreeHideable
-              ? () => {
-                  const navigation = document.getElementById(
-                    navigationIds.changes,
-                  );
-                  const leaving =
-                    !changesTreeHidden &&
-                    !!navigation?.contains(document.activeElement);
-                  toggleChangesTree();
-                  if (leaving)
-                    document
-                      .getElementById(detailIds.changes)
-                      ?.focus({ preventScroll: true });
-                }
-              : null,
+            toggleTree: changesTreeToggle,
             only: changesOnly,
             toggleOnly: toggleChangesOnly,
           })
@@ -1923,6 +1924,14 @@ export function WorkspaceInspectorHost({
                         reviewCursor
                         reviewScope={changesScope}
                         scopeControls={changesScopeBar()}
+                        headStart={
+                          <ChangesFrameButtons
+                            treeHidden={changesTreeHidden}
+                            toggleTree={changesTreeToggle}
+                            only={changesOnly}
+                            toggleOnly={toggleChangesOnly}
+                          />
+                        }
                         {...(changesOnly
                           ? {
                               headEnd: (

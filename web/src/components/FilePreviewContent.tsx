@@ -21,8 +21,6 @@ import {
   ArrowRight,
   ChevronLeft,
   FolderPlus,
-  PanelLeftClose,
-  PanelLeftOpen,
   RefreshCw,
   X,
 } from "lucide-react";
@@ -102,6 +100,7 @@ import { RenderedFrame } from "./RenderedFrame";
 import { useGraphicPointing } from "./useGraphicPointing";
 import { useRenderedScripts } from "../useRenderedScripts";
 import { ThreadsChip, UnresolvedNav } from "./ThreadsPanel";
+import { FileTreeButton } from "./changesFrame";
 import {
   useZenEscape,
   useZenMode,
@@ -2493,25 +2492,14 @@ export function FilePreviewContent({
               </button>
             ) : null}
             {onToggleTree ? (
-              <button
-                type="button"
+              <FileTreeButton
+                hidden={treeHidden}
+                onToggle={onToggleTree}
+                what="file tree"
+                // :files is the file view's (the inspector's, there).
+                {...(showingChanges && !inspectorRun ? {} : { keys: ":files" })}
                 className="file-preview-refresh"
-                title={
-                  // :files is the file view's (the inspector's, there).
-                  `${treeHidden ? "Show" : "Hide"} the file tree${showingChanges && !inspectorRun ? "" : " (:files)"}`
-                }
-                aria-label={
-                  treeHidden ? "Show the file tree" : "Hide the file tree"
-                }
-                aria-pressed={treeHidden}
-                onClick={onToggleTree}
-              >
-                {treeHidden ? (
-                  <PanelLeftOpen size={13} aria-hidden="true" />
-                ) : (
-                  <PanelLeftClose size={13} aria-hidden="true" />
-                )}
-              </button>
+              />
             ) : null}
             {!showingChanges && entry && onRefresh ? (
               <button

@@ -322,6 +322,12 @@ export interface ReviewSurface {
    * and whether it stays in place while its row scrolls (needs `styles`).
    */
   control(label: string): { minHeight: number; sticky: boolean } | null;
+  /**
+   * Every control of the head in reach: its row scrolls sideways what does
+   * not fit, or wraps it onto another row, never clipping it (needs
+   * `styles`).
+   */
+  headScrolls(): boolean;
 
   // What is shown.
   /** The file list shows (with `styles`, as the stylesheet lays it out). */

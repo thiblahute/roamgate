@@ -182,8 +182,11 @@ Inspector button, shortcuts, or workspace/agent menus.
   it), `/`, `*`, `#`, `n`/`N` (a search that finds no line goes file to file
   by path, the tree marks the files with a hit), `V` Visual lines
   (Shift+click too), `S` side by side, `R`/`gr` reload, `f` the tree, `o`
-  Review only. A click puts the cursor on a line, a second click there
-  opens the comment box. Ctrl-f is the page down
+  Review only. By touch too, the start of the diff's head has a button
+  hiding or showing the changed files beside the diff (remembered) and a
+  Review only button, pressed again to bring the rest back; a head too
+  wide for the screen scrolls sideways. A click puts the cursor on a line,
+  a second click there opens the comment box. Ctrl-f is the page down
   (Cmd+F still finds on a Mac) and `:split` / `:unified` switch.
 - Changes' `:` line has the review's commands, with Tab completion, and
   says so for a word that is none of them. `:q` (`:quit`, `:close`, `:wq`, `:x`...) and Esc with nothing else to

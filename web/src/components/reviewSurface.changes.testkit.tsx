@@ -183,7 +183,7 @@ export async function mountChangesReview(
   const { changesFrameClass, changesFrameCommands, useChangesTreeHidden } =
     await import("./changesFrame");
   const { useZenEscape, useZenMode } = await import("../useZenMode");
-  const { ReviewOnlyEnd } = await import("./changesFrame");
+  const { ChangesFrameButtons, ReviewOnlyEnd } = await import("./changesFrame");
   const { useSystemBack } = await import("../systemBack");
   const { workspaceInspectorLayout } = await import(
     "./workspaceInspectorLayout"
@@ -564,10 +564,20 @@ export async function mountChangesReview(
                   ? cloneElement(
                       children as ReactElement<{
                         reviewOnly?: boolean;
+                        headStart?: ReactNode;
                         headEnd?: ReactNode;
                       }>,
                       {
                         reviewOnly: only,
+                        // The head's start, as the host gives it.
+                        headStart: (
+                          <ChangesFrameButtons
+                            treeHidden={treeHidden}
+                            toggleTree={compact ? null : toggleTree}
+                            only={only}
+                            toggleOnly={toggleOnly}
+                          />
+                        ),
                         // Review only's end of the head, as the host gives it.
                         ...(only
                           ? {
@@ -1690,6 +1700,15 @@ export async function mountChangesReview(
           style.position === "sticky" ||
           !(scroller()?.contains(element) ?? false),
       };
+    },
+    headScrolls() {
+      const head = host.querySelector<HTMLElement>(".diff-content-head");
+      if (!head) return false;
+      const style = getComputedStyle(head);
+      return (
+        ["auto", "scroll"].includes(style.overflowX) ||
+        style.flexWrap === "wrap"
+      );
     },
     async setHidden(value) {
       putAway.hidden = value;

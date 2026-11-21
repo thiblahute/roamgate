@@ -955,10 +955,56 @@
 
 /* The review's head is one row: the commit bar, the agent's chip, the view
    menu and an expanding find join the scope; what does not fit shrinks or
-   goes to tooltips, never to a second row. */
+   goes to tooltips, never to a second row. What still does not fit is
+   reached by scrolling the row sideways (a swipe, Shift+wheel), without a
+   scrollbar. */
 .diff-content-view:not(.is-mobile) .diff-content-head.is-review {
   flex-wrap: nowrap;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.diff-content-view:not(.is-mobile)
+  .diff-content-head.is-review::-webkit-scrollbar {
+  display: none;
+}
+
+/* The head's start: the changed files hidden or shown, Review only. */
+.diff-frame-buttons {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+}
+
+.diff-frame-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--rv-muted, var(--muted));
+  cursor: pointer;
+}
+
+.diff-frame-button:hover {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
+
+.diff-frame-button[aria-pressed="true"] {
+  color: var(--rv-accent, var(--accent));
+}
+
+@media (pointer: coarse) {
+  .diff-frame-button {
+    min-width: 32px;
+  }
 }
 
 .diff-content-head.is-review > * {

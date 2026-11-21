@@ -1,7 +1,16 @@
-import { FolderTree, GitGraph, History, Minimize2, X } from "lucide-react";
+import {
+  FolderTree,
+  GitGraph,
+  History,
+  Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 import { roamgateLocalStorage } from "../browserStorage";
 import type { InspectorCommand } from "../inspectorCommands";
+import { ZenButton } from "../useZenMode";
 import { ZenDock } from "./ZenIsland";
 
 /*
@@ -85,6 +94,92 @@ export function changesFrameCommands({
       run: toggleOnly,
     },
   ];
+}
+
+/**
+ * The tree beside a view, hidden or shown: the Files preview's file tree,
+ * Changes' changed files.
+ */
+export function FileTreeButton({
+  hidden,
+  onToggle,
+  what,
+  keys,
+  className,
+  size = 13,
+}: {
+  hidden: boolean;
+  onToggle: () => void;
+  /** What the tree is: "file tree", "changed files". */
+  what: string;
+  /** Its keys, for the tooltip: ":files", "f, :files"; none: no keys. */
+  keys?: string;
+  className: string;
+  size?: number;
+}) {
+  const label = `${hidden ? "Show" : "Hide"} the ${what}`;
+  return (
+    <button
+      type="button"
+      className={className}
+      title={keys ? `${label} (${keys})` : label}
+      aria-label={label}
+      aria-pressed={hidden}
+      onClick={onToggle}
+    >
+      {hidden ? (
+        <PanelLeftOpen size={size} aria-hidden="true" />
+      ) : (
+        <PanelLeftClose size={size} aria-hidden="true" />
+      )}
+    </button>
+  );
+}
+
+/**
+ * The start of Changes' diff head, by touch too: the changed files beside
+ * the diff hidden or shown (`:files`, when the tree can be: not on a
+ * compact inspector, whose tree is a drill-down) and Review only, the diff
+ * alone over the whole screen (`o`, `:only`), pressed again to come back.
+ */
+export function ChangesFrameButtons({
+  treeHidden,
+  toggleTree,
+  only,
+  toggleOnly,
+}: {
+  treeHidden: boolean;
+  /** Null: the tree cannot be hidden here (a compact inspector). */
+  toggleTree: (() => void) | null;
+  only: boolean;
+  toggleOnly: () => void;
+}) {
+  return (
+    <div className="diff-frame-buttons" role="group" aria-label="Layout">
+      {toggleTree && !only ? (
+        <FileTreeButton
+          hidden={treeHidden}
+          onToggle={toggleTree}
+          what="changed files"
+          keys=":files"
+          className="diff-frame-button"
+          size={14}
+        />
+      ) : null}
+      <ZenButton
+        zen={only}
+        onToggle={toggleOnly}
+        className="diff-frame-button"
+        label="Review only"
+        title={
+          only
+            ? "Show the rest again (o, :only, Esc)"
+            : "Review only: the diff alone, full screen (o, :only; o or Esc brings the rest back)"
+        }
+        size={14}
+      />
+    </div>
+  );
 }
 
 /**

@@ -124,6 +124,74 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await mouse.unmount();
       });
 
+      test("by touch, the head's Review only shows the diff alone, and the same button brings the rest back", async () => {
+        // A phone in landscape: the inspector wide, the tree beside the diff.
+        const review = await mount({
+          files: [added("a.ts", 4)],
+          width: 915,
+          coarse: true,
+          styles: true,
+        });
+        expect(review.chromeShown()).toBe(true);
+        await review.clickButton("Review only");
+        expect(review.diffOnly()).toBe(true);
+        expect(review.control("Show all")).not.toBeNull();
+        // The way back stays at the head's start, in reach unscrolled.
+        await review.clickButton("Review only");
+        expect(review.diffOnly()).toBe(false);
+        expect(review.chromeShown()).toBe(true);
+        await review.unmount();
+        // A phone held upright too: its tree a drill-down, Review only there.
+        const upright = await mount({
+          files: [added("a.ts", 4)],
+          width: 412,
+          phone: true,
+          coarse: true,
+          styles: true,
+        });
+        expect(upright.control("Hide the changed files")).toBeNull();
+        await upright.clickButton("Review only");
+        expect(upright.diffOnly()).toBe(true);
+        await upright.clickButton("Review only");
+        expect(upright.diffOnly()).toBe(false);
+        await upright.unmount();
+      });
+
+      test("the head's button hides the changed files beside the diff and shows them again, remembered", async () => {
+        const review = await mount({
+          files: [added("a.ts", 4)],
+          width: 915,
+          coarse: true,
+          styles: true,
+        });
+        expect(review.filesShown()).toBe(true);
+        await review.clickButton("Hide the changed files");
+        expect(review.filesShown()).toBe(false);
+        await review.reload();
+        expect(review.filesShown()).toBe(false);
+        await review.clickButton("Show the changed files");
+        expect(review.filesShown()).toBe(true);
+        await review.reload();
+        expect(review.filesShown()).toBe(true);
+        await review.unmount();
+      });
+
+      test("every control of the head is in reach: its row scrolls sideways (or wraps on a phone held upright)", async () => {
+        for (const options of [
+          { width: 915, coarse: true },
+          { width: 1400 },
+          { width: 412, phone: true, coarse: true },
+        ]) {
+          const review = await mount({
+            files: [added("a.ts", 2)],
+            styles: true,
+            ...options,
+          });
+          expect(review.headScrolls()).toBe(true);
+          await review.unmount();
+        }
+      });
+
       test("o and :only show the diff only; o or Esc bring the rest back, then Esc closes", async () => {
         const review = await mount({
           files: [added("a.ts", 4)],
