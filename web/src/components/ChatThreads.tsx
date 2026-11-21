@@ -47,6 +47,14 @@ import {
 } from "../unresolvedThreads";
 import { formatUiDateTime } from "../uiLocale";
 import { CHAT_PARTS_EVENT } from "./chatPaging";
+import {
+  commentOnPart,
+  messagePartsOf,
+  messageStopKey,
+  messageStops,
+  SelectionOffer,
+  useSelectedWords,
+} from "./MessageThreads";
 import "./ChatThreads.css";
 
 /**
@@ -723,110 +731,97 @@ export function ChatThreadsProvider({
   };
 
   /** The parts of a thread's message, and the threads on them. */
-  const messageParts = (
-    thread: ReviewThread,
-    comment: string,
-  ): MessageParts => {
-    const notes = (byMessage.get(comment) ?? [])
-      .filter((nested) => !hidden.has(nested.id))
-      .map((nested) => ({
-        key: nested.id,
-        quote: nested.anchor.message?.quote ?? "",
-        node: renderThread(nested),
-      }));
-    if (partDraft?.comment === comment)
-      notes.push({
-        key: "draft",
-        quote: partDraft.quote,
-        node: (
-          <div className="chat-thread is-draft">
-            <ThreadEditor
-              placeholder={`Comment for ${agent}...`}
-              onLeave={backToConversation}
-              onClose={(id) => {
-                dropFailed(id);
-                setPartDraft(null);
-                backToConversation();
-              }}
-              onSave={(text, id) =>
-                send({
-                  id,
-                  kind: "discussion",
-                  anchor: { message: partDraft },
-                  text,
-                }).then((ok) => {
-                  if (!ok) return;
-                  setPartDraft(null);
-                  backToConversation();
-                })
-              }
-            />
-          </div>
-        ),
-      });
-    return {
-      notes,
-      focused: cursor?.startsWith(`q:${comment}:`)
-        ? Number(cursor.slice(comment.length + 3))
-        : null,
+  const messageParts = (thread: ReviewThread, comment: string): MessageParts =>
+    messagePartsOf({
+      key: `q:${comment}`,
+      threads: byMessage.get(comment),
+      hidden,
+      renderThread,
+      draft:
+        partDraft?.comment === comment
+          ? {
+              quote: partDraft.quote,
+              node: (
+                <div className="chat-thread is-draft">
+                  <ThreadEditor
+                    placeholder={`Comment for ${agent}...`}
+                    onLeave={backToConversation}
+                    onClose={(id) => {
+                      dropFailed(id);
+                      setPartDraft(null);
+                      backToConversation();
+                    }}
+                    onSave={(text, id) =>
+                      send({
+                        id,
+                        kind: "discussion",
+                        anchor: { message: partDraft },
+                        text,
+                      }).then((ok) => {
+                        if (!ok) return;
+                        setPartDraft(null);
+                        backToConversation();
+                      })
+                    }
+                  />
+                </div>
+              ),
+            }
+          : null,
+      cursor,
+      setCursor,
       onComment: (quote) =>
         setPartDraft({
           thread: thread.id,
           comment,
           quote: quote.trim().slice(0, 4000),
         }),
-      onSelect: (part) => setCursor(`q:${comment}:${part}`),
-    };
-  };
+      messageStop: `m:${comment}`,
+    });
 
   const partsFor = (entry: HistoryEntry): MessageParts => {
     entries.current.set(entry.id, entry);
-    const notes = (byEntry.get(entry.id) ?? [])
-      .filter((thread) => !hidden.has(thread.id))
-      .map((thread) => ({
-        key: thread.id,
-        quote: thread.anchor.chat?.quote ?? "",
-        node: renderThread(thread),
-      }));
-    if (draft?.entry === entry.id)
-      notes.push({
-        key: "draft",
-        quote: draft.quote,
-        node: (
-          <div className="chat-thread is-draft">
-            <ThreadEditor
-              placeholder={`Comment for ${agent}...`}
-              onLeave={backToConversation}
-              onClose={(id) => {
-                dropFailed(id);
-                setDraft(null);
-                backToConversation();
-              }}
-              onSave={(text, id) =>
-                send({
-                  id,
-                  kind: "discussion",
-                  anchor: { chat: draft },
-                  text,
-                }).then((ok) => {
-                  if (!ok) return;
-                  setDraft(null);
-                  backToConversation();
-                })
-              }
-            />
-          </div>
-        ),
-      });
-    return {
-      notes,
-      focused: cursor?.startsWith(`p:${entry.id}:`)
-        ? Number(cursor.slice(entry.id.length + 3))
-        : null,
+    return messagePartsOf({
+      key: `p:${entry.id}`,
+      threads: byEntry.get(entry.id),
+      hidden,
+      renderThread,
+      draft:
+        draft?.entry === entry.id
+          ? {
+              quote: draft.quote,
+              node: (
+                <div className="chat-thread is-draft">
+                  <ThreadEditor
+                    placeholder={`Comment for ${agent}...`}
+                    onLeave={backToConversation}
+                    onClose={(id) => {
+                      dropFailed(id);
+                      setDraft(null);
+                      backToConversation();
+                    }}
+                    onSave={(text, id) =>
+                      send({
+                        id,
+                        kind: "discussion",
+                        anchor: { chat: draft },
+                        text,
+                      }).then((ok) => {
+                        if (!ok) return;
+                        setDraft(null);
+                        backToConversation();
+                      })
+                    }
+                  />
+                </div>
+              ),
+            }
+          : null,
+      cursor,
+      setCursor,
       onComment: (quote) => comment(entry, quote),
-      onSelect: (part) => setCursor(`p:${entry.id}:${part}`),
       single: true,
-    };
+    });
   };
 
   // The keys: from the message box (k on its first line in normal mode, or
@@ -1202,41 +1197,20 @@ export function ChatThreadsProvider({
     );
     if (!messages || !list) return;
     list.tabIndex = -1;
-    const keyOf = (stop: HTMLElement) => {
-      if (stop.dataset.chatStop) return stop.dataset.chatStop;
-      const message =
-        stop.closest<HTMLElement>(".chat-thread-body")?.dataset.messageId;
-      if (message) return `q:${message}:${stop.dataset.part}`;
-      const entry =
-        stop.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
-      return `p:${entry}:${stop.dataset.part}`;
-    };
+    const keyOf = (stop: HTMLElement) =>
+      messageStopKey(
+        stop,
+        (part) =>
+          `p:${part.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId}:${part.dataset.part}`,
+      );
+    // The conversation as shown: not what tool calls hold, nor what is
+    // hidden.
     const stops = () =>
-      Array.from(
-        list.querySelectorAll<HTMLElement>(
-          ".chat-review [data-part], [data-chat-stop]",
-        ),
-      ).filter(
-        (stop) =>
-          (stop.dataset.chatStop ||
-            !stop.closest(".chat-thread") ||
-            partOfLongThreadMessage(stop)) &&
-          // The conversation as shown: not what tool calls hold, nor what
-          // is hidden.
-          !stop.closest(".agent-history-chat-tools") &&
-          stop.getClientRects().length > 0,
+      messageStops(
+        list,
+        ".chat-review [data-part], [data-chat-stop]",
+        (stop) => !stop.closest(".agent-history-chat-tools"),
       );
-    // A thread's message in several parts: each is a stop, after the
-    // message itself (one part: the message is the stop).
-    const partOfLongThreadMessage = (stop: HTMLElement) => {
-      const body = stop.closest<HTMLElement>(".chat-thread-body");
-      return (
-        !!body &&
-        body.querySelectorAll(":scope [data-part]").length -
-          body.querySelectorAll(":scope .rc-part-notes [data-part]").length >
-          1
-      );
-    };
     const select = (stop: HTMLElement | undefined) => {
       if (!stop) return;
       setCursor(keyOf(stop));
@@ -1374,30 +1348,9 @@ export function ChatThreadsProvider({
           void write("review.delete", { comment_id: thread.id });
       } else if (
         (key === "c" || key === "Enter") &&
-        list.querySelector(".chat-thread.is-draft .cm-content")
-      )
-        // A comment being written: back into it.
-        list
-          .querySelector<HTMLElement>(".chat-thread.is-draft .cm-content")
-          ?.focus();
-      else if (
-        (key === "c" || key === "Enter") &&
-        here?.dataset.part !== undefined &&
-        here.closest(".chat-thread-body")
+        commentOnPart(list, here, thread, keys.current.setPartDraft)
       ) {
-        // A part of a thread's message: a thread on it.
-        const message =
-          here.closest<HTMLElement>(".chat-thread-body")?.dataset.messageId;
-        const add = here.querySelector(":scope > .rc-part-add");
-        if (message && thread)
-          keys.current.setPartDraft({
-            thread: thread.id,
-            comment: message,
-            quote: (here.textContent ?? "")
-              .replace(add?.textContent ?? "", "")
-              .trim()
-              .slice(0, 4000),
-          });
+        /* Taken up or commented on. */
       } else if ((key === "c" || key === "Enter" || key === "R") && thread) {
         // An answer being written in that thread: back into it.
         const open = list.querySelector<HTMLElement>(
@@ -1439,58 +1392,12 @@ export function ChatThreadsProvider({
   }, []);
 
   // Words selected in a message offer a comment on them.
-  const [selection, setSelection] = useState<{
-    entry: string;
-    quote: string;
-    x: number;
-    y: number;
-  } | null>(null);
-  useEffect(() => {
-    let timer = 0;
-    const onChange = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        const current = window.getSelection();
-        const range =
-          current && !current.isCollapsed && current.rangeCount === 1
-            ? current.getRangeAt(0)
-            : null;
-        const start =
-          range?.startContainer instanceof Element
-            ? range.startContainer
-            : range?.startContainer.parentElement;
-        const message = start?.closest<HTMLElement>(".chat-review [data-part]")
-          ? start?.closest<HTMLElement>("[data-entry-id]")
-          : null;
-        const quote = current?.toString().trim() ?? "";
-        if (!range || !message?.dataset.entryId || !quote) {
-          setSelection(null);
-          return;
-        }
-        const rect = range.getBoundingClientRect();
-        // On a touch screen the selection's handles hang under its ends:
-        // Comment goes below them, 44px high, where a finger reaches it.
-        const touch = window.matchMedia?.("(pointer: coarse)").matches;
-        setSelection({
-          entry: message.dataset.entryId,
-          quote,
-          x: Math.max(8, Math.min(rect.left, window.innerWidth - 120)),
-          y: Math.max(
-            8,
-            Math.min(
-              rect.bottom + (touch ? 32 : 8),
-              window.innerHeight - (touch ? 52 : 44),
-            ),
-          ),
-        });
-      }, 200);
-    };
-    document.addEventListener("selectionchange", onChange);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener("selectionchange", onChange);
-    };
-  }, []);
+  const [selection, clearSelection] = useSelectedWords((start) => {
+    const message = start.closest<HTMLElement>(".chat-review [data-part]")
+      ? start.closest<HTMLElement>("[data-entry-id]")
+      : null;
+    return message?.dataset.entryId ? { entry: message.dataset.entryId } : null;
+  });
 
   // A phone's keyboard opening under a comment being written, or a box
   // opened while it is up: the whole box, its buttons too, back into what
@@ -1647,25 +1554,16 @@ export function ChatThreadsProvider({
           </button>
         </div>
       ) : null}
-      {selection
-        ? createPortal(
-            <button
-              type="button"
-              className="chat-thread-select"
-              style={{ left: selection.x, top: selection.y }}
-              // Keeps the selection while the button is pressed.
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={() => {
-                const entry = entries.current.get(selection.entry);
-                if (entry) comment(entry, selection.quote);
-                setSelection(null);
-              }}
-            >
-              Comment
-            </button>,
-            document.body,
-          )
-        : null}
+      {selection ? (
+        <SelectionOffer
+          at={selection}
+          onClick={() => {
+            const entry = entries.current.get(selection.entry);
+            if (entry) comment(entry, selection.quote);
+            clearSelection();
+          }}
+        />
+      ) : null}
     </ChatThreadsContext.Provider>
   );
 }
