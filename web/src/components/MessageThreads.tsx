@@ -13,10 +13,11 @@ import { type DraftPlace, type ThreadBox, ThreadEditor } from "./ThreadEditor";
 
 /*
  * Messages with threads on their parts, one way for an agent chat's
- * messages (ChatThreads) and the Files preview's threads (FileThreads): a
- * message is drawn by NoteBody in parts, the + beside a part opens a
- * thread on it quoting it, and the threads on a part are drawn under it,
- * their own messages in parts too. Reply on a thread's
+ * messages (ChatThreads), a work item's description and comments
+ * (WorkItemThreads) and the review's and the Files preview's threads
+ * (FileThreads): a message is drawn by NoteBody in parts, the + beside a
+ * part opens a thread on it quoting it, and the threads on a part are
+ * drawn under it, their own messages in parts too. Reply on a thread's
  * message (or R on it) opens a thread on the whole message, quoting
  * nothing (`message: {thread, comment}`): such threads are drawn under
  * the message after those on its parts (MessageNotes), their head saying

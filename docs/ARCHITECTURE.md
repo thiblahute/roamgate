@@ -1817,13 +1817,18 @@ optional on every review's message part: none means the whole message):
 the detail draws the description and every comment as messages in parts
 with the chat threads' own code (`web/src/components/MessageThreads.tsx`,
 the one implementation of messages with threads on their parts, used by
-`ChatThreads.tsx`, `FileThreads.tsx` and `WorkItemThreads.tsx`:
-`MessageThread` draws a thread's messages in parts with the threads on
-them under the words they quote and the boxes, `messagePartsOf` and
-`threadMessageParts` build `NoteBody`'s parts, the `+` in the chat's
-`.chat-review` gutter opening a thread on a part, `messageStops` and
-`messageStopKey` the keys' stops, `commentOnPart` c on a part,
-`useSelectedWords` and `SelectionOffer` Comment on words selected; a
+`ChatThreads.tsx`, `FileThreads.tsx`, `EffortThreads.tsx` and
+`WorkItemThreads.tsx`: `MessageThread` draws a thread's messages in parts
+with the threads on them under the words they quote and the boxes,
+`ThreadMessageBody` a message with the threads on the whole of it drawn
+after them (`MessageNotes`, their head "On this message"),
+`messagePartsOf` and `threadMessageParts` build `NoteBody`'s parts, the
+`+` in the chat's `.chat-review` gutter opening a thread on a part and
+Reply on a message (`ThreadCard`'s `onReplyMessage`; `replyOnMessage` for
+R on its stop or first part) one on the whole message (`message` with no
+`quote`), `messageStops` and `messageStopKey` the keys' stops,
+`commentOnPart` c on a part, `useSelectedWords` and `SelectionOffer`
+Comment on words selected; a
 `MessageThreadsScope` says what differs: the anchor of a thread on a
 part (`work: {item}` plus `message`, the chat's `message` alone), the
 boxes kept, the words beside comments not delivered). `WorkDescription`

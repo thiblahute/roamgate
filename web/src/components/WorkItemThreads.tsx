@@ -26,11 +26,11 @@ import {
   type MessageThreadsScope,
   messageStopKey,
   messageStops,
+  replyOnMessage,
   SelectionOffer,
-  threadMessageParts,
+  ThreadMessageBody,
   useSelectedWords,
 } from "./MessageThreads";
-import { NoteBody } from "./ReviewNoteBody";
 import { useThreadKeys } from "./useThreadKeys";
 
 /**
@@ -313,7 +313,8 @@ export function workThreadsScope(
 /**
  * The item's description (the first comment of its description thread),
  * a message in parts as the comments are: the threads on its parts under
- * them, its + in the chat's gutter.
+ * them, its + in the chat's gutter, Reply under it (a thread on the whole
+ * description) and the threads on the whole of it after.
  */
 export function WorkDescription({
   api,
@@ -332,11 +333,12 @@ export function WorkDescription({
   return (
     <div className="work-description" aria-label="Description">
       <div className="chat-review" data-message-id={message.id}>
-        <NoteBody
-          text={message.body}
-          parts={threadMessageParts(scope, thread, message.id, {
-            single: true,
-          })}
+        <ThreadMessageBody
+          scope={scope}
+          thread={thread}
+          message={message}
+          single
+          actions
         />
       </div>
     </div>
@@ -523,7 +525,8 @@ export function workWordsLocate(
  * The chat threads' keys on an item's detail (`list`: its description and
  * threads): j / k through the parts of its comments and the threads'
  * messages, c on a part comments on it (a thread on it, quoting it), on
- * a message answers its thread, r resolves, za folds, n / N thread to
+ * a message answers its thread, R on a message (the description too)
+ * answers the whole message, r resolves, za folds, n / N thread to
  * thread. `fallback` takes the detail's own keys (s, t, o, dd), and c /
  * r with no stop under the cursor (a new comment, an answer to the last
  * thread).
@@ -613,6 +616,11 @@ export function useWorkItemKeys({
     // A part of a comment (the description's too): a thread on it.
     commentFirst: (here, thread) =>
       commentOnPart(getList(), here, thread, api.setPartDraft, (part) =>
+        part.closest(".work-description") ? description?.id : undefined,
+      ),
+    // R on a comment (the description too): a thread on the whole of it.
+    replyMessage: (here, thread) =>
+      replyOnMessage(getList(), here, thread, api.setPartDraft, (part) =>
         part.closest(".work-description") ? description?.id : undefined,
       ),
     comment: () => false,

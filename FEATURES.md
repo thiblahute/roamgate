@@ -2247,12 +2247,16 @@ with the comment), whose Send and Cancel are always in view. The
 description and every comment are messages in parts, as a chat's: the
 `+` beside a part (on a phone, the part or message tapped shows its +)
 comments on that part, a thread of its own drawn under it quoting it,
-with its own Reply, Resolve and Fold; words selected in a comment offer
-**Comment**, quoting them. The keys are the chat threads' (`j`/`k`
-through the parts and messages, `c` on a part comments on it, on a
-message answers its thread, `r` resolves, `za` folds, `n`/`N` thread to
-thread, `gg`/`G`; off a stop, `c` is a new comment and `r` an answer to
-the last thread). The threads go to the owner session, which answers in
+with its own Reply, Resolve and Fold; **Reply** on a comment (at the right
+of its author, shown as the pointer is over it; under the description,
+which has no author row) answers the whole comment in a thread of its own,
+drawn under the comment after the threads on its parts and headed "On this
+message"; words selected in a comment offer **Comment**, quoting them. The
+keys are the chat threads' (`j`/`k` through the parts and messages, `c` on
+a part comments on it, on a message answers its thread, `R` on a comment
+(or the description) answers the whole of it, `r` resolves, `za` folds,
+`n`/`N` thread to thread, `gg`/`G`; off a stop, `c` is a new comment and
+`r` an answer to the last thread). The threads go to the owner session, which answers in
 them as it does a review's (a thread on a part reaches it with the words
 quoted); a comment with no owner running waits and says so, sent once one
 runs. `a`
