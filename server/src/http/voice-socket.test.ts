@@ -94,6 +94,9 @@ describe("voice socket", () => {
     const sent: string[] = [];
     const ws = { send: (message: string) => sent.push(message) };
     socket.message(ws, JSON.stringify({ op: "listen" }));
+    // The listening models' loading is a dictation's news only.
+    emit({ event: "listen_loading", session: 1 });
+    emit({ event: "listen_ready", session: 1 });
     emit({ event: "final", session: 1, text: "Do um it.", speech_ms: 900 });
     expect(sent.map((s) => JSON.parse(s))).toEqual([
       { event: "listening", session: 1, resume: expect.any(String) },

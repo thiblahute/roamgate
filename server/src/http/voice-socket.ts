@@ -506,6 +506,8 @@ type Dictation = {
   concluding: boolean;
   /** FINISH_DEADLINE_MS after `finish`: a final, whatever came. */
   deadline: ReturnType<typeof setTimeout> | null;
+  /** The helper loads its listening models: the audio waits for them. */
+  loading: boolean;
   /** Starts the helper's next utterance. */
   next: () => VoiceSession;
 };
@@ -542,12 +544,22 @@ const CALL_ICE_CHARS = 2000;
  * whatever the helper or the cleaner do: the words heard so far, as heard.
  */
 export const FINISH_DEADLINE_MS = 15_000;
+/**
+ * While the helper loads its listening models (a helper just started), a
+ * finished dictation waits this long for them, then FINISH_DEADLINE_MS.
+ */
+export const LOADING_DEADLINE_MS = 90_000;
+/** A dictation's final when nothing was heard: an error the client shows. */
+export const NOTHING_HEARD = "Nothing was heard";
 /** A dictation's pauses never end it: the client says when it is over. */
 const DICTATION_END_SILENCE_MS = 10_000;
 
 /** Told to a socket: the helper's events, and dictation's own fields. */
-type Told = VoiceEvent & {
+type Told = Omit<VoiceEvent, "event"> & {
+  /** A dictation's `loading` and `ready`: the helper's listening models. */
+  event: VoiceEvent["event"] | "loading" | "ready";
   mode?: "dictation";
+  nothing_heard?: boolean;
   cleaned?: boolean;
   timing?: { stt_ms: number; clean_ms: number };
 };
@@ -1086,6 +1098,21 @@ export function createVoiceSocket(
     debug(
       `dictation ${listening.id}: heard ${sttMs} ms after finish, ${result.cleaned ? `cleaned in ${cleanMs} ms` : "typed as heard"}, ${raw.length} chars heard, ${result.text.length} typed`,
     );
+    if (!raw) {
+      // Said as such: an empty final types nothing, and a client waiting
+      // on its cleaning shows nothing either.
+      listening.over = true;
+      if (listening.stall) clearTimeout(listening.stall);
+      listening.stall = null;
+      deliver(listening, {
+        event: "error",
+        session: listening.id,
+        error: NOTHING_HEARD,
+        nothing_heard: true,
+        recoverable: false,
+      });
+      return;
+    }
     deliver(listening, {
       event: "final",
       session: listening.id,
@@ -1114,16 +1141,11 @@ export function createVoiceSocket(
     );
   };
 
-  /**
-   * The client is done: the helper ends what it hears, and the final
-   * comes within FINISH_DEADLINE_MS whatever happens.
-   */
-  const finishDictation = (listening: Listening) => {
+  /** A finished dictation's final comes within `ms`, whatever comes. */
+  const armDeadline = (listening: Listening, ms: number) => {
     const state = listening.dictation;
-    if (!state || state.finishedAt !== null || listening.over) return;
-    state.finishedAt = performance.now();
-    if (listening.stall) clearTimeout(listening.stall);
-    listening.stall = null;
+    if (!state) return;
+    if (state.deadline) clearTimeout(state.deadline);
     state.deadline = setTimeout(() => {
       state.deadline = null;
       debug(`dictation ${listening.id}: no final in time, the words as heard`);
@@ -1134,7 +1156,23 @@ export function createVoiceSocket(
         Math.round(performance.now() - (state.finishedAt ?? 0)),
         0,
       );
-    }, FINISH_DEADLINE_MS);
+    }, ms);
+  };
+
+  /**
+   * The client is done: the helper ends what it hears, and the final
+   * comes within FINISH_DEADLINE_MS whatever happens.
+   */
+  const finishDictation = (listening: Listening) => {
+    const state = listening.dictation;
+    if (!state || state.finishedAt !== null || listening.over) return;
+    state.finishedAt = performance.now();
+    if (listening.stall) clearTimeout(listening.stall);
+    listening.stall = null;
+    armDeadline(
+      listening,
+      state.loading ? LOADING_DEADLINE_MS : FINISH_DEADLINE_MS,
+    );
     listening.session.finish();
   };
 
@@ -1152,6 +1190,27 @@ export function createVoiceSocket(
     if (event.session !== undefined && event.session !== listening.session.id)
       return;
     switch (event.event) {
+      case "listen_loading":
+        // A helper just started: what is said now is heard once its
+        // models are loaded, and the client may say so meanwhile.
+        state.loading = true;
+        deliver(listening, {
+          event: "loading",
+          session: listening.id,
+          mode: "dictation",
+        });
+        return;
+      case "listen_ready":
+        state.loading = false;
+        deliver(listening, {
+          event: "ready",
+          session: listening.id,
+          mode: "dictation",
+        });
+        // Finished while they loaded: the helper hears it all only now.
+        if (state.finishedAt !== null && !state.concluding)
+          armDeadline(listening, FINISH_DEADLINE_MS);
+        return;
       case "speech_start":
         deliver(listening, { event: "speech_start", session: listening.id });
         return;
@@ -1261,6 +1320,7 @@ export function createVoiceSocket(
       finishedAt: null,
       concluding: false,
       deadline: null,
+      loading: false,
       next,
     };
     let started: VoiceSession;
@@ -1436,10 +1496,16 @@ export function createVoiceSocket(
                 ? request.call
                 : undefined;
             const started = helper.listen(
-              (event) =>
-                event.event === "audio"
-                  ? callAudioCame(holder.listening, event.bytes ?? 0)
-                  : relayed.onEvent(event),
+              (event) => {
+                if (event.event === "audio")
+                  callAudioCame(holder.listening, event.bytes ?? 0);
+                // The voice chat's audio waits for the models as well.
+                else if (
+                  event.event !== "listen_loading" &&
+                  event.event !== "listen_ready"
+                )
+                  relayed.onEvent(event);
+              },
               {
                 ...(viaCall !== undefined ? { call: viaCall } : {}),
                 hold: request.hold === true,

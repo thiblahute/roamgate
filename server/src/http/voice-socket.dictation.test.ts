@@ -11,6 +11,8 @@ import {
   createVoiceSocket,
   DETACHED_MS,
   FINISH_DEADLINE_MS,
+  LOADING_DEADLINE_MS,
+  NOTHING_HEARD,
   STALL_MS,
 } from "./voice-socket";
 
@@ -285,14 +287,112 @@ describe("dictation on the voice socket", () => {
     }
   });
 
-  test("nothing said is an empty final", async () => {
+  test("nothing heard is an explicit error, never an empty final", async () => {
     const { socket, emit } = dictationSocket();
     const { ws, sent } = fakeSocket();
     socket.message(ws, listen());
     socket.message(ws, JSON.stringify({ op: "finish" }));
     emit({ event: "final", text: "", speech_ms: 0 });
     await settle();
-    expect(sent.at(-1)).toMatchObject({ event: "final", text: "", raw: "" });
+    expect(sent.at(-1)).toEqual({
+      event: "error",
+      session: 1,
+      error: NOTHING_HEARD,
+      nothing_heard: true,
+      recoverable: false,
+    });
+    expect(sent.some((message) => message.event === "final")).toBe(false);
+    // Once: a late final from the helper adds nothing.
+    emit({ event: "final", text: "late" });
+    await settle();
+    expect(sent.filter((m) => m.event === "error")).toHaveLength(1);
+  });
+
+  test("nothing heard by the deadline is the same explicit error", () => {
+    jest.useFakeTimers();
+    try {
+      const { socket } = dictationSocket();
+      const { ws, sent } = fakeSocket();
+      socket.message(ws, listen());
+      socket.message(ws, JSON.stringify({ op: "finish" }));
+      jest.advanceTimersByTime(FINISH_DEADLINE_MS);
+      expect(sent.at(-1)).toMatchObject({
+        event: "error",
+        nothing_heard: true,
+        recoverable: false,
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("a helper loading its models hears the audio sent before, once ready", async () => {
+    jest.useFakeTimers();
+    try {
+      const { socket, emit, latest } = dictationSocket();
+      const { ws, sent } = fakeSocket();
+      socket.message(ws, listen());
+      // A helper just started: its listening models load for seconds.
+      emit({ event: "listen_loading" });
+      expect(sent.at(-1)).toEqual({
+        event: "loading",
+        session: 1,
+        mode: "dictation",
+      });
+      for (let i = 0; i < 150; i += 1) socket.message(ws, audio(20));
+      // All of it goes to the helper, which keeps it until they load.
+      expect(latest().bytes).toBe(150 * 20 * 32);
+      socket.message(ws, JSON.stringify({ op: "finish" }));
+      expect(latest().calls).toEqual(["finish"]);
+      // The models take longer than the deadline after finish: the
+      // dictation waits for them rather than ending with nothing.
+      jest.advanceTimersByTime(FINISH_DEADLINE_MS + 5_000);
+      expect(sent.at(-1)?.event).toBe("loading");
+      emit({ event: "listen_ready" });
+      expect(sent.at(-1)).toEqual({
+        event: "ready",
+        session: 1,
+        mode: "dictation",
+      });
+      // Then the audio sent meanwhile is heard.
+      emit({ event: "speech_start" });
+      emit({ event: "partial", text: "euh hello there" });
+      emit({ event: "final", text: "euh hello there" });
+      await settle();
+      expect(sent.at(-1)).toMatchObject({
+        event: "final",
+        session: 1,
+        text: "Hello there.",
+        raw: "euh hello there",
+        cleaned: true,
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("once ready, a dictation finished while loading has FINISH_DEADLINE_MS", () => {
+    jest.useFakeTimers();
+    try {
+      const { socket, emit } = dictationSocket();
+      const { ws, sent } = fakeSocket();
+      socket.message(ws, listen());
+      emit({ event: "listen_loading" });
+      socket.message(ws, JSON.stringify({ op: "finish" }));
+      jest.advanceTimersByTime(LOADING_DEADLINE_MS - 1);
+      emit({ event: "listen_ready" });
+      emit({ event: "partial", text: "hello" });
+      jest.advanceTimersByTime(FINISH_DEADLINE_MS - 1);
+      expect(sent.some((m) => m.event === "final")).toBe(false);
+      jest.advanceTimersByTime(1);
+      expect(sent.at(-1)).toMatchObject({
+        event: "final",
+        text: "hello",
+        cleaned: false,
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test("a helper that stops mid-dictation ends it with an error at once", () => {

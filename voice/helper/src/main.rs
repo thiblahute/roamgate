@@ -27,7 +27,10 @@
 //! `--parakeet-model` and `--whisper-model`, a final Parakeet wrote in
 //! English while the conversation is in another language is heard by
 //! Whisper, and read again in that language when it was said in it (see
-//! `reread`).
+//! `reread`). The first session loads the listening models: it is told
+//! `{"event": "listen_loading", "session": 3}`, then `listen_ready` once
+//! they are (seconds later); its audio and its finish wait meanwhile, and
+//! are heard after.
 //!
 //! Speaking: `{"id": 2, "op": "speak", "text": "...", "language": "fr"}`, one
 //! sentence to Ogg Opus speech, in the language given or the one its words
@@ -1033,6 +1036,18 @@ fn main() {
                 if listener.is_none() && !starting {
                     continue;
                 }
+                // The session waits while the models load (seconds, from a
+                // helper just started): its audio waits too, heard after.
+                let session = match &command {
+                    listen::Command::Start { id, .. } if listener.is_none() => Some(*id),
+                    _ => None,
+                };
+                if let Some(session) = session {
+                    reply(
+                        &output,
+                        json!({"event": "listen_loading", "session": session}),
+                    );
+                }
                 if listener.is_none() {
                     let model = match (&config.parakeet_model, &config.whisper_model) {
                         (Some(dir), _) => listen::Model::Parakeet(dir),
@@ -1063,7 +1078,15 @@ fn main() {
                         reread.clone(),
                         emit.clone(),
                     ) {
-                        Ok(created) => listener = Some(created),
+                        Ok(created) => {
+                            listener = Some(created);
+                            if let Some(session) = session {
+                                reply(
+                                    &output,
+                                    json!({"event": "listen_ready", "session": session}),
+                                );
+                            }
+                        }
                         Err(error) => {
                             reply(&output, json!({"event": "error", "error": error}));
                             continue;

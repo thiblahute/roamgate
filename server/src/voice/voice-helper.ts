@@ -947,7 +947,13 @@ export type VoiceEvent = {
     | "final"
     | "error"
     /** A call's microphone came for the session: `bytes` of it. */
-    | "audio";
+    | "audio"
+    /**
+     * The session waits for the listening models to load (a helper just
+     * started), its audio heard once they are: `listen_ready`.
+     */
+    | "listen_loading"
+    | "listen_ready";
   session?: number;
   /** On `audio`: how much came, as 16 kHz mono S16LE. */
   bytes?: number;

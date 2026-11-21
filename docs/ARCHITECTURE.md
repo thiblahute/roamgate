@@ -1712,7 +1712,16 @@ heard", "cleaned": true, "timing": {"stt_ms": 180, "clean_ms": 640}}`
 (`stt_ms` from `finish` to the helper's last words, `clean_ms` the
 cleaning's own). `cleaned` false gives the words as heard: no model, a
 model that failed, took over 8 s, or whose reply is not a cleaning of
-them (most of its words not said, or much longer). A helper that stops
+them (most of its words not said, or much longer). When nothing was
+heard, the final is `{"event": "error", "session": 4, "error": "Nothing
+was heard", "nothing_heard": true, "recoverable": false}` instead, for
+the client to say so. A helper just started (or stopped after
+`helper_idle_exit_minutes` and started again) loads its listening models
+first, for seconds: `{"event": "loading", "session": 4, "mode":
+"dictation"}` says so, then `{"event": "ready", ...}`. The audio that
+comes meanwhile waits in the helper and is heard once they are loaded,
+`finish` after it; a dictation finished while they load waits up to
+LOADING_DEADLINE_MS (90 s) for them, then FINISH_DEADLINE_MS. A helper that stops
 gives `{"event": "error", "session": 4, "recoverable": true}` at once. A
 voice chat listening takes the helper from a dictation, which then ends
 with a final of what it heard, not cleaned. Dictation has no `for_agent`:

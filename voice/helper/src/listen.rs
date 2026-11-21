@@ -83,6 +83,21 @@ const REFERENCE_GAP: usize = RATE as usize * 2 / 5;
 const REFERENCE_MAX: usize = RATE as usize * 8;
 /// The session the reference is heard in, before any real one.
 const ENROLLING: u32 = u32::MAX;
+/// What the gate may not have heard yet of what was pushed, at 48 kHz: the
+/// resampler's latency and the denoiser's last partial frame (480 samples).
+const GATE_LATENCY: u64 = 48 * 50;
+/// A finish waits at most this long for the gate to hear what came before
+/// it: audio that came while the models loaded is pushed at once, and the
+/// gate goes through it faster than it was said.
+const FINISH_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// What the microphone goes through before the gate (16 kHz mono S16LE
+/// pushed, 48 kHz F32 denoised).
+const FRONT: &str = "appsrc name=src format=time \
+       caps=audio/x-raw,format=S16LE,layout=interleaved,channels=1,rate=16000 ! \
+     audioconvert ! audioresample ! \
+     audio/x-raw,format=F32LE,layout=interleaved,channels=1,rate=48000 ! \
+     audiornnoise";
 
 pub enum Command {
     /// A new session replaces the one before.
@@ -535,11 +550,10 @@ struct Heard {
 
 pub struct Listener {
     pipeline: gst::Pipeline,
-    src: gst_app::AppSrc,
+    /// The microphone's way to the gate.
+    feed: Feed,
     gate: gst::Element,
     state: Arc<Mutex<State>>,
-    /// The microphone's time line, continued across sessions.
-    position: gst::ClockTime,
     /// Where a call's microphone goes.
     calls: CallRouting,
     holds: Holds,
@@ -547,9 +561,6 @@ pub struct Listener {
     /// pieces): heard first whenever a new speaker is to be taken, so the
     /// voice kept is theirs, never the first sound heard.
     reference: Option<Vec<u8>>,
-    /// Samples the gate got so far (48 kHz), to know when it heard the
-    /// reference.
-    gate_heard: Arc<std::sync::atomic::AtomicU64>,
     /// Whether the gate keeps one voice (a speaker model).
     speaker_check: bool,
     /// No session started yet: the gate knows no voice.
@@ -689,11 +700,7 @@ impl Listener {
         // The queue lets the transcriber work on an utterance while the
         // gate goes on listening.
         let pipeline = gst::parse::launch(&format!(
-            "appsrc name=src format=time \
-               caps=audio/x-raw,format=S16LE,layout=interleaved,channels=1,rate={RATE} ! \
-             audioconvert ! audioresample ! \
-             audio/x-raw,format=F32LE,layout=interleaved,channels=1,rate=48000 ! \
-             audiornnoise ! {gate} ! \
+            "{FRONT} ! {gate} ! \
              queue max-size-buffers=0 max-size-bytes=0 max-size-time=0 ! \
              audioconvert ! audioresample ! {transcriber} ! \
              fakesink name=sink sync=false async=false"
@@ -707,20 +714,7 @@ impl Listener {
             .downcast::<gst_app::AppSrc>()
             .unwrap();
         let gate = pipeline.by_name("gate").unwrap();
-        let gate_heard = Arc::new(std::sync::atomic::AtomicU64::new(0));
-        {
-            let heard = gate_heard.clone();
-            gate.static_pad("sink").unwrap().add_probe(
-                gst::PadProbeType::BUFFER,
-                move |_, info| {
-                    if let Some(buffer) = info.buffer() {
-                        let samples = buffer.size() as u64 / 4;
-                        heard.fetch_add(samples, std::sync::atomic::Ordering::SeqCst);
-                    }
-                    gst::PadProbeReturn::Ok
-                },
-            );
-        }
+        let feed = Feed::new(src, &gate);
         // A speechgate without it keeps its own 5 s.
         if let Some(ms) = give_up_ms
             && gate.find_property("give-up").is_some()
@@ -903,14 +897,12 @@ impl Listener {
         crate::dump_dot(&pipeline, "roamgate-voice-listen");
         Ok(Self {
             pipeline,
-            src,
+            feed,
             gate,
             state,
-            position: gst::ClockTime::ZERO,
             calls: CallRouting::default(),
             holds: Holds::default(),
             reference: reference.filter(|_| speaker_model.is_some() && drop_other_voices),
-            gate_heard,
             speaker_check: speaker_model.is_some() && drop_other_voices,
             fresh: true,
             voices,
@@ -928,28 +920,18 @@ impl Listener {
     /// heard in a session of its own (ENROLLING), stopped at once, so none
     /// of it is transcribed; waits until the gate heard it all.
     fn enroll(&mut self, reference: Vec<u8>) {
-        use std::sync::atomic::Ordering;
         let seconds = reference.len() as f32 / 2.0 / RATE as f32;
         self.gate.emit_by_name::<()>("start", &[&ENROLLING, &true]);
         self.gate.emit_by_name::<()>("stop", &[]);
-        // At 48 kHz once through the gate, short of the resampler's and the
-        // denoiser's latency.
-        let wanted = self.gate_heard.load(Ordering::SeqCst) + (reference.len() as u64 / 2) * 3
-            - (REFERENCE_GAP as u64) * 3 / 2;
-        self.push(reference);
-        let started = std::time::Instant::now();
-        while self.gate_heard.load(Ordering::SeqCst) < wanted
-            && started.elapsed() < std::time::Duration::from_secs(5)
-        {
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        self.feed.push(reference);
+        // Its last silence need not be heard.
+        let heard = self.feed.heard(
+            (REFERENCE_GAP as u64) * 3 / 2,
+            std::time::Duration::from_secs(5),
+        );
         eprintln!(
             "[voice] the speaker's voice is taken from their reference recordings ({seconds:.1} s{})",
-            if self.gate_heard.load(Ordering::SeqCst) < wanted {
-                ", not all heard in time"
-            } else {
-                ""
-            }
+            if heard { "" } else { ", not all heard in time" }
         );
     }
 
@@ -1073,7 +1055,7 @@ impl Listener {
                         return;
                     }
                 }
-                self.push(samples);
+                self.feed.push(samples);
             }
             Command::CallAudio { call, samples } => {
                 let session = {
@@ -1098,6 +1080,16 @@ impl Listener {
                     state.session == Some(id) && !state.done
                 };
                 if active {
+                    // The gate ends the utterance with what it heard so
+                    // far: what was pushed may still wait in appsrc, as the
+                    // audio that came while the models loaded does, all of
+                    // it pushed at once. Finished before hearing it, the
+                    // gate says nothing was said.
+                    if !self.feed.heard(GATE_LATENCY, FINISH_WAIT) {
+                        eprintln!(
+                            "[voice] session {id}: finished before the gate heard all that came"
+                        );
+                    }
                     self.gate.emit_by_name::<()>("finish", &[]);
                 }
             }
@@ -1117,10 +1109,44 @@ impl Listener {
             return;
         }
         let told = self.calls.heard(samples.len());
-        self.push(samples);
+        self.feed.push(samples);
         if let Some(bytes) = told {
             let emit = self.state.lock().unwrap().emit.clone();
             emit(json!({"event": "audio", "session": id, "bytes": bytes}));
+        }
+    }
+}
+
+/// The microphone's way to the gate: what is pushed, on the microphone's
+/// time line, and how much of it the gate heard.
+struct Feed {
+    src: gst_app::AppSrc,
+    /// The microphone's time line, continued across sessions.
+    position: gst::ClockTime,
+    /// Samples pushed so far, as the gate gets them (48 kHz).
+    pushed: u64,
+    /// Samples the gate got so far (48 kHz).
+    gate_heard: Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl Feed {
+    fn new(src: gst_app::AppSrc, gate: &gst::Element) -> Self {
+        let gate_heard = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let counted = gate_heard.clone();
+        gate.static_pad("sink")
+            .unwrap()
+            .add_probe(gst::PadProbeType::BUFFER, move |_, info| {
+                if let Some(buffer) = info.buffer() {
+                    let samples = buffer.size() as u64 / 4;
+                    counted.fetch_add(samples, std::sync::atomic::Ordering::SeqCst);
+                }
+                gst::PadProbeReturn::Ok
+            });
+        Self {
+            src,
+            position: gst::ClockTime::ZERO,
+            pushed: 0,
+            gate_heard,
         }
     }
 
@@ -1129,6 +1155,8 @@ impl Listener {
         let duration = gst::ClockTime::from_nseconds(
             (samples.len() as u64 / 2) * gst::ClockTime::SECOND.nseconds() / RATE as u64,
         );
+        // At 48 kHz once through to the gate.
+        self.pushed += samples.len() as u64 / 2 * 3;
         let mut buffer = gst::Buffer::from_mut_slice(samples);
         {
             let buffer = buffer.get_mut().unwrap();
@@ -1137,6 +1165,21 @@ impl Listener {
         }
         self.position += duration;
         let _ = self.src.push_buffer(buffer);
+    }
+
+    /// Waits until the gate heard all that was pushed but its last `short`
+    /// samples (48 kHz), at most `limit`: whether it did.
+    fn heard(&self, short: u64, limit: std::time::Duration) -> bool {
+        use std::sync::atomic::Ordering;
+        let wanted = self.pushed.saturating_sub(short);
+        let started = std::time::Instant::now();
+        while self.gate_heard.load(Ordering::SeqCst) < wanted {
+            if started.elapsed() >= limit {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        true
     }
 }
 
@@ -1495,6 +1538,43 @@ mod tests {
         let names: Vec<_> = told.iter().map(|e| e["event"].as_str().unwrap()).collect();
         assert_eq!(names, ["speech_start", "text", "speech_end", "final"]);
         assert!(told[3].get("for_agent").is_none());
+    }
+
+    /// Audio pushed all at once, as what came while the models loaded is,
+    /// waits in appsrc: a finish then waits until the gate heard it, but
+    /// for GATE_LATENCY, or the gate would end the utterance without it.
+    #[test]
+    fn a_finish_waits_for_the_gate_to_hear_what_came_before() {
+        gst::init().unwrap();
+        gstrsaudiofx::plugin_register_static().unwrap();
+        let pipeline = gst::parse::launch(&format!(
+            "{} ! identity name=gate sleep-time=1000 ! fakesink sync=false async=false",
+            super::FRONT
+        ))
+        .unwrap()
+        .downcast::<gst::Pipeline>()
+        .unwrap();
+        let src = pipeline
+            .by_name("src")
+            .unwrap()
+            .downcast::<gst_app::AppSrc>()
+            .unwrap();
+        let mut feed = super::Feed::new(src, &pipeline.by_name("gate").unwrap());
+        pipeline.set_state(gst::State::Playing).unwrap();
+        // 4 s of a tone, in the phone's 20 ms chunks.
+        for chunk in 0..200 {
+            let samples: Vec<u8> = (0..320)
+                .flat_map(|n| {
+                    let t = (chunk * 320 + n) as f32 / super::RATE as f32;
+                    (((t * 440.0 * std::f32::consts::TAU).sin() * 8000.0) as i16).to_le_bytes()
+                })
+                .collect();
+            feed.push(samples);
+        }
+        // Each buffer takes the gate 1 ms: all of it is not heard yet.
+        assert!(!feed.heard(super::GATE_LATENCY, std::time::Duration::ZERO));
+        assert!(feed.heard(super::GATE_LATENCY, std::time::Duration::from_secs(5)));
+        pipeline.set_state(gst::State::Null).unwrap();
     }
 
     /// speechgate as in a gst-launch line, without the application: what
