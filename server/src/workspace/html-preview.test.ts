@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HTML_PREVIEW_MAX_BYTES } from "../../../shared/filePreview";
 import { shQuote } from "../utils/process-utils";
+import { standInHostHome } from "../test-environment";
 import { createFileHandlers } from "./files";
 import { readHtmlPreviewFile, HtmlPreviewError } from "./html-preview-files";
 import { HTML_PREVIEW_CSP, renderHtmlPreview } from "./html-preview";
@@ -13,6 +14,8 @@ const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
   "base64",
 );
+
+standInHostHome();
 
 async function fixture(run: (root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "roamgate-html-preview-"));

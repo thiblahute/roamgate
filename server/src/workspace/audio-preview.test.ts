@@ -8,6 +8,9 @@ import { shQuote } from "../utils/process-utils";
 import { createFileHandlers } from "./files";
 import { fileDownloadRange } from "./file-download";
 import { runBinaryProcessWithTimeout } from "./process";
+import { standInHostHome } from "../test-environment";
+
+standInHostHome();
 
 test("audio range parsing handles boundaries and ignores unsupported ranges", () => {
   for (const [range, expected] of [

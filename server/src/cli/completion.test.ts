@@ -5,13 +5,16 @@ import { EXIT_OK, EXIT_USAGE } from "./command";
 import { renderCompletion } from "./completion";
 import { cliCommands, runCli } from "./index";
 import { createTestCli, type TestCli } from "./test-context";
+import { runnableShell } from "../test-environment";
 
 let cli: TestCli;
 afterEach(() => cli?.cleanup());
 
 describe("roamgate completion", () => {
+  // Each needs the shell installed: skipped without (a toolbox may have a
+  // PATH wrapper for a shell it lacks).
   for (const shell of ["bash", "zsh"] as const) {
-    test.skipIf(!Bun.which(shell))(
+    test.skipIf(!runnableShell(shell))(
       `${shell} script parses and names every command`,
       () => {
         cli = createTestCli();
@@ -27,22 +30,25 @@ describe("roamgate completion", () => {
     );
   }
 
-  test.skipIf(!Bun.which("bash"))("bash completes subcommand actions", () => {
-    cli = createTestCli();
-    const path = join(cli.home, "completion.bash");
-    writeFileSync(path, renderCompletion("bash", cliCommands()));
-    const result = Bun.spawnSync(
-      [
-        "bash",
-        "-c",
-        `source "$1"; COMP_WORDS=(roamgate config s); COMP_CWORD=2; _roamgate; echo "\${COMPREPLY[*]}"`,
-        "bash",
-        path,
-      ],
-      { stdout: "pipe" },
-    );
-    expect(result.stdout.toString().trim()).toBe("show set");
-  });
+  test.skipIf(!runnableShell("bash"))(
+    "bash completes subcommand actions",
+    () => {
+      cli = createTestCli();
+      const path = join(cli.home, "completion.bash");
+      writeFileSync(path, renderCompletion("bash", cliCommands()));
+      const result = Bun.spawnSync(
+        [
+          "bash",
+          "-c",
+          `source "$1"; COMP_WORDS=(roamgate config s); COMP_CWORD=2; _roamgate; echo "\${COMPREPLY[*]}"`,
+          "bash",
+          path,
+        ],
+        { stdout: "pipe" },
+      );
+      expect(result.stdout.toString().trim()).toBe("show set");
+    },
+  );
 
   test("fish script registers commands with descriptions", () => {
     const script = renderCompletion("fish", cliCommands());

@@ -17,6 +17,9 @@ import { shQuote } from "../utils/process-utils";
 import { createFileHandlers } from "./files";
 import { runBinaryProcessWithTimeout } from "./process";
 import * as atomicMove from "./atomic-file-move";
+import { standInHostHome } from "../test-environment";
+
+standInHostHome();
 
 for (const remote of [false, true]) {
   describe(`${remote ? "SSH shell" : "local"} file mutations`, () => {

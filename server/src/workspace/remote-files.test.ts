@@ -15,6 +15,9 @@ import {
   resolveRemoteFilePaths,
   readRemoteFile,
 } from "./remote-files";
+import { standInHostHome } from "../test-environment";
+
+standInHostHome();
 
 function b64(value: string) {
   return Buffer.from(value, "utf8").toString("base64");
