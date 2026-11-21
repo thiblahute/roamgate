@@ -441,6 +441,16 @@ async function mockApp(before?: () => Promise<void> | void) {
   await before?.();
   const { initializeLayoutPreferences } = await import("./layoutPreferences");
   initializeLayoutPreferences();
+  // What App loads on demand on a review's way, loaded now: a settle then
+  // waits on App's own steps, never on compiling a module under the
+  // suite's load.
+  await Promise.all([
+    import("./reviewOpen"),
+    import("./changesReviewOpen"),
+    import("./mrReviewFlow"),
+    import("./components/ReviewList"),
+    import("./components/WorkspaceInspectorHost"),
+  ]);
 }
 
 /**

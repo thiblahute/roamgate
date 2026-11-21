@@ -206,6 +206,14 @@ if (process.env.ROAMGATE_APP_REVIEW_LIST_TEST !== "1") {
     }));
     const { initializeLayoutPreferences } = await import("./layoutPreferences");
     initializeLayoutPreferences();
+    // What App loads on demand here, loaded now: a settle then waits on
+    // App's own steps, never on compiling a module under the suite's load.
+    await Promise.all([
+      import("./reviewOpen"),
+      import("./changesReviewOpen"),
+      import("./components/ReviewList"),
+      import("./components/WorkspaceInspectorHost"),
+    ]);
     const { default: App } = await import("./App");
     const { createRoot } = await import("react-dom/client");
     const container = document.createElement("div");
