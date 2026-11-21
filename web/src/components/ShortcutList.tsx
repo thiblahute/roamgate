@@ -82,6 +82,7 @@ export function ShortcutList({
           id={filterId ?? ownId}
           className="review-keys-filter"
           type="search"
+          data-dictation="off"
           aria-label="Search shortcuts"
           // biome-ignore lint/a11y/noAutofocus: filtering is the point
           autoFocus
