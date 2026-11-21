@@ -1,0 +1,88 @@
+/* Dictation (Dictation.tsx): the microphone on a box, and the words as
+   heard while they are said. */
+.dictation-button.is-listening {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* On a box other than the message box: small, at its right edge. */
+.dictation-button.is-on-field {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.dictation-button.is-on-field:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--panel-2, transparent);
+}
+
+.dictation-button.is-on-field.is-listening {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.dictation-status {
+  padding: 4px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.dictation-status.is-error {
+  color: var(--warning-text);
+}
+
+/* A review comment's editor (ReviewCommentEditor.tsx): the microphone at
+   its top right, the text clear of it. */
+.rc-editor-box {
+  position: relative;
+  min-width: 0;
+}
+
+.rc-editor-box > .dictation-button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+
+.rc-editor-box.has-dictation .cm-content {
+  padding-right: 34px;
+}
+
+.rc-editor-box > .dictation-status {
+  margin-top: 4px;
+}
+
+/* Any other box (FieldDictation.tsx): the microphone floats at the right
+   edge of the focused one, the status line under or over it. */
+.field-dictation-button,
+.field-dictation-status {
+  position: fixed;
+  z-index: 10000;
+}
+
+.field-dictation-button > .dictation-button.is-on-field {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  background: var(--input-bg);
+}
+
+.field-dictation-status > .dictation-status {
+  background: var(--panel);
+  box-shadow: var(--shadow-tooltip);
+}
+
+.has-field-dictation {
+  padding-inline-end: 34px !important;
+}

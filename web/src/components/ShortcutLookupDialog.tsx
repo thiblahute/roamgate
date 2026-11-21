@@ -298,6 +298,7 @@ export function ShortcutLookupDialog({
           </p>
           <input
             type="search"
+            data-dictation="off"
             aria-label="Search shortcuts"
             placeholder="Search shortcuts..."
             value={search}
@@ -352,6 +353,7 @@ export function ShortcutLookupDialog({
                           <label>
                             <span>Key combinations</span>
                             <input
+                              data-dictation="off"
                               aria-label={`Keys for ${item.label}`}
                               value={draft}
                               placeholder="Ctrl+Alt+K"

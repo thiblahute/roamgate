@@ -164,6 +164,7 @@ export function FilesystemBrowser({
             value={search}
             onChange={(event) => setSearch(event.currentTarget.value)}
             placeholder="Search loaded files"
+            data-dictation="off"
             aria-label="Search loaded files"
             maxLength={512}
             title="Search loaded names or paths. Globs: r*md, ?.txt, **/*.md, *.{md,txt}"

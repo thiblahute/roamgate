@@ -8,6 +8,8 @@ import {
 } from "@codemirror/view";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { type RefObject, useEffect, useRef } from "react";
+import { useSpeechEngine } from "../speechEngine";
+import { DictationButton, DictationStatus, useDictation } from "./Dictation";
 import { keepAboveKeyboard } from "./keepAboveKeyboard";
 import { defineExCommands, vimExEditors } from "./vimEx";
 
@@ -277,9 +279,10 @@ export function ReviewCommentEditor({
     view.focus();
     if (vimMode && cm) Vim.handleKey(cm, "A", "mapping");
     // A phone's keyboard opening shrinks the screen: keep the box the editor
-    // is drawn in (its parent: the editor with its bar and buttons) in view.
+    // is drawn in (the parent of its box with the dictation button: the
+    // editor with its bar and buttons) in view.
     const stopKeeping = keepAboveKeyboard(
-      () => host.parentElement,
+      () => host.parentElement?.parentElement,
       () => view.hasFocus,
     );
     return () => {
@@ -291,5 +294,35 @@ export function ReviewCommentEditor({
     };
   }, []);
 
-  return <div ref={hostRef} className="rc-editor" />;
+  // Dictate, on the box as on the message box: needs the server's voice
+  // engine. The text goes in at the cursor, as typed text does.
+  const dictateHere = useSpeechEngine().listen;
+  const dictation = useDictation({
+    kind: "text",
+    hint: placeholder,
+    multiLine: true,
+    read: () => {
+      const view = viewRef.current;
+      if (!view) return null;
+      const { from, to } = view.state.selection.main;
+      return { value: view.state.doc.toString(), start: from, end: to };
+    },
+    replace: (start, end, text, caret) => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({
+        changes: { from: start, to: end, insert: text },
+        selection: EditorSelection.cursor(caret),
+        userEvent: "input.type",
+      });
+      view.focus();
+    },
+  });
+  return (
+    <div className={`rc-editor-box${dictateHere ? " has-dictation" : ""}`}>
+      <div ref={hostRef} className="rc-editor" />
+      {dictateHere ? <DictationButton dictation={dictation} /> : null}
+      <DictationStatus dictation={dictation} />
+    </div>
+  );
 }

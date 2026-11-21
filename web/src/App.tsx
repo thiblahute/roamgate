@@ -341,6 +341,11 @@ const MobileTabSheet = lazyWithReload("mobile-tabs", () =>
     default: module.MobileTabSheet,
   })),
 );
+// Dictate on the focused box: loaded after the page, out of its first bundle.
+const FieldDictation = lazyWithReload(
+  "field-dictation",
+  () => import("./components/FieldDictation"),
+);
 const AssistantPanel = lazyWithReload("assistant", () =>
   import("./components/AssistantPanel").then((module) => ({
     default: module.AssistantPanel,
@@ -5411,6 +5416,10 @@ export default function App() {
       </CompanionStrip>
 
       {zenMode && !mobile && !companionCallOpen ? zenIsland : null}
+
+      <Suspense fallback={null}>
+        <FieldDictation />
+      </Suspense>
 
       {mobile && mobileTabSheetOpen ? (
         <Suspense fallback={null}>

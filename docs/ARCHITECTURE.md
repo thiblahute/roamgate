@@ -1668,8 +1668,11 @@ meanwhile is stopped in it.
 ## Dictation
 
 Dictation types what the user says into a text field, cleaned first: the
-Android dictation app (a bubble over other apps) and the message box's
-dictate button (`web/src/dictation.ts`) use it. It is a mode of the voice
+Android dictation app (a bubble over other apps) and the page's Dictate
+buttons (`web/src/dictation.ts`, one `useDictation` in
+`web/src/components/Dictation.tsx`: the message box's, every comment
+editor's, and `FieldDictation`'s on any other focused text box without a
+`data-dictation` attribute around it) use it. It is a mode of the voice
 socket (`/api/voice/ws`, `server/src/http/voice-socket.ts`); the cleaner
 is `server/src/voice/voice-dictation.ts`.
 

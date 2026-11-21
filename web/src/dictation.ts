@@ -12,9 +12,27 @@ import { activeMicrophoneConstraints } from "./webrtcCall";
 /** Audio is sent in pieces this long. */
 const CHUNK_MS = 40;
 
+/** What a field takes, as the server's cleaner knows them (voice-dictation.ts). */
+export type DictationKind =
+  | "chat"
+  | "email_body"
+  | "email_subject"
+  | "search"
+  | "url"
+  | "code"
+  | "name"
+  | "email_address"
+  | "address"
+  | "number"
+  | "text";
+
 export type DictationTarget = {
-  /** chat (a message to an agent) or code (a shell command). */
-  kind: "chat" | "code";
+  /** chat (a message to an agent), code (a shell command), text... */
+  kind: DictationKind;
+  /** The field's label or placeholder; by default from its kind. */
+  hint?: string;
+  /** Whether the field takes several lines; by default all but code. */
+  multiLine?: boolean;
   /** The box's text before and after the cursor. */
   before: string;
   after: string;
@@ -24,6 +42,8 @@ export type DictationResult = {
   text: string;
   /** False: the words as heard (no cleaner, or it failed). */
   cleaned: boolean;
+  /** The server heard no words at all: nothing is typed. */
+  nothingHeard?: boolean;
 };
 
 export type Dictating = {
@@ -64,13 +84,23 @@ function socketUrl(): URL {
   return url;
 }
 
+/** The field's hint when it names none. */
+function defaultHint(kind: DictationKind): string {
+  if (kind === "code") return "Shell command";
+  if (kind === "chat") return "Message to the agent";
+  return "";
+}
+
 /**
  * Starts dictating: resolves once the microphone streams. `onHeard` gets
- * the words as heard so far, whole each time.
+ * the words as heard so far, whole each time; `onLoading` whether the
+ * server's listening models are still loading (what is said meanwhile is
+ * heard once they are).
  */
 export async function startDictation(
   target: DictationTarget,
   onHeard: (text: string) => void,
+  onLoading?: (loading: boolean) => void,
 ): Promise<Dictating> {
   const channel = await VoiceChannel.open({
     connect: () => new WebSocket(socketUrl()),
@@ -86,6 +116,7 @@ export async function startDictation(
   };
   let session: number | null = null;
   let heard = "";
+  let nothingHeard = false;
   let settle: (result: DictationResult) => void = () => {};
   let fail: (error: Error) => void = () => {};
   const result = new Promise<DictationResult>((resolve, reject) => {
@@ -94,20 +125,26 @@ export async function startDictation(
   });
   // Never left unhandled: cancel drops it.
   result.catch(() => {});
-  channel.listen((event: ChannelEvent & { cleaned?: boolean }) => {
-    if (event.event === "listening") {
-      session = event.session ?? null;
-      return;
-    }
-    if (event.session !== undefined && event.session !== session) return;
-    if (event.event === "partial") {
-      heard = event.text ?? "";
-      onHeard(heard);
-    } else if (event.event === "final")
-      settle({ text: event.text ?? "", cleaned: event.cleaned === true });
-    else if (event.event === "error")
-      fail(new Error(event.error ?? "Dictation failed"));
-  });
+  channel.listen(
+    (event: ChannelEvent & { cleaned?: boolean; nothing_heard?: boolean }) => {
+      if (event.event === "listening") {
+        session = event.session ?? null;
+        return;
+      }
+      if (event.session !== undefined && event.session !== session) return;
+      if (event.event === "loading") onLoading?.(true);
+      else if (event.event === "ready") onLoading?.(false);
+      else if (event.event === "partial") {
+        heard = event.text ?? "";
+        onHeard(heard);
+      } else if (event.event === "final")
+        settle({ text: event.text ?? "", cleaned: event.cleaned === true });
+      else if (event.event === "error") {
+        nothingHeard = event.nothing_heard === true;
+        fail(new Error(event.error ?? "Dictation failed"));
+      }
+    },
+  );
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: activeMicrophoneConstraints(),
@@ -143,8 +180,8 @@ export async function startDictation(
         app: "roamgate",
         app_label: "Roamgate",
         kind: target.kind,
-        hint: target.kind === "code" ? "Shell command" : "Message to the agent",
-        multi_line: target.kind !== "code",
+        hint: target.hint || defaultHint(target.kind),
+        multi_line: target.multiLine ?? target.kind !== "code",
       },
       before: target.before,
       after: target.after,
@@ -163,6 +200,7 @@ export async function startDictation(
         try {
           return await result;
         } catch {
+          if (nothingHeard) return { text: "", cleaned: false, nothingHeard };
           // What was heard is still the user's: typed as heard.
           return { text: heard.trim(), cleaned: false };
         } finally {

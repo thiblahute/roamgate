@@ -1001,6 +1001,7 @@ export function MoveIntoDialog({
           type="search"
           className="workspace-move-search"
           placeholder="Top level, group or workspace"
+          data-dictation="off"
           aria-label="Find a group or workspace"
           autoComplete="off"
           data-1p-ignore

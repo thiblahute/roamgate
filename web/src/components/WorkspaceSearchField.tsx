@@ -13,6 +13,7 @@ export function WorkspaceSearchField({
   return (
     <input
       type="search"
+      data-dictation="off"
       aria-label="Search workspaces"
       placeholder="Search workspaces"
       autoComplete="off"

@@ -244,6 +244,8 @@ export function ShortcutHelp({
     <div
       className={`shortcut-help ${className}`.trim()}
       role="presentation"
+      // Its search takes keys, not dictation.
+      data-dictation="off"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           event.preventDefault();

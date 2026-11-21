@@ -475,7 +475,11 @@ Inspector state is scoped to each checkout; see
   press it again the cleaned text (fillers, false starts and
   self-corrections gone, spoken punctuation written, each language kept)
   goes in at the cursor. It hides during a voice call, which listens
-  instead. The
+  instead. The same microphone is on every comment box and shows at the
+  right edge of any other text box while it has the focus (titles,
+  settings, notes), except filters on names, such as the workspace and
+  shortcut searches. While the server loads its listening models the
+  status line says so; what is said meanwhile is still heard. The
   Android dictation app uses the same server side to type into any app
   ([protocol](docs/ARCHITECTURE.md#dictation)).
   With a router set up, voice chat reaches every agent session: each thing
