@@ -986,7 +986,14 @@ test("the notification socket's links use the origin tailscale serve forwards", 
           };
         });
         ws.onopen = () =>
-          ws.send(JSON.stringify({ op: "hello", since: 0, client: "android" }));
+          ws.send(
+            JSON.stringify({
+              op: "hello",
+              since: 0,
+              client: "android",
+              preferences: { completed: true, blocked: true },
+            }),
+          );
         expect(await replayed).toMatchObject({
           event: "notification",
           id: 1,
