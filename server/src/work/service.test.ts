@@ -17,6 +17,7 @@ import { reviewServiceForTest } from "../review/testkit";
 import { handleWorkRpc, isWorkMethod } from "./rpc";
 import {
   createWorkService,
+  decisionDecided,
   type WorkGit,
   type WorkReviews,
   type WorkServiceDeps,
@@ -133,6 +134,37 @@ function fakeReviews(): WorkReviews & {
         return moved;
       }
       throw new Error("no such thread");
+    },
+    // As the review service: only the comment's author rewrites or deletes.
+    async editComment(input) {
+      const snapshot = sessions.get(input.sessionId)!;
+      for (const thread of snapshot.threads) {
+        const comment = thread.comments.find((c) => c.id === input.commentId);
+        if (!comment) continue;
+        if (comment.author !== input.author)
+          throw new Error("an agent can only edit its own comments");
+        comment.body = input.text;
+        return thread;
+      }
+      throw new Error("no such comment");
+    },
+    async deleteComment(input) {
+      const snapshot = sessions.get(input.sessionId)!;
+      for (const [at, thread] of snapshot.threads.entries()) {
+        const index = thread.comments.findIndex(
+          (c) => c.id === input.commentId,
+        );
+        if (index < 0) continue;
+        if (thread.comments[index]!.author !== input.author)
+          throw new Error("an agent can only delete its own comments");
+        if (index === 0) {
+          snapshot.threads.splice(at, 1);
+          return { deleted: thread.id, thread: null };
+        }
+        thread.comments.splice(index, 1);
+        return { deleted: input.commentId, thread };
+      }
+      throw new Error("no such comment");
     },
   };
 }
@@ -286,20 +318,20 @@ describe("work service", () => {
     });
     expect(notified).toEqual([]);
 
-    const forYou = service.update(
+    const forYou = await service.update(
       { item: item.id, state: "you" },
       { by: "agent" },
     );
     expect(forYou.state).toBe("you");
     expect(notified).toEqual([item.id]);
-    const doing = service.update(
+    const doing = await service.update(
       { item: item.id.slice(0, 8), state: "doing", add_tags: ["phone"] },
       { by: "user" },
     );
     expect(doing.tags).toEqual(["reviews", "phone"]);
     expect(cleared).toEqual([item.id]);
     // Back to For you notifies again: once per entry.
-    service.update({ item: item.id, state: "you" }, { by: "user" });
+    await service.update({ item: item.id, state: "you" }, { by: "user" });
     expect(notified).toEqual([item.id, item.id]);
 
     const done = service.done(
@@ -323,9 +355,9 @@ describe("work service", () => {
     await expect(
       service.reopen({ item: item.id, state: "done" }, { by: "user" }),
     ).rejects.toThrow(WorkError);
-    expect(() =>
+    await expect(
       service.update({ item: "ffffffff", state: "open" }, { by: "user" }),
-    ).toThrow(/no work item/);
+    ).rejects.toThrow(/no work item/);
     expect(service.list({ open: true }).map((i) => i.id)).toEqual([item.id]);
     expect(service.list({ tags: ["phone"] }).map((i) => i.id)).toEqual([
       item.id,
@@ -349,21 +381,59 @@ describe("work service", () => {
     expect(first.createdAt).toBe("2026-11-19T08:00:00.000Z");
     expect(first.doneAt).toBe("2026-11-19T18:30:00.000Z");
     expect(first.source).toBe("imported from plans/todo.md line 107");
-    // Run again with a better title and a tag: the same item, changed.
-    const again = await service.add(
+    // Run again with a tag more: the same item, changed, and said so.
+    const again = await service.addOrUpdate(
       {
-        title: "Headset (boom mic) muting after each turn",
+        title: "Headset muting after each turn",
         state: "done",
         tags: ["voice", "calls"],
+        text: "A description the item already has",
         source: "imported from plans/todo.md line 107",
         created_at: "2026-11-19T08:00:00Z",
       },
       { by: "agent" },
     );
-    expect(again.id).toBe(first.id);
-    expect(again.title).toBe("Headset (boom mic) muting after each turn");
-    expect(again.tags).toEqual(["voice", "calls"]);
-    expect(again.doneAt).toBe("2026-11-19T18:30:00.000Z");
+    expect(again.item.id).toBe(first.id);
+    expect(again.updated).toBe(true);
+    expect(again.changed).toEqual({ tags: ["voice", "calls"] });
+    expect(again.ignored).toEqual(["text"]);
+    expect(again.item.doneAt).toBe("2026-11-19T18:30:00.000Z");
+    expect(service.board().items.length).toBe(1);
+    // A different title is never slipped in: refused, unless asked.
+    await expect(
+      service.add(
+        {
+          title: "Headset (boom mic) muting after each turn",
+          source: "imported from plans/todo.md line 107",
+        },
+        { by: "agent" },
+      ),
+    ).rejects.toThrow(/exists in roamgate: .* replace: true/);
+    expect(service.store.item(first.id)!.title).toBe(
+      "Headset muting after each turn",
+    );
+    const retitled = await service.addOrUpdate(
+      {
+        title: "Headset (boom mic) muting after each turn",
+        source: "imported from plans/todo.md line 107",
+        replace: true,
+      },
+      { by: "agent" },
+    );
+    expect(retitled.updated).toBe(true);
+    expect(retitled.changed).toEqual({
+      title: "Headset (boom mic) muting after each turn",
+    });
+    expect(retitled.item.tags).toEqual(["voice", "calls"]);
+    // Nothing new: updated, nothing changed.
+    const same = await service.addOrUpdate(
+      {
+        title: "Headset (boom mic) muting after each turn",
+        source: "imported from plans/todo.md line 107",
+      },
+      { by: "agent" },
+    );
+    expect(same).toMatchObject({ updated: true, changed: {} });
     expect(service.board().items.length).toBe(1);
     // Another project may hold the same source: its own item.
     service.projectSet({ name: "gst2", roots: ["/g"] }, { by: "user" });
@@ -586,6 +656,213 @@ describe("work service", () => {
     );
     expect((await service.check()).landed).toEqual([ticked.id]);
     expect(service.store.item(open.id)!.state).toBe("open");
+    expect(service.store.item(ticked.id)!.links.at(-1)).toEqual({
+      kind: "deploy",
+      sha: "decision",
+      branch: "ticked",
+    });
+  });
+
+  test("a decision is decided by its ticked box, or by its heading's Answered line (RFC-0053)", () => {
+    const rfc = [
+      "## Decisions",
+      "",
+      "### D1. Crates and the sink's name",
+      "",
+      '> **Answered 2026-11-11:** "Follow gst-plugins-rs".',
+      "",
+      "### D2. Formats",
+      "",
+      "Open: packed RGB only?",
+      "",
+      "### D3: Timestamps",
+      "",
+      "> **Decided:** none.",
+      "",
+      "## Later",
+      "",
+      "- [ ] **D13** The staged add.",
+      "- [x] **D14** Plain first.",
+    ].join("\n");
+    expect(decisionDecided(rfc, "D1")).toBe(true);
+    expect(decisionDecided(rfc, "D2")).toBe(false);
+    expect(decisionDecided(rfc, "D3")).toBe(true);
+    expect(decisionDecided(rfc, "D13")).toBe(false);
+    expect(decisionDecided(rfc, "D14")).toBe(true);
+    // D1 is not D13's heading, nor D14's box.
+    expect(
+      decisionDecided("### D13. Staged\n\n> **Answered:** yes", "D1"),
+    ).toBe(false);
+    expect(decisionDecided("- [x] **D14** done", "D1")).toBe(false);
+  });
+
+  test("a tick in the working tree of the rule's checkout counts, said uncommitted; another branch checked out does not", async () => {
+    const files = new Map<string, string>();
+    let head = "main";
+    const git: WorkGit = async (_root, args) => {
+      if (args[0] === "show")
+        return { code: 0, stdout: "- [ ] **D5** Not on main yet.\n" };
+      if (args[0] === "rev-parse") return { code: 0, stdout: `${head}\n` };
+      return { code: 1, stdout: "" };
+    };
+    const { service } = setup({
+      git,
+      readFile: async (root, path) => files.get(`${root}/${path}`) ?? null,
+    });
+    service.projectSet(
+      {
+        name: "gst2",
+        roots: [{ connectionId: "desktop", path: "/g/2.0" }],
+        done: { kind: "branch", root: "/g/2.0", branch: "main" },
+      },
+      { by: "user" },
+    );
+    const item = await service.add(
+      {
+        project: "gst2",
+        title: "D5",
+        links: [{ kind: "decision", path: "rfcs/0052.md", id: "D5" }],
+      },
+      { by: "user" },
+    );
+    // Unticked everywhere: open.
+    expect((await service.check()).landed).toEqual([]);
+    // Ticked in the working tree, but another branch is checked out there.
+    files.set("/g/2.0/rfcs/0052.md", "- [x] **D5** Ticked locally.\n");
+    head = "feature";
+    expect((await service.check()).landed).toEqual([]);
+    head = "main";
+    expect((await service.check()).landed).toEqual([item.id]);
+    const done = service.store.item(item.id)!;
+    expect(done.state).toBe("done");
+    expect(done.links.at(-1)).toEqual({
+      kind: "deploy",
+      sha: "decision",
+      branch: "ticked, uncommitted",
+    });
+    // The deployed rule reads this Roamgate's own checkout the same way.
+    const own = setup({
+      git: async (_root, args) =>
+        args[0] === "show"
+          ? { code: 0, stdout: "### D2. Formats\n\nOpen.\n" }
+          : { code: 1, stdout: "" },
+      readFile: async () =>
+        "### D2. Formats\n\n> **Answered 2026-11-20:** RGB.\n",
+    });
+    own.service.projectSet(
+      { name: "roamgate", roots: ["/home/me/roamgate"] },
+      { by: "user" },
+    );
+    const mine = await own.service.add(
+      {
+        title: "D2",
+        links: [{ kind: "decision", path: "plans/x.md", id: "D2" }],
+      },
+      { by: "user" },
+    );
+    expect((await own.service.check()).landed).toEqual([mine.id]);
+  });
+
+  test("an owner's session must be one Roamgate manages; its task is taken as given", async () => {
+    const { service } = setup({
+      sessions: async () => ["desktop/w35:p1", "mac/w2:p4"],
+    });
+    await expect(
+      service.add(
+        { title: "Nobody's", owner: { session: "desktop/w99:p9" } },
+        { by: "agent" },
+      ),
+    ).rejects.toThrow(
+      /no agent session Roamgate manages is at desktop\/w99:p9; agent_sessions .* such as desktop\/w35:p1/,
+    );
+    const item = await service.add(
+      {
+        title: "A subagent's",
+        owner: { session: "mac/w2:p4", task: "a0a5b2a0a1e034112" },
+      },
+      { by: "agent" },
+    );
+    expect(item.owner).toEqual({
+      session: "mac/w2:p4",
+      task: "a0a5b2a0a1e034112",
+    });
+    await expect(
+      service.update(
+        { item: item.id, owner: { session: "gone/w1:p1" } },
+        { by: "agent" },
+      ),
+    ).rejects.toThrow(/no agent session Roamgate manages is at gone\/w1:p1/);
+    // Another task of the same session: no session to check again.
+    const moved = await service.update(
+      { item: item.id, owner: { session: "mac/w2:p4", task: "ffff" } },
+      { by: "agent" },
+    );
+    expect(moved.owner?.task).toBe("ffff");
+    // Without the sessions, nothing is checked (an older Roamgate).
+    const loose = setup();
+    const any = await loose.service.add(
+      { title: "Any", owner: { session: "x/y:z" } },
+      { by: "agent" },
+    );
+    expect(any.owner?.session).toBe("x/y:z");
+  });
+
+  test("an agent rewrites or deletes its own comments on an item, not the user's nor another agent's", async () => {
+    const { service, reviews } = setup();
+    const item = await service.add(
+      {
+        title: "Comments",
+        owner: { session: "desktop/w35:p1" },
+        text: "First words",
+      },
+      { by: "agent", caller: "Claude in roamgate", address: "desktop/w35:p1" },
+    );
+    const sessionId = service.threads({ item: item.id })!.session.id;
+    const mine = reviews.sessions.get(sessionId)!.threads[0]!.comments[0]!;
+    expect(mine.author).toBe("Claude");
+    const users = await reviews.addThread({
+      sessionId,
+      author: "you",
+      text: "Please look",
+      anchor: { work: { item: item.id } },
+    });
+    // Signed with the caller line, as a comment told to another session is.
+    const told = await reviews.addThread({
+      sessionId,
+      author: "Codex in gst2",
+      text: "Taken.",
+      anchor: { work: { item: item.id } },
+    });
+    const meta = { by: "agent" as const, caller: "Claude in roamgate" };
+    const edited = await service.commentEdit(
+      { comment: mine.id, text: "Better words" },
+      meta,
+    );
+    expect(edited.item.id).toBe(item.id);
+    expect(edited.thread?.comments[0]?.body).toBe("Better words");
+    await expect(
+      service.commentEdit(
+        { comment: users.comments[0]!.id, text: "Mine now" },
+        meta,
+      ),
+    ).rejects.toThrow(/only edit its own comments \(this one is by you\)/);
+    await expect(
+      service.commentDelete({ comment: told.comments[0]!.id }, meta),
+    ).rejects.toThrow(/only delete its own comments/);
+    // Its caller line signs some of its comments: those are its own too.
+    const theirs = await service.commentEdit(
+      { comment: told.comments[0]!.id, text: "Done." },
+      { by: "agent", caller: "Codex in gst2" },
+    );
+    expect(theirs.thread?.comments[0]?.body).toBe("Done.");
+    // A thread's id names no comment; a comment of no item is refused.
+    await expect(
+      service.commentEdit({ comment: told.id, text: "x" }, meta),
+    ).rejects.toThrow(/give the comment's own id/);
+    const gone = await service.commentDelete({ comment: mine.id }, meta);
+    expect(gone.deleted).toBe(edited.thread!.id);
+    expect(gone.thread).toBeNull();
+    expect(reviews.sessions.get(sessionId)!.threads.length).toBe(2);
   });
 
   test("an item's threads are a review of the item, its comments going to the owner's pane", async () => {
@@ -667,7 +944,10 @@ describe("work service", () => {
       ownRoot: () => "/home/me/roamgate",
     });
     const item = await service.add({ title: "Nest me" }, { by: "user" });
-    service.update({ item: item.id, owner: "desktop/w35:p1" }, { by: "user" });
+    await service.update(
+      { item: item.id, owner: "desktop/w35:p1" },
+      { by: "user" },
+    );
     const sessionId = service.threads({ item: item.id, open: true })!.session
       .id;
     const parent = await kit.service.addThread({
@@ -812,7 +1092,10 @@ describe("work service", () => {
     const waiting = kit.service.get({ sessionId: snapshot.session.id });
     expect(waiting.session.deliveryError).toBe(WORK_NO_OWNER);
     // An owner appears: a retry sends the comment to its pane, naming the item.
-    service.update({ item: item.id, owner: "desktop/w35:p1" }, { by: "user" });
+    await service.update(
+      { item: item.id, owner: "desktop/w35:p1" },
+      { by: "user" },
+    );
     panes.set("w35:p1", "w35:p1");
     await kit.service.retry({ sessionId: snapshot.session.id });
     await Bun.sleep(80);
@@ -820,6 +1103,10 @@ describe("work service", () => {
     expect(kit.prompts[0]!.paneId).toBe("w35:p1");
     expect(kit.prompts[0]!.text).toContain("work item you own");
     expect(kit.prompts[0]!.text).toContain("Please look");
+    // No mod with the work tools in that pane: the client's work command.
+    expect(kit.prompts[0]!.text).toContain(
+      `roamgate-review work work_list '{"item": "${item.id.slice(0, 8)}"}'`,
+    );
     expect(kit.prompts[0]!.text).toContain("work_update");
 
     // A TODO thread adopted through the real service: moved with its ids,
@@ -1180,8 +1467,68 @@ describe("work tools and rpc", () => {
     expect(parsed.item.owner).toBe("desktop/w35:p1");
     expect(parsed.item.source).toBe("voice job 12");
     expect(parsed.thread).toBeTruthy();
+    expect(parsed.review).toBe(parsed.item.review);
+    expect(parsed.updated).toBeUndefined();
     expect(pushes.find((p) => p.summary)?.summary).toBe(
       'Claude in roamgate added "From a tool"',
+    );
+    // The same source again: changed, and the answer says so and what.
+    const again = JSON.parse(
+      (
+        await workTool(
+          service,
+          "work_add",
+          {
+            title: "From a tool",
+            tags: ["voice", "calls"],
+            text: "Other words",
+            source: "voice job 12",
+          },
+          "Claude in roamgate",
+          "desktop/w35:p1",
+        )
+      ).split("\n")[1]!,
+    );
+    expect(again.item.id).toBe(parsed.item.id);
+    expect(again.updated).toBe(true);
+    expect(again.changed).toEqual({ tags: ["voice", "calls"] });
+    expect(again.ignored).toEqual(["text"]);
+    expect(again.note).toMatch(/changed, not added/);
+    expect(again.thread).toBe(parsed.thread);
+    await expect(
+      workTool(
+        service,
+        "work_add",
+        { title: "Another title", source: "voice job 12" },
+        "Claude in roamgate",
+      ),
+    ).rejects.toThrow(/replace: true/);
+    // An adopted thread: its id answered beside the description's.
+    const other = await service.add(
+      { title: "Other", text: "Adopt me" },
+      { by: "user" },
+    );
+    const adoptable = service.threads({ item: other.id })!.threads[0]!;
+    const adopted = JSON.parse(
+      (
+        await workTool(
+          service,
+          "work_add",
+          {
+            title: "Adopting",
+            text: "Own words",
+            adopt_thread: adoptable.id,
+            links: [{ kind: "commit", sha: "abcdef1234", subject: "Fix" }],
+          },
+          "Claude in roamgate",
+        )
+      ).split("\n")[1]!,
+    );
+    expect(adopted.adopted_thread).toBe(adoptable.id);
+    expect(adopted.thread).toBeUndefined();
+    expect(adopted.review).toBeTruthy();
+    expect(adopted.item.done_when).toMatch(
+      /^its commit reaches this Roamgate's deployed build$/,
     );
     const listed = JSON.parse(
       (
@@ -1236,8 +1583,11 @@ describe("work tools and rpc", () => {
       "work_done",
       "work_reopen",
       "work_adopt",
+      "work_comment_edit",
+      "work_comment_delete",
       "work_project",
     ]);
+    expect(help.tools[0].description).toContain("roamgate-review work TOOL");
     const done = JSON.parse(
       (
         await workTool(

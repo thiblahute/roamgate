@@ -775,6 +775,12 @@ export function createReviewService(args: {
    * client's commands.
    */
   agentTools?: (connectionId: string, paneId: string) => boolean;
+  /**
+   * Whether the pane's agent has the Work board's tools (`work_*`): a
+   * session whose mod predates them is told the review client's `work`
+   * command instead.
+   */
+  agentWorkTools?: (connectionId: string, paneId: string) => boolean;
   gitlab?: {
     context: (session: ReviewSession) => GlabContext;
     /** The checkout's branch and what finding its merge request needs. */
@@ -3572,8 +3578,8 @@ export function createReviewService(args: {
       lines.push(
         "",
         due.some((thread) => thread.anchor.work?.description)
-          ? `The item is yours to do (it was added or reopened with you as its owner): take it with work_update (state: doing, owner: your session, or the subagent you give it to), or give it to another session. These are threads on a work item of the Work board, not on code: read the item with your work_list tool (item: its id) when you need more, and move it with work_update, work_done or work_reopen as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`
-          : `These are threads on a work item of the Work board, not on code: read the item with your work_list tool (item: its id) when you need more, and move it with work_update, work_done or work_reopen as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`,
+          ? `The item is yours to do (it was added or reopened with you as its owner): take it with ${how.workUpdate} (state: doing, owner: your session, or the subagent you give it to), or give it to another session. These are threads on a work item of the Work board, not on code: read the item with ${how.workList} when you need more, and move it with ${how.workMove} as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`
+          : `These are threads on a work item of the Work board, not on code: read the item with ${how.workList} when you need more, and move it with ${how.workMove} as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`,
       );
     else if (due.length && chat)
       lines.push(
@@ -3746,9 +3752,28 @@ export function createReviewService(args: {
    * the review client.
    */
   function howTo(target: ReviewSession, paneId: string) {
+    // The Work board's tools came later than the others: a session whose
+    // mod predates them (started before, not restarted) has the client.
+    const workTools =
+      args.agentTools?.(target.connectionId, paneId) &&
+      args.agentWorkTools?.(target.connectionId, paneId);
+    const item =
+      target.target.kind === "work" ? target.target.item.slice(0, 8) : "ID";
+    const work = workTools
+      ? {
+          workList: `your work_list tool (item: ${item})`,
+          workUpdate: "your work_update tool",
+          workMove: "your work_update, work_done or work_reopen tools",
+        }
+      : {
+          workList: `\`roamgate-review work work_list '{"item": "${item}"}'\``,
+          workUpdate: `\`roamgate-review work work_update '{"item": "${item}", ...}'\``,
+          workMove: `\`roamgate-review work work_update\`, \`work_done\` or \`work_reopen\` the same way (\`roamgate-review work help\` lists the parameters)`,
+        };
     if (args.agentTools?.(target.connectionId, paneId)) {
       const review = `review: ${target.id.slice(0, 8)}`;
       return {
+        ...work,
         get: `your \`review_get\` tool (${review})`,
         reply: "your `review_reply` tool (comment_id: the bracketed ID)",
         replyChanged:
@@ -3762,6 +3787,7 @@ export function createReviewService(args: {
     }
     const command = clientCommand(target);
     return {
+      ...work,
       get: `\`${command} get\``,
       reply: `\`${command} reply --comment ID -- TEXT\``,
       replyChanged: `\`${command} reply --comment ID -- TEXT\` (say what you changed)`,

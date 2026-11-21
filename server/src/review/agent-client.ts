@@ -141,7 +141,8 @@ def parser():
     o.add_argument("--message", help="shown when the review opens")
 
     sub.add_parser("skill", help="print the instructions for agents")
-    sub.add_parser("list", help="reviews of this checkout")
+    ls = sub.add_parser("list", help="reviews of this checkout (--all: every review here)")
+    ls.add_argument("--all", action="store_true", help="every review of this connection, whatever the checkout")
     sub.add_parser("get", help="the review with all threads")
 
     a = sub.add_parser("add", help="start a thread")
@@ -175,8 +176,8 @@ def parser():
     w.add_argument("--any", action="store_true", help="wake on any change")
     w.add_argument("--timeout", type=int, default=1800, help="seconds (default 1800)")
 
-    m = sub.add_parser("summary", help="the overall comment (kept only if the user has none)")
-    m.add_argument("text", nargs="*", help="text, or - for standard input")
+    m = sub.add_parser("summary", help="the overall comment: read it (no text), or set it (kept only if the user has none)")
+    m.add_argument("text", nargs="*", help="text, or - for standard input; none reads it")
 
     k = sub.add_parser("working", help="say you are working on the review")
     k.add_argument("--comment", help="the thread you are working on (comment or thread id)")

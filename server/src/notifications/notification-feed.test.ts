@@ -362,7 +362,17 @@ test("Web Push gets the same payload, and skips quiet devices while the Android 
       tag: JSON.stringify(["roamgate-task", "alpha", 3, "p1"]),
       target: { paneId: "p1" },
     });
+    expect(calls[0]!.payload).not.toHaveProperty("path");
     expect(calls[0]!.skip(quiet)).toBe(false);
+    // A page path of its own (a work item's) travels in the push too, so
+    // that the click lands on the item, not the app's root.
+    f.publish(
+      { ...blocked, paneId: "work:0123456789abcdef" },
+      { kind: "work", path: "/#roamgate-work=0123456789abcdef" },
+    );
+    expect(calls[1]!.payload).toMatchObject({
+      path: "/#roamgate-work=0123456789abcdef",
+    });
 
     // A browser on the socket does not count; the Android app does.
     const browser = hello(f, { client: "web" });

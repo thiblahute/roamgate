@@ -293,6 +293,14 @@ test("the agent loop: open, discuss, watch, reply, resolve", async () => {
   const listed = await run(s, ["list"]);
   expect(listed.json).toHaveLength(1);
   expect(listed.json[0].threads).toBe(2);
+  // --all: every review of the connection, whatever the checkout.
+  const all = await run(s, ["list", "--all"]);
+  expect(all.json.map((each: { id: string }) => each.id)).toEqual(
+    listed.json.map((each: { id: string }) => each.id),
+  );
+  // summary without text reads the overall comment.
+  const summary = await run(s, ["summary"]);
+  expect(summary.json).toEqual({ summary: "" });
 });
 
 test("an agent cannot rewrite the user's comment and gets a clear error", async () => {

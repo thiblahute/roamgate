@@ -27,6 +27,19 @@ function validNotificationTarget(target) {
   );
 }
 
+/* A page path of the app a click opens instead of the target's pane (a
+   work item's "/#roamgate-work=ID"): one path, same origin, no scheme or
+   host in it. */
+function validNotificationPath(path) {
+  return (
+    typeof path === "string" &&
+    path.length <= 2048 &&
+    path.startsWith("/") &&
+    !path.startsWith("//") &&
+    !path.startsWith("/\\")
+  );
+}
+
 self.addEventListener("push", (event) => {
   event.waitUntil(
     (async () => {
@@ -38,6 +51,7 @@ self.addEventListener("push", (event) => {
       }
       const target = message?.target;
       const valid = validNotificationTarget(target);
+      const path = validNotificationPath(message?.path) ? message.path : null;
       await self.registration.showNotification(
         typeof message?.title === "string"
           ? message.title
@@ -51,6 +65,7 @@ self.addEventListener("push", (event) => {
           data: {
             type: "roamgate:task-notification-activate",
             target: valid ? target : null,
+            ...(path ? { path } : {}),
           },
         },
       );
@@ -64,6 +79,8 @@ self.addEventListener("notificationclick", (event) => {
   if (data?.type !== "roamgate:task-notification-activate") return;
   // Notifications without a valid target only focus or open the app.
   const target = validNotificationTarget(data.target) ? data.target : null;
+  // A page path of its own (a work item's) wins over the pane.
+  const path = validNotificationPath(data.path) ? data.path : null;
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({
@@ -81,14 +98,16 @@ self.addEventListener("notificationclick", (event) => {
       for (const client of appWindows) {
         try {
           await client.focus().catch(() => {});
-          if (target) client.postMessage(data);
+          if (target || path) client.postMessage(data);
           return;
         } catch {
           // A window can close between discovery and activation.
         }
       }
-      const url = new URL("/", self.location.origin);
-      if (target)
+      const url = path
+        ? new URL(path, self.location.origin)
+        : new URL("/", self.location.origin);
+      if (target && !path)
         url.hash =
           "roamgate-task=" + encodeURIComponent(JSON.stringify(target));
       await self.clients.openWindow(url.href);

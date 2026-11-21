@@ -27,7 +27,12 @@ import { roamgateEnv } from "../config/environment";
 export class WorkError extends Error {
   constructor(
     message: string,
-    readonly code: "invalid" | "not_found" | "unavailable" = "invalid",
+    readonly code:
+      | "invalid"
+      | "not_found"
+      | "unavailable"
+      | "conflict"
+      | "forbidden" = "invalid",
   ) {
     super(message);
   }

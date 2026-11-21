@@ -278,6 +278,8 @@ async function announceTools($: EngineInterface): Promise<void> {
       session: await $.session.id(),
       client: toolsClient,
       tools: ROAMGATE_TOOLS.length,
+      // This mod has the Work board's tools: the prompts may name them.
+      work: "1",
       ...(headless ? { headless: "1" } : {}),
       ...(gone ? { gone: "1" } : {}),
     }).catch((error) => debug($, `tools hello failed: ${messageOf(error)}`));

@@ -51,8 +51,14 @@ function clip(value: string, max = 80) {
   return value.slice(0, max);
 }
 
-/** The JSON message the service worker renders for one device delivery. */
-export function taskPushPayload(task: PushNotification) {
+/**
+ * The JSON message the service worker renders for one device delivery.
+ * `path` is the page path a click opens when it is not the task's pane (a
+ * work item's `/#roamgate-work=ID`): the worker opens it, or hands it to
+ * the open page.
+ */
+export function taskPushPayload(task: PushNotification, path?: string) {
+  const to = path ? { path } : {};
   if ("task_id" in task)
     return {
       title: task.title,
@@ -63,6 +69,7 @@ export function taskPushPayload(task: PushNotification) {
         taskId: task.task_id,
         runId: task.run_id,
       },
+      ...to,
     };
   const target =
     task.workspaceId && task.paneId
@@ -97,6 +104,7 @@ export function taskPushPayload(task: PushNotification) {
       task.paneId ?? task.title ?? task.kind,
     ]),
     target,
+    ...to,
   };
 }
 

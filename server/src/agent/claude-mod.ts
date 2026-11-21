@@ -101,6 +101,12 @@ type ToolsSession = {
   seenAt: number;
   /** Conversation mode's: Roamgate starts it again with the same tools. */
   headless: boolean;
+  /**
+   * Its mod has the Work board's tools (`work_*`): a session started before
+   * the mod had them keeps its older mod until it restarts, so the prompts
+   * name the review client's `work` command to it instead.
+   */
+  work: boolean;
 };
 
 export class ClaudeModError extends Error {
@@ -283,6 +289,7 @@ export function createClaudeModHub(args: {
       toolSessions.set(key(each.connection_id, each.pane_id), {
         sessionId: each.session_id,
         client: each.client,
+        work: each.work === true,
         seenAt: each.seen_at,
         headless: each.headless === true,
       });
@@ -328,6 +335,7 @@ export function createClaudeModHub(args: {
             session_id: each.sessionId,
             client: each.client,
             seen_at: each.seenAt,
+            ...(each.work ? { work: true } : {}),
             headless: each.headless,
           };
         }),
@@ -379,6 +387,8 @@ export function createClaudeModHub(args: {
     client: string;
     headless: boolean;
     gone: boolean;
+    /** The mod has the Work board's tools (one from before them says nothing). */
+    work?: boolean;
   }) {
     if (!input.client) throw new ClaudeModError("the mod sent no client id");
     const at = key(input.connectionId, input.paneId);
@@ -395,12 +405,14 @@ export function createClaudeModHub(args: {
       !known ||
       known.client !== input.client ||
       known.sessionId !== input.sessionId ||
-      known.headless !== input.headless;
+      known.headless !== input.headless ||
+      known.work !== (input.work === true);
     toolSessions.set(at, {
       sessionId: input.sessionId,
       client: input.client,
       seenAt: now(),
       headless: input.headless,
+      work: input.work === true,
     });
     // Each hello moves the time; the file only needs it for a headless one.
     if (fresh || input.headless) save();
@@ -821,6 +833,11 @@ export function createClaudeModHub(args: {
     ack,
     event,
     tools,
+    /** Whether the pane's Claude has the mod's Work board tools (`work_*`). */
+    hasWorkTools(connectionId: string, paneId: string): boolean {
+      const entry = toolSessions.get(key(connectionId, paneId));
+      return !!entry && entry.work && toolsFresh(entry);
+    },
     /** Whether the pane's Claude has the mod's tools (it said so lately). */
     hasTools(connectionId: string, paneId: string): boolean {
       const entry = toolSessions.get(key(connectionId, paneId));

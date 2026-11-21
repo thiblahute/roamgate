@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -30,6 +31,7 @@ import {
   type WorkProject,
   type WorkState,
   workDescriptionThread,
+  workDoneWhen,
 } from "../../../shared/work";
 import { openAgentTask } from "../agentTasksOpen";
 import { nextColumn, nextRow } from "../boardNavigation";
@@ -159,6 +161,194 @@ export function workDescriptionOf(
   const thread = workDescriptionThread(threads, item);
   const body = thread?.comments[0]?.body.trim() ?? "";
   return thread && body && body !== item.title ? thread : null;
+}
+
+/** A card dragged between the columns: the item, the pointer, the column under it. */
+export type WorkDrag = {
+  item: WorkItem;
+  x: number;
+  y: number;
+  /** The state column the pointer is over, when one. */
+  over: WorkState | null;
+};
+
+/** A mouse drags after this far; a finger after holding this long. */
+export const WORK_DRAG_MOVE_PX = 6;
+export const WORK_DRAG_HOLD_MS = 250;
+/** A finger that moves this far while holding scrolls instead. */
+const WORK_DRAG_SLOP_PX = 10;
+
+/** The state column under a point of the page, when one. */
+export function workColumnAt(x: number, y: number): WorkState | null {
+  const state = document
+    .elementFromPoint(x, y)
+    ?.closest<HTMLElement>("[data-work-column]")?.dataset.workColumn;
+  return state && WORK_STATES.includes(state as WorkState)
+    ? (state as WorkState)
+    : null;
+}
+
+/**
+ * Dragging a card to another column, by pointer (a mouse moves it at once;
+ * a finger or pen holds it first, so that the columns still scroll by
+ * touch), changing the item's state on the drop as the detail's state menu
+ * does. The keys are untouched; Esc lets go. Returns the drag in progress,
+ * the handler for a card's pointer down, and the cancel.
+ */
+export function useWorkDrag(
+  enabled: boolean,
+  onDrop: (item: WorkItem, state: WorkState) => void,
+): {
+  drag: WorkDrag | null;
+  start: (item: WorkItem) => (event: ReactPointerEvent<HTMLElement>) => void;
+  cancel: () => void;
+} {
+  const [drag, setDrag] = useState<WorkDrag | null>(null);
+  const live = useRef<WorkDrag | null>(null);
+  const pending = useRef<{
+    item: WorkItem;
+    pointerId: number;
+    x: number;
+    y: number;
+    mouse: boolean;
+    target: HTMLElement;
+    timer: ReturnType<typeof setTimeout> | null;
+    stop: () => void;
+  } | null>(null);
+
+  const show = (next: WorkDrag | null) => {
+    live.current = next;
+    setDrag(next);
+  };
+  const end = useCallback(() => {
+    const open = pending.current;
+    if (!open) return;
+    pending.current = null;
+    if (open.timer) clearTimeout(open.timer);
+    open.stop();
+    try {
+      if (open.target.hasPointerCapture?.(open.pointerId))
+        open.target.releasePointerCapture(open.pointerId);
+    } catch {
+      // The element may be gone.
+    }
+    show(null);
+  }, []);
+
+  useEffect(() => end, [end]);
+  useEffect(() => {
+    if (!enabled) end();
+  }, [enabled, end]);
+
+  const start = useCallback(
+    (item: WorkItem) => (event: ReactPointerEvent<HTMLElement>) => {
+      if (!enabled || event.button !== 0 || !event.isPrimary) return;
+      // Its buttons and links keep their clicks; a drag starts on the card.
+      if (
+        (event.target as HTMLElement).closest(
+          "button, a, input, select, textarea",
+        )
+      )
+        return;
+      end();
+      const target = event.currentTarget;
+      const pointerId = event.pointerId;
+      const mouse = event.pointerType === "mouse";
+      const begin = () => {
+        const open = pending.current;
+        if (!open || live.current) return;
+        if (open.timer) clearTimeout(open.timer);
+        open.timer = null;
+        try {
+          target.setPointerCapture(pointerId);
+        } catch {
+          // Capture is a nicety: the window listeners carry the drag.
+        }
+        // A finger: the page stops scrolling under the held card.
+        document.addEventListener("touchmove", noScroll, { passive: false });
+        show({
+          item: open.item,
+          x: open.x,
+          y: open.y,
+          over: workColumnAt(open.x, open.y),
+        });
+      };
+      const noScroll = (touch: TouchEvent) => {
+        if (touch.cancelable) touch.preventDefault();
+      };
+      const move = (moved: PointerEvent) => {
+        const open = pending.current;
+        if (!open || moved.pointerId !== pointerId) return;
+        const dx = moved.clientX - open.x;
+        const dy = moved.clientY - open.y;
+        const far = Math.hypot(dx, dy);
+        if (!live.current) {
+          if (open.mouse) {
+            if (far >= WORK_DRAG_MOVE_PX) begin();
+            else return;
+          } else if (far > WORK_DRAG_SLOP_PX) {
+            // A swipe before the hold is a scroll: not a drag.
+            end();
+            return;
+          } else return;
+        }
+        if (!live.current) return;
+        show({
+          ...live.current,
+          x: moved.clientX,
+          y: moved.clientY,
+          over: workColumnAt(moved.clientX, moved.clientY),
+        });
+      };
+      const swallowClick = () => {
+        const stop = (click: Event) => {
+          click.stopPropagation();
+          click.preventDefault();
+        };
+        document.addEventListener("click", stop, { capture: true });
+        setTimeout(
+          () => document.removeEventListener("click", stop, { capture: true }),
+          0,
+        );
+      };
+      const up = (upped: PointerEvent) => {
+        if (upped.pointerId !== pointerId) return;
+        const current = live.current;
+        if (current) {
+          const over = workColumnAt(upped.clientX, upped.clientY);
+          // The drop is no click on the card: it stays where it is.
+          swallowClick();
+          if (over && over !== current.item.state) onDrop(current.item, over);
+        }
+        end();
+      };
+      const cancel = (cancelled: PointerEvent) => {
+        if (cancelled.pointerId === pointerId) end();
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", cancel);
+      pending.current = {
+        item,
+        pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        mouse,
+        target,
+        // A mouse waits for a move; a finger, for the hold.
+        timer: mouse ? null : setTimeout(begin, WORK_DRAG_HOLD_MS),
+        stop: () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+          window.removeEventListener("pointercancel", cancel);
+          document.removeEventListener("touchmove", noScroll);
+        },
+      };
+    },
+    [enabled, end, onDrop],
+  );
+
+  return { drag, start, cancel: end };
 }
 
 export type WorkModeOptions = {
@@ -371,6 +561,17 @@ export function useWorkMode({
     },
     [],
   );
+  // A card dragged to another column: its state, as the detail's menu sets it.
+  const onDrop = useCallback(
+    (item: WorkItem, state: WorkState) =>
+      void act("update", { item: item.id, state }),
+    [act],
+  );
+  const {
+    drag,
+    start: dragStart,
+    cancel: dragCancel,
+  } = useWorkDrag(enabled && !detail && !adding, onDrop);
 
   /** Where the owner is: its pane shown, its task's sheet opened. */
   const openOwner = useCallback(
@@ -505,7 +706,8 @@ export function useWorkMode({
     if (event.metaKey || event.ctrlKey || event.altKey) return false;
     if (event.key === "Escape") {
       keyState.current = EMPTY_KEY_STATE;
-      if (filters) setFilters(false);
+      if (drag) dragCancel();
+      else if (filters) setFilters(false);
       else if (adding) {
         setAdding(false);
         back();
@@ -697,6 +899,10 @@ export function useWorkMode({
         <WorkDetail
           item={detailItem}
           project={scope ? null : projectName(detailItem.project)}
+          doneWhen={workDoneWhen(
+            detailItem,
+            projects.find((each) => each.id === detailItem.project),
+          )}
           compose={compose}
           onCompose={setCompose}
           onComposeDone={() => setCompose(null)}
@@ -828,14 +1034,18 @@ export function useWorkMode({
                 : "No work item yet: a (or the + button) adds one; agents add theirs with work_add."}
             </p>
           ) : null}
-          <div className={board ? "mr-reviews-board" : "mr-reviews-sections"}>
+          <div
+            className={`${board ? "mr-reviews-board" : "mr-reviews-sections"}${drag ? " is-work-dragging" : ""}`}
+          >
             {columns.map(({ state, items: inColumn }) => {
-              if (!inColumn.length && !board) return null;
+              // A list on a narrow pane leaves empty states out, but a card
+              // being dragged can be dropped in any of them.
+              if (!inColumn.length && !board && !drag) return null;
               const isFolded = folded.has(state);
               return (
                 <div
                   key={state}
-                  className={`mr-reviews-lane is-${state}${isFolded ? " is-folded" : ""}`}
+                  className={`mr-reviews-lane is-${state}${isFolded ? " is-folded" : ""}${drag?.over === state ? " is-drop-target" : ""}${drag?.item.state === state ? " is-drop-source" : ""}`}
                   role="group"
                   aria-label={WORK_STATE_TITLE[state]}
                   data-work-column={state}
@@ -863,6 +1073,8 @@ export function useWorkMode({
                           item={item}
                           project={scope ? null : projectName(item.project)}
                           selected={item.id === selected}
+                          dragging={drag?.item.id === item.id}
+                          onDragStart={dragStart(item)}
                           onSelect={() => select(item.id)}
                           onOpen={() => openDetail(item)}
                           onOpenOwner={() => void openOwner(item)}
@@ -876,6 +1088,18 @@ export function useWorkMode({
               );
             })}
           </div>
+          {drag ? (
+            <div
+              className="work-drag-ghost"
+              aria-hidden="true"
+              style={{ left: drag.x, top: drag.y }}
+            >
+              {drag.item.title}
+              {drag.over && drag.over !== drag.item.state ? (
+                <small>{WORK_STATE_TITLE[drag.over]}</small>
+              ) : null}
+            </div>
+          ) : null}
           {deployed ? (
             <p className="assistant-hint work-deployed">
               Deployed build {deployed.slice(0, 10)}: items whose commit it
@@ -884,9 +1108,9 @@ export function useWorkMode({
           ) : null}
           {!mobile ? (
             <p className="assistant-hint mr-reviews-keys">
-              j/k move · h/l columns · Enter open · c comment · s state · t tags
-              · o the agent's work · dd done · a add · za fold · f filters · /
-              search · [ ] Reviews · ? all keys
+              j/k move · h/l columns · Enter open · c comment · s state (or drag
+              a card to a column) · t tags · o the agent's work · dd done · a
+              add · za fold · f filters · / search · [ ] Reviews · ? all keys
             </p>
           ) : null}
         </>
@@ -930,6 +1154,8 @@ function WorkCard({
   item,
   project,
   selected,
+  dragging,
+  onDragStart,
   onSelect,
   onOpen,
   onOpenOwner,
@@ -940,6 +1166,9 @@ function WorkCard({
   /** Its project's name, when the board shows every project. */
   project: string | null;
   selected: boolean;
+  /** Being dragged to another column. */
+  dragging?: boolean;
+  onDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
   onSelect: () => void;
   onOpen: () => void;
   onOpenOwner: () => void;
@@ -949,8 +1178,9 @@ function WorkCard({
   return (
     <BoardCard
       selected={selected}
-      className={`work-card is-${item.state}`}
+      className={`work-card is-${item.state}${dragging ? " is-dragging" : ""}`}
       data={{ "data-work-item": item.id, "data-work-state": item.state }}
+      item={onDragStart ? { onPointerDown: onDragStart } : undefined}
       onSelect={onSelect}
       onOpen={onOpen}
       actions={
@@ -1043,6 +1273,7 @@ function WorkCard({
 function WorkDetail({
   item,
   project,
+  doneWhen,
   compose,
   onCompose,
   onComposeDone,
@@ -1061,6 +1292,8 @@ function WorkDetail({
 }: {
   item: WorkItem;
   project: string | null;
+  /** How the item becomes done by itself, when something watches it. */
+  doneWhen: string | null;
   compose: "comment" | "reply" | null;
   onCompose: (what: "comment" | "reply") => void;
   onComposeDone: () => void;
@@ -1235,6 +1468,12 @@ function WorkDetail({
                   </button>
                 ))}
               </dd>
+            </div>
+          ) : null}
+          {doneWhen ? (
+            <div>
+              <dt>Done when</dt>
+              <dd className="work-done-when">{doneWhen}</dd>
             </div>
           ) : null}
           <div>

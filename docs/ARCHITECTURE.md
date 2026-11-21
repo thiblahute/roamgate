@@ -1783,9 +1783,16 @@ doneAt?, by, review?}`). States are
 confirmed in real use), `open` (nobody on it) and `done`. Tags are free
 words (lower case, spaces as dashes, 40 characters, 12 per item). The owner
 is a session's address (`connection/pane`) and, for a background subagent,
-its task id. `source` is one line saying where the item came from (a
+its task id; the session must be one the agent messenger lists
+(`agent_sessions`: a connection knows it), else the write is refused with
+the known addresses, while the task id is taken as given (subagents are
+not listed). `source` is one line saying where the item came from (a
 review thread id, "imported from STATUS.md line 12"): one item per source
-in a project, the same source given again changes that item. Links:
+in a project, the same source given again changes that item (`add`
+answers `updated: true` with `changed`, the fields by name, and `ignored`
+for a `text` left aside, the description standing) but never retitles it
+silently: a different title is refused (`conflict`) unless `replace:
+true`. Links:
 `review {id, thread?}`, `effort {id, part?}`, `pr {url}`, `commit {sha,
 subject?, root?}`, `branch {name, root?}`, `decision {path, id}` (an RFC
 or plan file and its `Dn`), `item {id}` (waits for it), `deploy {sha,
@@ -1850,7 +1857,13 @@ they do efforts'.
 Notification: an item entering `you` publishes one feed notification (kind
 `work`, pane `work:<item id>` so its tag is stable, path
 `/#roamgate-work=<id>`, which opens the board on the item), cleared when it
-leaves `you` or is removed.
+leaves `you` or is removed. The path travels in the Web Push payload too
+(`taskPushPayload(task, path)`): the service worker
+(`web/public/task-notifications-sw.js`, `?v=3`) keeps a same-origin path
+in the notification's data and, on the click, opens it (no open page) or
+hands it to the open page, whose `followNotificationPath`
+(`web/src/taskNotifications.ts`) sets the hash so `watchWorkHash` opens
+the item; a path wins over a pane target.
 
 Done rule: at start, every 10 minutes, and when the deployed build changes
 (`server/public/.built-from` next to the server, read every minute; the
@@ -1859,8 +1872,19 @@ link is checked against its project's rule (`git merge-base --is-ancestor
 SHA TARGET` in the rule's root, through its connection; a sha the
 checkout no longer has falls back to `git log --grep=SUBJECT TARGET` when
 the link has a subject), an item whose only links are decisions against
-the file on the rule's branch (`- [x] **Dn**`); a hit moves the item to
-`done` with a `deploy` link and a push saying so.
+the file on the rule's branch (HEAD for the deployed rule) and, failing
+that, the working tree of the rule's root when that branch is checked
+out there (`readFile` over the same shell as git); a decision is decided
+by its ticked box (`- [x] **Dn**`) or by its heading (`### Dn.`, `## Dn:`)
+followed, before the next heading of its level, by a `**Answered ...**` or
+`**Decided ...**` line (RFC-0053's form; `decisionDecided`,
+`server/src/work/service.ts`). A hit moves the item to `done` with a
+`deploy` link (`{sha: "decision", branch: "ticked"}`, or `"ticked,
+uncommitted"` when a tick came from the working tree only) and a push
+saying so. A commit link rules: decisions count only for an item whose
+links are all decisions. `workDoneWhen` (shared/work.ts) says the rule in
+a sentence, answered as `done_when` by the tools and shown as **Done
+when** in the item's detail.
 
 RPCs `bridge.work.*` (machine-wide; `by: "agent"` with a `summary` says an
 agent wrote): `board`, `list {project?, state?, open?, tags?, owner?,
@@ -1878,15 +1902,36 @@ tags?, owner?}` (a review thread becomes an item that adopts it, source
 connection, generation, workspace, pane and task, for the page to open its
 chat or its Background tasks sheet), `check`. Every change is pushed to
 every page as `{work: {changed: ["items" | "item" | "projects"], item?,
-by, summary?}}`.
+by, summary?}}`. On the page, a card dragged to another column
+(`useWorkDrag`, WorkBoard.tsx: pointer events, a mouse after 6 px, a
+finger or pen after a 250 ms hold so the columns still scroll by touch,
+Esc lets go) calls `update {item, state}` as the detail's state menu
+does; the keys are untouched.
 
 Tools (the review socket's `work` command: `roamgate-review work TOOL
-JSON`, the mod's `work_*` tools, deferred): `work_list`, `work_add`,
-`work_update`, `work_done`, `work_reopen`, `work_adopt`, `work_project`,
-with the RPCs' parameters checked against their schemas
-(`server/src/work/tools.ts`; `help` lists them). Answers are JSON after a
-line saying what in them other people wrote. The caller is named in what
-the user is told ("Claude in roamgate added ...").
+JSON`, the mod's `work_*` tools, deferred): `work_list`, `work_add`
+(answers the item, `review`, `thread` (the description's) and
+`adopted_thread`, and `updated`/`changed`/`ignored` when the source named
+an existing item), `work_update`, `work_done`, `work_reopen`,
+`work_adopt`, `work_comment_edit {comment, text}` and `work_comment_delete
+{comment}` (an agent's own comments on an item, by their ids, from any
+connection; `review_edit` works on the same ids when the item's review is
+on the agent's connection), `work_project`, with the RPCs' parameters
+checked against their schemas (`server/src/work/tools.ts`; `help` lists
+them). Answers are JSON after a line saying what in them other people
+wrote. The caller is named in what the user is told ("Claude in roamgate
+added ..."). Each description ends by naming the client's `work` command
+as the way without the tool: the mod registers its tools at
+`session.start`, so a Claude session started before the mod had the
+`work_*` tools keeps its older mod until it restarts (installed plugins
+are not hot-reloaded), and a subagent loads them through ToolSearch as
+any deferred tool. The mod's `mod_tools` hello says `work: 1` when it
+has them (`ClaudeModHub.hasWorkTools`); the review service's delivered
+prompts for a work item name the tools to such a session and the
+client's command (`roamgate-review work work_list '{"item": ...}'`) to
+any other (`howTo`, `agentWorkTools`). The client's `list --all` lists
+every review of the connection, not only the checkout's, and `summary`
+without text reads the overall comment.
 
 ## Conversation mode
 

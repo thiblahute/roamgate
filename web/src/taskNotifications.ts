@@ -1,8 +1,32 @@
 export const TASK_NOTIFICATION_ACTIVATE_EVENT =
   "roamgate:task-notification-activate";
 // Bump when the notification payload contract changes.
-const NOTIFICATION_WORKER = "/task-notifications-sw.js?v=2";
+const NOTIFICATION_WORKER = "/task-notifications-sw.js?v=3";
 const NOTIFICATION_HASH = "#roamgate-task=";
+
+/**
+ * A notification's own page path (`/#roamgate-work=ID`), handed to the
+ * open page by the worker: followed as a link to it would be, its hash set
+ * so the page's hash watchers (`watchWorkHash`) open what it names. Only a
+ * path of this origin, with a hash to follow.
+ */
+export function followNotificationPath(
+  path: unknown,
+  location: Pick<Location, "origin" | "hash"> = window.location,
+): boolean {
+  if (typeof path !== "string" || !path.startsWith("/")) return false;
+  let url: URL;
+  try {
+    url = new URL(path, location.origin);
+  } catch {
+    return false;
+  }
+  if (url.origin !== location.origin || !url.hash) return false;
+  // The same hash again fires no hashchange: cleared first.
+  if (location.hash === url.hash) location.hash = "";
+  location.hash = url.hash;
+  return true;
+}
 
 export interface TaskNotificationTarget {
   connectionId: string;
@@ -192,10 +216,12 @@ export function listenForTaskNotificationActivation(
   const receive = (event: MessageEvent) => {
     if (
       event.origin !== window.location.origin ||
-      event.data?.type !== TASK_NOTIFICATION_ACTIVATE_EVENT ||
-      !isNotificationTarget(event.data.target)
+      event.data?.type !== TASK_NOTIFICATION_ACTIVATE_EVENT
     )
       return;
+    // A page path of its own (a work item's) wins over the pane.
+    if (followNotificationPath(event.data.path)) return;
+    if (!isNotificationTarget(event.data.target)) return;
     activate(event.data.target);
   };
   // Dropping the fragment lets the same link change the hash, and so

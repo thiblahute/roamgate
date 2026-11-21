@@ -2226,14 +2226,20 @@ Each card is an item: its title (wrapping, the card as wide as its
 column), tags, owner (the session or subagent working on it), its links
 (a review thread, an effort, a request, a commit, a branch, an RFC's
 decision, another item it waits for) and when it moved; the selected card
-offers **Open the agent's work** and **Done** over its corner. A card
+offers **Open the agent's work** and **Done** over its corner. Drag a card
+to another column to change its state (a mouse moves it at once; a finger
+holds it a moment first, a swipe still scrolls the columns; the column
+under the pointer lights up, the title follows it, Esc lets go); the keys
+do the same (`s`). A card
 never grows in its column: opening it (`Enter`, `i`, a tap or a click)
 shows the item's detail in the view, as a request's detail is shown, with
 **All items** to go back (Esc too): its title and state, its
 **description** (the text it was added with, images at the detail's
 width), a state menu (`s`), tags (`t`), its owner with **Open the agent's
 work** (`o`: the owner's pane, and its subagent's task in the Background
-tasks sheet), its project, links and dates, **Done** (`dd`) or
+tasks sheet), its project, links, **Done when** (how it becomes done by
+itself: its commit landing, or every decision ticked) and dates, **Done**
+(`dd`) or
 **Reopen**, **Delete**, then its thread: the comments, each with Reply,
 and **Comment** (`c`; `r` replies to the last thread) in the review
 comment editor (images pasted, dropped or added with its button are kept
@@ -2254,7 +2260,8 @@ runs. `a`
 editor (paste, drop or add images; they are stored with the item's thread
 once it is added), its state and tags; Cmd+Enter or **Add** adds it. `za`
 folds a column; `?` lists the keys. An item entering For you notifies you
-once; the notification opens the view on the item's detail.
+once; the notification, on the page, on your phone's Web Push or in the
+Android app, opens the view on the item's detail.
 
 An item you add without an owner (any state but For you) goes to the
 project's **coordinator** session: it owns the item, and the item is
@@ -2267,12 +2274,19 @@ ask.
 
 Agents keep the board true with their `work_*` tools (`work_list`,
 `work_add`, `work_update`, `work_done`, `work_reopen`, `work_adopt`,
-`work_project`): an item they take says `doing` with them as owner (a
-subagent's task id when one does the work), a fix waiting for a deploy
-says `verify` with its commit linked, and becomes **done by itself** once
-that commit is on dogfood's deployed build (the `roamgate` project) or on
-the project's branch (`gstreamer2/main` for GStreamer 2.0); a decision item
-is done once its box is ticked in the RFC. In a review's Comments panel,
+`work_comment_edit`, `work_comment_delete`, `work_project`; the review
+client's `roamgate-review work` does the same for a session without
+them): an item they take says `doing` with them as owner (a session a
+connection knows, else refused; a subagent's task id when one does the
+work), a fix waiting for a deploy says `verify` with its commit linked,
+and becomes **done by itself** once that commit is on dogfood's deployed
+build (the `roamgate` project) or on the project's branch
+(`gstreamer2/main` for GStreamer 2.0); an item whose links are all
+decisions is done once every one is ticked in the RFC or plan (`- [x]
+**Dn**`, or its `### Dn` heading answered), committed or still in the
+checkout's working tree (the item says uncommitted then). Importing the
+same source twice changes the item and says so; a new title needs
+`replace`. In a review's Comments panel,
 **Work item** on a thread moves it to the board as an item: its comments
 and id are kept, the review linked.
 

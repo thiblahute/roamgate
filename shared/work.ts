@@ -242,8 +242,35 @@ export function describeWorkLink(link: WorkLink): string {
     case "item":
       return `after ${link.id.slice(0, 8)}`;
     case "deploy":
+      // The decisions' rule: no commit, the branch says how they were found.
+      if (link.sha === "decision")
+        return `decisions ${link.branch ?? "ticked"}`;
       return `landed ${link.sha.slice(0, 10)}${link.branch ? ` on ${link.branch}` : ""}`;
   }
+}
+
+/**
+ * When a live item becomes done by itself ("Done when: ..."), for the
+ * item's detail and the tools' answers; null when nothing watches it (no
+ * commit nor decision link, or already done). Decisions count only when
+ * they are the item's only links: a commit link rules.
+ */
+export function workDoneWhen(
+  item: Pick<WorkItem, "state" | "links">,
+  project: Pick<WorkProject, "done"> | null | undefined,
+): string | null {
+  if (item.state === "done") return null;
+  const commits = item.links.filter((link) => link.kind === "commit");
+  const decisions = item.links.filter((link) => link.kind === "decision");
+  if (!commits.length && !decisions.length) return null;
+  const where = !project
+    ? "where its project says"
+    : project.done.kind === "deployed"
+      ? "this Roamgate's deployed build"
+      : `${project.done.branch} in ${project.done.root}`;
+  if (commits.length)
+    return `${commits.length === 1 ? "its commit reaches" : "one of its commits reaches"} ${where}${decisions.length ? " (its decisions do not count: they rule only an item whose links are all decisions)" : ""}`;
+  return `every decision is ticked (\`- [x] **Dn**\`, or its \`### Dn\` heading answered or decided) in the file${project?.done.kind === "branch" ? ` on ${project.done.branch}` : " as committed"}, or in the checkout's working tree (said uncommitted then)`;
 }
 
 /** The owner as shown: `connection/pane`, with its task. */

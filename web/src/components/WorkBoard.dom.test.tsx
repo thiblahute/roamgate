@@ -522,6 +522,158 @@ if (
     }
   });
 
+  test("a card dragged to another column changes its state: a mouse at once, a finger after a hold (a swipe scrolls), Esc lets go", async () => {
+    localStorage.clear();
+    calls.length = 0;
+    const { WORK_DRAG_HOLD_MS, WORK_DRAG_MOVE_PX } = await import(
+      "./WorkBoard"
+    );
+    const view = await mount();
+    try {
+      const lane = (state: string) =>
+        view.panel.querySelector<HTMLElement>(`[data-work-column="${state}"]`)!;
+      const card = (id: string) =>
+        view.panel
+          .querySelector<HTMLElement>(`[data-work-item="${id}"]`)!
+          .closest<HTMLElement>("li")!;
+      // What stands under the pointer: a lane, chosen by the test.
+      let under: Element | null = null;
+      (document as any).elementFromPoint = () => under;
+      const pointer = async (
+        type: string,
+        init: Record<string, unknown>,
+        target: EventTarget = window,
+      ) => {
+        await act(async () => {
+          target.dispatchEvent(
+            new PointerEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              pointerId: 1,
+              isPrimary: true,
+              button: 0,
+              pointerType: "mouse",
+              clientX: 10,
+              clientY: 10,
+              ...init,
+            }),
+          );
+        });
+      };
+      const ghost = () =>
+        view.panel.querySelector<HTMLElement>(".work-drag-ghost");
+
+      // A mouse: a few pixels are a click, farther is a drag.
+      await pointer("pointerdown", {}, card("1300000000000000"));
+      await pointer("pointermove", { clientX: 10 + WORK_DRAG_MOVE_PX - 2 });
+      expect(ghost()).toBeNull();
+      under = lane("doing");
+      await pointer("pointermove", { clientX: 140 });
+      expect(ghost()?.textContent).toContain("Item 1300000000000000");
+      expect(ghost()?.textContent).toContain("Doing");
+      expect(card("1300000000000000").classList.contains("is-dragging")).toBe(
+        true,
+      );
+      expect(lane("doing").classList.contains("is-drop-target")).toBe(true);
+      expect(lane("open").classList.contains("is-drop-target")).toBe(false);
+      await pointer("pointerup", { clientX: 140 });
+      expect(calls[calls.length - 1]).toEqual([
+        "update",
+        { item: "1300000000000000", state: "doing" },
+      ]);
+      expect(ghost()).toBeNull();
+      expect(lane("doing").classList.contains("is-drop-target")).toBe(false);
+      // The drop is no click: the detail stays closed.
+      expect(view.panel.querySelector("[data-work-detail]")).toBeNull();
+
+      // Let go over its own column, or outside any: nothing changes.
+      calls.length = 0;
+      under = lane("open");
+      await pointer("pointerdown", {}, card("1400000000000000"));
+      await pointer("pointermove", { clientX: 200 });
+      expect(ghost()).not.toBeNull();
+      await pointer("pointerup", { clientX: 200 });
+      expect(calls).toEqual([]);
+      under = null;
+      await pointer("pointerdown", {}, card("1400000000000000"));
+      await pointer("pointermove", { clientX: 200 });
+      await pointer("pointerup", { clientX: 200 });
+      expect(calls).toEqual([]);
+
+      // Esc lets go of a card being dragged.
+      under = lane("verify");
+      await pointer("pointerdown", {}, card("1400000000000000"));
+      await pointer("pointermove", { clientX: 300 });
+      expect(ghost()).not.toBeNull();
+      await view.key("Escape");
+      expect(ghost()).toBeNull();
+      await pointer("pointerup", { clientX: 300 });
+      expect(calls).toEqual([]);
+
+      // A finger: a swipe before the hold is a scroll, not a drag.
+      await pointer(
+        "pointerdown",
+        { pointerType: "touch", pointerId: 2 },
+        card("1500000000000000"),
+      );
+      await pointer("pointermove", {
+        pointerType: "touch",
+        pointerId: 2,
+        clientY: 60,
+      });
+      await act(async () => {
+        await new Promise((resolve) =>
+          setTimeout(resolve, WORK_DRAG_HOLD_MS + 60),
+        );
+      });
+      expect(ghost()).toBeNull();
+      await pointer("pointerup", { pointerType: "touch", pointerId: 2 });
+      expect(calls).toEqual([]);
+      // Held still: the card lifts, and goes where the finger lets it go.
+      under = lane("you");
+      await pointer(
+        "pointerdown",
+        { pointerType: "touch", pointerId: 3 },
+        card("1500000000000000"),
+      );
+      await act(async () => {
+        await new Promise((resolve) =>
+          setTimeout(resolve, WORK_DRAG_HOLD_MS + 60),
+        );
+      });
+      expect(ghost()?.textContent).toContain("Item 1500000000000000");
+      await pointer("pointermove", {
+        pointerType: "touch",
+        pointerId: 3,
+        clientX: 40,
+      });
+      await pointer("pointerup", {
+        pointerType: "touch",
+        pointerId: 3,
+        clientX: 40,
+      });
+      expect(calls[calls.length - 1]).toEqual([
+        "update",
+        { item: "1500000000000000", state: "you" },
+      ]);
+      expect(ghost()).toBeNull();
+
+      // The keys still move the selection and open the detail.
+      await view.click(view.panel.querySelector("[data-work-item]"));
+      expect(view.panel.querySelector("[data-work-detail]")).not.toBeNull();
+      // The detail's Done when row says how the item becomes done by itself.
+      await view.key("Escape");
+      await view.click(
+        view.panel.querySelector('[data-work-item="1200000000000000"]'),
+      );
+      expect(view.text(".work-done-when")).toContain(
+        "its commit reaches main in /home/me/gstreamer/2.0",
+      );
+    } finally {
+      await view.unmount();
+    }
+  });
+
   test("the scope and the filters: the workspace's project, the tags row, every tag; a choice is remembered; an item opens its project and its detail", async () => {
     localStorage.clear();
     // The board as given, without the item the first test added.

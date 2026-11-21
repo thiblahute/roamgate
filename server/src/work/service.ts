@@ -101,6 +101,19 @@ export type WorkReviews = {
   }): ReviewThread;
   /** Stores an image of the review (as a pasted one is); its path. */
   addImage?(sessionId: string, type: string, data: Uint8Array): string;
+  /** Rewrites a comment, as its author (the review service checks). */
+  editComment?(input: {
+    sessionId: string;
+    commentId: string;
+    author: string;
+    text: string;
+  }): Promise<ReviewThread>;
+  /** Deletes a comment (its thread, when the first), as its author. */
+  deleteComment?(input: {
+    sessionId: string;
+    commentId: string;
+    author: string;
+  }): Promise<{ deleted: string; thread: ReviewThread | null }>;
 };
 
 export type WorkNotifications = {
@@ -115,6 +128,20 @@ export type WorkServiceDeps = {
   reviews?: WorkReviews;
   notifications?: WorkNotifications;
   git?: WorkGit;
+  /**
+   * A file of a checkout's working tree, on its connection (the decisions'
+   * rule reads uncommitted ticks there); null when unreadable.
+   */
+  readFile?: (
+    root: string,
+    path: string,
+    connectionId?: string,
+  ) => Promise<string | null>;
+  /**
+   * The addresses (`connection/pane`) of the agent sessions Roamgate
+   * manages, as agent_sessions lists them: an owner must be one of them.
+   */
+  sessions?: () => Promise<readonly string[]>;
   /** The deployed build of this Roamgate (server/public/.built-from). */
   deployed?: () => string | null;
   /** This Roamgate's own checkout, for the deployed rule. */
@@ -145,6 +172,50 @@ type AddImage = { token: string; type: string; data: Uint8Array };
 function summaryOf(meta: WorkMeta, what: string): string {
   return meta.summary ?? `${meta.caller ?? "Claude"} ${what}`;
 }
+
+/** The agent's bare name from its caller line ("Claude in roamgate"). */
+function agentNameOf(meta: WorkMeta): string {
+  return (meta.caller ?? "Claude").split(" in ")[0] || "Claude";
+}
+
+/**
+ * Whether a decision is decided in a file's text: its box ticked (`- [x]
+ * **Dn**`), or its heading (`### Dn.`, `## Dn:`, `#### Dn`) followed, before
+ * the next heading of its level or higher, by a line that says it was
+ * answered or decided (RFC-0053's `> **Answered 2026-11-11:** ...`).
+ */
+export function decisionDecided(text: string, id: string): boolean {
+  const lines = text.split("\n");
+  const ticked = lines.find((line) => line.includes(`**${id}**`));
+  if (ticked && /^\s*[-*]\s+\[[xX]\]/.test(ticked)) return true;
+  const heading = new RegExp(`^(#{1,6})\\s+${id}(?![0-9])[.:)]?(\\s|$)`);
+  for (let at = 0; at < lines.length; at++) {
+    const open = heading.exec(lines[at]!);
+    if (!open) continue;
+    const level = open[1]!.length;
+    for (let next = at + 1; next < lines.length; next++) {
+      const line = lines[next]!;
+      const other = /^(#{1,6})\s/.exec(line);
+      if (other && other[1]!.length <= level) break;
+      if (/^\s*>?\s*\*\*(Answered|Decided|Decision)\b/i.test(line)) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+/** What `add` did: the item, and whether it changed an existing one. */
+export type WorkAdded = {
+  item: WorkItem;
+  /** The source named an existing item: changed instead of added. */
+  updated: boolean;
+  /** What the change touched, by field (the item's fields' names). */
+  changed?: Record<string, unknown>;
+  /** Parameters an update leaves aside (the text: its description stands). */
+  ignored?: string[];
+  /** The thread given as `adopt_thread`, now the item's own. */
+  adopted?: string;
+};
 
 export function createWorkService(deps: WorkServiceDeps) {
   const { store } = deps;
@@ -179,6 +250,20 @@ export function createWorkService(deps: WorkServiceDeps) {
     if (!found)
       throw new WorkError(`no work item ${ref.slice(0, 20)}`, "not_found");
     return found;
+  }
+
+  /**
+   * An owner's session must be one Roamgate manages (agent_sessions); its
+   * task (a subagent's id) is taken as given, subagents are not listed.
+   */
+  async function assertOwnerKnown(owner: WorkOwner | undefined) {
+    if (!owner || !deps.sessions) return;
+    const known = await deps.sessions();
+    if (known.includes(owner.session)) return;
+    throw new WorkError(
+      `no agent session Roamgate manages is at ${owner.session}; agent_sessions (roamgate-review sessions) lists them as CONNECTION/PANE${known.length ? `, such as ${known.slice(0, 3).join(", ")}` : ""}`,
+      "not_found",
+    );
   }
 
   /** Writes an item, says so, and keeps the For you notification right. */
@@ -426,6 +511,19 @@ export function createWorkService(deps: WorkServiceDeps) {
     params: Record<string, unknown>,
     meta: WorkMeta,
   ): Promise<WorkItem> {
+    return (await addOrUpdate(params, meta)).item;
+  }
+
+  /**
+   * `add`, saying what it did: an item with the same source in the project
+   * is changed instead of added (an import run again), its id kept, but
+   * never silently retitled: a different title is refused unless `replace`
+   * is true. Its text is left aside then (the description stands).
+   */
+  async function addOrUpdate(
+    params: Record<string, unknown>,
+    meta: WorkMeta,
+  ): Promise<WorkAdded> {
     seed();
     const project = projectOf(
       typeof params.project === "string" ? params.project : undefined,
@@ -437,17 +535,39 @@ export function createWorkService(deps: WorkServiceDeps) {
           .find((item) => item.project === project.id && item.source === source)
       : undefined;
     if (existing) {
+      const title =
+        params.title !== undefined ? parseWorkTitle(params.title) : undefined;
+      if (
+        title !== undefined &&
+        title !== existing.title &&
+        params.replace !== true
+      )
+        throw new WorkError(
+          `an item with source "${oneLine(source!, 80)}" exists in ${project.name}: ${existing.id} "${oneLine(existing.title, 80)}"; work_update changes it, or replace: true retitles it to "${oneLine(title, 80)}"`,
+          "conflict",
+        );
       const rest: Record<string, unknown> = { ...params, item: existing.id };
       delete rest.source;
       delete rest.project;
       delete rest.text;
       delete rest.images;
-      return update(rest, meta);
+      delete rest.replace;
+      const ignored = ["text", "images"].filter((key) => given(params[key]));
+      const { item, changed, adopted } = await change(rest, meta);
+      return {
+        item,
+        updated: true,
+        changed,
+        ...(ignored.length ? { ignored } : {}),
+        ...(adopted ? { adopted } : {}),
+      };
     }
     const at = now();
     const created = parseWorkTime(params.created_at, "created_at") ?? at;
     const state = given(params.state) ? parseWorkState(params.state) : "open";
-    const owner = ownerFor(project, state, parseWorkOwner(params.owner));
+    const givenOwner = parseWorkOwner(params.owner);
+    await assertOwnerKnown(givenOwner);
+    const owner = ownerFor(project, state, givenOwner);
     const text = parseAddText(params);
     const item: WorkItem = {
       id: newWorkId(),
@@ -475,15 +595,35 @@ export function createWorkService(deps: WorkServiceDeps) {
       { state: item.state, title: item.title, ...(owner ? { owner } : {}) },
       `added "${oneLine(item.title, 60)}"`,
     );
+    let adopted: string | undefined;
     if (given(params.adopt_thread))
-      adopt(made, String(params.adopt_thread), meta);
+      adopted = adopt(made, String(params.adopt_thread), meta).thread;
     // An adopted thread is the item's words already; an imported done item
     // is history, nobody's to do.
     else if (item.state !== "done") await announce(made, meta, text, "added");
-    return store.item(made.id) ?? made;
+    return {
+      item: store.item(made.id) ?? made,
+      updated: false,
+      ...(adopted ? { adopted } : {}),
+    };
   }
 
-  function update(params: Record<string, unknown>, meta: WorkMeta): WorkItem {
+  async function update(
+    params: Record<string, unknown>,
+    meta: WorkMeta,
+  ): Promise<WorkItem> {
+    return (await change(params, meta)).item;
+  }
+
+  /** `update`, saying what changed (the fields, by name). */
+  async function change(
+    params: Record<string, unknown>,
+    meta: WorkMeta,
+  ): Promise<{
+    item: WorkItem;
+    changed: Record<string, unknown>;
+    adopted?: string;
+  }> {
     const before = itemOf(params.item);
     const change: Record<string, unknown> = {};
     const next: WorkItem = { ...before, by: meta.by, updatedAt: now() };
@@ -533,6 +673,8 @@ export function createWorkService(deps: WorkServiceDeps) {
       change.tags = next.tags;
     if (params.owner !== undefined) {
       const owner = parseWorkOwner(params.owner);
+      if (owner && owner.session !== before.owner?.session)
+        await assertOwnerKnown(owner);
       if (owner) next.owner = owner;
       else delete next.owner;
       if (JSON.stringify(owner) !== JSON.stringify(before.owner))
@@ -550,8 +692,9 @@ export function createWorkService(deps: WorkServiceDeps) {
     }
     const linksChanged =
       JSON.stringify(next.links) !== JSON.stringify(before.links);
+    if (linksChanged) change.links = next.links;
     let written = before;
-    if (Object.keys(change).length || linksChanged)
+    if (Object.keys(change).length)
       written = commit(
         before,
         next,
@@ -561,9 +704,14 @@ export function createWorkService(deps: WorkServiceDeps) {
           ? `moved "${oneLine(next.title, 60)}" to ${String(change.state)}`
           : `changed "${oneLine(next.title, 60)}"`,
       );
+    let adopted: string | undefined;
     if (given(params.adopt_thread))
-      adopt(written, String(params.adopt_thread), meta);
-    return store.item(written.id) ?? written;
+      adopted = adopt(written, String(params.adopt_thread), meta).thread;
+    return {
+      item: store.item(written.id) ?? written,
+      changed: change,
+      ...(adopted ? { adopted } : {}),
+    };
   }
 
   /** The item is done: what landed, when known, is linked. */
@@ -744,16 +892,83 @@ export function createWorkService(deps: WorkServiceDeps) {
   }
 
   /**
+   * A comment of an item's thread, by an agent: rewritten (`text`) or
+   * deleted, only one of its own (its name, or its caller line "NAME in
+   * WORKSPACE", as the comment was signed); the user's and other agents'
+   * are refused. The comment names its item: any item's review will do.
+   */
+  async function commentEdit(
+    params: Record<string, unknown>,
+    meta: WorkMeta,
+    what: "edit" | "delete",
+  ): Promise<{
+    item: WorkItem;
+    thread: ReviewThread | null;
+    deleted?: string;
+  }> {
+    const ref = typeof params.comment === "string" ? params.comment.trim() : "";
+    if (!ref) throw new WorkError("comment is required");
+    const { session, thread } = threadRef(ref);
+    if (session.target.kind !== "work")
+      throw new WorkError(
+        "that comment is not on a work item: review_edit works on it",
+      );
+    const item = itemOf(session.target.item);
+    const comment = thread.comments.find(
+      (each) => each.id === ref || each.id.startsWith(ref),
+    );
+    if (!comment)
+      throw new WorkError(
+        "comment names a thread: give the comment's own id (work_list {item} lists them)",
+        "not_found",
+      );
+    const mine = new Set([agentNameOf(meta), meta.caller ?? "Claude"]);
+    if (meta.by === "agent" && !mine.has(comment.author))
+      throw new WorkError(
+        `an agent can only ${what} its own comments (this one is by ${oneLine(comment.author, 60)})`,
+        "forbidden",
+      );
+    const author = meta.by === "user" ? REVIEW_USER : comment.author;
+    if (what === "edit") {
+      if (!deps.reviews?.editComment)
+        throw new WorkError("comments cannot be edited here", "unavailable");
+      const text = typeof params.text === "string" ? params.text.trim() : "";
+      if (!text) throw new WorkError("text is empty");
+      const edited = await deps.reviews.editComment({
+        sessionId: session.id,
+        commentId: comment.id,
+        author,
+        text,
+      });
+      return { item, thread: edited };
+    }
+    if (!deps.reviews?.deleteComment)
+      throw new WorkError("comments cannot be deleted here", "unavailable");
+    const gone = await deps.reviews.deleteComment({
+      sessionId: session.id,
+      commentId: comment.id,
+      author,
+    });
+    return { item, thread: gone.thread, deleted: gone.deleted };
+  }
+
+  /**
    * An existing review thread becomes the item's own: moved into the
    * item's review with its comments and ids, anchored on the item (the
    * review and thread it came from remembered, with its quoted words), a
    * review link added. A thread the item already has changes nothing.
+   * Answers the item and the thread's id (the same, moved or not).
    */
-  function adopt(item: WorkItem, ref: string, meta: WorkMeta): WorkItem {
+  function adopt(
+    item: WorkItem,
+    ref: string,
+    meta: WorkMeta,
+  ): { item: WorkItem; thread: string } {
     const { session: from, thread } = threadRef(ref);
     const own = threads({ item: item.id, open: true });
     if (!own) throw new WorkError("the item's review could not be opened");
-    if (thread.sessionId === own.session.id) return store.item(item.id) ?? item;
+    if (thread.sessionId === own.session.id)
+      return { item: store.item(item.id) ?? item, thread: thread.id };
     const quote = thread.anchor.work?.quote ?? thread.anchor.render?.quote;
     deps.reviews!.moveThread({
       sessionId: own.session.id,
@@ -781,7 +996,7 @@ export function createWorkService(deps: WorkServiceDeps) {
         { adopted: thread.id },
         `took thread ${thread.id.slice(0, 8)} into "${oneLine(current.title, 60)}"`,
       );
-    return store.item(item.id) ?? current;
+    return { item: store.item(item.id) ?? current, thread: thread.id };
   }
 
   /**
@@ -934,8 +1149,15 @@ export function createWorkService(deps: WorkServiceDeps) {
           const ticked = await Promise.all(
             decisions.map((decision) => decisionTicked(project, decision)),
           );
-          if (ticked.every(Boolean))
-            where = { kind: "deploy", sha: "decision", branch: "ticked" };
+          if (ticked.every((each) => each.ticked))
+            where = {
+              kind: "deploy",
+              sha: "decision",
+              // Said on the item: a tick the file's branch has not yet.
+              branch: ticked.some((each) => each.uncommitted)
+                ? "ticked, uncommitted"
+                : "ticked",
+            };
         }
       } catch (error) {
         log("work done check failed", {
@@ -1029,16 +1251,21 @@ export function createWorkService(deps: WorkServiceDeps) {
     return found.code === 0 && /^[0-9a-f]{40}$/.test(sha) ? sha : null;
   }
 
-  /** Whether a decision's box is ticked in the file at the project's root. */
+  /**
+   * Whether a decision is decided (`decisionDecided`) in the file on the
+   * project's branch (HEAD, for the deployed rule), else in the working
+   * tree of the rule's root when it is a checkout (`uncommitted` then).
+   */
   async function decisionTicked(
     project: WorkProject,
     decision: Extract<WorkLink, { kind: "decision" }>,
-  ): Promise<boolean> {
-    if (!deps.git) return false;
+  ): Promise<{ ticked: boolean; uncommitted?: boolean }> {
+    const none = { ticked: false };
+    if (!deps.git) return none;
     const root =
       project.roots.find((each) => decision.path.startsWith(`${each.path}/`)) ??
       project.roots[0];
-    if (!root) return false;
+    if (!root) return none;
     const path = decision.path.startsWith("/")
       ? decision.path.slice(root.path.length + 1)
       : decision.path;
@@ -1048,11 +1275,24 @@ export function createWorkService(deps: WorkServiceDeps) {
       ["show", `${ref}:${path}`],
       root.connectionId,
     );
-    if (shown.code !== 0) return false;
-    const line = shown.stdout
-      .split("\n")
-      .find((each) => each.includes(`**${decision.id}**`));
-    return !!line && /^\s*[-*]\s+\[[xX]\]/.test(line);
+    if (shown.code === 0 && decisionDecided(shown.stdout, decision.id))
+      return { ticked: true };
+    // Not on the branch yet: the working tree of the root, when the
+    // branch is checked out there (or the deployed rule's own checkout).
+    if (!deps.readFile) return none;
+    if (project.done.kind === "branch") {
+      const head = await deps.git(
+        root.path,
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        root.connectionId,
+      );
+      if (head.code !== 0 || head.stdout.trim() !== project.done.branch)
+        return none;
+    }
+    const text = await deps.readFile(root.path, path, root.connectionId);
+    return text !== null && decisionDecided(text, decision.id)
+      ? { ticked: true, uncommitted: true }
+      : none;
   }
 
   function start() {
@@ -1087,15 +1327,23 @@ export function createWorkService(deps: WorkServiceDeps) {
     list,
     projectSet,
     add,
+    addOrUpdate,
     update,
+    change,
     done,
     reopen,
     remove,
     threads,
     comment,
+    /** An agent rewrites one of its comments on an item. */
+    commentEdit: (params: Record<string, unknown>, meta: WorkMeta) =>
+      commentEdit(params, meta, "edit"),
+    /** An agent deletes one of its comments on an item. */
+    commentDelete: (params: Record<string, unknown>, meta: WorkMeta) =>
+      commentEdit(params, meta, "delete"),
     /** An item takes an existing review thread as its own. */
     adopt: (params: Record<string, unknown>, meta: WorkMeta) =>
-      adopt(itemOf(params.item), String(params.thread ?? ""), meta),
+      adopt(itemOf(params.item), String(params.thread ?? ""), meta).item,
     ownerPane,
     ownerTarget,
     promote,

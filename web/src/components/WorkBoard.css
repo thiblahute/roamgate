@@ -480,3 +480,62 @@
 .work-deployed {
   font-size: 11px;
 }
+
+/* How an item becomes done by itself (the detail's Done when row). */
+.work-done-when {
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* A card dragged to another column: the card fades where it was, the
+   column under the pointer lights up, the title follows the pointer. */
+.is-work-dragging,
+.is-work-dragging * {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.work-card.is-dragging > .mr-reviews-row {
+  opacity: 0.4;
+}
+
+.mr-reviews-lane.is-drop-target {
+  border-radius: 8px;
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  background: var(--accent-soft, rgba(88, 166, 255, 0.12));
+}
+
+.mr-reviews-lane.is-drop-target.is-drop-source {
+  outline-color: var(--viewer-border);
+  background: none;
+}
+
+.work-drag-ghost {
+  position: fixed;
+  z-index: 6000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(320px, 70vw);
+  padding: 6px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  transform: translate(12px, 12px);
+  pointer-events: none;
+}
+
+.work-drag-ghost > small {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}

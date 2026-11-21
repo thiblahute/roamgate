@@ -1071,9 +1071,11 @@ export function createReviewAgentServer(args: {
       };
     }
     if (command === "list") {
-      const root = await rootOf(connection, form);
+      // `--all`: every review of this connection, not just the checkout's.
+      const root =
+        form.get("all") === "1" ? undefined : await rootOf(connection, form);
       return args.service
-        .list({ connectionId: connection.id, root })
+        .list({ connectionId: connection.id, ...(root ? { root } : {}) })
         .filter(({ session }) =>
           args.service.agentMayRead({ sessionId: session.id }),
         )
@@ -1198,6 +1200,8 @@ export function createReviewAgentServer(args: {
         };
       }
       case "summary":
+        // Without text: read the overall comment, as the user has it.
+        if (!text?.trim()) return { summary: session.summary };
         return args.service.agentSummary({ sessionId, author: agent, text });
       case "working":
         return sessionOutput(
@@ -1285,6 +1289,7 @@ export function createReviewAgentServer(args: {
           client,
           headless: form.get("headless") === "1",
           gone: form.get("gone") === "1",
+          work: form.get("work") === "1",
         });
       if (command === "mod_poll")
         return await args.claudeMod.poll({

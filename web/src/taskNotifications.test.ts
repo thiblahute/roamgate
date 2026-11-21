@@ -2,6 +2,7 @@ import { describe, expect, jest, mock, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { runInNewContext } from "node:vm";
 import {
+  followNotificationPath,
   listenForTaskNotificationActivation,
   prepareTaskNotifications,
   showTaskNotification,
@@ -55,7 +56,7 @@ async function withBrowser(
 function registration() {
   return {
     active: {
-      scriptURL: origin + "/task-notifications-sw.js?v=2",
+      scriptURL: origin + "/task-notifications-sw.js?v=3",
       state: "activated" as ServiceWorkerState,
     },
     showNotification: mock(async () => {}),
@@ -198,7 +199,7 @@ describe("task notification transport", () => {
       await Promise.resolve();
       await Promise.resolve();
       expect(active.showNotification).not.toHaveBeenCalled();
-      expect(register).toHaveBeenCalledWith("/task-notifications-sw.js?v=2", {
+      expect(register).toHaveBeenCalledWith("/task-notifications-sw.js?v=3", {
         updateViaCache: "none",
       });
       pending.active = active.active;
@@ -210,7 +211,7 @@ describe("task notification transport", () => {
 
   test("upgrades the legacy worker before delivery even when ready already resolves", async () => {
     const replacement = Object.assign(new EventTarget(), {
-      scriptURL: origin + "/task-notifications-sw.js?v=2",
+      scriptURL: origin + "/task-notifications-sw.js?v=3",
       state: "installing" as ServiceWorkerState,
     });
     const active = {
@@ -247,7 +248,7 @@ describe("task notification transport", () => {
         );
         await registered.promise;
         await Promise.resolve();
-        expect(register).toHaveBeenCalledWith("/task-notifications-sw.js?v=2", {
+        expect(register).toHaveBeenCalledWith("/task-notifications-sw.js?v=3", {
           updateViaCache: "none",
         });
         for (const state of ["installed", "activating"] as const) {
@@ -583,6 +584,50 @@ describe("task notification transport", () => {
       );
     },
   );
+  test("a worker's click with a page path of its own sets the page's hash, as following the link would", async () => {
+    const activate = mock();
+    const location = new URL(origin + "/");
+    const page = Object.assign(new EventTarget(), {
+      location,
+      history: { state: null, replaceState: mock() },
+    });
+    const worker = new EventTarget();
+    const message = (data: unknown, from = origin) =>
+      worker.dispatchEvent(new MessageEvent("message", { data, origin: from }));
+    await withBrowser(
+      { navigator: { serviceWorker: worker }, window: page },
+      async () => {
+        const stop = listenForTaskNotificationActivation(activate);
+        const path = "/#roamgate-work=0123456789abcdef";
+        message({ type: TASK_NOTIFICATION_ACTIVATE_EVENT, target: null, path });
+        expect(location.hash).toBe("#roamgate-work=0123456789abcdef");
+        expect(activate).not.toHaveBeenCalled();
+        // The path wins over a pane target; another origin's message, a
+        // path without a hash or one leaving the origin do nothing.
+        message({ type: TASK_NOTIFICATION_ACTIVATE_EVENT, target, path });
+        expect(activate).not.toHaveBeenCalled();
+        location.hash = "";
+        message(
+          { type: TASK_NOTIFICATION_ACTIVATE_EVENT, target: null, path },
+          "https://other.example",
+        );
+        expect(location.hash).toBe("");
+        expect(followNotificationPath("/settings", location)).toBe(false);
+        expect(
+          followNotificationPath("https://evil.example/#x", location),
+        ).toBe(false);
+        expect(followNotificationPath("//evil.example/#x", location)).toBe(
+          false,
+        );
+        expect(location.hash).toBe("");
+        // Without a path, the target activates as before.
+        message({ type: TASK_NOTIFICATION_ACTIVATE_EVENT, target });
+        expect(activate).toHaveBeenCalledWith(target);
+        stop();
+      },
+    );
+  });
+
   test("activates a notification link followed by the page already open, each time", async () => {
     const activate = mock();
     const location = new URL(origin + "/app?x=1#pane");
@@ -701,6 +746,33 @@ describe("notification service worker clicks", () => {
       tag: "roamgate-task",
       data: { type: TASK_NOTIFICATION_ACTIVATE_EVENT, target: null },
     });
+    // A page path of its own (a work item's) is kept for the click; one
+    // that would leave the origin is not.
+    for (const [path, kept] of [
+      ["/#roamgate-work=0123456789abcdef", true],
+      ["//evil.example/", false],
+      ["https://evil.example/", false],
+      [42, false],
+    ] as const) {
+      listeners.push({
+        data: { json: () => ({ title: "For you: Item", target: null, path }) },
+        waitUntil: (value: Promise<void>) => {
+          pending = value;
+        },
+      });
+      await pending;
+      expect(
+        (showNotification.mock.calls.slice(-1)[0] as unknown as unknown[])[1],
+      ).toEqual({
+        body: "Open Roamgate to check your agents.",
+        tag: "roamgate-task",
+        data: {
+          type: TASK_NOTIFICATION_ACTIVATE_EVENT,
+          target: null,
+          ...(kept ? { path } : {}),
+        },
+      });
+    }
   });
   test("focuses an app window or opens a same-origin pane link without caching", async () => {
     const listeners: Record<string, (event: any) => void> = {};
@@ -757,6 +829,26 @@ describe("notification service worker clicks", () => {
     expect(openWindow).toHaveBeenCalledWith(
       origin + "/#roamgate-task=" + encodeURIComponent(JSON.stringify(target)),
     );
+    // A notification with a page path of its own (a work item's) opens it,
+    // or hands it to the open page: the click lands on the item.
+    const path = "/#roamgate-work=0123456789abcdef";
+    const withPath = {
+      notification: {
+        close,
+        data: { type: TASK_NOTIFICATION_ACTIVATE_EVENT, target: null, path },
+      },
+      waitUntil: (promise: Promise<void>) => {
+        pending = promise;
+      },
+    };
+    listeners.notificationclick(withPath);
+    await pending;
+    expect(openWindow).toHaveBeenLastCalledWith(origin + path);
+    windows = [{ url: origin + "/", focus, postMessage }];
+    listeners.notificationclick(withPath);
+    await pending;
+    expect(postMessage).toHaveBeenLastCalledWith(withPath.notification.data);
+    expect(openWindow).toHaveBeenCalledTimes(2);
   });
   test("pane-less clicks focus the app without navigating", async () => {
     const listeners: Record<string, (event: any) => void> = {};

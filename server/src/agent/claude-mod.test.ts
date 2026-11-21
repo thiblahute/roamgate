@@ -330,6 +330,15 @@ test("a terminal session has the tools while it says so, until it leaves", () =>
   made.tools({ ...TOOLS, gone: true });
   expect(made.hasTools("local", "w1-2")).toBe(false);
   expect(() => made.tools({ ...TOOLS, client: "" })).toThrow("client id");
+  // A mod from before the Work board's tools says nothing of them: the
+  // prompts name the review client's work command to that session.
+  made.tools(TOOLS);
+  expect(made.hasTools("local", "w1-2")).toBe(true);
+  expect(made.hasWorkTools("local", "w1-2")).toBe(false);
+  made.tools({ ...TOOLS, work: true });
+  expect(made.hasWorkTools("local", "w1-2")).toBe(true);
+  made.tools({ ...TOOLS, gone: true });
+  expect(made.hasWorkTools("local", "w1-2")).toBe(false);
 });
 
 test("a headless session's tools outlive its process and a restart", () => {

@@ -534,6 +534,15 @@ function workTools(): RoamgateTool[] {
     description:
       "A review thread (its id, or a comment's) that becomes the item's own thread: comments and ids kept, its old anchor dropped, the review linked.",
   };
+  const COMMENT = {
+    type: "string",
+    description:
+      "The comment's id, as work_list {item} lists it (8 characters are enough); one of yours.",
+  };
+  // Said in each description: an agent without the tool (a session whose
+  // mod predates it, a subagent that cannot load it) has the client.
+  const CLI =
+    "Without this tool, the review client does the same from the repository's directory: `roamgate-review work TOOL 'JSON'` (`roamgate-review work help` lists the parameters).";
   const tool = (
     name: string,
     description: string,
@@ -543,14 +552,14 @@ function workTools(): RoamgateTool[] {
     name,
     command: "work",
     deferred: true,
-    description,
+    description: `${description} ${CLI}`,
     inputSchema: schema(properties, required),
     body: (input) => ({ tool: name, params: JSON.stringify(input) }),
   });
   return [
     tool(
       "work_list",
-      'The user\'s Work board: work items by project (roamgate by default) with id, title, state (you: waits on the user, doing, verify, open, done), tags, owner (a session address and its subagent task), links (review threads, efforts, requests, commits, branches, decisions, other items) and times. Filter by state, open (live items only), tags (all of them), owner, query words; item: one item with its comments. Use it before changing the board, and to answer "what is on the list".',
+      'The user\'s Work board: work items by project (roamgate by default) with id, title, state (you: waits on the user, doing, verify, open, done), tags, owner (a session address and its subagent task), links (review threads, efforts, requests, commits, branches, decisions, other items), done_when (how it becomes done by itself) and times. Filter by state, open (live items only), tags (all of them), owner, query words; item: one item with its comments. Use it before changing the board, and to answer "what is on the list".',
       {
         project: { type: "string" },
         state: STATE,
@@ -563,7 +572,7 @@ function workTools(): RoamgateTool[] {
     ),
     tool(
       "work_add",
-      "Add a work item to the user's Work board: a title, its project (roamgate by default), a state (open by default; you when it waits on the user, doing when you take it), tags, an owner {session, task?} (yours from agent_sessions; the agent id of a subagent you spawned), links (the review thread it came from, the commit its fix landed in, an RFC's decision), text: a first comment. Importing existing work: source says where it came from (a review thread id, \"imported from STATUS.md line 12\"; the same source again changes that item instead of adding one), created_at and done_at keep its dates (ISO 8601), adopt_thread makes an existing review thread the item's own (comments and ids kept). The user sees it on the board; a For you item notifies them once.",
+      "Add a work item to the user's Work board: a title, its project (roamgate by default), a state (open by default; you when it waits on the user, doing when you take it), tags, an owner {session, task?} (session: yours from agent_sessions, refused when no connection knows it; task: the agent id of a subagent you spawned, taken as given), links (the review thread it came from, the commit its fix landed in, an RFC's decision: an item whose links are all decisions is done once every one is ticked), text: its description, a first comment. Importing existing work: source says where it came from (a review thread id, \"imported from STATUS.md line 12\"; the same source again changes that item instead of adding one: the answer says updated: true with what changed, the text is left aside, and a different title is refused unless replace: true), created_at and done_at keep its dates (ISO 8601), adopt_thread makes an existing review thread the item's own (comments and ids kept). Answers the item, its review, thread (its description's) and adopted_thread. The user sees it on the board; a For you item notifies them once.",
       {
         title: { type: "string" },
         project: { type: "string" },
@@ -577,12 +586,17 @@ function workTools(): RoamgateTool[] {
         updated_at: { type: "string" },
         done_at: { type: "string" },
         adopt_thread: ADOPT,
+        replace: {
+          type: "boolean",
+          description:
+            "With source: an existing item of that source takes this title too (refused otherwise, when the titles differ).",
+        },
       },
       ["title"],
     ),
     tool(
       "work_update",
-      "Change a work item: title, state, project, tags (tags replaces; add_tags and remove_tags edit), owner (yours, a subagent's, or null to clear), links (links replaces; add_links and remove_links edit), source, created_at and done_at (an imported item's dates), adopt_thread (an existing review thread becomes the item's own). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. Comments on the item reach its owner; answer them with review_reply.",
+      "Change a work item: title, state, project, tags (tags replaces; add_tags and remove_tags edit), owner (yours, a subagent's, or null to clear; a session no connection knows is refused), links (links replaces; add_links and remove_links edit), source, created_at and done_at (an imported item's dates), adopt_thread (an existing review thread becomes the item's own). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. Comments on the item reach its owner; answer them with review_reply.",
       {
         item: ITEM,
         title: { type: "string" },
@@ -632,6 +646,18 @@ function workTools(): RoamgateTool[] {
       "Reopen a done work item (open by default, or the state given).",
       { item: ITEM, state: STATE },
       ["item"],
+    ),
+    tool(
+      "work_comment_edit",
+      "Rewrite one of your own comments on a work item (its id from work_list {item}), to correct or complete it rather than adding another; the user's and other agents' comments are refused. review_edit does the same on the same id when the item's review is on your connection.",
+      { comment: COMMENT, text: { type: "string" } },
+      ["comment", "text"],
+    ),
+    tool(
+      "work_comment_delete",
+      "Delete one of your own comments on a work item (its id from work_list {item}); the first comment of a thread takes the thread with it. The user's and other agents' comments are refused.",
+      { comment: COMMENT },
+      ["comment"],
     ),
     tool(
       "work_project",

@@ -35,10 +35,12 @@ export async function handleWorkRpc(
       return { items: service.list(params) };
     case "bridge.work.project.set":
       return { project: service.projectSet(params, meta) };
-    case "bridge.work.add":
-      return { item: await service.add(params, meta) };
+    case "bridge.work.add": {
+      const { item, updated } = await service.addOrUpdate(params, meta);
+      return { item, ...(updated ? { updated } : {}) };
+    }
     case "bridge.work.update":
-      return { item: service.update(params, meta) };
+      return { item: await service.update(params, meta) };
     case "bridge.work.done":
       return { item: service.done(params, meta) };
     case "bridge.work.reopen":

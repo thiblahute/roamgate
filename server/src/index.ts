@@ -1465,7 +1465,14 @@ function getWorkService(): WorkService {
       // An image an item is added with: stored as a pasted one is.
       addImage: (sessionId, type, data) =>
         saveReviewImage(reviewDirectory(), sessionId, type, data),
+      // An agent's own comment, rewritten or deleted (the review service
+      // checks the author).
+      editComment: (input) => review.edit(input),
+      deleteComment: (input) => review.deleteComment(input),
     },
+    // An owner must be a session Roamgate manages (agent_sessions).
+    sessions: async () =>
+      (await getAgentMessenger().list()).map((each) => each.address),
     notifications: {
       publish: (item) => {
         const status =
@@ -1519,6 +1526,25 @@ function getWorkService(): WorkService {
         return { code: read.code, stdout: read.stdout };
       } catch {
         return { code: null, stdout: "" };
+      }
+    },
+    // The decisions' rule reads uncommitted ticks in the working tree.
+    readFile: async (root, path, connectionId) => {
+      const runtime = connectionId
+        ? connectionManager.readyRuntime(connectionId)
+        : null;
+      if (connectionId && (!runtime || runtime.remotePlatform === "windows"))
+        return null;
+      if (path.startsWith("/") || path.split("/").includes("..")) return null;
+      const script = `cat ${shQuote(`${root}/${path}`)}`;
+      try {
+        const read = await runProcessWithCodeTimeout(
+          gitShellCommandArgv(script, runtime?.sshHost() || undefined),
+          30_000,
+        );
+        return read.code === 0 ? read.stdout : null;
+      } catch {
+        return null;
       }
     },
     deployed: () => readDeployed() ?? readHead(checkout),
@@ -1957,6 +1983,8 @@ function getReviewService(): ReviewService {
     // A Claude whose Roamgate mod said it has the tools answers with them.
     agentTools: (connectionId, paneId) =>
       claudeModHub.hasTools(connectionId, paneId),
+    agentWorkTools: (connectionId, paneId) =>
+      claudeModHub.hasWorkTools(connectionId, paneId),
     onDeliveryError: (session, reason) =>
       logger.warn("review comments not delivered", {
         connection: session.connectionId,

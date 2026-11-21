@@ -420,7 +420,8 @@ export function createNotificationFeed(options: {
     ) {
       const isCurrent = extra.isCurrent ?? (() => true);
       if (!isCurrent()) return;
-      const payload = taskPushPayload(task);
+      // A page path of its own (a work item's) travels in the push too.
+      const payload = taskPushPayload(task, extra.path);
       const event: StoredNotification = {
         event: "notification",
         id: ++last,
