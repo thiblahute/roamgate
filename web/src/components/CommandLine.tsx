@@ -30,6 +30,8 @@ export function CommandLine({
       {kind}
       <input
         className="review-cmd"
+        // A Vim prompt: the page's Dictate (FieldDictation) stays off it.
+        data-dictation="off"
         aria-label={kind === ":" ? "Command" : "Search"}
         // biome-ignore lint/a11y/noAutofocus: a Vim prompt takes the keys
         autoFocus
