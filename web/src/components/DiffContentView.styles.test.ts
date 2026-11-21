@@ -87,9 +87,10 @@ test("the comment editor in Changes reads as the classic review's: its sans at 1
   const box = rule(".diff-review-composer.chat-review,\n.diff-review-reply");
   expect(box).toContain("--rv-surface: var(--shell-panel);");
   expect(box).toContain("--rv-surface-2: var(--panel-2);");
-  const tokens = await Bun.file(
-    new URL("../styles/tokens.css", import.meta.url),
-  ).text();
+  // Whitespace collapsed: the formatter wraps a long declaration.
+  const tokens = (
+    await Bun.file(new URL("../styles/tokens.css", import.meta.url)).text()
+  ).replace(/\s+/g, " ");
   expect(tokens).toContain(
     '--sans-font: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;',
   );
