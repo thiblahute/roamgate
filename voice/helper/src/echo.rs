@@ -31,6 +31,18 @@
 //! delay measured, leaving out where the user talks over it (the microphone
 //! well above the echo expected): what is left is the echo, before and
 //! after the canceller (and its gain control).
+//!
+//! A microphone may come with its echo already taken out: the Roamgate
+//! app's (Android's voice-communication input, with the phone's own echo
+//! canceller and noise suppression) is digital silence while the replies
+//! play on the loudspeaker, and only the user is ever heard in it. There is
+//! then no echo, so no delay to measure, and AEC3, its noise suppression
+//! and gain control would only work on the user's voice. So that is told
+//! apart (`Delay::silence`): the microphone silent (below NEAR_SILENT, no
+//! microphone's own noise is that low) in most of the frames the far end's
+//! echo would come in. It then goes through untouched (`passthrough`),
+//! until an echo is heard in it again (a delay measured, or the microphone
+//! no longer silent while the far end plays).
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -83,6 +95,15 @@ const DOUBLE_TALK_FLOOR: f64 = 1e-6;
 /// it covers REPORT_MAX (30 s: the music plays on).
 const REPORT_GAP: u64 = 120;
 const REPORT_MAX: u64 = 3000;
+/// A microphone frame quieter than this (mean square, -80 dBFS) is the
+/// silence a phone's own echo canceller and noise suppression leave: no
+/// microphone's own noise is that low.
+const NEAR_SILENT: f64 = 1e-8;
+/// The microphone silent in at least this share of the frames the far
+/// end's echo would come in: its echo was taken out before it came here...
+const SILENT_SHARE: f64 = 0.6;
+/// ...and heard again when silent in less than this share of them.
+const HEARD_SHARE: f64 = 0.2;
 
 /// The canceller's settings.
 #[derive(Clone, Debug)]
@@ -125,6 +146,14 @@ pub enum Event {
         /// The lead moved for it.
         moved: bool,
     },
+    /// The microphone came with the echo already taken out (`taken_out`),
+    /// silent in `silent_share` of the frames the echo would come in, at
+    /// `level_db` there; or the echo is heard in it again.
+    Upstream {
+        taken_out: bool,
+        silent_share: f64,
+        level_db: f64,
+    },
 }
 
 impl std::fmt::Display for Event {
@@ -149,6 +178,24 @@ impl std::fmt::Display for Event {
                 f,
                 "the echo comes {delay_ms} ms after the replies go out (correlation {correlation:.2}), within AEC3's reach from the {lead_ms} ms lead"
             ),
+            Event::Upstream {
+                taken_out: true,
+                silent_share,
+                level_db,
+            } => write!(
+                f,
+                "the microphone hears none of the replies while they play (silent in {:.0}% of the frames their echo would come in, at {level_db:.1} dBFS there): their echo is taken out before it comes here (the phone's own echo canceller), so there is no delay to measure; the microphone goes through untouched, without AEC3, its noise suppression or gain control",
+                silent_share * 100.0
+            ),
+            Event::Upstream {
+                taken_out: false,
+                silent_share,
+                level_db,
+            } => write!(
+                f,
+                "the replies are heard in the microphone again (silent in {:.0}% of the frames their echo would come in, at {level_db:.1} dBFS there): back through AEC3",
+                silent_share * 100.0
+            ),
         }
     }
 }
@@ -168,10 +215,28 @@ pub struct Report {
     pub double_talk_seconds: f64,
     /// The echo's delay, when measured.
     pub delay_ms: Option<u64>,
+    /// The echo was taken out before it came: the microphone went through
+    /// untouched, the user being whatever is not silent in it.
+    pub passthrough: bool,
 }
 
 impl std::fmt::Display for Report {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.passthrough {
+            write!(
+                f,
+                "over {:.1} s of the replies, the microphone heard none of their echo, at {:.1} dBFS (taken out before it came here), and went through untouched",
+                self.seconds, self.before_db
+            )?;
+            if self.double_talk_seconds > 0.0 {
+                write!(
+                    f,
+                    "; {:.1} s of the user talking over them",
+                    self.double_talk_seconds
+                )?;
+            }
+            return Ok(());
+        }
         write!(f, "over {:.1} s of the replies' echo", self.seconds)?;
         match self.delay_ms {
             Some(delay) => write!(f, " ({delay} ms late)")?,
@@ -318,7 +383,53 @@ struct Delay {
     near: Envelope,
 }
 
+/// The microphone over the frames the far end's echo would come in (the
+/// far end audible at most MAX_DELAY before), in the last WINDOW.
+#[derive(Clone, Copy, Debug)]
+struct Silence {
+    /// Its share of them below NEAR_SILENT...
+    share: f64,
+    /// ...and its mean square there.
+    level: f64,
+}
+
 impl Delay {
+    /// The microphone where the far end's echo would come in, once the far
+    /// end was audible for MIN_AUDIBLE of the frames looked at.
+    fn silence(&self) -> Option<Silence> {
+        let end = self.near.end();
+        let from = end.saturating_sub(WINDOW as u64).max(self.near.first);
+        if end - from < MIN_WINDOW as u64 {
+            return None;
+        }
+        // The last frame the far end was audible in, from MAX_DELAY before.
+        let mut audible_at = None;
+        for frame in from.saturating_sub(MAX_DELAY as u64)..from {
+            if self.far.get(frame).is_some_and(|p| p > FAR_AUDIBLE) {
+                audible_at = Some(frame);
+            }
+        }
+        let (mut frames, mut silent, mut sum) = (0usize, 0usize, 0.0);
+        for frame in from..end {
+            if self.far.get(frame).is_some_and(|p| p > FAR_AUDIBLE) {
+                audible_at = Some(frame);
+            }
+            if !audible_at.is_some_and(|at| frame - at <= MAX_DELAY as u64) {
+                continue;
+            }
+            let near = self.near.get(frame).unwrap_or(0.0);
+            frames += 1;
+            sum += near;
+            if near < NEAR_SILENT {
+                silent += 1;
+            }
+        }
+        (frames >= MIN_AUDIBLE).then(|| Silence {
+            share: silent as f64 / frames as f64,
+            level: sum / frames as f64,
+        })
+    }
+
     fn measure(&self) -> Option<Measure> {
         let end = self.near.end();
         let from = end.saturating_sub(WINDOW as u64).max(self.near.first);
@@ -437,6 +548,9 @@ struct State {
     clean_sum: f64,
     clean_count: u32,
     stats: Stats,
+    /// The microphone came with the echo taken out: it goes through
+    /// untouched.
+    passthrough: bool,
 }
 
 impl State {
@@ -458,6 +572,8 @@ impl State {
         if far > FAR_AUDIBLE {
             self.stats.last_echo = Some(frame);
             match self.taken {
+                // Nothing of the echo comes: what is heard is the user.
+                _ if self.passthrough && before >= NEAR_SILENT => self.stats.double_talk += 1,
                 Some(m)
                     if before > DOUBLE_TALK_FLOOR
                         && before > DOUBLE_TALK_RATIO * m.coupling * far =>
@@ -505,23 +621,63 @@ impl State {
             )),
             double_talk_seconds: stats.double_talk as f64 * FRAME_NS as f64 / 1e9,
             delay_ms: self.taken.map(|m| m.frames * FRAME_NS / 1_000_000),
+            passthrough: self.passthrough,
         })
     }
 
-    /// Measures the delay again; moves the lead when `align` and the echo
-    /// is out of AEC3's reach, the echo counted so far reported first. A
-    /// new delay taken is told.
+    /// Measures the delay again, and whether the microphone came with the
+    /// echo taken out (see `upstream`).
     fn measure(&mut self, align: bool) -> Vec<Event> {
         let mut events = Vec::new();
-        let Some(measure) = self.delay.measure() else {
-            return events;
+        if let Some(measure) = self.delay.measure() {
+            self.follow(measure, align, &mut events);
+        }
+        self.upstream(&mut events);
+        events
+    }
+
+    /// Lets the microphone through untouched while it is silent where the
+    /// far end's echo would come, with no delay measured: its echo was taken
+    /// out before it came (a phone's own echo canceller); back through the
+    /// canceller once a delay is measured, or the microphone is no longer
+    /// silent there. The echo counted so far is reported first.
+    fn upstream(&mut self, events: &mut Vec<Event>) {
+        let Some(silence) = self.delay.silence() else {
+            return;
         };
+        let change = if self.passthrough {
+            self.taken.is_some() || silence.share < HEARD_SHARE
+        } else {
+            self.taken.is_none() && silence.share >= SILENT_SHARE
+        };
+        if !change {
+            return;
+        }
+        if let Some(report) = self.finish() {
+            events.push(Event::Report(report));
+        }
+        self.passthrough = !self.passthrough;
+        // Frames on their way through the canceller come out of it no more.
+        self.pending.clear();
+        self.clean_sum = 0.0;
+        self.clean_count = 0;
+        events.push(Event::Upstream {
+            taken_out: self.passthrough,
+            silent_share: silence.share,
+            level_db: db(silence.level),
+        });
+    }
+
+    /// Takes a delay measured when it agrees with the one before; moves the
+    /// lead when `align` and the echo is out of AEC3's reach, the echo
+    /// counted so far reported first. A new delay taken is told.
+    fn follow(&mut self, measure: Measure, align: bool, events: &mut Vec<Event>) {
         let agreed = self
             .last
             .is_some_and(|last| last.frames.abs_diff(measure.frames) <= AGREE);
         self.last = Some(measure);
         if !agreed {
-            return events;
+            return;
         }
         let new = self
             .taken
@@ -557,7 +713,6 @@ impl State {
                 moved,
             });
         }
-        events
     }
 }
 
@@ -624,6 +779,8 @@ pub struct EchoCanceller {
     clock: gst::Clock,
     base: gst::ClockTime,
     state: Arc<Mutex<State>>,
+    /// Where the microphone goes when it passes through untouched.
+    on_clean: OnClean,
     on_report: OnReport,
     /// Buffers of far end pushed, for tests.
     far_buffers: AtomicU64,
@@ -727,10 +884,12 @@ impl EchoCanceller {
             clean_sum: 0.0,
             clean_count: 0,
             stats: Stats::default(),
+            passthrough: false,
         }));
         {
             let state = state.clone();
             let on_report = on_report.clone();
+            let on_clean = on_clean.clone();
             let per_frame = (RATE as u64 * FRAME_NS / 1_000_000_000) as u32;
             sink.set_callbacks(
                 gst_app::AppSinkCallbacks::builder()
@@ -789,6 +948,7 @@ impl EchoCanceller {
             clock,
             base,
             state,
+            on_clean,
             on_report,
             far_buffers: AtomicU64::new(0),
         })
@@ -865,50 +1025,61 @@ impl EchoCanceller {
     pub fn near_at(&self, samples: Vec<u8>, at: gst::ClockTime) {
         let duration =
             gst::ClockTime::from_nseconds(samples.len() as u64 / 2 * 1_000_000_000 / RATE as u64);
-        let mut buffer = gst::Buffer::from_slice(samples);
-        let events = {
+        let (at, passthrough, events) = {
             let mut state = self.state.lock().unwrap();
             let at = at.max(state.near_next);
             state.near_next = at + duration;
-            let mut frames = 0;
+            let passthrough = state.passthrough;
+            let mut frames = Vec::new();
             {
                 let State {
-                    near_frames,
-                    delay,
-                    pending,
-                    ..
+                    near_frames, delay, ..
                 } = &mut *state;
-                let map = buffer.map_readable().unwrap();
                 near_frames.add(
                     at.nseconds(),
                     RATE as u64,
-                    s16_squares(&map),
+                    s16_squares(&samples),
                     |frame, power| {
                         delay.near.add(frame, power);
-                        pending.push_back((frame, power));
-                        frames += 1;
+                        frames.push((frame, power));
                     },
                 );
+            }
+            let mut events = Vec::new();
+            state.unmeasured += frames.len() as u64;
+            for (frame, power) in frames {
+                if passthrough {
+                    // Untouched: as it came.
+                    if let Some(report) = state.count(frame, power, power) {
+                        events.push(Event::Report(report));
+                    }
+                } else {
+                    state.pending.push_back((frame, power));
+                }
             }
             // The canceller gives as much as it takes: more pending means
             // its output was lost.
             while state.pending.len() > 100 {
                 state.pending.pop_front();
             }
-            state.unmeasured += frames;
-            let events = if state.unmeasured >= MEASURE_EVERY {
+            if state.unmeasured >= MEASURE_EVERY {
                 state.unmeasured = 0;
-                state.measure(self.align)
-            } else {
-                Vec::new()
-            };
-            let buffer = buffer.make_mut();
-            buffer.set_pts(at);
-            buffer.set_duration(duration);
-            events
+                events.extend(state.measure(self.align));
+            }
+            (at, passthrough, events)
         };
         for event in events {
             (self.on_report)(event);
+        }
+        if passthrough {
+            (self.on_clean)(samples);
+            return;
+        }
+        let mut buffer = gst::Buffer::from_slice(samples);
+        {
+            let buffer = buffer.make_mut();
+            buffer.set_pts(at);
+            buffer.set_duration(duration);
         }
         let _ = self.near.push(buffer);
     }
@@ -1056,6 +1227,55 @@ mod tests {
         delay_ms: Option<u64>,
         lead_ms: u64,
         reports: Vec<Report>,
+        /// Whether the microphone was ever taken as coming with the echo
+        /// taken out.
+        passthrough: bool,
+    }
+
+    /// Feeds the far end `far` and the microphone `near` (16 kHz), in 10 ms
+    /// blocks, the far end first (it went out before its echo), as a call
+    /// does with the far end `lead_ms` ahead; gives what came out, the
+    /// events and the lead at the end.
+    fn drive(far: &[f64], near: &[f64], lead_ms: u64, align: bool) -> (Vec<f64>, Vec<Event>, u64) {
+        gst::init().unwrap();
+        let clean: Arc<Mutex<Vec<u8>>> = Arc::default();
+        let events: Arc<Mutex<Vec<Event>>> = Arc::default();
+        let canceller = {
+            let clean = clean.clone();
+            EchoCanceller::start(
+                &Settings {
+                    lead: gst::ClockTime::from_mseconds(lead_ms),
+                    align,
+                    noise_suppression: false,
+                    gain_control: false,
+                },
+                &s16_caps(RATE),
+                Arc::new(move |samples| clean.lock().unwrap().extend(samples)),
+                {
+                    let events = events.clone();
+                    Arc::new(move |event| {
+                        eprintln!("  {event}");
+                        events.lock().unwrap().push(event)
+                    })
+                },
+            )
+            .unwrap()
+        };
+        let block = RATE as usize / 100;
+        for (i, (f, n)) in s16(far)
+            .chunks(block * 2)
+            .zip(s16(near).chunks(block * 2))
+            .enumerate()
+        {
+            let at = gst::ClockTime::from_mseconds(i as u64 * 10);
+            canceller.far_at(f, at, gst::ClockTime::from_mseconds(10));
+            canceller.near_at(n.to_vec(), at);
+        }
+        let lead_ms = canceller.lead().mseconds();
+        drop(canceller);
+        let out = from_s16(&clean.lock().unwrap());
+        let events = std::mem::take(&mut *events.lock().unwrap());
+        (out, events, lead_ms)
     }
 
     /// Plays `seconds` of a reply whose echo comes back `delay_ms` later,
@@ -1114,55 +1334,22 @@ mod tests {
                 near[i] += user[i] * 0.5;
             }
         }
-        let clean: Arc<Mutex<Vec<u8>>> = Arc::default();
-        let events: Arc<Mutex<Vec<Event>>> = Arc::default();
-        let canceller = {
-            let clean = clean.clone();
-            EchoCanceller::start(
-                &Settings {
-                    lead: gst::ClockTime::from_mseconds(lead_ms),
-                    align,
-                    noise_suppression: false,
-                    gain_control: false,
-                },
-                &s16_caps(RATE),
-                Arc::new(move |samples| clean.lock().unwrap().extend(samples)),
-                {
-                    let events = events.clone();
-                    Arc::new(move |event| {
-                        eprintln!("  {event}");
-                        events.lock().unwrap().push(event)
-                    })
-                },
-            )
-            .unwrap()
-        };
-        // 10 ms blocks, the far end first: it went out before its echo.
-        let block = rate / 100;
         // Then 3 s of silence and the room's noise: the last report.
         let tail = rate * 3;
-        let far_bytes = s16(&far
-            .iter()
-            .copied()
-            .chain(std::iter::repeat_n(0.0, tail))
-            .collect::<Vec<_>>());
-        let near_bytes = s16(&near
-            .iter()
-            .copied()
-            .chain((0..tail).map(|_| 0.0005 * noise.next()))
-            .collect::<Vec<_>>());
-        for (i, (f, n)) in far_bytes
-            .chunks(block * 2)
-            .zip(near_bytes.chunks(block * 2))
-            .enumerate()
-        {
-            let at = gst::ClockTime::from_mseconds(i as u64 * 10);
-            canceller.far_at(f, at, gst::ClockTime::from_mseconds(10));
-            canceller.near_at(n.to_vec(), at);
-        }
-        let lead_ms = canceller.lead().mseconds();
-        drop(canceller);
-        let mut out = from_s16(&clean.lock().unwrap());
+        let (mut out, events, lead_ms) = drive(
+            &far.iter()
+                .copied()
+                .chain(std::iter::repeat_n(0.0, tail))
+                .collect::<Vec<_>>(),
+            &near
+                .iter()
+                .copied()
+                .chain((0..tail).map(|_| 0.0005 * noise.next()))
+                .collect::<Vec<_>>(),
+            lead_ms,
+            align,
+        );
+        let block = rate / 100;
         out.truncate(near.len());
         assert!(
             out.len() + 2 * block >= near.len(),
@@ -1174,7 +1361,6 @@ mod tests {
         let from = (settle * rate as f64) as usize;
         let to = double_from.min(out.len());
         let user_part = &user[double_from..out.len().min(user.len())];
-        let events = std::mem::take(&mut *events.lock().unwrap());
         Run {
             echo_db: db(mean_square(&echo[from..to])),
             residual_db: db(mean_square(&out[from..to])),
@@ -1194,6 +1380,15 @@ mod tests {
                     _ => None,
                 })
                 .collect(),
+            passthrough: events.iter().any(|e| {
+                matches!(
+                    e,
+                    Event::Upstream {
+                        taken_out: true,
+                        ..
+                    }
+                )
+            }),
         }
     }
 
@@ -1211,6 +1406,8 @@ mod tests {
                 removed > 20.0,
                 "only {removed:.1} dB taken out at {delay} ms"
             );
+            // An echo is there: the microphone goes through the canceller.
+            assert!(!run.passthrough);
             // The user is still heard while the reply plays.
             assert!(
                 run.near_after_db > run.near_db - 10.0,
@@ -1389,6 +1586,108 @@ mod tests {
         }
     }
 
+    /// The Roamgate app's microphone on the loudspeaker (2026-11-21): the
+    /// phone's own echo canceller took the replies out, it is digital
+    /// silence while they play (-88.9 dBFS) and only the user is heard in
+    /// it, so no delay was ever measured and AEC3 worked on the user alone.
+    /// It goes through untouched; once the echo comes in it again (the
+    /// phone's canceller let go), back through AEC3, its delay measured.
+    #[test]
+    fn passes_a_microphone_whose_echo_the_phone_took_out() {
+        let rate = RATE as usize;
+        let seconds = 26.0;
+        let far = speech(seconds, 210.0, 1);
+        let user = speech(seconds, 120.0, 2);
+        let mut noise = Noise(5);
+        // The phone's silence: a sample or two of noise.
+        let mut near: Vec<f64> = (0..far.len())
+            .map(|_| 3.0 / 32768.0 * noise.next())
+            .collect();
+        // The user talks over the replies from 6 to 9 s.
+        for i in 6 * rate..9 * rate {
+            near[i] += user[i] * 0.5;
+        }
+        // From 12 s on, the echo comes in, 300 ms late at -10 dB.
+        let echo_from = 12 * rate;
+        let delay = 300 * rate / 1000;
+        let roomed = convolve(&far, &room());
+        for i in echo_from..near.len() {
+            near[i] += roomed[i - delay] * 10f64.powf(-0.5) + 0.0005 * noise.next();
+        }
+        let (out, events, _) = drive(&far, &near, DEFAULT_LEAD_MS, true);
+        let taken_out = events
+            .iter()
+            .position(|e| {
+                matches!(
+                    e,
+                    Event::Upstream {
+                        taken_out: true,
+                        ..
+                    }
+                )
+            })
+            .expect("the echo taken out before was not told");
+        let heard = events
+            .iter()
+            .position(|e| {
+                matches!(
+                    e,
+                    Event::Upstream {
+                        taken_out: false,
+                        ..
+                    }
+                )
+            })
+            .expect("the echo coming in again was not told");
+        assert!(taken_out < heard);
+        // No delay while there is no echo; one once it comes in.
+        let first_delay = events
+            .iter()
+            .position(|e| matches!(e, Event::Delay { .. }))
+            .expect("no delay measured once the echo came");
+        assert!(first_delay > taken_out);
+        let measured = events
+            .iter()
+            .rev()
+            .find_map(|e| match e {
+                Event::Delay { delay_ms, .. } => Some(*delay_ms),
+                _ => None,
+            })
+            .unwrap();
+        assert!(measured.abs_diff(300) <= 30, "{measured} ms measured");
+        // The user, from 5 to 11 s, came out exactly as they went in.
+        let to_s16 = |samples: &[f64]| from_s16(&s16(samples));
+        assert_eq!(
+            out[5 * rate..11 * rate],
+            to_s16(&near[5 * rate..11 * rate])[..]
+        );
+        // The reports said so: the echo was not heard, the user was.
+        let passed = events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Report(r) if r.passthrough => Some(*r),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            !passed.is_empty(),
+            "no report of the microphone passed through"
+        );
+        assert!(passed.iter().all(|r| r.before_db < -80.0), "{passed:?}");
+        assert!(
+            passed.iter().map(|r| r.double_talk_seconds).sum::<f64>() > 2.0,
+            "{passed:?}"
+        );
+        // The echo, once back through AEC3, is taken out (the last 4 s).
+        let from = out.len().min(near.len()) - 4 * rate;
+        let to = out.len().min(near.len());
+        let echo: Vec<f64> = (from..to)
+            .map(|i| roomed[i - delay] * 10f64.powf(-0.5))
+            .collect();
+        let removed = db(mean_square(&echo)) - db(mean_square(&out[from..to]));
+        assert!(removed > 15.0, "only {removed:.1} dB taken out");
+    }
+
     /// An echo within AEC3's reach from the lead leaves the lead alone.
     #[test]
     fn keeps_a_lead_in_reach() {
@@ -1404,6 +1703,7 @@ mod tests {
             2.0,
         );
         assert_eq!(run.lead_ms, DEFAULT_LEAD_MS);
+        assert!(!run.passthrough);
         let measured = run.delay_ms.expect("no delay measured");
         assert!(measured.abs_diff(300) <= 30, "{measured} ms measured");
         assert!(run.echo_db - run.residual_db > 20.0);
@@ -1441,6 +1741,7 @@ mod tests {
             removed_db: 21.3,
             double_talk_seconds: 0.0,
             delay_ms: None,
+            passthrough: false,
         };
         assert_eq!(
             report.to_string(),
@@ -1464,6 +1765,28 @@ mod tests {
             }
             .to_string(),
             "the echo comes 640 ms after the replies go out (correlation 0.71): the far end now leads by 440 ms, for AEC3 to find it"
+        );
+        let report = Report {
+            seconds: 15.4,
+            before_db: -88.9,
+            after_db: -88.9,
+            removed_db: 0.0,
+            double_talk_seconds: 2.0,
+            delay_ms: None,
+            passthrough: true,
+        };
+        assert_eq!(
+            report.to_string(),
+            "over 15.4 s of the replies, the microphone heard none of their echo, at -88.9 dBFS (taken out before it came here), and went through untouched; 2.0 s of the user talking over them"
+        );
+        assert_eq!(
+            Event::Upstream {
+                taken_out: true,
+                silent_share: 0.97,
+                level_db: -88.9
+            }
+            .to_string(),
+            "the microphone hears none of the replies while they play (silent in 97% of the frames their echo would come in, at -88.9 dBFS there): their echo is taken out before it comes here (the phone's own echo canceller), so there is no delay to measure; the microphone goes through untouched, without AEC3, its noise suppression or gain control"
         );
     }
 }
