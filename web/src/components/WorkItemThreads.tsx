@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   REVIEW_USER,
-  type ReviewComment,
   type ReviewMessagePart,
   type ReviewSnapshot,
   type ReviewThread,
@@ -22,8 +20,17 @@ import {
   undeliveredComments,
   writeThenReadBack,
 } from "./ChatThreads";
-import { type MessageParts, NoteBody } from "./ReviewNoteBody";
-import { ThreadCard } from "./ThreadCard";
+import {
+  commentOnPart,
+  MessageThread,
+  type MessageThreadsScope,
+  messageStopKey,
+  messageStops,
+  SelectionOffer,
+  threadMessageParts,
+  useSelectedWords,
+} from "./MessageThreads";
+import { NoteBody } from "./ReviewNoteBody";
 import { useThreadKeys } from "./useThreadKeys";
 
 /**
@@ -237,257 +244,70 @@ export function useWorkItemView(): WorkItemView {
   };
 }
 
-/** The threads on a comment (anchor `message`), in order. */
-function threadsOn(
-  threads: readonly ReviewThread[],
-  comment: string,
-): ReviewThread[] {
-  return threads.filter((thread) => thread.anchor.message?.comment === comment);
-}
-
-/** A part's words, as the quote of a thread on it. */
-function partText(part: HTMLElement): string {
-  return (part.textContent ?? "").trim().slice(0, 4000);
-}
-
 /**
- * A comment of the item as a message in parts, as a chat's: the threads
- * on its parts drawn under them (and the one being written), the + in a
- * part's margin opening one, a click on a part putting j / k on it.
+ * The item's threads as the chat's are drawn (MessageThreads): a thread
+ * on a part is anchored on the item, its box takes the item's images, a
+ * thread's head says where it was written.
  */
-function WorkMessageBody({
-  api,
-  item,
-  thread,
-  message,
-  seen,
-  single,
-  onLeave,
-}: {
-  api: WorkItemThreadsApi;
-  item: string;
-  /** The thread the message is in (a thread on its parts is in it too). */
-  thread: ReviewThread;
-  message: ReviewComment;
-  /** The threads this one is drawn in: not drawn again inside it. */
-  seen: ReadonlySet<string>;
-  /** A message in one part is a stop too (the description). */
-  single?: boolean;
-  onLeave: () => void;
-}) {
-  const notes = threadsOn(api.threads, message.id)
-    .filter((nested) => !seen.has(nested.id))
-    .map((nested) => ({
-      key: nested.id,
-      quote: nested.anchor.message?.quote ?? "",
-      node: (
-        <WorkThreadCard
-          api={api}
-          item={item}
-          shown={nested}
-          seen={new Set([...seen, nested.id])}
-          onLeave={onLeave}
-        />
-      ),
-    }));
-  const draft = api.partDraft;
-  if (draft?.comment === message.id)
-    notes.push({
-      key: "draft",
-      quote: draft.quote ?? "",
-      node: (
-        <div className="chat-thread is-draft work-thread-draft">
-          <ThreadEditor
-            placeholder="Comment on this part..."
-            onAddImage={api.addImage}
-            onLeave={onLeave}
-            onClose={() => {
-              api.setPartDraft(null);
-              onLeave();
-            }}
-            onSave={(text, id) =>
-              api
-                .send({
-                  id,
-                  kind: "discussion",
-                  anchor: { work: { item }, message: draft },
-                  text,
-                })
-                .then((ok) => {
-                  if (!ok) return;
-                  api.setPartDraft(null);
-                  onLeave();
-                })
-            }
-          />
-        </div>
-      ),
-    });
-  const at = `q:${message.id}:`;
-  const parts: MessageParts = {
-    notes,
-    focused: api.cursor?.startsWith(at)
-      ? Number(api.cursor.slice(at.length))
+export function workThreadsScope(
+  api: WorkItemThreadsApi,
+  item: string,
+  description: ReviewThread | null | undefined,
+  onLeave: () => void,
+): MessageThreadsScope {
+  const byMessage = new Map<string, ReviewThread[]>();
+  const drawn = new Set<string>();
+  for (const thread of api.threads) {
+    for (const comment of thread.comments) drawn.add(comment.id);
+    const comment = thread.anchor.message?.comment;
+    if (comment)
+      byMessage.set(comment, [...(byMessage.get(comment) ?? []), thread]);
+  }
+  return {
+    byMessage,
+    cursor: api.cursor,
+    setCursor: api.setCursor,
+    flipped: api.flipped,
+    toggleFold: api.toggleFold,
+    replying: api.replying,
+    setReplying: api.setReplying,
+    partDraft: api.partDraft,
+    setPartDraft: api.setPartDraft,
+    partAnchor: (part) => ({ work: { item }, message: part }),
+    partPlaceholder: "Comment on this part...",
+    pendingById: api.pendingById,
+    undelivered: api.waiting
+      ? {
+          ids: api.undelivered,
+          text: api.waiting.noOwner
+            ? "Waiting for the owner session"
+            : `Not delivered: ${api.waiting.reason}`,
+        }
       : null,
-    onComment: (quote) =>
-      api.setPartDraft({
-        thread: thread.id,
-        comment: message.id,
-        quote: quote.trim().slice(0, 4000),
-      }),
-    // A click on a part puts j / k on it; on the one part of a thread's
-    // message, on the message, its stop (a phone shows its + then).
-    onSelect: (index) => {
-      const body = document.querySelector(
-        `[data-message-id="${CSS.escape(message.id)}"]`,
-      );
-      const parts =
-        body?.querySelectorAll(":scope > .rc-text > [data-part]").length ?? 0;
-      api.setCursor(
-        !single && parts <= 1 ? `m:${message.id}` : `${at}${index}`,
-      );
-    },
-    ...(single ? { single: true } : {}),
-  };
-  return <NoteBody text={message.body} parts={parts} />;
-}
-
-/**
- * A thread's card: its messages as messages in parts, the threads on
- * their parts in them. The description's own thread shows its answers
- * only (its first comment is the description, drawn above).
- */
-function WorkThreadCard({
-  api,
-  item,
-  shown,
-  description,
-  seen,
-  onLeave,
-}: {
-  api: WorkItemThreadsApi;
-  item: string;
-  shown: ReviewThread;
-  description?: ReviewThread | null;
-  seen: ReadonlySet<string>;
-  onLeave: () => void;
-}) {
-  const thread =
-    shown.id === description?.id
-      ? { ...shown, comments: shown.comments.slice(1) }
-      : shown;
-  if (!thread.comments.length) return null;
-  const part = thread.anchor.message;
-  const pendingOf = (message: ReviewComment, index: number) =>
-    api.pendingById.get(message.id) ??
-    (index === 0 && thread === shown
-      ? api.pendingById.get(thread.id)
-      : undefined);
-  return (
-    <ThreadCard
-      thread={thread}
-      folded={thread.resolved !== api.flipped.has(thread.id)}
-      cursor={api.cursor}
-      onToggleFold={() => api.toggleFold(thread)}
-      onReply={() => api.setReplying(thread.id)}
-      onResolve={() =>
-        void api.write("review.resolve", {
-          comment_id: thread.id,
-          resolved: !thread.resolved,
-        })
-      }
-      onDelete={() =>
-        void api.write("review.delete", { comment_id: thread.id })
-      }
-      head={
-        thread.anchor.work?.quote ? (
+    write: api.write,
+    send: api.send,
+    box: () => ({ onAddImage: api.addImage }),
+    onLeave,
+    head: (thread) => {
+      const part = thread.anchor.message;
+      if (thread.anchor.work?.quote)
+        return (
           <blockquote className="work-thread-quote">
             {thread.anchor.work.quote}
           </blockquote>
-        ) : thread.id === description?.id ? (
-          <p className="work-thread-on">On the description</p>
-        ) : part && seen.size === 1 ? (
-          // On a comment not drawn (one deleted): on its own, with the words.
-          part.quote ? (
-            <blockquote className="work-thread-quote">{part.quote}</blockquote>
-          ) : (
-            <p className="work-thread-on">On an earlier comment</p>
-          )
-        ) : undefined
-      }
-      messageClass={(message, index) =>
-        pendingOf(message, index) ? " is-pending" : ""
-      }
-      authorExtra={(message, index) => {
-        const pending = pendingOf(message, index);
-        if (pending)
-          return (
-            <span
-              className={`chat-thread-pending${pending.error ? " is-failed" : ""}`}
-              role={pending.error ? "alert" : "status"}
-            >
-              {pending.error ? "Not saved: Send tries again" : "Sending..."}
-            </span>
-          );
-        if (api.undelivered.has(message.id) && api.waiting)
-          return (
-            <>
-              <span className="chat-thread-pending is-failed" role="status">
-                {api.waiting.noOwner
-                  ? "Waiting for the owner session"
-                  : `Not delivered: ${api.waiting.reason}`}
-              </span>
-              <button
-                type="button"
-                className="chat-thread-retry"
-                onClick={() => void api.write("review.retry", {})}
-              >
-                Retry
-              </button>
-            </>
-          );
-        return null;
-      }}
-      body={(message) => (
-        <WorkMessageBody
-          api={api}
-          item={item}
-          thread={thread}
-          message={message}
-          seen={seen}
-          onLeave={onLeave}
-        />
-      )}
-      footer={
-        api.replying === thread.id && !api.pendingById.has(thread.id) ? (
-          <ThreadEditor
-            placeholder="Reply..."
-            onAddImage={api.addImage}
-            onLeave={onLeave}
-            onClose={() => {
-              api.setReplying(null);
-              onLeave();
-            }}
-            onSave={(text, id) =>
-              api
-                .send({
-                  id,
-                  replyTo: thread.id,
-                  kind: thread.kind,
-                  anchor: thread.anchor,
-                  text,
-                })
-                .then((ok) => {
-                  if (!ok) return;
-                  api.setReplying(null);
-                  onLeave();
-                })
-            }
-          />
-        ) : undefined
-      }
-    />
-  );
+        );
+      if (thread.id === description?.id)
+        return <p className="work-thread-on">On the description</p>;
+      // On a comment not drawn (one deleted): on its own, with the words.
+      if (part && !drawn.has(part.comment))
+        return part.quote ? (
+          <blockquote className="work-thread-quote">{part.quote}</blockquote>
+        ) : (
+          <p className="work-thread-on">On an earlier comment</p>
+        );
+      return undefined;
+    },
+  };
 }
 
 /**
@@ -508,17 +328,15 @@ export function WorkDescription({
 }) {
   const message = thread.comments[0];
   if (!message) return null;
+  const scope = workThreadsScope(api, item, thread, onLeave);
   return (
     <div className="work-description" aria-label="Description">
-      <div className="chat-review work-message" data-message-id={message.id}>
-        <WorkMessageBody
-          api={api}
-          item={item}
-          thread={thread}
-          message={message}
-          seen={new Set([thread.id])}
-          single
-          onLeave={onLeave}
+      <div className="chat-review" data-message-id={message.id}>
+        <NoteBody
+          text={message.body}
+          parts={threadMessageParts(scope, thread, message.id, {
+            single: true,
+          })}
         />
       </div>
     </div>
@@ -532,8 +350,8 @@ export function WorkDescription({
  * detail's description) is drawn from its answers on. A thread on a part
  * of a comment (anchor `message`: the thread, the comment, the words) is
  * drawn under that part, in the comment, as a chat's threads on a
- * message's parts are; words selected in a comment offer Comment, a
- * thread quoting them.
+ * message's parts are (MessageThreads); words selected in a comment offer
+ * Comment, a thread quoting them.
  */
 export function WorkItemThreads({
   item,
@@ -567,47 +385,23 @@ export function WorkItemThreads({
     // A later change of compose opens the box again; the threads read
     // then are the current ones.
   }, [compose]);
-  /**
-   * The comments drawn as messages (the description above when shown): a
-   * thread on one of them is drawn in it; on another, on its own.
-   */
-  const drawn = useMemo(() => {
-    const ids = new Set<string>();
-    for (const thread of api.threads)
-      thread.comments.forEach((comment, index) => {
-        if (thread.id !== description?.id || index > 0 || description)
-          ids.add(comment.id);
-      });
-    return ids;
-  }, [api.threads, description]);
+  const scope = workThreadsScope(api, item, description, onLeave);
+  // A thread on a comment is drawn in it; one on a comment not drawn (one
+  // deleted), on its own.
   const roots = api.threads.filter((thread) => {
     const parent = thread.anchor.message?.comment;
-    return !parent || !drawn.has(parent);
+    return !parent || !drawnIn(api, parent);
   });
 
   // Words selected in a comment (the description too) offer a thread on
   // it, quoting them.
-  const [selection, setSelection] = useState<SelectedWords | null>(null);
-  useEffect(() => {
-    let timer = 0;
-    const onChange = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        const root = rootRef.current;
-        setSelection(
-          selectedWords(
-            root?.closest<HTMLElement>("[data-work-keys]") ?? root,
-            description?.id ?? null,
-          ),
-        );
-      }, 200);
-    };
-    document.addEventListener("selectionchange", onChange);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener("selectionchange", onChange);
-    };
-  }, [description?.id]);
+  const [selection, clearSelection] = useSelectedWords((start) =>
+    workWordsLocate(
+      rootRef.current?.closest<HTMLElement>("[data-work-keys]") ??
+        rootRef.current,
+      description?.id ?? null,
+    )(start),
+  );
 
   return (
     <div
@@ -620,19 +414,18 @@ export function WorkItemThreads({
           {api.error}
         </p>
       ) : null}
-      {roots.map((shown) => (
-        <WorkThreadCard
-          key={shown.id}
-          api={api}
-          item={item}
-          shown={shown}
-          description={description}
-          seen={new Set([shown.id])}
-          onLeave={onLeave}
-        />
-      ))}
+      {roots.map((shown) => {
+        // The description's own thread: its answers, under the description.
+        const thread =
+          shown.id === description?.id
+            ? { ...shown, comments: shown.comments.slice(1) }
+            : shown;
+        return thread.comments.length ? (
+          <MessageThread key={thread.id} thread={thread} scope={scope} />
+        ) : null;
+      })}
       {composing ? (
-        <div className="chat-thread is-draft work-thread-draft">
+        <div className="chat-thread is-draft">
           <ThreadEditor
             placeholder="Comment for the owner session..."
             onAddImage={api.addImage}
@@ -675,67 +468,55 @@ export function WorkItemThreads({
           ) : null}
         </div>
       )}
-      {selection
-        ? createPortal(
-            <button
-              type="button"
-              className="chat-thread-select work-thread-select"
-              style={{ left: selection.x, top: selection.y }}
-              // Keeps the selection while the button is pressed.
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={() => {
-                api.setPartDraft({
-                  thread: selection.thread,
-                  comment: selection.comment,
-                  quote: selection.quote,
-                });
-                setSelection(null);
-                window.getSelection()?.removeAllRanges();
-              }}
-            >
-              Comment
-            </button>,
-            document.body,
-          )
-        : null}
+      {selection ? (
+        <SelectionOffer
+          at={selection}
+          // Over the board's floating panel.
+          className="work-thread-select"
+          onClick={() => {
+            api.setPartDraft({
+              thread: selection.thread,
+              comment: selection.comment,
+              quote: selection.quote.slice(0, 4000),
+            });
+            clearSelection();
+            window.getSelection()?.removeAllRanges();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
-/** A stop of the detail's keys: its place, as the cursor holds it. */
-function workStopKey(stop: HTMLElement): string {
-  if (stop.dataset.chatStop) return stop.dataset.chatStop;
-  const message =
-    stop.closest<HTMLElement>("[data-message-id]")?.dataset.messageId;
-  return `q:${message}:${stop.dataset.part}`;
+/** Whether a comment of the item's threads is drawn (any of them is). */
+function drawnIn(api: WorkItemThreadsApi, comment: string): boolean {
+  return api.threads.some((thread) =>
+    thread.comments.some((each) => each.id === comment),
+  );
 }
 
 /**
- * A thread's message in several parts: each is a stop, after the message
- * itself (one part: the message is the stop). The description's parts
- * are stops as they are.
+ * Where words selected in the detail are: the thread and comment they are
+ * in (a nested thread's own for words of its messages; the description's
+ * thread for its words), not in a box being written.
  */
-function partOfLongMessage(stop: HTMLElement): boolean {
-  const body = stop.closest<HTMLElement>(".chat-thread-body");
-  if (!body) return true;
-  return (
-    body.querySelectorAll(":scope [data-part]").length -
-      body.querySelectorAll(":scope .rc-part-notes [data-part]").length >
-    1
-  );
-}
-
-/** The stops of the detail's j / k, in order: parts, messages, folded lines. */
-export function workStops(list: HTMLElement): HTMLElement[] {
-  return Array.from(
-    list.querySelectorAll<HTMLElement>(
-      ".chat-review [data-part], [data-chat-stop]",
-    ),
-  ).filter(
-    (stop) =>
-      (stop.dataset.chatStop || partOfLongMessage(stop)) &&
-      stop.getClientRects().length > 0,
-  );
+export function workWordsLocate(
+  root: HTMLElement | null,
+  description: string | null,
+): (start: Element) => { thread: string; comment: string } | null {
+  return (start) => {
+    if (
+      !root?.contains(start) ||
+      start.closest(".chat-thread-editor, input, textarea")
+    )
+      return null;
+    const body = start.closest<HTMLElement>("[data-message-id]");
+    const comment = body?.dataset.messageId;
+    const thread =
+      body?.closest<HTMLElement>(".chat-thread[data-thread-id]")?.dataset
+        .threadId ?? (body?.closest(".work-description") ? description : null);
+    return comment && thread ? { thread, comment } : null;
+  };
 }
 
 /**
@@ -806,8 +587,8 @@ export function useWorkItemKeys({
     return !!draft;
   };
   useThreadKeys(getList, undefined, {
-    stops: workStops,
-    keyOf: workStopKey,
+    stops: messageStops,
+    keyOf: messageStopKey,
     stopAt: (target) =>
       target.closest<HTMLElement>("[data-chat-stop], [data-part]"),
     cursor: api.cursor,
@@ -829,24 +610,11 @@ export function useWorkItemKeys({
     remove: (thread) =>
       void api.write("review.delete", { comment_id: thread.id }),
     reply: (thread) => api.setReplying(thread.id),
-    commentFirst: (here, thread) => {
-      // A comment being written: back into it.
-      if (draftOpen()) return true;
-      if (here?.dataset.part === undefined) return false;
-      // A part of a comment (the description's too): a thread on it.
-      const message =
-        here.closest<HTMLElement>("[data-message-id]")?.dataset.messageId;
-      const owner =
-        thread?.id ??
-        (here.closest(".work-description") ? description?.id : undefined);
-      if (!message || !owner) return false;
-      api.setPartDraft({
-        thread: owner,
-        comment: message,
-        quote: partText(here),
-      });
-      return true;
-    },
+    // A part of a comment (the description's too): a thread on it.
+    commentFirst: (here, thread) =>
+      commentOnPart(getList(), here, thread, api.setPartDraft, (part) =>
+        part.closest(".work-description") ? description?.id : undefined,
+      ),
     comment: () => false,
     otherKey: (key, at) => {
       const inThread = !!at.here?.closest("[data-thread-id]");
@@ -858,68 +626,6 @@ export function useWorkItemKeys({
       return fallback(key);
     },
   });
-}
-
-/** Words selected in a comment: its thread, the comment, where Comment goes. */
-export type SelectedWords = {
-  thread: string;
-  comment: string;
-  quote: string;
-  x: number;
-  y: number;
-};
-
-/**
- * The words selected in a comment under `root` (not in a box being
- * written): the thread and comment they are in (a nested thread's own,
- * for words of its messages; the description's thread for its words),
- * and where to offer Comment.
- */
-export function selectedWords(
-  root: HTMLElement | null,
-  description: string | null = null,
-): SelectedWords | null {
-  const current = window.getSelection();
-  const range =
-    current && !current.isCollapsed && current.rangeCount === 1
-      ? current.getRangeAt(0)
-      : null;
-  const start =
-    range?.startContainer instanceof Element
-      ? range.startContainer
-      : range?.startContainer.parentElement;
-  const quote = current?.toString().trim() ?? "";
-  if (
-    !range ||
-    !start ||
-    !quote ||
-    !root?.contains(start) ||
-    start.closest(".chat-thread-editor, input, textarea")
-  )
-    return null;
-  const body = start.closest<HTMLElement>("[data-message-id]");
-  const comment = body?.dataset.messageId;
-  const thread =
-    body?.closest<HTMLElement>(".chat-thread[data-thread-id]")?.dataset
-      .threadId ?? (body?.closest(".work-description") ? description : null);
-  if (!comment || !thread) return null;
-  const rect = range.getBoundingClientRect();
-  // On a touch screen the selection's handles hang under its ends: Comment
-  // goes below them, 44px high, where a finger reaches it.
-  const touch = window.matchMedia?.("(pointer: coarse)").matches;
-  return {
-    thread,
-    comment,
-    quote: quote.slice(0, 4000),
-    x: Math.max(8, Math.min(rect.left, window.innerWidth - 120)),
-    y: Math.max(
-      8,
-      Math.min(
-        rect.bottom + (touch ? 32 : 8),
-        window.innerHeight - (touch ? 52 : 44),
-      ),
-    ),
-  };
 }
 
 /** Whether a thread's last word is the user's (for the card's badge). */

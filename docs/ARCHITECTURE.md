@@ -1815,15 +1815,22 @@ another thread (an answer to that comment, or to words of it) adds
 `message: {thread, comment, quote?}` to the item's anchor (`quote` is
 optional on every review's message part: none means the whole message):
 the detail draws the description and every comment as messages in parts
-on the chat threads' model (`WorkItemThreads.tsx`: `WorkDescription`,
-`WorkThreadCard`, through `NoteBody`'s parts in the chat's `.chat-review`
-gutter, the `+` beside a part opening a thread on it quoting it, words
-selected offering Comment), a thread on a part drawn under that part;
-`useWorkItemKeys` gives the detail the chat threads' keys
-(`useThreadKeys` on the detail's list, `[data-work-keys]`: the stops are
-the description's parts, the threads' messages and the parts of a long
-one; the board's handler leaves the keys to the focused list and takes
-through its fallback s, t, o, dd, and c / r off a stop). `work_list
+with the chat threads' own code (`web/src/components/MessageThreads.tsx`,
+the one implementation of messages with threads on their parts, used by
+`ChatThreads.tsx`, `FileThreads.tsx` and `WorkItemThreads.tsx`:
+`MessageThread` draws a thread's messages in parts with the threads on
+them under the words they quote and the boxes, `messagePartsOf` and
+`threadMessageParts` build `NoteBody`'s parts, the `+` in the chat's
+`.chat-review` gutter opening a thread on a part, `messageStops` and
+`messageStopKey` the keys' stops, `commentOnPart` c on a part,
+`useSelectedWords` and `SelectionOffer` Comment on words selected; a
+`MessageThreadsScope` says what differs: the anchor of a thread on a
+part (`work: {item}` plus `message`, the chat's `message` alone), the
+boxes kept, the words beside comments not delivered). `WorkDescription`
+draws the description as such a message; `useWorkItemKeys` gives the
+detail the chat threads' keys (`useThreadKeys` on the detail's list,
+`[data-work-keys]`; the board's handler leaves the keys to the focused
+list and takes through its fallback s, t, o, dd, and c / r off a stop). `work_list
 {item}` lists such a thread under that comment as its `threads` (`on:
 {comment, quote?}`), and the delivered prompt says it is on a message of
 that thread (on a part of one, with the quote); its owner answers it

@@ -33,12 +33,13 @@ if (
     ),
   }));
   const { createRoot } = await import("react-dom/client");
+  const { selectedWords } = await import("./MessageThreads");
   const {
-    selectedWords,
     useWorkItemKeys,
     useWorkItemView,
     WorkDescription,
     WorkItemThreads,
+    workWordsLocate,
   } = await import("./WorkItemThreads");
   type Api = Parameters<typeof WorkItemThreads>[0]["api"];
 
@@ -433,12 +434,16 @@ if (
     over.setEnd(described, 3);
     selection.removeAllRanges();
     selection.addRange(over);
-    expect(selectedWords(list(), description.id)).toMatchObject({
+    expect(
+      selectedWords(workWordsLocate(list(), description.id)),
+    ).toMatchObject({
       thread: description.id,
       comment: "c000000000000000",
       quote: "The",
     });
-    expect(selectedWords(document.createElement("div"))).toBe(null);
+    expect(
+      selectedWords(workWordsLocate(document.createElement("div"), null)),
+    ).toBe(null);
     selection.removeAllRanges();
   });
 }
