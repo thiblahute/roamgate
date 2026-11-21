@@ -12,6 +12,7 @@ import {
   Hand,
   Link2,
   ListChecks,
+  LoaderCircle,
   type LucideIcon,
   MessageSquare,
   Plus,
@@ -28,6 +29,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import type { ReviewThread } from "../../../shared/review";
 import {
@@ -77,6 +79,7 @@ import {
   workTagCounts,
 } from "../workScope";
 import { BoardCard } from "./BoardCard";
+import { ThreadEditor, type ThreadBox } from "./ThreadEditor";
 import { WorkAddForm } from "./WorkAddForm";
 import {
   postWorkItemComment,
@@ -454,6 +457,15 @@ export function useWorkMode({
   /** The detail's list, where its keys are (the chat threads' keys). */
   const detailListRef = useRef<HTMLDivElement>(null);
   const [adding, setAdding] = useState(false);
+  /**
+   * The item just added, as the add answered it: its detail stays open
+   * while its owner sorts it (until the user leaves it), drawn from this
+   * until the board's next read has it.
+   */
+  const [watching, setWatching] = useState<WorkItem | null>(null);
+  /** The watched item was on the board: gone from it later, it was split. */
+  const watchSeen = useRef(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const keyState = useRef(EMPTY_KEY_STATE);
   /** s or t on a card: the detail opens with that box focused. */
@@ -739,8 +751,38 @@ export function useWorkMode({
 
   const selectedItem = items.find((item) => item.id === selected) ?? null;
   const detailItem = detail
-    ? (boardItems.find((item) => item.id === detail) ?? null)
+    ? (boardItems.find((item) => item.id === detail) ??
+      (watching?.id === detail && !watchSeen.current ? watching : null))
     : null;
+  // Watching ends when its detail is left (Esc, back, another item); an
+  // item that leaves the board while sorted was split or removed: said so.
+  useEffect(() => {
+    if (!watching) return;
+    if (detail !== watching.id) {
+      setWatching(null);
+      watchSeen.current = false;
+      return;
+    }
+    if (!data) return;
+    if (boardItems.some((each) => each.id === watching.id)) {
+      watchSeen.current = true;
+      return;
+    }
+    if (!watchSeen.current) return;
+    setWatching(null);
+    watchSeen.current = false;
+    setDetail(null);
+    setNotice(
+      `"${watching.title}" left the board while being sorted: split into other items, or removed`,
+    );
+  }, [watching, detail, data, boardItems]);
+  /** Another one after this: the form again, the detail left. */
+  const addAnother = () => {
+    setDetail(null);
+    setCompose(null);
+    setNotice(null);
+    setAdding(true);
+  };
   const markDone = (item: WorkItem) => void act("done", { item: item.id });
   const openDetail = (item: WorkItem) => {
     setSelected(item.id);
@@ -963,6 +1005,18 @@ export function useWorkMode({
 
   const body = !enabled ? null : (
     <>
+      {notice ? (
+        <div className="work-notice" role="status">
+          <span>{notice}</span>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setNotice(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
       {failure ? (
         <div className="assistant-error" role="alert">
           <span>{failure}</span>
@@ -990,9 +1044,15 @@ export function useWorkMode({
                 ...params,
                 project: scope ?? projects[0]!.id,
               });
+              // Its detail, until the owner has sorted it (or the user
+              // leaves): the coordinator's title, tags, state and reply
+              // show up there as they come.
+              watchSeen.current = false;
+              setWatching(item);
+              setNotice(null);
               setAdding(false);
               setSelected(item.id);
-              back();
+              setDetail(item.id);
             } catch (cause) {
               setFailure(
                 cause instanceof Error ? cause.message : String(cause),
@@ -1031,6 +1091,18 @@ export function useWorkMode({
             }
           }}
           back={back}
+          sorting={
+            watching?.id === detailItem.id
+              ? {
+                  sorter:
+                    detailItem.owner?.session ??
+                    projects.find((each) => each.id === detailItem.project)
+                      ?.coordinator?.session ??
+                    null,
+                  onAddAnother: addAnother,
+                }
+              : null
+          }
           stateRef={stateRef}
           tagsRef={tagsRef}
           listRef={detailListRef}
@@ -1196,11 +1268,94 @@ function OwnerChip({ owner }: { owner: NonNullable<WorkItem["owner"]> }) {
   );
 }
 
+/** How an ask was answered on this page: being sent, sent, or not sent. */
+export type WorkAnswerState =
+  | { phase: "sending" | "sent"; text: string }
+  | { phase: "failed"; text: string; error: string };
+
+/**
+ * The answers of this page, by item and ask: a card and the item's detail
+ * (or a card drawn again by a push) say the same, and a second tap, from
+ * either, sends nothing.
+ */
+const workAnswers = new Map<string, WorkAnswerState>();
+const workAnswerListeners = new Set<() => void>();
+/** The words of a card's Reply box, kept while the card is drawn again. */
+const workReplyBoxes = new Map<string, ThreadBox>();
+
+function workAnswerKey(item: string, ask: string): string {
+  return `${item}\n${ask}`;
+}
+
+function setWorkAnswer(key: string, state: WorkAnswerState) {
+  workAnswers.set(key, state);
+  for (const listener of workAnswerListeners) listener();
+}
+
+function subscribeWorkAnswers(listener: () => void): () => void {
+  workAnswerListeners.add(listener);
+  return () => workAnswerListeners.delete(listener);
+}
+
+/** Forgets the page's answers (tests). */
+export function resetWorkAnswers() {
+  workAnswers.clear();
+  workReplyBoxes.clear();
+  for (const listener of workAnswerListeners) listener();
+}
+
+/**
+ * Answers an item's ask once: the user's comment, posted unless an answer
+ * to that ask is being sent or was sent already (a double tap, a tap on
+ * the card then on the detail). False when it was ignored.
+ */
+export function answerWorkAsk(
+  item: string,
+  ask: string,
+  text: string,
+  id?: string,
+  post: (item: string, text: string, id?: string) => Promise<void> = (
+    ...args
+  ) => postWorkItemComment(...args),
+  { reply = false }: { reply?: boolean } = {},
+): Promise<boolean> {
+  const key = workAnswerKey(item, ask);
+  const current = workAnswers.get(key);
+  // A tap answers once; a reply in the user's words may follow one.
+  if (current?.phase === "sending") return Promise.resolve(false);
+  if (current?.phase === "sent" && !reply) return Promise.resolve(false);
+  setWorkAnswer(key, { phase: "sending", text });
+  return post(item, text, id).then(
+    () => {
+      setWorkAnswer(key, { phase: "sent", text });
+      return true;
+    },
+    (failure: unknown) => {
+      setWorkAnswer(key, {
+        phase: "failed",
+        text,
+        error: failure instanceof Error ? failure.message : String(failure),
+      });
+      return false;
+    },
+  );
+}
+
+/** The words a status says of an answer: its first line, short. */
+function answerWords(text: string): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > 80 ? `${line.slice(0, 79)}...` : line;
+}
+
 /**
  * What the user has to do on a For you or Verify item (its `ask`), as a
  * highlighted line that wraps, with its answers as small buttons: a tap
  * posts the answer as the user's comment on the item, which reaches its
- * owner. Nothing in the other states or without an ask.
+ * owner, once (the buttons wait while it is sent, and stay off once it
+ * is). Reply opens the comment box right there, for an answer in the
+ * user's own words (no "Something else" answer needed): Cmd+Enter or Send
+ * posts it the same way, Esc or Cancel puts it away, the card stays
+ * closed. Nothing in the other states or without an ask.
  */
 export function WorkAsk({
   item,
@@ -1209,26 +1364,27 @@ export function WorkAsk({
   item: Pick<WorkItem, "id" | "state" | "ask" | "answers">;
   className?: string;
 }) {
-  const [sending, setSending] = useState<string | null>(null);
-  const [said, setSaid] = useState<{ text: string; error?: true } | null>(null);
   const asked = workAskOf(item);
+  const key = asked ? workAnswerKey(item.id, asked.ask) : "";
+  const said = useSyncExternalStore(subscribeWorkAnswers, () =>
+    key ? workAnswers.get(key) : undefined,
+  );
+  const [replying, setReplying] = useState(
+    () => !!workReplyBoxes.get(item.id)?.text.trim(),
+  );
   if (!asked) return null;
+  const sending = said?.phase === "sending";
+  const answered = said?.phase === "sent";
   const answer = (text: string) => {
-    setSending(text);
-    setSaid(null);
-    postWorkItemComment(item.id, text).then(
-      () => {
-        setSending(null);
-        setSaid({ text: `Sent: ${text}` });
-      },
-      (failure: unknown) => {
-        setSending(null);
-        setSaid({
-          text: `Not sent: ${failure instanceof Error ? failure.message : String(failure)}`,
-          error: true,
-        });
-      },
-    );
+    void answerWorkAsk(item.id, asked.ask, text);
+  };
+  const openReply = () => {
+    if (!workReplyBoxes.has(item.id)) workReplyBoxes.set(item.id, { text: "" });
+    setReplying(true);
+  };
+  const closeReply = () => {
+    workReplyBoxes.delete(item.id);
+    setReplying(false);
   };
   return (
     <div
@@ -1244,33 +1400,76 @@ export function WorkAsk({
           {asked.ask}
         </span>
       </p>
-      {asked.answers.length ? (
-        <span className="work-ask-answers" aria-label="Answers">
-          {asked.answers.map((text) => (
-            <button
-              key={text}
-              type="button"
-              className="work-ask-answer"
-              disabled={sending !== null}
-              aria-busy={sending === text || undefined}
-              title={`Answer "${text}": a comment for the owner`}
-              onClick={(event) => {
-                event.stopPropagation();
-                answer(text);
-              }}
-              onKeyDown={(event) => event.stopPropagation()}
-            >
-              {text}
-            </button>
-          ))}
-        </span>
+      <span className="work-ask-answers" aria-label="Answers">
+        {asked.answers.map((text) => (
+          <button
+            key={text}
+            type="button"
+            className={`work-ask-answer${answered && said.text === text ? " is-sent" : ""}`}
+            disabled={sending || answered}
+            aria-busy={(sending && said.text === text) || undefined}
+            title={`Answer "${text}": a comment for the owner`}
+            onClick={(event) => {
+              event.stopPropagation();
+              answer(text);
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            {text}
+          </button>
+        ))}
+        {replying ? null : (
+          <button
+            type="button"
+            className="work-ask-answer is-reply"
+            disabled={sending}
+            title="Answer in your own words: a comment for the owner"
+            onClick={(event) => {
+              event.stopPropagation();
+              openReply();
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <MessageSquare size={11} aria-hidden="true" />
+            {asked.answers.length ? "Something else" : "Reply"}
+          </button>
+        )}
+      </span>
+      {replying ? (
+        // The box is the card's, not a way into it: clicks, keys and a
+        // drag's press stay in it.
+        // biome-ignore lint/a11y/noStaticElementInteractions: keeps its events
+        <div
+          className="work-ask-reply chat-thread is-draft"
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <ThreadEditor
+            placeholder="Your answer, in your own words..."
+            kept={workReplyBoxes.get(item.id) ?? { text: "" }}
+            onLeave={() => {}}
+            onClose={closeReply}
+            onSave={(text, id) =>
+              answerWorkAsk(item.id, asked.ask, text, id, undefined, {
+                reply: true,
+              }).then((sent) => {
+                if (sent) closeReply();
+              })
+            }
+          />
+        </div>
       ) : null}
       {said ? (
         <small
-          className={`work-ask-status${said.error ? " is-error" : ""}`}
-          role={said.error ? "alert" : "status"}
+          className={`work-ask-status${said.phase === "failed" ? " is-error" : ""}`}
+          role={said.phase === "failed" ? "alert" : "status"}
         >
-          {said.text}
+          {said.phase === "failed"
+            ? `Not sent: ${said.error}`
+            : said.phase === "sending"
+              ? `Sending: ${answerWords(said.text)}`
+              : `Sent: ${answerWords(said.text)}`}
         </small>
       ) : null}
     </div>
@@ -1504,6 +1703,75 @@ function WorkLinkRow({
   );
 }
 
+/** How long an added item waits to be sorted before the detail says so. */
+export const WORK_SORT_PATIENCE_MS = 2 * 60_000;
+
+/**
+ * The detail of an item just added: while its owner (the coordinator)
+ * sorts it, says who is giving it a title, tags and a state; after
+ * WORK_SORT_PATIENCE_MS with nobody on it, says so plainly instead of
+ * waiting on; once sorted, says so (the detail above shows the result,
+ * the thread the coordinator's reply). Add another is always there.
+ */
+export function WorkSortStatus({
+  item,
+  sorter,
+  onAddAnother,
+}: {
+  item: Pick<WorkItem, "needsTriage" | "owner">;
+  sorter: string | null;
+  onAddAnother: () => void;
+}) {
+  const sorting = !!item.needsTriage;
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    if (!sorting) return;
+    setLate(false);
+    const timer = setTimeout(() => setLate(true), WORK_SORT_PATIENCE_MS);
+    return () => clearTimeout(timer);
+  }, [sorting]);
+  const phase = !sorting ? "sorted" : late || !sorter ? "unsorted" : "sorting";
+  return (
+    <div className={`work-sort is-${phase}`} data-work-sort={phase}>
+      <p className="work-sort-text" role="status">
+        {phase === "sorting" ? (
+          <>
+            <LoaderCircle
+              size={13}
+              className="work-sort-spin"
+              aria-hidden="true"
+            />
+            <span>
+              Sorting: {sorter} is giving it a title, tags and a state
+            </span>
+          </>
+        ) : phase === "unsorted" ? (
+          <>
+            <Hand size={13} aria-hidden="true" />
+            <span>
+              {sorter
+                ? "No one has sorted it yet; it stays marked on the board"
+                : "The project has no coordinator to sort it; it stays marked on the board"}
+            </span>
+          </>
+        ) : (
+          <>
+            <Check size={13} aria-hidden="true" />
+            <span>
+              Sorted
+              {item.owner ? ` by ${item.owner.session}` : ""}: its title, tags
+              and state are set
+            </span>
+          </>
+        )}
+      </p>
+      <button type="button" className="ghost" onClick={onAddAnother}>
+        <Plus size={13} /> Add another
+      </button>
+    </div>
+  );
+}
+
 /**
  * An item's detail in the view, as a request's: its title and state, its
  * description (its text when it was added), what one sets (state, tags),
@@ -1530,6 +1798,7 @@ function WorkDetail({
   onTags,
   onRemove,
   back,
+  sorting = null,
   stateRef,
   tagsRef,
   listRef,
@@ -1554,6 +1823,11 @@ function WorkDetail({
   onTags: (tags: string[]) => void;
   onRemove: () => void;
   back: () => void;
+  /**
+   * The item was just added: who sorts it (its owner, else the project's
+   * coordinator), and Add another.
+   */
+  sorting?: { sorter: string | null; onAddAnother: () => void } | null;
   stateRef: RefObject<HTMLSelectElement | null>;
   tagsRef: RefObject<HTMLInputElement | null>;
   listRef: RefObject<HTMLDivElement | null>;
@@ -1612,6 +1886,13 @@ function WorkDetail({
             {WORK_STATE_TITLE[item.state]}
           </span>
         </div>
+        {sorting ? (
+          <WorkSortStatus
+            item={item}
+            sorter={sorting.sorter}
+            onAddAnother={sorting.onAddAnother}
+          />
+        ) : null}
         <WorkAsk item={item} className="is-detail" />
         {description ? (
           <WorkDescription

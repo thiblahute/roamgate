@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { expect, jest, mock, test } from "bun:test";
 import { inIsolatedChild } from "../testIsolated";
 
 /**
@@ -110,15 +110,39 @@ if (
     repoRoot: null,
   };
   const calls: [string, Record<string, unknown>][] = [];
+  /** The board's readers: a push (an agent's change) draws them again. */
+  const boardReaders = new Set<() => void>();
+  const pushBoard = async () => {
+    await act(async () => {
+      for (const reader of boardReaders) reader();
+    });
+  };
+  /** The next add's item is not on the board's read yet (a push brings it). */
+  let addUnread = false;
   const workModule = await import("../work");
   mock.module("../work", () => ({
     ...workModule,
-    useWorkBoard: () => ({ board, error: null, reload: async () => {} }),
+    useWorkBoard: () => {
+      const [, setRead] = React.useState(0);
+      React.useEffect(() => {
+        const reader = () => setRead((count) => count + 1);
+        boardReaders.add(reader);
+        return () => {
+          boardReaders.delete(reader);
+        };
+      }, []);
+      return { board, error: null, reload: async () => {} };
+    },
     workCall: async (method: string, params: Record<string, unknown>) => {
       calls.push([method, params]);
       if (method !== "add") return {};
-      const made = item("3300000000000000", "gst2", "open", []);
-      board.items = [...board.items, made];
+      // Free text: the coordinator owns it, to sort.
+      const made = item("3300000000000000", "gst2", "open", [], {
+        title: String(params.text ?? "").split("\n")[0],
+        owner: { session: "desktop/w32:p1" },
+        needsTriage: true,
+      });
+      if (!addUnread) board.items = [...board.items, made];
       return { item: made };
     },
   }));
@@ -148,10 +172,13 @@ if (
   const threadsModule = await import("./WorkItemThreads");
   /** The answers tapped on a card: the item and the comment's words. */
   const posted: [string, string][] = [];
+  /** While set, a post waits for it: an answer being sent. */
+  let postGate: Promise<void> | null = null;
   mock.module("./WorkItemThreads", () => ({
     ...threadsModule,
     postWorkItemComment: async (item: string, text: string) => {
       posted.push([item, text]);
+      if (postGate) await postGate;
     },
     useWorkItemThreads: () => ({
       snapshot: undefined,
@@ -314,6 +341,7 @@ if (
       cards,
       selected,
       closed: () => closed,
+      pushBoard,
       async unmount() {
         await act(async () => root.unmount());
         container.remove();
@@ -537,9 +565,64 @@ if (
         },
       ]);
       expect(form()).toBeNull();
-      // The new item is the selected one.
+      // The new item's detail opens, and says who sorts it.
+      const sort = () => view.panel.querySelector<HTMLElement>(".work-sort");
+      expect(
+        view.panel
+          .querySelector("[data-work-detail]")
+          ?.getAttribute("data-work-detail"),
+      ).toBe("3300000000000000");
+      expect(sort()?.dataset.workSort).toBe("sorting");
+      expect(view.text(".work-sort-text")).toBe(
+        "Sorting: desktop/w32:p1 is giving it a title, tags and a state",
+      );
+      expect(view.text(".work-detail h3")).toBe("Copy a picture");
+      // The coordinator sorts it: the detail follows the push.
+      board.items = board.items.map((each) =>
+        each.id === "3300000000000000"
+          ? {
+              ...each,
+              title: "Paste images into the add form",
+              tags: ["images"],
+              state: "doing",
+              needsTriage: undefined,
+            }
+          : each,
+      );
+      await pushBoard();
+      expect(sort()?.dataset.workSort).toBe("sorted");
+      expect(view.text(".work-sort-text")).toBe(
+        "Sorted by desktop/w32:p1: its title, tags and state are set",
+      );
+      expect(view.text(".work-detail h3")).toBe(
+        "Paste images into the add form",
+      );
+      expect(
+        view.panel.querySelector<HTMLSelectElement>(
+          ".work-detail select[aria-label='State (s)']",
+        )?.value,
+      ).toBe("doing");
+      // Add another: the form again.
+      await view.click(
+        [...view.panel.querySelectorAll(".work-sort button")].find(
+          (each) => each.textContent === " Add another",
+        ) ?? null,
+      );
+      expect(form()).not.toBeNull();
+      expect(view.panel.querySelector(".work-detail")).toBeNull();
+      await view.click(
+        [...form()!.querySelectorAll("button")].find(
+          (each) => each.textContent === "Cancel",
+        ) ?? null,
+      );
+      expect(form()).toBeNull();
+      // The new item is the selected one, its detail left.
+      expect(view.panel.querySelector(".work-detail")).toBeNull();
       expect(view.selected()).toBe("3300000000000000");
     } finally {
+      board.items = board.items.filter(
+        (each) => each.id !== "3300000000000000",
+      );
       await view.unmount();
     }
   });
@@ -826,7 +909,11 @@ if (
     board.items = [
       item("1900000000000000", "gst2", "you", ["car"], {
         ask: "Choose: media to the car with the phone mic, or no music on car links",
-        answers: ["Media, phone mic", "No music"],
+        answers: [
+          "Media, phone mic",
+          "No music",
+          "Something else (I will write it)",
+        ],
       }),
       item("1910000000000000", "gst2", "verify", ["dictation"], {
         ask: "Dictate once after 10 idle minutes; text should appear",
@@ -844,28 +931,88 @@ if (
       expect(you.querySelector(".work-ask-text")?.textContent).toBe(
         "For you: Choose: media to the car with the phone mic, or no music on car links",
       );
+      // The answers, and Something else: the user's own words (an
+      // agent's "I will write it" answer is that box, not a tap).
       const answers = [...you.querySelectorAll(".work-ask-answer")];
       expect(answers.map((each) => each.textContent)).toEqual([
         "Media, phone mic",
         "No music",
+        "Something else",
       ]);
       expect(
-        card("1910000000000000").querySelector(".work-ask.is-verify")
-          ?.textContent,
+        card("1910000000000000").querySelector(
+          ".work-ask.is-verify .work-ask-text",
+        )?.textContent,
       ).toBe(
         "To verify: Dictate once after 10 idle minutes; text should appear",
       );
+      // An ask with no answers: Reply.
       expect(
-        card("1910000000000000").querySelector(".work-ask-answer"),
-      ).toBeNull();
+        [...card("1910000000000000").querySelectorAll(".work-ask-answer")].map(
+          (each) => each.textContent,
+        ),
+      ).toEqual(["Reply"]);
       expect(card("1920000000000000").querySelector(".work-ask")).toBeNull();
 
-      // A tap posts the answer, and does not open the card.
-      await view.click(answers[1]!);
+      // A tap posts the answer, and does not open the card; a second tap
+      // while it is sent, or after, sends nothing (it arrived twice once).
+      let release = () => {};
+      postGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await act(async () => {
+        (answers[1] as HTMLElement).click();
+        (answers[1] as HTMLElement).click();
+        (answers[0] as HTMLElement).click();
+      });
       expect(posted).toEqual([["1900000000000000", "No music"]]);
       expect(view.panel.querySelector(".work-detail")).toBeNull();
       expect(you.querySelector(".work-ask-status")?.textContent).toBe(
+        "Sending: No music",
+      );
+      expect(
+        answers
+          .slice(0, 2)
+          .every((each) => (each as HTMLButtonElement).disabled),
+      ).toBe(true);
+      postGate = null;
+      await act(async () => {
+        release();
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      expect(you.querySelector(".work-ask-status")?.textContent).toBe(
         "Sent: No music",
+      );
+      expect(
+        answers
+          .slice(0, 2)
+          .every((each) => (each as HTMLButtonElement).disabled),
+      ).toBe(true);
+      await view.click(answers[1]!);
+      expect(posted.length).toBe(1);
+
+      // Something else: a box right on the card, which stays closed;
+      // Send posts the user's words as their comment.
+      await view.click(answers[2]!);
+      expect(view.panel.querySelector(".work-detail")).toBeNull();
+      const reply = you.querySelector(".work-ask-reply")!;
+      expect(reply).not.toBeNull();
+      await view.type(
+        reply.querySelector("textarea")!,
+        "Media, but the car's own mic",
+      );
+      await view.click(
+        [...reply.querySelectorAll("button")].find(
+          (each) => each.textContent === "Send",
+        ) ?? null,
+      );
+      expect(posted).toEqual([
+        ["1900000000000000", "No music"],
+        ["1900000000000000", "Media, but the car's own mic"],
+      ]);
+      expect(you.querySelector(".work-ask-reply")).toBeNull();
+      expect(you.querySelector(".work-ask-status")?.textContent).toBe(
+        "Sent: Media, but the car's own mic",
       );
 
       await view.click(you);
@@ -876,9 +1023,128 @@ if (
           .querySelector(".assistant-task-heading")
           ?.nextElementSibling?.classList.contains("work-ask"),
       ).toBe(true);
+      // The detail knows it was answered: no second answer from there.
+      const again = detail.querySelectorAll<HTMLButtonElement>(
+        ".work-ask-answer:not(.is-reply)",
+      );
+      expect([...again].every((each) => each.disabled)).toBe(true);
+      await view.click(again[0]!);
+      expect(posted.length).toBe(2);
     } finally {
       board.items = saved;
       posted.length = 0;
+      postGate = null;
+      await view.unmount();
+    }
+  });
+
+  test("an item added waits in its detail until sorted: drawn before the board has it, says so plainly after two minutes, Esc leaves, a split says where it went", async () => {
+    localStorage.clear();
+    const saved = board.items;
+    const { WORK_SORT_PATIENCE_MS } = await import("./WorkBoard");
+    const view = await mount();
+    const form = () =>
+      view.panel.querySelector<HTMLFormElement>("form.work-add");
+    const sort = () =>
+      view.panel.querySelector<HTMLElement>(".work-sort")?.dataset.workSort ??
+      null;
+    try {
+      await view.key("a");
+      await view.type(
+        form()!.querySelector<HTMLTextAreaElement>("textarea")!,
+        "Fix the toolbar on the phone",
+      );
+      // The add is answered before the board's read has the item.
+      addUnread = true;
+      jest.useFakeTimers();
+      try {
+        await act(async () => {
+          form()!.dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true }),
+          );
+        });
+        await act(async () => {});
+        expect(form()).toBeNull();
+        expect(
+          view.panel
+            .querySelector("[data-work-detail]")
+            ?.getAttribute("data-work-detail"),
+        ).toBe("3300000000000000");
+        expect(view.text(".work-detail h3")).toBe(
+          "Fix the toolbar on the phone",
+        );
+        expect(sort()).toBe("sorting");
+        await act(async () => {
+          jest.advanceTimersByTime(WORK_SORT_PATIENCE_MS - 1000);
+        });
+        expect(sort()).toBe("sorting");
+        await act(async () => {
+          jest.advanceTimersByTime(1000);
+        });
+        expect(sort()).toBe("unsorted");
+        expect(view.text(".work-sort-text")).toBe(
+          "No one has sorted it yet; it stays marked on the board",
+        );
+      } finally {
+        jest.useRealTimers();
+        addUnread = false;
+      }
+      // The board's read brings it; Esc leaves, the card selected.
+      board.items = [
+        ...board.items,
+        item("3300000000000000", "gst2", "open", [], {
+          title: "Fix the toolbar on the phone",
+          owner: { session: "desktop/w32:p1" },
+          needsTriage: true,
+        }),
+      ];
+      await view.pushBoard();
+      expect(sort()).toBe("unsorted");
+      await view.key("Escape");
+      expect(view.panel.querySelector(".work-detail")).toBeNull();
+      expect(view.selected()).toBe("3300000000000000");
+      expect(
+        view.panel
+          .querySelector('[data-work-item="3300000000000000"]')
+          ?.querySelector(".work-triage")?.textContent,
+      ).toBe("being sorted");
+      // Opened again from its card: an ordinary detail.
+      await view.click(
+        view.panel.querySelector('[data-work-item="3300000000000000"]'),
+      );
+      expect(view.panel.querySelector(".work-detail")).not.toBeNull();
+      expect(sort()).toBeNull();
+      await view.key("Escape");
+
+      // Another, split by the coordinator: it leaves the board, the
+      // detail says so.
+      await view.key("a");
+      await view.type(
+        form()!.querySelector<HTMLTextAreaElement>("textarea")!,
+        "Two things",
+      );
+      board.items = board.items.filter(
+        (each) => each.id !== "3300000000000000",
+      );
+      await act(async () => {
+        form()!.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      expect(sort()).toBe("sorting");
+      board.items = board.items.filter(
+        (each) => each.id !== "3300000000000000",
+      );
+      await view.pushBoard();
+      expect(view.panel.querySelector(".work-detail")).toBeNull();
+      expect(view.text(".work-notice span")).toBe(
+        '"Two things" left the board while being sorted: split into other items, or removed',
+      );
+    } finally {
+      board.items = saved;
       await view.unmount();
     }
   });

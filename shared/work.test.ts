@@ -198,6 +198,18 @@ test("a card says what the user has to do only in For you and Verify", () => {
     answers: [],
   });
   expect(workAskOf({ ...asked, state: "doing" })).toBeNull();
+  // "I will write it" answers are the card's Reply box: not drawn.
+  expect(
+    workAskOf({
+      ...asked,
+      answers: [
+        "A",
+        "Something else (I will write it)",
+        "Other",
+        "Otherwise B",
+      ],
+    })?.answers,
+  ).toEqual(["A", "Otherwise B"]);
   expect(workAskOf({ state: "you", ask: "  " })).toBeNull();
   expect(workAskOf({ state: "you" })).toBeNull();
 });

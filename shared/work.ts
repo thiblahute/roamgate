@@ -166,14 +166,30 @@ export function workStateAsks(state: WorkState): boolean {
 }
 
 /**
+ * An answer that only says the user will write their own ("Something
+ * else (I will write it)", "Other"): the card's Reply box is that, so it
+ * is not drawn as a tap.
+ */
+export function workAnswerWritesIn(answer: string): boolean {
+  return /^(something else|other|none of (these|the above))\b/i.test(
+    answer.trim(),
+  );
+}
+
+/**
  * What a card shows as the user's to do: the ask of a For you or Verify
- * item, with its answers; null in the other states or without an ask.
+ * item, with its answers (but the ones that say "I will write it": the
+ * card's Reply box is there for that); null in the other states or
+ * without an ask.
  */
 export function workAskOf(
   item: Pick<WorkItem, "state" | "ask" | "answers">,
 ): { ask: string; answers: string[] } | null {
   if (!workStateAsks(item.state) || !item.ask?.trim()) return null;
-  return { ask: item.ask.trim(), answers: item.answers ?? [] };
+  return {
+    ask: item.ask.trim(),
+    answers: (item.answers ?? []).filter((each) => !workAnswerWritesIn(each)),
+  };
 }
 
 /**

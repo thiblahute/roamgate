@@ -160,6 +160,81 @@
   cursor: default;
 }
 
+.work-ask-answer.is-sent:disabled {
+  opacity: 1;
+  background: var(--accent-soft);
+}
+
+.work-ask-answer.is-reply {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  border-style: dashed;
+}
+
+.work-ask-reply {
+  min-width: 0;
+  cursor: auto;
+}
+
+/* An item just added: who sorts it, then that it is sorted. */
+.work-sort {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 0 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 6px 10px;
+  background: var(--accent-soft);
+}
+
+.work-sort.is-unsorted {
+  border-left-color: var(--warning-text, #d29922);
+  background: var(--warning-soft);
+}
+
+.work-sort-text {
+  display: flex;
+  flex: 1 1 14em;
+  gap: 6px;
+  align-items: flex-start;
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.work-sort-text > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.work-sort-spin {
+  animation: row-spinner 0.8s linear infinite;
+}
+
+.work-notice {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-sort-spin {
+    animation: none;
+  }
+}
+
 .is-mobile .work-ask-answer {
   min-height: 32px;
   padding: 4px 12px;

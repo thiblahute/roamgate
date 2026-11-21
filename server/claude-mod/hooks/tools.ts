@@ -543,7 +543,7 @@ function workTools(): RoamgateTool[] {
     type: ["array", "null"],
     items: { type: "string" },
     description:
-      "For a decision: a few short answers (6 at most, 80 characters each) the user taps; each is posted as their comment on the item, reaching its owner. null or [] clears them.",
+      'For a decision: a few short answers (6 at most, 80 characters each) the user taps; each is posted as their comment on the item, reaching its owner. The user can always reply in their own words: no "Something else" answer. null or [] clears them.',
   };
   const COMMENT = {
     type: "string",
@@ -609,7 +609,7 @@ function workTools(): RoamgateTool[] {
     ),
     tool(
       "work_update",
-      "Change a work item: title, state, project, tags (tags replaces; add_tags and remove_tags edit), owner (yours, a subagent's, or null to clear; a session no connection knows is refused), links (links replaces; add_links and remove_links edit), source, created_at and done_at (an imported item's dates), adopt_thread (an existing review thread becomes the item's own), needs_triage (false once an item the user added as free text is sorted). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences (\"Choose: media to the car with the phone mic, or no music on car links\", \"Dictate once after 10 idle minutes; text should appear\"), and for a decision answers, a few short one-tap choices (each tap is the user's comment on the item, reaching its owner); without an ask the move is refused. Leaving those states clears them unless given. Comments on the item reach its owner; answer them with review_reply.",
+      'Change a work item: title, state, project, tags (tags replaces; add_tags and remove_tags edit), owner (yours, a subagent\'s, or null to clear; a session no connection knows is refused), links (links replaces; add_links and remove_links edit), source, created_at and done_at (an imported item\'s dates), adopt_thread (an existing review thread becomes the item\'s own), needs_triage (false once an item the user added as free text is sorted). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences ("Choose: media to the car with the phone mic, or no music on car links", "Dictate once after 10 idle minutes; text should appear"), and for a decision answers, a few short one-tap choices (each tap is the user\'s comment on the item, reaching its owner; the user can also reply in their own words, so no "Something else" answer); without an ask the move is refused. Leaving those states clears them unless given. Comments on the item reach its owner; answer them with review_reply.',
       {
         item: ITEM,
         title: { type: "string" },

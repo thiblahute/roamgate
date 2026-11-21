@@ -79,16 +79,18 @@ export function workCommentWrite(
 }
 
 /**
- * The user's comment on an item from outside its detail (a card's answer):
- * the Comment box's write, the review made first when the item has none.
+ * The user's comment on an item from outside its detail (a card's answer
+ * or reply): the Comment box's write, the review made first when the item
+ * has none. Sent again with the same `id`, the server writes it once.
  */
 export async function postWorkItemComment(
   item: string,
   text: string,
+  id?: string,
 ): Promise<void> {
   const session = await openWorkItemReview(item);
   const { method, params } = pendingWriteCall({
-    ...workCommentWrite(item, text),
+    ...workCommentWrite(item, text, id),
     sessionId: session.id,
     at: new Date().toISOString(),
   });
