@@ -150,16 +150,34 @@ test("the skill names the mod's tools, those behind tool search apart", () => {
     REVIEW_SKILL.indexOf("## Two kinds of comment"),
   );
   const [direct = "", deferred = ""] = paragraph.split("behind tool");
+  // The Work board's tools are named in their own section, below.
+  const work = ROAMGATE_TOOLS.filter((tool) => tool.name.startsWith("work_"));
+  const others = ROAMGATE_TOOLS.filter((tool) => !work.includes(tool));
   expect(named(direct).sort()).toEqual(
-    ROAMGATE_TOOLS.filter((tool) => !tool.deferred)
+    others
+      .filter((tool) => !tool.deferred)
       .map((tool) => tool.name)
       .sort(),
   );
   expect(named(deferred).sort()).toEqual(
-    ROAMGATE_TOOLS.filter((tool) => tool.deferred)
+    others
+      .filter((tool) => tool.deferred)
       .map((tool) => tool.name)
       .sort(),
   );
+  const boardAt = REVIEW_SKILL.indexOf("## The Work board");
+  const board = REVIEW_SKILL.slice(
+    boardAt,
+    REVIEW_SKILL.indexOf("\n## ", boardAt + 1),
+  ).replace(/\s+/g, " ");
+  expect(board).toContain(
+    "they are also tools, `mcp__roamgate__work_*`, behind tool search;",
+  );
+  expect(work.length).toBeGreaterThan(0);
+  for (const tool of work) {
+    expect(tool.deferred).toBe(true);
+    expect(board).toContain(`\`${tool.name}\``);
+  }
 });
 
 test("the client's help says it talks to the reviews in Changes", async () => {
