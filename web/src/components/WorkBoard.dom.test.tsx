@@ -176,9 +176,20 @@ if (
       pendingById: new Map(),
       undelivered: new Set(),
       error: "",
+      cursor: null,
+      setCursor: () => {},
+      partDraft: null,
+      setPartDraft: () => {},
+      flipped: new Set(),
+      toggleFold: () => {},
+      replying: null,
+      setReplying: () => {},
     }),
     WorkItemThreads: (props: { description?: { id: string } | null }) => (
       <div data-work-threads={props.description?.id ?? ""} />
+    ),
+    WorkDescription: (props: { thread: { comments: { body: string }[] } }) => (
+      <div className="work-description">{props.thread.comments[0]?.body}</div>
     ),
   }));
   mock.module("./ReviewCommentEditorLazy", () => ({
@@ -426,7 +437,10 @@ if (
       // dd in the detail: done.
       await view.key("d");
       await view.key("d");
-      expect(calls[calls.length - 1]).toEqual(["done", { item: "1200000000000000" }]);
+      expect(calls[calls.length - 1]).toEqual([
+        "done",
+        { item: "1200000000000000" },
+      ]);
       // Esc goes back to the board, the card still selected.
       await view.key("Escape");
       expect(detail()).toBeNull();

@@ -59,9 +59,13 @@ import {
 } from "../workScope";
 import { BoardCard } from "./BoardCard";
 import { MobileSheetHandle } from "./MobileSheetHandle";
-import { NoteBody } from "./ReviewNoteBody";
 import { WorkAddForm } from "./WorkAddForm";
-import { useWorkItemThreads, WorkItemThreads } from "./WorkItemThreads";
+import {
+  useWorkItemKeys,
+  useWorkItemThreads,
+  WorkDescription,
+  WorkItemThreads,
+} from "./WorkItemThreads";
 import "./WorkBoard.css";
 
 /**
@@ -217,6 +221,8 @@ export function useWorkMode({
   const [selected, setSelected] = useState<string | null>(initialItem ?? null);
   const [detail, setDetail] = useState<string | null>(initialItem ?? null);
   const [compose, setCompose] = useState<"comment" | "reply" | null>(null);
+  /** The detail's list, where its keys are (the chat threads' keys). */
+  const detailListRef = useRef<HTMLDivElement>(null);
   const [adding, setAdding] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const keyState = useRef(EMPTY_KEY_STATE);
@@ -510,13 +516,32 @@ export function useWorkMode({
       return true;
     }
     if (adding) return false;
+    // The detail's list has the keys when it has the focus (the chat
+    // threads' keys, and the detail's own through them).
+    if (detailItem && target?.closest("[data-work-keys]")) return false;
     const fed = feedKey(keyState.current, event.key);
     keyState.current = fed.state;
     if (fed.type === "wait") return true;
     const count = fed.count ?? 1;
     const key = fed.key;
     if (detailItem) {
-      if (key === "c") setCompose("comment");
+      const list = detailListRef.current;
+      if (
+        list &&
+        (key === "j" ||
+          key === "k" ||
+          key === "ArrowDown" ||
+          key === "ArrowUp" ||
+          key === "gg" ||
+          key === "G")
+      ) {
+        // The keys go to the list, and this one with them.
+        list.focus({ preventScroll: true });
+        if (key.length === 1 || key.startsWith("Arrow"))
+          list.dispatchEvent(
+            new KeyboardEvent("keydown", { key, bubbles: true }),
+          );
+      } else if (key === "c") setCompose("comment");
       else if (key === "r") setCompose("reply");
       else if (key === "s") stateRef.current?.focus();
       else if (key === "t") tagsRef.current?.focus();
@@ -673,6 +698,7 @@ export function useWorkMode({
           item={detailItem}
           project={scope ? null : projectName(detailItem.project)}
           compose={compose}
+          onCompose={setCompose}
           onComposeDone={() => setCompose(null)}
           onBack={closeDetail}
           onOpenOwner={() => void openOwner(detailItem)}
@@ -694,6 +720,7 @@ export function useWorkMode({
           back={back}
           stateRef={stateRef}
           tagsRef={tagsRef}
+          listRef={detailListRef}
         />
       ) : (
         <>
@@ -1009,12 +1036,15 @@ function WorkCard({
  * An item's detail in the view, as a request's: its title and state, its
  * description (its text when it was added), what one sets (state, tags),
  * its owner (and the agent's work), its project, links and dates, its
- * buttons, then its thread, whose comments go to the owner session.
+ * buttons, then its thread, whose comments go to the owner session. The
+ * description and the comments are messages in parts, with the chat
+ * threads' keys on the detail (`listRef`: where they are).
  */
 function WorkDetail({
   item,
   project,
   compose,
+  onCompose,
   onComposeDone,
   onBack,
   onOpenOwner,
@@ -1027,10 +1057,12 @@ function WorkDetail({
   back,
   stateRef,
   tagsRef,
+  listRef,
 }: {
   item: WorkItem;
   project: string | null;
   compose: "comment" | "reply" | null;
+  onCompose: (what: "comment" | "reply") => void;
   onComposeDone: () => void;
   onBack: () => void;
   onOpenOwner: () => void;
@@ -1043,6 +1075,7 @@ function WorkDetail({
   back: () => void;
   stateRef: RefObject<HTMLSelectElement | null>;
   tagsRef: RefObject<HTMLInputElement | null>;
+  listRef: RefObject<HTMLDivElement | null>;
 }) {
   const api = useWorkItemThreads(item.id);
   const description = useMemo(
@@ -1050,8 +1083,39 @@ function WorkDetail({
     [api.threads, item],
   );
   const owner = item.owner;
+  /** A box closed: the keys go back to the detail. */
+  const leave = useCallback(
+    () => listRef.current?.focus({ preventScroll: true }),
+    [listRef],
+  );
+  useWorkItemKeys({
+    api,
+    description,
+    getList: () => listRef.current,
+    fallback: (key) => {
+      if (key === "c") onCompose("comment");
+      else if (key === "r") onCompose("reply");
+      else if (key === "s") stateRef.current?.focus();
+      else if (key === "t") tagsRef.current?.focus();
+      else if (key === "o") onOpenOwner();
+      else if (key === "dd") {
+        if (item.state !== "done") onDone();
+      } else return false;
+      return true;
+    },
+  });
+  // The keys are the detail's as it opens.
+  useEffect(() => {
+    listRef.current?.focus({ preventScroll: true });
+  }, [listRef]);
   return (
-    <>
+    // biome-ignore lint/a11y/noStaticElementInteractions: the keys' list
+    <div
+      className="work-detail-keys"
+      data-work-keys=""
+      tabIndex={-1}
+      ref={listRef}
+    >
       <div className="assistant-section-heading">
         <button type="button" className="ghost" onClick={onBack}>
           <ChevronLeft size={13} /> All items
@@ -1068,9 +1132,12 @@ function WorkDetail({
           </span>
         </div>
         {description ? (
-          <div className="work-description" aria-label="Description">
-            <NoteBody text={description.comments[0]!.body} />
-          </div>
+          <WorkDescription
+            api={api}
+            item={item.id}
+            thread={description}
+            onLeave={leave}
+          />
         ) : null}
         <dl className="assistant-task-metadata">
           <div>
@@ -1225,10 +1292,10 @@ function WorkDetail({
           description={description}
           compose={compose}
           onComposeDone={onComposeDone}
-          onLeave={back}
+          onLeave={leave}
         />
       </section>
-    </>
+    </div>
   );
 }
 

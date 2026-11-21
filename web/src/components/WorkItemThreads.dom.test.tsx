@@ -2,10 +2,11 @@ import { expect, mock, test } from "bun:test";
 import { inIsolatedChild } from "../testIsolated";
 
 /**
- * An item's threads in its detail: a thread on a comment of another thread
- * is drawn under that comment, under the words it quotes; Reply to this
- * under a comment opens a box for a thread on it; words selected in a
- * comment offer Comment, a thread on it quoting them.
+ * An item's threads in its detail, on the chat threads' model: the
+ * description and every comment are messages in parts, the + beside a
+ * part opens a thread on it quoting it, drawn under the part; j / k go
+ * through the parts and the threads' messages and c on a part comments
+ * on it; words selected in a comment offer Comment, quoting them.
  */
 if (
   inIsolatedChild(
@@ -17,8 +18,9 @@ if (
 ) {
   const { installTestDom } = await import("../testDom");
   installTestDom({ url: "http://localhost/", width: 1280 });
+  (HTMLElement.prototype as any).scrollIntoView = () => {};
   const React = await import("react");
-  const { act } = React;
+  const { act, useRef } = React;
   mock.module("./ReviewCommentEditorLazy", () => ({
     ReviewCommentEditorLazy: (props: {
       placeholder?: string;
@@ -31,7 +33,13 @@ if (
     ),
   }));
   const { createRoot } = await import("react-dom/client");
-  const { WorkItemThreads } = await import("./WorkItemThreads");
+  const {
+    selectedWords,
+    useWorkItemKeys,
+    useWorkItemView,
+    WorkDescription,
+    WorkItemThreads,
+  } = await import("./WorkItemThreads");
   type Api = Parameters<typeof WorkItemThreads>[0]["api"];
 
   const at = "2026-11-20T10:00:01.000Z";
@@ -57,6 +65,11 @@ if (
     updatedAt: at,
   });
   const item = "1200000000000000";
+  const description = thread(
+    "d000000000000001",
+    { work: { item, description: true } },
+    [comment("c000000000000000", "you", "The description of the item.")],
+  );
   const parent = thread("a000000000000001", { work: { item } }, [
     comment("c000000000000001", "you", "Please look at the box."),
     comment(
@@ -77,47 +90,98 @@ if (
     },
     [comment("c000000000000003", "you", "Which words?")],
   );
+  const onDescription = thread(
+    "b000000000000002",
+    {
+      work: { item },
+      message: {
+        thread: description.id,
+        comment: "c000000000000000",
+        quote: "The description of the item.",
+      },
+    },
+    [comment("c000000000000004", "Claude", "Noted.")],
+  );
   const sends: Record<string, unknown>[] = [];
-  const api: Api = {
+  const fallbacks: string[] = [];
+  const data = {
     snapshot: undefined,
-    threads: [parent, nested],
-    open: 2,
+    threads: [description, parent, nested, onDescription],
+    open: 4,
     waiting: null,
     write: async () => true,
     addImage: async () => "",
-    send: async (next) => {
+    send: async (next: Record<string, unknown>) => {
       sends.push(next);
       return true;
     },
     pendingById: new Map(),
-    undelivered: new Set(),
+    undelivered: new Set<string>(),
     error: "",
   };
+  /** The detail as the board draws it: the description, then the threads. */
+  function Detail() {
+    const view = useWorkItemView();
+    const api = { ...data, ...view } as Api;
+    const listRef = useRef<HTMLDivElement>(null);
+    const leave = () => listRef.current?.focus();
+    useWorkItemKeys({
+      api,
+      description,
+      getList: () => listRef.current,
+      fallback: (key) => {
+        fallbacks.push(key);
+        return key === "c" || key === "r" || key === "s";
+      },
+    });
+    return (
+      <div data-work-keys="" tabIndex={-1} ref={listRef}>
+        <WorkDescription
+          api={api}
+          item={item}
+          thread={description}
+          onLeave={leave}
+        />
+        <WorkItemThreads
+          item={item}
+          api={api}
+          description={description}
+          compose={null}
+          onComposeDone={() => {}}
+          onLeave={leave}
+        />
+      </div>
+    );
+  }
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
-  await act(async () =>
-    root.render(
-      <WorkItemThreads
-        item={item}
-        api={api}
-        description={null}
-        compose={null}
-        onComposeDone={() => {}}
-        onLeave={() => {}}
-      />,
-    ),
-  );
+  await act(async () => root.render(<Detail />));
   const wait = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
+  const list = () => host.querySelector<HTMLElement>("[data-work-keys]")!;
   const card = (id: string) =>
     host.querySelector<HTMLElement>(`.chat-thread[data-thread-id="${id}"]`);
   const bodyOf = (id: string) =>
-    host.querySelector<HTMLElement>(
-      `.chat-thread-body[data-message-id="${id}"]`,
+    host.querySelector<HTMLElement>(`[data-message-id="${id}"]`);
+  const press = async (key: string) => {
+    await act(async () => {
+      list().dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      );
+      await wait(10);
+    });
+  };
+  const focusedKey = () => {
+    const stop = host.querySelector<HTMLElement>(
+      "[data-chat-stop].is-focused, .rc-part.is-focused",
     );
-  const messageOf = (id: string) =>
-    host.querySelector<HTMLElement>(`[data-chat-stop="m:${id}"]`)!;
+    if (!stop) return null;
+    if (stop.dataset.chatStop) return stop.dataset.chatStop;
+    const message =
+      stop.closest<HTMLElement>("[data-message-id]")?.dataset.messageId;
+    return `q:${message}:${stop.dataset.part}`;
+  };
   /** Writes in the box being written, then sends it. */
   const writeAndSend = async (box: HTMLElement, text: string) => {
     const field = box.querySelector("textarea")!;
@@ -137,24 +201,51 @@ if (
       await wait(20);
     });
   };
+  const firstText = (node: Node): Text | null => {
+    if (node.nodeType === 3 && node.textContent?.trim()) return node as Text;
+    for (const child of node.childNodes) {
+      const found = firstText(child);
+      if (found) return found;
+    }
+    return null;
+  };
 
-  test("a thread on a comment is drawn under that comment, under the words it quotes, with its own buttons", () => {
-    const shown = card(nested.id)!;
-    expect(shown).not.toBeNull();
-    // In the parent's second message, not beside the parent.
-    expect(host.querySelectorAll(".work-threads > .chat-thread").length).toBe(
-      1,
-    );
+  test("the description and the comments are messages in parts with a + each, their threads drawn under the part quoted", () => {
+    // In the chat's gutter, a + on every part.
     expect(
-      shown.closest(".chat-thread-body")?.getAttribute("data-message-id"),
+      host.querySelectorAll(
+        ".work-description.chat-review, .work-description .chat-review",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(host.querySelector(".work-threads.chat-review")).not.toBeNull();
+    for (const id of [
+      "c000000000000000",
+      "c000000000000001",
+      "c000000000000002",
+    ])
+      expect(
+        bodyOf(id)!.querySelectorAll(
+          ":scope > .rc-text > .rc-part > .rc-part-add",
+        ).length,
+      ).toBe(id === "c000000000000002" ? 2 : 1);
+    // The thread on the description's words: under them, in the description.
+    const noted = card(onDescription.id)!;
+    expect(noted.closest(".work-description")).not.toBeNull();
+    expect(noted.parentElement?.classList.contains("rc-part-notes")).toBe(true);
+    expect(noted.textContent).toContain("Noted.");
+    // The thread on the second paragraph of Claude's comment: under it.
+    const shown = card(nested.id)!;
+    expect(
+      shown.closest("[data-message-id]")?.getAttribute("data-message-id"),
     ).toBe("c000000000000002");
-    expect(shown.parentElement?.classList.contains("rc-part-notes")).toBe(true);
-    // Right under the part it quotes: the second paragraph, marked.
     const quoted = shown.parentElement?.previousElementSibling;
     expect(quoted?.classList.contains("has-notes")).toBe(true);
     expect(quoted?.textContent).toContain("The words go with it.");
     expect(quoted?.textContent).not.toContain("Done: the box opens.");
-    expect(shown.textContent).toContain("Which words?");
+    // Neither stands on its own among the threads.
+    expect(host.querySelectorAll(".work-threads > .chat-thread").length).toBe(
+      1,
+    );
     expect(
       [...shown.querySelectorAll(".chat-thread-bar button")].map(
         (button) => button.textContent,
@@ -162,32 +253,23 @@ if (
     ).toEqual(["Reply", "Resolve", "Fold", "Delete"]);
   });
 
-  test("Reply to this under a comment opens a box for a thread on it, sent on that comment", async () => {
-    const message = messageOf("c000000000000002");
-    const reply = message.querySelector<HTMLButtonElement>(
-      ":scope > .work-thread-message-bar > button",
-    )!;
-    expect(reply.textContent).toBe("Reply to this");
-    await act(async () => reply.click());
+  test("+ beside a part opens a box under it, a thread on that part quoting it", async () => {
+    const part =
+      bodyOf("c000000000000002")!.querySelectorAll<HTMLElement>(".rc-part")[1]!;
+    await act(async () =>
+      part.querySelector<HTMLButtonElement>(".rc-part-add")!.click(),
+    );
     const box = bodyOf("c000000000000002")!.querySelector<HTMLElement>(
       ".chat-thread.is-draft",
     )!;
     expect(box).not.toBeNull();
-    // Under the whole comment: after its last part (and the thread there).
+    // Under the part: after it (and the thread already there).
     const siblings = [...box.parentElement!.parentElement!.children];
     const partBefore = siblings
       .slice(0, siblings.indexOf(box.parentElement!))
       .reverse()
       .find((each) => each.classList.contains("rc-part"));
-    expect(partBefore?.textContent).toContain("The words go with it.");
-    expect(partBefore?.textContent).not.toContain("Done: the box opens.");
-    expect(box.querySelector("textarea")?.getAttribute("aria-label")).toBe(
-      "Reply to this comment...",
-    );
-    // Its button goes while the box is open.
-    expect(message.querySelector(":scope > .work-thread-message-bar")).toBe(
-      null,
-    );
+    expect(partBefore).toBe(part);
     const before = sends.length;
     await writeAndSend(box, "Thanks!");
     expect(sends.length).toBe(before + 1);
@@ -195,26 +277,116 @@ if (
       kind: "discussion",
       anchor: {
         work: { item },
-        message: { thread: parent.id, comment: "c000000000000002" },
+        message: {
+          thread: parent.id,
+          comment: "c000000000000002",
+          quote: "The words go with it.",
+        },
       },
       text: "Thanks!",
     });
-    expect(
-      (sends[sends.length - 1]!.anchor as any).message.quote,
-    ).toBeUndefined();
     expect(bodyOf("c000000000000002")!.querySelector(".is-draft")).toBe(null);
+  });
+
+  test("+ on the description opens a thread on it, in the description's thread", async () => {
+    await act(async () =>
+      bodyOf("c000000000000000")!
+        .querySelector<HTMLButtonElement>(".rc-part > .rc-part-add")!
+        .click(),
+    );
+    const box = host.querySelector<HTMLElement>(
+      ".work-description .chat-thread.is-draft",
+    )!;
+    expect(box).not.toBeNull();
+    const before = sends.length;
+    await writeAndSend(box, "Is it?");
+    expect(sends[sends.length - 1]).toMatchObject({
+      anchor: {
+        work: { item },
+        message: {
+          thread: description.id,
+          comment: "c000000000000000",
+          quote: "The description of the item.",
+        },
+      },
+      text: "Is it?",
+    });
+    expect(sends.length).toBe(before + 1);
+  });
+
+  test("j / k go through the description's part, the messages and the parts of a long one; c on a part comments on it", async () => {
+    list().focus();
+    await press("j");
+    expect(focusedKey()).toBe("q:c000000000000000:0");
+    await press("j");
+    // A thread on the description's words is a stop of its own first.
+    expect(focusedKey()).toBe("m:c000000000000004");
+    await press("j");
+    expect(focusedKey()).toBe("m:c000000000000001");
+    await press("j");
+    expect(focusedKey()).toBe("m:c000000000000002");
+    await press("j");
+    expect(focusedKey()).toBe("q:c000000000000002:0");
+    await press("j");
+    expect(focusedKey()).toBe("q:c000000000000002:1");
+    await press("k");
+    expect(focusedKey()).toBe("q:c000000000000002:0");
+    await press("c");
+    const box = bodyOf("c000000000000002")!.querySelector<HTMLElement>(
+      ".chat-thread.is-draft",
+    )!;
+    expect(box).not.toBeNull();
+    expect(box.querySelector("textarea")?.getAttribute("aria-label")).toBe(
+      "Comment on this part...",
+    );
+    const before = sends.length;
+    await writeAndSend(box, "On the first part.");
+    expect(sends[sends.length - 1]).toMatchObject({
+      anchor: {
+        message: {
+          thread: parent.id,
+          comment: "c000000000000002",
+          quote: "Done: the box opens.",
+        },
+      },
+    });
+    expect(sends.length).toBe(before + 1);
+    // c on a message answers its thread; with no stop, the detail's own c.
+    await press("k");
+    await press("k");
+    expect(focusedKey()).toBe("m:c000000000000001");
+    await press("c");
+    expect(
+      card(parent.id)!
+        .querySelector(":scope > .chat-thread-editor textarea")
+        ?.getAttribute("aria-label"),
+    ).toBe("Reply...");
+    await act(async () =>
+      [...card(parent.id)!.querySelectorAll("button")]
+        .find((button) => button.textContent === "Cancel")!
+        .click(),
+    );
+    await press("s");
+    expect(fallbacks).toEqual(["s"]);
+    // A click on the one part of a comment puts the cursor on the comment
+    // (its stop); on a part of a long one, on that part.
+    await act(async () =>
+      bodyOf("c000000000000001")!
+        .querySelector<HTMLElement>(".rc-part")!
+        .click(),
+    );
+    expect(focusedKey()).toBe("m:c000000000000001");
+    await act(async () =>
+      bodyOf("c000000000000002")!
+        .querySelectorAll<HTMLElement>(":scope > .rc-text > .rc-part")[1]!
+        .click(),
+    );
+    expect(focusedKey()).toBe("q:c000000000000002:1");
   });
 
   test("words selected in a comment offer Comment: a thread on it quoting them", async () => {
     const body = bodyOf("c000000000000001")!;
-    const words = (function first(node: Node): Text | null {
-      if (node.nodeType === 3 && node.textContent?.trim()) return node as Text;
-      for (const child of node.childNodes) {
-        const found = first(child);
-        if (found) return found;
-      }
-      return null;
-    })(body)!;
+    const words = firstText(body)!;
     expect(words.textContent).toBe("Please look at the box.");
     const range = document.createRange();
     range.setStart(words, 0);
@@ -240,14 +412,10 @@ if (
     expect(document.querySelector(".chat-thread-select")).toBe(null);
     const box = body.querySelector<HTMLElement>(".chat-thread.is-draft")!;
     expect(box).not.toBeNull();
-    expect(box.querySelector("textarea")?.getAttribute("aria-label")).toBe(
-      "Comment on these words...",
-    );
     const before = sends.length;
     await writeAndSend(box, "Which box?");
     expect(sends.length).toBe(before + 1);
     expect(sends[sends.length - 1]).toMatchObject({
-      kind: "discussion",
       anchor: {
         work: { item },
         message: {
@@ -258,33 +426,18 @@ if (
       },
       text: "Which box?",
     });
-  });
-
-  test("words selected in a nested thread's message are that thread's", async () => {
-    const { selectedWords } = await import("./WorkItemThreads");
-    const body = bodyOf("c000000000000003")!;
-    const words = (function first(node: Node): Text | null {
-      if (node.nodeType === 3 && node.textContent?.trim()) return node as Text;
-      for (const child of node.childNodes) {
-        const found = first(child);
-        if (found) return found;
-      }
-      return null;
-    })(body)!;
-    const range = document.createRange();
-    range.setStart(words, 0);
-    range.setEnd(words, 5);
-    range.getBoundingClientRect = () =>
-      ({ left: 40, top: 100, bottom: 120, right: 120 }) as DOMRect;
-    const selection = window.getSelection()!;
+    // Words of the description are the description thread's.
+    const described = firstText(bodyOf("c000000000000000")!)!;
+    const over = document.createRange();
+    over.setStart(described, 0);
+    over.setEnd(described, 3);
     selection.removeAllRanges();
-    selection.addRange(range);
-    expect(selectedWords(host)).toMatchObject({
-      thread: nested.id,
-      comment: "c000000000000003",
-      quote: "Which",
+    selection.addRange(over);
+    expect(selectedWords(list(), description.id)).toMatchObject({
+      thread: description.id,
+      comment: "c000000000000000",
+      quote: "The",
     });
-    // Not for words outside the threads.
     expect(selectedWords(document.createElement("div"))).toBe(null);
     selection.removeAllRanges();
   });

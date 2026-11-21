@@ -1807,12 +1807,20 @@ prompt names the item and the `work_*` tools. A thread on a comment of
 another thread (an answer to that comment, or to words of it) adds
 `message: {thread, comment, quote?}` to the item's anchor (`quote` is
 optional on every review's message part: none means the whole message):
-the detail draws it under that comment, indented, under the words it
-quotes (`WorkItemThreads.tsx`, through `NoteBody`'s parts, as a chat's
-threads on a message's parts), `work_list {item}` lists it under that
-comment as its `threads` (`on: {comment, quote?}`), and the delivered
-prompt says it is on a message of that thread (on a part of one, with the
-quote); its owner answers it with `review_reply` on its own id.
+the detail draws the description and every comment as messages in parts
+on the chat threads' model (`WorkItemThreads.tsx`: `WorkDescription`,
+`WorkThreadCard`, through `NoteBody`'s parts in the chat's `.chat-review`
+gutter, the `+` beside a part opening a thread on it quoting it, words
+selected offering Comment), a thread on a part drawn under that part;
+`useWorkItemKeys` gives the detail the chat threads' keys
+(`useThreadKeys` on the detail's list, `[data-work-keys]`: the stops are
+the description's parts, the threads' messages and the parts of a long
+one; the board's handler leaves the keys to the focused list and takes
+through its fallback s, t, o, dd, and c / r off a stop). `work_list
+{item}` lists such a thread under that comment as its `threads` (`on:
+{comment, quote?}`), and the delivered prompt says it is on a message of
+that thread (on a part of one, with the quote); its owner answers it
+with `review_reply` on its own id.
 
 Owner and announcement: `add` gives an item added with no owner the
 project's coordinator (`ownerFor`; not a For you item, the user's own, nor

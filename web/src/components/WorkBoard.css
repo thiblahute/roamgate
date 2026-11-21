@@ -381,17 +381,36 @@
   font-style: italic;
 }
 
-/* A thread on a comment: under the words it quotes (under the whole
-   comment when none), indented in the comment's body, as a chat's are
-   under a message's part. */
-.work-threads .rc-part-notes {
-  margin: 6px 0 4px 12px;
+/* The detail's keys (the chat threads': j / k through the parts of its
+   comments) are on the list of its sections, laid out as the body is. */
+.work-detail-keys {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  outline: none;
 }
 
-.work-threads .rc-part-notes > .chat-thread {
-  margin: 0 0 6px;
-  padding-left: 8px;
-  border-left: 2px solid var(--border-soft);
+/* The description and the comments are messages in parts, in the chat's
+   gutter (.chat-review): the + beside a part. On a phone, the message
+   tapped (one part: the message is the stop) shows its + as a part
+   tapped does. */
+@media (hover: none) and (pointer: coarse) {
+  .work-threads
+    .chat-thread-message.is-focused
+    > .chat-thread-body
+    > .rc-text
+    > .rc-part {
+    padding-left: calc(var(--rc-depth, 0) * 1.4em + 36px);
+  }
+
+  .work-threads
+    .chat-thread-message.is-focused
+    > .chat-thread-body
+    > .rc-text
+    > .rc-part
+    > .rc-part-add {
+    visibility: visible;
+  }
 }
 
 /* Comment on words selected in a comment: over the board's floating

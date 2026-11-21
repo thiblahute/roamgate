@@ -2237,14 +2237,19 @@ tasks sheet), its project, links and dates, **Done** (`dd`) or
 **Reopen**, **Delete**, then its thread: the comments, each with Reply,
 and **Comment** (`c`; `r` replies to the last thread) in the review
 comment editor (images pasted, dropped or added with its button are kept
-with the comment), whose Send and Cancel are always in view. **Reply to
-this** under a comment answers that comment in a thread of its own, drawn
-indented under it; words selected in a comment offer **Comment**, a thread
-under those words quoting them (as a chat's threads on a message's parts);
-each has its own Reply, Resolve and Fold. The threads go to the owner
-session, which answers in them as it does a review's (a thread on a
-comment reaches it with the words quoted); a comment with no owner running
-waits and says so, sent once one runs. `a`
+with the comment), whose Send and Cancel are always in view. The
+description and every comment are messages in parts, as a chat's: the
+`+` beside a part (on a phone, the part or message tapped shows its +)
+comments on that part, a thread of its own drawn under it quoting it,
+with its own Reply, Resolve and Fold; words selected in a comment offer
+**Comment**, quoting them. The keys are the chat threads' (`j`/`k`
+through the parts and messages, `c` on a part comments on it, on a
+message answers its thread, `r` resolves, `za` folds, `n`/`N` thread to
+thread, `gg`/`G`; off a stop, `c` is a new comment and `r` an answer to
+the last thread). The threads go to the owner session, which answers in
+them as it does a review's (a thread on a part reaches it with the words
+quoted); a comment with no owner running waits and says so, sent once one
+runs. `a`
 (or **+**) adds an item in the view: a title, a description in the same
 editor (paste, drop or add images; they are stored with the item's thread
 once it is added), its state and tags; Cmd+Enter or **Add** adds it. `za`
