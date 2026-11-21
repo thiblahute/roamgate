@@ -404,7 +404,16 @@ describe("roamgate-hold runs the headless claude", () => {
     // Unconfirmed when the runtime goes: the next sends it again.
     child.write(userLine("once"));
     const saved = rg.swap()!;
-    expect(saved.pending?.length ?? 0).toBeLessThanOrEqual(1);
+    // Unconfirmed: the input at most once, and the start when the holder's
+    // ack of it is still on its way (a command it applied is never applied
+    // again).
+    const pending = saved.pending ?? [];
+    expect(
+      pending.filter((command) => command.op === "input").length,
+    ).toBeLessThanOrEqual(1);
+    expect(
+      pending.every((command) => ["input", "start"].includes(command.op)),
+    ).toBe(true);
     const again = (await rg.channel().spawn({
       command: {},
       attachOnly: true,
