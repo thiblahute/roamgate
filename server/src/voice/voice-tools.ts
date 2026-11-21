@@ -313,6 +313,44 @@ export function toolArgs(
   ];
 }
 
+/** The longest input or error of a tool call a job's log line keeps. */
+const LOGGED_CHARS = 300;
+
+/**
+ * The log lines of a job's stream-json event: each tool it calls, with its
+ * input, and each call that failed. What a job did (moving, pausing or
+ * turning down the call's music, say) is seen nowhere else.
+ */
+export function toolCallLog(
+  id: string,
+  event: Record<string, unknown>,
+): string[] {
+  const message = event.message as { content?: unknown } | undefined;
+  if (!Array.isArray(message?.content)) return [];
+  const clip = (text: string) =>
+    text.length > LOGGED_CHARS ? `${text.slice(0, LOGGED_CHARS)}...` : text;
+  const lines: string[] = [];
+  for (const part of message.content as Record<string, unknown>[]) {
+    if (event.type === "assistant" && part?.type === "tool_use")
+      lines.push(
+        `[voice] tool job ${id}: ${String(part.name)} ${clip(JSON.stringify(part.input ?? {}))}`,
+      );
+    else if (
+      event.type === "user" &&
+      part?.type === "tool_result" &&
+      part.is_error === true
+    ) {
+      const text = Array.isArray(part.content)
+        ? (part.content as { text?: unknown }[])
+            .map((each) => (typeof each?.text === "string" ? each.text : ""))
+            .join(" ")
+        : String(part.content ?? "");
+      lines.push(`[voice] tool job ${id}: a call failed: ${clip(text)}`);
+    }
+  }
+  return lines;
+}
+
 export function spawnTools(
   model: string,
   command: string | undefined,
@@ -585,6 +623,7 @@ export class VoiceTools {
           });
           continue;
         }
+        for (const logged of toolCallLog(job.id, event)) console.error(logged);
         if (event.type !== "result") continue;
         if (event.is_error) failed = String(event.result ?? "It failed.");
         else result = String(event.result ?? "");

@@ -11,6 +11,7 @@ import {
   matchesTool,
   saysYes,
   toolArgs,
+  toolCallLog,
   toolDecision,
   toolsContext,
   type ToolProcess,
@@ -93,6 +94,54 @@ describe("matching tools", () => {
       "mcp__send_server__list",
     ])
       expect(writesByName(tool)).toBe(false);
+  });
+});
+
+describe("a job's log", () => {
+  test("each tool called, with its input, and each call that failed", () => {
+    expect(
+      toolCallLog("t4", {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "text", text: "Moving it." },
+            {
+              type: "tool_use",
+              name: "mcp__spotify__transfer",
+              input: { device: "amd-desktop", play: true },
+            },
+          ],
+        },
+      }),
+    ).toEqual([
+      '[voice] tool job t4: mcp__spotify__transfer {"device":"amd-desktop","play":true}',
+    ]);
+    expect(
+      toolCallLog("t4", {
+        type: "user",
+        message: {
+          content: [
+            { type: "tool_result", content: "ok" },
+            {
+              type: "tool_result",
+              is_error: true,
+              content: [{ type: "text", text: "No active device" }],
+            },
+          ],
+        },
+      }),
+    ).toEqual(["[voice] tool job t4: a call failed: No active device"]);
+    const long = toolCallLog("t5", {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", name: "x", input: { a: "b".repeat(500) } },
+        ],
+      },
+    });
+    expect(long[0]?.endsWith("...")).toBe(true);
+    expect(long[0]!.length).toBeLessThan(340);
+    expect(toolCallLog("t6", { type: "result", result: "done" })).toEqual([]);
   });
 });
 
