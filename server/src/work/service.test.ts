@@ -23,7 +23,7 @@ import {
   type WorkServiceDeps,
 } from "./service";
 import { openWorkStore, WorkError } from "./store";
-import { workTool } from "./tools";
+import { WORK_USER_WRITING, workTool, workUserTool } from "./tools";
 
 const dirs: string[] = [];
 function dir() {
@@ -1610,6 +1610,88 @@ test("the real review service asks the coordinator to triage the user's free-tex
 });
 
 describe("work tools and rpc", () => {
+  test("the user's tools write in their name: words for its owner to sort, comments and answers that reach it", async () => {
+    const { service, reviews } = setup();
+    service.projectSet(
+      { name: "roamgate", coordinator: "desktop/w35:p1" },
+      { by: "user" },
+    );
+    const json = (answer: string) => JSON.parse(answer.split("\n")[1]!);
+    // An item added from a call: the user's words as its text, never a
+    // title, so the coordinator sorts it; where it came from said.
+    const added = json(
+      await workUserTool(
+        service,
+        "work_add",
+        { text: "Call drops when the car starts" },
+        "voice 2026-11-21 10:00:00",
+      ),
+    );
+    expect(added.item.owner_session).toBe("desktop/w35:p1");
+    expect(added.item.needs_triage).toBe(true);
+    expect(added.item.source).toBe("voice 2026-11-21 10:00:00");
+    expect(service.store.item(added.item.id)?.by).toBe("user");
+    expect(reviews.added.at(-1)).toMatchObject({
+      author: "you",
+      text: "Call drops when the car starts",
+    });
+    // A title is the sorting session's to give.
+    await expect(
+      workUserTool(service, "work_add", { title: "x", text: "y" }),
+    ).rejects.toThrow(/invalid work_add/);
+    // The user's moves are never refused for a missing ask.
+    const moved = json(
+      await workUserTool(service, "work_update", {
+        item: added.item.id,
+        state: "you",
+        ask: "Choose: drop the car link or keep it",
+        answers: ["Drop it", "Keep it"],
+      }),
+    );
+    expect(moved.item.state).toBe("you");
+    // An answer must be one of the item's, whatever its case.
+    await expect(
+      workUserTool(service, "work_answer", {
+        item: added.item.id,
+        answer: "Maybe",
+      }),
+    ).rejects.toThrow(/"Drop it", "Keep it"/);
+    const answered = json(
+      await workUserTool(service, "work_answer", {
+        item: added.item.id,
+        answer: "keep it",
+      }),
+    );
+    expect(answered.told).toBeTruthy();
+    expect(reviews.added.at(-1)).toMatchObject({
+      author: "you",
+      text: "Keep it",
+    });
+    await workUserTool(service, "work_comment", {
+      item: added.item.id,
+      text: "Et vérifie avec le téléphone",
+    });
+    expect(reviews.added.at(-1)).toMatchObject({
+      author: "you",
+      text: "Et vérifie avec le téléphone",
+    });
+    const done = json(
+      await workUserTool(service, "work_done", { item: added.item.id }),
+    );
+    expect(done.item.state).toBe("done");
+    const listed = json(
+      await workUserTool(service, "work_list", { state: "done" }),
+    );
+    expect(listed.items.map((item: { id: string }) => item.id)).toEqual([
+      added.item.id,
+    ]);
+    // Only the user's tools: no project changes, no other's comments.
+    await expect(
+      workUserTool(service, "work_project", { name: "x" }),
+    ).rejects.toThrow(/unknown tool/);
+    expect(WORK_USER_WRITING).not.toContain("work_list");
+  });
+
   test("the tools take an ask and answers, list them, and say how to give one", async () => {
     const { service } = setup();
     const made = JSON.parse(

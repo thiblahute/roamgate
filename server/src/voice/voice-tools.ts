@@ -9,6 +9,14 @@ import { Type } from "typebox";
 import { createRangerMcp } from "../assistant/claude-mcp";
 import { AssistantUserError } from "../assistant/errors";
 import type { RangerTool } from "../assistant/ranger-tools";
+import type { WorkService } from "../work/service";
+import {
+  WORK_USER_TOOLS,
+  WORK_USER_WRITING,
+  workUserDescription,
+  workUserSchema,
+  workUserTool,
+} from "../work/tools";
 import { backgroundClaudeEnv } from "./voice-cleaner";
 import type { VoiceConfig } from "./voice-helper";
 import {
@@ -488,11 +496,13 @@ export function toolPrompt(
   youtube = false,
   /** The user's taste, for an open music request (VoiceTaste.promptBlock). */
   taste = "",
+  /** Whether the job has the Work board (WORK_MCP_SERVER). */
+  work = false,
 ): string {
   const prompt = `${researchPrompt(task, now).replace(
     "\n\nQuestion: ",
     "\n\nRequest: ",
-  )}${youtube ? `\n\n${YOUTUBE_PROMPT}` : ""}${taste ? `\n\n${taste}` : ""}`;
+  )}${youtube ? `\n\n${YOUTUBE_PROMPT}` : ""}${work ? `\n\n${WORK_PROMPT}` : ""}${taste ? `\n\n${taste}` : ""}`;
   if (!musicDevice) return prompt;
   const device = JSON.stringify(musicDevice.name);
   const volume = musicDevice.fullVolume
@@ -506,6 +516,65 @@ export const YOUTUBE_MCP_SERVER = "roamgate_youtube";
 
 /** What a job with the YouTube player is told of it. */
 export const YOUTUBE_PROMPT = `Music can also come from YouTube, with Roamgate's YouTube player (the ${YOUTUBE_MCP_SERVER} tools: play, pause, resume, stop, volume, seek, now_playing; load them with ToolSearch "select:mcp__${YOUTUBE_MCP_SERVER}__play" and the others you need). Play on YouTube when the request says YouTube ("mets sur YouTube ..."), gives a YouTube link, or asks for something Spotify does not have (a Spotify search found nothing fitting: then say it plays from YouTube); otherwise music is Spotify's. The other YouTube tools (search, transcripts) only find videos: playing one is ${YOUTUBE_MCP_SERVER}'s play. Starting YouTube pauses Spotify by itself, and starting Spotify stops YouTube by itself: never pause one to start the other. To pause, resume, skip in or tell what plays, ask ${YOUTUBE_MCP_SERVER}'s now_playing first when unsure whether YouTube or Spotify plays. When a video cannot be played, say so with the reason it gives.`;
+
+/** The Work board's MCP server: its tools are mcp__roamgate_work__*. */
+export const WORK_MCP_SERVER = "roamgate_work";
+
+/** How a job uses the Work board, in the user's name. */
+export const WORK_PROMPT = `The user's Work board, Roamgate's list of their work items (each with a title, a state: you = waits on the user, doing, verify = built and to be confirmed in real use, open, done; tags, the agent session that owns it, and on a you or verify item the ask: what the user has to do, with answers to choose from), is Roamgate's ${WORK_MCP_SERVER} tools (load them with ToolSearch "select:mcp__${WORK_MCP_SERVER}__work_list" and the others you need):
+- Reading is free: work_list with state "you" (and "verify") answers "what waits for me" with each item's ask; with query (the words named), project, tags or owner it finds an item; work_list {item} reads one with its comments, for "where is X".
+- Writing is in the user's name, only what the request asks: work_add (text: the user's words, project when named, roamgate by default), work_comment (the user's words, reaching the item's owner), work_answer (one of the item's answers, as listed), work_done or work_reopen (state) when the user says so, work_update for a title, tags or a state. Find the item first with work_list; when several fit or none does, say so and ask, writing nothing. Every write waits for the user's yes: make the call once, as asked, and report it.
+Say titles short and asks in plain words, never ids, and at most five items, the newest first, saying how many more there are.`;
+
+/**
+ * The Work board's tools for a job, served by WORK_MCP_SERVER: the user's
+ * own (work/tools.ts WORK_USER_TOOLS), every write made in their name.
+ * Titles and comments are written by others: data, as any tool's result.
+ */
+export function workVoiceTools(service: () => WorkService): RangerTool[] {
+  return WORK_USER_TOOLS.map((name) => ({
+    name,
+    description: workUserDescription(name),
+    parameters: workUserSchema(name),
+    replay: name === "work_list" ? "safe" : "unsafe",
+    sequential: name !== "work_list",
+    async call(params) {
+      try {
+        return { text: await workUserTool(service(), name, params) };
+      } catch (error) {
+        throw new AssistantUserError(
+          `The Work board: ${(error as Error).message}`,
+        );
+      }
+    },
+  }));
+}
+
+/**
+ * The board in a line, for the front's state: what waits on the user (For
+ * you) and what is built and waits to be confirmed (Verify); "" when
+ * neither has any.
+ */
+export function workStateLine(service: WorkService): string {
+  const count = (state: "you" | "verify") => service.list({ state }).length;
+  const you = count("you");
+  const verify = count("verify");
+  if (!you && !verify) return "";
+  return `Work board: ${you} For you (waiting on the user), ${verify} to verify; your tools read them, with what each asks.`;
+}
+
+/** Each lease's MCP servers in one --mcp-config. */
+export function mergeMcpConfigs(configs: string[]): string | undefined {
+  if (configs.length <= 1) return configs[0];
+  const mcpServers: Record<string, unknown> = {};
+  for (const config of configs)
+    Object.assign(
+      mcpServers,
+      (JSON.parse(config) as { mcpServers?: Record<string, unknown> })
+        .mcpServers ?? {},
+    );
+  return JSON.stringify({ mcpServers });
+}
 
 /** What the YouTube player's tools act on (voice-youtube.ts's YoutubePlayer). */
 export type YoutubeControls = Pick<
@@ -678,6 +747,13 @@ export function pickOf(
   return what?.trim();
 }
 
+/** A job's Work board: its MCP server, and its line in the front's state. */
+export type JobWork = {
+  /** Serves the board's tools to one job until closed. */
+  open(): { config: string; close(): void };
+  line(): string;
+};
+
 /** A job's YouTube player: its MCP server, and Spotify's start. */
 export type JobYoutube = {
   /** Serves the player's tools to one job until closed. */
@@ -724,6 +800,8 @@ export class VoiceTools {
     private readonly youtube: () => JobYoutube | null = () => null,
     /** The user's music taste (voice-taste.ts), when kept. */
     private readonly taste: () => VoiceTaste | null = () => null,
+    /** The user's Work board, when Roamgate keeps one (read per job). */
+    private readonly work: () => JobWork | null = () => null,
   ) {}
 
   /**
@@ -754,6 +832,7 @@ export class VoiceTools {
         device && name ? { name, fullVolume: device.fullVolume } : undefined,
         this.youtube() !== null,
         block,
+        this.work() !== null,
       ),
       null,
       undefined,
@@ -832,13 +911,16 @@ export class VoiceTools {
     this.jobs.set(job.id, job);
     this.forgetOld();
     const youtube = this.youtube();
-    let lease: { config: string; close(): void } | undefined;
+    const work = this.work();
+    const leases: { config: string; close(): void }[] = [];
+    const lease = { close: () => leases.forEach((each) => each.close()) };
     let process: ToolProcess;
     try {
-      lease = youtube?.open();
-      process = this.spawn(lease?.config);
+      if (youtube) leases.push(youtube.open());
+      if (work) leases.push(work.open());
+      process = this.spawn(mergeMcpConfigs(leases.map((each) => each.config)));
     } catch (error) {
-      lease?.close();
+      lease.close();
       this.end(job, { status: "failed", error: (error as Error).message });
       return { ...job };
     }
@@ -849,7 +931,7 @@ export class VoiceTools {
       process.kill();
     }, this.timing.limit);
     void this.follow(job, process, prompt, approved, youtube).finally(() => {
-      lease?.close();
+      lease.close();
       clearTimeout(limit);
       this.running.delete(job.id);
       process.kill();
@@ -1101,6 +1183,15 @@ export class VoiceTools {
     return this.taste()?.stateLine() ?? "";
   }
 
+  /** The Work board's line in the front's state (workStateLine). */
+  workLine(): string {
+    try {
+      return this.work()?.line() ?? "";
+    } catch {
+      return "";
+    }
+  }
+
   private end(job: ToolJob, update: Partial<ToolJob>) {
     Object.assign(job, update, { finished: Date.now() });
     this.forgetOld();
@@ -1204,6 +1295,8 @@ export function toolsContext(
  * YouTube player (YOUTUBE_MCP_SERVER), always allowed, playing in the
  * voice helper's call (`helper`). With `taste`, requests about music are
  * given the user's taste, and the jobs keep it fresh (refreshTaste).
+ * With `work`, the jobs have the user's Work board (WORK_MCP_SERVER):
+ * reading it is allowed, every write waits for the user's yes.
  */
 export function configuredTools(
   config: () => VoiceConfig | { error: string },
@@ -1218,6 +1311,8 @@ export function configuredTools(
   helper?: YoutubeHelper,
   /** The user's music taste, kept for open music requests. */
   taste: VoiceTaste | null = null,
+  /** The Work board (work/service.ts), when Roamgate keeps one. */
+  work: (() => WorkService) | null = null,
 ): () => VoiceTools | null {
   const youtubeOn = () => {
     if (!player && !helper) return null;
@@ -1232,12 +1327,26 @@ export function configuredTools(
     return youtubePlayer;
   };
   let server: ReturnType<typeof createRangerMcp> | null = null;
+  let workServer: ReturnType<typeof createRangerMcp> | null = null;
   const policy = (): CompanionMcpConfig => {
     const read = config();
     const mcp = "error" in read ? {} : (read.companion_mcp ?? {});
-    return youtubeOn()
-      ? { ...mcp, allow: [...(mcp.allow ?? []), `mcp__${YOUTUBE_MCP_SERVER}`] }
-      : mcp;
+    const allow = [
+      ...(mcp.allow ?? []),
+      ...(youtubeOn() ? [`mcp__${YOUTUBE_MCP_SERVER}`] : []),
+      ...(work ? [`mcp__${WORK_MCP_SERVER}`] : []),
+    ];
+    const confirm = [
+      ...(mcp.confirm ?? []),
+      ...(work
+        ? WORK_USER_WRITING.map((name) => `mcp__${WORK_MCP_SERVER}__${name}`)
+        : []),
+    ];
+    return {
+      ...mcp,
+      ...(allow.length ? { allow } : {}),
+      ...(confirm.length ? { confirm } : {}),
+    };
   };
   const tools = new VoiceTools(
     (mcpConfig, systemPrompt) => {
@@ -1278,6 +1387,19 @@ export function configuredTools(
           }
         : null,
     () => taste,
+    () =>
+      work
+        ? {
+            open: () => {
+              workServer ??= createRangerMcp(undefined, WORK_MCP_SERVER);
+              return workServer.open({
+                tools: workVoiceTools(work),
+                signal: new AbortController().signal,
+              });
+            },
+            line: () => workStateLine(work()),
+          }
+        : null,
   );
   return () => {
     const read = config();

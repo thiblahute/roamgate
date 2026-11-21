@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createVoiceRoutes, toolRoute } from "../http/voice";
+import { createVoiceRoutes, toolRoute, withSearches } from "../http/voice";
+import { createWorkService, type WorkService } from "../work/service";
+import { openWorkStore } from "../work/store";
 import type { VoiceHelper } from "./voice-helper";
 import { parseFrontReply } from "./voice-front";
 import {
@@ -23,6 +25,9 @@ import {
   pickOf,
   toolPrompt,
   VoiceTools,
+  mergeMcpConfigs,
+  WORK_PROMPT,
+  workStateLine,
   writesByName,
   YOUTUBE_PROMPT,
   type YoutubeControls,
@@ -1437,5 +1442,152 @@ describe("the user's taste", () => {
     );
     expect(prompt.endsWith("\n\nTaste: x")).toBe(true);
     expect(toolPrompt("mets de la musique")).not.toContain("Taste:");
+  });
+});
+
+describe("the Work board", () => {
+  const COMPANION = { helper: "h", front_model: "opus", companion_mcp: POLICY };
+
+  function board() {
+    const dir = mkdtempSync(join(tmpdir(), "roamgate-voice-work-"));
+    const service = createWorkService({ store: openWorkStore(dir) });
+    return {
+      service,
+      done: () => rmSync(dir, { recursive: true, force: true }),
+    };
+  }
+
+  function configured(service: WorkService) {
+    const spawned: {
+      process: Fake;
+      policy: CompanionMcpConfig;
+      mcpConfig?: string;
+    }[] = [];
+    const using = configuredTools(
+      () => COMPANION,
+      (_model, _command, policy, mcpConfig) => {
+        const process = fakeProcess();
+        spawned.push({ process, policy, mcpConfig });
+        return process as ToolProcess;
+      },
+      undefined,
+      undefined,
+      null,
+      () => service,
+    )()!;
+    return { using, spawned };
+  }
+
+  async function rpc(mcpConfig: string, body: Record<string, unknown>) {
+    const server = JSON.parse(mcpConfig).mcpServers.roamgate_work;
+    const response = await fetch(server.url, {
+      method: "POST",
+      headers: { ...server.headers, "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, ...body }),
+    });
+    return response.status === 200 ? response.json() : response.status;
+  }
+
+  test("a job reads the board freely, and every write waits for the user's yes", async () => {
+    const { service, done } = board();
+    try {
+      await service.add(
+        {
+          title: "Pick the car audio",
+          state: "you",
+          ask: "Choose: media or no music",
+          answers: ["Media", "No music"],
+        },
+        { by: "user" },
+      );
+      const { using, spawned } = configured(service);
+      using.start("Qu'est-ce qui m'attend sur le board ?", true);
+      const { process, policy, mcpConfig } = spawned[0]!;
+      expect(askRules(policy)).toContain("mcp__roamgate_work");
+      expect(
+        toolDecision("mcp__roamgate_work__work_list", { state: "you" }, policy)
+          .behavior,
+      ).toBe("allow");
+      for (const write of [
+        "work_add",
+        "work_update",
+        "work_done",
+        "work_reopen",
+        "work_comment",
+        "work_answer",
+      ])
+        expect(
+          toolDecision(`mcp__roamgate_work__${write}`, { item: "x" }, policy)
+            .behavior,
+        ).toBe("hold");
+      // The companion's own tools are still given as voice.json says.
+      expect(policy.confirm).toContain(SEND);
+      const user = process.written.find((each) => each.type === "user") as {
+        message: { content: string };
+      };
+      expect(user.message.content).toContain(WORK_PROMPT);
+
+      const listed = await rpc(mcpConfig!, { method: "tools/list" });
+      expect(
+        listed.result.tools.map((tool: { name: string }) => tool.name),
+      ).toEqual([
+        "work_list",
+        "work_add",
+        "work_update",
+        "work_done",
+        "work_reopen",
+        "work_comment",
+        "work_answer",
+      ]);
+      const read = await rpc(mcpConfig!, {
+        method: "tools/call",
+        params: { name: "work_list", arguments: { state: "you" } },
+      });
+      expect(read.result.content[0].text).toContain(
+        "Choose: media or no music",
+      );
+      // An error says what went wrong, for the job to tell.
+      const wrong = await rpc(mcpConfig!, {
+        method: "tools/call",
+        params: { name: "work_done", arguments: { item: "ffffffffffff" } },
+      });
+      expect(wrong.result.isError).toBe(true);
+      expect(wrong.result.content[0].text).toContain(
+        "no work item ffffffffffff",
+      );
+
+      // The front's state says what waits on the user, in one line.
+      expect(using.workLine()).toBe(workStateLine(service));
+      expect(using.workLine()).toContain("1 For you");
+      expect(withSearches("", null, using)).toContain("Work board: 1 For you");
+
+      process.push(result("Une chose t'attend."));
+      await settle();
+      await settle();
+      expect(await rpc(mcpConfig!, { method: "tools/list" })).toBe(401);
+    } finally {
+      done();
+    }
+  });
+
+  test("nothing waiting, no line; each lease's servers in one config", () => {
+    const { service, done } = board();
+    try {
+      expect(workStateLine(service)).toBe("");
+    } finally {
+      done();
+    }
+    expect(mergeMcpConfigs([])).toBeUndefined();
+    expect(mergeMcpConfigs(['{"mcpServers":{"a":1}}'])).toBe(
+      '{"mcpServers":{"a":1}}',
+    );
+    expect(
+      JSON.parse(
+        mergeMcpConfigs([
+          '{"mcpServers":{"a":{"url":"x"}}}',
+          '{"mcpServers":{"b":{"url":"y"}}}',
+        ])!,
+      ),
+    ).toEqual({ mcpServers: { a: { url: "x" }, b: { url: "y" } } });
   });
 });

@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import type { ReviewThread } from "../../../shared/review";
+import { REVIEW_USER, type ReviewThread } from "../../../shared/review";
 import {
   describeWorkLink,
   describeWorkOwner,
@@ -8,6 +8,7 @@ import {
   WORK_STATES,
   type WorkItem,
   type WorkProject,
+  workAskOf,
   workDescriptionThread,
   workDoneWhen,
 } from "../../../shared/work";
@@ -434,6 +435,36 @@ export function threadLines(
 }
 
 /**
+ * What `work_add` answers: the item, its review and thread (its
+ * description's, told to its owner when that is another session); an
+ * item the source names already was changed instead: said, with what.
+ */
+function addedLine(
+  service: WorkService,
+  added: Awaited<ReturnType<WorkService["addOrUpdate"]>>,
+): Record<string, unknown> {
+  const made = service.store.item(added.item.id) ?? added.item;
+  const thread = workDescriptionThread(
+    service.threads({ item: made.id })?.threads ?? [],
+    made,
+  );
+  return {
+    item: itemLine(made, service.store.project(made.project)),
+    ...(added.updated
+      ? {
+          updated: true,
+          changed: added.changed ?? {},
+          ...(added.ignored ? { ignored: added.ignored } : {}),
+          note: `an item with this source existed: changed, not added${added.ignored ? " (its description stands: the text was left aside)" : ""}`,
+        }
+      : {}),
+    ...(made.review ? { review: made.review } : {}),
+    ...(thread ? { thread: thread.id } : {}),
+    ...(added.adopted ? { adopted_thread: added.adopted } : {}),
+  };
+}
+
+/**
  * One of the board's tools for an agent session: `caller` names it in what
  * the user is told ("Claude in roamgate"). Answers JSON after the line
  * saying what in it other people wrote.
@@ -444,6 +475,8 @@ export async function workTool(
   params: unknown,
   caller: string,
   address?: string,
+  /** "user": the user's own change, made for them (the voice companion). */
+  by: WorkMeta["by"] = "agent",
 ): Promise<string> {
   if (tool === "help")
     return JSON.stringify({
@@ -468,11 +501,10 @@ export async function workTool(
     );
   }
   const input = params as Record<string, unknown>;
-  const meta: WorkMeta = {
-    by: "agent",
-    caller,
-    ...(address ? { address } : {}),
-  };
+  const meta: WorkMeta =
+    by === "user"
+      ? { by: "user" }
+      : { by: "agent", caller, ...(address ? { address } : {}) };
   const answer = (value: unknown) => `${UNTRUSTED}\n${JSON.stringify(value)}`;
   const line = (item: WorkItem) =>
     itemLine(item, service.store.project(item.project));
@@ -506,31 +538,8 @@ export async function workTool(
           : {}),
       });
     }
-    case "work_add": {
-      // Its text is its description thread, told to its owner when that
-      // is another session (the coordinator's, say). An item the source
-      // names already is changed instead: said, with what changed.
-      const added = await service.addOrUpdate(input, meta);
-      const made = service.store.item(added.item.id) ?? added.item;
-      const thread = workDescriptionThread(
-        service.threads({ item: made.id })?.threads ?? [],
-        made,
-      );
-      return answer({
-        item: line(made),
-        ...(added.updated
-          ? {
-              updated: true,
-              changed: added.changed ?? {},
-              ...(added.ignored ? { ignored: added.ignored } : {}),
-              note: `an item with this source existed: changed, not added${added.ignored ? " (its description stands: the text was left aside)" : ""}`,
-            }
-          : {}),
-        ...(made.review ? { review: made.review } : {}),
-        ...(thread ? { thread: thread.id } : {}),
-        ...(added.adopted ? { adopted_thread: added.adopted } : {}),
-      });
-    }
+    case "work_add":
+      return answer(addedLine(service, await service.addOrUpdate(input, meta)));
     case "work_update":
       return answer({ item: line(await service.update(input, meta)) });
     case "work_done":
@@ -557,4 +566,154 @@ export async function workTool(
     case "work_project":
       return answer({ project: projectLine(service.projectSet(input, meta)) });
   }
+}
+
+/**
+ * The board's tools the user's own voice companion uses (voice-tools.ts):
+ * the agents' tools that read and move items, and two only the user has,
+ * a comment in their name and the answer to an item's ask. Every write
+ * is the user's (`by: user`): their comment reaches the item's owner as
+ * one typed on the board does.
+ */
+export const WORK_USER_TOOLS = [
+  "work_list",
+  "work_add",
+  "work_update",
+  "work_done",
+  "work_reopen",
+  "work_comment",
+  "work_answer",
+] as const;
+
+export type WorkUserToolName = (typeof WORK_USER_TOOLS)[number];
+
+/** The user's tools that change the board: all but work_list. */
+export const WORK_USER_WRITING: WorkUserToolName[] = WORK_USER_TOOLS.filter(
+  (name) => name !== "work_list",
+);
+
+export const workUserToolSchemas = {
+  work_add: Type.Object(
+    {
+      text: Type.String({
+        minLength: 1,
+        maxLength: 20_000,
+        description: "The user's words, as they said them.",
+      }),
+      project: Type.Optional(
+        Type.String({
+          maxLength: 80,
+          description: "Its name or id; the roamgate project by default.",
+        }),
+      ),
+      tags: Type.Optional(tagsParam),
+      source: Type.Optional(sourceParam),
+    },
+    { additionalProperties: false },
+  ),
+  work_comment: Type.Object(
+    {
+      item: itemParam,
+      text: Type.String({
+        minLength: 1,
+        maxLength: 20_000,
+        description: "The user's words, as they said them (Markdown).",
+      }),
+    },
+    { additionalProperties: false },
+  ),
+  work_answer: Type.Object(
+    {
+      item: itemParam,
+      answer: Type.String({
+        minLength: 1,
+        maxLength: 80,
+        description: "One of the item's answers, as work_list lists them.",
+      }),
+    },
+    { additionalProperties: false },
+  ),
+};
+
+/** What the user's own tools say: the agents' words, without the CLI. */
+export function workUserDescription(name: WorkUserToolName): string {
+  switch (name) {
+    case "work_comment":
+      return "Comment on a work item in the user's name: their words, as they said them, reach the item's owner (the session working on it) as a comment they typed on the board does.";
+    case "work_answer":
+      return "Answer a For you or Verify item's ask with one of its answers (as work_list lists them): posted as the user's comment on the item, which reaches its owner, as a tap on the card does.";
+    case "work_add":
+      return "Add a work item the user asked for: text is the user's words (no title: the session that sorts the project's new items gives it one), project the one they name (roamgate by default), source where it came from. It lands in Open, its owner the project's coordinator, who sorts it.";
+    default:
+      return WORK_DESCRIPTIONS[name].replace(` ${WORK_CLI_NOTE}`, "");
+  }
+}
+
+/** The parameters of the user's tool `name`. */
+export function workUserSchema(name: WorkUserToolName) {
+  return Object.hasOwn(workUserToolSchemas, name)
+    ? workUserToolSchemas[name as keyof typeof workUserToolSchemas]
+    : workToolSchemas[name as WorkToolName];
+}
+
+/**
+ * One of the user's tools (WORK_USER_TOOLS), made for them: the agents'
+ * tool with `by: user`, or a comment in their name. An item added is
+ * the user's words as its text, never a title, so its owner (the
+ * project's coordinator) sorts it, as one added on the board is, and says
+ * where it came from (`source`, `voice <time>` by default).
+ */
+export async function workUserTool(
+  service: WorkService,
+  tool: string,
+  params: unknown,
+  source = `voice ${new Date().toISOString().slice(0, 19).replace("T", " ")}`,
+): Promise<string> {
+  if (!(WORK_USER_TOOLS as readonly string[]).includes(tool))
+    throw new WorkError(
+      `unknown tool ${tool.slice(0, 60)}: ${WORK_USER_TOOLS.join(", ")}`,
+      "not_found",
+    );
+  const name = tool as WorkUserToolName;
+  if (!Object.hasOwn(workUserToolSchemas, name))
+    return workTool(service, name, params, "", undefined, "user");
+  const schema = workUserToolSchemas[name as keyof typeof workUserToolSchemas];
+  if (!Value.Check(schema, params)) {
+    const first = [...Value.Errors(schema, params)][0];
+    throw new WorkError(
+      `invalid ${name} parameters${first ? `: ${first.instancePath || "/"} ${first.message}` : ""}`,
+    );
+  }
+  if (name === "work_add") {
+    const input = params as Record<string, unknown>;
+    const added = await service.addOrUpdate(
+      { ...input, source: input.source ?? source },
+      { by: "user" },
+    );
+    return `${UNTRUSTED}\n${JSON.stringify(addedLine(service, added))}`;
+  }
+  const input = params as { item: string; text?: string; answer?: string };
+  const item = service.store.find(input.item);
+  if (!item) throw new WorkError("no such item", "not_found");
+  let text = input.text ?? "";
+  if (name === "work_answer") {
+    const asked = workAskOf(item);
+    const said = (input.answer ?? "").trim().toLowerCase();
+    const answer = asked?.answers.find((each) => each.toLowerCase() === said);
+    if (!answer)
+      throw new WorkError(
+        asked?.answers.length
+          ? `not one of the item's answers: ${asked.answers.map((each) => JSON.stringify(each)).join(", ")}`
+          : "the item asks nothing to choose from: comment instead",
+      );
+    text = answer;
+  }
+  const thread = await service.comment({ item: item.id, text }, REVIEW_USER);
+  return `${UNTRUSTED}\n${JSON.stringify({
+    item: itemLine(item, service.store.project(item.project)),
+    comment: thread.comments[0]?.id ?? thread.id,
+    ...(item.owner
+      ? { told: describeWorkOwner(item.owner) }
+      : { note: "nobody owns the item: the comment waits for one" }),
+  })}`;
 }

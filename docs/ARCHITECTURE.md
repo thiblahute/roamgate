@@ -1875,6 +1875,23 @@ is delivered again) and leaves its review; the thread's review is linked
 from the item. Lists of a checkout's reviews leave work reviews out, as
 they do efforts'.
 
+Voice companion: the companion's tool jobs (`server/src/voice/voice-tools.ts`)
+get the board from Roamgate itself, the `roamgate_work` MCP server
+(`createRangerMcp`, leased per job beside `roamgate_youtube`, their
+configs merged into one `--mcp-config`), serving `WORK_USER_TOOLS`
+(`server/src/work/tools.ts`): `work_list`, `work_update`, `work_done` and
+`work_reopen` are the agents' tools run with `by: "user"`; `work_add`
+takes the user's words as `text` and no title (so the item is untitled
+and, with the coordinator as owner, `needsTriage`), `source` defaulting to
+`voice <time>`; `work_comment` and `work_answer` (one of the item's
+`answers`, matched without case) post the user's comment through the
+service's `comment` with author `you`, the review service delivering it to
+the owner as a comment typed on the board. The companion's policy allows
+`mcp__roamgate_work` and lists every writing tool (`WORK_USER_WRITING`)
+under `confirm`, so a write is held and read back until the user's yes;
+reads run at once. `workStateLine` adds one line to the front's state
+(`withSearches`): how many items are `you` and `verify`.
+
 Notification: an item entering `you` publishes one feed notification (kind
 `work`, pane `work:<item id>` so its tag is stable, path
 `/#roamgate-work=<id>`, which opens the board on the item), cleared when it

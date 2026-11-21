@@ -875,6 +875,13 @@ Inspector state is scoped to each checkout; see
   send and to whom, and does it only when you say yes. In its conversation
   that read-back has **Yes, do it** and **No** buttons, and a plain yes or
   no typed there answers it too; it stops waiting after 5 minutes.
+  With its tools, it also has your [Work board](#work-board): ask "qu'est-ce
+  qui m'attend ?" (the For you items with what each asks) or "où en est
+  la musique dans la voiture ?" (an item and its comments), and it reads
+  them; ask it to add something, comment on
+  an item, answer an item's question with one of its answers, or mark one
+  done or reopen it, and it does it in your name once you say yes to its
+  read-back, as for a message.
   Its conversation also takes text, in a call or without one, for a quick
   question with no microphone: **Ask the companion** in the application
   menu or the command menu (`Cmd+Option+Shift+V`, `Ctrl+Alt+Shift+V`), or
@@ -2308,6 +2315,16 @@ same source twice changes the item and says so; a new title needs
 `replace`. In a review's Comments panel,
 **Work item** on a thread moves it to the board as an item: its comments
 and id are kept, the review linked.
+
+The voice companion, when it has its tools (`companion_mcp`), reads the
+board on a call or in its conversation: what waits for you, with each
+item's ask, and where an item stands with its comments; it knows how many
+items are For you and to verify. It writes only what you ask, in your
+name, once you say yes to its read-back: an item added from your words
+(no title: the coordinator sorts it, its source `voice` and the time), a
+comment that reaches the item's owner as one typed on the board does, an
+answer to an item's ask (one of its answers), done, reopen, a new title,
+tags or state.
 
 ## Diff Viewer
 

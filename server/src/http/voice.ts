@@ -1278,7 +1278,9 @@ export function withSearches(
     : "";
   // What the user listens to lately, for "qu'est-ce que j'écoute en ce moment".
   const taste = tools?.tasteLine() ?? "";
-  return [context, searches, using, taste].filter(Boolean).join("\n\n");
+  // What waits on the user on the Work board, for "qu'est-ce qui m'attend ?".
+  const work = tools?.workLine() ?? "";
+  return [context, searches, using, taste, work].filter(Boolean).join("\n\n");
 }
 
 const looksFrench = (text: string) =>

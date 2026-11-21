@@ -546,6 +546,8 @@ const voiceTools = configuredTools(
   undefined,
   voiceHelper,
   new VoiceTaste(tastePath(), companionMemoryFiles.dir),
+  // Read when a job starts: the board is made on first use.
+  () => getWorkService(),
 );
 const companionMemory = new CompanionMemory({
   path: companionMemoryPath(),
