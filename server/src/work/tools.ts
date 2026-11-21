@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
+import type { ReviewThread } from "../../../shared/review";
 import {
   describeWorkLink,
   describeWorkOwner,
@@ -244,7 +245,7 @@ export type WorkToolName = keyof typeof workToolSchemas;
 
 export const WORK_DESCRIPTIONS: Record<WorkToolName, string> = {
   work_list:
-    'The Work board: work items by project (roamgate by default) with id, title, state (you: waits on the user, doing, verify, open, done), tags, owner (a session address and its subagent task), source, links (review threads, efforts, requests, commits, branches, decisions, other items) and times; filter by state, open, tags (all), owner, words. item: one item with its comments. Use it before changing the board, and to answer "what is on the list".',
+    'The Work board: work items by project (roamgate by default) with id, title, state (you: waits on the user, doing, verify, open, done), tags, owner (a session address and its subagent task), source, links (review threads, efforts, requests, commits, branches, decisions, other items) and times; filter by state, open, tags (all), owner, words. item: one item with its comments (a thread on one of the comments is listed under that comment as its threads, with on.quote the words it quotes; answer it with review_reply on its own thread id). Use it before changing the board, and to answer "what is on the list".',
   work_add:
     "Add a work item: a title, its project, a state (open by default; you when it waits on the user, doing when you take it), tags, an owner {session, task?} (yours from agent_sessions; the agent id of a subagent you spawned; without one, the project's coordinator session owns it and is told of it), links (a review thread it came from, the commit its fix landed in, an RFC's decision). text: its description, the first comment of its thread. Importing: source names where it came from (the same source again changes that item instead of adding one), created_at / done_at keep its dates, adopt_thread makes an existing review thread the item's own (comments and ids kept). The user sees it on the Work board; a For you item notifies them once.",
   work_update:
@@ -311,6 +312,63 @@ export function itemLine(item: WorkItem): Record<string, unknown> {
 }
 
 /**
+ * An item's threads as `work_list` answers them: a thread on a comment of
+ * another thread (`on`: that comment, and the words quoted when some were)
+ * is listed under that comment as its `threads`, at any depth; one on a
+ * comment the item no longer shows stands on its own.
+ */
+export function threadLines(
+  threads: readonly ReviewThread[],
+): Record<string, unknown>[] {
+  const onComment = new Map<string, ReviewThread[]>();
+  const comments = new Set<string>();
+  for (const thread of threads) {
+    for (const comment of thread.comments) comments.add(comment.id);
+    const parent = thread.anchor.message?.comment;
+    if (parent)
+      onComment.set(parent, [...(onComment.get(parent) ?? []), thread]);
+  }
+  const placed = new Set<string>();
+  const line = (thread: ReviewThread): Record<string, unknown> => {
+    placed.add(thread.id);
+    const on = thread.anchor.message;
+    return {
+      thread: thread.id,
+      resolved: thread.resolved,
+      ...(on
+        ? {
+            on: {
+              comment: on.comment,
+              ...(on.quote ? { quote: on.quote } : {}),
+            },
+          }
+        : {}),
+      comments: thread.comments.map((comment) => {
+        const under = (onComment.get(comment.id) ?? []).filter(
+          (nested) => !placed.has(nested.id),
+        );
+        return {
+          id: comment.id,
+          author: comment.author,
+          at: comment.createdAt,
+          text: comment.body,
+          ...(under.length ? { threads: under.map(line) } : {}),
+        };
+      }),
+    };
+  };
+  const roots = threads.filter((thread) => {
+    const parent = thread.anchor.message?.comment;
+    return !parent || !comments.has(parent);
+  });
+  const lines = roots.map(line);
+  // A thread whose parent is under another not reached (a cycle): its own.
+  for (const thread of threads)
+    if (!placed.has(thread.id)) lines.push(line(thread));
+  return lines;
+}
+
+/**
  * One of the board's tools for an agent session: `caller` names it in what
  * the user is told ("Claude in roamgate"). Answers JSON after the line
  * saying what in it other people wrote.
@@ -366,16 +424,7 @@ export async function workTool(
           ...(description?.comments[0]
             ? { description: description.comments[0].body }
             : {}),
-          comments: (snapshot?.threads ?? []).map((thread) => ({
-            thread: thread.id,
-            resolved: thread.resolved,
-            comments: thread.comments.map((comment) => ({
-              id: comment.id,
-              author: comment.author,
-              at: comment.createdAt,
-              text: comment.body,
-            })),
-          })),
+          comments: threadLines(snapshot?.threads ?? []),
         });
       }
       const board = service.board();

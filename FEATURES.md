@@ -2237,9 +2237,14 @@ tasks sheet), its project, links and dates, **Done** (`dd`) or
 **Reopen**, **Delete**, then its thread: the comments, each with Reply,
 and **Comment** (`c`; `r` replies to the last thread) in the review
 comment editor (images pasted, dropped or added with its button are kept
-with the comment), whose Send and Cancel are always in view. The thread
-goes to the owner session, which answers in it as it does a review's; a
-comment with no owner running waits and says so, sent once one runs. `a`
+with the comment), whose Send and Cancel are always in view. **Reply to
+this** under a comment answers that comment in a thread of its own, drawn
+indented under it; words selected in a comment offer **Comment**, a thread
+under those words quoting them (as a chat's threads on a message's parts);
+each has its own Reply, Resolve and Fold. The threads go to the owner
+session, which answers in them as it does a review's (a thread on a
+comment reaches it with the words quoted); a comment with no owner running
+waits and says so, sent once one runs. `a`
 (or **+**) adds an item in the view: a title, a description in the same
 editor (paste, drop or add images; they are stored with the item's thread
 once it is added), its state and tags; Cmd+Enter or **Add** adds it. `za`

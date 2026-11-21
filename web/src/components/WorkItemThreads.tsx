@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   REVIEW_USER,
+  type ReviewComment,
+  type ReviewMessagePart,
   type ReviewSnapshot,
   type ReviewThread,
   WORK_NO_OWNER,
@@ -19,7 +29,7 @@ import {
   undeliveredComments,
   writeThenReadBack,
 } from "./ChatThreads";
-import { NoteBody } from "./ReviewNoteBody";
+import { type MessageParts, NoteBody } from "./ReviewNoteBody";
 import { ThreadCard } from "./ThreadCard";
 
 /**
@@ -189,7 +199,11 @@ export function useWorkItemThreads(item: string): WorkItemThreadsApi {
  * opens the box on the last thread, `compose` a new thread's box. The
  * description thread (the item's text when it was added, shown as the
  * detail's description) is drawn from its answers on: its first comment
- * is the description.
+ * is the description. A thread on a comment of another thread (anchor
+ * `message`: that thread, the comment, and the words quoted when some
+ * were) is drawn under that comment, indented, under the words it quotes,
+ * as a chat's are under a message's part: "Reply to this" on a comment
+ * opens one, and so does Comment on words selected in a comment.
  */
 export function WorkItemThreads({
   item,
@@ -212,6 +226,9 @@ export function WorkItemThreads({
   const [replying, setReplying] = useState<string | null>(null);
   const [folded, setFolded] = useState<Set<string>>(new Set());
   const [composing, setComposing] = useState(false);
+  /** A thread being written on a comment: the comment, the words quoted. */
+  const [partDraft, setPartDraft] = useState<ReviewMessagePart | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (compose === "comment") setComposing(true);
     else if (compose === "reply") {
@@ -231,132 +248,265 @@ export function WorkItemThreads({
       else next.add(id);
       return next;
     });
+  /** The threads on a comment of another thread, by that comment. */
+  const onComment = useMemo(() => {
+    const map = new Map<string, ReviewThread[]>();
+    for (const thread of api.threads) {
+      const comment = thread.anchor.message?.comment;
+      if (comment) map.set(comment, [...(map.get(comment) ?? []), thread]);
+    }
+    return map;
+  }, [api.threads]);
+  /**
+   * The comments drawn (not the description, shown above): a thread on a
+   * comment not among them stands on its own, saying what it quoted.
+   */
+  const drawn = useMemo(() => {
+    const ids = new Set<string>();
+    for (const thread of api.threads)
+      thread.comments.forEach((comment, index) => {
+        if (thread.id !== description?.id || index > 0) ids.add(comment.id);
+      });
+    return ids;
+  }, [api.threads, description]);
+  const roots = api.threads.filter((thread) => {
+    const parent = thread.anchor.message?.comment;
+    return !parent || !drawn.has(parent);
+  });
+
+  // Words selected in a comment offer a thread on it, quoting them.
+  const [selection, setSelection] = useState<SelectedWords | null>(null);
+  useEffect(() => {
+    let timer = 0;
+    const onChange = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(
+        () => setSelection(selectedWords(rootRef.current)),
+        200,
+      );
+    };
+    document.addEventListener("selectionchange", onChange);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("selectionchange", onChange);
+    };
+  }, []);
+  /** Opens the box of a thread on a comment (on its words, when quoted). */
+  const openPart = (part: ReviewMessagePart) => {
+    setPartDraft(part);
+    setSelection(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const pendingOf = (
+    shown: ReviewThread,
+    thread: ReviewThread,
+    message: ReviewComment,
+    index: number,
+  ) =>
+    api.pendingById.get(message.id) ??
+    (index === 0 && thread === shown
+      ? api.pendingById.get(thread.id)
+      : undefined);
+
+  /**
+   * The threads on a message, drawn under the words they quote (under the
+   * whole message when none), and the one being written on it.
+   */
+  const partsOf = (
+    message: ReviewComment,
+    seen: Set<string>,
+  ): MessageParts | undefined => {
+    const notes = (onComment.get(message.id) ?? [])
+      .filter((nested) => !seen.has(nested.id))
+      .map((nested) => ({
+        key: nested.id,
+        quote: nested.anchor.message?.quote ?? "",
+        node: renderThread(nested, new Set([...seen, nested.id])),
+      }));
+    if (partDraft?.comment === message.id)
+      notes.push({
+        key: "draft",
+        quote: partDraft.quote ?? "",
+        node: (
+          <div className="chat-thread is-draft work-thread-draft">
+            <ThreadEditor
+              placeholder={
+                partDraft.quote
+                  ? "Comment on these words..."
+                  : "Reply to this comment..."
+              }
+              onAddImage={api.addImage}
+              onLeave={onLeave}
+              onClose={() => {
+                setPartDraft(null);
+                onLeave();
+              }}
+              onSave={(text, id) =>
+                api
+                  .send({
+                    id,
+                    kind: "discussion",
+                    anchor: { work: { item }, message: partDraft },
+                    text,
+                  })
+                  .then((ok) => {
+                    if (!ok) return;
+                    setPartDraft(null);
+                    onLeave();
+                  })
+              }
+            />
+          </div>
+        ),
+      });
+    return notes.length ? { notes, focused: null } : undefined;
+  };
+
+  /** A thread's card, its nested threads drawn in its messages. */
+  const renderThread = (shown: ReviewThread, seen: Set<string>): ReactNode => {
+    // The description's own thread: its answers, under the description.
+    const thread =
+      shown.id === description?.id
+        ? { ...shown, comments: shown.comments.slice(1) }
+        : shown;
+    if (!thread.comments.length) return null;
+    const isFolded =
+      folded.has(thread.id) ||
+      (thread.resolved && !folded.has(`open:${thread.id}`));
+    const part = thread.anchor.message;
+    return (
+      <ThreadCard
+        key={thread.id}
+        thread={thread}
+        folded={isFolded}
+        cursor={null}
+        onToggleFold={() =>
+          thread.resolved
+            ? toggleFold(`open:${thread.id}`)
+            : toggleFold(thread.id)
+        }
+        onReply={() => setReplying(thread.id)}
+        onResolve={() =>
+          void api.write("review.resolve", {
+            comment_id: thread.id,
+            resolved: !thread.resolved,
+          })
+        }
+        onDelete={() =>
+          void api.write("review.delete", { comment_id: thread.id })
+        }
+        head={
+          thread.anchor.work?.quote ? (
+            <blockquote className="work-thread-quote">
+              {thread.anchor.work.quote}
+            </blockquote>
+          ) : thread.id === description?.id ? (
+            <p className="work-thread-on">On the description</p>
+          ) : part && !drawn.has(part.comment) ? (
+            // On a comment not drawn here (the description's, one deleted).
+            part.quote ? (
+              <blockquote className="work-thread-quote">
+                {part.quote}
+              </blockquote>
+            ) : (
+              <p className="work-thread-on">On an earlier comment</p>
+            )
+          ) : undefined
+        }
+        messageClass={(message, index) =>
+          pendingOf(shown, thread, message, index) ? " is-pending" : ""
+        }
+        authorExtra={(message, index) => {
+          const pending = pendingOf(shown, thread, message, index);
+          if (pending)
+            return (
+              <span
+                className={`chat-thread-pending${pending.error ? " is-failed" : ""}`}
+                role={pending.error ? "alert" : "status"}
+              >
+                {pending.error ? "Not saved: Send tries again" : "Sending..."}
+              </span>
+            );
+          if (api.undelivered.has(message.id) && api.waiting)
+            return (
+              <>
+                <span className="chat-thread-pending is-failed" role="status">
+                  {api.waiting.noOwner
+                    ? "Waiting for the owner session"
+                    : `Not delivered: ${api.waiting.reason}`}
+                </span>
+                <button
+                  type="button"
+                  className="chat-thread-retry"
+                  onClick={() => void api.write("review.retry", {})}
+                >
+                  Retry
+                </button>
+              </>
+            );
+          return null;
+        }}
+        body={(message) => (
+          <NoteBody text={message.body} parts={partsOf(message, seen)} />
+        )}
+        messageBar={(message, index) =>
+          pendingOf(shown, thread, message, index) ||
+          partDraft?.comment === message.id ? null : (
+            <div className="work-thread-message-bar">
+              <button
+                type="button"
+                className="work-thread-reply"
+                title="Answer this comment in a thread of its own, under it (select its words to quote them)"
+                onClick={() =>
+                  openPart({ thread: thread.id, comment: message.id })
+                }
+              >
+                Reply to this
+              </button>
+            </div>
+          )
+        }
+        footer={
+          replying === thread.id && !api.pendingById.has(thread.id) ? (
+            <ThreadEditor
+              placeholder="Reply..."
+              onAddImage={api.addImage}
+              onLeave={onLeave}
+              onClose={() => {
+                setReplying(null);
+                onLeave();
+              }}
+              onSave={(text, id) =>
+                api
+                  .send({
+                    id,
+                    replyTo: thread.id,
+                    kind: thread.kind,
+                    anchor: thread.anchor,
+                    text,
+                  })
+                  .then((ok) => {
+                    if (!ok) return;
+                    setReplying(null);
+                    onLeave();
+                  })
+              }
+            />
+          ) : undefined
+        }
+      />
+    );
+  };
+
   return (
-    <div className="work-threads" data-work-threads={item}>
+    <div className="work-threads" data-work-threads={item} ref={rootRef}>
       {api.error ? (
         <p className="work-threads-error" role="alert">
           {api.error}
         </p>
       ) : null}
-      {api.threads.map((shown) => {
-        // The description's own thread: its answers, under the description.
-        const thread =
-          shown.id === description?.id
-            ? { ...shown, comments: shown.comments.slice(1) }
-            : shown;
-        if (!thread.comments.length) return null;
-        const isFolded =
-          folded.has(thread.id) ||
-          (thread.resolved && !folded.has(`open:${thread.id}`));
-        return (
-          <ThreadCard
-            key={thread.id}
-            thread={thread}
-            folded={isFolded}
-            cursor={null}
-            onToggleFold={() =>
-              thread.resolved
-                ? toggleFold(`open:${thread.id}`)
-                : toggleFold(thread.id)
-            }
-            onReply={() => setReplying(thread.id)}
-            onResolve={() =>
-              void api.write("review.resolve", {
-                comment_id: thread.id,
-                resolved: !thread.resolved,
-              })
-            }
-            onDelete={() =>
-              void api.write("review.delete", { comment_id: thread.id })
-            }
-            head={
-              thread.anchor.work?.quote ? (
-                <blockquote className="work-thread-quote">
-                  {thread.anchor.work.quote}
-                </blockquote>
-              ) : thread.id === description?.id ? (
-                <p className="work-thread-on">On the description</p>
-              ) : undefined
-            }
-            messageClass={(message, index) =>
-              (api.pendingById.get(message.id) ??
-              (index === 0 && thread === shown
-                ? api.pendingById.get(thread.id)
-                : undefined))
-                ? " is-pending"
-                : ""
-            }
-            authorExtra={(message, index) => {
-              const pending =
-                api.pendingById.get(message.id) ??
-                (index === 0 && thread === shown
-                  ? api.pendingById.get(thread.id)
-                  : undefined);
-              if (pending)
-                return (
-                  <span
-                    className={`chat-thread-pending${pending.error ? " is-failed" : ""}`}
-                    role={pending.error ? "alert" : "status"}
-                  >
-                    {pending.error
-                      ? "Not saved: Send tries again"
-                      : "Sending..."}
-                  </span>
-                );
-              if (api.undelivered.has(message.id) && api.waiting)
-                return (
-                  <>
-                    <span
-                      className="chat-thread-pending is-failed"
-                      role="status"
-                    >
-                      {api.waiting.noOwner
-                        ? "Waiting for the owner session"
-                        : `Not delivered: ${api.waiting.reason}`}
-                    </span>
-                    <button
-                      type="button"
-                      className="chat-thread-retry"
-                      onClick={() => void api.write("review.retry", {})}
-                    >
-                      Retry
-                    </button>
-                  </>
-                );
-              return null;
-            }}
-            body={(message) => <NoteBody text={message.body} />}
-            footer={
-              replying === thread.id && !api.pendingById.has(thread.id) ? (
-                <ThreadEditor
-                  placeholder="Reply..."
-                  onAddImage={api.addImage}
-                  onLeave={onLeave}
-                  onClose={() => {
-                    setReplying(null);
-                    onLeave();
-                  }}
-                  onSave={(text, id) =>
-                    api
-                      .send({
-                        id,
-                        replyTo: thread.id,
-                        kind: thread.kind,
-                        anchor: thread.anchor,
-                        text,
-                      })
-                      .then((ok) => {
-                        if (!ok) return;
-                        setReplying(null);
-                        onLeave();
-                      })
-                  }
-                />
-              ) : undefined
-            }
-          />
-        );
-      })}
+      {roots.map((shown) => renderThread(shown, new Set([shown.id])))}
       {composing ? (
         <div className="chat-thread is-draft work-thread-draft">
           <ThreadEditor
@@ -401,8 +551,86 @@ export function WorkItemThreads({
           ) : null}
         </div>
       )}
+      {selection
+        ? createPortal(
+            <button
+              type="button"
+              className="chat-thread-select work-thread-select"
+              style={{ left: selection.x, top: selection.y }}
+              // Keeps the selection while the button is pressed.
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() =>
+                openPart({
+                  thread: selection.thread,
+                  comment: selection.comment,
+                  quote: selection.quote,
+                })
+              }
+            >
+              Comment
+            </button>,
+            document.body,
+          )
+        : null}
     </div>
   );
+}
+
+/** Words selected in a comment: its thread, the comment, where Comment goes. */
+export type SelectedWords = {
+  thread: string;
+  comment: string;
+  quote: string;
+  x: number;
+  y: number;
+};
+
+/**
+ * The words selected in a comment of the threads under `root` (not in a
+ * box being written): the thread and comment they are in (a nested
+ * thread's own, for words of its messages), and where to offer Comment.
+ */
+export function selectedWords(root: HTMLElement | null): SelectedWords | null {
+  const current = window.getSelection();
+  const range =
+    current && !current.isCollapsed && current.rangeCount === 1
+      ? current.getRangeAt(0)
+      : null;
+  const start =
+    range?.startContainer instanceof Element
+      ? range.startContainer
+      : range?.startContainer.parentElement;
+  const quote = current?.toString().trim() ?? "";
+  if (
+    !range ||
+    !start ||
+    !quote ||
+    !root?.contains(start) ||
+    start.closest(".chat-thread-editor, input, textarea")
+  )
+    return null;
+  const body = start.closest<HTMLElement>(".chat-thread-body[data-message-id]");
+  const comment = body?.dataset.messageId;
+  const thread = body?.closest<HTMLElement>(".chat-thread[data-thread-id]")
+    ?.dataset.threadId;
+  if (!comment || !thread) return null;
+  const rect = range.getBoundingClientRect();
+  // On a touch screen the selection's handles hang under its ends: Comment
+  // goes below them, 44px high, where a finger reaches it.
+  const touch = window.matchMedia?.("(pointer: coarse)").matches;
+  return {
+    thread,
+    comment,
+    quote: quote.slice(0, 4000),
+    x: Math.max(8, Math.min(rect.left, window.innerWidth - 120)),
+    y: Math.max(
+      8,
+      Math.min(
+        rect.bottom + (touch ? 32 : 8),
+        window.innerHeight - (touch ? 52 : 44),
+      ),
+    ),
+  };
 }
 
 /** Whether a thread's last word is the user's (for the card's badge). */

@@ -381,6 +381,58 @@
   font-style: italic;
 }
 
+/* A thread on a comment: under the words it quotes (under the whole
+   comment when none), indented in the comment's body, as a chat's are
+   under a message's part. */
+.work-threads .rc-part-notes {
+  margin: 6px 0 4px 12px;
+}
+
+.work-threads .rc-part-notes > .chat-thread {
+  margin: 0 0 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border-soft);
+}
+
+/* Comment on words selected in a comment: over the board's floating
+   panel, which stands above the page's offers. */
+.chat-thread-select.work-thread-select {
+  z-index: 5800;
+}
+
+/* Under each comment: Reply to this, a thread of its own on that comment. */
+.work-thread-message-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.work-thread-message-bar button {
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.work-thread-message-bar button:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* A finger: the button is tall enough to hit. */
+@media (hover: none) and (pointer: coarse) {
+  .work-thread-message-bar button {
+    min-height: 40px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+}
+
 /* Adding an item: the title, the description editor, state and tags. */
 .work-add {
   gap: 10px;

@@ -644,6 +644,137 @@ describe("work service", () => {
     });
   });
 
+  test("a thread on an item's comment is kept under it, listed with its parent, and delivered with its quote", async () => {
+    const panes = new Map([["w35:p1", "w35:p1"]]);
+    const kit = reviewServiceForTest({
+      deliveryDelayMs: 1,
+      retryDelayMs: 1,
+      agentSearchMs: 600_000,
+      sessionPane: async (connectionId, sessionId) => {
+        if (!sessionId.startsWith(WORK_SESSION_PREFIX)) return null;
+        const paneId = await service.ownerPane(
+          sessionId.slice(WORK_SESSION_PREFIX.length),
+          connectionId,
+        );
+        return paneId && panes.has(paneId) ? paneId : null;
+      },
+      paneSession: async () => null,
+    });
+    const service = createWorkService({
+      store: openWorkStore(dir()),
+      reviews: realReviews(kit.service),
+      defaultConnection: () => "desktop",
+      ownRoot: () => "/home/me/roamgate",
+    });
+    const item = await service.add({ title: "Nest me" }, { by: "user" });
+    service.update({ item: item.id, owner: "desktop/w35:p1" }, { by: "user" });
+    const sessionId = service.threads({ item: item.id, open: true })!.session
+      .id;
+    const parent = await kit.service.addThread({
+      sessionId,
+      author: "you",
+      text: "Please look",
+      anchor: { work: { item: item.id } },
+      kind: "discussion",
+    });
+    await Bun.sleep(80);
+    expect(kit.prompts.length).toBe(1);
+    const answered = await kit.service.reply({
+      sessionId,
+      commentId: parent.id,
+      author: "Claude",
+      text: "Done: the box opens.\n\nThe words go with it.",
+    });
+    const said = answered.comments[1]!;
+    // The user answers a part of the agent's comment, then the whole of
+    // it: threads on that comment, in the item's review.
+    const quoted = await kit.service.addThread({
+      sessionId,
+      author: "you",
+      text: "Which box?",
+      anchor: {
+        work: { item: item.id },
+        message: {
+          thread: parent.id,
+          comment: said.id,
+          quote: "the box opens",
+        },
+      },
+      kind: "discussion",
+    });
+    const whole = await kit.service.addThread({
+      sessionId,
+      author: "you",
+      text: "Thanks",
+      anchor: {
+        work: { item: item.id },
+        message: { thread: parent.id, comment: said.id },
+      },
+      kind: "discussion",
+    });
+    expect(quoted.anchor).toEqual({
+      work: { item: item.id },
+      message: { thread: parent.id, comment: said.id, quote: "the box opens" },
+    });
+    expect(whole.anchor.message).toEqual({
+      thread: parent.id,
+      comment: said.id,
+    });
+    // Delivered to the owner as comments on the item, with the words.
+    await Bun.sleep(80);
+    const prompt = kit.prompts
+      .slice(1)
+      .map((each) => each.text)
+      .join("\n");
+    expect(kit.prompts.slice(1).every((each) => each.paneId === "w35:p1")).toBe(
+      true,
+    );
+    expect(prompt).toContain("work item you own");
+    expect(prompt).toContain(
+      `on a part of a message in thread [${parent.id.slice(0, 8)}] (on the work item):`,
+    );
+    expect(prompt).toContain("  > the box opens");
+    expect(prompt).toContain("Which box?");
+    expect(prompt).toContain(
+      `on a message in thread [${parent.id.slice(0, 8)}] (on the work item):`,
+    );
+    expect(prompt).toContain("Thanks");
+    // work_list lists them under the comment they answer, not beside it.
+    const listed = JSON.parse(
+      (await workTool(service, "work_list", { item: item.id }, "Claude")).split(
+        "\n",
+      )[1]!,
+    );
+    expect(
+      listed.comments.map((each: { thread: string }) => each.thread),
+    ).toEqual([parent.id]);
+    expect(listed.comments[0].comments[0].threads).toBeUndefined();
+    const under = listed.comments[0].comments[1];
+    expect(under.id).toBe(said.id);
+    expect(
+      under.threads.map((each: { thread: string }) => each.thread),
+    ).toEqual([quoted.id, whole.id]);
+    expect(under.threads[0].on).toEqual({
+      comment: said.id,
+      quote: "the box opens",
+    });
+    expect(
+      under.threads[0].comments.map((c: { text: string }) => c.text),
+    ).toEqual(["Which box?"]);
+    expect(under.threads[1].on).toEqual({ comment: said.id });
+    // The owner answers in the nested thread, by its id.
+    const replied = await kit.service.reply({
+      sessionId,
+      commentId: quoted.id,
+      author: "Claude",
+      text: "The reply box.",
+    });
+    expect(replied.comments.map((comment) => comment.body)).toEqual([
+      "Which box?",
+      "The reply box.",
+    ]);
+  });
+
   test("the real review service delivers an item's comment to its owner, and waits without one", async () => {
     const panes = new Map<string, string>();
     const kit = reviewServiceForTest({
