@@ -395,20 +395,53 @@ function notificationPermission(): NotificationPermission | "unsupported" {
   return Notification.permission;
 }
 
-function storedTaskNotificationPreferences(): TaskNotificationPreferences {
+/**
+ * Reads the saved notification preferences. Finished work notifies only when
+ * the user turned it on: every toggle saves the whole object, so a stored
+ * `completed: true` without `completedChosen` is the old default, not a choice.
+ */
+export function parseTaskNotificationPreferences(
+  raw: string | null,
+): TaskNotificationPreferences {
   try {
-    const stored = JSON.parse(
-      roamgateLocalStorage.getItem(TASK_NOTIFICATION_PREFERENCES_KEY) ?? "{}",
-    );
+    const stored = JSON.parse(raw ?? "{}");
     return {
-      completed: stored.completed !== false,
+      completed: stored.completedChosen === true && stored.completed === true,
       blocked: stored.blocked !== false,
       ...(stored.quietWithAndroidApp === true
         ? { quietWithAndroidApp: true }
         : {}),
     };
   } catch {
-    return { completed: true, blocked: true };
+    return { completed: false, blocked: true };
+  }
+}
+
+/** The preferences as saved, marking finished work as chosen once it was. */
+export function serializeTaskNotificationPreferences(
+  preferences: TaskNotificationPreferences,
+  completedChosen: boolean,
+): string {
+  return JSON.stringify(
+    completedChosen ? { ...preferences, completedChosen: true } : preferences,
+  );
+}
+
+function storedTaskNotificationPreferences(): TaskNotificationPreferences {
+  return parseTaskNotificationPreferences(
+    roamgateLocalStorage.getItem(TASK_NOTIFICATION_PREFERENCES_KEY),
+  );
+}
+
+function storedCompletedNotificationChosen(): boolean {
+  try {
+    return (
+      JSON.parse(
+        roamgateLocalStorage.getItem(TASK_NOTIFICATION_PREFERENCES_KEY) ?? "{}",
+      )?.completedChosen === true
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -4911,7 +4944,10 @@ export const store = {
       roamgateLocalStorage.setItem("taskNotificationTransport", transport);
       roamgateLocalStorage.setItem(
         TASK_NOTIFICATION_PREFERENCES_KEY,
-        JSON.stringify(preferences),
+        serializeTaskNotificationPreferences(
+          preferences,
+          kind === "completed" || storedCompletedNotificationChosen(),
+        ),
       );
       set({
         taskNotificationPreferences: preferences,

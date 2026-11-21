@@ -649,17 +649,27 @@ export function ConfigurationDialog({
               {s.taskNotificationsEnabled &&
                 (
                   [
-                    ["blocked", "Task needs attention"],
-                    ["completed", "Task completed"],
+                    [
+                      "blocked",
+                      "Task needs attention",
+                      "An agent waits for you or a review asks for you",
+                    ],
+                    [
+                      "completed",
+                      "Task completed",
+                      "Off by default: only what needs you notifies",
+                    ],
                     [
                       "quietWithAndroidApp",
                       "Don't send Web Push while the Android app is connected",
+                      null,
                     ],
                   ] as const
-                ).map(([kind, label]) => (
+                ).map(([kind, label, help]) => (
                   <div className="config-preference-row" key={kind}>
                     <div className="config-item-copy">
                       <strong>{label}</strong>
+                      {help ? <span>{help}</span> : null}
                     </div>
                     <button
                       type="button"

@@ -333,9 +333,10 @@ never repeated. See [Ranger](../FEATURES.md#ranger) and
 
 1. Use trusted HTTPS (or loopback HTTP). On iOS/iPadOS 16.4+, open the installed
    Home Screen app.
-2. Enable **Task notifications**, grant permission, and choose **Task needs
-   attention** and/or **Task completed**. **Background push** confirms the
-   device is enrolled.
+2. Enable **Task notifications** and grant permission. **Task needs
+   attention** (an agent waits for you, a review asks for you) is on;
+   **Task completed** (finished work) is off until you turn it on.
+   **Background push** confirms the device is enrolled.
 
 `roamgate push test` sends a test notification to every enrolled device. Push is
 on by default; setting `ROAMGATE_WEB_PUSH_SUBJECT` to an empty value disables it

@@ -2316,7 +2316,8 @@ exist (never overwriting) and says what to run to continue it. See
   and reopens the connection it was last on, or the default if it is gone.
   Linux/macOS bridges can reach Unix or Windows SSH hosts. See
   [connection setup](docs/DEPLOYMENT.md#multiple-and-remote-herdr-connections).
-- Task notifications for input-required and completed agents, delivered by
+- Task notifications when an agent needs input or a review asks for you, and
+  for finished agents when you turn that on, delivered by
   [Web Push](docs/DEPLOYMENT.md#web-push-notifications) even with the page
   closed. Delivery is best-effort.
 - Themes, accents, interface scale (80–150%), terminal font, font size, and

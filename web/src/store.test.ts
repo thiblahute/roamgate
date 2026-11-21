@@ -16,7 +16,9 @@ import {
   noticeAutoDismissDelay,
   numberedCreatedTabRename,
   parseHerdrTaskNotification,
+  parseTaskNotificationPreferences,
   reconcileConnectionCatalogSessions,
+  serializeTaskNotificationPreferences,
   stabilizeRefreshPatch,
   type ServerSessionState,
   type State,
@@ -374,6 +376,51 @@ describe("automatic update check preference", () => {
         });
       }
     }
+  });
+});
+
+describe("task notification preferences", () => {
+  test("finished work is off by default and on a stored object from before the choice", () => {
+    const needsYou = { completed: false, blocked: true };
+    expect(parseTaskNotificationPreferences(null)).toEqual(needsYou);
+    expect(parseTaskNotificationPreferences("not json")).toEqual(needsYou);
+    // Saved whole by another toggle before completedChosen existed.
+    expect(
+      parseTaskNotificationPreferences(
+        JSON.stringify({ completed: true, blocked: true }),
+      ),
+    ).toEqual(needsYou);
+    expect(
+      parseTaskNotificationPreferences(
+        JSON.stringify({
+          completed: true,
+          blocked: false,
+          quietWithAndroidApp: true,
+        }),
+      ),
+    ).toEqual({ completed: false, blocked: false, quietWithAndroidApp: true });
+  });
+
+  test("finished work the user turned on stays on", () => {
+    const saved = serializeTaskNotificationPreferences(
+      { completed: true, blocked: true },
+      true,
+    );
+    expect(JSON.parse(saved)).toEqual({
+      completed: true,
+      blocked: true,
+      completedChosen: true,
+    });
+    expect(parseTaskNotificationPreferences(saved)).toEqual({
+      completed: true,
+      blocked: true,
+    });
+    expect(
+      serializeTaskNotificationPreferences(
+        { completed: false, blocked: true },
+        false,
+      ),
+    ).toBe(JSON.stringify({ completed: false, blocked: true }));
   });
 });
 

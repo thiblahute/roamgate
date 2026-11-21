@@ -73,10 +73,35 @@ function hello(
   f.open(s, ORIGIN, "session-1");
   f.message(
     s,
-    JSON.stringify({ op: "hello", since: null, client: "android", ...message }),
+    JSON.stringify({
+      op: "hello",
+      since: null,
+      client: "android",
+      // A client that asked for finished work too, unless a test says.
+      preferences: { completed: true, blocked: true },
+      ...message,
+    }),
   );
   return s;
 }
+
+test("a hello without preferences gets only what needs the user", () => {
+  const f = feed();
+  const s = socket();
+  f.open(s, ORIGIN, "session-1");
+  f.message(s, JSON.stringify({ op: "hello", since: null, client: "android" }));
+  f.publish(completed);
+  f.publish(blocked);
+  expect(
+    s.sent
+      .filter((each) => each.event === "notification")
+      .map((each) => each.kind),
+  ).toEqual(["blocked"]);
+  expect(f.status().clients[0]?.preferences).toEqual({
+    completed: false,
+    blocked: true,
+  });
+});
 
 test("a notification is the push payload plus its id, time, kind, group and page", () => {
   const f = feed();
@@ -440,7 +465,7 @@ test("status lists the open sockets: kind, address, since and last seen", () => 
         connected_at: 1_000_000,
         last_seen: 1_000_000,
         silent_ms: 6_000,
-        preferences: { completed: true, blocked: true },
+        preferences: { completed: false, blocked: true },
       },
     ],
   });
@@ -462,7 +487,15 @@ test("connections, hellos, sends and closes are logged", () => {
   f.publish(completed);
   const s = socket();
   f.open(s, ORIGIN, "session-1", "192.0.2.7");
-  f.message(s, JSON.stringify({ op: "hello", since: 0, client: "android" }));
+  f.message(
+    s,
+    JSON.stringify({
+      op: "hello",
+      since: 0,
+      client: "android",
+      preferences: { completed: true, blocked: true },
+    }),
+  );
   f.publish(blocked);
   clock += 2_000;
   f.close(s, 1001, "Going away");

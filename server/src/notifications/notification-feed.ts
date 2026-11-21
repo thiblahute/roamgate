@@ -347,7 +347,9 @@ export function createNotificationFeed(options: {
       ? message.preferences
       : {};
     client.preferences = {
-      completed: preferences.completed !== false,
+      // Finished work only when the client asks for it: by default, only
+      // what needs the user notifies.
+      completed: preferences.completed === true,
       blocked: preferences.blocked !== false,
     };
     prune();
@@ -486,7 +488,7 @@ export function createNotificationFeed(options: {
         connectedAt: now(),
         ...(sessionToken ? { sessionToken } : {}),
         client: null,
-        preferences: { completed: true, blocked: true },
+        preferences: { completed: false, blocked: true },
         lastSeen: now(),
       };
       clients.set(socket, client);
