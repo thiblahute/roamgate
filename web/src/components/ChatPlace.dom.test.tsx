@@ -463,9 +463,12 @@ if (process.env.ROAMGATE_CHAT_PLACE_DOM_TEST !== "1") {
     const threadElement = () =>
       container.querySelector<HTMLElement>('.chat-thread[data-thread-id="t1"]');
     expect(threadElement()?.textContent).toContain("Why the first part?");
-    const reply = [...threadElement()!.querySelectorAll("button")].find(
-      (button) => button.textContent === "Reply",
-    )!;
+    // The thread's Reply (in its bar), not the one on its message.
+    const reply = [
+      ...threadElement()!.querySelectorAll<HTMLButtonElement>(
+        ".chat-thread-bar button",
+      ),
+    ].find((button) => button.textContent === "Reply")!;
     await React.act(async () => reply.click());
     for (
       let i = 0;
