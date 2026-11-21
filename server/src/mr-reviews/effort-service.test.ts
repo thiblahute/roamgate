@@ -1,11 +1,19 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { fixupTargets, type MrReviewsPush } from "../../../shared/mrReviews";
 import { WORKSPACE_TREE_VERSION } from "../../../shared/workspaceTree";
 import { updateGuiSettings } from "../config/gui-settings";
+import { shQuote } from "./clones";
 import { createGitFixture, FORGE_HOST, type GitFixture } from "./git.fixture";
 import {
+  mainCheckout,
   parsePartStops,
   parsePick,
   partStopsScript,
@@ -612,6 +620,234 @@ test("a part of an effort headed in a linked worktree starts from the repository
     cwd: clone,
     branch: "pool-b",
   });
+}, 30_000);
+
+test("a clone kept in a repository directory (gstreamer.git): parts start from its checkout, found through the repository, and a repository with no checkout is named", async () => {
+  const g = createGitFixture();
+  fixtures.push(g);
+  g.project("media/engine");
+  // The clone as gstreamer.git is: the checkout's `.git` is a file naming
+  // the repository directory beside it, whose `gitdir` file names the
+  // checkout back; `git worktree list` names the repository first, with no
+  // work tree of its own, so work-tree commands fail there.
+  const clones = join(g.root, "clones");
+  mkdirSync(clones, { recursive: true });
+  const gitDir = join(clones, "engine.git");
+  const clone = join(clones, "engine");
+  g.git(
+    clones,
+    "clone",
+    "-q",
+    "--separate-git-dir",
+    gitDir,
+    `https://${FORGE_HOST}/media/engine.git`,
+    clone,
+  );
+  writeFileSync(join(gitDir, "gitdir"), `${clone}/.git\n`);
+  g.git(clone, "remote", "set-head", "origin", "main");
+  g.git(clone, "checkout", "-q", "-b", "big");
+  g.commit(clone, "pool/a.c", "a\n", "pool: add a");
+  g.commit(clone, "pool/b.c", "b\n", "pool: add b");
+  g.commit(clone, "pool/c.c", "c\n", "pool: add c");
+  g.git(clone, "checkout", "-q", "main");
+  // The effort's head: a linked worktree beside the clone, alone in its
+  // group; the checkout itself has no workspace.
+  const head = join(clones, "engine.worktrees", "big");
+  g.git(clone, "worktree", "add", "-q", head, "big");
+  expect(g.git(head, "worktree", "list", "--porcelain").split("\n")[0]).toBe(
+    `worktree ${gitDir}`,
+  );
+  expect(() => g.git(gitDir, "rev-parse", "--show-toplevel")).toThrow(
+    "must be run in a work tree",
+  );
+  const workspaces: {
+    workspace_id: string;
+    label: string;
+    cwd: string;
+    worktree?: Record<string, unknown>;
+  }[] = [
+    {
+      workspace_id: "w2",
+      label: "big",
+      cwd: head,
+      worktree: {
+        checkout_path: head,
+        is_linked_worktree: true,
+        repo_key: gitDir,
+      },
+    },
+  ];
+  const connection = g.connection(workspaces);
+  // The main checkout from a worktree, the checkout or the repository
+  // itself; a plain clone's as before; none where there is no repository.
+  for (const at of [head, clone, gitDir])
+    expect(await mainCheckout(connection, at)).toEqual({
+      repository: gitDir,
+      checkout: clone,
+    });
+  const plain = g.clone("media/engine", "plain");
+  expect(await mainCheckout(connection, plain)).toEqual({
+    repository: join(plain, ".git"),
+    checkout: plain,
+  });
+  expect(await mainCheckout(connection, join(g.root, "nowhere"))).toBeNull();
+  await updateGuiSettings((current) => ({
+    ...current,
+    mr_reviews: {
+      hosts: [{ host: FORGE_HOST, provider: "gitlab" }],
+      upstream_groups: ["g1"],
+    },
+  }));
+  const calls: Record<string, unknown>[] = [];
+  const reviews = createMrReviews({
+    run: async () => ({ code: 1, stdout: "", stderr: "" }),
+    store: openMrStore(join(dir, `state-${Math.random()}.json`)),
+    discoverHosts: () => [],
+    connections: () => [connection],
+    tree: {
+      read: async () => ({
+        version: WORKSPACE_TREE_VERSION,
+        nodes: [
+          { id: "g1", kind: "group", parent: null, label: "Big" },
+          // A worktree workspace, which the tree names by its checkout.
+          {
+            id: "n1",
+            kind: "workspace",
+            parent: "g1",
+            ref: { connection_id: "local", path: head },
+          },
+        ],
+      }),
+      apply: async () => {},
+    },
+    // As the worktree path does: work-tree commands where the worktree
+    // starts from (a repository directory refuses them) and, as Herdr,
+    // never from a linked worktree.
+    createWorktree: async (input) => {
+      calls.push(input);
+      const from =
+        input.cwd ??
+        workspaces.find((each) => each.workspace_id === input.workspaceId)
+          ?.cwd ??
+        "";
+      const top = await connection.run(
+        `git -C ${shQuote(from)} rev-parse --show-toplevel`,
+        30_000,
+      );
+      if (top.code !== 0) throw new Error(top.stderr.trim());
+      const [own, common] = (
+        await connection.run(
+          `git -C ${shQuote(from)} rev-parse --path-format=absolute --git-dir --git-common-dir`,
+          30_000,
+        )
+      ).stdout
+        .trim()
+        .split("\n");
+      if (own !== common)
+        throw new Error(
+          "linked_worktree_source: New and open worktree actions start from the repo parent workspace.",
+        );
+      const path = join(clones, "engine.worktrees", input.branch);
+      g.git(
+        top.stdout.trim(),
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        input.branch,
+        path,
+        "origin/main",
+      );
+      return { path };
+    },
+    effortsDir: join(dir, `efforts-${Math.random()}`),
+  });
+  await reviews.upstream.refresh(true);
+  await reviews.boardTool(
+    "effort_set",
+    { group: "Big", source: "refs/heads/big", head },
+    "Claude",
+  );
+  await reviews.efforts.refresh(true);
+  const [a, b, c] = JSON.parse(
+    (
+      await reviews.boardTool("ledger_list", { effort: "Big" }, "Claude")
+    ).replace(/^[^\n]*\n/, ""),
+  ).commits.map((each: any) => each.sha);
+  for (const [name, sha] of [
+    ["Pool a", a],
+    ["Pool b", b],
+    ["Pool c", c],
+  ])
+    await reviews.handle("bridge.mr_reviews.ledger.plans", {
+      id: "Big",
+      action: "propose",
+      name,
+      commits: [sha],
+      accepted: true,
+    });
+  // No workspace on the checkout: the part starts from its path, found
+  // through the repository's gitdir file, and is a worktree of that repository.
+  expect(
+    await reviews.handle("bridge.mr_reviews.effort.part", {
+      id: "Big",
+      plan: "Pool a",
+      branch: "pool-a",
+    }),
+  ).toMatchObject({ ok: true, picked: 1 });
+  expect(calls[0]).toEqual({
+    connectionId: "local",
+    cwd: clone,
+    branch: "pool-a",
+  });
+  expect(
+    g
+      .git(
+        join(clones, "engine.worktrees", "pool-a"),
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
+      )
+      .trim(),
+  ).toBe(gitDir);
+  // A workspace open on the checkout (its repository not described by Herdr
+  // yet): the part starts from that workspace.
+  workspaces.push({
+    workspace_id: "w1",
+    label: "engine",
+    cwd: clone,
+    worktree: { checkout_path: clone },
+  });
+  expect(
+    await reviews.handle("bridge.mr_reviews.effort.part", {
+      id: "Big",
+      plan: "Pool b",
+      branch: "pool-b",
+    }),
+  ).toMatchObject({ ok: true, picked: 1 });
+  expect(calls[1]).toEqual({
+    connectionId: "local",
+    workspaceId: "w1",
+    branch: "pool-b",
+  });
+  // The checkout gone: the repository has none of its own, and the refusal
+  // names it instead of asking for a main checkout there is none of.
+  workspaces.pop();
+  rmSync(clone, { recursive: true, force: true });
+  expect(await mainCheckout(connection, head)).toEqual({
+    repository: gitDir,
+    checkout: null,
+  });
+  await expect(
+    reviews.handle("bridge.mr_reviews.effort.part", {
+      id: "Big",
+      plan: "Pool c",
+      branch: "pool-c",
+    }),
+  ).rejects.toThrow(
+    `the repository ${gitDir} has no checkout of its own (no gitdir file naming one, no core.worktree, nothing beside it without .git): worktrees start from a checkout`,
+  );
+  expect(calls).toHaveLength(2);
 }, 30_000);
 
 test("Herdr's errors read without their code or a closing period", () => {

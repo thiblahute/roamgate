@@ -39,6 +39,7 @@ import {
   upstreamRef,
 } from "./efforts";
 import { effortPlanEntries } from "./effort-board";
+import { homeSourceScript, parseHomeSource } from "./home";
 import { MrReviewsError } from "./rpc";
 import {
   parseRequestPatchIds,
@@ -544,9 +545,10 @@ export async function handleEffortRpc(
   /**
    * Where a part's worktree starts: Herdr refuses a linked worktree as the
    * source, so, as the workspace menu's New worktree does, the repository's
-   * parent workspace (its main checkout), never the head's linked one. With
-   * none open, the main checkout's path, which Herdr and the worktree
-   * command take as well.
+   * parent workspace (its main checkout, found through the clone's
+   * repository even when that is a separate directory such as
+   * gstreamer.git), never the head's linked one. With none open, the main
+   * checkout's path, which Herdr and the worktree command take as well.
    */
   const partSource = async (
     effort: MrEffort,
@@ -556,8 +558,8 @@ export async function handleEffortRpc(
     const head =
       effort.head?.connectionId === connectionId ? effort.head : undefined;
     const main = await mainCheckout(connection, effort.clone.path);
-    if (main) {
-      const at = await workspaceAt(connectionId, [main]);
+    if (main?.checkout) {
+      const at = await workspaceAt(connectionId, [main.checkout]);
       if (at) return { workspaceId: at };
     }
     const listed = await connection
@@ -574,11 +576,16 @@ export async function handleEffortRpc(
     const workspace = workspaces.find((each) => each?.workspace_id === known);
     const parent = workspace && repoParentWorkspace(workspaces, workspace);
     if (parent) return { workspaceId: parent };
-    if (main) return { cwd: main };
+    if (main?.checkout) return { cwd: main.checkout };
     if (known && workspace?.worktree?.is_linked_worktree !== true)
       return { workspaceId: known };
+    // A repository with no checkout of its own is said by its path: the
+    // generic words would send the user looking for a main checkout there
+    // is none of.
     throw new MrReviewsError(
-      "open a workspace on the main checkout of the effort's clone first: worktrees start from there",
+      main
+        ? `the repository ${main.repository} has no checkout of its own (no gitdir file naming one, no core.worktree, nothing beside it without .git): worktrees start from a checkout, so check it out, or open a workspace on a checkout of it first`
+        : "open a workspace on the main checkout of the effort's clone first: worktrees start from there",
       "not_found",
     );
   };
@@ -1891,22 +1898,39 @@ export async function handleEffortRpc(
 }
 
 /**
- * The main checkout of the repository a checkout belongs to (the folder of
- * its git common directory), where Herdr starts new worktrees from. Null
- * for a bare repository or when git cannot tell.
+ * The main checkout of the repository a checkout belongs to, where Herdr
+ * starts new worktrees from: the folder of its git common directory
+ * (`<root>/.git`); for a clone kept in a repository directory, as
+ * gstreamer.git is (the first entry of `git worktree list`, with no work
+ * tree of its own), the checkout the MR home finds for it
+ * (`homeSourceScript`: the one its `gitdir` file names, `core.worktree`, or
+ * the directory beside it without `.git`, when that checkout's repository
+ * is this one). `checkout` is null when the repository has no checkout of
+ * its own (a bare one, or one whose checkout is gone); the whole is null
+ * when git cannot tell the repository.
  */
-async function mainCheckout(
+export async function mainCheckout(
   connection: MrConnection,
   path: string,
-): Promise<string | null> {
+): Promise<{ repository: string; checkout: string | null } | null> {
   const run = await connection
     .run(
       `git -C ${shQuote(path)} rev-parse --path-format=absolute --git-common-dir`,
       30_000,
     )
     .catch(() => null);
-  const common = run?.code === 0 ? run.stdout.trim().replace(/\/+$/, "") : "";
-  return common.endsWith("/.git") ? common.slice(0, -"/.git".length) : null;
+  const repository =
+    run?.code === 0 ? run.stdout.trim().replace(/\/+$/, "") : "";
+  if (!repository.startsWith("/")) return null;
+  if (repository.endsWith("/.git"))
+    return { repository, checkout: repository.slice(0, -"/.git".length) };
+  const source = await connection
+    .run(homeSourceScript(repository), 30_000)
+    .catch(() => null);
+  return {
+    repository,
+    checkout: source ? parseHomeSource(source.stdout) || null : null,
+  };
 }
 
 /**
