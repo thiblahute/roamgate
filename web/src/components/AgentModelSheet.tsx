@@ -164,6 +164,7 @@ export function AgentModelSheet({
           ref={inputRef}
           className="agent-model-filter"
           type="text"
+          data-dictation="off"
           value={query}
           placeholder="Filter, or type a model name"
           aria-label="Filter the models, or type a model name"
