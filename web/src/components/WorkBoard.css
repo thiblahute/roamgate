@@ -72,19 +72,105 @@
   gap: 3px;
 }
 
-.work-link,
-.is-mobile .work-link {
-  min-height: 0;
-  max-width: 100%;
-  padding: 0 6px;
-  overflow: hidden;
-  background: none;
-  font: inherit;
-  font-size: 10px;
-  line-height: 1.6;
-  text-overflow: ellipsis;
+/* A card's title wraps, long words and paths too: the card keeps the
+   column's width. */
+.work-card .mr-reviews-dense-head > strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A card's links: one line of small chips, a kind and its count each,
+   wrapping inside the card; the detail lists them. */
+.mr-reviews-dense-chips.work-link-chips {
+  min-width: 0;
+}
+
+.work-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   white-space: nowrap;
+}
+
+.work-link-chip > svg {
+  flex: none;
+  opacity: 0.8;
+}
+
+/* The detail's links: a row each, its label read first, what it is
+   below; the row is its action. */
+.work-link-list {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.work-link-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.work-link-open,
+.assistant-panel.is-mobile .work-link-open {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.work-link-open > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+button.work-link-open {
   cursor: pointer;
+}
+
+button.work-link-open:hover,
+button.work-link-open:focus-visible {
+  border-color: var(--viewer-border);
+  background: var(--accent-soft);
+}
+
+.work-link-text {
+  display: grid;
+  min-width: 0;
+}
+
+.work-link-label {
+  overflow-wrap: anywhere;
+}
+
+.work-link-text > small {
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.assistant-panel.is-mobile .work-link-open {
+  padding: 6px 8px;
+  font-size: 14px;
+}
+
+.assistant-panel.is-mobile .work-link-text > small {
+  font-size: 12px;
 }
 
 /* A card's tag: a small chip; a tap searches for it. Its own size: the
@@ -100,10 +186,6 @@
 .mr-reviews-chip.work-tag:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
-}
-
-.mr-reviews-own > .work-link {
-  font-size: 11px;
 }
 
 /* The detail: the description full width, its images scaled to it. */

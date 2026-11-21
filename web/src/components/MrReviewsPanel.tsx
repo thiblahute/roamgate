@@ -1934,6 +1934,13 @@ export function MrReviewsPanel({
     panelRef,
     onClose,
     ...(initialWorkItem ? { initialItem: initialWorkItem } : {}),
+    efforts: inbox?.efforts,
+    requests: inbox?.entries,
+    // An item's effort link: the inbox mode's view of that effort.
+    onOpenEffort: (id) => {
+      setMode("mr");
+      openEffort(id);
+    },
   });
   /** The sections drawn: an empty Suggested takes no column on the board. */
   const drawnSections = board

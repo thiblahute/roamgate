@@ -4,8 +4,19 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Copy,
+  FileDiff,
+  GitBranch,
+  GitCommitHorizontal,
+  GitPullRequest,
+  Link2,
+  ListChecks,
+  type LucideIcon,
+  MessageSquare,
   Plus,
   RefreshCw,
+  Rocket,
+  Route,
 } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
@@ -21,10 +32,15 @@ import type { ReviewThread } from "../../../shared/review";
 import {
   describeWorkLink,
   filterWorkItems,
+  readableWorkLink,
+  summarizeWorkLinks,
   WORK_STATE_TITLE,
   WORK_STATES,
   type WorkItem,
   type WorkLink,
+  type WorkLinkGroupKind,
+  type WorkLinkNames,
+  workLinkGroupOf,
   type WorkProject,
   type WorkState,
   workDescriptionThread,
@@ -40,6 +56,7 @@ import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
 import {
   shallowEqual,
   type State,
+  store,
   TASK_NOTIFICATION_ACTIVATE_EVENT,
   useStoreSelector,
 } from "../store";
@@ -359,6 +376,12 @@ export type WorkModeOptions = {
   onClose: (options?: { keepFocus?: boolean }) => void;
   /** An item to open on (a notification's link). */
   initialItem?: string;
+  /** The upstreaming efforts the view knows: their names. */
+  efforts?: readonly { id: string; name: string }[] | undefined;
+  /** The requests the view knows: their titles, by URL. */
+  requests?: readonly { url: string; title: string }[] | undefined;
+  /** Shows an effort's view (the inbox mode's). */
+  onOpenEffort?: (id: string) => void;
 };
 
 export type WorkMode = {
@@ -394,6 +417,9 @@ export function useWorkMode({
   panelRef,
   onClose,
   initialItem,
+  efforts,
+  requests,
+  onOpenEffort,
 }: WorkModeOptions): WorkMode {
   const { board: data, error, reload } = useWorkBoard();
   const reviews = useReviewState();
@@ -632,6 +658,7 @@ export function useWorkMode({
     [mobile, onClose],
   );
 
+  /** A link's action, from the item's detail. */
   const openLink = useCallback(
     (link: WorkLink) => {
       switch (link.kind) {
@@ -646,6 +673,9 @@ export function useWorkMode({
             );
           return;
         }
+        case "effort":
+          onOpenEffort?.(link.id);
+          return;
         case "pr":
           window.open(link.url, "_blank", "noopener");
           return;
@@ -654,6 +684,20 @@ export function useWorkMode({
           setSelected(link.id);
           return;
         case "commit":
+          // Its review (`SHA^..SHA`), shown in Changes as Commits' is.
+          void import("../reviewOpen").then(async ({ openCommitReview }) => {
+            const sessionId = await openCommitReview(link.sha, {
+              ...(link.root ? { path: link.root } : {}),
+            });
+            const connectionId = store.get().activeConnectionId;
+            if (!sessionId || !connectionId) return;
+            requestReviewShown(connectionId, sessionId);
+            if (mobile) onClose({ keepFocus: true });
+          });
+          return;
+        case "branch":
+          void navigator.clipboard?.writeText(link.name).catch(() => {});
+          return;
         case "deploy":
           void navigator.clipboard?.writeText(link.sha).catch(() => {});
           return;
@@ -661,7 +705,33 @@ export function useWorkMode({
           return;
       }
     },
-    [reviews.sessions, mobile, onClose],
+    [reviews.sessions, mobile, onClose, onOpenEffort],
+  );
+  /** What names the detail's links: efforts, requests, reviews, items. */
+  const linkNames = useMemo<WorkLinkNames>(
+    () => ({
+      effort: (id) => efforts?.find((each) => each.id === id)?.name,
+      pr: (url) => requests?.find((each) => each.url === url)?.title,
+      review: (id, thread) => {
+        const snapshot = reviews.sessions.get(id);
+        if (!snapshot) return undefined;
+        const body = thread
+          ? snapshot.threads.find((each) => each.id === thread)?.comments[0]
+              ?.body
+          : undefined;
+        const words = body?.replace(/\s+/g, " ").trim();
+        return {
+          title: snapshot.session.title,
+          ...(words
+            ? {
+                thread: words.length > 80 ? `${words.slice(0, 79)}...` : words,
+              }
+            : {}),
+        };
+      },
+      item: (id) => boardItems.find((each) => each.id === id)?.title,
+    }),
+    [efforts, requests, reviews.sessions, boardItems],
   );
 
   const selectedItem = items.find((item) => item.id === selected) ?? null;
@@ -941,6 +1011,8 @@ export function useWorkMode({
           onBack={closeDetail}
           onOpenOwner={() => void openOwner(detailItem)}
           onLink={openLink}
+          linkNames={linkNames}
+          canOpenEffort={!!onOpenEffort}
           onState={(next) =>
             void act("update", { item: detailItem.id, state: next })
           }
@@ -1045,7 +1117,6 @@ export function useWorkMode({
                           onSelect={() => select(item.id)}
                           onOpen={() => openDetail(item)}
                           onOpenOwner={() => void openOwner(item)}
-                          onLink={openLink}
                           onTag={searchTag}
                           onDone={() => markDone(item)}
                         />
@@ -1131,7 +1202,6 @@ function WorkCard({
   onSelect,
   onOpen,
   onOpenOwner,
-  onLink,
   onTag,
   onDone,
 }: {
@@ -1145,7 +1215,6 @@ function WorkCard({
   onSelect: () => void;
   onOpen: () => void;
   onOpenOwner: () => void;
-  onLink: (link: WorkLink) => void;
   /** A tag's chip: the search keeps that tag's items. */
   onTag: (tag: string) => void;
   onDone: () => void;
@@ -1223,24 +1292,26 @@ function WorkCard({
         </span>
       </div>
       <span className="mr-reviews-next">
-        {item.links.map((link) => (
-          <button
-            key={`${link.kind}:${describeWorkLink(link)}`}
-            type="button"
-            className={`mr-reviews-chip work-link is-${link.kind}${link.kind === "deploy" ? " is-good" : ""}`}
-            title={
-              link.kind === "commit" || link.kind === "deploy"
-                ? `${describeWorkLink(link)} (click copies the sha)`
-                : describeWorkLink(link)
-            }
-            onClick={(event) => {
-              event.stopPropagation();
-              onLink(link);
-            }}
+        {item.links.length ? (
+          <span
+            className="mr-reviews-dense-chips work-link-chips"
+            aria-label="Links"
           >
-            {describeWorkLink(link)}
-          </button>
-        ))}
+            {summarizeWorkLinks(item.links).map((group) => {
+              const Icon = WORK_LINK_ICONS[group.kind];
+              return (
+                <span
+                  key={group.kind}
+                  className={`mr-reviews-chip is-label work-link-chip is-${group.kind}${group.kind === "deploy" ? " is-good" : ""}`}
+                  title={group.title}
+                >
+                  <Icon size={10} aria-hidden="true" />
+                  {group.label}
+                </span>
+              );
+            })}
+          </span>
+        ) : null}
         <small className="mr-reviews-dense-meta">
           {ago(
             item.state === "done"
@@ -1251,6 +1322,100 @@ function WorkCard({
         </small>
       </span>
     </BoardCard>
+  );
+}
+
+/** A link chip's icon, by the kind its chip groups. */
+const WORK_LINK_ICONS: Record<WorkLinkGroupKind, LucideIcon> = {
+  effort: Route,
+  pr: GitPullRequest,
+  thread: MessageSquare,
+  review: FileDiff,
+  branch: GitBranch,
+  commit: GitCommitHorizontal,
+  decision: ListChecks,
+  item: Link2,
+  deploy: Rocket,
+};
+
+/** What a link's button does, said on it; null: it does nothing. */
+function workLinkAction(link: WorkLink, canOpenEffort: boolean): string | null {
+  switch (link.kind) {
+    case "review":
+      return link.thread ? "Open the thread's review" : "Open the review";
+    case "effort":
+      return canOpenEffort ? "Open the effort's view" : null;
+    case "pr":
+      return "Open the request online";
+    case "commit":
+      return "Review the commit in Changes";
+    case "branch":
+      return "Copy the branch's name";
+    case "item":
+      return "Open that item";
+    case "deploy":
+      return link.sha === "decision" ? null : "Copy the commit's sha";
+    case "decision":
+      return null;
+  }
+}
+
+/**
+ * A link in the item's detail: its icon, a label one reads and what it
+ * is, the whole row its action (open the effort, the review, the commit,
+ * the request online); a commit's sha copied beside.
+ */
+function WorkLinkRow({
+  link,
+  names,
+  canOpenEffort,
+  onOpen,
+}: {
+  link: WorkLink;
+  names: WorkLinkNames;
+  canOpenEffort: boolean;
+  onOpen: () => void;
+}) {
+  const { label, detail } = readableWorkLink(link, names);
+  const Icon = WORK_LINK_ICONS[workLinkGroupOf(link)];
+  const action = workLinkAction(link, canOpenEffort);
+  const body = (
+    <>
+      <Icon size={13} aria-hidden="true" />
+      <span className="work-link-text">
+        <span className="work-link-label">{label}</span>
+        {detail ? <small>{detail}</small> : null}
+      </span>
+    </>
+  );
+  return (
+    <li className={`work-link-row is-${workLinkGroupOf(link)}`}>
+      {action ? (
+        <button
+          type="button"
+          className="work-link-open"
+          title={action}
+          onClick={onOpen}
+        >
+          {body}
+        </button>
+      ) : (
+        <span className="work-link-open">{body}</span>
+      )}
+      {link.kind === "commit" ? (
+        <button
+          type="button"
+          className="assistant-icon-button"
+          aria-label="Copy the sha"
+          title={`Copy ${link.sha.slice(0, 10)}`}
+          onClick={() =>
+            void navigator.clipboard?.writeText(link.sha).catch(() => {})
+          }
+        >
+          <Copy size={13} />
+        </button>
+      ) : null}
+    </li>
   );
 }
 
@@ -1272,6 +1437,8 @@ function WorkDetail({
   onBack,
   onOpenOwner,
   onLink,
+  linkNames,
+  canOpenEffort,
   onState,
   onDone,
   onReopen,
@@ -1292,6 +1459,10 @@ function WorkDetail({
   onBack: () => void;
   onOpenOwner: () => void;
   onLink: (link: WorkLink) => void;
+  /** What names its links better than their ids. */
+  linkNames: WorkLinkNames;
+  /** An effort link opens the effort's view. */
+  canOpenEffort: boolean;
   onState: (state: WorkState) => void;
   onDone: () => void;
   onReopen: () => void;
@@ -1443,22 +1614,18 @@ function WorkDetail({
           {item.links.length ? (
             <div>
               <dt>Links</dt>
-              <dd className="mr-reviews-own">
-                {item.links.map((link) => (
-                  <button
-                    key={`${link.kind}:${describeWorkLink(link)}`}
-                    type="button"
-                    className={`mr-reviews-chip work-link is-${link.kind}${link.kind === "deploy" ? " is-good" : ""}`}
-                    title={
-                      link.kind === "commit" || link.kind === "deploy"
-                        ? `${describeWorkLink(link)} (click copies the sha)`
-                        : describeWorkLink(link)
-                    }
-                    onClick={() => onLink(link)}
-                  >
-                    {describeWorkLink(link)}
-                  </button>
-                ))}
+              <dd>
+                <ul className="work-link-list">
+                  {item.links.map((link) => (
+                    <WorkLinkRow
+                      key={`${link.kind}:${describeWorkLink(link)}`}
+                      link={link}
+                      names={linkNames}
+                      canOpenEffort={canOpenEffort}
+                      onOpen={() => onLink(link)}
+                    />
+                  ))}
+                </ul>
               </dd>
             </div>
           ) : null}

@@ -205,12 +205,27 @@ if (
       />
     ),
   }));
+  /** More of the inbox: its efforts, its requests. */
+  let inboxMore: Record<string, unknown> = {};
+  const reviewedCommits: [string, unknown][] = [];
+  const reviewOpenModule = await import("../reviewOpen");
+  mock.module("../reviewOpen", () => ({
+    ...reviewOpenModule,
+    openCommitReview: async (sha: string, options: unknown) => {
+      reviewedCommits.push([sha, options]);
+      return null;
+    },
+  }));
   const { bridge } = await import("../api");
   const original = bridge.call.bind(bridge);
-  bridge.call = (async (method: string, ...rest: unknown[]) =>
-    method.startsWith("bridge.mr_reviews.")
-      ? { entries: [], order: [], hosts: [], views: [] }
-      : original(method, ...(rest as []))) as typeof bridge.call;
+  bridge.call = (async (method: string, ...rest: unknown[]) => {
+    // An effort's view reads nothing here: it says so.
+    if (method.startsWith("bridge.mr_reviews.effort."))
+      throw new Error("no effort here");
+    return method.startsWith("bridge.mr_reviews.")
+      ? { entries: [], order: [], hosts: [], views: [], ...inboxMore }
+      : original(method, ...(rest as []));
+  }) as typeof bridge.call;
   bridge.onMrReviews = (() => () => {}) as typeof bridge.onMrReviews;
   const { MrReviewsPanel } = await import("./MrReviewsPanel");
   const { createRoot } = await import("react-dom/client");
@@ -375,12 +390,7 @@ if (
         [...doing.querySelectorAll(".mr-reviews-chip")].map(
           (chip) => chip.textContent,
         ),
-      ).toEqual([
-        "caps",
-        "docs",
-        "desktop/w32:p1 · abc12345",
-        "abcdef1234 Fix caps",
-      ]);
+      ).toEqual(["caps", "docs", "desktop/w32:p1 · abc12345", "commit"]);
 
       // j selects the first card; l the column beside; k stays in it.
       await view.key("j");
@@ -803,5 +813,111 @@ if (
         "desktop:/home/me/gstreamer/2.0/gst2-caps": "all",
       },
     });
+  });
+
+  test("a card's links are one line of small chips, a kind and a count each; the detail lists them with labels one reads, each its action", async () => {
+    localStorage.clear();
+    const mr =
+      "https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs/-/merge_requests/2345";
+    inboxMore = {
+      efforts: [
+        {
+          id: "emwqgkha97zmf",
+          name: "gst-plugins-rs webrtc fixes",
+          group: "g",
+          source: "s",
+          target: "t",
+          total: 0,
+          counts: {},
+        },
+      ],
+    };
+    // The item of the user's screenshot (2026-11-21), and a request.
+    const links = [
+      { kind: "review", id: "d22a2f86aaaaaaaa", thread: "cf35a5acbbbbbbbb" },
+      { kind: "effort", id: "emwqgkha97zmf" },
+      { kind: "branch", name: "webrtc-signaller-tls-verify" },
+      { kind: "branch", name: "webrtcsrc-no-decodebin3-panic" },
+      {
+        kind: "commit",
+        sha: "f9b1e86950000000",
+        subject: "webrtc: Verify the signalling server's certificate",
+        root: "/src/gst-plugins-rs",
+      },
+      { kind: "commit", sha: "62d3530630000000", subject: "webrtcsrc: Post" },
+      { kind: "pr", url: mr },
+    ];
+    board.items = [
+      ...board.items,
+      item("1800000000000000", "gst2", "you", ["upstreaming"], { links }),
+    ];
+    const opened: string[] = [];
+    const open = window.open;
+    window.open = ((url: string) => {
+      opened.push(url);
+      return null;
+    }) as typeof window.open;
+    const view = await mount();
+    try {
+      const card = view.panel.querySelector(
+        "[data-work-item='1800000000000000']",
+      )!;
+      const chips = [...card.querySelectorAll(".work-link-chip")];
+      expect(chips.map((chip) => chip.textContent)).toEqual([
+        "effort",
+        "PR !2345",
+        "thread",
+        "2 branches",
+        "2 commits",
+      ]);
+      // Each with its kind's icon; none a button of its own: a tap opens
+      // the card.
+      expect(chips.every((chip) => chip.querySelector("svg"))).toBe(true);
+      expect(card.querySelector(".work-link-chips button")).toBeNull();
+      // No raw ids on the card.
+      for (const id of ["d22a2f86", "cf35a5ac", "emwqgkha97zmf", "f9b1e869"])
+        expect(card.textContent).not.toContain(id);
+
+      // The detail: a row per link, its label read first.
+      await view.click(card);
+      const rows = () => [
+        ...view.panel.querySelectorAll<HTMLElement>(
+          ".work-detail .work-link-row",
+        ),
+      ];
+      expect(
+        rows().map((row) => row.querySelector(".work-link-label")?.textContent),
+      ).toEqual([
+        "The review thread",
+        "gst-plugins-rs webrtc fixes",
+        "webrtc-signaller-tls-verify",
+        "webrtcsrc-no-decodebin3-panic",
+        "webrtc: Verify the signalling server's certificate",
+        "webrtcsrc: Post",
+        "Request !2345",
+      ]);
+      expect(rows()[4]!.querySelector("small")?.textContent).toBe(
+        "Commit f9b1e86950 in gst-plugins-rs",
+      );
+      // The request opens online; the commit's review is asked for in
+      // its repository; the effort shows the inbox mode's effort view.
+      await view.click(rows()[6]!.querySelector("button.work-link-open"));
+      expect(opened).toEqual([mr]);
+      await view.click(rows()[4]!.querySelector("button.work-link-open"));
+      expect(reviewedCommits).toEqual([
+        ["f9b1e86950000000", { path: "/src/gst-plugins-rs" }],
+      ]);
+      await view.click(rows()[1]!.querySelector("button.work-link-open"));
+      expect(view.panel.classList.contains("is-mr")).toBe(true);
+      expect(view.panel.querySelector(".work-detail")).toBeNull();
+      expect(view.panel.querySelector(".mr-effort-view")).not.toBeNull();
+    } finally {
+      window.open = open;
+      inboxMore = {};
+      board.items = board.items.filter(
+        (each) => each.id !== "1800000000000000",
+      );
+      await view.unmount();
+    }
   });
 }

@@ -45,7 +45,7 @@ const detail = `
             <div><dt>State</dt><dd><select><option>Doing</option></select></dd></div>
             <div><dt>Tags</dt><dd><input placeholder="tags, space separated"></dd></div>
             <div><dt>Owner</dt><dd class="mr-reviews-own"><span class="mr-reviews-chip is-wait work-owner">desktop/w35:p1</span><button type="button" class="ghost">Open the session</button></dd></div>
-            <div><dt>Links</dt><dd class="mr-reviews-own"><button type="button" class="mr-reviews-chip work-link is-review">review d22a2f86 thread beb2d667</button></dd></div>
+            <div><dt>Links</dt><dd><ul class="work-link-list"><li class="work-link-row is-commit"><button type="button" class="work-link-open"><svg></svg><span class="work-link-text"><span class="work-link-label">webrtc: Verify the signalling server's certificate when no CA file is set</span><small>Commit f9b1e86950 in gst-plugins-rs</small></span></button><button type="button" class="assistant-icon-button">c</button></li></ul></dd></div>
           </dl>
         </section>
         <section class="work-detail-threads" aria-label="Comments">
@@ -103,7 +103,13 @@ test("the detail's header rows and description fit a 360px phone", async () => {
     // Chips wrap onto more lines; a link chip is cut short, never wider
     // than its row; a field is the row's width.
     expect(page.style(".mr-reviews-own").flexWrap).toBe("wrap");
-    expect(page.style(".work-link").maxWidth).toBe("100%");
+    // A link is a row: its label wraps, its button keeps no minimum nor
+    // the phone's 44px buttons' height.
+    expect(["0", "0px"]).toContain(page.style(".work-link-list").minWidth);
+    const link = page.style(".work-link-open");
+    expect(["0", "0px"]).toContain(link.minWidth);
+    expect(["0", "0px"]).toContain(link.minHeight);
+    expect(page.style(".work-link-label").overflowWrap).toBe("anywhere");
     expect(
       page.style(".work-detail .assistant-task-metadata input").maxWidth,
     ).toBe("100%");
@@ -112,6 +118,51 @@ test("the detail's header rows and description fit a 360px phone", async () => {
     expect(page.style(".work-description").overflowWrap).toBe("anywhere");
     expect(page.style(".work-description img").maxWidth).toBe("100%");
     expect(page.style(".work-detail-threads img").maxWidth).toBe("100%");
+  } finally {
+    await page.close();
+  }
+});
+
+// A card on a phone (2026-11-21): six links drawn as bordered boxes of raw
+// ids, 44px high each (the phone's buttons), passing the card's right
+// edge. Its links are now small chips of one line that wrap, and its
+// title wraps anywhere.
+test("a card's title wraps and its link chips stay small inside it", async () => {
+  const page = render(`
+    <aside class="assistant-panel mr-reviews-panel is-mobile is-work">
+      <div class="assistant-tasks mr-reviews-body is-work">
+        <div class="mr-reviews-sections">
+          <div class="mr-reviews-lane is-you" data-work-column="you">
+            <ul class="assistant-task-list">
+              <li class="mr-reviews-item work-card is-you">
+                <div role="button" class="assistant-task-row mr-reviews-row" data-work-item="i1">
+                  <div class="mr-reviews-dense-head"><strong>gst-plugins-rs fixes prepared for upstream (signaller server verification)</strong></div>
+                  <span class="mr-reviews-next">
+                    <span class="mr-reviews-dense-chips work-link-chips"><span class="mr-reviews-chip is-label work-link-chip is-branch"><svg></svg>2 branches</span></span>
+                    <small class="mr-reviews-dense-meta">now</small>
+                  </span>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </aside>`);
+  try {
+    expect(page.style(".assistant-task-list").gridTemplateColumns).toBe(
+      "minmax(0, 1fr)",
+    );
+    const title = page.style(".work-card .mr-reviews-dense-head > strong");
+    expect(title.overflowWrap).toBe("anywhere");
+    expect(["0", "0px"]).toContain(title.minWidth);
+    expect(page.style(".mr-reviews-next").flexWrap).toBe("wrap");
+    const chips = page.style(".work-link-chips");
+    expect(chips.flexWrap).toBe("wrap");
+    expect(["0", "0px"]).toContain(chips.minWidth);
+    const chip = page.style(".work-link-chip");
+    expect(chip.display).toBe("inline-flex");
+    expect(chip.whiteSpace).toBe("nowrap");
+    expect(chip.fontSize).toBe("10px");
   } finally {
     await page.close();
   }

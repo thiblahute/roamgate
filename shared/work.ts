@@ -342,6 +342,197 @@ export function describeWorkLink(link: WorkLink): string {
   }
 }
 
+/** A request's number as its forge writes it: `!123` (GitLab), `#123`. */
+export function workPrRef(url: string): string | null {
+  const gitlab = /\/-\/merge_requests\/(\d+)/.exec(url);
+  if (gitlab) return `!${gitlab[1]}`;
+  const github = /\/pulls?\/(\d+)/.exec(url);
+  return github ? `#${github[1]}` : null;
+}
+
+/** The kinds of links a card's chips group, in the chips' order. */
+export const WORK_LINK_GROUPS = [
+  "effort",
+  "pr",
+  "thread",
+  "review",
+  "branch",
+  "commit",
+  "decision",
+  "item",
+  "deploy",
+] as const;
+export type WorkLinkGroupKind = (typeof WORK_LINK_GROUPS)[number];
+
+/** A card's chip: the links of a kind, as a word and a count. */
+export type WorkLinkGroup = {
+  kind: WorkLinkGroupKind;
+  label: string;
+  count: number;
+  /** Its links in words (the chip's tooltip), no ids. */
+  title: string;
+};
+
+/** A chip's words for one link of a kind, and for several. */
+const WORK_LINK_WORDS: Record<WorkLinkGroupKind, [string, string]> = {
+  effort: ["effort", "efforts"],
+  pr: ["PR", "PRs"],
+  thread: ["thread", "threads"],
+  review: ["review", "reviews"],
+  branch: ["branch", "branches"],
+  commit: ["commit", "commits"],
+  decision: ["decision", "decisions"],
+  item: ["after an item", "items before"],
+  deploy: ["landed", "landings"],
+};
+
+/** The group a link's chip counts it in. */
+export function workLinkGroupOf(link: WorkLink): WorkLinkGroupKind {
+  if (link.kind === "review") return link.thread ? "thread" : "review";
+  return link.kind;
+}
+
+/** A link in the words of a card's tooltip: what it is, never an id. */
+function workLinkHint(link: WorkLink): string {
+  switch (link.kind) {
+    case "review":
+      return link.thread ? "a review thread" : "a review";
+    case "effort":
+      return link.part ? `an effort's part ${link.part}` : "an effort";
+    case "pr":
+      return workPrRef(link.url) ?? link.url.replace(/^https?:\/\//, "");
+    case "commit":
+      return link.subject ?? link.sha.slice(0, 10);
+    case "branch":
+      return link.name;
+    case "decision":
+      return `${link.id} in ${link.path.split("/").pop() ?? link.path}`;
+    case "item":
+      return "another item";
+    case "deploy":
+      return link.sha === "decision"
+        ? "its decisions ticked"
+        : `landed${link.branch ? ` on ${link.branch}` : ""}`;
+  }
+}
+
+/**
+ * A card's links on one line: a chip per kind with its count ("effort",
+ * "2 branches", "PR !123", "thread"), never the raw ids; the item's detail
+ * lists each.
+ */
+export function summarizeWorkLinks(
+  links: readonly WorkLink[],
+): WorkLinkGroup[] {
+  const byGroup = new Map<WorkLinkGroupKind, WorkLink[]>();
+  for (const link of links) {
+    const group = workLinkGroupOf(link);
+    byGroup.set(group, [...(byGroup.get(group) ?? []), link]);
+  }
+  return WORK_LINK_GROUPS.flatMap((kind) => {
+    const found = byGroup.get(kind);
+    if (!found) return [];
+    const count = found.length;
+    const first = found[0]!;
+    const ref = first.kind === "pr" ? workPrRef(first.url) : null;
+    const [one, several] = WORK_LINK_WORDS[kind];
+    const label =
+      count > 1
+        ? `${count} ${several}`
+        : kind === "pr" && ref
+          ? `PR ${ref}`
+          : one;
+    return [{ kind, label, count, title: found.map(workLinkHint).join("\n") }];
+  });
+}
+
+/** What the page knows that names a link better than its id. */
+export type WorkLinkNames = {
+  effort?: (id: string) => string | undefined;
+  /** A request's title, by its URL. */
+  pr?: (url: string) => string | undefined;
+  /** A review's title, and the first words of the thread named. */
+  review?: (
+    id: string,
+    thread?: string,
+  ) => { title?: string; thread?: string } | undefined;
+  /** Another item's title. */
+  item?: (id: string) => string | undefined;
+};
+
+/**
+ * A link as the item's detail lists it: a label one reads (a commit's
+ * subject, a branch, an effort's name, a request's title or number, the
+ * thread's first words) and a smaller line saying what and where it is.
+ */
+export function readableWorkLink(
+  link: WorkLink,
+  names: WorkLinkNames = {},
+): { label: string; detail: string } {
+  const base = (path: string) =>
+    path.replace(/\/+$/, "").split("/").pop() ?? path;
+  switch (link.kind) {
+    case "review": {
+      const known = names.review?.(link.id, link.thread);
+      const where = known?.title ? `in ${known.title}` : "in a review";
+      if (link.thread)
+        return {
+          label: known?.thread ? `"${known.thread}"` : "The review thread",
+          detail: `Thread ${where}`,
+        };
+      return { label: known?.title ?? "A review", detail: "Review" };
+    }
+    case "effort":
+      return {
+        label: names.effort?.(link.id) ?? "An upstreaming effort",
+        detail: `Upstreaming effort${link.part ? `, part ${link.part}` : ""}`,
+      };
+    case "pr": {
+      const ref = workPrRef(link.url);
+      const host = /^https?:\/\/([^/]+)/.exec(link.url)?.[1];
+      const title = names.pr?.(link.url);
+      return {
+        label: title ?? (ref ? `Request ${ref}` : link.url),
+        detail: [
+          ref?.startsWith("!") ? "Merge request" : "Pull request",
+          ref && title ? ref : null,
+          host ? `on ${host}` : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      };
+    }
+    case "commit":
+      return {
+        label: link.subject ?? `Commit ${link.sha.slice(0, 10)}`,
+        detail: `Commit ${link.sha.slice(0, 10)}${link.root ? ` in ${base(link.root)}` : ""}`,
+      };
+    case "branch":
+      return {
+        label: link.name,
+        // A worktree is often named as its branch: no need to say it twice.
+        detail: `Branch${link.root && base(link.root) !== link.name ? ` in ${base(link.root)}` : ""}`,
+      };
+    case "decision":
+      return {
+        label: `Decision ${link.id}`,
+        detail: `In ${base(link.path)}`,
+      };
+    case "item":
+      return {
+        label: names.item?.(link.id) ?? "Another item",
+        detail: "This item comes after it",
+      };
+    case "deploy":
+      return link.sha === "decision"
+        ? { label: "Its decisions are ticked", detail: link.branch ?? "" }
+        : {
+            label: `Landed${link.branch ? ` on ${link.branch}` : ""}`,
+            detail: `Commit ${link.sha.slice(0, 10)}`,
+          };
+  }
+}
+
 /**
  * When a live item becomes done by itself ("Done when: ..."), for the
  * item's detail and the tools' answers; null when nothing watches it (no
