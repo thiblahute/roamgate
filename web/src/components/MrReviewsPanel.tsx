@@ -3659,6 +3659,7 @@ export function MrReviewsPanel({
               ref={work.searchRef}
               type="search"
               className="mr-reviews-search"
+              data-dictation="off"
               aria-label="Search the items"
               placeholder="Search (/): words, #tag, owner"
               value={work.query}
