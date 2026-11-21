@@ -28,7 +28,12 @@
   --chat-comment: #9a6200;
 }
 
+/* A card is as wide as its column, never as wide as its longest line: a
+   grid or flex item keeps no content-based minimum (an implicit column took
+   a card's longest paragraph, 2470px on a 412px phone), and a path, a URL
+   or a long token in inline code breaks rather than widening it. */
 .chat-thread {
+  min-width: 0;
   margin: 4px 0 8px;
   padding: 6px 8px;
   border: 1px solid color-mix(in srgb, var(--chat-comment) 35%, var(--border));
@@ -38,6 +43,7 @@
   color: var(--text);
   font-size: 13px;
   text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .chat-thread.is-resolved {
