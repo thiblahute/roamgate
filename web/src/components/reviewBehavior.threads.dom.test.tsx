@@ -710,6 +710,8 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
           ["g1", true],
           ["t1", false],
         ]);
+        // Above the first file, scrolled away with the diff, never pinned.
+        expect(review.scrolledWithDiff("g1")).toBe(true);
         // Above the first line: n goes on from the cursor, to the lines'
         // threads, and past the last wraps around to the review's.
         await review.press("n");

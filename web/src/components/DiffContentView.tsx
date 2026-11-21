@@ -3974,10 +3974,14 @@ function DiffContentViewInner({
     const on = above.findIndex(
       (stop) => fileStopKey(stop) === threadView.cursor,
     );
+    // Above the first file, scrolled with it: each brought into sight.
+    const onAbove = (stop: HTMLElement) => {
+      threadView.setCursor(fileStopKey(stop));
+      stop.scrollIntoView?.({ block: "nearest" });
+    };
     if (on >= 0) {
       const to = on + direction * count;
-      if (to >= 0 && to < above.length)
-        threadView.setCursor(fileStopKey(above[to]!));
+      if (to >= 0 && to < above.length) onAbove(above[to]!);
       else if (direction === 1) {
         threadView.setCursor(null);
         cursorHandle.current.moveTo(0);
@@ -3990,7 +3994,7 @@ function DiffContentViewInner({
       !threadView.cursor &&
       cursorHandle.current.rowIndex() === 0
     ) {
-      threadView.setCursor(fileStopKey(above[above.length - 1]!));
+      onAbove(above[above.length - 1]!);
       return 0;
     }
     const stops = stopsHere();
@@ -5564,6 +5568,15 @@ function DiffContentViewInner({
         rememberUserScroll();
     };
     const onScroll = () => {
+      // Above the first file (the review's own threads, gone to or
+      // scrolled to): nothing kept in place, a thread opened there grows
+      // under the reader's eyes.
+      if (
+        articles[0] &&
+        articles[0].getBoundingClientRect().top >
+          scroller.getBoundingClientRect().top
+      )
+        scrollAnchorRef.current = null;
       if (
         scrollAnchorRef.current &&
         !scrollbarPointerActiveRef.current &&
@@ -5656,6 +5669,17 @@ function DiffContentViewInner({
         ) ?? [],
       ).find((element) => element.dataset.diffEntryKey === activeEntryKey);
       const scroller = target?.closest<HTMLElement>(".pierre-diff-scroll");
+      // The first file: the review's own above it shown too, nothing kept
+      // in place (its threads open and close at the top).
+      if (
+        target &&
+        scroller?.querySelector(".diff-review-lead") &&
+        scroller.querySelector("[data-diff-entry-key]") === target
+      ) {
+        scroller.scrollTop = 0;
+        updateNearbyRef.current?.();
+        return;
+      }
       if (target && scroller)
         scrollAnchorRef.current = {
           key: activeEntryKey,
@@ -5863,10 +5887,30 @@ function DiffContentViewInner({
     );
   });
 
+  // The overall comment opened, the diff scrolled down: brought into sight.
+  useEffect(() => {
+    if (!overallOpen) return;
+    userScrollUntilRef.current = performance.now() + 150;
+    sectionRef.current
+      ?.querySelector(".diff-review-overall")
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [overallOpen]);
+  // The review's own: its overall comment, the forge's section and the
+  // threads on the whole of it, above the first file, scrolled with the
+  // diff (only the head stays put, a phone's screen is the diff's).
+  const leadBlock =
+    overallBlock || forgeSection || generalBlock ? (
+      <div className="diff-review-lead">
+        {overallBlock}
+        {forgeSection}
+        {generalBlock}
+      </div>
+    ) : null;
   const diffList = visibleEntries.length ? (
     <DiffSurfaceScroll
       className={`pierre-diff-scroll ${mobile ? "is-compact" : ""} ${continuous ? "is-continuous" : ""}`}
     >
+      {leadBlock}
       {renderedSections.map((section) => (
         <DiffFileSection
           key={section.key}
@@ -6616,13 +6660,14 @@ function DiffContentViewInner({
       ) : null}
       <DiffThreadsContext.Provider value={diffThreads}>
         <DiffDrawingContext.Provider value={drawing}>
-          {overallBlock}
-          {forgeSection}
-          {generalBlock}
           {diffList}
-          {/* No changed file: the Other files alone, in a scroll of their own. */}
-          {!diffList && otherFilesBlock ? (
-            <div className="diff-other-files-scroll">{otherFilesBlock}</div>
+          {/* No changed file: the review's own and the Other files, in a
+              scroll of their own. */}
+          {!diffList && (leadBlock || otherFilesBlock) ? (
+            <div className="diff-other-files-scroll">
+              {leadBlock}
+              {otherFilesBlock}
+            </div>
           ) : null}
         </DiffDrawingContext.Provider>
       </DiffThreadsContext.Provider>

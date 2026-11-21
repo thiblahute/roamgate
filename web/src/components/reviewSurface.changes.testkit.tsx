@@ -2386,6 +2386,15 @@ export async function mountChangesReview(
         }),
       );
     },
+    scrolledWithDiff(threadId) {
+      const card = host.querySelector(
+        `details.mrt[data-thread-id="${CSS.escape(threadId)}"], .chat-thread[data-thread-id="${CSS.escape(threadId)}"]`,
+      );
+      if (!card) throw new Error(`no thread ${threadId}`);
+      return (
+        card.closest(".pierre-diff-scroll, .diff-other-files-scroll") !== null
+      );
+    },
     async toggleForgeThread(id) {
       const card = [
         ...host.querySelectorAll<HTMLDetailsElement>("details.mrt"),

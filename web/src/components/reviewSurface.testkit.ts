@@ -475,6 +475,11 @@ export interface ReviewSurface {
   markedLines(): ShownLine[];
   /** The forge's discussions as drawn, in order. */
   forgeThreads(): ShownForgeThread[];
+  /**
+   * A thread's card (a forge discussion's too) is in the diff's scroll,
+   * scrolled away with it, not pinned above it.
+   */
+  scrolledWithDiff(threadId: string): boolean;
   /** Fold or unfold a drawn forge discussion by clicking its summary. */
   toggleForgeThread(id: string): Promise<void>;
   /** The review's conversations list is open. */

@@ -461,6 +461,9 @@ if (
           expect(byId.get("m4")?.open).toBe(false);
           expect(byId.get("m3")?.open).toBe(true);
           expect(byId.has("m2")).toBe(false);
+          // On the whole request, above the first file: scrolled away with
+          // the diff, never pinned over it.
+          expect(review.scrolledWithDiff("m3")).toBe(true);
           // The link shows all the changes, where every one is.
           await review.clickButton("all changes");
           expect(review.commitBar()?.head).toBe("All changes");
