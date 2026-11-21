@@ -1219,6 +1219,23 @@
   min-height: 28px;
 }
 
+/* The commit bar is never wider than the screen: "The code changed" and a
+   status go under the commit when they do not fit beside it, their words
+   wrapped, Reload and Retry in reach. */
+.diff-content-view.is-mobile .diff-review-row > .diff-review-views {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  row-gap: 2px;
+  max-width: 100%;
+}
+
+.diff-content-view.is-mobile
+  .diff-review-row
+  :is(.diff-review-changed, .diff-review-views-status) {
+  max-width: 100%;
+  white-space: normal;
+}
+
 .diff-content-view.is-mobile .diff-review-row .diff-overall-toggle {
   display: inline-flex;
   align-items: center;

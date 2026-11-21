@@ -143,7 +143,7 @@ export function ChangesCommitBar({
       ) : null}
       {views.status ? (
         <span className="diff-review-views-status note" aria-live="polite">
-          {views.status}
+          <span>{views.status}</span>
           {views.failed && !views.loading ? (
             <button
               type="button"

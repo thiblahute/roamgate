@@ -61,11 +61,31 @@
   white-space: nowrap;
 }
 
-.diff-review-changed {
+/* "The code changed" and a status with its Retry: the words give way (cut,
+   or wrapped on a phone), never the button, which stays on the screen. */
+.diff-review-changed,
+.diff-review-views-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.diff-review-changed {
   color: var(--warning-text);
+}
+
+.diff-review-changed > span,
+.diff-review-views-status > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-review-changed > button,
+.diff-review-views-status > button {
+  flex: none;
 }
 
 .diff-review-changed button {
