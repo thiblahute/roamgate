@@ -40,6 +40,7 @@ import {
   type ReviewThreadKind,
 } from "../../../shared/review";
 import { reviewCall, useReviewSnapshots, useReviewState } from "../review";
+import { useOpenAtTarget } from "../reviewOpenAt";
 import {
   latestAnswerAt,
   reviewAgent,
@@ -3810,6 +3811,16 @@ function DiffContentViewInner({
       THREAD_GO_TO_MS + 50,
     );
   };
+  // A link to one of the review's comments (reviewOpenAt.ts): gone to as
+  // the Comments panel goes to a thread, the comment highlighted.
+  useOpenAtTarget({
+    find: (id) =>
+      scoped.threads.find((each) => each.id === id) ??
+      drawnThreads?.find((each) => each.id === id),
+    threads: scoped.threads,
+    root: () => sectionRef.current,
+    go: (thread) => goToAnyThread(thread),
+  });
   /** Whether a thread's line is among the rows drawn (its file open, read). */
   const spotDrawn = (spot: PlacedThread) =>
     cursorHandle.current.model.rows.some(
