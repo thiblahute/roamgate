@@ -126,6 +126,13 @@ import { BoardCard } from "./BoardCard";
 import { ResizeSeparator } from "./ResizeSeparator";
 import { ThreadEditor, type ThreadBox } from "./ThreadEditor";
 import { WorkAddForm } from "./WorkAddForm";
+import { peekReviewDraft } from "../reviewDrafts";
+import {
+  useWorkDraftItems,
+  workAddDraft,
+  workItemDraft,
+  workItemDrafts,
+} from "../workDrafts";
 import {
   postWorkItemComment,
   useWorkItemKeys,
@@ -728,6 +735,21 @@ export function useWorkMode({
     scope ??
     projects[0]?.id ??
     null;
+  /** Where the add form keeps its unsent words: + shows "Draft" then. */
+  const addDraft = addProject
+    ? workAddDraft(
+        addProject,
+        draft ? (draft.workspace ?? null) : workspace,
+        draft?.owner,
+      )
+    : undefined;
+  const plainAddDraft = addProject
+    ? workAddDraft(addProject, workspace)
+    : undefined;
+  const draftItems = useWorkDraftItems();
+  const addHasDraft =
+    !!plainAddDraft &&
+    peekReviewDraft(plainAddDraft.session, plainAddDraft.key) !== undefined;
   const choose = (next: WorkScope) => {
     setChoice({ key: workspaceKey, scope: next });
     setMemory((current) => rememberWorkScope(current, workspace, next));
@@ -1509,12 +1531,21 @@ export function useWorkMode({
       <button
         type="button"
         className="assistant-icon-button"
-        aria-label="Add an item (a)"
-        title="Add an item (a)"
+        aria-label={
+          addHasDraft ? "Add an item (a): a draft is kept" : "Add an item (a)"
+        }
+        title={
+          addHasDraft
+            ? "Add an item (a): what you started writing is kept"
+            : "Add an item (a)"
+        }
         aria-pressed={adding}
         onClick={() => openAdd()}
       >
         <Plus size={16} />
+        {addHasDraft ? (
+          <span className="work-draft-dot" aria-hidden="true" />
+        ) : null}
       </button>
       <button
         type="button"
@@ -1558,6 +1589,7 @@ export function useWorkMode({
         <WorkAddForm
           key={addSeq}
           project={addProject}
+          {...(addDraft ? { draft: addDraft } : {})}
           projectName={projectName(addProject)}
           {...(draft
             ? {
@@ -1850,6 +1882,7 @@ export function useWorkMode({
                               : projectName(item.project)
                           }
                           selected={item.id === selected}
+                          drafted={draftItems.has(item.id)}
                           dragging={drag?.item.id === item.id}
                           onDragStart={dragStart(item)}
                           onSelect={() => select(item.id)}
@@ -1947,6 +1980,8 @@ const workAnswers = new Map<string, WorkAnswerState>();
 const workAnswerListeners = new Set<() => void>();
 /** The words of a card's Reply box, kept while the card is drawn again. */
 const workReplyBoxes = new Map<string, ThreadBox>();
+/** The card's Reply box, among the item's drafts. */
+const WORK_ASK_DRAFT = "ask";
 
 function workAnswerKey(item: string, ask: string): string {
   return `${item}\n${ask}`;
@@ -2035,7 +2070,9 @@ export function WorkAsk({
     key ? workAnswers.get(key) : undefined,
   );
   const [replying, setReplying] = useState(
-    () => !!workReplyBoxes.get(item.id)?.text.trim(),
+    () =>
+      !!workReplyBoxes.get(item.id)?.text.trim() ||
+      peekReviewDraft(workItemDrafts(item.id), WORK_ASK_DRAFT) !== undefined,
   );
   if (!asked) return null;
   const sending = said?.phase === "sending";
@@ -2113,6 +2150,7 @@ export function WorkAsk({
           <ThreadEditor
             placeholder="Your answer, in your own words..."
             kept={workReplyBoxes.get(item.id) ?? { text: "" }}
+            draft={workItemDraft(item.id, WORK_ASK_DRAFT)}
             onLeave={() => {}}
             onClose={closeReply}
             onSave={(text, id) =>
@@ -2145,6 +2183,7 @@ function WorkCard({
   item,
   project,
   selected,
+  drafted = false,
   dragging,
   onDragStart,
   onSelect,
@@ -2157,6 +2196,8 @@ function WorkCard({
   /** Its project's name, when the board shows every project. */
   project: string | null;
   selected: boolean;
+  /** A box of it has words not sent yet: "Draft" says so. */
+  drafted?: boolean;
   /** Being dragged to another column. */
   dragging?: boolean;
   onDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
@@ -2212,6 +2253,14 @@ function WorkCard({
         <strong>{item.title}</strong>
         <WorkAsk item={item} />
         <span className="mr-reviews-dense-chips" aria-label="Tags and owner">
+          {drafted ? (
+            <span
+              className="mr-reviews-chip is-wait work-draft"
+              title="A comment or reply you started writing is kept: open the item to go on"
+            >
+              Draft
+            </span>
+          ) : null}
           {item.questions ? (
             <span
               className="mr-reviews-chip is-wait work-decisions"

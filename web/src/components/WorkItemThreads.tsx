@@ -28,6 +28,7 @@ import {
   writeThenReadBack,
 } from "./ChatThreads";
 import {
+  type BoxKey,
   commentOnPart,
   MessageThread,
   type MessageThreadsScope,
@@ -39,6 +40,18 @@ import {
   useSelectedWords,
 } from "./MessageThreads";
 import { useThreadKeys } from "./useThreadKeys";
+import { reviewDraftKeys, peekReviewDraft } from "../reviewDrafts";
+import { workItemDraft, workItemDrafts } from "../workDrafts";
+
+/** An item's new comment box, among its drafts. */
+const WORK_COMMENT_DRAFT = "comment";
+
+/** A reply's or a part's box, among the item's drafts. */
+function workBoxDraftKey(key: BoxKey): string {
+  return "reply" in key
+    ? `reply:${key.reply}`
+    : `part:${JSON.stringify(key.part)}`;
+}
 
 /**
  * A work item's comments: a review of the item (target `work`), whose
@@ -302,6 +315,8 @@ export function workThreadsScope(
   item: string,
   description: ReviewThread | null | undefined,
   onLeave: () => void,
+  /** The boxes opened again with their drafts: they take no focus. */
+  restored: ReadonlySet<string> = new Set(),
 ): MessageThreadsScope {
   const byMessage = new Map<string, ReviewThread[]>();
   const drawn = new Set<string>();
@@ -334,7 +349,14 @@ export function workThreadsScope(
       : null,
     write: api.write,
     send: api.send,
-    box: () => ({ onAddImage: api.addImage }),
+    box: (key) => {
+      const draft = workItemDraft(item, workBoxDraftKey(key));
+      return {
+        onAddImage: api.addImage,
+        draft,
+        ...(restored.has(draft.key) ? { autoFocus: false } : {}),
+      };
+    },
     onLeave,
     head: (thread) => {
       const part = thread.anchor.message;
@@ -428,7 +450,40 @@ export function WorkItemThreads({
   /** Esc in a box: the keys go back to the detail. */
   onLeave: () => void;
 }) {
-  const [composing, setComposing] = useState(false);
+  // A box left with words in it opens again with them: the new comment
+  // first, else a reply, else a thread on a part.
+  const [composing, setComposing] = useState(
+    () =>
+      peekReviewDraft(workItemDrafts(item), WORK_COMMENT_DRAFT) !== undefined,
+  );
+  /** Opened again with its draft: it takes no focus (the detail's keys). */
+  const [restoredComment] = useState(composing);
+  const [restored, setRestored] = useState<ReadonlySet<string>>(new Set());
+  const reopened = useRef(composing);
+  useEffect(() => {
+    if (reopened.current || !api.threads.length) return;
+    reopened.current = true;
+    if (api.replying || api.partDraft) return;
+    const keys = reviewDraftKeys(workItemDrafts(item));
+    const reply = api.threads.find(
+      (thread) =>
+        !thread.resolved &&
+        keys.includes(workBoxDraftKey({ reply: thread.id })),
+    );
+    if (reply) {
+      setRestored(new Set([workBoxDraftKey({ reply: reply.id })]));
+      return api.setReplying(reply.id);
+    }
+    for (const key of keys) {
+      if (!key.startsWith("part:")) continue;
+      try {
+        const part = JSON.parse(key.slice("part:".length)) as ReviewMessagePart;
+        if (!api.threads.some((thread) => thread.id === part.thread)) continue;
+        setRestored(new Set([key]));
+        return api.setPartDraft(part);
+      } catch {}
+    }
+  }, [api.threads]);
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (compose === "comment") setComposing(true);
@@ -442,7 +497,7 @@ export function WorkItemThreads({
     // A later change of compose opens the box again; the threads read
     // then are the current ones.
   }, [compose]);
-  const scope = workThreadsScope(api, item, description, onLeave);
+  const scope = workThreadsScope(api, item, description, onLeave, restored);
   // A thread on a comment is drawn in it; one on a comment not drawn (one
   // deleted), on its own.
   const roots = api.threads.filter((thread) => {
@@ -486,6 +541,8 @@ export function WorkItemThreads({
           <ThreadEditor
             placeholder="Comment for the owner session..."
             onAddImage={api.addImage}
+            draft={workItemDraft(item, WORK_COMMENT_DRAFT)}
+            autoFocus={!restoredComment}
             onLeave={onLeave}
             onClose={() => {
               setComposing(false);

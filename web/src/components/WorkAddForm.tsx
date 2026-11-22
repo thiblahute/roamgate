@@ -1,11 +1,18 @@
 import { ChevronLeft } from "lucide-react";
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import {
+  type DraftImage,
+  draftImagesNow,
+  peekReviewDraft,
+  readDraftImages,
+} from "../reviewDrafts";
 import { blobBase64 } from "../renderedCapture";
 import { vimKeys } from "../vimKeys";
 import { ImagePickButton } from "./ImagePickButton";
 import type { CommentEditorHandle } from "./ReviewCommentEditor";
 import { ReviewCommentEditorLazy } from "./ReviewCommentEditorLazy";
 import { IMAGE_UPLOADING, imageUploadPending } from "./reviewImageUpload";
+import { type DraftPlace, useBoxDraft } from "./ThreadEditor";
 
 /** An image is at most this big (the review image store's limit). */
 const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
@@ -18,13 +25,28 @@ export const WORK_ADD_IMAGES = 8;
  * read only at Add can be unreadable by then (Chrome on Android drops
  * the picker's grant), which failed the add with nothing said.
  */
-export type WorkAddImage = {
-  token: string;
-  name: string;
-  type: string;
-  /** Base64. */
-  data: string;
-};
+export type WorkAddImage = DraftImage;
+
+/**
+ * The words the form starts with: its kept draft's, and the words it is
+ * opened with (a chat's quote, `:add WORDS`) after them unless the draft
+ * has them already.
+ */
+export function workAddStart(kept: string | undefined, initial: string) {
+  if (!kept) return initial;
+  if (!initial || kept.includes(initial.trim())) return kept;
+  return `${kept}\n\n${initial}`;
+}
+
+/** The highest number of the images' tokens (`work-image:N`). */
+function lastImageToken(images: readonly WorkAddImage[]): number {
+  let last = 0;
+  for (const image of images) {
+    const number = Number(/^work-image:(\d+)$/.exec(image.token)?.[1] ?? 0);
+    if (number > last) last = number;
+  }
+  return last;
+}
 
 /** An image taken into the form: checked, and read at once. */
 export async function takeWorkImage(
@@ -85,7 +107,9 @@ export function workAddPayload(
  * the project's coordinator's to sort (a clear title, tags, a state,
  * split when it holds several tasks), or the session's it is added for
  * (`owner`: from its chat, the words quoted in `initialText`). Cmd+Enter,
- * or Add, adds it; Esc or Cancel leaves.
+ * or Add, adds it; Esc or Back leaves, its words and images kept as its
+ * `draft` (shown again when the form is opened there, after a reload
+ * too); Cancel drops them.
  */
 export function WorkAddForm({
   project,
@@ -94,6 +118,7 @@ export function WorkAddForm({
   owner,
   onAdd,
   onCancel,
+  draft,
 }: {
   project: string;
   projectName: string;
@@ -106,14 +131,43 @@ export function WorkAddForm({
     images?: { token: string; type: string; data: string }[];
   }) => Promise<void>;
   onCancel: () => void;
+  /** Where its unsent words and images are kept. */
+  draft?: DraftPlace;
 }) {
+  const [start] = useState(() =>
+    workAddStart(
+      draft ? peekReviewDraft(draft.session, draft.key) : undefined,
+      initialText,
+    ),
+  );
   const [waiting, setWaiting] = useState("");
   /** Why the add failed: stays until dismissed or added again. */
   const [failed, setFailed] = useState("");
   const [busy, setBusy] = useState(false);
-  const taken = useRef(0);
-  const text = useRef(initialText);
-  const images = useRef<WorkAddImage[]>([]);
+  const text = useRef(start);
+  const images = useRef<WorkAddImage[]>(
+    draft ? draftImagesNow(draft.session, draft.key) : [],
+  );
+  const taken = useRef(lastImageToken(images.current));
+  const drafted = useBoxDraft(draft, text, images);
+  /** The kept images, read back after a reload: Add waits for them. */
+  const imagesRead = useRef<Promise<void>>(Promise.resolve());
+  useEffect(() => {
+    if (!draft || images.current.length || !start.includes("work-image:"))
+      return;
+    imagesRead.current = readDraftImages(draft.session, draft.key).then(
+      (read) => {
+        const known = new Set(images.current.map((image) => image.token));
+        images.current = [
+          ...images.current,
+          ...read.filter((image) => !known.has(image.token)),
+        ];
+        taken.current = Math.max(taken.current, lastImageToken(read));
+      },
+    );
+    // Read once, as the form is drawn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const handle = useRef<CommentEditorHandle | null>(null);
   const [vim] = useState(vimKeys);
   const keepImage = async (file: File): Promise<string> => {
@@ -135,7 +189,16 @@ export function WorkAddForm({
     setFailed("");
     setBusy(true);
     try {
-      await onAdd(workAddPayload(text.current, images.current));
+      await imagesRead.current;
+      const payload = workAddPayload(text.current, images.current);
+      // Added: the draft goes (the form closes); not added, it stays.
+      drafted.forget();
+      try {
+        await onAdd(payload);
+      } catch (cause) {
+        drafted.resume();
+        throw cause;
+      }
     } catch (cause) {
       setFailed(
         `Not added: ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -178,7 +241,7 @@ export function WorkAddForm({
         <div className="chat-thread-editor work-add-text">
           <Suspense fallback={null}>
             <ReviewCommentEditorLazy
-              value={initialText}
+              value={start}
               vimMode={vim}
               autoFocus
               placeholder={`What needs doing, in your own words: what, why, where; paste or drop images, or add them. ${owner ? `${owner} sorts it` : "It gets sorted"} into a title, tags and a state for you.`}
@@ -231,7 +294,15 @@ export function WorkAddForm({
           >
             {busy ? "Adding..." : "Add"}
           </button>
-          <button type="button" className="ghost" onClick={onCancel}>
+          <button
+            type="button"
+            className="ghost"
+            title="Drop what was written"
+            onClick={() => {
+              drafted.forget();
+              onCancel();
+            }}
+          >
             Cancel
           </button>
         </div>

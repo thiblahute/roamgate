@@ -653,6 +653,26 @@ button.work-link-open:focus-visible {
   min-width: 0;
 }
 
+/* A box of the item has words not sent yet. */
+.work-draft {
+  font-style: italic;
+}
+
+/* The add button, when the new item form has words not sent yet. */
+.assistant-icon-button:has(> .work-draft-dot) {
+  position: relative;
+}
+
+.work-draft-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 /* An item added as free text, until its owner sorts it. */
 .work-triage {
   font-style: italic;
