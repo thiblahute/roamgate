@@ -338,6 +338,31 @@ test("a new review past the limit is refused, saying how to make room", () => {
   ).toBe("/repo/0");
 });
 
+test("a work item's review is opened past the limit", () => {
+  const { service } = setup(undefined, { sessionLimit: 1 });
+  service.open({
+    connectionId: "local",
+    root: "/repo",
+    target: { kind: "worktree" },
+    raise: false,
+  });
+  const work = service.open({
+    connectionId: "local",
+    root: "/repo",
+    target: { kind: "work", item: "0123abcd" },
+    raise: false,
+  });
+  expect(work.session.target).toEqual({ kind: "work", item: "0123abcd" });
+  expect(() =>
+    service.open({
+      connectionId: "local",
+      root: "/repo/other",
+      target: { kind: "worktree" },
+      raise: false,
+    }),
+  ).toThrow("too many reviews");
+});
+
 test("the store keeps thousands of reviews", () => {
   expect(REVIEW_LIMITS.sessions).toBeGreaterThanOrEqual(10_000);
 });

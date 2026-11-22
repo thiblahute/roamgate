@@ -830,9 +830,13 @@ export function createReviewService(args: {
   const sessions = new ReviewSessions();
   const sessionLimit = args.sessionLimit ?? REVIEW_LIMITS.sessions;
 
-  /** Refuses a new review once the store holds the most it keeps. */
-  function checkRoom(): void {
-    if (sessions.size < sessionLimit) return;
+  /**
+   * Refuses a new review once the store holds the most it keeps. A work
+   * item's review is never refused: adding an item to the Work board must
+   * not fail because of old reviews.
+   */
+  function checkRoom(target?: ReviewTarget): void {
+    if (target?.kind === "work" || sessions.size < sessionLimit) return;
     throw new ReviewError(
       `too many reviews (${sessions.size}, the limit is ${sessionLimit}); ` +
         "delete old ones in the reviews list to make room",
@@ -2156,7 +2160,7 @@ export function createReviewService(args: {
     if (found && automatic && found.automaticBase === undefined)
       found.automaticBase = true;
     if (!found) {
-      checkRoom();
+      checkRoom(target);
       const at = now();
       found = {
         id: newId(),
