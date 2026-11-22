@@ -73,7 +73,7 @@ describe("local workspace file operations", () => {
         (error: Error) => error.message,
       );
       expect(absolute).toBe(
-        `${elsewhere} is not here: its repository is not checked out at this path, or its checkout does not have this file.`,
+        `${elsewhere} was not found: no such file on this host (or its repository is not checked out at this path).`,
       );
       expect(absolute).not.toContain("ENOENT");
       const relative = await readLocalFile(root, "rfcs/a.md").catch(

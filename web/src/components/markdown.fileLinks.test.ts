@@ -137,18 +137,53 @@ test("plain path:line references become links, in backticks too", () => {
   ).toEqual(["web/src/a.ts"]);
 });
 
-test("links elsewhere stay as they were", () => {
+test("links and paths outside the checkouts are files of the host", () => {
   const found = links(
     renderMarkdown(
-      "[web](https://example.com/plans/a.md) [out](/tmp/a.md:3) [head](#goals) plain text at 12:30",
+      "[fr-1](/var/home/u/.claude/tmp/out/fr-1.wav) [notes](~/notes.md:3) [clip](file:///tmp/a.mp4) and `~/out/b.wav`, /tmp/c.png.",
       { fileLinks },
     ),
   );
-  expect(found.map((link) => link.path)).toEqual([null, null, null]);
-  expect(found.map((link) => link.target)).toEqual(["_blank", "_blank", null]);
+  expect(
+    found.map(({ text, root, path, line, href }) => ({
+      text,
+      root,
+      path,
+      line,
+      href,
+    })),
+  ).toEqual([
+    {
+      text: "fr-1",
+      root: "/",
+      path: "var/home/u/.claude/tmp/out/fr-1.wav",
+      line: null,
+      href: "#",
+    },
+    { text: "notes", root: "~", path: "notes.md", line: "3", href: "#" },
+    { text: "clip", root: "/", path: "tmp/a.mp4", line: null, href: "#" },
+    {
+      text: "~/out/b.wav",
+      root: "~",
+      path: "out/b.wav",
+      line: null,
+      href: "#",
+    },
+    { text: "/tmp/c.png", root: "/", path: "tmp/c.png", line: null, href: "#" },
+  ]);
+});
+
+test("links elsewhere stay as they were", () => {
+  const found = links(
+    renderMarkdown(
+      "[web](https://example.com/plans/a.md) [head](#goals) plain text at 12:30",
+      { fileLinks },
+    ),
+  );
+  expect(found.map((link) => link.path)).toEqual([null, null]);
+  expect(found.map((link) => link.target)).toEqual(["_blank", null]);
   expect(found.map((link) => link.href)).toEqual([
     "https://example.com/plans/a.md",
-    "/tmp/a.md:3",
     "#goals",
   ]);
   // A file:// URL is still no link when nothing resolves it.

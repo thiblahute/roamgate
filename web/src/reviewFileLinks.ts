@@ -4,8 +4,10 @@ import { resolveWorkspaceMarkdownPath } from "./workspaceFileUrl";
 /**
  * The files a review comment names, as links Roamgate opens in Files: a
  * Markdown link to a path of the review's repository (relative to it, or to
- * the commented file with `./` and `../`), to an absolute path in a checkout
- * Roamgate knows, or a `file://` URL; and plain `path:line` references.
+ * the commented file with `./` and `../`), to an absolute path (in a
+ * checkout Roamgate knows, else anywhere on the host), to `~/` (the host's
+ * home), or a `file://` URL; plain `path:line` references, and plain
+ * absolute or `~/` paths to a file.
  */
 
 /** Where a comment's file links lead from: its review and the checkouts around it. */
@@ -21,7 +23,11 @@ export type FileLinkScope = {
   documentPath?: string;
 };
 
-/** A file a comment names, as Files opens it: its repository and path there. */
+/**
+ * A file a comment names, as Files opens it: its repository and path there.
+ * A file outside every checkout has the filesystem's root (`/`, `C:/`) or
+ * the host's home (`~`) for root.
+ */
 export type FileLink = {
   root: string;
   path: string;
@@ -63,6 +69,14 @@ function inCheckouts(
   return null;
 }
 
+/** `/a/b`, its empty and `.` parts dropped; null with a `..` part. */
+function normalAbsolute(path: string): string | null {
+  if (!path.startsWith("/")) return null;
+  const parts = path.split("/").filter((part) => part && part !== ".");
+  if (parts.includes("..")) return null;
+  return `/${parts.join("/")}`;
+}
+
 /**
  * The file a link's target names, or null when it is not a file here: a
  * web address, a path outside every checkout, a heading of the comment.
@@ -101,9 +115,27 @@ export function resolveFileLink(
     ...(fragment ? { fragment } : {}),
   };
   const path = decoded(pathPart).replace(/\\/g, "/");
+  if (path === "~" || path.startsWith("~/")) {
+    const inHome = normalAbsolute(path.slice(1));
+    return inHome && inHome !== "/"
+      ? { root: "~", path: inHome.slice(1), ...at }
+      : null;
+  }
   if (path.startsWith("/") || WINDOWS_DRIVE.test(path)) {
     const found = inCheckouts(path, scope);
-    return found ? { ...found, ...at } : null;
+    if (found) return { ...found, ...at };
+    // A checkout itself is no file to show.
+    if (
+      [scope.root, ...(scope.checkouts ?? [])].some(
+        (each) => each && sameRoot(each, path),
+      )
+    )
+      return null;
+    // Anywhere else on the host: Files reads it by its absolute path.
+    const drive = WINDOWS_DRIVE.test(path) ? path.slice(0, 2) : "";
+    const absolute = normalAbsolute(path.slice(drive.length));
+    if (!absolute || absolute === "/") return null;
+    return { root: `${drive}/`, path: absolute.slice(1), ...at };
   }
   if (!scope.root) return null;
   // `./a` and `../a` are beside the commented file; any other path is in
@@ -173,7 +205,19 @@ export function bareFileReference(text: string): boolean {
   );
 }
 
-/** The `path:line` references written plainly in `text`. */
+/**
+ * An absolute or `~/` path written plainly (`/tmp/out/a.wav`,
+ * `~/notes.md:3`), its line optional; not ending in the sentence's
+ * punctuation.
+ */
+const PATH_REFERENCE =
+  /(?<![\w/.:@~-])((?:~|[A-Za-z]:)?\/(?:[\w.@+%=,-]+\/)*[\w@+%=-](?:[\w.@+%=,-]*[\w@+%=-])?)(?::(\d+)(?:-(\d+))?(?::\d+)?)?(?![\w/])/g;
+
+/**
+ * The `path:line` references written plainly in `text`, and the absolute
+ * and `~/` paths to a file (a name with an extension, or anything in `~/`)
+ * without a line.
+ */
 export function findFileReferences(text: string): FileReference[] {
   const found: FileReference[] = [];
   for (const match of text.matchAll(REFERENCE)) {
@@ -185,5 +229,18 @@ export function findFileReferences(text: string): FileReference[] {
       text: match[0],
     });
   }
-  return found;
+  for (const match of text.matchAll(PATH_REFERENCE)) {
+    const path = match[1]!;
+    const start = match.index;
+    const end = start + match[0].length;
+    if (
+      !match[2] &&
+      !path.startsWith("~/") &&
+      !/[^/]\.[A-Za-z0-9]+$/.test(path)
+    )
+      continue;
+    if (found.some((each) => start < each.end && end > each.start)) continue;
+    found.push({ start, end, text: match[0] });
+  }
+  return found.sort((a, b) => a.start - b.start);
 }

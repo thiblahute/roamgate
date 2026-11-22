@@ -436,6 +436,14 @@ describe("workspace resource scope", () => {
     expect(pathInRepository("./rfcs/a.md", "/src/2.0")).toBe(
       "/src/2.0/rfcs/a.md",
     );
+    // A comment's link outside every checkout: the filesystem's root, or
+    // the host's home the server expands.
+    expect(pathInRepository("tmp/out/fr-1.wav", "/", checkout)).toBe(
+      "/tmp/out/fr-1.wav",
+    );
+    expect(pathInRepository(".claude/a.wav", "~", checkout)).toBe(
+      "~/.claude/a.wav",
+    );
   });
 
   test("restores maximized state without losing dock sizes or either list width", () => {

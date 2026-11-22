@@ -267,6 +267,15 @@ Inspector button, shortcuts, or workspace/agent menus.
   comments reach it, **Ask Claude about this line** (`C`), its review, and
   **Go to Claude's pane** (the review is kept). With no agent bound to the
   review, the workspace's agent pane is its agent.
+- A file a comment, a chat message or a Work item names opens in Files on
+  that view's connection, never as a page of the server: a Markdown link to
+  a path of the review (relative, `./`, `../`), an absolute path anywhere
+  on the host, a `~/` path (the host's home, over SSH too) or a `file://`
+  URL, and plain `path:line` references or absolute and `~/` paths to a
+  file written in the text. With a line, its source at that line; without,
+  rendered (Markdown, images, PDFs, audio and video players), else a
+  download; a missing file says it was not found. A middle or Ctrl click
+  opens it in a tab of its own; web addresses stay links to the web.
 - Files and Changes are one review of the checkout.
   A comment written in Files, on the source or the rendered Markdown, HTML
   or diagram, is a thread of the checkout's review, the one Changes writes
@@ -1274,7 +1283,8 @@ conflicts are aborted, and nothing is ever pushed.
 - Preview text with highlighting and search, Markdown (with Mermaid diagrams,
   centred in the chat's reading column however wide the view; wider tables,
   code and diagrams scroll in their own box), static HTML (workspace CSS/images/fonts; scripts blocked; 512 MiB limit),
-  images, PDFs, and audio up to 25 MiB. Browsers without a native PDF viewer
+  images, PDFs, audio up to 25 MiB, and video (MP4, WebM, Ogg, QuickTime;
+  streamed in the ranges the player asks for, any size). Browsers without a native PDF viewer
   use a responsive three-page window with previous/next navigation.
 - A file written on disk after it was shown says so above the preview
   (**Changed on disk**), locally and over SSH, without reloading by itself:

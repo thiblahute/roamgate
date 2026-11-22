@@ -27,6 +27,15 @@ export const AUDIO_MIME_TYPES: ReadonlyMap<string, string> = new Map([
   ["weba", "audio/webm"],
 ]);
 
+// Served inline for <video>, in ranges as the player asks: any size.
+export const VIDEO_MIME_TYPES: ReadonlyMap<string, string> = new Map([
+  ["mp4", "video/mp4"],
+  ["m4v", "video/mp4"],
+  ["webm", "video/webm"],
+  ["ogv", "video/ogg"],
+  ["mov", "video/quicktime"],
+]);
+
 export const AUDIO_INLINE_PREVIEW_MAX_BYTES = 25 * 1024 * 1024;
 export const HTML_PREVIEW_MAX_BYTES = 512 * 1024;
 
@@ -43,5 +52,11 @@ export function imageMimeForPath(path: string) {
 export function audioMimeForPath(path: string) {
   return (
     AUDIO_MIME_TYPES.get(path.toLowerCase().split(".").pop() ?? "") ?? null
+  );
+}
+
+export function videoMimeForPath(path: string) {
+  return (
+    VIDEO_MIME_TYPES.get(path.toLowerCase().split(".").pop() ?? "") ?? null
   );
 }

@@ -393,7 +393,7 @@ test("a file not on the host is said plainly, not as realpath's error", async ()
       },
     }).catch((error: Error) => error.message);
     expect(message).toBe(
-      `${missing} is not here: its repository is not checked out at this path, or its checkout does not have this file.`,
+      `${missing} was not found: no such file on this host (or its repository is not checked out at this path).`,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

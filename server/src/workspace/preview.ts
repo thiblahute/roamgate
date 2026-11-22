@@ -1,5 +1,6 @@
 import {
   audioMimeForPath,
+  videoMimeForPath,
   imageMimeForPath,
 } from "../../../shared/filePreview";
 import { PREVIEW_IMAGE_MAX_BYTES, PREVIEW_MAX_BYTES } from "./file-constants";
@@ -29,7 +30,9 @@ export function trimIncompleteUtf8Tail(buffer: Buffer) {
 
 export function inlinePreviewMimeForPath(path: string) {
   if (path.toLowerCase().endsWith(".pdf")) return "application/pdf";
-  return imageMimeForPath(path) ?? audioMimeForPath(path);
+  return (
+    imageMimeForPath(path) ?? audioMimeForPath(path) ?? videoMimeForPath(path)
+  );
 }
 
 export function previewLimitForPath(path: string, size: number) {

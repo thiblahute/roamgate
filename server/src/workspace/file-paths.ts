@@ -90,7 +90,7 @@ export function assertInsideRoot(rootReal: string, targetReal: string) {
  */
 export function missingFileMessage(requestedPath: string, rootReal: string) {
   return isAbsolute(requestedPath)
-    ? `${requestedPath} is not here: its repository is not checked out at this path, or its checkout does not have this file.`
+    ? `${requestedPath} was not found: no such file on this host (or its repository is not checked out at this path).`
     : `${requestedPath} is not in this checkout (${rootReal}).`;
 }
 

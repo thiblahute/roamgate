@@ -209,6 +209,78 @@ describe("workspace file handlers", () => {
     });
   });
 
+  test("a ~/ path is read from the host's home, and a missing one says so", async () => {
+    await withTempDir(async (dir) => {
+      const home = join(dir, "home");
+      const checkout = join(dir, "checkout");
+      await mkdir(join(home, "out"), { recursive: true });
+      await mkdir(checkout);
+      await writeFile(join(home, "out", "notes.md"), "# Notes");
+      const handlers = createFileHandlers({
+        herdr: {
+          call: async (method: string) => {
+            if (method === "workspace.get")
+              return { workspace: { worktree: { checkout_path: checkout } } };
+            throw new Error(`unexpected call ${method}`);
+          },
+        } as any,
+        sshHost: () => undefined,
+        runProcessWithCodeTimeout: async () => ({
+          code: 0,
+          stdout: "",
+          stderr: "",
+        }),
+        shQuote,
+        localHome: () => home,
+      });
+      const read = await handlers.readWorkspaceFile({
+        workspace_id: "w1",
+        path: "~/out/notes.md",
+      });
+      expect(read.path).toBe(join(home, "out", "notes.md"));
+      expect(read.text).toBe("# Notes");
+      const stat = await handlers.statWorkspaceFile({
+        workspace_id: "w1",
+        path: "~/out/notes.md",
+      });
+      expect(stat.type).toBe("file");
+      await expect(
+        handlers.readWorkspaceFile({
+          workspace_id: "w1",
+          path: "~/out/gone.wav",
+        }),
+      ).rejects.toThrow(`${join(home, "out", "gone.wav")} was not found`);
+    });
+  });
+
+  test("a ~/ path on an SSH host is in the home the host says, asked once", async () => {
+    const commands: string[] = [];
+    const handlers = createFileHandlers({
+      herdr: {
+        call: async (method: string) => {
+          if (method === "workspace.get")
+            return { workspace: { worktree: { checkout_path: "/repo" } } };
+          throw new Error(`unexpected call ${method}`);
+        },
+      } as any,
+      sshHost: () => "remote",
+      runProcessWithCodeTimeout: async (argv) => {
+        const command = argv.at(-1)!;
+        commands.push(command);
+        if (command === 'printf %s "$HOME"')
+          return { code: 0, stdout: "/home/far\n", stderr: "" };
+        return { code: 1, stdout: "", stderr: "stop" };
+      },
+      shQuote,
+    });
+    for (let i = 0; i < 2; i++)
+      await expect(
+        handlers.readWorkspaceFile({ workspace_id: "w1", path: "~/a.wav" }),
+      ).rejects.toThrow("stop");
+    expect(commands.filter((each) => each.includes("$HOME"))).toHaveLength(1);
+    expect(commands.at(-1)).toContain(shQuote("/home/far/a.wav"));
+  });
+
   test("prefers pane cwd over an agent foreground directory for git operations", async () => {
     const calls: string[][] = [];
     const handlers = createFileHandlers({

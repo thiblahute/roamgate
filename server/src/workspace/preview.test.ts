@@ -23,7 +23,9 @@ describe("workspace preview helpers", () => {
     expect(inlinePreviewMimeForPath("voice/take.WAV")).toBe("audio/wav");
     expect(inlinePreviewMimeForPath("song.mp3")).toBe("audio/mpeg");
     expect(inlinePreviewMimeForPath("clip.m4a")).toBe("audio/mp4");
-    expect(inlinePreviewMimeForPath("video.mp4")).toBeNull();
+    expect(inlinePreviewMimeForPath("video.mp4")).toBe("video/mp4");
+    expect(inlinePreviewMimeForPath("clip.WebM")).toBe("video/webm");
+    expect(inlinePreviewMimeForPath("movie.mkv")).toBeNull();
   });
 
   test("chooses larger limits only for previewable images", () => {

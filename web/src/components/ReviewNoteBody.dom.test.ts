@@ -324,4 +324,41 @@ async function registerTests() {
     expect(open).toHaveBeenCalledTimes(3);
     expect(anchors[2]!.getAttribute("target")).toBe("_blank");
   });
+
+  test("a link to a file outside the checkouts opens it in Files by its path", async () => {
+    const { FileLinksContext } = await import("./ReviewNoteBody");
+    const open = mock<(link: unknown, how: unknown) => void>(() => {});
+    const repo = "/home/u/devel/roamgate.worktrees";
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () =>
+      root!.render(
+        h(
+          FileLinksContext.Provider,
+          { value: { root: repo, checkouts: [repo], open } },
+          h(NoteBody, {
+            text: "Listen: [fr-1](/var/home/u/.claude/tmp/out/fr-1.wav), then ~/out/fr-2.wav:4.",
+          }),
+        ),
+      ),
+    );
+    const anchors = [...container.querySelectorAll("a")];
+    expect(anchors.map((a) => a.textContent)).toEqual([
+      "fr-1",
+      "~/out/fr-2.wav:4",
+    ]);
+    // Never the server's page of that path.
+    expect(anchors.map((a) => a.getAttribute("href"))).toEqual(["#", "#"]);
+    await act(async () => anchors[0]!.click());
+    expect(open.mock.calls[0]).toEqual([
+      { root: "/", path: "var/home/u/.claude/tmp/out/fr-1.wav" },
+      { newTab: false },
+    ]);
+    await act(async () => anchors[1]!.click());
+    expect(open.mock.calls[1]).toEqual([
+      { root: "~", path: "out/fr-2.wav", line: 4 },
+      { newTab: false },
+    ]);
+  });
 }

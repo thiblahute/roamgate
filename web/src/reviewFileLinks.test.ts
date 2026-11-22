@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   fileLinkLabel,
+  fileLinkTitle,
   findFileReferences,
   resolveFileLink,
 } from "./reviewFileLinks";
@@ -71,10 +72,43 @@ test("an absolute path in a checkout Roamgate knows, by its path there", () => {
     root,
     path: "plans/a b.md",
   });
-  // Outside every checkout: not a file here.
-  expect(resolveFileLink("/tmp/notes.md", scope)).toBeNull();
-  expect(resolveFileLink(`${root}-other/a.md`, scope)).toBeNull();
   expect(resolveFileLink(root, scope)).toBeNull();
+});
+
+test("an absolute path outside every checkout, by its path on the host", () => {
+  expect(resolveFileLink("/tmp/notes.md", scope)).toEqual({
+    root: "/",
+    path: "tmp/notes.md",
+  });
+  expect(resolveFileLink(`${root}-other/a.md:4`, scope)).toEqual({
+    root: "/",
+    path: `${root.slice(1)}-other/a.md`,
+    line: 4,
+  });
+  expect(resolveFileLink("C:\\Users\\me\\a.txt", scope)).toEqual({
+    root: "C:/",
+    path: "Users/me/a.txt",
+  });
+  expect(resolveFileLink("file:///tmp/out/a%20b.wav", scope)).toEqual({
+    root: "/",
+    path: "tmp/out/a b.wav",
+  });
+  // Not the root itself, nor a way out of a path.
+  expect(resolveFileLink("/", scope)).toBeNull();
+  expect(resolveFileLink("/tmp/../etc/passwd", scope)).toBeNull();
+});
+
+test("a ~/ path is in the host's home", () => {
+  const link = resolveFileLink("~/.claude/tmp/out/fr-1.wav:3", scope);
+  expect(link).toEqual({
+    root: "~",
+    path: ".claude/tmp/out/fr-1.wav",
+    line: 3,
+  });
+  expect(fileLinkLabel(link!, scope)).toBe("~/.claude/tmp/out/fr-1.wav:3");
+  expect(fileLinkTitle(link!)).toBe("~/.claude/tmp/out/fr-1.wav:3");
+  expect(resolveFileLink("~", scope)).toBeNull();
+  expect(resolveFileLink("~/../x", scope)).toBeNull();
 });
 
 test("a file:// URL names the file on this host", () => {
@@ -124,4 +158,15 @@ test("plain path:line references in text, not words, times or URLs", () => {
   expect(texts("at 12:30, ratio:2, Note:3")).toEqual([]);
   expect(texts("https://example.com/a.md:3 and host:8080")).toEqual([]);
   expect(texts("foo:12abc")).toEqual([]);
+});
+
+test("plain absolute and ~/ paths to a file, without a line", () => {
+  const texts = (text: string) =>
+    findFileReferences(text).map((found) => found.text);
+  expect(
+    texts("Wrote /var/home/u/out/fr-1.wav, see ~/notes and ~/a.md:3."),
+  ).toEqual(["/var/home/u/out/fr-1.wav", "~/notes", "~/a.md:3"]);
+  // A route or a directory without an extension is no file.
+  expect(texts("the /api/file/download route, and/or /tmp")).toEqual([]);
+  expect(texts("https://example.com/a/b.png host/a/b.png")).toEqual([]);
 });

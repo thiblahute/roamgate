@@ -4,6 +4,7 @@ import {
   type ReviewFileRequest,
   type ReviewSummaryOf,
 } from "./review-files";
+import { homedir } from "node:os";
 import type { HerdrClient } from "../bridge/herdr-client";
 import { sshReadCommandArgv } from "../bridge/ssh-command";
 import { checkoutPath as getCheckoutPath } from "./utils";
@@ -59,7 +60,7 @@ import {
 } from "./git-history";
 import { sharedPullRequestStatus } from "./pull-request";
 import { collectIgnoredNames } from "./git-ignore";
-import { GIT_DIFF_TIMEOUT_MS } from "./file-constants";
+import { GIT_DIFF_TIMEOUT_MS, PREVIEW_TIMEOUT_MS } from "./file-constants";
 import { inlinePreviewMimeForPath } from "./preview";
 import { canRevealFiles, revealLocalPath } from "./file-manager";
 import {
@@ -94,6 +95,7 @@ export function createFileHandlers({
   lastStepBaselines,
   revealPath = revealLocalPath,
   reviewRoots = () => [],
+  localHome = homedir,
 }: {
   herdr: HerdrClient;
   sshHost: () => string | undefined;
@@ -103,7 +105,41 @@ export function createFileHandlers({
   revealPath?: typeof revealLocalPath;
   /** The roots of the connection's review sessions (a review from elsewhere). */
   reviewRoots?: () => string[];
+  /** The home `~/` paths are in, on this machine. */
+  localHome?: () => string;
 }) {
+  /** The home of each SSH host, asked once. */
+  const remoteHomes = new Map<string, Promise<string>>();
+
+  async function hostHome(): Promise<string> {
+    const host = sshHost();
+    if (!host) return localHome().replace(/\\/g, "/");
+    let home = remoteHomes.get(host);
+    if (!home) {
+      home = runProcessWithCodeTimeout(
+        sshReadCommandArgv(host, 'printf %s "$HOME"', [], "files.home"),
+        PREVIEW_TIMEOUT_MS,
+      ).then((result) => {
+        const path = result.stdout.trim();
+        if (result.code !== 0 || !path.startsWith("/"))
+          throw new Error(`the home of ${host} is not known`);
+        return path;
+      });
+      remoteHomes.set(host, home);
+      home.catch(() => remoteHomes.delete(host));
+    }
+    return home;
+  }
+
+  /**
+   * A `~/` path (a comment's link to a file in the host's home) as the
+   * absolute path it names on the workspace's host; any other as given.
+   */
+  async function expandHome(path: string): Promise<string> {
+    if (path !== "~" && !path.startsWith("~/")) return path;
+    return `${(await hostHome()).replace(/\/+$/, "")}${path.slice(1)}`;
+  }
+
   async function explorerRoot(
     workspaceId: string,
     workspace: any,
@@ -134,7 +170,7 @@ export function createFileHandlers({
   async function fileTarget(params: Record<string, unknown>, method: string) {
     const workspaceId = String(params.workspace_id ?? "");
     if (!workspaceId) throw new Error(`${method} requires workspace_id`);
-    const path = sanitizePreviewPath(params.path);
+    const path = await expandHome(sanitizePreviewPath(params.path));
     if (!path) throw new Error(`${method} requires path`);
     const workspace = await getWorkspace(workspaceId);
     const checkoutPath = await explorerRoot(workspaceId, workspace);
@@ -150,7 +186,11 @@ export function createFileHandlers({
     if (!workspaceId) throw new Error(`${method} requires workspace_id`);
     const path =
       params.scope === "filesystem"
-        ? sanitizeFilesystemPath(params.path)
+        ? sanitizeFilesystemPath(
+            typeof params.path === "string"
+              ? await expandHome(params.path.trim())
+              : params.path,
+          )
         : sanitizeExplorerPath(params.path);
     if (!path) throw new Error(`${method} requires path`);
     const workspace = await getWorkspace(workspaceId);

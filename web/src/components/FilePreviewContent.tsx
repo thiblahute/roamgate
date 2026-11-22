@@ -3,6 +3,7 @@ import { vimKeys } from "../vimKeys";
 import {
   audioMimeForPath,
   AUDIO_INLINE_PREVIEW_MAX_BYTES,
+  videoMimeForPath,
 } from "../../../shared/filePreview";
 import {
   Suspense,
@@ -625,7 +626,11 @@ export function FilePreviewContent({
   );
   const audioTooLarge =
     hasAudioPreview && (preview?.size ?? 0) > AUDIO_INLINE_PREVIEW_MAX_BYTES;
-  const hasMediaPreview = hasPdfPreview || hasAudioPreview;
+  // A video plays as it streams, in the ranges its player asks for.
+  const hasVideoPreview = Boolean(
+    preview && preview.type !== "directory" && videoMimeForPath(previewPath),
+  );
+  const hasMediaPreview = hasPdfPreview || hasAudioPreview || hasVideoPreview;
   // Framed and read by the rendered pages, whose limits decide: never the
   // text preview's.
   const hasHtmlPreview = framesHtmlPreview(preview);
@@ -2827,6 +2832,18 @@ export function FilePreviewContent({
                   preload="metadata"
                   src={inlinePreviewUrl}
                   aria-label={`Audio preview: ${entry?.name ?? previewPath}`}
+                />
+              </div>
+            ) : null}
+            {!loading && !error && hasVideoPreview && inlinePreviewUrl ? (
+              <div className="file-preview-video">
+                <video
+                  key={inlinePreviewUrl}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  src={inlinePreviewUrl}
+                  aria-label={`Video preview: ${entry?.name ?? previewPath}`}
                 />
               </div>
             ) : null}

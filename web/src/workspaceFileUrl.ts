@@ -24,7 +24,7 @@ export function workspaceFileUrl(
   );
   url.searchParams.set("workspace_id", workspaceId);
   url.searchParams.set("path", path);
-  if (/^(?:\/|[a-z]:[\\/])/i.test(path))
+  if (/^(?:\/|~\/|[a-z]:[\\/])/i.test(path))
     url.searchParams.set("scope", "filesystem");
   if (options.inline) url.searchParams.set("inline", "1");
   if (options.revision !== undefined) {
