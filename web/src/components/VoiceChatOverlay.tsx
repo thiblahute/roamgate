@@ -7,9 +7,10 @@ import {
   Volume2,
 } from "lucide-react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { AgentIcon } from "./AgentIcon";
 import { MICROPHONE_PAUSED } from "../webrtcCall";
+import { subscribeVoiceLight, voiceLight } from "../voiceLightFlag";
 import {
   CallAppButton,
   CallOutputButton,
@@ -130,6 +131,7 @@ export function VoiceChatOverlay({
   const microphonePaused = useMicrophonePausedByPhone();
   const tuck = useCallTuck(voiceCallTucked(), setVoiceCallTucked);
   const tucked = tuck.tucked && !(moveQuestion && onAnswerMove);
+  const light = useSyncExternalStore(subscribeVoiceLight, voiceLight);
   const rate =
     speechRate === undefined || !onCycleSpeechRate
       ? null
@@ -206,6 +208,14 @@ export function VoiceChatOverlay({
                 >
                   {duration}
                 </span>
+                {light ? (
+                  <span
+                    className="voice-chat-overlay-light"
+                    title={`Light voice models, for ${light}: the GPU stays free`}
+                  >
+                    Light voice
+                  </span>
+                ) : null}
               </span>
             </span>
           </button>

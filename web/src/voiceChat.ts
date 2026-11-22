@@ -12,6 +12,7 @@ import { markdownToSpeech } from "./markdownToSpeech";
 import { highlightReading } from "./readingHighlight";
 import { speechPlayback } from "./speechPlayback";
 import { setVoiceFronting, voiceFronting } from "./voiceFrontFlag";
+import { setVoiceLight } from "./voiceLightFlag";
 import { noteCompanionEpoch } from "./companionMemory";
 import {
   activeCall,
@@ -73,6 +74,11 @@ export type VoiceAvailability = {
    * tells them ("companion") or has them read whole ("relay").
    */
   front_mode?: "companion" | "relay";
+  /**
+   * Who the low-GPU profile is on for, its lighter models reading the
+   * replies (server/src/voice/voice-low-gpu.ts); absent with the full ones.
+   */
+  low_gpu?: string;
   /** Bumped by each reset of the companion's memory. */
   companion_epoch?: number;
   /**
@@ -170,6 +176,9 @@ export async function fetchVoiceAvailability(): Promise<VoiceAvailability> {
       setMaxPause(availability.max_pause_ms);
     routing = availability.route === true;
     setVoiceFronting(availability.front === true);
+    setVoiceLight(
+      typeof availability.low_gpu === "string" ? availability.low_gpu : null,
+    );
     noteCompanionEpoch(availability.companion_epoch);
     if (
       availability.front_mode === "companion" ||

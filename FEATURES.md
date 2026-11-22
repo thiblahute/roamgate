@@ -699,6 +699,12 @@ Inspector state is scoped to each checkout; see
   speed, lets each part be changed, downloads them with their progress
   (resumed when stopped, checksums checked), and removes the models no
   longer used ([setup](docs/DEPLOYMENT.md#voice-setup-assistant)).
+  **Gaming: light voice models** there (or `roamgate voice profile low-gpu
+  on`, a game's hook, GameMode running as a call starts) keeps the GPU free:
+  voice calls go on with the CPU's models (Parakeet, Kokoro reading each
+  language in its own voice), the call bar says **Light voice**, and the
+  companion knows why the voice changed
+  ([low-GPU profile](docs/DEPLOYMENT.md#low-gpu-voice-profile)).
   Both engines read the same text: code
   blocks, Mermaid diagrams, oversized tables, and long hashes/values are
   omitted or announced instead of read aloud, simple tables retain column

@@ -549,3 +549,19 @@
     flex-basis: 118px;
   }
 }
+
+/* The low-GPU profile's lighter voice reads the replies. */
+.voice-chat-overlay-light {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+@container (max-width: 190px) {
+  .voice-chat-overlay-light {
+    display: none;
+  }
+}

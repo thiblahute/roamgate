@@ -73,6 +73,7 @@ import {
   type VoiceLibraryState,
 } from "../voiceLibrary";
 import { useSpeechEngine } from "../speechEngine";
+import { VoiceLowGpu } from "./VoiceLowGpu";
 import { VoiceSetup } from "./VoiceSetup";
 import "./VoiceSettings.css";
 
@@ -325,6 +326,7 @@ export function VoiceSettings() {
   return (
     <div className="voice-settings">
       <VoiceSetup />
+      <VoiceLowGpu />
       <p className="configuration-scope">
         Who reads voice replies aloud, on this server.
       </p>

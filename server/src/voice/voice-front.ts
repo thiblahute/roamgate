@@ -682,12 +682,15 @@ export function turnText(request: {
  * started on it: companionRecent), the sentence the user cut, and the
  * music under the call: "on" when it plays, "off" when the call has music
  * that is off now (not playing, whatever voice.json configures), "waiting"
- * when it is on but silent until the user's voice is learnt.
+ * when it is on but silent until the user's voice is learnt. `lightVoice`:
+ * who the low-GPU profile is on for (voice-low-gpu.ts), whose lighter
+ * voice reads the replies.
  */
 export function callLines(call: {
   recent?: string;
   interruptedAt?: string;
   music?: "on" | "off" | "waiting";
+  lightVoice?: string | null;
 }): string {
   return [
     call.recent?.trim() ?? "",
@@ -701,6 +704,9 @@ export function callLines(call: {
         : call.music === "waiting"
           ? "- The call's music is on but waits for the user's voice: nothing plays under it until they have spoken a little."
           : "",
+    call.lightVoice
+      ? `- The voice is the light one (low-GPU profile, on for: ${call.lightVoice}): Kokoro reads the replies on the CPU, not the user's chosen voice, and Whisper does not hear again what Parakeet wrote, so the GPU stays free for the game or job. Say so when the user asks why the voice sounds different, or mentions the game.`
+      : "",
   ]
     .filter(Boolean)
     .join("\n");

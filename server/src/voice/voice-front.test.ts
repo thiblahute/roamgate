@@ -481,6 +481,11 @@ describe("context for words that lean on the call", () => {
     expect(callLines({ music: "waiting" })).toBe(
       "- The call's music is on but waits for the user's voice: nothing plays under it until they have spoken a little.",
     );
+    // The low-GPU profile's light voice: the companion can say why.
+    expect(callLines({ lightVoice: "gaming" })).toContain(
+      "- The voice is the light one (low-GPU profile, on for: gaming): Kokoro reads the replies",
+    );
+    expect(callLines({ lightVoice: null })).toBe("");
     // Nothing on the call: as before.
     expect(turnText({ current: "c", said: "hi", call: callLines({}) })).toBe(
       'Current: c\nSaid: "hi"',

@@ -893,6 +893,55 @@ page, the running helper stops once nothing uses it, so the next voice
 request loads the new models; after `roamgate setup voice`,
 `roamgate service restart` loads them at once.
 
+### Low-GPU voice profile
+
+While a game or another job needs the GPU, the **low-GPU profile** has the
+voice helper start with a lighter set of models, without changing
+`voice.json`: the setup assistant's light tier among the models already
+installed (nothing is downloaded). On the desktop's models that is
+Parakeet without Whisper reading again, Kokoro's ONNX model reading on the
+CPU in place of Qwen3-TTS, WeSpeaker, Smart Turn and Qwen3 0.6B, all on
+the CPU: the helper takes no GPU memory (measured: 0 MiB on an RTX 3060 Ti
+with a game running, against about 5 GB for the full set), and Kokoro reads
+about four times faster than real time on a 16-core CPU. A part whose light
+model is not installed takes the lightest one that is (the CPU's first),
+and an optional part none. Voices chosen in Voices (a Qwen3-TTS one, a
+stock voice, Surprise) wait for the profile to end; each sentence is read
+by Kokoro in its language's voice (`ff_siwis` for French, `af_heart` for
+English), and one in a language Kokoro has no voice for (German, Russian,
+Korean...) is replaced by a short notice saying so, never read with another
+language's accent. The companion is told the voice is the light one, and
+the call bar shows **Light voice**.
+
+It is on while someone holds it, or while GameMode runs when a call
+starts (`gamemoded -s`, asked on the host through `host-spawn` when the
+server runs in a toolbox). Holders are kept in
+`~/.local/share/roamgate/voice/low-gpu.json`, which the server follows:
+
+```sh
+roamgate voice profile low-gpu on --by gaming --now  # a game starts
+roamgate voice profile low-gpu off --by gaming       # it ends
+roamgate voice profile low-gpu on                    # by hand ("manual")
+roamgate voice profile low-gpu off                   # every holder lets go
+roamgate voice profile low-gpu status [--json]       # holders, models, GPU estimate
+roamgate voice profile low-gpu models tts=kokoro-82m # a part by hand
+roamgate voice profile low-gpu models --reset
+roamgate voice gaming on|off|status [--now]          # the same, --by gaming
+```
+
+**Configuration > Speech > Gaming: light voice models** turns it on or off
+from the page (off there lets every holder go) and says who holds it and
+what the running helper has. When the profile changes, a helper doing
+nothing stops at once and the next voice request starts one with the right
+set. A helper serving a call or a listening keeps its models until that
+ends, then stops; `--now` (or **Switch now**) restarts it at once instead:
+a short notice is said on the call, which then goes on in the new helper
+after a few seconds' gap. A game hook should ask with `--now` when the game
+starts (the game needs the memory then) and without it when the game ends
+(the full voice can wait for the call to end), and tolerate the command
+failing. A call starting while GameMode runs, or after it stopped, restarts
+an idle helper with the other set first.
+
 With `GST_DEBUG_DUMP_DOT_DIR` set in Roamgate's environment, the helper
 writes its pipelines' graphs there (`roamgate-voice-speak.dot`,
 `roamgate-voice-listen.dot`) when they start
@@ -1950,6 +1999,7 @@ and 2 on bad arguments; many accept `--json`.
 | `roamgate auth show\|rotate\|revoke-sessions`                     | Show the login method, replace the token, or sign out every browser.                                                                                                                                                                                                                             |
 | `roamgate connections list\|test\|add\|remove\|set-default`       | Manage [connection profiles](#multiple-and-remote-herdr-connections). Edits are refused while the managed service runs unless `--restart` is given. Only the service config's address is checked, so stop other processes sharing the registry (such as a foreground run on another port) first. |
 | `roamgate setup voice [list\|remove-unused]`                      | Detect the hardware and download the [voice chat](#voice-setup-assistant) models it calls for, then point `voice.json` at them.                                                                                                                                                                  |
+| `roamgate voice profile low-gpu on\|off\|status\|models`          | Hold the [low-GPU voice profile](#low-gpu-voice-profile) on (`--by NAME`, `--now`) or let it go; `roamgate voice gaming` is the same held by `gaming`.                                                                                                                                           |
 | `roamgate push test`                                              | Send a test [Web Push](#web-push-notifications) notification.                                                                                                                                                                                                                                    |
 | `roamgate activity today\|day\|range\|events\|workspaces\|status` | Read the [activity log](./activity.md#command-line) read-only, without the server.                                                                                                                                                                                                               |
 | `roamgate update [--check]` / `roamgate rollback`                 | Update to the latest release or restore `roamgate.previous` (Linux/macOS).                                                                                                                                                                                                                       |

@@ -211,6 +211,7 @@ import {
 import { tastePath, VoiceTaste } from "./voice/voice-taste";
 import { createVoiceRoutes, withSearches } from "./http/voice";
 import { createVoiceSetupRoute } from "./http/voice-setup";
+import { createVoiceLowGpuRoute } from "./http/voice-low-gpu";
 import { createVoiceSocket } from "./http/voice-socket";
 import { configuredCleaner } from "./voice/voice-cleaner";
 import { configuredDictation } from "./voice/voice-dictation";
@@ -237,6 +238,7 @@ import {
 import { detectHardware, systemProbe } from "./voice/voice-hardware";
 import { defaultHelperPath, defaultModelsDir } from "./voice/voice-models";
 import { VoiceSetupRunner } from "./voice/voice-setup";
+import { gameModeActive, lowGpuPath, VoiceLowGpu } from "./voice/voice-low-gpu";
 import { VoiceLibrary } from "./voice/voice-library";
 import { VoiceProfiles, voiceProfilesDir } from "./voice/voice-profiles";
 import {
@@ -460,8 +462,21 @@ const notifications = createNotificationFeed({
 });
 /** The permission prompts open per connection, to notify each once. */
 const notifiedPrompts = new Map<string, Set<string>>();
-// Voice chat's helper starts on the first voice request.
-const voiceHelper = new VoiceHelper(() => readVoiceConfig());
+// Voice chat's helper starts on the first voice request, with the low-GPU
+// profile's models over voice.json's while it is on.
+const voiceHelper = new VoiceHelper(() => voiceLowGpu.config());
+// The low-GPU profile (`roamgate voice profile low-gpu`, the Voice
+// settings, GameMode at a call's start): its state file followed.
+const voiceLowGpu = new VoiceLowGpu({
+  path: lowGpuPath(),
+  readConfig: () => readVoiceConfig(),
+  modelsDir: defaultModelsDir(),
+  helper: voiceHelper,
+  gameMode: () => gameModeActive(),
+});
+voiceHelper.beforeCall = () => voiceLowGpu.beforeCall();
+voiceLowGpu.watch();
+const handleVoiceLowGpu = createVoiceLowGpuRoute(voiceLowGpu);
 // The Voice settings' setup assistant: models downloaded, voice.json
 // pointed at them, the helper restarted with them once it is free.
 const voiceSetup = new VoiceSetupRunner(
@@ -619,6 +634,7 @@ const handleVoice = createVoiceRoutes(
   companionMemory,
   companionMemoryFiles,
   waitingAnswers,
+  () => voiceLowGpu.reason(),
 );
 const voiceSocket = createVoiceSocket(
   voiceHelper,
@@ -4853,6 +4869,8 @@ function main() {
             server.timeout(req, VOICE_HTTP_IDLE_TIMEOUT_SECONDS);
             const setup = await handleVoiceSetup(req, url.pathname);
             if (setup) return setup;
+            const lowGpu = await handleVoiceLowGpu(req, url.pathname);
+            if (lowGpu) return lowGpu;
             const response = await handleVoice(req, url.pathname);
             if (response) return response;
           }

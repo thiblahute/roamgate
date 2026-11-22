@@ -1536,3 +1536,159 @@ describe("native speech rate", () => {
     expect((await helper.speak("Hi.")).nativeRate).toBe(1.3);
   });
 });
+
+describe("voice helper: Kokoro's languages and the low-GPU set", () => {
+  const SAID = (request: Record<string, unknown>) =>
+    request.op === "speak"
+      ? [
+          {
+            id: request.id,
+            audio: Buffer.from("ogg").toString("base64"),
+            language: request.language ?? "fr",
+          },
+        ]
+      : request.op === "call_start"
+        ? [{ id: request.id, signalling_port: 4242 }]
+        : [];
+  const quiet = () => {
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => errors.push(args.join(" "));
+    return { errors, restore: () => (console.error = original) };
+  };
+  const speaks = (frames: Frame[]) =>
+    requests(frames).filter((request) => request.op === "speak");
+
+  test("Kokoro reads French and English as they are, in their language", async () => {
+    const fake = fakeHelper(SAID);
+    const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+    await helper.speak("Bonjour, je lance la partie.", "fr");
+    await helper.speak("The build passed.");
+    await helper.speak("J'ai relancé le pipeline GitLab CI.");
+    expect(
+      speaks(fake.spawned[0]!.frames).map((request) => [
+        request.text,
+        request.language ?? "detected",
+      ]),
+    ).toEqual([
+      ["Bonjour, je lance la partie.", "fr"],
+      ["The build passed.", "detected"],
+      ["J'ai relancé le pipeline GitLab CI.", "detected"],
+    ]);
+  });
+
+  test("a language Kokoro has no voice for is said to be one, not read with another's accent", async () => {
+    const fake = fakeHelper(SAID);
+    const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+    const log = quiet();
+    try {
+      await helper.speak(
+        "Ich habe den Build gestartet und er ist jetzt fertig.",
+      );
+      await helper.speak("Guten Tag.", "de");
+    } finally {
+      log.restore();
+    }
+    expect(
+      speaks(fake.spawned[0]!.frames).map((request) => [
+        request.text,
+        request.language,
+      ]),
+    ).toEqual([
+      ["This reply is in German, which this voice cannot read.", "en"],
+      ["This reply is in German, which this voice cannot read.", "en"],
+    ]);
+    expect(log.errors.join("\n")).toContain("no Kokoro voice reads de");
+  });
+
+  test("Qwen3-TTS reads what Kokoro cannot: no notice", async () => {
+    const fake = fakeHelper(SAID);
+    const helper = new VoiceHelper(
+      () => ({ ...CONFIG, tts_models: [{ model: "qwen3-tts", path: "/b" }] }),
+      fake.spawn,
+    );
+    await helper.speak("Guten Tag.", "de");
+    expect(speaks(fake.spawned[0]!.frames)[0]?.text).toBe("Guten Tag.");
+  });
+
+  test("a low-GPU helper reads with its own voice, a chosen one left aside", async () => {
+    const fake = fakeHelper(SAID);
+    const helper = new VoiceHelper(
+      () => ({ ...CONFIG, low_gpu: "gaming" }),
+      fake.spawn,
+    );
+    await helper.speak("Bonjour.", "fr", [
+      { model: "qwen3-tts", path: "/base", voice_embedding: "/me.json" },
+    ]);
+    expect(speaks(fake.spawned[0]!.frames)[0]?.tts_models).toBeUndefined();
+    expect(helper.runningProfile()).toBe("low-gpu");
+    expect(helper.lowGpuReason()).toBe("gaming");
+  });
+
+  test("a call waits for beforeCall, then starts", async () => {
+    const fake = fakeHelper(SAID);
+    const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+    const order: string[] = [];
+    helper.beforeCall = async () => {
+      order.push(`before, ${fake.spawned.length} helpers`);
+    };
+    await helper.startCall(
+      {
+        background: "",
+        volume: 0.6,
+        ducked: 0.15,
+        release_ms: 3000,
+        muted: true,
+        reply_loudness: -16,
+      },
+      () => {},
+    );
+    expect(order).toEqual(["before, 0 helpers"]);
+    expect(requests(fake.spawned[0]!.frames)[0]?.op).toBe("call_start");
+  });
+
+  test("restartModels makes the call again in a helper with the new models", async () => {
+    let config: VoiceConfig = CONFIG;
+    const fake = fakeHelper(SAID);
+    const helper = new VoiceHelper(() => config, fake.spawn);
+    const events: string[] = [];
+    const call = await helper.startCall(
+      {
+        background: "",
+        volume: 0.6,
+        ducked: 0.15,
+        release_ms: 3000,
+        muted: true,
+        reply_loudness: -16,
+      },
+      (event) => events.push(event.event),
+    );
+    expect(helper.runningProfile()).toBe("full");
+    config = { ...CONFIG, low_gpu: "gaming" };
+    const log = quiet();
+    try {
+      expect(helper.restartModels()).toBe(true);
+      for (let i = 0; i < 20 && !events.includes("call_restarted"); i++)
+        await Bun.sleep(1);
+    } finally {
+      log.restore();
+    }
+    expect(fake.spawned).toHaveLength(2);
+    expect(requests(fake.spawned[1]!.frames)[0]).toMatchObject({
+      op: "call_start",
+      call: call.id,
+    });
+    expect(events).toContain("call_restarted");
+    expect(helper.runningProfile()).toBe("low-gpu");
+  });
+
+  test("reloadModelsAndWait stops a free helper and waits for it to end", async () => {
+    const fake = fakeHelper(SAID);
+    const helper = new VoiceHelper(() => CONFIG, fake.spawn);
+    expect(await helper.reloadModelsAndWait()).toBe("not-running");
+    await helper.speak("Oui.", "fr");
+    expect(await helper.reloadModelsAndWait()).toBe("now");
+    expect(fake.spawned[0]!.killed()).toBe(true);
+    expect(helper.runningProfile()).toBeNull();
+  });
+});

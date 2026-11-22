@@ -20,6 +20,11 @@ import {
   type VoiceTag,
   withoutPrints,
 } from "./voice-speakers";
+import {
+  cannotReadNotice,
+  KOKORO_VOICES,
+  kokoroCannotRead,
+} from "./voice-kokoro-language";
 import type { CompanionMcpConfig } from "./voice-tools";
 
 /**
@@ -239,6 +244,14 @@ export type VoiceConfig = {
    * loopback ICE candidates are given to the page with it.
    */
   call_ice_address?: string;
+  /**
+   * Not in voice.json: set by the low-GPU profile (voice-low-gpu.ts) on
+   * the configuration the helper starts with, its models swapped for the
+   * profile's; says who asked for it ("gaming", "GameMode"...). Such a
+   * helper reads every sentence with its own voice, a voice chosen in
+   * Voices (a Qwen3-TTS one) left for when the profile ends.
+   */
+  low_gpu?: string;
 };
 
 /** A dotted IPv4 address, each part 0 to 255. */
@@ -1099,13 +1112,23 @@ export class VoiceHelper {
   private kokoroUntil = 0;
   /** Restarts of the helper by this side so far, and why the last one. */
   private restarts = 0;
-  private restartedFor: "stuck" | "unreadable" = "stuck";
+  private restartedFor: "stuck" | "unreadable" | "models" = "stuck";
   /** Arms of the speak watch: a ping's answer acts on its own arm only. */
   private watchArms = 0;
   /** The running helper's helper_idle_exit_minutes, in ms: 0 for never. */
   private idleMs = 0;
   /** Stops the helper once idleMs passed with nothing to or from it. */
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The running helper's low_gpu (voice-low-gpu.ts): null for its full set. */
+  private lowGpu: string | null = null;
+  /** Whether only Kokoro reads in the running helper (no other model). */
+  private kokoroOnly = false;
+  /**
+   * Awaited as a call starts, before the helper is asked for it: the
+   * low-GPU profile (voice-low-gpu.ts) checks GameMode there, and has a
+   * helper loaded with the other set stopped first.
+   */
+  beforeCall: (() => Promise<void>) | null = null;
   /** Who hears the call_youtube events (voice-youtube.ts). */
   private youtubeListeners = new Set<
     (event: Record<string, unknown>) => void
@@ -1164,6 +1187,8 @@ export class VoiceHelper {
     this.process = helper;
     this.nativeRate = nativeSpeechRate(config);
     this.idleMs = idleExitMs(config);
+    this.lowGpu = config.low_gpu ?? null;
+    this.kokoroOnly = !config.tts_models || onlyKokoro(config.tts_models);
     this.touch(helper);
     void (async () => {
       for await (const frame of helper.frames) {
@@ -1269,7 +1294,10 @@ export class VoiceHelper {
    * again with what goes on (restartCalls), and the sentences it had not
    * said are said again (speakRequest).
    */
-  private restart(helper: VoiceHelperProcess, why: "stuck" | "unreadable") {
+  private restart(
+    helper: VoiceHelperProcess,
+    why: "stuck" | "unreadable" | "models",
+  ) {
     if (this.process !== helper) return;
     this.restarts += 1;
     this.restartedFor = why;
@@ -1512,6 +1540,13 @@ export class VoiceHelper {
       this.calls.delete(other);
       call.event({ event: "call_error", call: other, error: "Replaced" });
     }
+    try {
+      await this.beforeCall?.();
+    } catch (error) {
+      console.error(
+        `[voice] before call ${id}: ${(error as Error).message}, the call starts as it is`,
+      );
+    }
     const entry: RunningCall = {
       event: onEvent,
       background,
@@ -1648,6 +1683,21 @@ export class VoiceHelper {
     const kokoro = this.kokoroModels(language);
     if (kokoro && !onlyKokoro(models) && Date.now() < this.kokoroUntil)
       models = kokoro;
+    // A low-GPU helper reads with its own voice only: a voice chosen in
+    // Voices would load its model (Qwen3-TTS) on the GPU.
+    if (models && this.lowGpu !== null) models = undefined;
+    // Kokoro reads a language with that language's voice: one it has none
+    // for would be read with another's accent, so a notice says so.
+    if (!retried && (models ? onlyKokoro(models) : this.kokoroOnly)) {
+      const missing = kokoroCannotRead(text, language);
+      if (missing) {
+        console.error(
+          `[voice] no Kokoro voice reads ${missing}: a notice is read in place of a sentence (${text.length} chars)`,
+        );
+        text = cannotReadNotice(missing);
+        language = "en";
+      }
+    }
     let nativeRate = this.nativeRate;
     let override: VoiceConfig["tts_models"];
     if (models) {
@@ -1844,6 +1894,57 @@ export class VoiceHelper {
     return "now";
   }
 
+  /**
+   * reloadModels, and the helper it stopped waited for (WRAPPED_EXIT_MS at
+   * most): a new one started before the old one ended would have its
+   * requests and calls ended with the old one.
+   */
+  async reloadModelsAndWait(): Promise<"now" | "after-call" | "not-running"> {
+    const old = this.process;
+    const result = this.reloadModels();
+    if (result === "now" && old) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        old.exited,
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, WRAPPED_EXIT_MS + 1000);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
+    return result;
+  }
+
+  /**
+   * Restarts the helper now, a call or a listening going on: it starts
+   * again with voice.json's models as they are now, its calls made again
+   * (restartCalls), its sentences said again. False when none runs.
+   */
+  restartModels(): boolean {
+    if (!this.process) return false;
+    this.restart(this.process, "models");
+    return true;
+  }
+
+  /**
+   * The running helper's models: "low-gpu" (voice-low-gpu.ts) or "full",
+   * null when none runs.
+   */
+  runningProfile(): "low-gpu" | "full" | null {
+    if (!this.process) return null;
+    return this.lowGpu === null ? "full" : "low-gpu";
+  }
+
+  /** Who asked for the running helper's low-GPU set, null without one. */
+  lowGpuReason(): string | null {
+    return this.process ? this.lowGpu : null;
+  }
+
+  /** The call running now, started, if any. */
+  currentCallId(): number | undefined {
+    return this.runningCall();
+  }
+
   stop() {
     if (this.process) this.stopping = true;
     this.clearIdle();
@@ -1916,6 +2017,8 @@ export class VoiceHelper {
     );
     if (!kokoro?.length || kokoro.length === config.tts_models?.length)
       return undefined;
+    // No Kokoro voice for the language: nothing to fall back on.
+    if (language && kokoroCannotRead("", language)) return undefined;
     const voice = language ? KOKORO_VOICES[language] : undefined;
     if (!voice) return kokoro;
     return kokoro.map((entry) =>
@@ -2050,20 +2153,7 @@ export const KOKORO_AFTER_STUCK_MS = 5 * 60_000;
  */
 export const KOKORO_AFTER_FAILURE_MS = 30_000;
 
-/**
- * Kokoro's voice for each language it speaks (one language a voice): a
- * Kokoro entry naming none reads a language with its own.
- */
-export const KOKORO_VOICES: Readonly<Record<string, string>> = {
-  en: "af_heart",
-  es: "ef_dora",
-  fr: "ff_siwis",
-  hi: "hf_alpha",
-  it: "if_sara",
-  ja: "jf_alpha",
-  pt: "pf_dora",
-  zh: "zf_xiaobei",
-};
+export { KOKORO_VOICES } from "./voice-kokoro-language";
 
 /**
  * Whether a sentence's error is its speaker's (a model failing to make it),

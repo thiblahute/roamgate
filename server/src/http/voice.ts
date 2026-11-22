@@ -244,7 +244,17 @@ export function createVoiceRoutes(
   memoryFiles: CompanionMemoryFiles | null = null,
   /** The jobs' answers nobody heard yet (voice-waiting.ts). */
   waiting: WaitingAnswers | null = null,
+  /** Who the low-GPU profile is on for (voice-low-gpu.ts), null off. */
+  lowGpu: () => string | null = () => null,
 ) {
+  /**
+   * The light voice the call has: the running helper's low-GPU set, else
+   * the one the next helper starts with.
+   */
+  const lightVoice = () =>
+    helper.runningProfile() === "full"
+      ? null
+      : (helper.lowGpuReason() ?? lowGpu());
   /** The state a page gave the front, with the answers waiting. */
   const withWaiting = (context: string) =>
     [context, waiting?.context() ?? ""].filter(Boolean).join("\n\n");
@@ -321,6 +331,7 @@ export function createVoiceRoutes(
         speech_rate: helper.speechRate(),
         max_pause_ms: helper.maxPauseMs(),
         ...surpriseStatus(library),
+        ...(lightVoice() ? { low_gpu: lightVoice() } : {}),
         ...(debug ? { debug } : {}),
       });
     }
@@ -773,6 +784,7 @@ export function createVoiceRoutes(
                   recent,
                   interruptedAt,
                   music: callMusic(currentCall()),
+                  lightVoice: lightVoice(),
                 }),
               ),
             })
