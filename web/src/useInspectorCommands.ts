@@ -1,6 +1,6 @@
 import { createContext, useContext, useId, useLayoutEffect } from "react";
 import type { InspectorCommand } from "./inspectorCommands";
-import type { ShortcutRow } from "./components/ShortcutList";
+import type { ShortcutGroup, ShortcutRow } from "./components/ShortcutHelp";
 import type { InspectorView } from "./workspaceResource";
 
 /** A view part's `:` commands, and `:N` where it has lines. */
@@ -23,42 +23,51 @@ export type InspectorCommandSet = {
 
 /** The inspector's own keys, in its shortcut list (`?`, `:help`). */
 export const INSPECTOR_KEYS: readonly ShortcutRow[] = [
-  ["gt gT", "next / previous view (2gt: the second view, Vim's tabs)"],
+  ["gt", "next view"],
+  ["gT", "previous view"],
   [":", "command line, in every view; Tab / Shift+Tab complete"],
-  ["?", "this list (:help WORD opens it filtered)"],
+  ["?", "this list (:help WORD opens it filtered)", false],
   ["← → Home End", "on the tabs: previous / next view, the first / last"],
 ];
 
 /**
  * The shortcut list `?` shows over a view: its part's own list when it has
  * one (the review in Changes), else the inspector's keys, then every
- * command the prompt has there.
+ * command the prompt has there, each run by its name.
  */
 export function inspectorShortcutList(set: InspectorCommandSet): {
   title: string;
-  rows: ShortcutRow[];
+  groups: ShortcutGroup[];
 } {
   if (set.shortcuts)
-    return { title: set.shortcuts.title, rows: [...set.shortcuts.rows] };
+    return {
+      title: set.shortcuts.title,
+      groups: [{ heading: "", rows: set.shortcuts.rows }],
+    };
   const seen = new Set<string>();
   return {
     title: "Inspector shortcuts",
-    rows: [
-      ...INSPECTOR_KEYS,
-      ...set.commands
-        .filter((command) => {
-          if (command.listed === false || seen.has(command.name)) return false;
-          seen.add(command.name);
-          return true;
-        })
-        .map(
-          (command): ShortcutRow => [
-            [command.name, ...(command.aliases ?? [])]
-              .map((word) => `:${word}`)
-              .join(" "),
-            command.description,
-          ],
-        ),
+    groups: [
+      { heading: "Keys", rows: INSPECTOR_KEYS },
+      {
+        heading: "Commands",
+        rows: set.commands
+          .filter((command) => {
+            if (command.listed === false || seen.has(command.name))
+              return false;
+            seen.add(command.name);
+            return true;
+          })
+          .map(
+            (command): ShortcutRow => [
+              [command.name, ...(command.aliases ?? [])]
+                .map((word) => `:${word}`)
+                .join(" "),
+              command.description,
+              `:${command.name}`,
+            ],
+          ),
+      },
     ],
   };
 }

@@ -1252,7 +1252,7 @@ export async function mountChangesReview(
     return active instanceof HTMLElement &&
       (view().contains(active) ||
         (host.contains(active) &&
-          active.closest(".review-keys, .review-cmdline") !== null))
+          active.closest(".shortcut-help, .review-cmdline") !== null))
       ? active
       : view();
   };
@@ -2142,28 +2142,31 @@ export async function mountChangesReview(
       return host.querySelector(".threads-panel") !== null;
     },
     shortcuts() {
-      const panel = [...host.querySelectorAll(".review-keys-panel")].find(
+      const panel = [...host.querySelectorAll(".shortcut-help-panel")].find(
         (each) => each.querySelector("h2")?.textContent === "Review shortcuts",
       );
       if (!panel) return null;
-      return [...panel.querySelectorAll(".keys-row")].map((row) => ({
-        keys: [...row.querySelectorAll("kbd")]
+      return [...panel.querySelectorAll(".command-item")].map((row) => ({
+        keys: [...row.querySelectorAll(".command-keys kbd")]
           .map((key) => key.textContent)
           .join(" "),
-        label: row.querySelector("dd")?.textContent ?? "",
+        label: row.querySelector(".command-item-title")?.textContent ?? "",
       }));
     },
     async filterShortcuts(text) {
       const input = host.querySelector<HTMLInputElement>(
-        ".review-keys-panel .review-keys-filter",
+        ".shortcut-help-panel .command-input",
       );
       if (!input) throw new Error("no shortcut list");
       await typeInto(input, text);
       await settleAll();
     },
     shortcutKeys() {
-      return [...host.querySelectorAll(".keys .keys-row dt")].map((row) =>
-        [...row.querySelectorAll("kbd")].map((key) => key.textContent ?? ""),
+      return [...host.querySelectorAll(".shortcut-help .command-item")].map(
+        (row) =>
+          [...row.querySelectorAll(".command-keys kbd")].map(
+            (key) => key.textContent ?? "",
+          ),
       );
     },
     vimPreference() {

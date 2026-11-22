@@ -632,6 +632,14 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         expect(review.shortcuts()).toBeNull();
         await review.press("j");
         expect(review.cursorLine()?.text).toBe("a.ts line 2");
+        // A row picked in it runs on the review: the next line.
+        await review.press("?");
+        await review.filterShortcuts("next line");
+        expect(review.shortcuts()?.[0]?.keys).toBe("j ↓");
+        await review.press("<Enter>");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(review.shortcuts()).toBeNull();
+        expect(review.cursorLine()?.text).toBe("a.ts line 3");
         await review.unmount();
       });
 
@@ -661,20 +669,20 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.filterShortcuts("?");
         expect(keys()).toEqual(["?"]);
         await review.filterShortcuts("{");
-        expect(keys()).toEqual(["{ }"]);
+        expect(keys()).toEqual(["{"]);
         await review.filterShortcuts("zz");
-        expect(keys()).toEqual(["zz zt zb"]);
+        expect(keys()).toEqual(["zz"]);
         await review.filterShortcuts("GitLab");
         expect(keys()).toEqual(["s", "O :open", "gm :switch"]);
         // "gg" is also in "suggest".
         await review.filterShortcuts("gg");
-        expect(keys()).toEqual(["gg G", "s"]);
+        expect(keys()).toEqual(["gg", "s"]);
         // One key: the rows holding it, not every row whose words hold
         // the letter.
         await review.filterShortcuts("V");
         expect(keys()).toEqual(["V"]);
         await review.filterShortcuts("side line");
-        expect(keys()).toEqual(["j k ↓ ↑", "← →"]);
+        expect(keys()).toEqual(["j ↓", "k ↑", "←", "→"]);
         await review.filterShortcuts("comment hunk");
         expect(keys()).toEqual([]);
         expect(review.text()).toContain("Nothing matches.");

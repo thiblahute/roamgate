@@ -20,7 +20,7 @@ import {
 } from "../useInspectorCommands";
 import type { InspectorView } from "../workspaceResource";
 import { CommandLine } from "./CommandLine";
-import { ShortcutList } from "./ShortcutList";
+import { ShortcutHelp } from "./ShortcutHelp";
 
 /**
  * The inspector's `:` prompt and shortcut list (`?`, `:help`) around its
@@ -141,12 +141,12 @@ export function useInspectorCommandFrame({
   const overlays = (
     <>
       {shortcuts ? (
-        <ShortcutList
+        <ShortcutHelp
           className="inspector-keys"
           {...inspectorShortcutList(shownCommands())}
           filter={shortcuts.filter}
-          onFilter={(filter) => setShortcuts({ filter })}
           placeholder="Search shortcuts and commands"
+          command={(text) => run(text)}
           onClose={() => {
             setShortcuts(null);
             back()?.focus({ preventScroll: true });

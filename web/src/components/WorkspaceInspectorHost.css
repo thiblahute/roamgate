@@ -351,12 +351,6 @@
   flex: 0 0 auto;
 }
 
-/* The inspector's shortcut list (`?`, `:help`), over the page. */
-.review-keys.inspector-keys {
-  position: fixed;
-  z-index: 1200;
-}
-
 /* Review only in Changes (`:only`): the diff alone, over the app. */
 .inspector-changes-resource.is-review-only:not(.is-hidden)
   > .workspace-inspector-detail {

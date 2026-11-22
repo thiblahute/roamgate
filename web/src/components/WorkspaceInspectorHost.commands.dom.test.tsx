@@ -509,13 +509,14 @@ if (
     test("? and :help list the view's commands and the inspector's keys, filtered by :help WORD; Esc closes it; ? in a field is text", async () => {
       const inspector = await mountInspector({ view: "files" });
       const list = () =>
-        inspector.host.querySelector(".review-keys.inspector-keys");
+        inspector.host.querySelector(".shortcut-help.inspector-keys");
       const rows = () =>
-        [...inspector.host.querySelectorAll(".inspector-keys .keys-row")].map(
-          (row) =>
-            [...row.querySelectorAll("kbd")]
-              .map((key) => key.textContent)
-              .join(" "),
+        [
+          ...inspector.host.querySelectorAll(".inspector-keys .command-item"),
+        ].map((row) =>
+          [...row.querySelectorAll("kbd")]
+            .map((key) => key.textContent)
+            .join(" "),
         );
       try {
         const item = inspector.place("tree");
@@ -525,7 +526,8 @@ if (
           "Inspector shortcuts",
         );
         expect(rows()).toEqual([
-          "gt gT",
+          "gt",
+          "gT",
           ":",
           "?",
           "← → Home End",
@@ -621,7 +623,9 @@ if (
           tab.focus();
           await inspector.press(tab, "?");
           const words = [
-            ...inspector.host.querySelectorAll(".inspector-keys .keys-row kbd"),
+            ...inspector.host.querySelectorAll(
+              ".inspector-keys .command-keys kbd",
+            ),
           ]
             .map((key) => key.textContent ?? "")
             .filter((key) => key.startsWith(":") && key.length > 1)
