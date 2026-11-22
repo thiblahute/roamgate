@@ -1670,7 +1670,7 @@ efforts: {<id>: {ledger (without journal), history}}}` (version 2 added
 the hosts, followed projects and hints, version 3 `upstream_workspaces`)
 in key-sorted JSON (`stableJson`, `history/format.ts`), every key matching
 a secret pattern dropped and token-like values masked (`withoutSecrets`,
-`history/secrets.ts`). `importChanges`
+`utils/secrets.ts`). `importChanges`
 diffs item by item (overrides and ledger entries by key, lists by id,
 key, name or ref, the order whole, histories by line count), flagging
 `newerLocal` by `at`. Applying replaces the exported keys (others kept,
