@@ -1,7 +1,8 @@
 /**
  * Instructions for coding agents, printed by `roamgate-review skill` and
  * installed next to the client as SKILL.md, linked into
- * `~/.claude/skills` when Claude Code is there.
+ * `~/.claude/skills` and `~/.codex/skills` when Claude Code or Codex is
+ * there.
  */
 export const REVIEW_SKILL = `---
 name: roamgate-review
@@ -85,7 +86,8 @@ itself. Change code in the thread's \`repo\` (\`get\` and \`watch\` give it).
    without \`--comment\` for work not tied to one thread.
 3. Answer every returned thread once:
    \`roamgate-review --agent Claude reply --comment ID -- "Fixed in abc123: ..."\`.
-   Say what you did. Never reply to yourself.
+   Say what you did. A reply to a thread whose last comment is yours is
+   refused: edit that comment instead (below).
 4. \`roamgate-review --agent Claude update --message "Pushed the fixes"\` when
    code changed, or \`working --done\` when it did not.
 

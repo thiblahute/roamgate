@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -151,6 +152,18 @@ test("links the skill and client where agents look, not over the user's", () => 
   rmSync(join(bin, "roamgate-review"));
   s.agent.installLocal();
   expect(readlinkSync(join(bin, "roamgate-review"))).toBe(s.client);
+});
+
+test("links the skill where Codex reads skills too, once that folder exists", () => {
+  const s = setup();
+  const codex = join(s.home, ".codex/skills");
+  s.agent.installLocal();
+  expect(existsSync(join(codex, "roamgate-review"))).toBe(false);
+  mkdirSync(codex, { recursive: true });
+  s.agent.installLocal();
+  expect(
+    readFileSync(join(codex, "roamgate-review/SKILL.md"), "utf8"),
+  ).toStartWith("---\nname: roamgate-review");
 });
 
 test("open --repo takes each repository's own range", async () => {

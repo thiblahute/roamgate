@@ -1689,6 +1689,14 @@ export function createReviewService(args: {
     if (thread.comments.length >= REVIEW_LIMITS.commentsPerThread)
       throw new ReviewError("this thread is too long");
     const writer = author(params.author);
+    // An agent answers the user, not itself: what it would add to its own
+    // last comment goes into that comment.
+    const last = thread.comments[thread.comments.length - 1];
+    if (writer !== REVIEW_USER && last?.author === writer)
+      throw new ReviewError(
+        `the last comment of this thread is yours: correct it with review_edit (comment_id: ${last.id.slice(0, 8)}; the review client: edit --comment ${last.id.slice(0, 8)} -- TEXT)`,
+        409,
+      );
     const at = now();
     thread.comments.push({
       id: commentId ?? newId(),

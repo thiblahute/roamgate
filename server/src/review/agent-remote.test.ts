@@ -52,12 +52,17 @@ test("the host setup links the skill and client, not over the user's", () => {
   const home = mkdtempSync(join(tmpdir(), "rg-remote-home-"));
   directories.push(home);
   mkdirSync(join(home, ".claude/skills"), { recursive: true });
+  mkdirSync(join(home, ".codex/skills"), { recursive: true });
   mkdirSync(join(home, ".local/bin"), { recursive: true });
   writeFileSync(join(home, ".local/bin/roamgate-review"), "mine");
   const setup = runSetup(home);
   expect(setup.stderr).toBe("");
   expect(
     readFileSync(join(home, ".claude/skills/roamgate-review/SKILL.md"), "utf8"),
+  ).toStartWith("---\nname: roamgate-review");
+  // Where Codex reads skills, too.
+  expect(
+    readFileSync(join(home, ".codex/skills/roamgate-review/SKILL.md"), "utf8"),
   ).toStartWith("---\nname: roamgate-review");
   expect(readFileSync(join(home, ".local/bin/roamgate-review"), "utf8")).toBe(
     "mine",

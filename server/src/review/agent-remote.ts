@@ -43,6 +43,7 @@ export function remoteSetupScript(): string {
     // Linked where agents look, as on this machine: never over the user's.
     'link() { [ -d "${2%/*}" ] || return 0; if [ -L "$2" ]; then case "$(readlink "$2")" in "$1") return 0 ;; *.cache/roamgate/*) rm -f "$2" ;; *) return 0 ;; esac; elif [ -e "$2" ]; then return 0; fi; ln -s "$1" "$2" || true; }',
     'link "$d/skills/roamgate-review" "$HOME/.claude/skills/roamgate-review"',
+    'link "$d/skills/roamgate-review" "$HOME/.codex/skills/roamgate-review"',
     'link "$f" "$HOME/.local/bin/roamgate-review"',
     'rm -f "$d/review.sock"',
     'printf %s "$d/review.sock"',

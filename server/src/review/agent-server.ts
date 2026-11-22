@@ -605,6 +605,11 @@ export function createReviewAgentServer(args: {
       skillDirectory,
       join(home, ".claude", "skills", "roamgate-review"),
     );
+    // Codex reads ~/.codex/skills/<name>/SKILL.md the same way.
+    linkIfFree(
+      skillDirectory,
+      join(home, ".codex", "skills", "roamgate-review"),
+    );
     linkIfFree(client, join(home, ".local", "bin", "roamgate-review"));
     const link = join(base, "review.sock");
     let current: string | null = null;

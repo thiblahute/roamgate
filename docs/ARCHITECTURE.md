@@ -385,8 +385,15 @@ Roamgate is not connected to is refused, so its pane ids never reach another
 server's panes. On an SSH host, each time the connection's command master is
 ready the bridge installs the client and adds
 `ssh -O forward -R ~/.cache/roamgate/review.sock:<socket>` on that master, so
-agents there use the existing login and no port listens. An agent signs with
-a plain name, can edit only its own comments and cannot post on GitLab. The
+agents there use the existing login and no port listens. On each machine
+the client's skill (`SKILL.md`, the manual agents read when it triggers)
+is installed beside it and linked into `~/.claude/skills` and
+`~/.codex/skills`, where Claude Code and Codex look, when those folders
+exist and the name is free. An agent signs with
+a plain name, can edit only its own comments and cannot post on GitLab. Its
+reply to a thread whose last comment is already its own is refused (409),
+pointing at `review_edit` (the client's `edit`) on that comment: it
+corrects its answer instead of answering itself. The
 user's discussion comments reach a review's agent as a prompt typed into its
 Herdr pane (`agent.prompt`), a few seconds after they are written: a burst
 goes as one prompt, one delivery at a time per review, without control
