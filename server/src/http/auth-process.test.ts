@@ -1006,3 +1006,86 @@ test("the notification socket's links use the origin tailscale serve forwards", 
     await rm(dir, { recursive: true, force: true });
   }
 }, 20_000);
+
+/** One request line on the test clock's socket, its reply line back. */
+async function askTestClock(path: string, line: string): Promise<string> {
+  const reply = Promise.withResolvers<string>();
+  let text = "";
+  const socket = await Bun.connect({
+    unix: path,
+    socket: {
+      data(_socket, chunk) {
+        text += new TextDecoder().decode(chunk);
+        const newline = text.indexOf("\n");
+        if (newline >= 0) reply.resolve(text.slice(0, newline));
+      },
+      close() {
+        reply.reject(new Error(`test clock closed before replying: ${text}`));
+      },
+    },
+  });
+  socket.write(`${line}\n`);
+  try {
+    return await reply.promise;
+  } finally {
+    socket.end();
+  }
+}
+
+test("the test clock drives the server's time: a login cooldown ends when the harness advances", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "roamgate-test-clock-"));
+  const clockPath = join(dir, "clock.sock");
+  const epoch = Date.UTC(2030, 4, 6, 7, 8, 9);
+  const login = (base: string, secret: string) =>
+    fetch(`${base}/api/login`, {
+      signal: AbortSignal.timeout(5000),
+      method: "POST",
+      body: JSON.stringify({ password: secret }),
+    });
+  try {
+    await withAuthServer(
+      async (base) => {
+        expect(await askTestClock(clockPath, "now")).toBe(String(epoch));
+        for (let attempt = 0; attempt < 5; attempt++) {
+          expect((await login(base, "wrong")).status).toBe(401);
+        }
+        const blocked = await login(base, password);
+        expect(blocked.status).toBe(429);
+        expect(blocked.headers.get("retry-after")).toBe("300");
+
+        // Real time passing changes nothing: only the harness moves it.
+        await Bun.sleep(1100);
+        expect((await login(base, password)).headers.get("retry-after")).toBe(
+          "300",
+        );
+
+        expect(await askTestClock(clockPath, "advance 299000")).toBe(
+          String(epoch + 299_000),
+        );
+        const almost = await login(base, password);
+        expect(almost.status).toBe(429);
+        expect(almost.headers.get("retry-after")).toBe("1");
+
+        await askTestClock(clockPath, "advance 1000");
+        const accepted = await login(base, password);
+        expect(accepted.status).toBe(200);
+        // The session token is stamped with the virtual time.
+        const token = accepted.headers
+          .get("set-cookie")
+          ?.split(";", 1)[0]
+          ?.split("=")[1];
+        const claims = JSON.parse(
+          Buffer.from(token?.split(".")[0] ?? "", "base64url").toString(),
+        );
+        expect(claims.iat).toBe(Math.floor((epoch + 300_000) / 1000));
+        expect(await askTestClock(clockPath, "jump")).toStartWith("error ");
+      },
+      {
+        ROAMGATE_TEST_CLOCK: clockPath,
+        ROAMGATE_TEST_CLOCK_EPOCH: String(epoch),
+      },
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 20_000);

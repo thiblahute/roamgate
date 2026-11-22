@@ -1,3 +1,5 @@
+// First: with ROAMGATE_TEST_CLOCK set, every module must see the test clock.
+import "./utils/test-clock-env";
 import { defaultSessionIndexDir } from "./agent/session-index-store";
 import { launchRegistry, sessionProfiles } from "./profiles/profiles";
 import { PROFILE_RPC_METHODS, returnAfterReset } from "./profiles/rpc";

@@ -46,6 +46,14 @@ Releases run `bun run precommit` and must package and inspect every platform
 archive and checksum; see [builds](docs/DEPLOYMENT.md#build-a-standalone-executable)
 and the [release policy](AGENTS.md#release-notes).
 
+### Test clock
+
+Scenarios about deadlines (idle stop, cooldowns, cache lifetimes, retries)
+start the server from source with `ROAMGATE_TEST_CLOCK=<socket>`: its time and
+timers become virtual and move only when the test sends `advance <ms>` on that
+socket. The standalone binary refuses the variable. The protocol and its
+semantics are in [contract/wire/test-clock.md](contract/wire/test-clock.md).
+
 ### Manual browser checks
 
 Automated tests do not launch browsers. For affected UI, check against a real

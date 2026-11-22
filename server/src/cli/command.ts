@@ -7,6 +7,8 @@ import {
   type RunCommand,
 } from "../config/service-manager";
 
+export { isStandaloneBinary } from "../config/standalone";
+
 /** Exit codes shared by management commands. */
 export const EXIT_OK = 0;
 export const EXIT_FAILURE = 1;
@@ -118,14 +120,4 @@ export function displayPath(path: string, runtime: CliRuntime): string {
   return path === runtime.homeDir || path.startsWith(`${runtime.homeDir}/`)
     ? `~${path.slice(runtime.homeDir.length)}`
     : path;
-}
-
-/** Whether this process is the standalone binary rather than `bun src/index.ts`. */
-export function isStandaloneBinary(runtime: CliRuntime): boolean {
-  const executable = runtime.execPath.split(/[\\/]/).pop()?.toLowerCase();
-  return (
-    executable !== "bun" &&
-    executable !== "bun.exe" &&
-    !(runtime.argv[1] ?? "").endsWith("src/index.ts")
-  );
 }
