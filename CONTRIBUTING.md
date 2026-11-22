@@ -54,6 +54,12 @@ timers become virtual and move only when the test sends `advance <ms>` on that
 socket. The standalone binary refuses the variable. The protocol and its
 semantics are in [contract/wire/test-clock.md](contract/wire/test-clock.md).
 
+A test server stays in its own world with two more variables:
+`ROAMGATE_HOST_SPAWN` names the host-spawn it runs from a toolbox (empty for
+none), so it never asks the real host's GameMode, and
+`ROAMGATE_SSH_RUNTIME_DIR` replaces `/tmp` for its SSH masters and forwards,
+so its orphan sweep never touches another server's.
+
 ### Manual browser checks
 
 Automated tests do not launch browsers. For affected UI, check against a real

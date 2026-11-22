@@ -6,6 +6,7 @@ import {
   rmSync,
 } from "node:fs";
 import { join } from "node:path";
+import { roamgateEnv } from "../config/environment";
 import { type Logger, silentLogger } from "../utils/logger";
 import {
   sshMasterArgv,
@@ -361,8 +362,26 @@ export function createSshMaster(args: {
 
 export type SshMaster = ReturnType<typeof createSshMaster>;
 
-/** Where SSH profile runtimes create their private directories. */
+/**
+ * Where SSH profile runtimes create their private directories by default:
+ * /tmp, short enough for the sockets in them on every platform (TMPDIR is
+ * too long on macOS).
+ */
 export const SSH_RUNTIME_DIRECTORY_ROOT = "/tmp";
+
+/**
+ * Where SSH profile runtimes create their directories, and where the orphan
+ * sweep looks: ROAMGATE_SSH_RUNTIME_DIR when set (a test server keeps its
+ * masters and forwards in its own run, and never sweeps another server's),
+ * else SSH_RUNTIME_DIRECTORY_ROOT.
+ */
+export function sshRuntimeDirectoryRoot(
+  environment: Record<string, string | undefined> = process.env,
+): string {
+  return (
+    roamgateEnv("SSH_RUNTIME_DIR", environment) || SSH_RUNTIME_DIRECTORY_ROOT
+  );
+}
 const SSH_RUNTIME_DIRECTORY_PATTERN = /^roamgate-ssh-[A-Za-z0-9]{6}$/;
 /** Written into each runtime directory: the pid of the Roamgate that owns it. */
 export const SSH_RUNTIME_OWNER_FILE = "owner.pid";
@@ -398,7 +417,7 @@ export async function sweepOrphanedSshMasters(
   } = {},
 ): Promise<number> {
   if (process.platform === "win32") return 0;
-  const root = args.root ?? SSH_RUNTIME_DIRECTORY_ROOT;
+  const root = args.root ?? sshRuntimeDirectoryRoot();
   const uid = args.uid ?? process.getuid?.();
   const logger = args.logger ?? silentLogger;
   const isProcessAlive = args.isProcessAlive ?? processAlive;

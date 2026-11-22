@@ -66,4 +66,15 @@ describe("hostSpawnPath", () => {
     expect(hostSpawnPath(join(root, "broken"), [])).toBeNull();
     expect(hostSpawnPath("", [])).toBeNull();
   });
+
+  test("ROAMGATE_HOST_SPAWN overrides the search, empty for none", () => {
+    const known = put("known", 0o755);
+    const own = put("own", 0o755);
+    expect(hostSpawnPath("", [known], own)).toBe(own);
+    expect(hostSpawnPath("", [known], "")).toBeNull();
+    put("broken-own", 0o600, "");
+    expect(
+      hostSpawnPath("", [known], join(root, "broken-own", "host-spawn")),
+    ).toBeNull();
+  });
 });

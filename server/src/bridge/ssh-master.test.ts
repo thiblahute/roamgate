@@ -22,6 +22,7 @@ import {
 import {
   createSshMaster,
   type SshMaster,
+  sshRuntimeDirectoryRoot,
   sweepOrphanedSshMasters,
 } from "./ssh-master";
 
@@ -487,5 +488,20 @@ describe.skipIf(process.platform === "win32")("orphaned master sweep", () => {
       await sweepOrphanedSshMasters({ ...options, runExit: async () => 0 }),
     ).toBe(1);
     expect(existsSync(directory)).toBe(false);
+  });
+});
+
+describe("SSH runtime directory root", () => {
+  test("ROAMGATE_SSH_RUNTIME_DIR moves it, /tmp otherwise", () => {
+    expect(sshRuntimeDirectoryRoot({})).toBe("/tmp");
+    expect(sshRuntimeDirectoryRoot({ ROAMGATE_SSH_RUNTIME_DIR: "" })).toBe(
+      "/tmp",
+    );
+    expect(
+      sshRuntimeDirectoryRoot({ ROAMGATE_SSH_RUNTIME_DIR: "/tmp/run/ssh" }),
+    ).toBe("/tmp/run/ssh");
+    expect(
+      sshRuntimeDirectoryRoot({ HERDR_GUI_SSH_RUNTIME_DIR: "/tmp/legacy" }),
+    ).toBe("/tmp/legacy");
   });
 });

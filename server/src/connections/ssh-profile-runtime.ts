@@ -7,7 +7,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
-  SSH_RUNTIME_DIRECTORY_ROOT,
+  sshRuntimeDirectoryRoot,
   SSH_RUNTIME_OWNER_FILE,
 } from "../bridge/ssh-master";
 import {
@@ -36,7 +36,7 @@ export function createSshProfileRuntimeConfig(
   assertSshTunnelPlatformSupported(platform);
   const directory =
     dependencies.createDirectory?.() ??
-    mkdtempSync(join(SSH_RUNTIME_DIRECTORY_ROOT, "roamgate-ssh-"));
+    mkdtempSync(join(sshRuntimeDirectoryRoot(), "roamgate-ssh-"));
   const chmod = dependencies.chmod ?? chmodSync;
   const stat = dependencies.stat ?? statSync;
   const removeDirectory =

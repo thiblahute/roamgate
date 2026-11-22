@@ -7,6 +7,7 @@
  */
 import { accessSync, constants, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { roamgateEnv } from "../config/environment";
 
 /** Where the toolbox packages install host-spawn: tried before PATH. */
 export const HOST_SPAWN_PATHS = [
@@ -27,13 +28,18 @@ export function runnable(path: string): boolean {
 }
 
 /**
- * The host-spawn to run: the first runnable one of the known paths, then of
- * PATH's directories; null when none runs.
+ * The host-spawn to run: ROAMGATE_HOST_SPAWN when set (empty: none; a test
+ * server points it at its own fake so it never reaches the real host), else
+ * the first runnable one of the known paths, then of PATH's directories;
+ * null when none runs.
  */
 export function hostSpawnPath(
   path = process.env.PATH ?? "",
   known = HOST_SPAWN_PATHS,
+  override = roamgateEnv("HOST_SPAWN"),
 ): string | null {
+  if (override !== undefined)
+    return override && runnable(override) ? override : null;
   for (const candidate of known) if (runnable(candidate)) return candidate;
   for (const dir of path.split(delimiter)) {
     if (!dir) continue;
