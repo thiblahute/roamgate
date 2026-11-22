@@ -25,6 +25,8 @@ import {
   RECOMMENDED_PASSWORD_LENGTH,
 } from "./config/auth-token";
 import type { ServerWebSocket } from "bun";
+import { recordCli, recordServe, recordSpawns } from "./contract-record/hooks";
+import { contractRecorder } from "./contract-record/recorder";
 import { createAssistantContext } from "./assistant/context";
 import {
   RANGER_THREAD_AUTHOR,
@@ -344,12 +346,23 @@ import {
 } from "./worktree/remove";
 
 const APP_VERSION = packageJson.version;
+// Contract record mode (contract-record/recorder.ts): null, and nothing
+// wrapped, unless ROAMGATE_CONTRACT_RECORD is set.
+const recorder = contractRecorder();
+recordSpawns(recorder);
 const cliCommandList = cliCommands();
-const cliResult = await runCli(
+const recordedCli = recordCli(
+  recorder,
   process.argv.slice(2),
   defaultCliContext(APP_VERSION),
+);
+const cliResult = await runCli(
+  process.argv.slice(2),
+  recordedCli.context,
   cliCommandList,
 );
+if (cliResult !== null && cliResult !== CONTINUE_TO_SERVER)
+  recordedCli.finish(cliResult);
 if (cliResult === CONTINUE_TO_SERVER) {
   // `service run <env>` loaded the service environment; start the listener.
   process.argv.splice(2);
@@ -377,6 +390,11 @@ if (config.authRequired) {
 }
 configureServerLogger(config.logLevel);
 const logger = serverLogger;
+if (recorder) {
+  for (const secret of [config.password, config.pin, sessionSecret])
+    recorder.redactor.addSecret(secret);
+  logger.info("contract record mode on", { directory: recorder.directory });
+}
 // Command masters of a Roamgate that crashed outlive it; end them.
 void sweepOrphanedSshMasters({ logger: logger.child("ssh") }).catch(
   () => undefined,
@@ -4735,11 +4753,28 @@ async function handleConnectionHttpRequest(
   }
 }
 
+/** The recorded channel of a server socket (contract record mode). */
+function socketChannel(ws: ServerWebSocket<unknown>) {
+  const data = ws.data as {
+    voice?: true;
+    notifications?: unknown;
+    signalling?: unknown;
+  };
+  if (data.notifications) return "notifications" as const;
+  if (data.signalling) return "signalling" as const;
+  if (data.voice) return "voice" as const;
+  return "ws" as const;
+}
+
 function main() {
   historyRuntime.start();
   const server = bindListenerBeforeConnectionStart({
     bindListener: () =>
-      Bun.serve<{
+      recordServe(
+        recorder,
+        "http",
+        socketChannel,
+      )<{
         sessionToken: string | null;
         voice?: true;
         /** The notification socket: the origin its links open on. */

@@ -50,6 +50,7 @@
     "package:windows-arm64": "scripts/package-release.sh windows-arm64",
     "release:prepare": "bun scripts/prepare-release.ts",
     "label:pr": "bun scripts/classify-pr-label.ts",
+    "contract:record": "bun scripts/contract-record.ts",
     "format": "biome format --write",
     "format:check": "biome format",
     "lint": "oxlint .",

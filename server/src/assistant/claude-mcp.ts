@@ -1,6 +1,8 @@
 import type { AssistantSource } from "../../../shared/assistant";
 import { randomUUID } from "node:crypto";
 import { surfaceAssistantUserError } from "./errors";
+import { recordServe } from "../contract-record/hooks";
+import { contractRecorder } from "../contract-record/recorder";
 import type { RangerTool } from "./ranger-tools";
 
 /** The MCP server name: Claude Code calls its tools `mcp__ranger__<name>`. */
@@ -36,7 +38,14 @@ type Listen = (fetch: (req: Request) => Promise<Response>) => Listener;
  */
 export function createRangerMcp(
   listen: Listen = (fetch) => {
-    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch });
+    const server = recordServe(
+      contractRecorder(),
+      "mcp",
+    )({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch,
+    });
     return {
       url: `http://127.0.0.1:${server.port}/mcp`,
       stop: () => void server.stop(true),

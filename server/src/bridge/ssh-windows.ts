@@ -1,4 +1,6 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import childProcess, {
+  type ChildProcessWithoutNullStreams,
+} from "node:child_process";
 import { rmSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { Readable } from "node:stream";
@@ -172,7 +174,7 @@ export function createWindowsSshTunnel(args: {
       const [program, ...argv] = sshBridgeCommandArgv(config.sshHost!, command);
       const child = args.spawnBridge
         ? args.spawnBridge([program, ...argv])
-        : spawn(program, argv, {
+        : childProcess.spawn(program, argv, {
             stdio: "pipe",
             env: { ...process.env, LC_ALL: "C" },
           });

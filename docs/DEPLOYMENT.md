@@ -430,6 +430,27 @@ done. For readable function names, run from source with
 `bun server/src/index.ts --profile`. For services, set `ROAMGATE_PROFILE=1` in
 the environment file, restart, and remove it afterwards.
 
+### Contract recording
+
+`ROAMGATE_CONTRACT_RECORD=1` (or a directory path) makes the server and the CLI
+record their external traffic as JSONL under `<data dir>/contract-record`:
+browser, voice, notification and call-signalling WebSocket messages, HTTP
+exchanges, agent socket and Ranger MCP calls, CLI runs and the processes the
+server starts (arguments and exit codes, not their output or environment). It
+is off by default and costs nothing when unset. Recordings are redacted before
+they are written: credential keys and values (passwords, PINs, cookies, tokens,
+forge and API keys, push endpoints, URL passwords, the server's own secrets)
+become `[redacted:<tag>]`, terminal bytes and keystrokes keep only their
+length, and long strings are cut. Files are 0600 in a 0700 directory, rotate at
+`ROAMGATE_CONTRACT_RECORD_SEGMENT_MB` (32) and the oldest are removed past
+`ROAMGATE_CONTRACT_RECORD_KEEP_MB` (1024). They still hold conversation text and
+file paths: keep them private.
+
+`bun run contract:record check` validates a recording against `contract/` and
+reports mismatches, unknown fields and unlisted messages (with no contract, it
+only builds a shape census to compare with `--baseline`); `list` shows the
+recorded sockets and `seed --sock <id>` turns one into a scenario seed.
+
 ## Multiple and remote Herdr connections
 
 The connection selector in the title bar adds, tests, connects, edits, and

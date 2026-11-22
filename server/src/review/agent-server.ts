@@ -38,6 +38,8 @@ import {
 } from "../conversation/suspended";
 import { REVIEW_CLIENT_CHECKSUM, REVIEW_CLIENT_SCRIPT } from "./agent-client";
 import { REVIEW_SKILL } from "./agent-skill";
+import { recordServe } from "../contract-record/hooks";
+import { contractRecorder } from "../contract-record/recorder";
 import {
   AgentMessageError,
   type AgentMessenger,
@@ -1439,7 +1441,10 @@ export function createReviewAgentServer(args: {
     chmodSync(socketDirectory, 0o700);
     const path = socketPathFor(socketKey);
     rmSync(path, { force: true });
-    const server = Bun.serve({
+    const server = recordServe(
+      contractRecorder(),
+      "agent",
+    )({
       unix: path,
       maxRequestBodySize: HOLD_OUTPUT_MAX_BODY_BYTES,
       fetch: async (request, server) => {

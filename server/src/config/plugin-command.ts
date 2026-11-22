@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import childProcess from "node:child_process";
 import { type CliRuntime, currentRuntime } from "../cli/command";
 import {
   accessUrls,
@@ -8,7 +8,7 @@ import {
 } from "../cli/service-context";
 
 function capture(binary: string, args: string[]) {
-  const result = spawnSync(binary, args, { encoding: "utf8" });
+  const result = childProcess.spawnSync(binary, args, { encoding: "utf8" });
   return {
     code: result.status ?? 1,
     out: result.stdout ?? "",
@@ -140,9 +140,13 @@ export async function runPluginCommand(
               ? ["uninstall"]
               : null;
     if (serviceArgs) {
-      const result = spawnSync(binary, ["service", ...serviceArgs], {
-        stdio: "inherit",
-      });
+      const result = childProcess.spawnSync(
+        binary,
+        ["service", ...serviceArgs],
+        {
+          stdio: "inherit",
+        },
+      );
       if (result.error)
         console.error(`roamgate plugin: ${result.error.message}`);
       return result.status ?? 1;

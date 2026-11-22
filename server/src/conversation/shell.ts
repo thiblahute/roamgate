@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import childProcess from "node:child_process";
 import { userInfo } from "node:os";
 import { holdSshSession, runInSshLane } from "../bridge/ssh-sessions";
 import { sshCommandArgv } from "../bridge/ssh-command";
@@ -112,7 +112,7 @@ export function createShellRunner(options: {
 }): ShellRunner {
   return ({ cwd, command, onOutput }) => {
     let stopped = false;
-    let child: ReturnType<typeof spawn> | null = null;
+    let child: ReturnType<typeof childProcess.spawn> | null = null;
     const output: ShellOutput = { stdout: "", stderr: "", truncated: false };
     const argv =
       options.argv?.(cwd, command) ??
@@ -136,7 +136,7 @@ export function createShellRunner(options: {
         release = hold.release;
         if (stopped) return { code: null, stopped: true };
         const run = hold.argv;
-        const proc = spawn(run[0]!, run.slice(1), {
+        const proc = childProcess.spawn(run[0]!, run.slice(1), {
           stdio: ["pipe", "pipe", "pipe"],
           env: shellEnv(),
         });
