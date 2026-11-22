@@ -409,3 +409,42 @@ test("no review method submits, publishes, resolves or posts on a forge: drafts 
       handleReviewRpc(service, local, method, { session_id: "x" }),
     ).rejects.toThrow(/unknown review method/);
 });
+
+test("a branch (head, a work item's branch link) is reviewed against the default branch, in the checkout at the path", async () => {
+  const service = setup();
+  let base: string | null = "origin/main";
+  const reading = {
+    ...local,
+    readRoot: async () => "/repo",
+    readDefaultBase: async () => {
+      if (base === null) throw new Error("no default branch");
+      return base;
+    },
+  };
+  const opened = (await handleReviewRpc(service, reading, "review.open", {
+    workspace_id: "w1",
+    path: "/repo",
+    head: "up/voice-setup",
+  })) as { session: { root: string; target: unknown } };
+  expect(opened.session.root).toBe("/repo");
+  expect(opened.session.target).toEqual({
+    kind: "range",
+    base: "origin/main",
+    head: "up/voice-setup",
+  });
+  await expect(
+    handleReviewRpc(service, reading, "review.open", {
+      workspace_id: "w1",
+      path: "/repo",
+      head: "--all",
+    }),
+  ).rejects.toThrow("head must be a branch name");
+  base = null;
+  await expect(
+    handleReviewRpc(service, reading, "review.open", {
+      workspace_id: "w1",
+      path: "/repo",
+      head: "feature",
+    }),
+  ).rejects.toThrow("no default branch to compare the branch to");
+});

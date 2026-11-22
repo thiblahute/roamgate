@@ -2266,8 +2266,12 @@ shows the item's detail in the view, as a request's detail is shown, with
 **description** (the text it was added with, images at the detail's
 width), a state menu (`s`), tags (`t`), its owner with **Open the agent's
 work** (`o`: the owner's pane, and its subagent's task in the Background
-tasks sheet), its project, links, **Done when** (how it becomes done by
-itself: its commit landing, or every decision ticked) and dates, **Done**
+tasks sheet), its project, links (a commit, a branch or a landing opens its review in
+Changes, in whichever of the project's repositories holds it, or says it
+is in none of them; the copy button beside takes its sha or name),
+**Done when** (how it becomes done by itself: its commit landing, or
+every decision ticked; in Verify or For you, only the user's word) and
+dates, **Done**
 (`dd`) or
 **Reopen**, **Delete**, then its thread: the comments, each with Reply,
 and **Comment** (`c`; `r` replies to the last thread) in the review
@@ -2338,10 +2342,12 @@ workspace, and an item they add gets their workspace's tag unless they
 coordinate the project or pass `"workspace": false`): an item they take
 says `doing` with them as owner (a session a
 connection knows, else refused; a subagent's task id when one does the
-work), a fix waiting for a deploy says `verify` with its commit linked,
-and becomes **done by itself** once that commit is on dogfood's deployed
-build (the `roamgate` project) or on the project's branch
-(`gstreamer2/main` for GStreamer 2.0); an item whose links are all
+work), a fix links its commit, and a `doing` or `open` item becomes
+**done by itself** once that commit is on dogfood's deployed build (the
+`roamgate` project) or on the project's branch (`gstreamer2/main` for
+GStreamer 2.0); one the user must try says `verify` with what to try,
+and stays there when its commit lands, its card showing **landed**, until
+it is marked done (For you too); an item whose links are all
 decisions is done once every one is ticked in the RFC or plan (`- [x]
 **Dn**`, or its `### Dn` heading answered), committed or still in the
 checkout's working tree (the item says uncommitted then). Importing the

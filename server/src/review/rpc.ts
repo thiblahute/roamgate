@@ -269,6 +269,18 @@ export async function handleReviewRpc(
       const defaultBase = connection.readDefaultBase
         ? await connection.readDefaultBase(root).catch(() => null)
         : undefined;
+      // A branch (`head`, a work item's branch link): against the default
+      // branch.
+      if (raw.target === undefined && typeof raw.head === "string") {
+        const head = raw.head.trim();
+        if (!head || head.startsWith("-"))
+          throw new ReviewError("head must be a branch name");
+        if (!defaultBase)
+          throw new ReviewError(
+            "the repository has no default branch to compare the branch to",
+          );
+        return open(root, { kind: "range", base: defaultBase, head });
+      }
       const target =
         raw.target ??
         (defaultBase === null

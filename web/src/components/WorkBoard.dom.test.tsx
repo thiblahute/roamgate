@@ -123,6 +123,8 @@ if (
   };
   /** The next add's item is not on the board's read yet (a push brings it). */
   let addUnread = false;
+  /** While set, the next add fails with these words. */
+  let addFails: string | null = null;
   const workModule = await import("../work");
   mock.module("../work", () => ({
     ...workModule,
@@ -139,7 +141,31 @@ if (
     },
     workCall: async (method: string, params: Record<string, unknown>) => {
       calls.push([method, params]);
+      if (method === "link_target") {
+        // The server finds the checkout: the link's root, else the
+        // project's; a commit in none says so plainly.
+        const link = params.link as {
+          kind: string;
+          root?: string;
+          sha?: string;
+        };
+        if (link.sha === "62d3530630000000")
+          throw new Error(
+            "This commit is not in any of the project's repositories",
+          );
+        return {
+          target: {
+            connectionId: "desktop",
+            root: link.root ?? "/src/gst2",
+          },
+        };
+      }
       if (method !== "add") return {};
+      if (addFails) {
+        const why = addFails;
+        addFails = null;
+        throw new Error(why);
+      }
       // Free text: the coordinator owns it, to sort.
       const made = item("3300000000000000", "gst2", "open", [], {
         title: String(params.text ?? "").split("\n")[0],
@@ -248,11 +274,16 @@ if (
   /** More of the inbox: its efforts, its requests. */
   let inboxMore: Record<string, unknown> = {};
   const reviewedCommits: [string, unknown][] = [];
+  const reviewedBranches: [string, unknown][] = [];
   const reviewOpenModule = await import("../reviewOpen");
   mock.module("../reviewOpen", () => ({
     ...reviewOpenModule,
     openCommitReview: async (sha: string, options: unknown) => {
       reviewedCommits.push([sha, options]);
+      return null;
+    },
+    openBranchReview: async (branch: string, options: unknown) => {
+      reviewedBranches.push([branch, options]);
       return null;
     },
   }));
@@ -562,6 +593,25 @@ if (
       expect(calls.some(([method]) => method === "add")).toBe(false);
       expect(form()!.textContent).toContain("Say what needs doing");
       await view.type(box, "Copy a picture\nPaste one here.");
+      // An add that fails says why in the form, and it stays there
+      // (the form, its words, the reason) until dismissed.
+      addFails = "the bridge is gone";
+      await act(async () => {
+        form()!.dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      });
+      const failedAlert = () =>
+        form()?.querySelector<HTMLElement>(".assistant-error[role=alert]");
+      expect(form()).not.toBeNull();
+      expect(failedAlert()?.textContent).toContain(
+        "Not added: the bridge is gone",
+      );
+      await view.click(failedAlert()!.querySelector("button"));
+      expect(failedAlert()).toBeFalsy();
       await act(async () => {
         form()!.dispatchEvent(
           new Event("submit", { bubbles: true, cancelable: true }),
@@ -1364,9 +1414,36 @@ if (
       await view.click(rows()[6]!.querySelector("button.work-link-open"));
       expect(opened).toEqual([mr]);
       await view.click(rows()[4]!.querySelector("button.work-link-open"));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
       expect(reviewedCommits).toEqual([
         ["f9b1e86950000000", { path: "/src/gst-plugins-rs" }],
       ]);
+      const targets = calls.filter(([method]) => method === "link_target");
+      expect(targets[targets.length - 1]?.[1]).toEqual({
+        item: "1800000000000000",
+        link: links[4],
+      });
+      // A branch is reviewed too, in the checkout the server found it in
+      // (it has no root of its own).
+      await view.click(rows()[2]!.querySelector("button.work-link-open"));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(reviewedBranches).toEqual([
+        ["webrtc-signaller-tls-verify", { path: "/src/gst2" }],
+      ]);
+      // A commit in none of the project's repositories: said plainly,
+      // never git's own error.
+      await view.click(rows()[5]!.querySelector("button.work-link-open"));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      expect(reviewedCommits.length).toBe(1);
+      expect(view.text(".assistant-error span")).toBe(
+        "This commit is not in any of the project's repositories",
+      );
       await view.click(rows()[1]!.querySelector("button.work-link-open"));
       expect(view.panel.classList.contains("is-mr")).toBe(true);
       expect(view.panel.querySelector(".work-detail")).toBeNull();

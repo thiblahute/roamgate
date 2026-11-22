@@ -201,19 +201,49 @@ export async function openWorkspaceReview(
  * attached; a review of it already there is shown again. Returns the
  * review, or null after saying why there is none.
  */
-export async function openCommitReview(
+export function openCommitReview(
   sha: string,
   options: { workspaceId?: string | undefined; path?: string } = {},
 ): Promise<string | null> {
+  return openRangeReview(
+    { target: { kind: "range", base: `${sha}^`, head: sha } },
+    "Cannot review this commit",
+    options,
+  );
+}
+
+/**
+ * A branch's review, against the repository's default branch, in the
+ * checkout at `path` (a work item's branch link). Returns the review, or
+ * null after saying why there is none.
+ */
+export function openBranchReview(
+  branch: string,
+  options: { workspaceId?: string | undefined; path?: string } = {},
+): Promise<string | null> {
+  return openRangeReview(
+    { head: branch },
+    "Cannot review this branch",
+    options,
+  );
+}
+
+async function openRangeReview(
+  what: { target: Record<string, unknown> } | { head: string },
+  failure: string,
+  options: { workspaceId?: string | undefined; path?: string },
+): Promise<string | null> {
   const current = store.get();
   const connectionId = current.activeConnectionId;
+  // A path names the repository: any workspace hosts its review then.
   const workspaceId =
     options.workspaceId ??
-    current.workspaces.find((w) => w.focused)?.workspace_id;
+    current.workspaces.find((w) => w.focused)?.workspace_id ??
+    (options.path ? current.workspaces[0]?.workspace_id : undefined);
   if (!connectionId || !workspaceId) {
     store.notify({
       kind: "error",
-      message: "Cannot review this commit",
+      message: failure,
       detail: connectionId
         ? "No workspace is focused."
         : "Roamgate is not connected to Herdr.",
@@ -229,7 +259,7 @@ export async function openCommitReview(
       {
         workspace_id: workspaceId,
         ...(options.path ? { path: options.path } : {}),
-        target: { kind: "range", base: `${sha}^`, head: sha },
+        ...what,
         ...(agentPane
           ? {
               agent_pane: agentPane.pane_id,
@@ -243,7 +273,7 @@ export async function openCommitReview(
   } catch (error) {
     store.notify({
       kind: "error",
-      message: "Cannot review this commit",
+      message: failure,
       detail: error instanceof Error ? error.message : String(error),
     });
     return null;

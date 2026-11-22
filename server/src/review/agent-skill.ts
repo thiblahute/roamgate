@@ -311,11 +311,14 @@ unless \`replace: true\`), \`created_at\` / \`done_at\`, and \`adopt_thread\`
 \`session\` must be one \`agent_sessions\` lists (its \`task\`, a subagent's
 id, is taken as given). Keep the board true as you
 work: take an item (doing, owner: your address or the subagent's task id),
-link the commit its fix landed in and move it to verify (it becomes done
-by itself once the commit is on the deployed build or the project's
-branch; an item whose links are all decisions, once every decision is
-ticked in the file, committed or in the working tree), put it in For you
-when it needs the user. An item in For you or Verify says what the user
+link the commit its fix landed in (the server fills in its checkout when
+you give no \`root\`); a doing or open item becomes done by itself once
+the commit is on the deployed build or the project's branch (an item whose
+links are all decisions, once every decision is ticked in the file,
+committed or in the working tree). When the user has to try it, move it
+to verify with an ask instead: it stays in Verify when the commit lands
+(its card shows landed) until the user, or you on their word, marks it
+done. Put it in For you when it needs the user. An item in For you or Verify says what the user
 has to do, shown on its card: \`ask\`, one or two sentences ("Choose:
 media to the car with the phone mic, or no music on car links", "Dictate
 once after 10 idle minutes; text should appear"), and for a decision

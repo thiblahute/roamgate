@@ -55,6 +55,8 @@ export async function handleWorkRpc(
       return { target: await service.ownerTarget(params) };
     case "bridge.work.session_target":
       return { target: await service.sessionTarget(params) };
+    case "bridge.work.link_target":
+      return { target: await service.linkTarget(params) };
     case "bridge.work.adopt":
       return { item: service.adopt(params, meta) };
     case "bridge.work.check":

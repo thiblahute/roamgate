@@ -18,6 +18,7 @@ import {
   workStateAsks,
   type WorkItem,
   type WorkLink,
+  type WorkLinkRoot,
   type WorkOwner,
   type WorkProject,
   type WorkPlace,
@@ -25,6 +26,8 @@ import {
   workPlaceTagFor,
   workProjectFamily,
   workProjectForPaths,
+  workLandingMakesDone,
+  workLinkRoots,
   workWorkspaceTag,
 } from "../../../shared/work";
 import {
@@ -35,6 +38,7 @@ import {
   parseWorkAnswers,
   parseWorkAsk,
   parseWorkCoordinator,
+  parseWorkLink,
   parseWorkLinks,
   parseWorkOwner,
   parseWorkSource,
@@ -44,6 +48,7 @@ import {
   parseWorkTitle,
   WorkError,
   type WorkStore,
+  workLinkKey,
 } from "./store";
 import { autoWorkTags } from "./tags";
 
@@ -365,6 +370,7 @@ export function createWorkService(deps: WorkServiceDeps) {
     what: string,
   ): WorkItem {
     store.saveItem(item, change);
+    if (needsLinkRoots(item)) fillLinkRootsLater(item.id);
     if (item.state === "you" && before?.state !== "you")
       deps.notifications?.publish(item);
     else if (item.state !== "you" && before?.state === "you")
@@ -1446,13 +1452,20 @@ export function createWorkService(deps: WorkServiceDeps) {
    * The done rules: every live item with a commit (or decision) link whose
    * project says it landed becomes done, with a `deploy` link saying where.
    */
-  async function check(): Promise<{ landed: string[]; checked: number }> {
+  async function check(): Promise<{
+    landed: string[];
+    recorded: string[];
+    checked: number;
+  }> {
     seed();
     const landed: string[] = [];
     let checked = 0;
     const deployed = deps.deployed?.() ?? null;
+    const recorded: string[] = [];
     for (const item of store.items()) {
       if (!WORK_OPEN_STATES.includes(item.state)) continue;
+      // Waiting on the user (verify, for you): a landing is recorded once.
+      if (!workLandingMakesDone(item.state) && landedOnce(item)) continue;
       const project = store.project(item.project);
       if (!project) continue;
       const commits = item.links.filter(
@@ -1496,6 +1509,29 @@ export function createWorkService(deps: WorkServiceDeps) {
       const at = now();
       const current = store.item(item.id);
       if (!current || !WORK_OPEN_STATES.includes(current.state)) continue;
+      // The user still has to verify or answer: the item stays in its
+      // state, its landing linked (shown on its card).
+      if (!workLandingMakesDone(current.state)) {
+        if (landedOnce(current)) continue;
+        const kept: WorkItem = {
+          ...current,
+          updatedAt: at,
+          by: "agent",
+          links: mergeWorkLinks(current.links, [where]),
+        };
+        commit(
+          current,
+          kept,
+          {
+            by: "agent",
+            summary: `${oneLine(kept.title, 60)} landed (${describeWorkLink(where)}), still ${kept.state === "verify" ? "to verify" : "for you"}`,
+          },
+          { landed: describeWorkLink(where) },
+          "landed",
+        );
+        recorded.push(kept.id);
+        continue;
+      }
       const next: WorkItem = withoutAsk({
         ...current,
         state: "done",
@@ -1516,7 +1552,146 @@ export function createWorkService(deps: WorkServiceDeps) {
       );
       landed.push(next.id);
     }
-    return { landed, checked };
+    return { landed, recorded, checked };
+  }
+
+  /** Whether an item's landing is linked already (a `deploy` link). */
+  function landedOnce(item: WorkItem): boolean {
+    return item.links.some((link) => link.kind === "deploy");
+  }
+
+  /**
+   * The checkout that holds a link's commit (a commit or landing link) or
+   * branch: the link's root, then the project's (workLinkRoots), then,
+   * on the deployed rule, this Roamgate's own; null when none does.
+   */
+  async function linkRepository(
+    link: WorkLink,
+    project: WorkProject | undefined,
+  ): Promise<WorkLinkRoot | null> {
+    const git = deps.git;
+    if (!git) return null;
+    let ask: string[];
+    if (link.kind === "branch") {
+      if (link.name.startsWith("-")) return null;
+      ask = ["rev-parse", "--verify", "--quiet", `${link.name}^{commit}`];
+    } else if (link.kind === "commit" || link.kind === "deploy") {
+      if (!/^[0-9a-f]{4,64}$/.test(link.sha)) return null;
+      ask = ["cat-file", "-e", `${link.sha}^{commit}`];
+    } else return null;
+    const places = workLinkRoots(link, project);
+    const own = project?.done.kind === "deployed" ? deps.ownRoot?.() : null;
+    if (own && !places.some((each) => each.path === own))
+      places.push({ path: own });
+    for (const place of places) {
+      const read = await git(place.path, ask, place.connectionId);
+      if (read.code === 0) return place;
+    }
+    return null;
+  }
+
+  /**
+   * `bridge.work.link_target`: where a commit, branch or landing link of
+   * an item is to be opened (its checkout, on its connection), or a
+   * plain error saying it is in none of the project's repositories.
+   */
+  async function linkTarget(params: Record<string, unknown>): Promise<{
+    connectionId: string | null;
+    root: string;
+  }> {
+    const item = itemOf(params.item);
+    const link = parseWorkLink(params.link);
+    if (link.kind === "deploy" && link.sha === "decision")
+      throw new WorkError("decisions ticked name no commit");
+    if (
+      link.kind !== "commit" &&
+      link.kind !== "branch" &&
+      link.kind !== "deploy"
+    )
+      throw new WorkError(
+        "only commit, branch and landing links have a repository",
+      );
+    const project = store.project(item.project);
+    const found = await linkRepository(link, project);
+    if (!found)
+      throw new WorkError(
+        link.kind === "branch"
+          ? `The branch ${oneLine(link.name, 80)} is not in any of the project's repositories`
+          : link.kind === "deploy"
+            ? "The landed commit is not in any of the project's repositories"
+            : "This commit is not in any of the project's repositories",
+        "not_found",
+      );
+    return {
+      connectionId: found.connectionId ?? deps.defaultConnection?.() ?? null,
+      root: found.path,
+    };
+  }
+
+  /** A commit or branch link without its checkout: the server finds it. */
+  function needsLinkRoots(item: WorkItem): boolean {
+    return (
+      !!deps.git &&
+      item.links.some(
+        (link) =>
+          (link.kind === "commit" || link.kind === "branch") && !link.root,
+      )
+    );
+  }
+
+  /** Links looked for and found nowhere, not looked for again. */
+  const rootless = new Set<string>();
+  let fills: Promise<unknown> = Promise.resolve();
+
+  function fillLinkRootsLater(id: string) {
+    fills = fills.then(() => fillLinkRoots(id)).catch(() => {});
+  }
+
+  /**
+   * Gives an item's commit and branch links the checkout that holds them
+   * (agents add them without one): written quietly, no history line, the
+   * item's time and author kept. True when a link changed.
+   */
+  async function fillLinkRoots(id: string): Promise<boolean> {
+    const item = store.item(id);
+    if (!item || !needsLinkRoots(item)) return false;
+    const project = store.project(item.project);
+    const found = new Map<string, WorkLink>();
+    for (const link of item.links) {
+      if ((link.kind !== "commit" && link.kind !== "branch") || link.root)
+        continue;
+      const key = `${item.project}\n${workLinkKey(link)}`;
+      if (rootless.has(key)) continue;
+      const where = await linkRepository(link, project);
+      if (!where) {
+        rootless.add(key);
+        continue;
+      }
+      found.set(workLinkKey(link), { ...link, root: where.path });
+    }
+    if (!found.size) return false;
+    // The item as it is now: written meanwhile, only the roots added.
+    const current = store.item(id);
+    if (!current) return false;
+    const links = mergeWorkLinks(
+      [],
+      current.links.map((link) =>
+        (link.kind === "commit" || link.kind === "branch") && !link.root
+          ? (found.get(workLinkKey(link)) ?? link)
+          : link,
+      ),
+    );
+    if (JSON.stringify(links) === JSON.stringify(current.links)) return false;
+    store.saveItem({ ...current, links });
+    push({ changed: ["item"], item: id, by: "agent" });
+    return true;
+  }
+
+  /** Every item's links without a checkout, looked for (at start). */
+  function backfillLinkRoots(): Promise<unknown> {
+    for (const item of store.items())
+      if (needsLinkRoots(item)) fillLinkRootsLater(item.id);
+    return fills;
   }
 
   /** Where a commit landed under the project's rule, or null. */
@@ -1624,6 +1799,7 @@ export function createWorkService(deps: WorkServiceDeps) {
   function start() {
     if (timers.length) return;
     seed();
+    void backfillLinkRoots();
     lastDeployed = deps.deployed?.() ?? null;
     void check().catch(() => {});
     timers.push(
@@ -1675,6 +1851,10 @@ export function createWorkService(deps: WorkServiceDeps) {
     sessionTarget,
     promote,
     check,
+    linkTarget,
+    backfillLinkRoots,
+    /** Settles once the links' checkouts being looked for are found. */
+    linkRootsFilled: () => fills,
     start,
     stop,
     /** For tests and the tools. */

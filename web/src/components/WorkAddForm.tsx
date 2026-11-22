@@ -12,8 +12,39 @@ const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 /** How many images an item is added with, at most. */
 export const WORK_ADD_IMAGES = 8;
 
-/** An image taken into the form, named in its text by a token. */
-export type WorkAddImage = { token: string; file: File };
+/**
+ * An image taken into the form, named in its text by a token: its bytes
+ * read when it is taken, as a comment box's are sent then. A picked file
+ * read only at Add can be unreadable by then (Chrome on Android drops
+ * the picker's grant), which failed the add with nothing said.
+ */
+export type WorkAddImage = {
+  token: string;
+  name: string;
+  type: string;
+  /** Base64. */
+  data: string;
+};
+
+/** An image taken into the form: checked, and read at once. */
+export async function takeWorkImage(
+  file: File,
+  token: string,
+): Promise<WorkAddImage> {
+  if (!file.type.startsWith("image/")) throw new Error("not an image");
+  if (file.size > IMAGE_MAX_BYTES)
+    throw new Error("an image is at most 10 MiB");
+  let data: string;
+  try {
+    data = await blobBase64(file);
+  } catch (cause) {
+    throw new Error(
+      `the image could not be read${cause instanceof Error && cause.message ? ` (${cause.message})` : ""}`,
+      { cause },
+    );
+  }
+  return { token, name: file.name, type: file.type, data };
+}
 
 /**
  * The Markdown for an image taken into the text: its token stands for
@@ -21,32 +52,26 @@ export type WorkAddImage = { token: string; file: File };
  */
 export function workImageMarkdown(image: WorkAddImage): string {
   const name =
-    image.file.name && image.file.name !== "image.png"
-      ? image.file.name.replace(/[[\]]/g, "")
+    image.name && image.name !== "image.png"
+      ? image.name.replace(/[[\]]/g, "")
       : "screenshot";
   return `![${name}](<${image.token}>)`;
 }
 
 /** What the add call carries: the text, and its images as base64. */
-export async function workAddPayload(
+export function workAddPayload(
   text: string,
   images: readonly WorkAddImage[],
-): Promise<{
+): {
   text?: string;
   images?: { token: string; type: string; data: string }[];
-}> {
+} {
   const kept = images.filter((image) => text.includes(image.token));
   return {
     ...(text.trim() ? { text: text.trim() } : {}),
     ...(kept.length
       ? {
-          images: await Promise.all(
-            kept.map(async (image) => ({
-              token: image.token,
-              type: image.file.type,
-              data: await blobBase64(image.file),
-            })),
-          ),
+          images: kept.map(({ token, type, data }) => ({ token, type, data })),
         }
       : {}),
   };
@@ -83,21 +108,19 @@ export function WorkAddForm({
   onCancel: () => void;
 }) {
   const [waiting, setWaiting] = useState("");
+  /** Why the add failed: stays until dismissed or added again. */
+  const [failed, setFailed] = useState("");
   const [busy, setBusy] = useState(false);
+  const taken = useRef(0);
   const text = useRef(initialText);
   const images = useRef<WorkAddImage[]>([]);
   const handle = useRef<CommentEditorHandle | null>(null);
   const [vim] = useState(vimKeys);
   const keepImage = async (file: File): Promise<string> => {
-    if (!file.type.startsWith("image/")) throw new Error("not an image");
-    if (file.size > IMAGE_MAX_BYTES)
-      throw new Error("an image is at most 10 MiB");
-    if (images.current.length >= WORK_ADD_IMAGES)
+    if (taken.current >= WORK_ADD_IMAGES)
       throw new Error(`at most ${WORK_ADD_IMAGES} images`);
-    const image = {
-      token: `work-image:${images.current.length + 1}`,
-      file,
-    };
+    const token = `work-image:${++taken.current}`;
+    const image = await takeWorkImage(file, token);
     images.current = [...images.current, image];
     return workImageMarkdown(image);
   };
@@ -109,9 +132,14 @@ export function WorkAddForm({
     }
     if (imageUploadPending(text.current)) return setWaiting(IMAGE_UPLOADING);
     setWaiting("");
+    setFailed("");
     setBusy(true);
     try {
-      await onAdd(await workAddPayload(text.current, images.current));
+      await onAdd(workAddPayload(text.current, images.current));
+    } catch (cause) {
+      setFailed(
+        `Not added: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
     } finally {
       setBusy(false);
     }
@@ -182,6 +210,18 @@ export function WorkAddForm({
             />
           </div>
         </div>
+        {failed ? (
+          <div className="assistant-error" role="alert">
+            <span>{failed}</span>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => setFailed("")}
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
         <div className="assistant-task-buttons">
           <button
             type="submit"

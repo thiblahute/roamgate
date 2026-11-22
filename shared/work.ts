@@ -391,6 +391,49 @@ export function workProjectForPaths<
   return null;
 }
 
+/** A checkout a link's commit or branch may be in, on its connection. */
+export type WorkLinkRoot = { connectionId?: string; path: string };
+
+/**
+ * Where a commit, branch or landing link is looked for, in order: the
+ * link's own root (on the connection of the project's root that holds
+ * it), then the project's roots, then the checkout of its branch rule.
+ * Each place once; the caller tries them (git) until one has it.
+ */
+export function workLinkRoots(
+  link: WorkLink,
+  project: Pick<WorkProject, "roots" | "done"> | null | undefined,
+): WorkLinkRoot[] {
+  const roots = project?.roots ?? [];
+  const out: WorkLinkRoot[] = [];
+  const seen = new Set<string>();
+  const put = (connectionId: string | undefined, raw: string) => {
+    const path = raw.length > 1 ? raw.replace(/\/+$/, "") : raw;
+    const key = `${connectionId ?? ""}\n${path}`;
+    if (!path || seen.has(key)) return;
+    seen.add(key);
+    out.push(connectionId ? { connectionId, path } : { path });
+  };
+  const own =
+    (link.kind === "commit" || link.kind === "branch") && link.root
+      ? link.root
+      : null;
+  if (own) {
+    let best: { connectionId: string; length: number } | null = null;
+    for (const root of roots)
+      if (
+        pathUnder(own, root.path) &&
+        (!best || root.path.length > best.length)
+      )
+        best = { connectionId: root.connectionId, length: root.path.length };
+    put(best?.connectionId, own);
+  }
+  for (const root of roots) put(root.connectionId, root.path);
+  if (project?.done.kind === "branch")
+    put(project.done.connectionId, project.done.root);
+  return out;
+}
+
 /**
  * Where a workspace stands on the board: its project (the one whose
  * coordinator is one of its panes, else the one whose root holds it),
@@ -840,10 +883,23 @@ export function readableWorkLink(
 }
 
 /**
+ * The states the done rule moves to done when the item's commit lands:
+ * doing and open. An item waiting on the user (verify, for you) stays
+ * where it is; the landing is only recorded (its `deploy` link).
+ */
+export const WORK_LANDING_DONE_STATES: readonly WorkState[] = ["doing", "open"];
+
+/** Whether a landing makes an item in this state done by itself. */
+export function workLandingMakesDone(state: WorkState): boolean {
+  return WORK_LANDING_DONE_STATES.includes(state);
+}
+
+/**
  * When a live item becomes done by itself ("Done when: ..."), for the
  * item's detail and the tools' answers; null when nothing watches it (no
  * commit nor decision link, or already done). Decisions count only when
- * they are the item's only links: a commit link rules.
+ * they are the item's only links: a commit link rules. An item in verify
+ * or for you never does: its landing is recorded, the user says done.
  */
 export function workDoneWhen(
   item: Pick<WorkItem, "state" | "links">,
@@ -858,6 +914,14 @@ export function workDoneWhen(
     : project.done.kind === "deployed"
       ? "this Roamgate's deployed build"
       : `${project.done.branch} in ${project.done.root}`;
+  if (!workLandingMakesDone(item.state)) {
+    const landed = item.links.some((link) => link.kind === "deploy");
+    const waits =
+      item.state === "verify" ? "the user verifies it" : "the user answers";
+    return landed
+      ? `when ${waits} and marks it done: it landed already, and stays ${item.state === "verify" ? "in Verify" : "For you"} until then`
+      : `when ${waits} and marks it done: its landing (${commits.length ? `its commit reaching ${where}` : "its decisions ticked"}) is only recorded, the item stays ${item.state === "verify" ? "in Verify" : "For you"}`;
+  }
   if (commits.length)
     return `${commits.length === 1 ? "its commit reaches" : "one of its commits reaches"} ${where}${decisions.length ? " (its decisions do not count: they rule only an item whose links are all decisions)" : ""}`;
   return `every decision is ticked (\`- [x] **Dn**\`, or its \`### Dn\` heading answered or decided) in the file${project?.done.kind === "branch" ? ` on ${project.done.branch}` : " as committed"}, or in the checkout's working tree (said uncommitted then)`;

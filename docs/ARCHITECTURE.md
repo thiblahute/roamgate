@@ -1811,7 +1811,19 @@ message of an agent's chat it came from: the session's address, its
 session id and the message's entry id). `history.jsonl` appends one line per
 change of an item (`{at, item, by, change}`), never capped. The
 `roamgate` project is seeded on the deployed rule with this checkout as
-its root.
+its root. A `commit` or `branch` link without a `root` gets one from the
+server: after any write, and for every item when the service starts, the
+checkouts of `workLinkRoots` (shared/work.ts: the link's own root, the
+project's roots, the branch rule's root; this Roamgate's checkout on the
+deployed rule) are tried in order (`git cat-file -e SHA^{commit}`, `git
+rev-parse --verify --quiet NAME^{commit}`), the first holding it written
+quietly (no history line, `updatedAt` kept); a link found nowhere is not
+looked for again until the server restarts. `link_target {item, link}`
+answers `{connectionId, root}` the same way for a commit, branch or
+landing link the page opens (its review in Changes: `SHA^..SHA`, or the
+branch against the default branch through `review.open`'s `head`), and
+refuses with "This commit is not in any of the project's repositories"
+(or the branch's) rather than git's error.
 
 Projects and workspaces (shared/work.ts, one implementation for the
 server and the page): `workProjectFamily` is a project and its
@@ -1971,7 +1983,10 @@ followed, before the next heading of its level, by a `**Answered ...**` or
 `server/src/work/service.ts`). A hit moves the item to `done` with a
 `deploy` link (`{sha: "decision", branch: "ticked"}`, or `"ticked,
 uncommitted"` when a tick came from the working tree only) and a push
-saying so. A commit link rules: decisions count only for an item whose
+saying so; only a `doing` or `open` item moves (`workLandingMakesDone`):
+one in `verify` or `you` waits on the user and keeps its state and ask,
+the hit only adding its `deploy` link (the card's **landed** chip), once,
+never again on later deploys. A commit link rules: decisions count only for an item whose
 links are all decisions. `workDoneWhen` (shared/work.ts) says the rule in
 a sentence, answered as `done_when` by the tools and shown as **Done
 when** in the item's detail.
@@ -1994,7 +2009,7 @@ connection, generation, workspace, pane and task, for the page to open its
 chat or its Background tasks sheet), `session_target {session}` (the same
 for any session's address: a `chat` link's, whose page shows the pane and
 then scrolls to `[data-entry-id]`, `openWorkChat` in `web/src/work.ts`),
-`check`. Every change is pushed to
+`link_target {item, link}`, `check`. Every change is pushed to
 every page as `{work: {changed: ["items" | "item" | "projects"], item?,
 by, summary?}}`. On the page, a card dragged to another column
 (`useWorkDrag`, WorkBoard.tsx: pointer events, a mouse after 6 px, a

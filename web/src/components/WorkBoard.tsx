@@ -68,7 +68,6 @@ import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
 import {
   shallowEqual,
   type State,
-  store,
   TASK_NOTIFICATION_ACTIVATE_EVENT,
   useStoreSelector,
 } from "../store";
@@ -492,6 +491,9 @@ export function useWorkMode({
   const { board: data, error, reload } = useWorkBoard();
   const reviews = useReviewState();
   const workspace = useWorkWorkspace();
+  const activeConnectionId = useStoreSelector(
+    (state) => state.activeConnectionId,
+  );
   const searchRef = useRef<HTMLInputElement>(null);
   const stateRef = useRef<HTMLSelectElement>(null);
   const tagsRef = useRef<HTMLInputElement>(null);
@@ -787,7 +789,7 @@ export function useWorkMode({
 
   /** A link's action, from the item's detail. */
   const openLink = useCallback(
-    (link: WorkLink) => {
+    (link: WorkLink, item?: string) => {
       switch (link.kind) {
         case "review": {
           const snapshot = reviews.sessions.get(link.id);
@@ -811,23 +813,28 @@ export function useWorkMode({
           setSelected(link.id);
           return;
         case "commit":
-          // Its review (`SHA^..SHA`), shown in Changes as Commits' is.
-          void import("../reviewOpen").then(async ({ openCommitReview }) => {
-            const sessionId = await openCommitReview(link.sha, {
-              ...(link.root ? { path: link.root } : {}),
-            });
-            const connectionId = store.get().activeConnectionId;
-            if (!sessionId || !connectionId) return;
-            requestReviewShown(connectionId, sessionId);
-            if (mobile) onClose({ keepFocus: true });
-          });
-          return;
         case "branch":
-          void navigator.clipboard?.writeText(link.name).catch(() => {});
+        case "deploy": {
+          // Its review (`SHA^..SHA`, a branch against the default one), in
+          // the checkout the server finds it in.
+          if (link.kind === "deploy" && link.sha === "decision") return;
+          if (!item) return;
+          setFailure(null);
+          void openWorkLinkReview(item, link, activeConnectionId)
+            .then((opened) => {
+              if (typeof opened === "string") setFailure(opened);
+              else if (opened) {
+                requestReviewShown(opened.connectionId, opened.sessionId);
+                if (mobile) onClose({ keepFocus: true });
+              }
+            })
+            .catch((cause) =>
+              setFailure(
+                cause instanceof Error ? cause.message : String(cause),
+              ),
+            );
           return;
-        case "deploy":
-          void navigator.clipboard?.writeText(link.sha).catch(() => {});
-          return;
+        }
         case "chat":
           void openWorkChat(link)
             .then((why) => {
@@ -844,7 +851,7 @@ export function useWorkMode({
           return;
       }
     },
-    [reviews.sessions, mobile, onClose, onOpenEffort],
+    [reviews.sessions, mobile, onClose, onOpenEffort, activeConnectionId],
   );
   /** What names the detail's links: efforts, requests, reviews, items. */
   const linkNames = useMemo<WorkLinkNames>(
@@ -1167,48 +1174,43 @@ export function useWorkMode({
             setAdding(false);
             back();
           }}
+          // A failure throws: the form says why, until dismissed.
           onAdd={async (params) => {
             setFailure(null);
-            try {
-              const { item } = await workCall<{ item: WorkItem }>(
-                "add",
-                workAddParams({
-                  ...params,
-                  project: addProject,
-                  ...(draft
+            const { item } = await workCall<{ item: WorkItem }>(
+              "add",
+              workAddParams({
+                ...params,
+                project: addProject,
+                ...(draft
+                  ? {
+                      owner: draft.owner,
+                      ...(draft.links ? { links: draft.links } : {}),
+                    }
+                  : {}),
+                // Where it was added: that workspace's tag, when it is
+                // one of the project's (a chat's: its pane's).
+                ...(draft
+                  ? { workspace: draftPlace(draft) }
+                  : workspace
                     ? {
-                        owner: draft.owner,
-                        ...(draft.links ? { links: draft.links } : {}),
+                        workspace: {
+                          connectionId: workspace.connectionId,
+                          workspaceId: workspace.workspaceId,
+                        },
                       }
                     : {}),
-                  // Where it was added: that workspace's tag, when it is
-                  // one of the project's (a chat's: its pane's).
-                  ...(draft
-                    ? { workspace: draftPlace(draft) }
-                    : workspace
-                      ? {
-                          workspace: {
-                            connectionId: workspace.connectionId,
-                            workspaceId: workspace.workspaceId,
-                          },
-                        }
-                      : {}),
-                }),
-              );
-              // Its detail, until the owner has sorted it (or the user
-              // leaves): the owner's title, tags, state and reply show up
-              // there as they come.
-              watchSeen.current = false;
-              setWatching(item);
-              setNotice(null);
-              setAdding(false);
-              setSelected(item.id);
-              setDetail(item.id);
-            } catch (cause) {
-              setFailure(
-                cause instanceof Error ? cause.message : String(cause),
-              );
-            }
+              }),
+            );
+            // Its detail, until the owner has sorted it (or the user
+            // leaves): the owner's title, tags, state and reply show up
+            // there as they come.
+            watchSeen.current = false;
+            setWatching(item);
+            setNotice(null);
+            setAdding(false);
+            setSelected(item.id);
+            setDetail(item.id);
           }}
         />
       ) : detailItem ? (
@@ -1228,7 +1230,7 @@ export function useWorkMode({
           onComposeDone={() => setCompose(null)}
           onBack={closeDetail}
           onOpenOwner={() => void openOwner(detailItem)}
-          onLink={openLink}
+          onLink={(link) => openLink(link, detailItem.id)}
           linkNames={linkNames}
           canOpenEffort={!!onOpenEffort}
           onState={(next) =>
@@ -1833,11 +1835,13 @@ function workLinkAction(link: WorkLink, canOpenEffort: boolean): string | null {
     case "commit":
       return "Review the commit in Changes";
     case "branch":
-      return "Copy the branch's name";
+      return "Review the branch in Changes";
     case "item":
       return "Open that item";
     case "deploy":
-      return link.sha === "decision" ? null : "Copy the commit's sha";
+      return link.sha === "decision"
+        ? null
+        : "Review the landed commit in Changes";
     case "decision":
       return null;
     case "chat":
@@ -1889,14 +1893,20 @@ function WorkLinkRow({
       ) : (
         <span className="work-link-open">{body}</span>
       )}
-      {link.kind === "commit" ? (
+      {link.kind === "commit" ||
+      link.kind === "branch" ||
+      (link.kind === "deploy" && link.sha !== "decision") ? (
         <button
           type="button"
           className="assistant-icon-button"
-          aria-label="Copy the sha"
-          title={`Copy ${link.sha.slice(0, 10)}`}
+          aria-label={
+            link.kind === "branch" ? "Copy the branch's name" : "Copy the sha"
+          }
+          title={`Copy ${link.kind === "branch" ? link.name : link.sha.slice(0, 10)}`}
           onClick={() =>
-            void navigator.clipboard?.writeText(link.sha).catch(() => {})
+            void navigator.clipboard
+              ?.writeText(link.kind === "branch" ? link.name : link.sha)
+              .catch(() => {})
           }
         >
           <Copy size={13} />
@@ -1904,6 +1914,36 @@ function WorkLinkRow({
       ) : null}
     </li>
   );
+}
+
+/** Where the server found a link's commit or branch (link_target). */
+export type WorkLinkTarget = { connectionId: string | null; root: string };
+
+/**
+ * A commit, branch or landing link of an item, reviewed in Changes: the
+ * server finds the checkout that holds it (the link's root, else the
+ * project's), the review opens there. Answers the review and its
+ * connection, or why it could not (the server's plain words, or another
+ * connection to switch to); a failed review open says so itself.
+ */
+export async function openWorkLinkReview(
+  item: string,
+  link: Extract<WorkLink, { kind: "commit" | "branch" | "deploy" }>,
+  activeConnectionId: string | null,
+): Promise<{ sessionId: string; connectionId: string } | string | null> {
+  const { target } = await workCall<{ target: WorkLinkTarget }>("link_target", {
+    item,
+    link,
+  });
+  if (!activeConnectionId) return "Roamgate is not connected to Herdr";
+  if (target.connectionId && target.connectionId !== activeConnectionId)
+    return `It is in ${target.root} on ${target.connectionId}: switch to that connection to review it`;
+  const { openBranchReview, openCommitReview } = await import("../reviewOpen");
+  const sessionId =
+    link.kind === "branch"
+      ? await openBranchReview(link.name, { path: target.root })
+      : await openCommitReview(link.sha, { path: target.root });
+  return sessionId ? { sessionId, connectionId: activeConnectionId } : null;
 }
 
 /** How long an added item waits to be sorted before the detail says so. */

@@ -559,22 +559,40 @@ describe("work service", () => {
       },
       { by: "user" },
     );
+    await service.linkRootsFilled();
     // No deployed build known: nothing moves.
-    expect(await service.check()).toEqual({ landed: [], checked: 3 });
+    expect(await service.check()).toEqual({
+      landed: [],
+      recorded: [],
+      checked: 3,
+    });
     deployed = "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111";
     const result = await service.check();
-    expect(result.landed.sort()).toEqual([landed.id, rebased.id].sort());
+    // The one in verify waits on the user: its landing is only recorded.
+    expect(result.landed).toEqual([rebased.id]);
+    expect(result.recorded).toEqual([landed.id]);
     const after = service.board().items;
     const landedNow = after.find((i) => i.id === landed.id)!;
-    expect(landedNow.state).toBe("done");
+    expect(landedNow.state).toBe("verify");
+    expect(landedNow.doneAt).toBeUndefined();
     expect(landedNow.links).toEqual([
-      { kind: "commit", sha: "aaaa1111" },
+      // The server found its checkout (Roamgate's own).
+      { kind: "commit", sha: "aaaa1111", root: "/home/me/roamgate" },
       { kind: "deploy", sha: deployed },
     ]);
     expect(after.find((i) => i.id === rebased.id)!.state).toBe("done");
     expect(after.find((i) => i.id === unrelated.id)!.state).toBe("open");
     expect(after.find((i) => i.id === lost.id)!.state).toBe("open");
-    expect(pushes.filter((p) => p.summary?.includes("landed")).length).toBe(2);
+    expect(
+      pushes.filter((p) => p.summary?.includes("landed")).map((p) => p.summary),
+    ).toEqual([
+      "Landed landed (landed aaaa1111aa), still to verify",
+      "Rebased landed (landed aaaa1111aa)",
+    ]);
+    // Recorded once: a later deploy adds no other landing.
+    deployed = "eeee1111eeee1111eeee1111eeee1111eeee1111";
+    expect((await service.check()).recorded).toEqual([]);
+    expect(service.store.item(landed.id)!.links.length).toBe(2);
     expect(
       calls.some((c) => c[0] === "/home/me/roamgate" && c[1] === "merge-base"),
     ).toBe(true);
@@ -609,8 +627,11 @@ describe("work service", () => {
       { by: "user" },
     );
     const result = await service.check();
-    expect(result.landed).toEqual([item.id]);
-    expect(calls[0]).toEqual({
+    // In verify: recorded, not done (the branch rule's root is asked).
+    expect(result.landed).toEqual([]);
+    expect(result.recorded).toEqual([item.id]);
+    expect(service.store.item(item.id)!.state).toBe("verify");
+    expect(calls.find((call) => call.args[0] === "merge-base")).toEqual({
       root: "/Users/me/2.0/gstreamer",
       args: ["merge-base", "--is-ancestor", "abcd1234", "origin/main"],
       connectionId: "mac",
@@ -620,6 +641,224 @@ describe("work service", () => {
       sha: "abcd1234",
       branch: "origin/main",
     });
+  });
+
+  test("a commit or branch link opens in the checkout that holds it: its root, else the project's roots; else a plain error", async () => {
+    // Two checkouts: the commit is in the second, the branch in the first.
+    const has: Record<string, string[]> = {
+      "/g/2.0/gstreamer": ["refs:feature"],
+      "/g/gstreamer2.worktrees/caps": ["abcd1234"],
+    };
+    const calls: { root: string; args: string[]; connectionId?: string }[] = [];
+    const git: WorkGit = async (root, args, connectionId) => {
+      calls.push({ root, args, connectionId });
+      const held = has[root] ?? [];
+      if (args[0] === "cat-file")
+        return {
+          code: held.some((sha) => args[2] === `${sha}^{commit}`) ? 0 : 128,
+          stdout: "",
+        };
+      if (args[0] === "rev-parse" && args[1] === "--verify")
+        return {
+          code: held.includes(`refs:${args[3]!.replace("^{commit}", "")}`)
+            ? 0
+            : 1,
+          stdout: "",
+        };
+      return { code: 1, stdout: "" };
+    };
+    const { service } = setup({ git });
+    service.projectSet(
+      {
+        name: "gst2",
+        roots: [
+          { connectionId: "desktop", path: "/g/2.0/gstreamer" },
+          { connectionId: "desktop", path: "/g/gstreamer2.worktrees/caps" },
+          { connectionId: "desktop", path: "/g/not-a-repo" },
+        ],
+        done: { kind: "branch", root: "/g/2.0/gstreamer", branch: "main" },
+      },
+      { by: "user" },
+    );
+    // Added by an agent without roots: the server fills them in, quietly.
+    const item = await service.add(
+      {
+        project: "gst2",
+        title: "Caps",
+        state: "doing",
+        links: [
+          { kind: "commit", sha: "abcd1234", subject: "caps: fix" },
+          { kind: "branch", name: "feature" },
+          { kind: "commit", sha: "eeee9999" },
+        ],
+      },
+      { by: "agent" },
+    );
+    await service.linkRootsFilled();
+    expect(service.store.item(item.id)!.links).toEqual([
+      {
+        kind: "commit",
+        sha: "abcd1234",
+        subject: "caps: fix",
+        root: "/g/gstreamer2.worktrees/caps",
+      },
+      { kind: "branch", name: "feature", root: "/g/2.0/gstreamer" },
+      // In none of them: left as it was, not looked for again.
+      { kind: "commit", sha: "eeee9999" },
+    ]);
+    const lookups = calls.filter(
+      (call) => call.args.join(" ") === "cat-file -e eeee9999^{commit}",
+    ).length;
+    expect(lookups).toBe(3);
+    await service.update({ item: item.id, add_tags: ["x"] }, { by: "agent" });
+    await service.linkRootsFilled();
+    expect(
+      calls.filter(
+        (call) => call.args.join(" ") === "cat-file -e eeee9999^{commit}",
+      ).length,
+    ).toBe(lookups);
+    // Opening them: the checkout, on its connection.
+    const links = service.store.item(item.id)!.links;
+    expect(await service.linkTarget({ item: item.id, link: links[0] })).toEqual(
+      { connectionId: "desktop", root: "/g/gstreamer2.worktrees/caps" },
+    );
+    // A link without a root (an old one) is found among the roots too.
+    expect(
+      await service.linkTarget({
+        item: item.id,
+        link: { kind: "commit", sha: "abcd1234" },
+      }),
+    ).toEqual({
+      connectionId: "desktop",
+      root: "/g/gstreamer2.worktrees/caps",
+    });
+    expect(
+      await service.linkTarget({
+        item: item.id,
+        link: { kind: "deploy", sha: "abcd1234", branch: "main" },
+      }),
+    ).toEqual({
+      connectionId: "desktop",
+      root: "/g/gstreamer2.worktrees/caps",
+    });
+    expect(
+      await service.linkTarget({
+        item: item.id,
+        link: { kind: "branch", name: "feature" },
+      }),
+    ).toEqual({ connectionId: "desktop", root: "/g/2.0/gstreamer" });
+    // In none: said plainly, never git's own words.
+    await expect(
+      service.linkTarget({ item: item.id, link: links[2] }),
+    ).rejects.toThrow(
+      "This commit is not in any of the project's repositories",
+    );
+    await expect(
+      service.linkTarget({
+        item: item.id,
+        link: { kind: "branch", name: "gone" },
+      }),
+    ).rejects.toThrow(
+      "The branch gone is not in any of the project's repositories",
+    );
+    await expect(
+      service.linkTarget({
+        item: item.id,
+        link: { kind: "pr", url: "https://x/1" },
+      }),
+    ).rejects.toThrow(/only commit, branch and landing links/);
+    // Through the RPC as the board asks.
+    expect(
+      await handleWorkRpc(service, "bridge.work.link_target", {
+        item: item.id,
+        link: { kind: "branch", name: "feature" },
+      }),
+    ).toEqual({
+      target: { connectionId: "desktop", root: "/g/2.0/gstreamer" },
+    });
+  });
+
+  test("existing items' commit links without a root get one when the service starts (the deployed rule: this Roamgate's checkout)", async () => {
+    const directory = dir();
+    const before = createWorkService({
+      store: openWorkStore(directory),
+      defaultConnection: () => "desktop",
+      ownRoot: () => "/home/me/roamgate",
+    });
+    // Written before roots were filled (no git then): the gaming item.
+    const old = await before.add(
+      {
+        title: "Gaming",
+        state: "done",
+        links: [
+          {
+            kind: "commit",
+            sha: "85bbb76eafbcb5973af4f8070bbebb500dcdded5",
+          },
+          { kind: "branch", name: "up/voice-setup" },
+        ],
+      },
+      { by: "agent" },
+    );
+    const git: WorkGit = async (root, args) => ({
+      code: root === "/home/me/roamgate" && args[0] !== "merge-base" ? 0 : 1,
+      stdout: "",
+    });
+    const after = createWorkService({
+      store: openWorkStore(directory),
+      defaultConnection: () => "desktop",
+      ownRoot: () => "/home/me/roamgate",
+      git,
+    });
+    await after.backfillLinkRoots();
+    expect(after.store.item(old.id)!.links).toEqual([
+      {
+        kind: "commit",
+        sha: "85bbb76eafbcb5973af4f8070bbebb500dcdded5",
+        root: "/home/me/roamgate",
+      },
+      { kind: "branch", name: "up/voice-setup", root: "/home/me/roamgate" },
+    ]);
+    // Its time and author kept: a repair, not a change.
+    expect(after.store.item(old.id)!.updatedAt).toBe(old.updatedAt);
+  });
+
+  test("an item for you whose commit lands stays for you, its landing recorded; an open one goes done", async () => {
+    const git: WorkGit = async (_root, args) => ({
+      code: args[0] === "merge-base" || args[0] === "cat-file" ? 0 : 1,
+      stdout: "",
+    });
+    const deployed = "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111";
+    const { service } = setup({ git, deployed: () => deployed });
+    const asked = await service.add(
+      {
+        title: "Try it",
+        state: "you",
+        ask: "Try the light voice",
+        links: [{ kind: "commit", sha: "aaaa1111" }],
+      },
+      { by: "user" },
+    );
+    const open = await service.add(
+      {
+        title: "Plain",
+        state: "open",
+        links: [{ kind: "commit", sha: "aaaa1111" }],
+      },
+      { by: "user" },
+    );
+    const result = await service.check();
+    expect(result).toEqual({
+      landed: [open.id],
+      recorded: [asked.id],
+      checked: 2,
+    });
+    const kept = service.store.item(asked.id)!;
+    expect(kept.state).toBe("you");
+    // Its ask stays: the user still has to answer.
+    expect(kept.ask).toBe("Try the light voice");
+    expect(kept.links.at(-1)).toEqual({ kind: "deploy", sha: deployed });
+    expect(service.store.item(open.id)!.state).toBe("done");
   });
 
   test("a decision link is done once its box is ticked on the project's branch", async () => {

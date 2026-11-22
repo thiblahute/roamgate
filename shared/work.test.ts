@@ -11,6 +11,9 @@ import {
   workPrRef,
   workQueryWithTag,
   workAskOf,
+  workDoneWhen,
+  workLandingMakesDone,
+  workLinkRoots,
   workStateAsks,
   workTagCompletions,
   type WorkProject,
@@ -403,4 +406,68 @@ test("a filter by a project's tree", () => {
       projects: workProjectFamily(projects, "gstreamer"),
     }).map((each) => each.id),
   ).toEqual(["a", "b"]);
+});
+
+test("a link's checkouts, in order: its own root (on the connection of the project's root holding it), the project's roots, the branch rule's", () => {
+  const project: Pick<WorkProject, "roots" | "done"> = {
+    roots: [
+      { connectionId: "desktop", path: "/g/2.0/" },
+      { connectionId: "mac", path: "/Users/me/2.0" },
+    ],
+    done: {
+      kind: "branch",
+      root: "/g/2.0/gstreamer",
+      branch: "main",
+      connectionId: "desktop",
+    },
+  };
+  expect(
+    workLinkRoots(
+      { kind: "commit", sha: "abcd1234", root: "/g/2.0/gstreamer" },
+      project,
+    ),
+  ).toEqual([
+    { connectionId: "desktop", path: "/g/2.0/gstreamer" },
+    { connectionId: "desktop", path: "/g/2.0" },
+    { connectionId: "mac", path: "/Users/me/2.0" },
+  ]);
+  // No root: the project's; a deploy link has none of its own.
+  expect(workLinkRoots({ kind: "deploy", sha: "abcd1234" }, project)).toEqual([
+    { connectionId: "desktop", path: "/g/2.0" },
+    { connectionId: "mac", path: "/Users/me/2.0" },
+    { connectionId: "desktop", path: "/g/2.0/gstreamer" },
+  ]);
+  // A root outside every project root: its connection unknown.
+  expect(
+    workLinkRoots({ kind: "branch", name: "x", root: "/elsewhere" }, null),
+  ).toEqual([{ path: "/elsewhere" }]);
+});
+
+test("done when: doing and open items go done when their commit lands; verify and for you only record it", () => {
+  const project = { done: { kind: "deployed" as const } };
+  const commit: WorkLink = { kind: "commit", sha: "abcd1234" };
+  expect(workLandingMakesDone("doing")).toBe(true);
+  expect(workLandingMakesDone("open")).toBe(true);
+  expect(workLandingMakesDone("verify")).toBe(false);
+  expect(workLandingMakesDone("you")).toBe(false);
+  expect(workDoneWhen({ state: "doing", links: [commit] }, project)).toBe(
+    "its commit reaches this Roamgate's deployed build",
+  );
+  expect(workDoneWhen({ state: "verify", links: [commit] }, project)).toBe(
+    "when the user verifies it and marks it done: its landing (its commit reaching this Roamgate's deployed build) is only recorded, the item stays in Verify",
+  );
+  expect(
+    workDoneWhen(
+      {
+        state: "verify",
+        links: [commit, { kind: "deploy", sha: "abcd1234" }],
+      },
+      project,
+    ),
+  ).toBe(
+    "when the user verifies it and marks it done: it landed already, and stays in Verify until then",
+  );
+  expect(workDoneWhen({ state: "you", links: [commit] }, project)).toContain(
+    "the item stays For you",
+  );
 });
