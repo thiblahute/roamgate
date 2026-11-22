@@ -616,15 +616,17 @@ Inspector state is scoped to each checkout; see
   its last few finished ones do, one line each, in plain words: the file read
   or edited, the agent a message went to, the review thread answered, the
   tools loaded; MCP tools go by readable names such as "Spotify: search").
-  What an agent writes in Roamgate's threads (a reply, a new thread or
-  review comment, an edit), through its tools or `roamgate-review` in a
-  shell, shows as its own tool row even in a collapsed block: the call's
-  `description` (the short words the agent gave it), else where it went and
-  the first words ("Replied on "the header bar" · Fixed..."); opened, the
-  row shows the words written, and its link opens the thread's review where
-  it lives. So the agent does not repeat its answers in the chat, and the
-  voice companion reads none of these rows: a turn that only answered in
-  threads is read as "Answered 2 threads." The chat has
+  What an agent writes in Roamgate (a reply, a new thread or review
+  comment, an edit, a Work item added, moved, retitled or marked done),
+  through its tools or `roamgate-review` in a shell, shows as its own tool
+  row even in a collapsed block: the call's `description` (the short words
+  the agent gave it), else where it went and the first words ("Replied on
+  Work: Inspector header bar · Right: splitting...", "Moved "Kokoro
+  voices" to Verify"); opened, the row shows the words written, and its
+  link opens the thread's review where it lives, or the item on the Work
+  board. Agents are told not to repeat these in the chat, and the voice
+  companion reads none of these rows: a turn that only answered in threads
+  is read as "Answered 2 threads." The chat has
   a message box that types into the agent's terminal and shares the
   pane's terminal composer draft. Paste images or use
   **Add images** to choose them on desktop or mobile; the box shows each as

@@ -472,3 +472,33 @@ test("what the model gets wrong is said back before any request", () => {
     expect(tool.command).toMatch(/^[a-z_]+$/);
   }
 });
+
+test("the writing tools take a description for the chat, never sent", () => {
+  const writing = [
+    "review_reply",
+    "review_add",
+    "review_edit",
+    "review_working",
+    "work_add",
+    "work_update",
+    "work_done",
+    "work_reopen",
+  ];
+  for (const name of writing) {
+    const schema = roamgateTool(name)!.inputSchema as {
+      properties: Record<string, { type: string; description: string }>;
+    };
+    expect(schema.properties.description?.type).toBe("string");
+    expect(schema.properties.description?.description).toContain(
+      "the user's chat shows it",
+    );
+  }
+  // A review tool's request leaves it out: Roamgate's server never reads it.
+  const reply = toolRequest(
+    roamgateTool("review_reply")!,
+    { comment_id: "a1b2c3d4", text: "Done", description: "Say it is done" },
+    IDENTITY,
+  ).body;
+  expect(reply).not.toHaveProperty("description");
+  expect(reply).toMatchObject({ comment: "a1b2c3d4", text: "Done" });
+});

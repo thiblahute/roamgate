@@ -1,6 +1,6 @@
 import type { HistoryEntry } from "./components/agentHistory";
 import { parseVoiceMessage } from "../../shared/voiceMessage";
-import { roamgateWrite } from "../../shared/toolSummary";
+import { isThreadWrite, roamgateWrite } from "../../shared/toolSummary";
 import { roamgateLocalStorage } from "./browserStorage";
 import {
   DEFAULT_SPEECH_RATE,
@@ -1045,10 +1045,10 @@ export function replyEntriesAfter(
 }
 
 /**
- * What the agent wrote in Roamgate's threads in answer to the message
- * sent, in a few words ("Answered 2 threads."): the chat shows each as a
- * row of its own, and the agent does not repeat them in the chat. Null
- * when it wrote in none.
+ * What the agent wrote in Roamgate in answer to the message sent, in a few
+ * words ("Answered 2 threads.", "Updated a Work item."): the chat shows
+ * each as a row of its own, and the agent does not repeat them in the
+ * chat. Null when it wrote nothing there.
  */
 export function threadWritesSaid(
   entries: readonly HistoryEntry[],
@@ -1056,18 +1056,34 @@ export function threadWritesSaid(
 ): string | null {
   const start = turnStart(entries, sentText);
   if (start < 0) return null;
-  const count = entries
-    .slice(start + 1)
-    .filter(
-      (entry) =>
-        entry.kind === "tool_call" &&
-        (entry.roamgate_write ??
-          (entry.text && entry.tool_name
-            ? roamgateWrite(entry.tool_name, entry.text)
-            : undefined)),
-    ).length;
-  if (!count) return null;
-  return count === 1 ? "Answered a thread." : `Answered ${count} threads.`;
+  let threads = 0;
+  let items = 0;
+  for (const entry of entries.slice(start + 1)) {
+    if (entry.kind !== "tool_call") continue;
+    const write =
+      entry.roamgate_write ??
+      (entry.text && entry.tool_name
+        ? roamgateWrite(entry.tool_name, entry.text)
+        : undefined);
+    if (!write) continue;
+    if (isThreadWrite(write)) threads += 1;
+    else items += 1;
+  }
+  const parts = [
+    threads === 1
+      ? "answered a thread"
+      : threads
+        ? `answered ${threads} threads`
+        : "",
+    items === 1
+      ? "updated a Work item"
+      : items
+        ? `updated ${items} Work items`
+        : "",
+  ].filter(Boolean);
+  if (!parts.length) return null;
+  const said = parts.join(" and ");
+  return `${said[0]!.toUpperCase()}${said.slice(1)}.`;
 }
 
 /**

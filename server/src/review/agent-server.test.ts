@@ -296,6 +296,9 @@ test("the agent loop: open, discuss, watch, reply, resolve", async () => {
     "reply",
     "--comment",
     question.id.slice(0, 5),
+    // For the chat's row only: the server reads none of it.
+    "--description",
+    "Say why it is static",
     "It",
     "is",
     "file-local",
@@ -304,6 +307,7 @@ test("the agent loop: open, discuss, watch, reply, resolve", async () => {
     author: "Claude",
     text: "It is file-local",
   });
+  expect(answer.stdout).not.toContain("Say why it is static");
   const resolved = await run(s, ["resolve", "--comment", question.id]);
   expect(resolved.json.resolved).toBe(true);
   const reopened = await run(s, ["reopen", "--comment", question.id]);

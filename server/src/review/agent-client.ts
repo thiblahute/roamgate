@@ -93,6 +93,12 @@ def common_options(target, default=None):
     )
 
 
+DESCRIPTION_HELP = (
+    "what this call does, in a few plain words: the user's chat shows it "
+    "as the call's row, so you do not say it there"
+)
+
+
 def parser():
     # --session and --agent work before or after the command; given after
     # it, they win, and unset they keep what was given before.
@@ -159,6 +165,7 @@ def parser():
         "--on-comment",
         help="a comment's id (a work item's description_comment): the thread goes on its part --quote reads",
     )
+    a.add_argument("--description", help=DESCRIPTION_HELP)
     a.add_argument("text", nargs="*", help="text, or - for standard input")
 
     for name, helptext in (
@@ -167,6 +174,7 @@ def parser():
     ):
         c = sub.add_parser(name, help=helptext)
         c.add_argument("--comment", required=True, help="comment or thread id (prefix ok)")
+        c.add_argument("--description", help=DESCRIPTION_HELP)
         c.add_argument("text", nargs="*", help="text, or - for standard input")
 
     d = sub.add_parser("delete", help="delete one of your comments")
@@ -190,6 +198,7 @@ def parser():
     k.add_argument("--comment", help="the thread you are working on (comment or thread id)")
     k.add_argument("--message", help="what you are doing, shown to the user")
     k.add_argument("--done", action="store_true")
+    k.add_argument("--description", help=DESCRIPTION_HELP)
 
     u = sub.add_parser("update", help="say what changed")
     u.add_argument("--message", required=True)
@@ -270,6 +279,7 @@ def parser():
     )
     wk.add_argument("tool", help="work_list, work_add, work_update, work_done, work_reopen, work_adopt, work_project, help")
     wk.add_argument("params", nargs="?", help="a JSON object, or - for standard input")
+    wk.add_argument("--description", help=DESCRIPTION_HELP)
 
     q = sub.add_parser(
         "permission",

@@ -2143,6 +2143,56 @@ test("free text the user adds from a session's chat is that session's to sort, n
 });
 
 describe("work tools and rpc", () => {
+  test("a call's description is for the user's chat: taken, never kept", async () => {
+    const { service } = setup();
+    const json = (answer: string) => JSON.parse(answer.split("\n")[1]!);
+    const added = json(
+      await workTool(
+        service,
+        "work_add",
+        { title: "Fix the bar", description: "Add the bar fix" },
+        "Claude",
+      ),
+    );
+    const moved = json(
+      await workTool(
+        service,
+        "work_update",
+        {
+          item: added.item.id,
+          state: "doing",
+          description: "Take the bar fix",
+        },
+        "Claude",
+      ),
+    );
+    expect(moved.item).toMatchObject({ title: "Fix the bar", state: "doing" });
+    await workTool(
+      service,
+      "work_done",
+      { item: added.item.id, description: "Mark it done" },
+      "Claude",
+    );
+    await workTool(
+      service,
+      "work_reopen",
+      { item: added.item.id, description: "Take it back" },
+      "Claude",
+    );
+    const item = service.store.item(added.item.id)!;
+    expect(JSON.stringify(item)).not.toContain("Take it back");
+    expect(JSON.stringify(item)).not.toContain("Add the bar fix");
+    // Still checked: too long is refused.
+    await expect(
+      workTool(
+        service,
+        "work_update",
+        { item: added.item.id, description: "x".repeat(201) },
+        "Claude",
+      ),
+    ).rejects.toThrow(/invalid work_update/);
+  });
+
   test("the user's tools write in their name: words for its owner to sort, comments and answers that reach it", async () => {
     const { service, reviews } = setup();
     service.projectSet(

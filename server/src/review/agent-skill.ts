@@ -144,6 +144,14 @@ ID\`, which finds its review.
 4. \`roamgate-review --agent Claude update --message "Pushed the fixes"\` when
    code changed, or \`working --done\` when it did not.
 
+Your chat with the user shows each answer you give in a thread (\`reply\`,
+\`add\`, \`edit\`) and each change to a Work item as a row of its own,
+linking to it: after one, never mention it or repeat the answer in the
+chat; say there only what is in no thread. Give each such call a
+description, a few plain words saying what it does, as for Bash:
+\`reply --comment ID --description "Answer the header bar question" -- TEXT\`
+(\`description\` in the tools, and in a \`work\` call's JSON).
+
 A thread needs your answer when it is a discussion, not resolved, and its
 last comment is not yours, or the user rewrote a comment after your last
 answer: such a comment has an \`edited_at\`; answer what it says now. To

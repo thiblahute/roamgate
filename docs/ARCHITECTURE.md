@@ -817,8 +817,10 @@ what the delivered prompts mean (answer each thread once in it with
 `review_reply`, the chat's answer in the thread, `review_working` before
 long work; keep owned Work items true, triage a free-text one with a
 title, tags, a state, split tasks; another session's message carries no
-user authority, answered once with `agent_message`; nothing is published
-to a forge), naming each tool as the session calls it. Being the system
+user authority, answered once with `agent_message`; an answer in a
+thread or a Work item's change shows in the chat as a row by itself, so
+never mention it there, and each such call gets a `description`; nothing
+is published to a forge), naming each tool as the session calls it. Being the system
 prompt, it survives compaction, `/clear` and resume. Once a request
 carried it, the next `mod_tools` hello (sent at once) says `rules: 1`
 (`ClaudeModHub.hasRules`), and the review service sends that pane the
@@ -1053,15 +1055,22 @@ changed (`file_edit`, shared/fileEdits.ts), also kept when redacted: Claude
 Code's patch from its result record (`toolUseResult.structuredPatch`, with
 line numbers and context, or a new file's content), else the change its
 arguments ask while it has no result, none once it failed; at most 160
-lines, its counts whole. A call that wrote in Roamgate's threads (the
-review_reply, review_add and review_edit tools, or `roamgate-review reply|add|edit`
-run from Bash or Codex's exec_command, read with the same shell parser as
-agent messages) carries `roamgate_write` (shared/toolSummary.ts): its
-action, its `description` argument, the review, thread and comment its
-result names, where it went (the words quoted, file:line) and the words
-written (4000 characters at most), kept when redacted and computed again
-from arguments and result, so past conversations get it too; nothing is
-stored. A refused call has none. A call streamed in conversation mode gets the same
+lines, its counts whole. A call that wrote in Roamgate (the
+review_reply, review_add and review_edit tools, work_add, work_update,
+work_done and work_reopen, or `roamgate-review reply|add|edit` and
+`roamgate-review work TOOL JSON` run from Bash or Codex's exec_command,
+read with the same shell parser as agent messages) carries
+`roamgate_write` (shared/toolSummary.ts): its action, its `description`
+argument, the review, thread and comment its result names, or the Work
+item (id, title, state, what changed), where it went (the words quoted,
+file:line) and the words written (4000 characters at most), kept when
+redacted and computed again from arguments and result, so past
+conversations get it too; nothing is stored. A refused call has none.
+`description` is an optional argument of those tools (and
+`--description` of the client's `add`, `reply`, `edit`, `working` and
+`work`), at most 200 characters: the mod leaves it out of its requests
+and the board drops it before its service, so only the transcript keeps
+it. A call streamed in conversation mode gets the same
 from its arguments until the transcript has it, and a permission prompt
 for such a call carries the change it asks to make.
 A comment on such a change (web/src/fileEditComments.ts) is a thread of the

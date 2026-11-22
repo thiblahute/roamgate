@@ -173,6 +173,18 @@ describe("voice chat text", () => {
         "answer them",
       ),
     ).toBe("Both fixed.");
+    // A Work item's change is said apart.
+    const moved = entry("tool", "", "tool_call", {
+      id: "c",
+      tool_name: "mcp__roamgate__work_update",
+      roamgate_write: { action: "item_update", item: "1" },
+    });
+    expect(replyAfter([asked, moved], "answer them")).toBe(
+      "Updated a Work item.",
+    );
+    expect(replyAfter([asked, reply("a"), live, moved], "answer them")).toBe(
+      "Answered 2 threads and updated a Work item.",
+    );
     // Other calls are no answer.
     expect(
       replyAfter(

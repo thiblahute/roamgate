@@ -279,6 +279,16 @@ function roamgateSummary(
     }
     case "agent_sessions":
       return "Listed sessions";
+    case "work_add":
+    case "work_update":
+    case "work_done":
+    case "work_reopen": {
+      const output = context.result
+        ? roamgateOutput(context.result)
+        : undefined;
+      const write = workWrite(tool, args, output);
+      return write ? itemWriteLine(write) : undefined;
+    }
     default:
       return undefined;
   }
@@ -316,6 +326,7 @@ const CLIENT_VALUES = new Set([
   "--title",
   "--description",
   "--timeout",
+  "--on-comment",
 ]);
 
 /**
@@ -396,6 +407,7 @@ export function reviewClientCall(
       set("end_line", line("--end-line"));
       set("side", option("--side"));
       set("quote", option("--quote"));
+      set("on_comment", option("--on-comment"));
       return { tool: "review_add", args };
     case "working":
       set("comment_id", option("--comment"));
@@ -419,6 +431,21 @@ export function reviewClientCall(
       set("title", option("--title"));
       set("text", text);
       return { tool: "review_notify", args };
+    case "work": {
+      // `work TOOL 'JSON'`, or its JSON on standard input.
+      const [tool, params] = positional;
+      if (!tool) return undefined;
+      const parsed = parseToolArguments(
+        params === undefined || params === "-" ? (heredoc ?? "{}") : params,
+      );
+      return {
+        tool,
+        args: {
+          ...(isArgumentObject(parsed) ? parsed : {}),
+          ...(args.description ? { description: args.description } : {}),
+        },
+      };
+    }
     default:
       return undefined;
   }
@@ -449,8 +476,24 @@ export function roamgateToolCall(
     : undefined;
 }
 
-/** What a call wrote in Roamgate: a comment in a thread. */
-export type RoamgateWriteAction = "reply" | "comment" | "draft" | "edit";
+/**
+ * What a call wrote in Roamgate: a comment in a thread, or a Work item
+ * added or changed.
+ */
+export type RoamgateWriteAction =
+  | "reply"
+  | "comment"
+  | "draft"
+  | "edit"
+  | "item_add"
+  | "item_update"
+  | "item_done"
+  | "item_reopen";
+
+/** The actions that wrote in a thread (the others changed a Work item). */
+export function isThreadWrite(write: RoamgateWrite): boolean {
+  return !write.action.startsWith("item_");
+}
 
 /**
  * What a call wrote in Roamgate, read from its arguments and its result:
@@ -467,6 +510,12 @@ export type RoamgateWrite = {
   comment?: string;
   /** Where it went, in a few words: the words quoted, file:line. */
   where?: string;
+  /** The Work item it added or changed: its id, its title, its state. */
+  item?: string;
+  title?: string;
+  state?: string;
+  /** What a Work item's change did, in a few words ("moved to Verify"). */
+  change?: string;
   /** The words written, up to ROAMGATE_WRITE_TEXT_LIMIT characters. */
   text?: string;
   /** Longer than that: the call's arguments have it whole. */
@@ -557,7 +606,122 @@ export function roamgateWrite(
   const call = roamgateToolCall(name, input);
   if (!call) return undefined;
   const output = result?.text ? roamgateOutput(result.text) : undefined;
-  return reviewWrite(call.tool, call.args, output);
+  return (
+    reviewWrite(call.tool, call.args, output) ??
+    workWrite(call.tool, call.args, output)
+  );
+}
+
+/** How the Work board names a state. */
+const WORK_STATE_NAMES: Record<string, string> = {
+  you: "For you",
+  doing: "Doing",
+  verify: "Verify",
+  open: "Open",
+  done: "Done",
+};
+
+function stateName(state: unknown): string | undefined {
+  const name = nonEmptyString(state);
+  return name ? (WORK_STATE_NAMES[name] ?? name) : undefined;
+}
+
+/** What a work_update did, in a few words, from its arguments. */
+function itemChange(args: Record<string, unknown>): string | undefined {
+  const parts: string[] = [];
+  const state = stateName(args.state);
+  if (state) parts.push(`moved to ${state}`);
+  const title = nonEmptyString(args.title);
+  if (title) parts.push(`retitled "${start(title)}"`);
+  if (nonEmptyString(args.text)) parts.push("rewrote its description");
+  const tick = Array.isArray(args.tick)
+    ? args.tick.filter(isArgumentObject)
+    : [];
+  const ticked = tick
+    .map((each) => nonEmptyString(each.decision))
+    .filter((each): each is string => !!each);
+  if (ticked.length) parts.push(`ticked ${ticked.join(", ")}`);
+  if (args.owner === null) parts.push("left it");
+  else if (isArgumentObject(args.owner)) parts.push("took it");
+  if (
+    Array.isArray(args.add_links) ||
+    Array.isArray(args.links) ||
+    Array.isArray(args.remove_links)
+  )
+    parts.push("changed its links");
+  if (
+    Array.isArray(args.tags) ||
+    Array.isArray(args.add_tags) ||
+    Array.isArray(args.remove_tags)
+  )
+    parts.push("changed its tags");
+  return parts.length ? parts.join(", ") : undefined;
+}
+
+/** A Work board tool's write, from its arguments and its output. */
+function workWrite(
+  tool: string,
+  args: Record<string, unknown>,
+  output: Record<string, unknown> | undefined,
+): RoamgateWrite | undefined {
+  const actions: Record<string, RoamgateWriteAction> = {
+    work_add: "item_add",
+    work_update: "item_update",
+    work_done: "item_done",
+    work_reopen: "item_reopen",
+  };
+  const action = actions[tool];
+  if (!action) return undefined;
+  const item = isArgumentObject(output?.item) ? output.item : undefined;
+  const id = nonEmptyString(item?.id) ?? nonEmptyString(args.item);
+  const title = nonEmptyString(item?.title) ?? nonEmptyString(args.title);
+  const state = nonEmptyString(item?.state) ?? nonEmptyString(args.state);
+  const description = nonEmptyString(args.description);
+  const change = action === "item_update" ? itemChange(args) : undefined;
+  return {
+    action,
+    ...(description ? { description: firstLine(description) } : {}),
+    ...(id ? { item: id } : {}),
+    ...(title ? { title: firstLine(title) } : {}),
+    ...(state ? { state } : {}),
+    ...(change ? { change } : {}),
+    ...writeText(nonEmptyString(args.text)),
+  };
+}
+
+/**
+ * A Work item's write in one line: "Added to Work: Fix the bar", "Kokoro
+ * voices: moved to Verify", "Marked Fix the bar done".
+ */
+export function itemWriteLine(write: RoamgateWrite): string | undefined {
+  const name = write.title
+    ? `"${start(write.title)}"`
+    : write.item
+      ? `item ${write.item.slice(0, 8)}`
+      : "an item";
+  switch (write.action) {
+    case "item_add": {
+      const state = stateName(write.state);
+      return `Added to Work: ${name}${state && state !== "Open" ? ` (${state})` : ""}`;
+    }
+    case "item_update": {
+      const change = write.change;
+      if (!change) return `Updated ${name}`;
+      const moved = /^moved to ([^,]+)$/.exec(change);
+      if (moved) return `Moved ${name} to ${moved[1]}`;
+      if (/^retitled "[^"]*"$/.test(change))
+        return `Retitled ${write.item ? `item ${write.item.slice(0, 8)}` : "an item"}: ${name}`;
+      return `Updated ${name}: ${change}`;
+    }
+    case "item_done":
+      return `Marked ${name} done`;
+    case "item_reopen": {
+      const state = stateName(write.state);
+      return `Reopened ${name}${state ? ` (${state})` : ""}`;
+    }
+    default:
+      return undefined;
+  }
 }
 
 function todoSummary(args: Record<string, unknown>): string {

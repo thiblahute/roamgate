@@ -74,7 +74,11 @@ import {
   type HistoryChatItem,
   type ToolStep,
 } from "./agentHistoryView";
-import { canOpenRoamgateWrite, openRoamgateWrite } from "../roamgateWrites";
+import {
+  canOpenRoamgateWrite,
+  openRoamgateWrite,
+  roamgateWriteHeadline,
+} from "../roamgateWrites";
 import {
   type RoamgateWrite,
   toolDisplayName,
@@ -1310,6 +1314,10 @@ const WRITE_LINK_TITLES: Record<RoamgateWrite["action"], string> = {
   comment: "Open the thread",
   draft: "Open the review comment",
   edit: "Open the thread at this comment",
+  item_add: "Open the item on the Work board",
+  item_update: "Open the item on the Work board",
+  item_done: "Open the item on the Work board",
+  item_reopen: "Open the item on the Work board",
 };
 
 function ToolStepRow({
@@ -1331,8 +1339,9 @@ function ToolStepRow({
   const { call, result } = step;
   // Dismissed from Roamgate, unanswered: said so, not as a failure.
   const status = stepStatus(step);
+  const summary = toolStepSummary(step);
   const headline =
-    toolStepSummary(step) ||
+    (write ? roamgateWriteHeadline(write, summary) : summary) ||
     (call && loader.loading.has(call.id) ? "Loading…" : "");
   const sentAt = (call ?? result)?.sent_at;
   return (

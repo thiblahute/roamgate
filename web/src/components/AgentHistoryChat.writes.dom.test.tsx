@@ -119,6 +119,22 @@ if (process.env.ROAMGATE_CHAT_WRITES_DOM_TEST !== "1") {
         { command: "roamgate-review reply --comment cccc2222 -- Both done" },
         thread("cccc2222dddd", "split the bar", "c-two"),
       ),
+      // A Work item moved: a row that opens its card.
+      ...call(
+        "t4",
+        "mcp__roamgate__work_update",
+        { item: "3878370a", state: "verify", ask: "Try it" },
+        JSON.stringify({
+          tool: "work_update",
+          result: {
+            item: {
+              id: "3878370a636e490e",
+              title: "Kokoro voices",
+              state: "verify",
+            },
+          },
+        }),
+      ),
     ];
     const container = document.createElement("div");
     document.body.append(container);
@@ -148,6 +164,7 @@ if (process.env.ROAMGATE_CHAT_WRITES_DOM_TEST !== "1") {
     ).toEqual([
       "Answer the header bar question",
       'Replied on "split the bar" · Both done',
+      'Moved "Kokoro voices" to Verify',
     ]);
     expect(rows.every((row) => row.classList.contains("is-write"))).toBe(true);
     const progress = block.querySelector(".agent-history-chat-progress");
@@ -194,10 +211,19 @@ if (process.env.ROAMGATE_CHAT_WRITES_DOM_TEST !== "1") {
         ".agent-history-chat-tools-list:not(.agent-history-chat-writes) > .agent-history-chat-step",
       ),
     ];
-    expect(list).toHaveLength(3);
+    expect(list).toHaveLength(4);
     expect(
       list.map((row) => !!row.querySelector(".agent-history-chat-step-link")),
-    ).toEqual([true, false, true]);
+    ).toEqual([true, false, true, true]);
+    await React.act(async () =>
+      list[3]!
+        .querySelector<HTMLButtonElement>(".agent-history-chat-step-link")!
+        .click(),
+    );
+    expect(opened[opened.length - 1]).toMatchObject({
+      action: "item_update",
+      item: "3878370a636e490e",
+    });
     expect(block.querySelector(".agent-history-chat-writes")).toBeNull();
     await React.act(async () => root.unmount());
   });
