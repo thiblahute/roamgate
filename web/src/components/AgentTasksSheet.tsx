@@ -73,6 +73,7 @@ import { useConnectionClient } from "../useConnectionClient";
 import { AgentHistoryChat } from "./AgentHistoryChat";
 import { groupHistoryChatItems } from "./agentHistoryView";
 import { focusDialogElement } from "./dialogFocus";
+import { ShortcutHelp } from "./ShortcutHelp";
 import "./AgentTasksSheet.css";
 
 const DETAIL_POLL_MS = 2000;
@@ -424,26 +425,12 @@ export function AgentTasksSheet({
           </p>
         )}
         {helpOpen ? (
-          <div className="agent-tasks-help" role="note" aria-label="Keys">
-            <dl>
-              {TASK_SHEET_KEYS.map(([keys, label]) => (
-                <div key={keys}>
-                  <dt>
-                    {keys
-                      .split(" ")
-                      .map((key, index) =>
-                        key === "/" ? (
-                          <span key={index}> / </span>
-                        ) : (
-                          <kbd key={index}>{key}</kbd>
-                        ),
-                      )}
-                  </dt>
-                  <dd>{label}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
+          <ShortcutHelp
+            title="Background tasks keys"
+            rows={TASK_SHEET_KEYS}
+            target={() => sheetRef.current}
+            onClose={() => setHelpOpen(false)}
+          />
         ) : null}
       </div>
     </div>,

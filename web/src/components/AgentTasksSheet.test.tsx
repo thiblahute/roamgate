@@ -31,6 +31,8 @@ if (process.env.ROAMGATE_TASKS_SHEET_DOM_TEST !== "1") {
       Node: browser.Node,
       Event: browser.Event,
       KeyboardEvent: browser.KeyboardEvent,
+      HTMLInputElement: browser.HTMLInputElement,
+      ResizeObserver: browser.ResizeObserver,
       CSS: { escape: (value: string) => value.replace(/["\\]/g, "\\$&") },
       requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
       cancelAnimationFrame: (id: number) => clearTimeout(id),
@@ -156,9 +158,35 @@ if (process.env.ROAMGATE_TASKS_SHEET_DOM_TEST !== "1") {
     await press("n");
     expect(cursor()).toBe("t2");
     await press("?");
-    expect(document.querySelector(".agent-tasks-help")).not.toBeNull();
+    const help = () => document.querySelector(".shortcut-help");
+    expect(help()).not.toBeNull();
+    // Its search has the keys, then Esc closes it, and only it.
+    expect(document.activeElement?.closest(".shortcut-help")).not.toBeNull();
     await press("Escape");
-    expect(document.querySelector(".agent-tasks-help")).toBeNull();
+    expect(help()).toBeNull();
+    expect(closed).toBe(0);
+    // A row picked in it runs in the sheet: the previous failed one.
+    await press("?");
+    const input = help()!.querySelector<HTMLInputElement>("input")!;
+    await React.act(async () => {
+      const set = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      set.call(input, "previous failed");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(
+      [...help()!.querySelectorAll(".command-item-title")].map(
+        (row) => row.textContent,
+      ),
+    ).toEqual(["previous failed one"]);
+    await press("Enter");
+    await settle();
+    expect(help()).toBeNull();
+    expect(cursor()).toBe("t3");
+    await press("k");
+    expect(cursor()).toBe("t2");
     expect(closed).toBe(0);
 
     // The workflow follows its running agent; done phases are folded.

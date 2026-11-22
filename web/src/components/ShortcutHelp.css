@@ -1,0 +1,117 @@
+/*
+ * A view's shortcut help (`?`, `:help`): the command menu's list over the
+ * page, in the app's colors (the review's when it is over the review).
+ */
+.shortcut-help {
+  --sh-surface: var(--rv-surface, var(--shell-panel, var(--panel)));
+  --sh-border: var(--rv-border, var(--shell-border, var(--viewer-border)));
+  --sh-muted: var(--rv-muted, var(--muted));
+  --sh-mono: var(--rv-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: max(6vh, env(safe-area-inset-top));
+  background: rgb(0 0 0 / 0.45);
+}
+
+.shortcut-help-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, calc(100% - 24px));
+  max-height: min(80vh, 80dvh);
+  overflow: hidden;
+  border: 1px solid var(--sh-border);
+  border-radius: 10px;
+  background: var(--sh-surface);
+  color: var(--rv-text, var(--text));
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.45);
+}
+
+.shortcut-help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 0 14px;
+}
+
+.shortcut-help-head h2 {
+  margin: 0;
+  font-size: 1.15em;
+}
+
+.shortcut-help-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.shortcut-help .command-list {
+  max-height: none;
+  flex: 1;
+  overflow: auto;
+}
+
+.shortcut-help .command-item {
+  grid-template-columns: 0 minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  min-height: 34px;
+}
+
+.shortcut-help .command-item-icon {
+  width: 0;
+}
+
+.shortcut-help .command-item-title {
+  font-weight: 500;
+  white-space: normal;
+}
+
+/* Listed only (a count, a key held with a click): not a target. */
+.shortcut-help .command-item.is-inert {
+  cursor: default;
+}
+
+.shortcut-help .command-item.is-inert .command-item-title {
+  color: var(--sh-muted);
+}
+
+.command-keys {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.command-keys kbd,
+.shortcut-help-foot kbd {
+  font: 11px var(--sh-mono, ui-monospace, monospace);
+  padding: 1px 5px;
+  border: 1px solid var(--sh-border, var(--viewer-border));
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--sh-surface, transparent);
+  color: var(--rv-text, var(--text));
+}
+
+.shortcut-help-foot {
+  margin: 0;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--sh-border);
+  color: var(--sh-muted);
+  font-size: 12px;
+}
+
+@media (pointer: coarse) {
+  .shortcut-help .command-item {
+    min-height: 44px;
+  }
+
+  .shortcut-help-foot {
+    display: none;
+  }
+}

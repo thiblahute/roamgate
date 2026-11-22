@@ -4,11 +4,8 @@ import {
   shortcutTitle,
   shortcutLabel,
   useShortcutPreferences,
-  getShortcutSnapshot,
 } from "../shortcutPreferences";
-import { SHORTCUT_NUMBERS, type ShortcutNumber } from "../shortcutBindings";
 import { endpointCreationReason } from "../store";
-import { normalizeSearchText } from "../searchText";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDown,
@@ -51,14 +48,10 @@ import { WorktreeOpenDialog } from "./WorktreeOpenDialog";
 import { AgentIcon } from "./AgentIcon";
 import { requestAgentTasks } from "../agentTasksOpen";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandShortcut,
-} from "./ui/command";
+  type ActionDefinition,
+  type ActionGroupDefinition,
+  ActionList,
+} from "./ActionList";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { canCreateWorktree, worktreeCreationSource } from "../worktree";
 import { WorktreeLifecycleDialog } from "./WorktreeLifecycleDialog";
@@ -66,28 +59,20 @@ import { WorktreeLifecycleDialog } from "./WorktreeLifecycleDialog";
 /** Fired on window when Cmd+K opens the menu, so overlays above it close. */
 export const COMMAND_MENU_OPENING = "roamgate:command-menu-opening";
 
+export {
+  commandFilter,
+  commandNumberedActions,
+  commandNumberShortcutIndex,
+  commandNumberShortcutTarget,
+  normalizeSearchText,
+  runCommandNumberShortcut,
+} from "./ActionList";
+
 type TextAction =
   | { type: "rename-workspace"; workspace: Workspace }
   | { type: "rename-tab"; tab: Tab }
   | { type: "create-worktree"; workspace: Workspace }
   | { type: "forward-port" };
-
-type ActionDefinition = {
-  key: string;
-  icon: React.ReactNode;
-  title: string;
-  detail?: string;
-  shortcut?: string;
-  keywords?: string[];
-  danger?: boolean;
-  disabledReason?: string | null;
-  run: () => void;
-};
-
-type ActionGroupDefinition = {
-  heading: string;
-  actions: ActionDefinition[];
-};
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -116,61 +101,6 @@ function agentName(pane: Pane) {
     .join(" · ");
 }
 
-export { normalizeSearchText };
-
-export function commandFilter(
-  value: string,
-  search: string,
-  keywords?: string[],
-) {
-  const query = normalizeSearchText(search);
-  if (!query) return 1;
-
-  const haystack = normalizeSearchText(value);
-  const keywordText = normalizeSearchText((keywords ?? []).join(" "));
-  const combined = [haystack, keywordText].filter(Boolean).join(" ");
-
-  if (haystack === query) return 1;
-  if (haystack.includes(query)) return 0.95;
-  if (keywordText.includes(query)) return 0.9;
-
-  const tokens = query.split(" ").filter(Boolean);
-  if (tokens.length === 0) return 1;
-  if (tokens.every((token) => combined.includes(token))) return 0.75;
-  if (tokens.some((token) => combined.includes(token))) return 0.35;
-
-  return 0;
-}
-
-function actionSearchValue(action: ActionDefinition) {
-  return [action.title, action.detail, action.shortcut]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function actionDisplaySignature(action: ActionDefinition) {
-  return normalizeSearchText(
-    [
-      action.title,
-      action.detail,
-      action.shortcut,
-      action.danger ? "danger" : "",
-    ]
-      .filter(Boolean)
-      .join(" "),
-  );
-}
-
-function actionCommandValue(action: ActionDefinition) {
-  return [action.title, action.detail, action.shortcut, action.key]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function rankAction(action: ActionDefinition, search: string) {
-  return commandFilter(actionSearchValue(action), search, action.keywords);
-}
-
 function pathLeaf(path: string) {
   return path.split("/").filter(Boolean).pop() ?? path;
 }
@@ -191,51 +121,6 @@ export function commandPathQuery(value: string) {
     return normalized;
   }
   return "";
-}
-
-type CommandNumberShortcutModifiers = Pick<
-  KeyboardEvent,
-  "altKey" | "code" | "ctrlKey" | "key" | "metaKey" | "shiftKey"
->;
-
-type CommandNumberShortcutEvent = CommandNumberShortcutModifiers &
-  Pick<KeyboardEvent, "preventDefault" | "repeat" | "stopPropagation">;
-
-export function commandNumberShortcutIndex(
-  event: CommandNumberShortcutModifiers,
-) {
-  const number = SHORTCUT_NUMBERS.find((n) =>
-    shortcutMatches(event, `command.${n}`),
-  );
-  return number === undefined ? null : number - 1;
-}
-
-export function commandNumberedActions<T>(
-  groups: readonly { actions: readonly T[] }[],
-) {
-  return groups.flatMap((group) => group.actions).slice(0, 9);
-}
-
-export function commandNumberShortcutTarget<T>(
-  event: CommandNumberShortcutModifiers,
-  actions: readonly T[],
-) {
-  const index = commandNumberShortcutIndex(event);
-  return index === null ? null : (actions[index] ?? null);
-}
-
-export function runCommandNumberShortcut<T>(
-  event: CommandNumberShortcutEvent,
-  actions: readonly T[],
-  runAction: (action: T) => void,
-) {
-  if (event.repeat) return false;
-  const action = commandNumberShortcutTarget(event, actions);
-  if (action === null) return false;
-  event.preventDefault();
-  event.stopPropagation();
-  runAction(action);
-  return true;
 }
 
 export function CommandCombobox({
@@ -270,8 +155,6 @@ export function CommandCombobox({
   const [open, setOpen] = useState(false);
   useCloseGlobalMenuForDialog(open, setOpen);
   const [search, setSearch] = useState("");
-  const [selectedActionValue, setSelectedActionValue] = useState("");
-  const [selectedActionSearch, setSelectedActionSearch] = useState("");
   const [openWorktreeWorkspaceId, setOpenWorktreeWorkspaceId] = useState<
     string | null
   >(null);
@@ -1067,91 +950,6 @@ export function CommandCombobox({
     { heading: "Help", actions: helpActions },
   ].filter((group) => group.actions.length > 0);
 
-  const normalizedSearch = normalizeSearchText(search);
-  const rankedActions = normalizedSearch
-    ? (() => {
-        const seen = new Set<string>();
-        return actionGroups
-          .flatMap((group) =>
-            group.actions.map((action) => ({
-              action,
-              group: group.heading,
-              score: rankAction(action, search),
-            })),
-          )
-          .filter((entry) => entry.score > 0)
-          .sort(
-            (a, b) =>
-              b.score - a.score ||
-              a.group.localeCompare(b.group) ||
-              a.action.title.localeCompare(b.action.title),
-          )
-          .filter((entry) => {
-            const signature = actionDisplaySignature(entry.action);
-            if (seen.has(signature)) return false;
-            seen.add(signature);
-            return true;
-          })
-          .slice(0, 3);
-      })()
-    : [];
-  const topActionKeys = new Set(rankedActions.map((entry) => entry.action.key));
-  const displayedSignatures = new Set(
-    rankedActions.map((entry) => actionDisplaySignature(entry.action)),
-  );
-  const displayedActionGroups: ActionGroupDefinition[] = [
-    ...(rankedActions.length > 0
-      ? [
-          {
-            heading: rankedActions.length === 1 ? "Top result" : "Top results",
-            actions: rankedActions.map((entry) => entry.action),
-          },
-        ]
-      : []),
-    ...actionGroups
-      .map((group) => ({
-        ...group,
-        actions: group.actions.filter((action) => {
-          if (topActionKeys.has(action.key)) return false;
-          if (!normalizedSearch) return true;
-          if (rankAction(action, search) <= 0) return false;
-          const signature = actionDisplaySignature(action);
-          if (displayedSignatures.has(signature)) return false;
-          displayedSignatures.add(signature);
-          return true;
-        }),
-      }))
-      .filter((group) => group.actions.length > 0),
-  ];
-  const numberedActions = commandNumberedActions(displayedActionGroups);
-  const numberShortcutIndexByKey = new Map(
-    numberedActions.map((action, index) => [action.key, index]),
-  );
-  const firstDisplayedActionValue = displayedActionGroups[0]?.actions[0]
-    ? actionCommandValue(displayedActionGroups[0].actions[0])
-    : "";
-  const displayedActionValues = new Set(
-    displayedActionGroups.flatMap((group) =>
-      group.actions.map((action) => actionCommandValue(action)),
-    ),
-  );
-  const commandSelectedValue =
-    selectedActionSearch === normalizedSearch &&
-    selectedActionValue &&
-    displayedActionValues.has(selectedActionValue)
-      ? selectedActionValue
-      : firstDisplayedActionValue;
-
-  useEffect(() => {
-    if (!open) {
-      setSelectedActionValue("");
-      setSelectedActionSearch("");
-      return;
-    }
-    setSelectedActionValue(firstDisplayedActionValue);
-    setSelectedActionSearch(normalizedSearch);
-  }, [firstDisplayedActionValue, normalizedSearch, open]);
-
   const setCommandOpen = (next: boolean) => {
     setOpen(next);
     if (!next) setSearch("");
@@ -1179,55 +977,15 @@ export function CommandCombobox({
             if (document.querySelector(".modal-backdrop:not([hidden])"))
               event.preventDefault();
           }}
-          onKeyDownCapture={(event) => {
-            runCommandNumberShortcut(
-              event,
-              numberedActions,
-              (action) => !action.disabledReason && run(action.run),
-            );
-          }}
         >
-          <Command
-            loop
-            shouldFilter={false}
-            value={commandSelectedValue}
-            onValueChange={(value) => {
-              setSelectedActionValue(value);
-              setSelectedActionSearch(normalizedSearch);
-            }}
-          >
-            <CommandInput
-              value={search}
-              onValueChange={setSearch}
-              placeholder="Search actions or enter file path..."
-            />
-            <CommandList>
-              <CommandEmpty>No actions found.</CommandEmpty>
-              {displayedActionGroups.map((group) => (
-                <CommandGroup key={group.heading} heading={group.heading}>
-                  {group.actions.map((action) => (
-                    <ActionItem
-                      key={action.key}
-                      value={actionCommandValue(action)}
-                      icon={action.icon}
-                      title={action.title}
-                      detail={action.detail}
-                      shortcut={action.shortcut}
-                      numberShortcutIndex={numberShortcutIndexByKey.get(
-                        action.key,
-                      )}
-                      keywords={action.keywords}
-                      danger={action.danger}
-                      disabledReason={action.disabledReason}
-                      onSelect={() => {
-                        if (!action.disabledReason) run(action.run);
-                      }}
-                    />
-                  ))}
-                </CommandGroup>
-              ))}
-            </CommandList>
-          </Command>
+          <ActionList
+            groups={actionGroups}
+            search={search}
+            onSearch={setSearch}
+            onRun={(action) => action.run && run(action.run)}
+            placeholder="Search actions or enter file path..."
+            numbered
+          />
         </PopoverContent>
       </Popover>
 
@@ -1341,66 +1099,5 @@ export function CommandCombobox({
         />
       ) : null}
     </>
-  );
-}
-
-function ActionItem({
-  value,
-  icon,
-  title,
-  detail,
-  shortcut,
-  numberShortcutIndex,
-  keywords,
-  danger,
-  onSelect,
-  disabledReason,
-}: {
-  value: string;
-  icon: React.ReactNode;
-  title: string;
-  detail?: string;
-  shortcut?: string;
-  numberShortcutIndex?: number;
-  keywords?: string[];
-  danger?: boolean;
-  onSelect: () => void;
-  disabledReason?: string | null;
-}) {
-  useShortcutPreferences();
-  const id =
-    numberShortcutIndex === undefined
-      ? null
-      : (`command.${numberShortcutIndex + 1}` as `command.${ShortcutNumber}`);
-  const numberShortcut = id ? shortcutLabel(id) : null;
-  return (
-    <CommandItem
-      value={value}
-      disabled={!!disabledReason}
-      title={disabledReason ?? undefined}
-      keywords={keywords}
-      onSelect={onSelect}
-      className={danger ? "is-danger" : undefined}
-      aria-keyshortcuts={
-        id
-          ? getShortcutSnapshot()
-              .preset.bindings[id].map((key) => key.replace("Ctrl", "Control"))
-              .join(" ") || undefined
-          : undefined
-      }
-    >
-      <span className="command-item-icon">{icon}</span>
-      <span className="command-item-text">
-        <span className="command-item-title">{title}</span>
-        {disabledReason || detail ? (
-          <span className="command-item-detail">
-            {disabledReason ?? detail}
-          </span>
-        ) : null}
-      </span>
-      {numberShortcut || shortcut ? (
-        <CommandShortcut>{numberShortcut ?? shortcut}</CommandShortcut>
-      ) : null}
-    </CommandItem>
   );
 }

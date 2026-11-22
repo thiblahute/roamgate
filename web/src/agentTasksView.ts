@@ -3,6 +3,7 @@
  * keys move through, and which agent to follow. Pure, so it is tested
  * without a DOM.
  */
+import type { ShortcutRow } from "./components/ShortcutHelp";
 import type {
   AgentTask,
   WorkflowAgentView,
@@ -324,17 +325,24 @@ export function sheetCommand(event: {
   }
 }
 
-/** The keys, for the sheet's help. */
-export const TASK_SHEET_KEYS: [string, string][] = [
-  ["j k / Down Up", "next / previous task, phase or agent"],
-  ["g G / Home End", "first / last"],
-  ["n N", "next / previous running one"],
-  ["e E", "next / previous failed one"],
-  ["Enter l / Right", "open the task or agent, or unfold the phase"],
-  ["h / Left", "fold the phase, or go to an agent's phase"],
+/**
+ * The keys, for the sheet's help (ShortcutHelp): picked there, a row runs
+ * as its first key would.
+ */
+export const TASK_SHEET_KEYS: readonly ShortcutRow[] = [
+  ["j ↓", "next task, phase or agent", "j"],
+  ["k ↑", "previous task, phase or agent", "k"],
+  ["g Home", "first", "g"],
+  ["G End", "last", "G"],
+  ["n", "next running one"],
+  ["N", "previous running one"],
+  ["e", "next failed one"],
+  ["E", "previous failed one"],
+  ["Enter l →", "open the task or agent, or unfold the phase", "Enter"],
+  ["h ←", "fold the phase, or go to an agent's phase", "h"],
   ["Space", "fold / unfold the phase; in output, page down"],
   ["f", "follow the running agent (or the output's end)"],
-  ["Esc Backspace", "back to the overview, then close"],
+  ["Esc Backspace", "back to the overview, then close", "Esc"],
   ["q", "close"],
-  ["?", "this list"],
+  ["?", "this list", false],
 ];
