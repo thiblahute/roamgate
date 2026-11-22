@@ -1764,6 +1764,28 @@ export function createReviewService(args: {
     return shown;
   }
 
+  /**
+   * The newest review, of any connection and kind, that `where` takes:
+   * what list({ chats: true }).find would answer, with a snapshot of that
+   * one alone (the Work board finds an item's review without one of every
+   * review).
+   */
+  function newest(
+    where: (session: ReviewSession) => boolean,
+  ): ReviewSnapshot | null {
+    let found: ReviewSession | undefined;
+    for (const each of sessions.values())
+      if (
+        where(each) &&
+        (!found || each.updatedAt.localeCompare(found.updatedAt) > 0)
+      )
+        found = each;
+    if (!found) return null;
+    migrateEntryAnchors(found);
+    void reanchorFile(found);
+    return snapshot(found);
+  }
+
   /** Worktree reviews whose Changes anchors are being migrated. */
   const migrating = new Map<string, Promise<void>>();
   const migrateAgain = new Set<string>();
@@ -4774,6 +4796,7 @@ export function createReviewService(args: {
       fileOf(preview(params), params),
     list,
     summaries,
+    newest,
     roots,
     refreshGitlab,
     findGitlab,

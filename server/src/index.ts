@@ -1417,12 +1417,10 @@ function getWorkService(): WorkService {
     },
     reviews: {
       find: (itemId) =>
-        review
-          .list({ chats: true })
-          .find(
-            ({ session }) =>
-              session.target.kind === "work" && session.target.item === itemId,
-          ) ?? null,
+        review.newest(
+          (session) =>
+            session.target.kind === "work" && session.target.item === itemId,
+        ),
       open: ({ item, connectionId, root, title }) =>
         review.open({
           connectionId,
@@ -1433,9 +1431,7 @@ function getWorkService(): WorkService {
           raise: false,
         }),
       get: (reviewId) =>
-        review
-          .list({ chats: true })
-          .find(({ session }) => session.id.startsWith(reviewId)) ?? null,
+        review.newest((session) => session.id.startsWith(reviewId)),
       // The review a thread (or a comment) of any connection is in.
       sessionOfComment: (ref: string) =>
         review

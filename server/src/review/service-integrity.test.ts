@@ -8,7 +8,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { REVIEW_LIMITS, type ReviewSnapshot } from "../../../shared/review";
+import {
+  REVIEW_LIMITS,
+  type ReviewSession,
+  type ReviewSnapshot,
+} from "../../../shared/review";
 import { handleReviewRpc } from "./rpc";
 import { createReviewService, type ReviewService } from "./service";
 import { openReviewStorage } from "./storage";
@@ -361,6 +365,44 @@ test("a work item's review is opened past the limit", () => {
       raise: false,
     }),
   ).toThrow("too many reviews");
+});
+
+test("a work item's review is found without listing every review", async () => {
+  let at = Date.parse("2026-11-22T10:00:00Z");
+  const { service } = setup(undefined, {
+    now: () => new Date((at += 1_000)),
+  });
+  const workOn = (connectionId: string, item: string) =>
+    service.open({
+      connectionId,
+      root: "/repo",
+      target: { kind: "work", item },
+      raise: false,
+    }).session;
+  const first = workOn("a", "0123abcd");
+  const second = workOn("b", "0123abcd");
+  workOn("a", "4567cdef");
+  const ofItem = (session: ReviewSession) =>
+    session.target.kind === "work" && session.target.item === "0123abcd";
+  // The newest of the item's reviews, as the list would answer.
+  expect(service.newest(ofItem)?.session.id).toBe(second.id);
+  await service.addThread({
+    sessionId: first.id,
+    anchor: {},
+    text: "Newer now",
+  });
+  const found = service.newest(ofItem);
+  expect(found?.session.id).toBe(first.id);
+  expect(found).toEqual(
+    service.list({ chats: true }).find(({ session }) => ofItem(session)) ??
+      null,
+  );
+  // By an id's prefix, and none.
+  expect(
+    service.newest((session) => session.id.startsWith(second.id.slice(0, 8)))
+      ?.session.id,
+  ).toBe(second.id);
+  expect(service.newest(() => false)).toBeNull();
 });
 
 test("the store keeps thousands of reviews", () => {
