@@ -10,6 +10,7 @@ import {
   openedText,
   ROAMGATE_TOOLS,
   type RoamgateTool,
+  RULES_MARKER,
   RULES_SECTION_ID,
   reviewTarget,
   rulesSection,
@@ -47,6 +48,12 @@ import {
  * hook beneath may answer it in less. */
 const ASK_BLOCKED_AFTER_MS = 2000;
 
+/**
+ * How long the end of a turn waits for classic.Stop to reach the mod before
+ * the check runs from turn.complete instead.
+ */
+const STOP_GRACE_MS = 1000;
+
 /** How often a session tells Roamgate it still has the tools. */
 const TOOLS_HELLO_MS = 4 * 60_000;
 
@@ -72,6 +79,19 @@ const toolsClient = randomId();
 let rulesWanted = false;
 /** The rules went into a system prompt: Roamgate is told, once. */
 let rulesComposed = false;
+/**
+ * The rules went in with one of this mod's prompts instead: a plugin
+ * seated above (Claude Code's cc-plugin-sec-default, for Team and
+ * Enterprise organizations) sends prompt.compose and every classic.* event
+ * on past the plugins a person installs, so this mod's never run there.
+ */
+let rulesAttached = false;
+/** A main turn ended in this process: prompt.compose had its chance. */
+let turnEnded = false;
+/** classic.Stop reached the mod: the end-of-turn check runs there. */
+let stopReached = false;
+/** The check sent its own prompt: the turn it starts ends as it is. */
+let reminded = false;
 /** Says the hello again at once (the rules are in now). */
 let helloNow: (() => Promise<void>) | null = null;
 /**
@@ -137,7 +157,7 @@ function hostOf($: EngineInterface, socket: string) {
       request($, socket, command, body),
     socketExists: () => $.fs.exists(socket),
     async submit(text: string) {
-      const result = await $.prompt.submit({ text, asUser: true });
+      const result = await submitOwn($, text, true);
       return result.drop ?? "";
     },
     after: (ms: number, fn: () => void) => $.clock.after(ms, fn),
@@ -310,8 +330,8 @@ async function announceTools($: EngineInterface): Promise<void> {
       tools: ROAMGATE_TOOLS.length,
       // This mod has the Work board's tools: the prompts may name them.
       work: "1",
-      // Its system prompt holds the rules: the prompts are short.
-      ...(rulesComposed ? { rules: "1" } : {}),
+      // Its conversation holds the rules: the prompts are short.
+      ...(rulesComposed || rulesAttached ? { rules: "1" } : {}),
       ...(headless ? { headless: "1" } : {}),
       ...(gone ? { gone: "1" } : {}),
     }).catch((error) => debug($, `tools hello failed: ${messageOf(error)}`));
@@ -428,6 +448,87 @@ function settleBlocked($: EngineInterface): void {
 }
 
 /**
+ * Submits one of this mod's own prompts (a delivery, the end-of-turn
+ * check). Where prompt.compose never reaches the mod, the rules come with
+ * the first one, and again once the conversation lost them. A plugin's own
+ * prompt skips its prompt.submit hooks, so they are in the text itself.
+ */
+async function submitOwn(
+  $: EngineInterface,
+  text: string,
+  asUser: boolean,
+): Promise<{ drop?: string }> {
+  const withRules = (await rulesNeeded($))
+    ? `${text}\n\n${rulesSection(toolName)}`
+    : text;
+  const result = await $.prompt.submit(
+    asUser ? { text: withRules, asUser: true } : { text: withRules },
+  );
+  if (!result.drop && withRules !== text && !rulesAttached) {
+    rulesAttached = true;
+    void helloNow?.();
+  }
+  return result;
+}
+
+/** Whether a prompt of the mod's must bring the rules itself. */
+async function rulesNeeded($: EngineInterface): Promise<boolean> {
+  if (!rulesWanted || rulesComposed || !turnEnded) return false;
+  return !(await rulesInConversation($));
+}
+
+/**
+ * Whether the conversation the next request is built from holds the rules
+ * a prompt brought (none after a compaction or /clear).
+ */
+async function rulesInConversation($: EngineInterface): Promise<boolean> {
+  try {
+    const messages = await $.session.messages({ as: "api" });
+    if (!Array.isArray(messages)) return false;
+    return messages.some(
+      (message) =>
+        message.role === "user" &&
+        message.content.some(
+          (block) =>
+            block.type === "text" &&
+            typeof block.text === "string" &&
+            block.text.includes(RULES_MARKER),
+        ),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The end-of-turn check where classic.Stop never reaches the mod: run once
+ * the turn ended, its reminder sent as the mod's own prompt.
+ */
+function checkAfterTurn($: EngineInterface, reason: string): void {
+  // The turn the check started ends as it is, as a Stop hook's would.
+  if (reminded) {
+    reminded = false;
+    return;
+  }
+  if (stopReached || reason !== "answer") return;
+  $.clock.after(STOP_GRACE_MS, () => {
+    if (stopReached) return;
+    void (async () => {
+      const reminder = await stopReminder($);
+      if (!reminder || stopReached) return;
+      reminded = true;
+      const entered = await submitOwn($, reminder, false).catch(
+        (error: unknown) => ({ drop: messageOf(error) }),
+      );
+      if (entered.drop) {
+        reminded = false;
+        debug($, `end-of-turn check not sent: ${entered.drop}`);
+      }
+    })();
+  });
+}
+
+/**
  * The end-of-turn check: what Roamgate delivered to this session that it
  * left (unanswered threads, items still to triage), as the reason to go
  * on; null when nothing waits or Roamgate cannot tell.
@@ -503,7 +604,10 @@ export const register: Register = (on) => {
     };
   }).catch(($, e, next) => next(e));
 
+  // A plugin seated above may send this on past the mod (see rulesAttached):
+  // then turn.complete runs the check.
   on("classic.Stop", async ($, e, next) => {
+    stopReached = true;
     const decided = await next(e);
     // Once: a turn this check already sent on ends as it is.
     if (!rulesWanted || e.stop_hook_active || decided.block) return decided;
@@ -530,6 +634,10 @@ export const register: Register = (on) => {
   });
 
   on("turn.complete", async ($, e, next) => {
+    if (e.agentId === undefined) {
+      turnEnded = true;
+      if (rulesWanted) checkAfterTurn($, e.reason);
+    }
     if (e.agentId === undefined && client) {
       // Every call of the main loop has ended; a background subagent's
       // ask may still wait on the person.

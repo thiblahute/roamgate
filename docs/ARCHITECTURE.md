@@ -812,6 +812,18 @@ carried it, the next `mod_tools` hello (sent at once) says `rules: 1`
 (`ClaudeModHub.hasRules`), and the review service sends that pane the
 short deliveries alone (Reviews, below).
 
+Where a plugin seated above sends `prompt.compose` and every `classic.*`
+event on past the plugins a person installs (Claude Code's built-in
+`cc-plugin-sec-default`, seated outermost for Team and Enterprise
+organizations and on machines with managed settings), the mod's hooks on
+them never run. Once a main turn ended with no `prompt.compose` reaching
+it, the mod's own prompts (deliveries, the end-of-turn check) carry the
+rules after their text whenever the conversation the next request is
+built from (`$.session.messages`) holds none: the first one, and the
+first after a compaction or `/clear`. Those prompts skip the mod's own
+`prompt.submit` hooks, hence the text. Only once one entered does the
+hello say `rules: 1`; until then that pane gets the long deliveries.
+
 End-of-turn check: the same sessions' `classic.Stop` asks `stop_check`
 (the pane, `claude_session`): the threads of the reviews and chats whose
 agent runs in the pane or is the session that a delivery sent it
@@ -825,6 +837,14 @@ mcp__roamgate__review_reply comment_id=c7804e28.`, `Still needs triage:
 fb590037 ...`), and Claude Code goes on with that. Never twice in a row
 (`stop_hook_active`), and each thread at most once per delivery, so it
 never loops. A settings hook beneath that blocks keeps its own reason.
+Where `classic.Stop` never reaches the mod (passed over as above), the
+check runs a second after the main turn's `turn.complete` (reason
+`answer`) and sends its lines as the mod's own prompt; the turn that
+prompt starts ends without a check, as `stop_hook_active` would. The
+mod's `classic.PermissionRequest` hook is passed over the same way, and
+no other event tells a person's permission ask from one auto mode's
+classifier settles: there a permission ask never reads blocked
+(`AskUserQuestion` still does).
 
 ## Ranger
 

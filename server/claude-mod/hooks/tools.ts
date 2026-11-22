@@ -897,6 +897,10 @@ export function openedText(answer: unknown): string {
 /** The mod's section of the system prompt, by its id. */
 export const RULES_SECTION_ID = "roamgate:rules";
 
+/** Words of the rules that find them again in a conversation. */
+export const RULES_MARKER =
+  "Roamgate delivers the user's comments, Work board items and other agent sessions' messages to you as prompts.";
+
 /**
  * Roamgate's rules, once per session in the system prompt: what the
  * prompts Roamgate delivers mean, so each of them only names the tool and
@@ -907,7 +911,7 @@ export function rulesSection(name: (tool: string) => string): string {
   return [
     "# Roamgate",
     "",
-    "Roamgate delivers the user's comments, Work board items and other agent sessions' messages to you as prompts. Each starts with a bracketed header and ends with one line naming the tool to call. The rules behind that line:",
+    `${RULES_MARKER} Each starts with a bracketed header and ends with one line naming the tool to call. The rules behind that line:`,
     "",
     `- Review and chat comments: answer every thread once, in its thread, with ${name("review_reply")} (comment_id: the bracketed id; on a message of a thread, that message's id), saying what you did or changed. For a comment on your chat, the answer goes in the thread, not in the chat (one word there at most). Before long work on a thread, say so with ${name("review_working")}.`,
     `- Work items you own: keep the board true with ${name("work_update")} (state doing when you take it, verify with an ask when the user must try it, you with an ask when it needs them), ${name("work_done")}, ${name("work_reopen")}. A new free-text item comes marked needs_triage: give it a short title (your first title clears the mark), its tags and its state, split extra tasks into new items (${name("work_add")}, linked with an item link). A design to agree on goes in the item's description (${name("work_update")} text): ${WORK_DOC_RULE}. ${deferred.join(", ")} load with tool search (select:${deferred.join(",")}).`,

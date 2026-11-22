@@ -1,5 +1,11 @@
 import type { On } from "claude-code";
-import { expect, type MockClock, mock, test } from "claude-code/testing";
+import {
+  expect,
+  type MockClock,
+  mock,
+  type Plugin,
+  test,
+} from "claude-code/testing";
 
 /**
  * The mod against the engine's own test kit (`claude plugin test`): the
@@ -122,8 +128,11 @@ test("a prompt dropped by a stop waits for the next turn's end", async ($, on) =
     return { text: e.text };
   });
   on("turn.complete", (_, e) => ({ text: e.answer }));
+  // Its system prompt has the rules: the prompts come as they are.
+  engineSections(on);
 
   await $.session.start(START);
+  await $.prompt.compose(COMPOSE);
   await clock.settle();
   expect(submitted).toEqual([]);
   expect(
@@ -717,4 +726,168 @@ test("a claude -p run's turns end without the check", async ($, on) => {
   const ended = await $.classic.Stop({ stop_hook_active: false });
   expect(ended.block).toBeUndefined();
   expect(asked).toHaveLength(0);
+});
+
+/**
+ * Claude Code's cc-plugin-sec-default, as it is seated for Team and
+ * Enterprise organizations: outermost, sending prompt.compose and every
+ * classic.* event on past the plugins a person installs.
+ */
+const SEC_DEFAULT = {
+  name: "sec-default",
+  tier: "prepend",
+  register(on) {
+    on("classic.*", (_, e, next) => next.to(e, "append"));
+    on("prompt.compose", (_, e, next) => next.to(e, "append"));
+  },
+} as const satisfies Plugin;
+
+/** The conversation the engine keeps: each prompt, as it entered. */
+function conversation(on: On) {
+  const messages: {
+    role: "user";
+    content: { type: "text"; text: string }[];
+  }[] = [];
+  const submitted: { text: string }[] = [];
+  on("prompt.submit", (_, e) => {
+    submitted.push({ text: e.text });
+    messages.push({ role: "user", content: [{ type: "text", text: e.text }] });
+    return { text: e.text };
+  });
+  on("session.messages", () => ({ value: messages }));
+  on("turn.complete", (_, e) => ({ text: e.answer }));
+  return { messages, submitted };
+}
+
+const ENDED = {
+  answer: "done",
+  durationMs: 1,
+  isAborted: false,
+  turnId: "t1",
+  reason: "answer",
+} as const;
+
+const RULES_WORDS = "Roamgate delivers the user's comments";
+
+test(
+  "with prompt.compose passed over, the mod's prompts bring the rules, and the hello claims them only then",
+  { plugins: [SEC_DEFAULT] },
+  async ($, on) => {
+    const clock = mock.clock(on);
+    session(on);
+    registry(on);
+    engineSections(on);
+    on("classic.Stop", () => ({}));
+    const inbox: { id: number; text: string }[] = [];
+    const sent = roamgate(on, inbox, clock);
+    const { messages, submitted } = conversation(on);
+    const rulesClaimed = () =>
+      sent.filter((each) => each.command === "mod_tools").at(-1)?.body.rules;
+
+    await $.session.start(START);
+    await clock.settle();
+    const composed = await $.prompt.compose(COMPOSE);
+    expect(composed.sections.map((section) => section.id)).toEqual(["intro"]);
+    await clock.settle();
+    expect(rulesClaimed()).toBeUndefined();
+
+    // The first turn ended with no rules section: the next prompt brings them.
+    await $.turn.complete(ENDED);
+    await clock.advance(5_000);
+    inbox.push({ id: 1, text: "A comment from me" });
+    await clock.advance(20_000);
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0]?.text).toStartWith("A comment from me\n\n# Roamgate\n");
+    expect(submitted[0]?.text).toContain(RULES_WORDS);
+    expect(submitted[0]?.text).toContain("mcp__roamgate__review_reply");
+    expect(rulesClaimed()).toBe("1");
+
+    // The conversation holds them: the next prompt comes alone.
+    inbox.push({ id: 2, text: "Another comment" });
+    await clock.advance(20_000);
+    expect(submitted[1]).toEqual({ text: "Another comment" });
+
+    // A compaction took them: the next prompt brings them again.
+    messages.length = 0;
+    inbox.push({ id: 3, text: "After the compaction" });
+    await clock.advance(20_000);
+    expect(submitted[2]?.text).toStartWith("After the compaction\n\n");
+    expect(submitted[2]?.text).toContain(RULES_WORDS);
+  },
+);
+
+test("where prompt.compose reaches the mod, its prompts bring no second copy", async ($, on) => {
+  const clock = mock.clock(on);
+  session(on);
+  registry(on);
+  engineSections(on);
+  const inbox: { id: number; text: string }[] = [];
+  roamgate(on, inbox, clock);
+  const { submitted } = conversation(on);
+
+  await $.session.start(START);
+  await clock.settle();
+  await $.prompt.compose(COMPOSE);
+  await $.turn.complete(ENDED);
+  await clock.advance(5_000);
+  inbox.push({ id: 1, text: "A comment from me" });
+  await clock.advance(20_000);
+  expect(submitted).toEqual([{ text: "A comment from me" }]);
+});
+
+test(
+  "with classic.Stop passed over, the end of the turn sends the check once, as the mod's prompt",
+  { plugins: [SEC_DEFAULT] },
+  async ($, on) => {
+    const clock = mock.clock(on);
+    session(on);
+    registry(on);
+    const asked = stopChecks(on, {
+      threads: [
+        { id: "c7804e28", review: "1a2b3c4d", title: "Work: Dictation" },
+      ],
+    });
+    const { submitted } = conversation(on);
+
+    await $.session.start(START);
+    await clock.settle();
+    await $.turn.complete(ENDED);
+    await clock.advance(1_000);
+    expect(asked).toHaveLength(1);
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0]?.text).toContain(
+      'Not answered yet: [c7804e28] in "Work: Dictation": mcp__roamgate__review_reply comment_id=c7804e28.',
+    );
+    // Compose never reached the mod: the check brings the rules too.
+    expect(submitted[0]?.text).toContain(RULES_WORDS);
+
+    // The turn it started ends as it is.
+    await $.turn.complete({ ...ENDED, turnId: "t2" });
+    await clock.advance(1_000);
+    expect(asked).toHaveLength(1);
+    // A later turn is checked again; nothing waits now.
+    await $.turn.complete({ ...ENDED, turnId: "t3" });
+    await clock.advance(1_000);
+    expect(asked).toHaveLength(2);
+    expect(submitted).toHaveLength(1);
+  },
+);
+
+test("where classic.Stop reaches the mod, the end of the turn checks nothing more", async ($, on) => {
+  const clock = mock.clock(on);
+  session(on);
+  registry(on);
+  const asked = stopChecks(on, {
+    threads: [{ id: "c7804e28", review: "1a2b3c4d", title: "Review" }],
+  });
+  const { submitted } = conversation(on);
+
+  await $.session.start(START);
+  await clock.settle();
+  const ended = await $.classic.Stop({ stop_hook_active: false });
+  expect(ended.block).toContain("c7804e28");
+  await $.turn.complete(ENDED);
+  await clock.advance(5_000);
+  expect(asked).toHaveLength(1);
+  expect(submitted).toHaveLength(0);
 });
