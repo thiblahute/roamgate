@@ -44,10 +44,9 @@ import type { HistoryEntry } from "./agentHistory";
 import { type MessageParts, NoteBody } from "./ReviewNoteBody";
 import {
   type PanelThread,
-  ThreadsChip,
   ThreadsPanel,
   type ThreadsPanelPlace,
-  UnresolvedNav,
+  ThreadsStatus,
   useOpenOnly,
 } from "./ThreadsPanel";
 import {
@@ -1538,8 +1537,8 @@ function ChatThreadsScope({
                       : `${awayOpen.length} on messages not shown`}
                   </button>
                 ) : null}
-                <ThreadsChip
-                  className="chat-threads-chip"
+                <ThreadsStatus
+                  className="chat-threads-chip chat-unresolved-nav"
                   threads={overview}
                   undelivered={
                     undelivered
@@ -1553,11 +1552,8 @@ function ChatThreadsScope({
                   onToggle={() =>
                     overviewOpen ? closeOverview() : openOverview()
                   }
-                />
-                <UnresolvedNav
-                  className="chat-unresolved-nav"
-                  total={unresolvedTotal}
                   position={unresolvedAt}
+                  stepTotal={unresolvedTotal}
                   openOnly={openOnly}
                   onStep={jumpUnresolved}
                   onOpenOnly={setOpenOnly}

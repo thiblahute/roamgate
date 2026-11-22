@@ -138,7 +138,7 @@ import {
   type Undelivered,
   useFileThreadView,
 } from "./FileThreads";
-import { conversationOrder, ThreadsChip, UnresolvedNav } from "./ThreadsPanel";
+import { conversationOrder, ThreadsStatus } from "./ThreadsPanel";
 import { preloadReviewCommentEditor } from "./ReviewCommentEditorLazy";
 import {
   changesDraftSession,
@@ -220,6 +220,7 @@ import { oneCommitTitle } from "../changesViews";
 import { useChangesViews, type ViewsSource } from "../useChangesViews";
 import { ChangesCommitBar } from "./ChangesCommitBar";
 import { InspectorHeaderControls } from "./inspectorHeaderSlot";
+import { OverflowRow } from "./OverflowRow";
 import type { InspectorCommand } from "../inspectorCommands";
 import { CommandLine } from "./CommandLine";
 import {
@@ -6197,7 +6198,11 @@ function DiffContentViewInner({
       </button>
     ) : null;
   const headTitle = embedded ? null : (
-    <div className="diff-content-title">
+    <div
+      className="diff-content-title"
+      data-overflow-keep=""
+      data-overflow-shrink=""
+    >
       {scopeControls ? (
         scopeControls
       ) : (
@@ -6315,6 +6320,8 @@ function DiffContentViewInner({
         // word), whole in the tooltip; a mark while it works.
         <span
           className={`changes-review-status${agentWorking ? " is-working" : ""}`}
+          data-overflow-keep=""
+          data-overflow-shrink=""
           aria-live="polite"
           title={agentSaid || statusLine}
         >
@@ -6325,7 +6332,7 @@ function DiffContentViewInner({
         </span>
       ) : null}
       {reviewEditor && focusBar !== null ? (
-        <div className="diff-review-focusbar">
+        <div className="diff-review-focusbar" data-overflow-keep="">
           <span className="note">
             {changesAgent.agentName ?? "Agent"} review, focus (optional):
           </span>
@@ -6501,11 +6508,22 @@ function DiffContentViewInner({
           ) : null}
         </button>
       ) : null}
-      {reviewEditor && readingOrder.length ? (
-        <UnresolvedNav
-          className="diff-unresolved-nav"
-          total={unresolvedTotal}
+      {panelThreads.length || (reviewEditor && readingOrder.length) ? (
+        <ThreadsStatus
+          className="diff-threads-chip diff-unresolved-nav"
+          threads={panelThreads}
+          undelivered={
+            diffThreads?.undelivered
+              ? {
+                  count: diffThreads.undelivered.ids.size,
+                  reason: diffThreads.undelivered.reason,
+                }
+              : undefined
+          }
+          open={threadsOpen}
+          onToggle={() => setThreadsOpen((open) => !open)}
           position={unresolvedAt}
+          stepTotal={reviewEditor ? unresolvedTotal : 0}
           openOnly={threadView.openOnly}
           onStep={(direction) => {
             reviewHandlers.current.threadKey?.(
@@ -6518,22 +6536,6 @@ function DiffContentViewInner({
             toggleOpenOnly();
             sectionRef.current?.focus({ preventScroll: true });
           }}
-        />
-      ) : null}
-      {panelThreads.length ? (
-        <ThreadsChip
-          className="diff-threads-chip"
-          threads={panelThreads}
-          undelivered={
-            diffThreads?.undelivered
-              ? {
-                  count: diffThreads.undelivered.ids.size,
-                  reason: diffThreads.undelivered.reason,
-                }
-              : undefined
-          }
-          open={threadsOpen}
-          onToggle={() => setThreadsOpen((open) => !open)}
         />
       ) : null}
       {!mobile && reviewEditor ? (
@@ -6672,12 +6674,17 @@ function DiffContentViewInner({
           </div>
         )}
       >
-        <div className={`diff-content-head${reviewEditor ? " is-review" : ""}`}>
+        {/* Never wider than the slot: what has no room goes behind ⋮. */}
+        <OverflowRow
+          className={`diff-content-head${reviewEditor ? " is-review" : ""}`}
+          moreLabel="More review controls"
+          moreClassName="diff-head-more"
+        >
           {headBack}
           {headStart}
           {headTitle}
           {headControls}
-        </div>
+        </OverflowRow>
       </InspectorHeaderControls>
       {reviewEditor ? null : viewBar}
 

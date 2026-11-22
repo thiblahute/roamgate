@@ -2226,10 +2226,11 @@ export async function mountChangesReview(
       if (!nav) return null;
       return {
         label: nav.querySelector('[aria-live="polite"]')?.textContent ?? "",
+        // No arrows to step with: none open.
         disabled:
           nav.querySelector<HTMLButtonElement>(
             'button[aria-label="Next unresolved thread"]',
-          )?.disabled === true,
+          )?.disabled !== false,
       };
     },
     async unresolvedStep(which) {

@@ -186,7 +186,15 @@ Open **Files**, **Changes**, **Commits**, **Agent History**, **Work** or
     again while the agent works), and scrolls sideways when still too
     wide;
   - **Files**: the file shown, its Back and Forward, name (its path in the
-    tooltip) and actions; its tabs and its tree's search stay in the view;
+    tooltip) and actions, as icons with tooltips (URL a globe, Point a
+    crosshair, Scripts a code mark lit while they run); its comments are one
+    control ("2 open · 5", "2/5 open" once on one, "All resolved"), with the
+    unresolved arrows and "only those" beside the count. The row is never
+    wider than its room: the name gives way first, then the least used
+    actions go behind a ⋮ button at the row's end, measured as the row is
+    drawn and resized, and listed under it with their names; the comments,
+    the Preview/Source switch and Close stay. Its tabs and its tree's search
+    stay in the view;
   - **Commits**: the checkout's pull or merge request, as a chip;
   - **History**: the session's name, its chips and actions.
     A view keeps controls inside its content (Work's Back, a column's head),
@@ -1487,7 +1495,7 @@ again, and comments follow their code or show as outdated.
   drawn under it, `r` resolves, `za` folds, `dd`
   deletes your own comment, `J`/`K` go message by message, `n`/`N` go
   to the next or previous thread, `gn`/`gN` (or the arrows beside the
-  comments chip, with "2 of 5 unresolved") to the next or previous
+  comments chip, which says "2/5 open") to the next or previous
   unresolved one, reading older messages for it if need be, and `gH`
   shows only the unresolved ones,
   and `i` or Esc (or Down past the last one) go back to the box. `T` (or the comments chip at the top

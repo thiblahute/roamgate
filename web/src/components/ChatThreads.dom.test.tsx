@@ -413,16 +413,16 @@ if (
         ?.closest("[data-thread-id]")
         ?.getAttribute("data-thread-id");
 
-    expect(where()).toBe("2 unresolved");
+    expect(where()).toBe("2 open");
     await keys("g", "n");
     await act(settle);
     expect(focused()).toBe("t1");
-    expect(where()).toBe("1 of 2 unresolved");
+    expect(where()).toBe("1/2 open");
     // Over the resolved one.
     await keys("g", "n");
     await act(settle);
     expect(focused()).toBe("t3");
-    expect(where()).toBe("2 of 2 unresolved");
+    expect(where()).toBe("2/2 open");
     // Past the last: back at the first, and said.
     await keys("g", "n");
     await act(settle);

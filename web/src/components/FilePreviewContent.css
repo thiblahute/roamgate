@@ -41,30 +41,22 @@
   background: var(--viewer-header-bg);
 }
 
+/* The name, then the controls at the row's end (an OverflowRow: what has
+   no room goes behind its ⋮). */
 .file-preview-title-row {
   min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 6px;
 }
 
-.file-preview-title {
+.overflow-row.file-preview-title-row > .file-preview-title {
   flex: 1 1 auto;
-  min-width: 0;
+  min-width: 5em;
   overflow: hidden;
   color: var(--text-strong);
   font-size: 13px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.file-preview-head-actions {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .file-preview-back {
@@ -396,6 +388,7 @@
 }
 
 .file-preview-copy.is-on,
+.file-preview-refresh.is-on,
 .file-preview-zen-hint .is-on {
   background: var(--accent-soft);
   border-color: var(--accent);

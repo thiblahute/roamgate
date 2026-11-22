@@ -1,0 +1,103 @@
+/*
+ * A row of controls that never overflows (OverflowRow.tsx): the controls
+ * that do not fit leave the row for a list under its ⋮ button. The list is
+ * placed against the row's positioned ancestor (the row itself by default),
+ * so an ancestor that clips sideways does not clip it.
+ */
+.overflow-row {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+/* Each control at its own width: the row measures them, nothing squeezes. */
+.overflow-row > * {
+  flex: 0 0 auto;
+}
+
+.overflow-row > [data-overflow-shrink] {
+  flex: 0 1 auto;
+}
+
+.overflow-row-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overflow-row-more[hidden] {
+  display: none;
+}
+
+.overflow-row-more[aria-expanded="true"] {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
+
+/* Out of the row (a child, or one of a display: contents child's): not
+   drawn, not focusable, still measured. */
+.overflow-row [data-overflowed] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The list: one control per line under ⋮, each as wide as the list. */
+.overflow-row-panel {
+  position: absolute;
+  z-index: 60;
+  top: var(--overflow-top, 100%);
+  right: var(--overflow-right, 0);
+  width: var(--overflow-width, 200px);
+  height: calc(var(--overflow-count, 0) * var(--overflow-pitch, 32px) + 8px);
+  border: 1px solid var(--viewer-border, var(--border));
+  border-radius: 8px;
+  background: var(--viewer-panel-bg, var(--panel));
+  box-shadow: var(--shadow-lg);
+}
+
+.overflow-row.is-open [data-overflowed] {
+  z-index: 61;
+  top: calc(
+    var(--overflow-top, 100%) +
+    4px +
+    var(--overflow-index, 0) *
+    var(--overflow-pitch, 32px) +
+    2px
+  );
+  right: calc(var(--overflow-right, 0px) + 4px);
+  left: auto;
+  width: calc(var(--overflow-width, 200px) - 8px);
+  max-width: none;
+  visibility: visible;
+  pointer-events: auto;
+  justify-content: flex-start;
+  padding-inline: 8px;
+  text-align: left;
+}
+
+/* Lines of a menu, not buttons in a row; a control that is on keeps its
+   mark. */
+.overflow-row.is-open
+  :is(button, a)[data-overflowed]:not(.is-on, [aria-pressed="true"]) {
+  border-color: transparent;
+  background: transparent;
+}
+
+.overflow-row.is-open :is(button, a)[data-overflowed]:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
+
+/* A control drawn with an icon only: its name beside it, in the list. */
+.overflow-row.is-open
+  [data-overflowed][aria-label]:not(:has(> :not(svg)))::after {
+  content: attr(aria-label);
+  margin-left: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}

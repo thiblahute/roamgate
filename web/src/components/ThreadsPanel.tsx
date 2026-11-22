@@ -1,4 +1,10 @@
-import { ChevronDown, ChevronUp, ListFilter } from "lucide-react";
+import {
+  CheckCheck,
+  ChevronDown,
+  ChevronUp,
+  ListFilter,
+  MessageSquare,
+} from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
@@ -125,86 +131,6 @@ export function useOpenOnly(): [boolean, (on: boolean) => void] {
   return [openOnly, change];
 }
 
-/**
- * The unresolved threads, one after the other: previous / next (gN / gn),
- * where you are among them ("2 of 5 unresolved"), and the choice to show
- * only them.
- */
-export function UnresolvedNav({
-  total,
-  position,
-  openOnly,
-  onStep,
-  onOpenOnly,
-  className = "",
-  commandHints = false,
-}: {
-  total: number;
-  /** The unresolved thread you are on, from 1; null when on none. */
-  position: number | null;
-  openOnly: boolean;
-  onStep: (direction: 1 | -1) => void;
-  onOpenOnly: (on: boolean) => void;
-  className?: string;
-  /** Where the keys are not had (a file's source): the `:` commands said. */
-  commandHints?: boolean;
-}) {
-  const hint = (key: string, command: string) =>
-    commandHints ? `:${command}` : key;
-  const label = !total
-    ? "All resolved"
-    : position
-      ? `${position} of ${total} unresolved`
-      : `${total} unresolved`;
-  return (
-    <div
-      className={`unresolved-nav ${className}`}
-      role="group"
-      aria-label="Unresolved threads"
-    >
-      <button
-        type="button"
-        className="unresolved-nav-step"
-        aria-label="Previous unresolved thread"
-        title={`Previous unresolved thread (${hint("gN", "previous")})`}
-        disabled={!total}
-        onClick={() => onStep(-1)}
-      >
-        <ChevronUp size={14} />
-      </button>
-      <span className="unresolved-nav-where" aria-live="polite">
-        {label}
-      </span>
-      <button
-        type="button"
-        className="unresolved-nav-step"
-        aria-label="Next unresolved thread"
-        title={`Next unresolved thread (${hint("gn", "next")})`}
-        disabled={!total}
-        onClick={() => onStep(1)}
-      >
-        <ChevronDown size={14} />
-      </button>
-      <button
-        type="button"
-        className={`unresolved-nav-only${openOnly ? " on" : ""}`}
-        aria-pressed={openOnly}
-        aria-label="Unresolved only"
-        title={
-          openOnly
-            ? `Showing only the unresolved threads: show the resolved ones too (${hint("gH", "unresolved")})`
-            : commandHints
-              ? "Show only the unresolved threads (:unresolved)"
-              : "Show only the unresolved threads; n / N skip the resolved ones (gH)"
-        }
-        onClick={() => onOpenOnly(!openOnly)}
-      >
-        <ListFilter size={14} />
-      </button>
-    </div>
-  );
-}
-
 export type PanelThread = {
   id: string;
   resolved: boolean;
@@ -233,49 +159,138 @@ export type ThreadsPanelPlace = {
   scrollTop: number;
 };
 
-/** "2 open · 10 comments": opens the panel. */
-export function ThreadsChip({
+/**
+ * The comments' one control: how many are open ("3 open · 4", where you
+ * are among them once on one: "2/3 open"), opening the panel (T); the
+ * previous / next unresolved thread (gN / gn) while some are open; the
+ * choice to show only the unresolved ones (gH) once there are any.
+ */
+export function ThreadsStatus({
   threads,
   open,
   onToggle,
+  position,
+  stepTotal,
+  openOnly,
+  onStep,
+  onOpenOnly,
   className = "",
   undelivered,
   commandHints = false,
 }: {
   threads: readonly { resolved: boolean }[];
+  /** The panel is open. */
   open: boolean;
   onToggle: () => void;
+  /** The unresolved thread you are on, from 1; null when on none. */
+  position: number | null;
+  /**
+   * The unresolved threads the arrows step through, when not all of
+   * `threads` (those drawn where they are).
+   */
+  stepTotal?: number;
+  openOnly: boolean;
+  onStep: (direction: 1 | -1) => void;
+  onOpenOnly: (on: boolean) => void;
   className?: string;
-  /** Where the keys are not had (a file's source): the `:` command said. */
+  /** Where the keys are not had (a file's source): the `:` commands said. */
   commandHints?: boolean;
   /** Comments that did not reach the agent, and why: said on the chip. */
   undelivered?: { count: number; reason: string };
 }) {
+  const hint = (key: string, command: string) =>
+    commandHints ? `:${command}` : key;
+  const total = threads.length;
   const unresolved = threads.filter((thread) => !thread.resolved).length;
+  const steps = stepTotal ?? unresolved;
+  const where = unresolved
+    ? `${position && steps ? `${position}/${steps}` : unresolved} open`
+    : total
+      ? "All resolved"
+      : "";
+  const said = unresolved
+    ? `${position && steps ? `On ${position} of ${steps} open` : `${unresolved} open`} of ${total} comment${total === 1 ? "" : "s"}`
+    : total
+      ? `All ${total} comment${total === 1 ? "" : "s"} resolved`
+      : "No comments yet";
   return (
-    <button
-      type="button"
-      className={`threads-chip ${className}`}
-      aria-expanded={open}
-      title={
-        undelivered
-          ? `The comments (${commandHints ? ":conversations" : "T"}). Not delivered: ${undelivered.reason}`
-          : `The comments (${commandHints ? ":conversations" : "T"})`
-      }
-      onClick={onToggle}
+    <div
+      className={`threads-status unresolved-nav ${className}`}
+      role="group"
+      aria-label="Unresolved threads"
+      // In an OverflowRow: the last to go.
+      data-overflow-priority="6"
     >
-      <span>{unresolved} open</span>
-      <span className="threads-chip-total">
-        {" "}
-        · {threads.length} comment{threads.length === 1 ? "" : "s"}
-      </span>
-      {undelivered ? (
-        <span className="threads-chip-undelivered" role="status">
-          {" "}
-          · {undelivered.count} not delivered
+      <button
+        type="button"
+        className={`threads-chip${unresolved ? " has-open" : ""}`}
+        aria-expanded={open}
+        title={`${said}: list them (${hint("T", "conversations")})${
+          undelivered ? `. Not delivered: ${undelivered.reason}` : ""
+        }`}
+        onClick={onToggle}
+      >
+        {unresolved ? null : total ? (
+          <CheckCheck size={13} aria-hidden="true" />
+        ) : (
+          <MessageSquare size={13} aria-hidden="true" />
+        )}
+        {/* None yet: the icon only, said in its name. */}
+        <span className="unresolved-nav-where" aria-live="polite">
+          {where}
         </span>
+        {where ? null : <span className="sr-only">No comments</span>}
+        {unresolved && total > unresolved ? (
+          <span className="threads-chip-total"> · {total}</span>
+        ) : null}
+        {undelivered ? (
+          <span className="threads-chip-undelivered" role="status">
+            {" "}
+            · {undelivered.count} not delivered
+          </span>
+        ) : null}
+      </button>
+      {steps ? (
+        <>
+          <button
+            type="button"
+            className="unresolved-nav-step"
+            aria-label="Previous unresolved thread"
+            title={`Previous unresolved thread (${hint("gN", "previous")})`}
+            onClick={() => onStep(-1)}
+          >
+            <ChevronUp size={14} />
+          </button>
+          <button
+            type="button"
+            className="unresolved-nav-step"
+            aria-label="Next unresolved thread"
+            title={`Next unresolved thread (${hint("gn", "next")})`}
+            onClick={() => onStep(1)}
+          >
+            <ChevronDown size={14} />
+          </button>
+        </>
       ) : null}
-    </button>
+      {total || openOnly ? (
+        <button
+          type="button"
+          className={`unresolved-nav-only${openOnly ? " on" : ""}`}
+          aria-pressed={openOnly}
+          aria-label="Unresolved only"
+          title={
+            openOnly
+              ? `Showing only the unresolved threads: show the resolved ones too (${hint("gH", "unresolved")})`
+              : commandHints
+                ? "Show only the unresolved threads (:unresolved)"
+                : "Show only the unresolved threads; n / N skip the resolved ones (gH)"
+          }
+          onClick={() => onOpenOnly(!openOnly)}
+        >
+          <ListFilter size={14} />
+        </button>
+      ) : null}
+    </div>
   );
 }
 

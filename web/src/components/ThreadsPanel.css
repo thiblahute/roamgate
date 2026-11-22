@@ -17,15 +17,29 @@
   --tp-accent: #9a6200;
 }
 
+/* The comments' chip, the first part of their one control (ThreadsStatus). */
 .threads-chip {
-  padding: 3px 10px;
-  border: 1px solid color-mix(in srgb, var(--tp-accent) 50%, var(--tp-border));
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
   border-radius: 999px;
-  background: var(--tp-bg);
-  color: var(--tp-accent);
+  background: transparent;
+  color: var(--tp-muted);
+  font: inherit;
   font-size: 12px;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.threads-chip.has-open {
+  color: var(--tp-accent);
+}
+
+.threads-chip-total {
+  color: var(--tp-muted);
 }
 
 .threads-chip[aria-expanded="true"] {
@@ -248,8 +262,10 @@
   content: "";
 }
 
-/* Previous / next unresolved thread, where you are, and "only those". */
+/* The comments' one control: the chip, previous / next unresolved thread
+   and "only those". */
 .unresolved-nav {
+  flex: none;
   --tp-bg: var(--panel);
   --tp-border: var(--border);
   --tp-muted: var(--muted);
@@ -300,6 +316,15 @@
 }
 
 .unresolved-nav-where {
-  padding: 0 4px;
   font-variant-numeric: tabular-nums;
+}
+
+.unresolved-nav .threads-chip {
+  width: auto;
+  height: 22px;
+  padding: 0 7px;
+}
+
+.unresolved-nav-where:empty {
+  display: none;
 }

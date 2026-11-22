@@ -99,6 +99,7 @@ export function FileTreeButton({
   keys,
   className,
   size = 13,
+  overflowPriority,
 }: {
   hidden: boolean;
   onToggle: () => void;
@@ -108,6 +109,8 @@ export function FileTreeButton({
   keys?: string;
   className: string;
   size?: number;
+  /** In an OverflowRow: how long it stays in the row. */
+  overflowPriority?: number;
 }) {
   const label = `${hidden ? "Show" : "Hide"} the ${what}`;
   return (
@@ -117,6 +120,7 @@ export function FileTreeButton({
       title={keys ? `${label} (${keys})` : label}
       aria-label={label}
       aria-pressed={hidden}
+      data-overflow-priority={overflowPriority}
       onClick={onToggle}
     >
       {hidden ? (

@@ -19,6 +19,8 @@
  * More and Close. No view has a toolbar row of its own under it.
  */
 .workspace-inspector-head {
+  /* The box an OverflowRow's list in the slot is placed in. */
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -154,6 +156,18 @@
   /* Safe: a row too long for the slot scrolls from its start. */
   justify-content: safe flex-end;
   gap: 6px;
+  /* Never drawn over the inspector's Expand, More and Close: what a view
+     puts here that is too wide is cut at the slot's end (its OverflowRow
+     sees to it that nothing is). Clipped sideways only: an OverflowRow's
+     list hangs under the row. */
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+/* An OverflowRow in the slot: its list is placed against the header, out
+   of the slot's clip. */
+.workspace-inspector-view-controls .overflow-row {
+  position: static;
 }
 
 .workspace-inspector-view-controls > .inspector-view-head {
@@ -212,19 +226,48 @@
   display: none;
 }
 
+/* Its row fits itself to the slot (an OverflowRow): no scrolling, the
+   scope's name gives way to its least width first. */
+.inspector-view-head.diff-head-slot > .diff-content-head.overflow-row {
+  overflow: visible;
+}
+
+.inspector-view-head.diff-head-slot
+  > .diff-content-head.overflow-row
+  > .diff-content-title {
+  min-width: 7em;
+}
+
+.inspector-view-head.diff-head-slot
+  > .diff-content-head.overflow-row
+  > .changes-review-status {
+  min-width: 0;
+}
+
+.diff-head-more {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
 /* Files: the file's name and actions; its path is the name's tooltip. */
 .inspector-view-head.file-preview-head-slot > .file-preview-title-row {
   flex: 1 1 0;
   gap: 6px;
 }
 
-.inspector-view-head.file-preview-head-slot .file-preview-title {
+.inspector-view-head.file-preview-head-slot
+  .file-preview-title-row
+  > .file-preview-title {
   font-size: 12px;
 }
 
 .inspector-view-head.file-preview-head-slot
-  .file-preview-head-actions
-  :is(button, a) {
+  .file-preview-title-row
+  > :is(button, a) {
   min-height: 24px;
   height: 24px;
   padding-block: 0;
@@ -496,6 +539,21 @@
   .workspace-inspector-view-controls
   > .inspector-view-head {
   flex: 1 0 auto;
+}
+
+/* A view whose row fits itself to its room (an OverflowRow marks the slot,
+   no :has() here: the review's typing would restyle it): no scrolling, so
+   its list can hang under the header. */
+.workspace-inspector.is-compact
+  .workspace-inspector-view-controls[data-overflow-fits] {
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+.workspace-inspector.is-compact
+  .workspace-inspector-view-controls[data-overflow-fits]
+  > .inspector-view-head {
+  flex: 1 1 0;
 }
 
 .workspace-inspector.is-compact

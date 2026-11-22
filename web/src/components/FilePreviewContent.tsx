@@ -21,8 +21,12 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronLeft,
+  CodeXml,
+  Copy,
+  Crosshair,
   Download,
   FolderPlus,
+  Globe,
   RefreshCw,
   X,
 } from "lucide-react";
@@ -101,7 +105,8 @@ import {
 import { RenderedFrame } from "./RenderedFrame";
 import { useGraphicPointing } from "./useGraphicPointing";
 import { useRenderedScripts } from "../useRenderedScripts";
-import { ThreadsChip, UnresolvedNav } from "./ThreadsPanel";
+import { OverflowRow } from "./OverflowRow";
+import { ThreadsStatus } from "./ThreadsPanel";
 import { FileTreeButton } from "./changesFrame";
 import {
   useZenEscape,
@@ -1397,6 +1402,7 @@ export function FilePreviewContent({
         className="file-preview-refresh"
         title={`Back (${mac ? "Cmd+[" : "Alt+Left"}, :back)`}
         aria-label="Back"
+        data-overflow-priority="3"
         disabled={!canStep(history, -1)}
         onClick={() => stepPlace(-1)}
       >
@@ -1407,6 +1413,7 @@ export function FilePreviewContent({
         className="file-preview-refresh"
         title={`Forward (${mac ? "Cmd+]" : "Alt+Right"}, :forward)`}
         aria-label="Forward"
+        data-overflow-priority="3"
         disabled={!canStep(history, 1)}
         onClick={() => stepPlace(1)}
       >
@@ -1549,25 +1556,28 @@ export function FilePreviewContent({
     (!!siteUrl ||
       (renderRichPreview && (hasMarkdownPreview || hasHtmlPreview)) ||
       isSvgFile);
+  const scriptsState = scripts.on
+    ? `Scripts on${scripts.listed ? " (listed)" : ""}`
+    : "Scripts off";
   const scriptsControl = canScript ? (
     <>
       <button
         type="button"
-        className={`file-preview-copy${scripts.on ? " is-on" : ""}`}
+        className={`file-preview-refresh${scripts.on ? " is-on" : ""}`}
         aria-pressed={scripts.on}
+        aria-label={scriptsState}
+        data-overflow-priority="1"
         disabled={!!scripts.listed}
         title={
           scripts.listed
-            ? `Scripts run here: ${scripts.listed} is in Settings, Instance, Sites we work on. Sandboxed, without access to Roamgate.`
+            ? `Scripts on: ${scripts.listed} is in Settings, Instance, Sites we work on. Sandboxed, without access to Roamgate.`
             : scripts.on
-              ? "Scripts run for this file. Sandboxed, without access to Roamgate. Click to turn them off."
-              : "Scripts are off. Click to run this file's scripts, sandboxed without access to Roamgate."
+              ? "Scripts on for this file, sandboxed without access to Roamgate: click to turn them off (:scripts)"
+              : "Scripts off: click to run this file's scripts, sandboxed without access to Roamgate (:scripts)"
         }
         onClick={scripts.toggle}
       >
-        {scripts.on
-          ? `Scripts on${scripts.listed ? " (listed)" : ""}`
-          : "Scripts off"}
+        <CodeXml size={13} aria-hidden="true" />
       </button>
       {scripts.turnedOn && !scripts.listed && scripts.alwaysEntry ? (
         <button
@@ -1580,6 +1590,20 @@ export function FilePreviewContent({
         </button>
       ) : null}
     </>
+  ) : null;
+  /** Point at a graphic: a crosshair, on while pointing. */
+  const pointControl = canPoint ? (
+    <button
+      type="button"
+      className={`file-preview-refresh${pointMode ? " is-on" : ""}`}
+      aria-pressed={pointMode}
+      aria-label="Point"
+      data-overflow-priority="2"
+      title="Point at a graphic: click for a point, drag for a box, or hold Alt (:point)"
+      onClick={() => setPointMode((on) => !on)}
+    >
+      <Crosshair size={13} aria-hidden="true" />
+    </button>
   ) : null;
   // The threads' keys and what they have open, as in an agent chat: j / k
   // through the blocks and the threads' messages, n / N, gn / gN, gH, c,
@@ -2100,11 +2124,22 @@ export function FilePreviewContent({
   const fileShown = !showingChanges;
   /** A page, a rendered file: what has the threads' blocks and keys. */
   const renderedShown = fileShown && (renderRichPreview || !!siteUrl);
-  const unresolvedNav = (
+  /** The comments' one control: their count, the panel, the arrows. */
+  const threadsStatus = (className?: string) => (
     <>
-      <UnresolvedNav
-        className="file-preview-unresolved-nav"
-        total={threadOrder.filter((thread) => !thread.resolved).length}
+      <ThreadsStatus
+        className={className ?? ""}
+        threads={fileThreads.threads}
+        undelivered={
+          undelivered
+            ? {
+                count: undelivered.ids.size,
+                reason: undelivered.reason,
+              }
+            : undefined
+        }
+        open={threadsOpen}
+        onToggle={() => setThreadsOpen((open) => !open)}
         position={unresolvedPosition(threadOrder, cursorThread)}
         openOnly={threadView.openOnly}
         onStep={jumpUnresolved}
@@ -2415,211 +2450,202 @@ export function FilePreviewContent({
     back?.focus({ preventScroll: true });
   };
 
+  /*
+   * One row, never wider than its room: the name gives way first (to its
+   * tooltip), then the least used controls go behind ⋮ (OverflowRow);
+   * the comments, the source switch and Close stay.
+   */
   const titleRow = (
-    <div className="file-preview-title-row">
+    <OverflowRow
+      className="file-preview-title-row"
+      moreLabel="More file controls"
+      moreClassName="file-preview-refresh"
+    >
       {backAction ? (
         <button
           type="button"
           className="file-preview-back"
           title={backAction.label}
           aria-label={backAction.label}
+          data-overflow-keep=""
           onClick={backAction.onClick}
         >
           <ChevronLeft size={14} aria-hidden="true" />
         </button>
       ) : null}
       {fileShown && entry ? historyButtons : null}
-      <div className="file-preview-title" title={entry?.path ?? entry?.name}>
+      <div
+        className="file-preview-title"
+        title={entry?.path ?? entry?.name}
+        data-overflow-keep=""
+        data-overflow-shrink=""
+      >
         {entry?.name ?? "Preview"}
       </div>
-      <div className="file-preview-head-actions">
-        {!showingChanges && showDirectoryWorkspaceAction ? (
-          <button
-            type="button"
-            className="file-preview-refresh"
-            title="New workspace with this directory as CWD"
-            aria-label="New workspace with this directory as CWD"
-            onClick={() => setWorkspaceDialogOpen(true)}
-          >
-            <FolderPlus size={13} aria-hidden="true" />
-          </button>
-        ) : null}
-        {onToggleTree ? (
-          <FileTreeButton
-            hidden={treeHidden}
-            onToggle={onToggleTree}
-            what="file tree"
-            // :files is the file view's (the inspector's, there).
-            {...(showingChanges && !inspectorRun ? {} : { keys: ":files" })}
-            className="file-preview-refresh"
-          />
-        ) : null}
-        {!showingChanges && entry && onRefresh ? (
-          <button
-            type="button"
-            className="file-preview-refresh"
-            title="Refresh preview (R, :refresh)"
-            aria-label="Refresh preview"
-            disabled={loadingProp}
-            onClick={reload}
-          >
-            <RefreshCw
-              size={13}
-              className={loadingProp ? "is-spinning" : undefined}
-              aria-hidden="true"
-            />
-          </button>
-        ) : null}
-        {!showingChanges && onOpenFile ? (
-          <button
-            type="button"
-            className="file-preview-copy"
-            title="Open a site's page here, to browse and comment on"
-            aria-expanded={urlOpen}
-            onClick={() => setUrlOpen((open) => !open)}
-          >
-            URL
-          </button>
-        ) : null}
-        {!showingChanges && onCreateAnnotation ? (
-          <ZenButton
-            zen={zen}
-            onToggle={toggleZen}
-            className="file-preview-refresh"
-            label="Review only"
-            title="Review only: hide all the chrome, just the file (o, :only; o or Esc brings it back)"
+      {!showingChanges && showDirectoryWorkspaceAction ? (
+        <button
+          type="button"
+          className="file-preview-refresh"
+          title="New workspace with this directory as CWD"
+          aria-label="New workspace with this directory as CWD"
+          onClick={() => setWorkspaceDialogOpen(true)}
+        >
+          <FolderPlus size={13} aria-hidden="true" />
+        </button>
+      ) : null}
+      {onToggleTree ? (
+        <FileTreeButton
+          hidden={treeHidden}
+          onToggle={onToggleTree}
+          what="file tree"
+          // :files is the file view's (the inspector's, there).
+          {...(showingChanges && !inspectorRun ? {} : { keys: ":files" })}
+          className="file-preview-refresh"
+          overflowPriority={2}
+        />
+      ) : null}
+      {!showingChanges && entry && onRefresh ? (
+        <button
+          type="button"
+          className="file-preview-refresh"
+          title="Refresh preview (R, :refresh)"
+          aria-label="Refresh preview"
+          data-overflow-priority="3"
+          disabled={loadingProp}
+          onClick={reload}
+        >
+          <RefreshCw
             size={13}
+            className={loadingProp ? "is-spinning" : undefined}
+            aria-hidden="true"
           />
-        ) : null}
-        {scriptsControl}
-        {canPoint ? (
-          <button
-            type="button"
-            className={`file-preview-copy${pointMode ? " is-on" : ""}`}
-            aria-pressed={pointMode}
-            title="Point at a graphic: click for a point, drag for a box (or hold Alt)"
-            onClick={() => setPointMode((on) => !on)}
-          >
-            Point
-          </button>
-        ) : null}
-        {canComment ? (
-          <>
-            <ThreadsChip
-              threads={fileThreads.threads}
-              undelivered={
-                undelivered
-                  ? {
-                      count: undelivered.ids.size,
-                      reason: undelivered.reason,
-                    }
-                  : undefined
-              }
-              open={threadsOpen}
-              onToggle={() => setThreadsOpen((open) => !open)}
-              className="file-preview-threads-chip"
-              commandHints={sourceShown}
-            />
-            {unresolvedNav}
-          </>
-        ) : null}
-        {!showingChanges && hasPreviewText && !preview?.truncated ? (
-          <button
-            type="button"
-            className="file-preview-copy"
-            title="Copy entire file content"
-            onClick={() => void copyPreviewText()}
-          >
-            Copy
-          </button>
-        ) : null}
-        {!showingChanges && hasRichPreview ? (
-          <button
-            type="button"
-            className="file-preview-mode-toggle"
-            role="switch"
-            aria-label="Source mode"
-            aria-checked={previewMode === "raw"}
-            onClick={() =>
-              setPreviewMode((mode) =>
-                mode === "rendered" ? "raw" : "rendered",
-              )
+        </button>
+      ) : null}
+      {!showingChanges && onOpenFile ? (
+        <button
+          type="button"
+          className="file-preview-refresh"
+          title="Open a site's page here, to browse and comment on (:url)"
+          aria-label="Open a URL"
+          aria-expanded={urlOpen}
+          onClick={() => setUrlOpen((open) => !open)}
+        >
+          <Globe size={13} aria-hidden="true" />
+        </button>
+      ) : null}
+      {!showingChanges && onCreateAnnotation ? (
+        <ZenButton
+          zen={zen}
+          onToggle={toggleZen}
+          className="file-preview-refresh"
+          label="Review only"
+          title="Review only: hide all the chrome, just the file (o, :only; o or Esc brings it back)"
+          size={13}
+          overflowPriority={1}
+        />
+      ) : null}
+      {scriptsControl}
+      {pointControl}
+      {canComment ? threadsStatus("file-preview-threads-status") : null}
+      {!showingChanges && hasPreviewText && !preview?.truncated ? (
+        <button
+          type="button"
+          className="file-preview-refresh"
+          title="Copy entire file content"
+          aria-label="Copy the file"
+          onClick={() => void copyPreviewText()}
+        >
+          <Copy size={13} aria-hidden="true" />
+        </button>
+      ) : null}
+      {!showingChanges && hasRichPreview ? (
+        <button
+          type="button"
+          className="file-preview-mode-toggle"
+          role="switch"
+          aria-label="Source mode"
+          aria-checked={previewMode === "raw"}
+          data-overflow-priority="5"
+          onClick={() =>
+            setPreviewMode((mode) => (mode === "rendered" ? "raw" : "rendered"))
+          }
+        >
+          <span className="file-preview-mode-label">
+            {hasMermaidPreview ? "Diagram" : "Preview"}
+          </span>
+          <span
+            className={
+              "settings-switch" + (previewMode === "raw" ? " is-on" : "")
             }
+            aria-hidden="true"
           >
-            <span className="file-preview-mode-label">
-              {hasMermaidPreview ? "Diagram" : "Preview"}
-            </span>
-            <span
-              className={
-                "settings-switch" + (previewMode === "raw" ? " is-on" : "")
-              }
-              aria-hidden="true"
-            >
-              <span />
-            </span>
-            <span className="file-preview-mode-label">Source</span>
-          </button>
-        ) : null}
-        {!showingChanges && !siteUrl && absolutePath && onShowInReview ? (
-          <button
-            type="button"
-            className="file-preview-copy"
-            title="Show in code review: this file in the review of its checkout, at the cursor's line"
-            onClick={() => onShowInReview(absolutePath, cursorLine())}
-          >
-            Review
-          </button>
-        ) : null}
-        {!showingChanges && reviewPath ? (
-          <button
-            type="button"
-            className={`file-preview-copy file-preview-reviewed ${reviewTick?.reviewed ? "is-reviewed" : ""}`}
-            aria-pressed={reviewTick?.reviewed ?? false}
-            title={
-              reviewTick?.reviewed
-                ? "Reviewed in the checkout's review: unmark it (:reviewed)"
-                : "Mark this file reviewed in the checkout's review (:reviewed)"
-            }
-            onClick={toggleReviewed}
-          >
-            {reviewTick?.reviewed ? "\u2713 Reviewed" : "Reviewed"}
-          </button>
-        ) : null}
-        {changesAvailable ? (
-          <button
-            type="button"
-            className="file-preview-changes-toggle"
-            aria-pressed={showingChanges}
-            title={showingChanges ? "Show file preview" : "Show changes"}
-            onClick={() => setDetailTab(showingChanges ? "file" : "changes")}
-          >
-            Changes
-          </button>
-        ) : null}
-        {downloadable ? (
-          <button
-            type="button"
-            className="file-preview-refresh"
-            title={downloadLabel}
-            aria-label="Download file"
-            onClick={downloadFile}
-          >
-            <Download size={13} aria-hidden="true" />
-          </button>
-        ) : null}
-        {entry && onClosePreview ? (
-          <button
-            type="button"
-            className="file-preview-refresh"
-            title="Close preview"
-            aria-label="Close file preview"
-            onClick={onClosePreview}
-          >
-            <X size={13} aria-hidden="true" />
-          </button>
-        ) : null}
-      </div>
-    </div>
+            <span />
+          </span>
+          <span className="file-preview-mode-label">Source</span>
+        </button>
+      ) : null}
+      {!showingChanges && !siteUrl && absolutePath && onShowInReview ? (
+        <button
+          type="button"
+          className="file-preview-copy"
+          title="Show in code review: this file in the review of its checkout, at the cursor's line (:review)"
+          onClick={() => onShowInReview(absolutePath, cursorLine())}
+        >
+          Review
+        </button>
+      ) : null}
+      {!showingChanges && reviewPath ? (
+        <button
+          type="button"
+          className={`file-preview-copy file-preview-reviewed ${reviewTick?.reviewed ? "is-reviewed" : ""}`}
+          aria-pressed={reviewTick?.reviewed ?? false}
+          data-overflow-priority="3"
+          title={
+            reviewTick?.reviewed
+              ? "Reviewed in the checkout's review: unmark it (:reviewed)"
+              : "Mark this file reviewed in the checkout's review (:reviewed)"
+          }
+          onClick={toggleReviewed}
+        >
+          {reviewTick?.reviewed ? "\u2713 Reviewed" : "Reviewed"}
+        </button>
+      ) : null}
+      {changesAvailable ? (
+        <button
+          type="button"
+          className="file-preview-changes-toggle"
+          aria-pressed={showingChanges}
+          data-overflow-priority="4"
+          title={showingChanges ? "Show file preview" : "Show changes"}
+          onClick={() => setDetailTab(showingChanges ? "file" : "changes")}
+        >
+          Changes
+        </button>
+      ) : null}
+      {downloadable ? (
+        <button
+          type="button"
+          className="file-preview-refresh"
+          title={downloadLabel}
+          aria-label="Download file"
+          onClick={downloadFile}
+        >
+          <Download size={13} aria-hidden="true" />
+        </button>
+      ) : null}
+      {entry && onClosePreview ? (
+        <button
+          type="button"
+          className="file-preview-refresh"
+          title="Close preview"
+          aria-label="Close file preview"
+          data-overflow-keep=""
+          onClick={onClosePreview}
+        >
+          <X size={13} aria-hidden="true" />
+        </button>
+      ) : null}
+    </OverflowRow>
   );
   const headNotices = (
     <>
@@ -3098,35 +3124,8 @@ export function FilePreviewContent({
             Show all
           </button>
           {scriptsControl}
-          {canPoint ? (
-            <button
-              type="button"
-              className={pointMode ? "is-on" : ""}
-              aria-pressed={pointMode}
-              onClick={() => setPointMode((on) => !on)}
-            >
-              Point
-            </button>
-          ) : null}
-          {canComment ? (
-            <>
-              <ThreadsChip
-                threads={fileThreads.threads}
-                undelivered={
-                  undelivered
-                    ? {
-                        count: undelivered.ids.size,
-                        reason: undelivered.reason,
-                      }
-                    : undefined
-                }
-                open={threadsOpen}
-                onToggle={() => setThreadsOpen((open) => !open)}
-                commandHints={sourceShown}
-              />
-              {unresolvedNav}
-            </>
-          ) : null}
+          {pointControl}
+          {canComment ? threadsStatus() : null}
           <ZenDock labels iconSize={13} />
         </div>
       ) : null}

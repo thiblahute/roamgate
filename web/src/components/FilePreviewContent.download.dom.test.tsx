@@ -184,7 +184,7 @@ if (process.env.ROAMGATE_PREVIEW_DOWNLOAD_DOM_TEST !== "1") {
       downloads.length = 0;
       const view = await mount(apk);
       const action = view.container.querySelector<HTMLButtonElement>(
-        '.file-preview-head-actions button[aria-label="Download file"]',
+        '.file-preview-title-row button[aria-label="Download file"]',
       );
       expect(action?.title).toBe("Download app-debug.apk (20.0 MB)");
       await act(async () => action!.click());
@@ -195,7 +195,7 @@ if (process.env.ROAMGATE_PREVIEW_DOWNLOAD_DOM_TEST !== "1") {
       const text = await mount(notes);
       expect(text.container.querySelector(".file-preview-download")).toBeNull();
       const textAction = text.container.querySelector<HTMLButtonElement>(
-        '.file-preview-head-actions button[aria-label="Download file"]',
+        '.file-preview-title-row button[aria-label="Download file"]',
       );
       await act(async () => textAction!.click());
       expect(downloads).toHaveLength(2);

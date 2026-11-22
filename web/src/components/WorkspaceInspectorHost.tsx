@@ -1663,6 +1663,8 @@ export function WorkspaceInspectorHost({
           <div
             ref={setHeaderSlotTarget}
             className="workspace-inspector-view-controls"
+            // An OverflowRow in it says so here (data-overflow-fits).
+            data-overflow-host=""
             data-view={state.view}
           />
           <div className="workspace-inspector-actions">

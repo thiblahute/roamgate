@@ -492,7 +492,7 @@ export interface ReviewSurface {
   conversationsShown(): boolean;
   /** The comments panel (T), or null when closed. */
   threadsPanel(): ThreadsPanelView | null;
-  /** The comments chip ("2 open · 3 comments"), or null. */
+  /** The comments chip ("2 open · 3"), or null. */
   threadsChip(): string | null;
   /** Click the comments chip. */
   clickThreadsChip(): Promise<void>;

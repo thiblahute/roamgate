@@ -27,6 +27,7 @@ export function ZenButton({
   label = "Diff only",
   title = "Diff only: hide all the chrome, just the diff (o, :only; o or Esc brings it back)",
   size = 16,
+  overflowPriority,
 }: {
   zen: boolean;
   onToggle: () => void;
@@ -34,11 +35,14 @@ export function ZenButton({
   label?: string;
   title?: string;
   size?: number;
+  /** In an OverflowRow: how long it stays in the row. */
+  overflowPriority?: number;
 }) {
   return (
     <button
       type="button"
       className={`${className}${zen ? " on" : ""}`}
+      data-overflow-priority={overflowPriority}
       aria-pressed={zen}
       aria-label={label}
       title={title}

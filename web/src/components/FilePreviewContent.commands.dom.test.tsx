@@ -261,11 +261,11 @@ if (
     const where = () =>
       view.host.querySelector(".unresolved-nav-where")?.textContent;
     await view.command("next");
-    expect(where()).toBe("1 of 2 unresolved");
+    expect(where()).toBe("1/2 open");
     await view.command("next");
-    expect(where()).toBe("2 of 2 unresolved");
+    expect(where()).toBe("2/2 open");
     await view.command("prev");
-    expect(where()).toBe("1 of 2 unresolved");
+    expect(where()).toBe("1/2 open");
     // :fold, as za: the cursor's thread folded, and back.
     const folded = () =>
       view.host
@@ -293,9 +293,11 @@ if (
     expect(view.calls).toContain("review /repo/plan.md 5");
     // :scripts, the Scripts button; :scripts on when on does nothing.
     const scripts = () =>
-      [...view.host.querySelectorAll("button")].find((button) =>
-        /^Scripts (on|off)/.test(button.textContent ?? ""),
-      )?.textContent;
+      [...view.host.querySelectorAll("button")]
+        .find((button) =>
+          /^Scripts (on|off)/.test(button.getAttribute("aria-label") ?? ""),
+        )
+        ?.getAttribute("aria-label");
     expect(scripts()).toBe("Scripts off");
     await view.command("scripts");
     expect(scripts()).toBe("Scripts on");
@@ -306,7 +308,7 @@ if (
     // :point, the Point button.
     const point = () =>
       [...view.host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Point")
+        .find((button) => button.getAttribute("aria-label") === "Point")
         ?.getAttribute("aria-pressed");
     expect(point()).toBe("false");
     await view.command("point");

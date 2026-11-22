@@ -140,34 +140,34 @@ if (
         await review.unmount();
       });
 
-      test("the comments chip counts the open ones and opens the panel; the unresolved arrows beside it step through them", async () => {
+      test("the comments' one control counts the open ones and opens the panel; its arrows step through them", async () => {
         const review = await mount({
           files: [added("a.ts", 12)],
           threads: four(),
         });
-        expect(review.threadsChip()).toBe("3 open · 4 comments");
+        expect(review.threadsChip()).toBe("3 open · 4");
         await review.clickThreadsChip();
         expect(review.threadsPanel()?.ids).toEqual(["t2", "t3", "t1"]);
         await review.clickThreadsChip();
         expect(review.threadsPanel()).toBeNull();
 
         expect(review.unresolvedNav()).toEqual({
-          label: "3 unresolved",
+          label: "3 open",
           disabled: false,
         });
         // In the order of the review, from its first line.
         await review.unresolvedStep("next");
         expect(review.cursorLine()?.new).toBe(2);
-        expect(review.unresolvedNav()?.label).toBe("1 of 3 unresolved");
+        expect(review.unresolvedNav()?.label).toBe("1/3 open");
         await review.unresolvedStep("next");
         expect(review.cursorLine()?.new).toBe(5);
-        expect(review.unresolvedNav()?.label).toBe("2 of 3 unresolved");
+        expect(review.unresolvedNav()?.label).toBe("2/3 open");
         await review.unresolvedStep("previous");
         expect(review.cursorLine()?.new).toBe(2);
         // Past the first: the last one, around.
         await review.unresolvedStep("previous");
         expect(review.cursorLine()?.new).toBe(8);
-        expect(review.unresolvedNav()?.label).toBe("3 of 3 unresolved");
+        expect(review.unresolvedNav()?.label).toBe("3/3 open");
         // Only them: the resolved thread is no longer drawn.
         expect(review.shownThreads().map((each) => each.id)).toContain("t4");
         await review.unresolvedStep("only");
@@ -176,11 +176,11 @@ if (
         );
         await review.unresolvedStep("only");
 
-        // All resolved: said, the arrows off.
+        // All resolved: said, the arrows gone.
         await review.push({
           threads: four().map((each) => ({ ...each, resolved: true })),
         });
-        expect(review.threadsChip()).toBe("0 open · 4 comments");
+        expect(review.threadsChip()).toBe("All resolved");
         expect(review.unresolvedNav()).toEqual({
           label: "All resolved",
           disabled: true,
@@ -316,13 +316,13 @@ if (
         await review.goToFile("a.ts");
         await review.press("gg");
         const where = () => review.unresolvedNav()?.label;
-        expect(where()).toBe("2 unresolved");
+        expect(where()).toBe("2 open");
         // The reviewed file shows no line yet.
         expect(review.lines("b.ts").map((line) => line.text)).not.toContain(
           "b.ts line 3",
         );
         await review.press("gn");
-        expect(where()).toBe("1 of 2 unresolved");
+        expect(where()).toBe("1/2 open");
         expect(review.notice()).toBe("1 of 2 unresolved");
         expect(review.cursorLine()).toMatchObject({ path: "a.ts", new: 2 });
         // Over the resolved one on a.ts into the reviewed file, opened.
@@ -330,11 +330,11 @@ if (
         expect(review.lines("b.ts").map((line) => line.text)).toContain(
           "b.ts line 3",
         );
-        expect(where()).toBe("2 of 2 unresolved");
+        expect(where()).toBe("2/2 open");
         expect(review.cursorLine()).toMatchObject({ path: "b.ts", new: 3 });
         // Past the last: back at the first.
         await review.press("gn");
-        expect(where()).toBe("1 of 2 unresolved");
+        expect(where()).toBe("1/2 open");
         expect(review.cursorLine()).toMatchObject({ path: "a.ts", new: 2 });
         await review.press("gN");
         expect(review.cursorLine()).toMatchObject({ path: "b.ts", new: 3 });
