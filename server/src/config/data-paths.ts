@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   closeSync,
   constants,
+  type Dirent,
   fchmodSync,
   fstatSync,
   fsyncSync,
@@ -15,7 +16,15 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { lstat, mkdir, open, rename, rm, stat } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -233,6 +242,48 @@ export async function replaceDataFileAsync(
   } catch {
     // Best effort, as for the synchronous writer.
   }
+}
+
+/** The temporary file name writeDataFile and replaceDataFileAsync use. */
+const DATA_TEMPORARY_NAME = /^\.roamgate-[0-9a-f-]{36}\.tmp$/;
+
+/**
+ * Remove the temporary files a killed process left between writing and
+ * renaming them: regular files named like the writers' own, anywhere under
+ * the root, last changed before this process started. Symlinks are never
+ * followed and no other file is touched. Returns how many were removed.
+ */
+export async function removeLeftoverDataTemporaries(
+  root: string = dataRoot(),
+  startedAt: number = performance.timeOrigin,
+): Promise<number> {
+  let removed = 0;
+  const visit = async (directory: string): Promise<void> => {
+    let entries: Dirent[];
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+        continue;
+      }
+      if (!entry.isFile() || !DATA_TEMPORARY_NAME.test(entry.name)) continue;
+      try {
+        const found = await lstat(path);
+        if (!found.isFile() || found.mtimeMs >= startedAt) continue;
+        await rm(path);
+        removed += 1;
+      } catch {
+        // Gone already, or not ours to remove: leave it.
+      }
+    }
+  };
+  await visit(root);
+  return removed;
 }
 
 /** Copy only missing files. Originals and concurrent/new values always win. */

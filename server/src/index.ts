@@ -1,6 +1,7 @@
 import { createUiSettingsRpcHandler } from "./bridge/settings-rpc";
 import { runInSshLane, type SshLane } from "./bridge/ssh-sessions";
 import { loadOrCreateSessionSecret } from "./config/session-secret";
+import { removeLeftoverDataTemporaries } from "./config/data-paths";
 import {
   createAgentSeenStore,
   createHerdrBootCache,
@@ -2931,6 +2932,18 @@ function main() {
     public_dir: config.publicDir,
   });
   logger.info("browser URL", { url: publicBrowserUrl });
+  void removeLeftoverDataTemporaries()
+    .then((removed) => {
+      if (removed > 0)
+        logger.info("removed leftover temporary data files", {
+          count: removed,
+        });
+    })
+    .catch((error) =>
+      logger.warn("leftover temporary data files not removed", {
+        error: sanitizeConnectionError(error),
+      }),
+    );
 
   const browserUrl = withLoginToken(
     publicBrowserUrl,

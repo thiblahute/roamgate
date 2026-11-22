@@ -1,4 +1,6 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
+import * as fsPromises from "node:fs/promises";
 import {
   chmodSync,
   existsSync,
@@ -9,6 +11,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,6 +22,7 @@ import {
   legacyDataRoot,
   migrateDataFile,
   publishDataFile,
+  removeLeftoverDataTemporaries,
   replaceDataFile,
   replaceDataFileAsync,
 } from "./data-paths";
@@ -162,6 +166,68 @@ test("asynchronous replacement is as atomic and private", async () => {
   symlinkSync(target, link);
   await expect(replaceDataFileAsync(link, "third")).rejects.toThrow("symlink");
   expect(readFileSync(target, "utf8")).toBe("second");
+});
+
+test("a failed write or rename leaves no temporary file", async () => {
+  const root = home();
+  const target = join(root, "roamgate", "state.json");
+  replaceDataFile(target, "first");
+  expect(() => replaceDataFile(target, "second", -1)).toThrow();
+  await expect(replaceDataFileAsync(target, "second", -1)).rejects.toThrow();
+  const rename = spyOn(fs, "renameSync").mockImplementation(() => {
+    throw new Error("killed");
+  });
+  const renameAsync = spyOn(fsPromises, "rename").mockImplementation(() =>
+    Promise.reject(new Error("killed")),
+  );
+  try {
+    expect(() => replaceDataFile(target, "second")).toThrow("killed");
+    await expect(replaceDataFileAsync(target, "second")).rejects.toThrow(
+      "killed",
+    );
+  } finally {
+    rename.mockRestore();
+    renameAsync.mockRestore();
+  }
+  expect(readFileSync(target, "utf8")).toBe("first");
+  expect(readdirSync(dirname(target))).toEqual(["state.json"]);
+});
+
+test("startup removes only the temporary files left before it started", async () => {
+  const root = join(home(), "roamgate");
+  const startedAt = Date.now();
+  const before = new Date(startedAt - 60_000);
+  const left = ".roamgate-0b6f3d1e-9a52-4c1e-8f3a-2d7e6c5b4a39.tmp";
+  const nested = join(root, "mr-reviews", "efforts", left);
+  const fresh = join(
+    root,
+    ".roamgate-1c7a4e2f-0b63-4d2f-9a4b-3e8f7d6c5b4a.tmp",
+  );
+  const others = [
+    join(root, "settings.json"),
+    join(root, ".roamgate-not-a-uuid.tmp"),
+    join(root, "other-0b6f3d1e-9a52-4c1e-8f3a-2d7e6c5b4a39.tmp"),
+  ];
+  for (const path of [join(root, left), nested, ...others]) {
+    write(path, "x");
+    utimesSync(path, before, before);
+  }
+  write(fresh, "x");
+  utimesSync(fresh, startedAt / 1000 + 1, startedAt / 1000 + 1);
+  const outside = join(home(), "elsewhere");
+  write(join(outside, left), "x");
+  utimesSync(join(outside, left), before, before);
+  symlinkSync(outside, join(root, "linked"));
+  mkdirSync(join(root, "dir", left), { recursive: true });
+
+  expect(await removeLeftoverDataTemporaries(root, startedAt)).toBe(2);
+  expect(existsSync(join(root, left))).toBe(false);
+  expect(existsSync(nested)).toBe(false);
+  expect(existsSync(fresh)).toBe(true);
+  expect(existsSync(join(root, "dir", left))).toBe(true);
+  for (const path of others) expect(existsSync(path)).toBe(true);
+  expect(existsSync(join(outside, left))).toBe(true);
+  expect(await removeLeftoverDataTemporaries(join(root, "missing"))).toBe(0);
 });
 
 test("concurrent first use publishes one complete legacy token", async () => {
