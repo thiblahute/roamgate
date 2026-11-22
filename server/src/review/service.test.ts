@@ -1,9 +1,14 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, jest, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ReviewPush, threadNeedsAnswer } from "../../../shared/review";
-import { fileChangePlace, type ReviewService, reviewsBranch } from "./service";
+import {
+  ACTIVITY_ROOT_MS,
+  fileChangePlace,
+  type ReviewService,
+  reviewsBranch,
+} from "./service";
 import { openReviewStorage } from "./storage";
 import { ReviewGoneError } from "../workspace/review-patch";
 import { TurnCauses } from "../voice/turn-causes";
@@ -342,6 +347,59 @@ test("activity tells which branches moved since their diff was seen", async () =
   expect(
     (await service.activity({ connectionId: "local" })).activity[0]!.newCommits,
   ).toBe(false);
+});
+
+test("activity reads each checkout on its own: the reviews asked for, a slow one told unreadable without holding back the others", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "roamgate-review-"));
+  directories.push(dir);
+  const asked: string[] = [];
+  const { service } = reviewServiceForTest({
+    dir,
+    loadHeads: (_connection, entries) => {
+      const root = entries[0]!.root;
+      asked.push(`${root} ${entries.length}`);
+      // The slow checkout never answers.
+      if (root === "/slow") return new Promise(() => {});
+      return Promise.resolve(entries.map(() => "aaaaaaa1"));
+    },
+  });
+  const open = (root: string, head: string) =>
+    service.open({
+      connectionId: "local",
+      root,
+      target: { kind: "range", base: "main", head },
+      raise: false,
+    }).session.id;
+  const fast = open("/fast", "HEAD");
+  const fastToo = open("/fast", "topic");
+  const slow = open("/slow", "HEAD");
+  const other = open("/other", "HEAD");
+  jest.useFakeTimers();
+  try {
+    const answer = service.activity({
+      connectionId: "local",
+      sessionIds: [fast, fastToo, slow],
+    });
+    jest.advanceTimersByTime(ACTIVITY_ROOT_MS);
+    const { activity } = await answer;
+    // One read per checkout, of only the reviews asked for.
+    expect(asked.sort()).toEqual(["/fast 2", "/slow 1"]);
+    expect(activity).toEqual([
+      { sessionId: fast, headSha: "aaaaaaa1", newCommits: false },
+      { sessionId: fastToo, headSha: "aaaaaaa1", newCommits: false },
+      { sessionId: slow, newCommits: false, unreadable: true },
+    ]);
+  } finally {
+    jest.useRealTimers();
+  }
+  expect(
+    (
+      await service.activity({ connectionId: "local", sessionIds: [other] })
+    ).activity.map((each) => each.sessionId),
+  ).toEqual([other]);
+  await expect(
+    service.activity({ connectionId: "local", sessionIds: "nope" }),
+  ).rejects.toThrow("sessionIds is a list");
 });
 
 test("the commit the overlay showed, gone, brings the patch ids along", async () => {

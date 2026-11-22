@@ -115,6 +115,49 @@ function isoTime(value: unknown): string | undefined {
     : undefined;
 }
 
+/** How long review.activity waits on one checkout's branches. */
+export const ACTIVITY_ROOT_MS = 5_000;
+/** The checkouts review.activity reads at once. */
+const ACTIVITY_PARALLEL = 6;
+/** The most reviews one review.activity call names. */
+const ACTIVITY_MAX_IDS = 1_000;
+
+/** The reviews a review.activity call names: review ids, as a list. */
+function activityIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new ReviewError("sessionIds is a list");
+  if (value.length > ACTIVITY_MAX_IDS)
+    throw new ReviewError(`sessionIds names over ${ACTIVITY_MAX_IDS} reviews`);
+  return value.filter(
+    (each): each is string => typeof each === "string" && ID.test(each),
+  );
+}
+
+/** Runs `work` on each item, at most `limit` at a time. */
+async function eachAtMost<T>(
+  items: readonly T[],
+  limit: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) await work(items[next++]!);
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker),
+  );
+}
+
+/** The promise's answer, or a rejection once `ms` have passed. */
+function withinMs<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("timed out")), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 function text(value: unknown, field: string, max: number): string {
   if (typeof value !== "string") throw new ReviewError(`${field} is required`);
   if (value.length > max)
@@ -4172,13 +4215,23 @@ export function createReviewService(args: {
     return result;
   }
 
-  /** For the reviews list: which reviews' branches moved since last seen. */
+  /**
+   * For the reviews list: which reviews' branches moved since last seen,
+   * of the reviews asked for (every one of the connection without). Each
+   * checkout is read on its own, a few at once, within ACTIVITY_ROOT_MS:
+   * a slow or unreachable one holds back no other, and its reviews are
+   * told unreadable rather than waited for.
+   */
   async function activity(params: Record<string, unknown>): Promise<{
     activity: ReviewActivity[];
   }> {
     const connectionId = text(params.connectionId, "connection", 200);
+    const asked =
+      params.sessionIds === undefined
+        ? null
+        : new Set(activityIds(params.sessionIds));
     const mine = [...sessions.values()].filter(
-      (s) => s.connectionId === connectionId,
+      (s) => s.connectionId === connectionId && (!asked || asked.has(s.id)),
     );
     // Known gone: told as such, not asked of the host again.
     const goneActivity = mine.flatMap((s) => {
@@ -4190,23 +4243,43 @@ export function createReviewService(args: {
     const reviews = mine.filter(
       (s) => s.target.kind === "range" && !knownGone(s),
     );
-    if (!args.loadHeads || !reviews.length) return { activity: goneActivity };
-    const heads = await args.loadHeads(
-      connectionId,
-      reviews.map((s) => ({
-        root: s.root,
-        ref: s.target.kind === "range" ? s.target.head : "HEAD",
-      })),
-    );
+    const loadHeads = args.loadHeads;
+    if (!loadHeads || !reviews.length) return { activity: goneActivity };
+    const byRoot = new Map<string, ReviewSession[]>();
+    for (const s of reviews)
+      byRoot.set(s.root, [...(byRoot.get(s.root) ?? []), s]);
+    const heads = new Map<string, string | null>();
+    const unreadable = new Set<string>();
+    await eachAtMost([...byRoot], ACTIVITY_PARALLEL, async ([root, group]) => {
+      try {
+        const found = await withinMs(
+          loadHeads(
+            connectionId,
+            group.map((s) => ({
+              root,
+              ref: s.target.kind === "range" ? s.target.head : "HEAD",
+            })),
+          ),
+          ACTIVITY_ROOT_MS,
+        );
+        group.forEach((s, index) => heads.set(s.id, found[index] ?? null));
+      } catch {
+        for (const s of group) unreadable.add(s.id);
+      }
+    });
     return {
       activity: [
         ...goneActivity,
-        ...reviews.map((s, index) => ({
-          sessionId: s.id,
-          headSha: heads[index] ?? undefined,
-          newCommits:
-            !!heads[index] && !!s.seenHeadSha && heads[index] !== s.seenHeadSha,
-        })),
+        ...reviews.map((s): ReviewActivity => {
+          if (unreadable.has(s.id))
+            return { sessionId: s.id, newCommits: false, unreadable: true };
+          const head = heads.get(s.id) ?? null;
+          return {
+            sessionId: s.id,
+            headSha: head ?? undefined,
+            newCommits: !!head && !!s.seenHeadSha && head !== s.seenHeadSha,
+          };
+        }),
       ],
     };
   }

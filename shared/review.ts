@@ -433,6 +433,8 @@ export type ReviewActivity = {
   headSha?: string;
   /** Its checkout or a commit of its range was found gone lately. */
   gone?: ReviewGoneCode;
+  /** Its checkout did not answer in time: whether it moved is not known. */
+  unreadable?: true;
 };
 
 export type ReviewMergeRequest = {

@@ -200,7 +200,12 @@ export async function handleReviewRpc(
       return { snapshots, missing };
     }
     case "review.activity":
-      return service.activity({ connectionId: connection.id });
+      return service.activity({
+        connectionId: connection.id,
+        ...(raw.session_ids !== undefined
+          ? { sessionIds: raw.session_ids }
+          : {}),
+      });
     case "review.import":
       return service.importSession({
         connectionId: connection.id,
