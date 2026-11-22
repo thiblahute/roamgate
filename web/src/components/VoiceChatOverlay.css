@@ -19,7 +19,8 @@
   position: absolute;
   bottom: 10px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(var(--voice-tuck-drag, 0px));
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.3, 1);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -401,6 +402,79 @@
   .voice-chat-overlay-avatar::after {
     animation: none !important;
   }
+}
+
+/*
+ * Swiped down, the card is a slim bar: who the call is with and what it is
+ * doing, mute and hang up. While a finger drags it, it follows without
+ * delay; let go, it settles in a short slide.
+ */
+.voice-chat-overlay.is-dragging {
+  transition: none;
+}
+
+.voice-chat-overlay.is-tucked {
+  --voice-call-button: 36px;
+  --voice-call-avatar: 28px;
+  padding: 4px;
+  border-radius: 22px;
+}
+
+.voice-chat-overlay.is-tucked button {
+  min-width: 36px;
+  height: 36px;
+}
+
+.voice-chat-overlay.is-tucked .voice-chat-overlay-avatar .agent-icon {
+  width: calc(var(--voice-call-avatar) - 8px);
+  height: calc(var(--voice-call-avatar) - 8px);
+}
+
+/*
+ * The grip that says the card swipes, on a touch screen only: a mouse does
+ * not drag it. The browser leaves the card's vertical moves to it.
+ */
+.voice-chat-overlay-handle {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .voice-chat-overlay {
+    touch-action: none;
+  }
+
+  .voice-chat-overlay-handle {
+    position: absolute;
+    top: 3px;
+    left: 50%;
+    display: block;
+    width: 32px;
+    height: 4px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--muted) 45%, transparent);
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  .voice-chat-overlay.is-tucked .voice-chat-overlay-handle {
+    top: 2px;
+    width: 24px;
+    height: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-chat-overlay {
+    transition: none;
+  }
+}
+
+/* The chat's last message stays above the slim bar, closer down. */
+.agent-history-messages:has(.voice-chat-overlay.is-tucked)
+  .agent-history-chat
+  > .agent-history-chat-content::after {
+  content: "";
+  flex: 0 0 64px;
 }
 
 /* Thumb-sized call buttons on a touch screen; two lines of words there. */

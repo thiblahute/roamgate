@@ -18,13 +18,16 @@ import {
 import {
   type ActiveVoiceState,
   formatCallDuration,
+  setVoiceCallTucked,
   speechRateView,
   voiceCallHungUp,
   voiceCallLeft,
   voiceCallName,
   voiceCallStartedAt,
+  voiceCallTucked,
   voiceControlView,
 } from "./voiceChatControl";
+import { useCallTuck } from "./voiceCallTuck";
 import "./VoiceChatOverlay.css";
 
 // Taps keep the focus where it was, such as the message box, like the
@@ -60,6 +63,11 @@ function useCallDuration(): string {
  * red hang-up. Below, the words being heard (their last lines). Surprise
  * and the voices live in Configuration's Speech section, not here. Its size
  * is fixed, so it stays put while the user talks.
+ *
+ * On a touch screen, a swipe down tucks the card into a slim bar that leaves
+ * the chat free (who it is with, what it is doing, mute and hang up); a
+ * swipe up or a tap on the bar brings the card back. A question to answer
+ * brings it back too.
  */
 export function VoiceChatOverlay({
   state,
@@ -120,6 +128,8 @@ export function VoiceChatOverlay({
   const name = voiceCallName(agent, place);
   const duration = useCallDuration();
   const microphonePaused = useMicrophonePausedByPhone();
+  const tuck = useCallTuck(voiceCallTucked(), setVoiceCallTucked);
+  const tucked = tuck.tucked && !(moveQuestion && onAnswerMove);
   const rate =
     speechRate === undefined || !onCycleSpeechRate
       ? null
@@ -131,23 +141,35 @@ export function VoiceChatOverlay({
   return (
     <div className="voice-chat-overlay-anchor">
       <div
-        className={`voice-chat-overlay is-${state}${muted ? " is-muted" : ""}`}
+        className={`voice-chat-overlay is-${state}${muted ? " is-muted" : ""}${
+          tucked ? " is-tucked" : ""
+        }${tuck.dragging ? " is-dragging" : ""}`}
         role="group"
         aria-label={`Voice call with ${name}`}
         style={
-          view.level === null
+          view.level === null && !tuck.style
             ? undefined
-            : ({ "--voice-level": view.level } as CSSProperties)
+            : ({
+                ...(view.level === null ? {} : { "--voice-level": view.level }),
+                ...tuck.style,
+              } as CSSProperties)
         }
+        {...tuck.handlers}
       >
+        <span className="voice-chat-overlay-handle" aria-hidden="true" />
         <div className="voice-chat-overlay-bar">
           <button
             type="button"
             className="voice-chat-overlay-who"
-            aria-label={`${name}: ${view.title}`}
-            title={view.title}
+            aria-label={
+              tucked
+                ? `${name}: ${view.label}. Show the call`
+                : `${name}: ${view.title}`
+            }
+            aria-expanded={tucked ? false : undefined}
+            title={tucked ? "Show the call" : view.title}
             onMouseDown={keepFocus}
-            onClick={onToggle}
+            onClick={tucked ? () => tuck.setTucked(false) : onToggle}
           >
             <span className="voice-chat-overlay-avatar" aria-hidden="true">
               <AgentIcon agent={agent} />
@@ -211,7 +233,7 @@ export function VoiceChatOverlay({
                 <Mic size={18} aria-hidden="true" />
               )}
             </button>
-            {rate ? (
+            {rate && !tucked ? (
               <button
                 type="button"
                 className="voice-chat-overlay-call voice-chat-overlay-rate"
@@ -223,14 +245,18 @@ export function VoiceChatOverlay({
                 {rate.label}
               </button>
             ) : null}
-            <CallAppButton
-              className="voice-chat-overlay-call voice-chat-overlay-output"
-              onMouseDown={keepFocus}
-            />
-            <CallOutputButton
-              className="voice-chat-overlay-call voice-chat-overlay-output"
-              onMouseDown={keepFocus}
-            />
+            {tucked ? null : (
+              <>
+                <CallAppButton
+                  className="voice-chat-overlay-call voice-chat-overlay-output"
+                  onMouseDown={keepFocus}
+                />
+                <CallOutputButton
+                  className="voice-chat-overlay-call voice-chat-overlay-output"
+                  onMouseDown={keepFocus}
+                />
+              </>
+            )}
             <button
               type="button"
               className="voice-chat-overlay-call voice-chat-overlay-hangup"
@@ -243,7 +269,7 @@ export function VoiceChatOverlay({
             </button>
           </div>
         </div>
-        {moveQuestion && onAnswerMove ? (
+        {tucked ? null : moveQuestion && onAnswerMove ? (
           <div className="voice-chat-overlay-move" role="group">
             <p aria-live="polite">{moveQuestion}</p>
             <div className="voice-chat-overlay-move-actions">

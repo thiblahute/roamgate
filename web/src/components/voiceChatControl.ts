@@ -123,12 +123,16 @@ export function formatCallDuration(ms: number): string {
  * goes on with the same call, a hang-up starts the next one from zero.
  */
 const CALL_CARRY_MS = 3000;
-let call: { startedAt: number; leftAt: number | null } | null = null;
+let call: {
+  startedAt: number;
+  leftAt: number | null;
+  tucked: boolean;
+} | null = null;
 
 /** The current call's start, starting one if none is going on. */
 export function voiceCallStartedAt(now = Date.now()): number {
   if (!call || (call.leftAt !== null && now - call.leftAt > CALL_CARRY_MS)) {
-    call = { startedAt: now, leftAt: null };
+    call = { startedAt: now, leftAt: null, tucked: false };
   } else {
     call.leftAt = null;
   }
@@ -143,4 +147,16 @@ export function voiceCallLeft(now = Date.now()) {
 /** The user hung up: the next call starts from zero. */
 export function voiceCallHungUp() {
   call = null;
+}
+
+/**
+ * Whether the current call's card is tucked into its bar: a card that comes
+ * back for the same call comes back the same way, a new call comes whole.
+ */
+export function voiceCallTucked(): boolean {
+  return call?.tucked ?? false;
+}
+
+export function setVoiceCallTucked(tucked: boolean) {
+  if (call) call.tucked = tucked;
 }
