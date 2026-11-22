@@ -2116,7 +2116,7 @@ function WorkDetail({
     >
       <div className="assistant-section-heading">
         <button type="button" className="ghost" onClick={onBack}>
-          <ChevronLeft size={13} /> All items
+          <ChevronLeft size={13} /> Back
         </button>
       </div>
       <section

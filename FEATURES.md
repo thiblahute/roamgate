@@ -2262,7 +2262,7 @@ under the pointer lights up, the title follows it, Esc lets go); the keys
 do the same (`s`). A card
 never grows in its column: opening it (`Enter`, `i`, a tap or a click)
 shows the item's detail in the view, as a request's detail is shown, with
-**All items** to go back (Esc too): its title and state, its
+**Back** to return to the view it came from (Esc too): its title and state, its
 **description** (the text it was added with, images at the detail's
 width), a state menu (`s`), tags (`t`), its owner with **Open the agent's
 work** (`o`: the owner's pane, and its subagent's task in the Background

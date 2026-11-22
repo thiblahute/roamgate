@@ -496,7 +496,7 @@ if (
       expect(detail()).not.toBeNull();
       expect(detail()!.dataset.workDetail).toBe("1200000000000000");
       expect(view.panel.querySelector(".mr-reviews-board")).toBeNull();
-      expect(view.text(".assistant-section-heading button")).toBe(" All items");
+      expect(view.text(".assistant-section-heading button")).toBe(" Back");
       expect(view.text(".work-detail .assistant-task-heading h3")).toBe(
         "Item 1200000000000000",
       );
