@@ -76,31 +76,35 @@ export const EFFORT_KEYS: readonly ShortcutRow[] = [
  * The board view's keys, the same in both of its modes (the reviews
  * inbox, the Work board): the walk, the columns, the switch between them.
  */
-export const BOARD_KEYS: [string, string][] = [
-  ["[ ]", "the other mode of the view: Work, or Reviews"],
+export const BOARD_KEYS: readonly ShortcutRow[] = [
+  ["[ ]", "the other mode of the view: Work, or Reviews", "]"],
 ];
 
 /**
  * The Work board's keys, for its help (?) and the shortcut cheat sheet:
  * the view's, then its own.
  */
-export const WORK_KEYS: [string, string][] = [
-  ["j k / Down Up", "next / previous item (a count repeats: 3j)"],
-  ["gg G / Home End", "first / last"],
-  [
-    "zz zt zb",
-    "show the selected item in the middle, at the top, at the bottom",
-  ],
-  ["h l / Tab", "on a wide pane (columns): the column on the left / right"],
+export const WORK_KEYS: readonly ShortcutRow[] = [
+  ["j ↓", "next item (a count repeats: 3j)", "j"],
+  ["k ↑", "previous item", "k"],
+  ["gg Home", "first", "gg"],
+  ["G End", "last", "G"],
+  ["zz", "show the selected item in the middle"],
+  ["zt", "show the selected item at the top"],
+  ["zb", "show the selected item at the bottom"],
+  ["h", "on a wide pane (columns): the column on the left"],
+  ["l Tab", "on a wide pane (columns): the column on the right", "l"],
   [
     "Enter i",
     "open the item: its description, state, tags, owner, links, its thread",
+    "Enter",
   ],
   [
     "c",
     "comment on the item, for its owner session (r in its detail: reply to the last thread)",
   ],
-  ["s t", "its state, its tags"],
+  ["s", "its state"],
+  ["t", "its tags"],
   ["o", "the owner's work: its session's pane, its subagent's task"],
   ["dd", "done"],
   ["a", "add an item: a title, a description with images, its state and tags"],
@@ -113,10 +117,10 @@ export const WORK_KEYS: [string, string][] = [
   ["/", "search the items: words, tags, owner"],
   ["r", "read the board again"],
   ...BOARD_KEYS,
-  ["?", "this list"],
+  ["?", "this list", false],
   [
     "Esc",
-    "close the list, the filters, the detail, clear the search or the selection, then hide the view",
+    "close the filters, the detail, clear the search or the selection, then hide the view",
   ],
 ];
 

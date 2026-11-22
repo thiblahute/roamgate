@@ -705,6 +705,69 @@ if (
     }
   });
 
+  test("? shows the Work keys in the shortcut help: searched by keys and words, Enter or a click runs one on the board, Esc closes only the help", async () => {
+    localStorage.clear();
+    calls.length = 0;
+    const view = await mount();
+    try {
+      const help = () => view.panel.querySelector(".shortcut-help");
+      const titles = () =>
+        [...help()!.querySelectorAll(".command-item-title")].map(
+          (row) => row.textContent,
+        );
+      const search = async (text: string) => {
+        await view.type(help()!.querySelector("input")!, text);
+        await view.key("Shift", {});
+      };
+      view.panel.focus();
+      await view.key("?");
+      expect(help()?.querySelector("h2")?.textContent).toBe("Work keys");
+      expect(document.activeElement).toBe(help()!.querySelector("input"));
+      // One key lists the rows holding it; words must all match.
+      await search("j");
+      expect(titles()).toEqual(["next item (a count repeats: 3j)"]);
+      await search("column right");
+      expect(titles()).toEqual([
+        "on a wide pane (columns): the column on the right",
+      ]);
+      // "?" itself is listed, not run.
+      await search("?");
+      expect(
+        help()!.querySelector(".command-item")?.getAttribute("aria-disabled"),
+      ).toBe("true");
+      // Enter runs the row picked: j selects the first card.
+      await search("next item");
+      await view.key("Enter");
+      expect(help()).toBeNull();
+      expect(view.selected()).toBe("1100000000000000");
+      // A click (a tap) runs it too: the column on the right.
+      await view.key("?");
+      await search("column right");
+      await view.click(help()!.querySelector(".command-item"));
+      await view.key("Shift", {});
+      expect(help()).toBeNull();
+      expect(view.selected()).toBe("1200000000000000");
+      // Down then j / k move in the list; Esc closes the help, not the view.
+      await view.key("?");
+      await search("item");
+      const chosen = () =>
+        help()!
+          .querySelector(".command-item[aria-selected='true']")
+          ?.querySelector(".command-item-title")?.textContent;
+      expect(chosen()).toBe("next item (a count repeats: 3j)");
+      await view.key("ArrowDown");
+      expect(chosen()).toBe("previous item");
+      await view.key("k");
+      expect(chosen()).toBe("next item (a count repeats: 3j)");
+      await view.key("Escape");
+      expect(help()).toBeNull();
+      expect(view.closed()).toBe(0);
+      expect(view.selected()).toBe("1200000000000000");
+    } finally {
+      await view.unmount();
+    }
+  });
+
   test("a card dragged to another column changes its state: a mouse at once, a finger after a hold (a swipe scrolls), Esc lets go", async () => {
     localStorage.clear();
     sessionStorage.clear();

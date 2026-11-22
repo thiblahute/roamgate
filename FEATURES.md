@@ -2577,9 +2577,20 @@ sharing access.
 ## Keyboard Shortcuts
 
 On desktop, press `Cmd+Shift+K` (`Ctrl+Alt+Shift+K` on Windows/Linux) or choose
-**Menu > Shortcut cheat sheet** for a filterable overview. Edit bindings under
+**Menu > Shortcut cheat sheet** for the app's shortcuts. Edit bindings under
 **Menu > Configuration > Behavior > Keyboard shortcuts** (up to three per
 action, with JSON import/export).
+
+The cheat sheet and every view's own keys (`?`, or its **Keys** button, in
+the Work board, Reviews, an effort, the background tasks sheet, the
+inspector's views and the review in Changes; `:help WORD` there) open the
+same shortcut help, the list of the command menu: its search has the focus
+and filters by a key (one key lists the rows holding it) or by words; `Up`
+and `Down` (or `Ctrl+N`/`Ctrl+P`) move, then `j`/`k` too, `/` goes back to
+the search; `Enter`, a click or a tap runs the shortcut in the view, as if
+its keys were typed there (a `:command` row runs the command); `Esc` closes
+it. A row that cannot run on its own (a count, a key of a comment box, the
+list itself) is listed, greyed.
 
 App shortcuts also work from a message box (an agent chat's composer or its
 Vim box, a terminal's composer, a review comment) whenever the key edits no
