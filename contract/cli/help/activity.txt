@@ -1,0 +1,30 @@
+Read the activity log (docs/activity.md), without the server.
+
+Usage:
+  roamgate activity today [--by workspace|subject] [--json]
+  roamgate activity day <YYYY-MM-DD> [--by workspace|subject] [--json]
+  roamgate activity range <from> <to> [--by workspace|subject] [--json]
+  roamgate activity events [--after ID] [--from T] [--to T]
+                           [--connection ID] [--workspace ID]
+                           [--kind K[,K...]] [--limit N] [--json | --ndjson]
+  roamgate activity workspaces [--from T] [--to T] [--connection ID] [--json]
+  roamgate activity status [--json]
+
+today, day and range print attended time and agent working and blocked
+time per workspace, or per subject with --by subject; with --json, the
+timeline (days of spans and totals per workspace and per subject).
+A subject is a group of the Workspaces tree, else the first folder under an
+activity.subject_roots entry.
+Days start at the activity.day_start setting, in local time.
+
+events prints events in log (id) order. --after resumes after an event id
+(a page's next_cursor); ts is not monotonic in id order. --from and --to are
+dates or ISO 8601 times. --limit defaults to 1000, at most 5000.
+--json prints an ActivityPage, --ndjson one Event per line.
+
+status says whether the log is recording, the recorder's last alive stamp,
+each connection's state and today's recording gaps.
+
+Connections listed in activity.exclude.connections are left out of
+everything but status. The log is opened read-only.
+

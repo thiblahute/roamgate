@@ -1,0 +1,1377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/assistant.schema.json",
+  "x-generated-from": "shared/assistant.ts",
+  "$defs": {
+    "AssistantAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workspace_label": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/AssistantActionKind"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "executing",
+            "succeeded",
+            "failed",
+            "uncertain",
+            "cancelled"
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "summary": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "connection_label": {
+          "type": "string"
+        },
+        "runtime_generation": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "connection_id",
+        "connection_label",
+        "created_at",
+        "detail",
+        "id",
+        "kind",
+        "params",
+        "runtime_generation",
+        "status",
+        "summary",
+        "workspace_id",
+        "workspace_label"
+      ]
+    },
+    "AssistantActionKind": {
+      "type": "string",
+      "enum": [
+        "create_workspace",
+        "create_worktree",
+        "create_tab",
+        "split_pane",
+        "start_agent",
+        "send_prompt",
+        "close_workspace",
+        "close_pane",
+        "close_agent"
+      ]
+    },
+    "AssistantAuthState": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["waiting", "working", "completed", "failed"]
+        },
+        "message": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "user_code": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["text", "secret", "select", "manual_code"]
+            },
+            "message": {
+              "type": "string"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "label"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["id", "type", "message"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["id", "provider", "status", "message"],
+      "additionalProperties": false
+    },
+    "AssistantChatSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "credential_source": {
+          "type": "string",
+          "enum": ["assistant", "pi"]
+        },
+        "thinking_level": {
+          "$ref": "#/$defs/AssistantThinkingLevel"
+        }
+      },
+      "required": ["credential_source", "instance_id", "model", "provider"],
+      "description": "Compare selection rather than stream revisions to detect stale browser writes."
+    },
+    "AssistantConfig": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "thinking_level": {
+          "$ref": "#/$defs/AssistantThinkingLevel"
+        },
+        "credential_source": {
+          "type": "string",
+          "enum": ["assistant", "pi"]
+        },
+        "allowed_workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantWorkspaceRef"
+          }
+        },
+        "approval_mode": {
+          "type": "string",
+          "enum": ["manual", "auto"]
+        },
+        "workspace_scope": {
+          "type": "string",
+          "const": "all",
+          "description": "Explicit all-workspace consent; legacy auto alone retains selected scope."
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "credential_source",
+        "allowed_workspaces"
+      ],
+      "additionalProperties": false
+    },
+    "AssistantMention": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "type": "number",
+              "description": "UTF-16 offsets of the exact"
+            },
+            "end": {
+              "type": "number"
+            },
+            "kind": {
+              "type": "string",
+              "const": "workspace"
+            },
+            "runtime_generation": {
+              "type": "number"
+            },
+            "connection_label": {
+              "type": "string"
+            },
+            "workspace_label": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "connection_id": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "connection_id",
+            "connection_label",
+            "end",
+            "kind",
+            "label",
+            "runtime_generation",
+            "start",
+            "workspace_id",
+            "workspace_label"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "type": "number",
+              "description": "UTF-16 offsets of the exact"
+            },
+            "end": {
+              "type": "number"
+            },
+            "kind": {
+              "type": "string",
+              "const": "agent"
+            },
+            "pane_id": {
+              "type": "string"
+            },
+            "terminal_id": {
+              "type": "string"
+            },
+            "agent": {
+              "type": "string"
+            },
+            "agent_identity": {
+              "type": "string",
+              "description": "Opaque identity of the selected session and pane occupant."
+            },
+            "runtime_generation": {
+              "type": "number"
+            },
+            "connection_label": {
+              "type": "string"
+            },
+            "workspace_label": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "connection_id": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
+            "agent_identity",
+            "connection_id",
+            "connection_label",
+            "end",
+            "kind",
+            "label",
+            "pane_id",
+            "runtime_generation",
+            "start",
+            "terminal_id",
+            "workspace_id",
+            "workspace_label"
+          ]
+        }
+      ]
+    },
+    "AssistantMentionCatalog": {
+      "type": "object",
+      "properties": {
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantMentionTarget"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": ["targets", "errors"],
+      "additionalProperties": false
+    },
+    "AssistantMentionTarget": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "workspace"
+            },
+            "runtime_generation": {
+              "type": "number"
+            },
+            "connection_label": {
+              "type": "string"
+            },
+            "workspace_label": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "connection_id": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "connection_id",
+            "connection_label",
+            "kind",
+            "label",
+            "runtime_generation",
+            "workspace_id",
+            "workspace_label"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "agent"
+            },
+            "pane_id": {
+              "type": "string"
+            },
+            "terminal_id": {
+              "type": "string"
+            },
+            "agent": {
+              "type": "string"
+            },
+            "agent_identity": {
+              "type": "string",
+              "description": "Opaque identity of the selected session and pane occupant."
+            },
+            "runtime_generation": {
+              "type": "number"
+            },
+            "connection_label": {
+              "type": "string"
+            },
+            "workspace_label": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "connection_id": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
+            "agent_identity",
+            "connection_id",
+            "connection_label",
+            "kind",
+            "label",
+            "pane_id",
+            "runtime_generation",
+            "terminal_id",
+            "workspace_id",
+            "workspace_label"
+          ]
+        }
+      ]
+    },
+    "AssistantMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "assistant"]
+        },
+        "text": {
+          "type": "string"
+        },
+        "thinking": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Model reasoning shown with an assistant reply, one entry per model call that shared reasoning, oldest first. Steps are numbered in this order; older reasoning is dropped first to fit the size limit."
+        },
+        "thinking_skipped": {
+          "type": "number",
+          "description": "Earlier steps dropped entirely, so the first entry is step N + 1."
+        },
+        "thinking_truncated": {
+          "type": "boolean",
+          "const": true,
+          "description": "Set when earlier reasoning was dropped or cut to fit the size limit."
+        },
+        "mentions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantMention"
+          }
+        },
+        "sent_at": {
+          "type": "string"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantToolActivity"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantSource"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantAction"
+          }
+        },
+        "task_proposals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantTaskProposal"
+          }
+        },
+        "show": {
+          "$ref": "#/$defs/AssistantShow",
+          "description": "What the reply put on screen, for the browser that asked."
+        }
+      },
+      "required": ["id", "role", "text", "sent_at", "tools", "sources"],
+      "additionalProperties": false
+    },
+    "AssistantModelApi": {
+      "type": "string",
+      "enum": ["openai-completions", "openai-responses", "anthropic-messages"]
+    },
+    "AssistantModelConnection": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reasoning": {
+          "type": "boolean",
+          "description": "Explicit capability for every submitted model; omitted preserves declarations."
+        },
+        "thinking_levels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantThinkingLevel"
+          },
+          "description": "Explicit supported efforts for every submitted model; omitted preserves maps."
+        },
+        "base_url": {
+          "type": "string"
+        },
+        "api": {
+          "$ref": "#/$defs/AssistantModelApi"
+        },
+        "api_key": {
+          "type": "string"
+        },
+        "credential_source": {
+          "type": "string",
+          "enum": ["assistant", "pi"]
+        }
+      },
+      "required": ["provider", "model", "base_url", "api", "credential_source"],
+      "additionalProperties": false
+    },
+    "AssistantNotificationInput": {
+      "type": "object",
+      "properties": {
+        "event_key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["completed", "attention"]
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": ["event_key", "kind", "title", "body"],
+      "additionalProperties": false
+    },
+    "AssistantNotificationReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "scope_key": {
+          "type": "string"
+        },
+        "event_key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["completed", "attention"]
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "body",
+        "created_at",
+        "event_key",
+        "kind",
+        "run_id",
+        "scope_key",
+        "title"
+      ]
+    },
+    "AssistantQueuedMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["steer", "follow_up"]
+        },
+        "text": {
+          "type": "string"
+        },
+        "mentions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantMention"
+          }
+        },
+        "sent_at": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "mode", "text", "sent_at"],
+      "additionalProperties": false,
+      "description": "A message sent while Ranger was answering. A steer joins the current turn after its next tool round; a follow-up waits for the answer and then starts the next turn. A steer that misses the turn becomes a follow-up."
+    },
+    "AssistantSessionSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "message_count": {
+          "type": "number"
+        }
+      },
+      "required": ["id", "title", "created_at", "updated_at", "message_count"],
+      "additionalProperties": false
+    },
+    "AssistantShow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pane_id": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        }
+      },
+      "required": ["connection_id", "request_id", "workspace_id"],
+      "description": "A workspace, or a pane in it, a reply showed in Roamgate: only the browser that sent `request_id` switches to it."
+    },
+    "AssistantSnapshot": {
+      "type": "object",
+      "properties": {
+        "chat_selection": {
+          "type": "boolean",
+          "const": true
+        },
+        "instance_id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantSessionSummary"
+          }
+        },
+        "config": {
+          "$ref": "#/$defs/AssistantConfig"
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "methods": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": ["api_key", "oauth"]
+                }
+              },
+              "configured": {
+                "type": "boolean"
+              },
+              "credential_method": {
+                "type": "string",
+                "enum": ["api_key", "oauth"]
+              },
+              "custom": {
+                "type": "object",
+                "properties": {
+                  "base_url": {
+                    "type": "string"
+                  },
+                  "api": {
+                    "$ref": "#/$defs/AssistantModelApi"
+                  }
+                },
+                "required": ["base_url", "api"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["id", "label", "methods", "configured"],
+            "additionalProperties": false
+          }
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "thinking_levels": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/AssistantThinkingLevel"
+                }
+              },
+              "default_thinking_level": {
+                "$ref": "#/$defs/AssistantThinkingLevel"
+              },
+              "custom": {
+                "type": "object",
+                "properties": {
+                  "base_url": {
+                    "type": "string"
+                  },
+                  "api": {
+                    "$ref": "#/$defs/AssistantModelApi"
+                  },
+                  "reasoning": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["base_url", "api"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["provider", "id", "label"],
+            "additionalProperties": false
+          }
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantMessage"
+          }
+        },
+        "queue": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantQueuedMessage"
+          },
+          "description": "Messages waiting for the running turn, oldest first."
+        },
+        "queue_held": {
+          "type": "boolean",
+          "const": true,
+          "description": "After Stop, a failure or a chat switch, the queue waits for the user."
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": ["string", "null"]
+        },
+        "auth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssistantAuthState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantTask"
+          }
+        }
+      },
+      "required": [
+        "instance_id",
+        "revision",
+        "config",
+        "providers",
+        "models",
+        "messages",
+        "running",
+        "error",
+        "auth"
+      ],
+      "additionalProperties": false
+    },
+    "AssistantSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["status", "history", "diff", "terminal"]
+        },
+        "runtime_generation": {
+          "type": "number"
+        },
+        "pane_id": {
+          "type": "string"
+        },
+        "read_at": {
+          "type": "string"
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection_id",
+        "id",
+        "kind",
+        "read_at",
+        "runtime_generation",
+        "title",
+        "workspace_id"
+      ]
+    },
+    "AssistantTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "paused", "cancelled"]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "next_run_at": {
+          "type": ["string", "null"]
+        },
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantWorkspace"
+          }
+        },
+        "model": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": ["provider", "id"],
+          "additionalProperties": false
+        },
+        "approval_mode": {
+          "type": "string",
+          "enum": ["manual", "auto"]
+        },
+        "current_run": {
+          "$ref": "#/$defs/AssistantTaskRun"
+        },
+        "last_run": {
+          "$ref": "#/$defs/AssistantTaskRun"
+        },
+        "title": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "mentions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantMentionTarget"
+          }
+        },
+        "scope": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantWorkspaceRef"
+          }
+        },
+        "all_workspaces": {
+          "type": "boolean",
+          "const": true,
+          "description": "Every workspace Ranger may use when a run starts, new ones included: `scope` is then the list as of the last run (or creation)."
+        },
+        "schedule": {
+          "$ref": "#/$defs/AssistantTaskSchedule"
+        },
+        "notification_mode": {
+          "type": "string",
+          "enum": ["status", "agent"]
+        }
+      },
+      "required": [
+        "created_at",
+        "id",
+        "model",
+        "next_run_at",
+        "prompt",
+        "schedule",
+        "scope",
+        "status",
+        "title",
+        "updated_at",
+        "workspaces"
+      ]
+    },
+    "AssistantTaskDetail": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/AssistantTask"
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantTaskRun"
+          }
+        },
+        "run": {
+          "$ref": "#/$defs/AssistantTaskRunDetail"
+        }
+      },
+      "required": ["task", "runs"],
+      "additionalProperties": false
+    },
+    "AssistantTaskInput": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "mentions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantMentionTarget"
+          }
+        },
+        "scope": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantWorkspaceRef"
+          }
+        },
+        "all_workspaces": {
+          "type": "boolean",
+          "const": true,
+          "description": "Every workspace Ranger may use when a run starts, new ones included: `scope` is then the list as of the last run (or creation)."
+        },
+        "schedule": {
+          "$ref": "#/$defs/AssistantTaskSchedule"
+        },
+        "notification_mode": {
+          "type": "string",
+          "enum": ["status", "agent"]
+        }
+      },
+      "required": ["title", "prompt", "scope", "schedule"],
+      "additionalProperties": false
+    },
+    "AssistantTaskNotification": {
+      "type": "object",
+      "properties": {
+        "task_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["succeeded", "failed", "waiting"]
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": ["task_id", "run_id", "status", "title", "body"],
+      "additionalProperties": false
+    },
+    "AssistantTaskOperation": {
+      "type": "string",
+      "enum": ["create", "update", "pause", "resume", "cancel", "delete"]
+    },
+    "AssistantTaskProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/AssistantTaskOperation"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "confirmed", "cancelled"]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "mentions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantMentionTarget"
+          }
+        },
+        "scope": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantWorkspaceRef"
+          }
+        },
+        "all_workspaces": {
+          "type": "boolean",
+          "const": true,
+          "description": "Every workspace Ranger may use when a run starts, new ones included: `scope` is then the list as of the last run (or creation)."
+        },
+        "schedule": {
+          "$ref": "#/$defs/AssistantTaskSchedule"
+        },
+        "notification_mode": {
+          "type": "string",
+          "enum": ["status", "agent"]
+        }
+      },
+      "required": [
+        "created_at",
+        "id",
+        "prompt",
+        "schedule",
+        "scope",
+        "status",
+        "title"
+      ]
+    },
+    "AssistantTaskRun": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "waiting",
+            "succeeded",
+            "failed",
+            "stopped"
+          ]
+        },
+        "scheduled_at": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "error": {
+          "type": ["string", "null"]
+        },
+        "notice": {
+          "type": "string",
+          "description": "What the run left out, such as workspaces past the limit."
+        }
+      },
+      "required": ["id", "task_id", "status", "scheduled_at", "error"],
+      "additionalProperties": false
+    },
+    "AssistantTaskRunDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantMessage"
+          }
+        },
+        "id": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "waiting",
+            "succeeded",
+            "failed",
+            "stopped"
+          ]
+        },
+        "scheduled_at": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "error": {
+          "type": ["string", "null"]
+        },
+        "notice": {
+          "type": "string",
+          "description": "What the run left out, such as workspaces past the limit."
+        }
+      },
+      "required": [
+        "error",
+        "id",
+        "messages",
+        "scheduled_at",
+        "status",
+        "task_id"
+      ]
+    },
+    "AssistantTaskSchedule": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "once"
+            },
+            "at": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "at"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "interval"
+            },
+            "minutes": {
+              "type": "number"
+            }
+          },
+          "required": ["type", "minutes"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "daily"
+            },
+            "time": {
+              "type": "string"
+            },
+            "timezone": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "time", "timezone"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "AssistantThinkingLevel": {
+      "type": "string",
+      "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+    },
+    "AssistantToolActivity": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["running", "completed", "failed"]
+        },
+        "arguments": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "name", "status"],
+      "additionalProperties": false
+    },
+    "AssistantWorkspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "connection_label": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "runtime_generation": {
+          "type": "number"
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection_id",
+        "connection_label",
+        "label",
+        "runtime_generation",
+        "workspace_id"
+      ]
+    },
+    "AssistantWorkspaceCatalog": {
+      "type": "object",
+      "properties": {
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssistantWorkspace"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "connection_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Current configured connections; absent on older bridges."
+        },
+        "complete_connection_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Connections whose workspace listings are complete and authoritative."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": ["workspaces", "errors"],
+      "additionalProperties": false
+    },
+    "AssistantWorkspaceRef": {
+      "type": "object",
+      "properties": {
+        "connection_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        }
+      },
+      "required": ["connection_id", "workspace_id"],
+      "additionalProperties": false
+    }
+  }
+}

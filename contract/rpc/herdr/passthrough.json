@@ -1,0 +1,13 @@
+{
+  "method": "*",
+  "family": "herdr",
+  "scope": "connection",
+  "handler": "server/src/index.ts",
+  "herdr": "pass-through",
+  "description": "Any method the server does not handle goes to the connection's Herdr as is (herdr.call), with the panes conversation mode holds and the Claude mod's states overlaid on the reply.",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

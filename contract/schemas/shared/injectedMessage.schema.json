@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/injectedMessage.schema.json",
+  "x-generated-from": "shared/injectedMessage.ts",
+  "$defs": {
+    "InjectedKind": {
+      "type": "string",
+      "enum": [
+        "report",
+        "agent",
+        "session",
+        "teammate",
+        "task",
+        "rewound",
+        "context"
+      ],
+      "description": "Also \"rewound\": the history's notice of the user's messages a rewind cut; \"context\": what Codex says of its environment (codex-injected.ts)."
+    },
+    "InjectedMessage": {
+      "type": "object",
+      "properties": {
+        "notices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InjectedNotice"
+          }
+        },
+        "rest": {
+          "type": "string",
+          "description": "Text after the injected blocks: the user's own words, if any."
+        }
+      },
+      "required": ["notices", "rest"],
+      "additionalProperties": false
+    },
+    "InjectedNotice": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/InjectedKind"
+        },
+        "label": {
+          "type": "string",
+          "description": "The notice's one line: \"Report from voice-overlay\"."
+        },
+        "body": {
+          "type": "string",
+          "description": "What it says, shown on expand."
+        }
+      },
+      "required": ["kind", "label", "body"],
+      "additionalProperties": false
+    }
+  }
+}

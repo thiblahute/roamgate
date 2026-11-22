@@ -1,0 +1,11 @@
+{
+  "method": "agent_chat.subscribe",
+  "family": "agent_chat",
+  "scope": "connection",
+  "handler": "server/src/conversation/rpc.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

@@ -1,0 +1,212 @@
+{
+  "commands": {
+    "service": {
+      "summary": "install and manage the Roamgate user service",
+      "help": "help/service.txt",
+      "actions": [
+        "install",
+        "status",
+        "restart",
+        "reload",
+        "uninstall",
+        "logs"
+      ],
+      "flags": ["--force", "--follow", "--lines"]
+    },
+    "herdr": {
+      "summary": "install, start and check the local Herdr server",
+      "help": "help/herdr.txt",
+      "actions": ["setup", "status"],
+      "flags": []
+    },
+    "setup": {
+      "summary": "set up voice chat: detect the hardware, download its models",
+      "help": "help/setup.txt",
+      "actions": ["voice"],
+      "flags": [
+        "--tier",
+        "--speech",
+        "--reread",
+        "--tts",
+        "--stock-voices",
+        "--speaker",
+        "--turn",
+        "--text-turn",
+        "--helper",
+        "--verify",
+        "--yes",
+        "--json"
+      ]
+    },
+    "voice": {
+      "summary": "voice profiles: the low-GPU set while a game runs",
+      "help": "help/voice.txt",
+      "actions": ["profile", "gaming"],
+      "flags": ["--by", "--now", "--reset", "--json"]
+    },
+    "doctor": {
+      "summary": "diagnose the installation and suggest fixes",
+      "help": "help/doctor.txt",
+      "actions": [],
+      "flags": ["--offline", "--json"]
+    },
+    "url": {
+      "summary": "print login URLs, optionally as a QR code",
+      "help": "help/url.txt",
+      "actions": [],
+      "flags": ["--qr", "--address", "--json"]
+    },
+    "config": {
+      "summary": "show or change the service configuration",
+      "help": "help/config.txt",
+      "actions": ["show", "get", "set", "unset", "edit", "path"],
+      "flags": ["--reveal", "--json", "--restart"]
+    },
+    "auth": {
+      "summary": "show or rotate login credentials and sign out browsers",
+      "help": "help/auth.txt",
+      "actions": ["show", "rotate", "revoke-sessions"],
+      "flags": ["--reveal", "--json", "--no-restart"]
+    },
+    "connections": {
+      "summary": "list, test and edit Herdr connection profiles",
+      "help": "help/connections.txt",
+      "actions": ["list", "test", "add", "remove", "set-default"],
+      "flags": [
+        "--json",
+        "--ssh",
+        "--control-socket",
+        "--client-socket",
+        "--label",
+        "--auto-connect",
+        "--default",
+        "--restart",
+        "--remote-control-socket",
+        "--remote-client-socket",
+        "--windows",
+        "--herdr-path",
+        "--session"
+      ]
+    },
+    "push": {
+      "summary": "send a test Web Push notification to enrolled devices",
+      "help": "help/push.txt",
+      "actions": ["test"],
+      "flags": ["--json"]
+    },
+    "activity": {
+      "summary": "read the activity log: day summaries, events, status",
+      "help": "help/activity.txt",
+      "actions": ["today", "day", "range", "events", "workspaces", "status"],
+      "flags": [
+        "--json",
+        "--ndjson",
+        "--after",
+        "--from",
+        "--to",
+        "--connection",
+        "--workspace",
+        "--kind",
+        "--limit",
+        "--by"
+      ]
+    },
+    "reviews": {
+      "summary": "export or import the Reviews' order, overrides, views, efforts",
+      "help": "help/reviews.txt",
+      "actions": ["export", "import"],
+      "flags": ["--out", "--apply"]
+    },
+    "history": {
+      "summary": "show or commit the local history of what was authored",
+      "help": "help/history.txt",
+      "actions": ["status", "commit"],
+      "flags": ["--json"]
+    },
+    "archive": {
+      "summary": "archive and search Claude Code, Codex and Pi sessions",
+      "help": "help/archive.txt",
+      "actions": [
+        "sync",
+        "ingest",
+        "search",
+        "session",
+        "cat",
+        "resume",
+        "health",
+        "status",
+        "rebuild-text",
+        "fetch-text",
+        "rebuild-index"
+      ],
+      "flags": [
+        "--json",
+        "--agent",
+        "--host",
+        "--project",
+        "--since",
+        "--until",
+        "--dir",
+        "--recent",
+        "--history",
+        "--regex",
+        "--tool-output",
+        "--index"
+      ]
+    },
+    "update": {
+      "summary": "update roamgate to the latest release",
+      "help": "help/update.txt",
+      "actions": [],
+      "flags": ["--check", "--json"]
+    },
+    "rollback": {
+      "summary": "restore the executable replaced by the last update",
+      "help": "help/rollback.txt",
+      "actions": [],
+      "flags": []
+    },
+    "plugin": {
+      "summary": "actions and panel used by the Herdr plugin",
+      "help": "help/plugin.stderr.txt",
+      "actions": [
+        "start",
+        "restart",
+        "status",
+        "url",
+        "version",
+        "uninstall",
+        "panel"
+      ],
+      "flags": []
+    },
+    "completion": {
+      "summary": "print a bash, zsh or fish completion script",
+      "help": "help/completion.txt",
+      "actions": ["bash", "zsh", "fish"],
+      "flags": []
+    }
+  },
+  "server_flags": [
+    "--host",
+    "--port",
+    "--password",
+    "--tls-cert",
+    "--tls-key",
+    "--socket-path",
+    "--client-socket-path",
+    "--ssh-host",
+    "--session",
+    "--public-dir",
+    "--log-level",
+    "--notification-source",
+    "--profile",
+    "--profile-duration",
+    "--profile-dir",
+    "--open",
+    "--help",
+    "--version"
+  ],
+  "top_level_help": "help/roamgate.txt",
+  "server_help": "help/server.txt"
+}

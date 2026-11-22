@@ -1,0 +1,2341 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/server.schema.json",
+  "x-generated-from": "contract/schemas/server-types.ts",
+  "$defs": {
+    "ActivityEvent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ts": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/EventKind"
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": ["string", "null"]
+        },
+        "tab_id": {
+          "type": ["string", "null"]
+        },
+        "pane_id": {
+          "type": ["string", "null"]
+        },
+        "agent": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "state": {
+                  "$ref": "#/$defs/AgentState"
+                },
+                "task": {
+                  "type": ["string", "null"]
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["name", "state", "task", "session_id"],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "visible": {
+          "type": ["boolean", "null"]
+        },
+        "idle_after_seconds": {
+          "type": ["number", "null"]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlurReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "open": {
+          "type": ["boolean", "null"]
+        },
+        "client": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "$ref": "#/$defs/ClientKind"
+                }
+              },
+              "required": ["id", "kind"],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/EventSource"
+        },
+        "cause": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventCause"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "On focus, on a switch or hidden blur, on a reported ui.visibility."
+        },
+        "input_age_ms": {
+          "type": ["number", "null"],
+          "description": "The page's input age when it reported the event; null when unknown."
+        }
+      },
+      "required": [
+        "id",
+        "ts",
+        "kind",
+        "connection_id",
+        "workspace_id",
+        "tab_id",
+        "pane_id"
+      ],
+      "additionalProperties": false
+    },
+    "ActivityGap": {
+      "type": "object",
+      "properties": {
+        "connection_id": {
+          "type": ["string", "null"],
+          "description": "Null: the whole recorder was not running."
+        },
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": ["string", "null"],
+          "description": "Null while the gap is still open."
+        },
+        "reason": {
+          "type": ["string", "null"]
+        },
+        "excluded": {
+          "type": "boolean",
+          "description": "Never set in the log; only on export to a provider."
+        }
+      },
+      "required": ["connection_id", "start", "end", "reason", "excluded"],
+      "additionalProperties": false,
+      "description": "The schema's RecordingGap."
+    },
+    "AgentLane": {
+      "type": "object",
+      "properties": {
+        "connection_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": ["string", "null"]
+        },
+        "pane_id": {
+          "type": ["string", "null"]
+        },
+        "agent": {
+          "type": "string"
+        },
+        "task": {
+          "type": ["string", "null"]
+        },
+        "spans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentSpan"
+          }
+        }
+      },
+      "required": [
+        "connection_id",
+        "workspace_id",
+        "pane_id",
+        "agent",
+        "task",
+        "spans"
+      ],
+      "additionalProperties": false
+    },
+    "AgentSpan": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "open": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/AgentState"
+        }
+      },
+      "required": ["start", "end", "open", "state"],
+      "additionalProperties": false
+    },
+    "AgentState": {
+      "type": "string",
+      "enum": ["working", "idle", "blocked", "unknown"]
+    },
+    "AttentionSegment": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/TimelineSource"
+        }
+      },
+      "required": ["start", "end", "workspace_id", "source"],
+      "additionalProperties": false,
+      "description": "Who had the attention, without overlaps: what the totals count."
+    },
+    "AuthoredDisposition": {
+      "type": "string",
+      "enum": [
+        "not_for_upstream",
+        "superseded",
+        "planned",
+        "upstream",
+        "in_review"
+      ]
+    },
+    "AuthoredEntry": {
+      "type": "object",
+      "properties": {
+        "disposition": {
+          "$ref": "#/$defs/AuthoredDisposition"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "pointer": {
+          "type": "string",
+          "description": "The commit, request or effort it points to (superseded by, upstream as)."
+        },
+        "subject": {
+          "type": "string",
+          "description": "The secondary key, to carry it across rewording and rebases (D12)."
+        },
+        "authorDate": {
+          "type": "number"
+        },
+        "sha": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string",
+          "enum": ["user", "agent"]
+        }
+      },
+      "required": ["disposition", "subject", "authorDate", "sha", "at", "by"],
+      "additionalProperties": false
+    },
+    "BlurReason": {
+      "type": "string",
+      "enum": [
+        "switch",
+        "hidden",
+        "idle",
+        "disconnect",
+        "timeout",
+        "recorder_stop"
+      ]
+    },
+    "CallEvent": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "call_error"
+            },
+            "call": {
+              "type": "number"
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": ["event", "call", "error"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "call_restarted"
+            },
+            "call": {
+              "type": "number"
+            }
+          },
+          "required": ["event", "call"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "call_ended"
+            },
+            "call": {
+              "type": "number"
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": ["event", "call", "error"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "call_music"
+            },
+            "call": {
+              "type": "number"
+            },
+            "waiting": {
+              "type": "boolean"
+            }
+          },
+          "required": ["event", "call", "waiting"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "What the helper says of a call: its background or microphone failed."
+    },
+    "ClientKind": {
+      "type": "string",
+      "enum": ["desktop", "phone"]
+    },
+    "ConnectionRpcRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "connection_id": {},
+        "connection_generation": {}
+      },
+      "required": ["id", "method"],
+      "additionalProperties": false
+    },
+    "DayTotals": {
+      "type": "object",
+      "properties": {
+        "attended_ms": {
+          "type": "number"
+        },
+        "idle_ms": {
+          "type": "number"
+        },
+        "unrecorded_ms": {
+          "type": "number",
+          "description": "The whole recorder was not running."
+        },
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkspaceTotals"
+          }
+        },
+        "subjects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SubjectTotals"
+          }
+        }
+      },
+      "required": [
+        "attended_ms",
+        "idle_ms",
+        "unrecorded_ms",
+        "workspaces",
+        "subjects"
+      ],
+      "additionalProperties": false
+    },
+    "EventCause": {
+      "type": "string",
+      "enum": [
+        "user_input",
+        "user_focus",
+        "page_load",
+        "reconnect",
+        "follow_herdr",
+        "app",
+        "herdr_event",
+        "herdr_listing",
+        "recorder_start",
+        "connection_ready"
+      ],
+      "description": "What made an attention event happen. A browser reports the first six; the recorder knows the Herdr ones. Only `user_input` and `user_focus` are signs of a person (docs/activity.md#causes)."
+    },
+    "EventKind": {
+      "type": "string",
+      "enum": [
+        "workspace.focus",
+        "workspace.blur",
+        "agent.state",
+        "session.idle",
+        "session.active",
+        "ui.visibility"
+      ],
+      "description": "Shapes of the activity protocol (docs/activity.md, activity.schema.json): what the log reads back as. The recorder writes rows; these are the views."
+    },
+    "EventSource": {
+      "type": "string",
+      "enum": ["browser", "herdr"]
+    },
+    "FocusSpan": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "open": {
+          "type": "boolean",
+          "description": "Still running: `end` is now."
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": ["string", "null"]
+        },
+        "pane_id": {
+          "type": ["string", "null"]
+        },
+        "source": {
+          "$ref": "#/$defs/TimelineSource"
+        },
+        "client_id": {
+          "type": ["string", "null"]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlurReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null while open."
+        },
+        "cause": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventCause"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What opened it (protocol EventCause); null on rows older than causes."
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "open",
+        "connection_id",
+        "workspace_id",
+        "pane_id",
+        "source",
+        "client_id",
+        "reason",
+        "cause"
+      ],
+      "additionalProperties": false
+    },
+    "ForwardWire": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "direction": {
+          "$ref": "#/$defs/SshForwardDirection"
+        },
+        "remote_port": {
+          "type": "number"
+        },
+        "local_port": {
+          "type": "number"
+        },
+        "label": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/SshForwardState"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "connection_id",
+        "direction",
+        "remote_port",
+        "local_port",
+        "state"
+      ],
+      "additionalProperties": false,
+      "description": "The bridge protocol is snake_case on the wire; internals are not."
+    },
+    "HolderCommand": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "number"
+        },
+        "op": {
+          "type": "string",
+          "enum": ["start", "input", "end", "kill"]
+        }
+      },
+      "required": ["seq", "op"],
+      "additionalProperties": {},
+      "description": "What Roamgate asks of a pane's holder (roamgate-hold), numbered: the holder applies each once, in order, and says which it applied last. Until then every poll answer carries it again."
+    },
+    "HolderReply": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "hold"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": ["action", "session_id"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "resume"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The TUI's command line, program first (`claude ... --resume <id>`): what a holder that knows it execs."
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "claude's arguments, `--resume <id>` included: older holders."
+            },
+            "agent": {
+              "type": "string",
+              "description": "The agent (claude: a session with no transcript starts by id)."
+            },
+            "env": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "The session's profile: set, and removed, before it execs."
+            },
+            "unset": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["action", "session_id", "cwd"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "refused"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": ["action", "reason"],
+          "additionalProperties": false
+        },
+        {
+          "$ref": "#/$defs/SuspendReply"
+        }
+      ],
+      "description": "What roamgate-hold is told: keep holding, or resume claude now."
+    },
+    "HolderResume": {
+      "type": "object",
+      "properties": {
+        "child": {
+          "type": "number"
+        },
+        "epoch_offset": {
+          "type": "number",
+          "description": "Where that child's lines start in the log (its start line)."
+        },
+        "offset": {
+          "type": "number",
+          "description": "Where the last line handled ends (a line's start)."
+        },
+        "state": {
+          "description": "The conversation's state there (ConversationSession.resumeState)."
+        }
+      },
+      "required": ["child", "epoch_offset", "offset", "state"],
+      "additionalProperties": false,
+      "description": "Where a reader had handled a child's lines to, and the state they left the conversation in: a runtime after it reads on from there, instead of reading the child's lines again from its start."
+    },
+    "HolderSaved": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "pending": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HolderCommand"
+          }
+        },
+        "resume": {
+          "$ref": "#/$defs/HolderResume"
+        }
+      },
+      "required": ["id", "offset"],
+      "additionalProperties": false,
+      "description": "What Roamgate had read of a holder's log, kept on the lease."
+    },
+    "IdleSpan": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "open": {
+          "type": "boolean"
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "client_id": {
+          "type": "string"
+        },
+        "client_kind": {
+          "$ref": "#/$defs/ClientKind"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "open",
+        "connection_id",
+        "client_id",
+        "client_kind"
+      ],
+      "additionalProperties": false
+    },
+    "interface-1609902973-89304-91271-1609902973-0-2349323": {
+      "type": "object",
+      "properties": {
+        "aborted": {
+          "type": "boolean"
+        },
+        "onabort": {
+          "anyOf": [
+            {
+              "$comment": "(this: AbortSignal, ev: Event) => any",
+              "type": "object",
+              "properties": {
+                "namedArgs": {
+                  "type": "object",
+                  "properties": {
+                    "this": {
+                      "$ref": "#/$defs/interface-1609902973-89304-91271-1609902973-0-2349323"
+                    },
+                    "ev": {
+                      "type": "object",
+                      "properties": {
+                        "bubbles": {
+                          "type": "boolean"
+                        },
+                        "cancelBubble": {
+                          "type": "boolean"
+                        },
+                        "cancelable": {
+                          "type": "boolean"
+                        },
+                        "composed": {
+                          "type": "boolean"
+                        },
+                        "currentTarget": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "defaultPrevented": {
+                          "type": "boolean"
+                        },
+                        "eventPhase": {
+                          "type": "number"
+                        },
+                        "isTrusted": {
+                          "type": "boolean"
+                        },
+                        "returnValue": {
+                          "type": "boolean"
+                        },
+                        "srcElement": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "target": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "timeStamp": {
+                          "type": "number"
+                        },
+                        "type": {
+                          "type": "string"
+                        },
+                        "NONE": {
+                          "type": "number",
+                          "const": 0
+                        },
+                        "CAPTURING_PHASE": {
+                          "type": "number",
+                          "const": 1
+                        },
+                        "AT_TARGET": {
+                          "type": "number",
+                          "const": 2
+                        },
+                        "BUBBLING_PHASE": {
+                          "type": "number",
+                          "const": 3
+                        }
+                      },
+                      "required": [
+                        "bubbles",
+                        "cancelBubble",
+                        "cancelable",
+                        "composed",
+                        "currentTarget",
+                        "defaultPrevented",
+                        "eventPhase",
+                        "isTrusted",
+                        "returnValue",
+                        "srcElement",
+                        "target",
+                        "timeStamp",
+                        "type",
+                        "NONE",
+                        "CAPTURING_PHASE",
+                        "AT_TARGET",
+                        "BUBBLING_PHASE"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["this", "ev"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {}
+      },
+      "required": ["aborted", "onabort", "reason"],
+      "additionalProperties": false
+    },
+    "LedgerFile": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number"
+        },
+        "entries": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/AuthoredEntry"
+          },
+          "description": "By ledger key (the patch id the commit was first seen with)."
+        },
+        "aliases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "A later patch id of a commit, to its ledger key."
+        },
+        "matches": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/MatchDecision"
+          },
+          "description": "Fuzzy match decisions by ledger key."
+        },
+        "plans": {
+          "type": "array",
+          "items": {
+            "$ref": "shared/mrReviews.schema.json#/$defs/MrPlan"
+          },
+          "description": "Planned requests (D25)."
+        },
+        "journal": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "number"
+              },
+              "at": {
+                "type": "string"
+              },
+              "by": {
+                "type": "string",
+                "enum": ["user", "agent"]
+              },
+              "summary": {
+                "type": "string"
+              },
+              "before": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/AuthoredEntry"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "matches": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/MatchDecision"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "description": "Match decisions before, when the change made some."
+              },
+              "plans": {
+                "type": "array",
+                "items": {
+                  "$ref": "shared/mrReviews.schema.json#/$defs/MrPlan"
+                },
+                "description": "Every plan before, when the change touched plans."
+              }
+            },
+            "required": ["id", "at", "by", "summary", "before"],
+            "additionalProperties": false
+          },
+          "description": "The last bulk changes, newest last, for Undo."
+        }
+      },
+      "required": [
+        "version",
+        "entries",
+        "aliases",
+        "matches",
+        "plans",
+        "journal"
+      ],
+      "additionalProperties": false
+    },
+    "ListDeltaReply": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        {
+          "type": "object",
+          "properties": {
+            "list_delta": {
+              "type": "object",
+              "properties": {
+                "base": {
+                  "type": "string"
+                },
+                "stamp": {
+                  "type": "string"
+                },
+                "array": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "rest": {
+                  "type": "object",
+                  "additionalProperties": {}
+                },
+                "order": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "upsert": {
+                  "type": "array",
+                  "items": {}
+                }
+              },
+              "required": [
+                "base",
+                "stamp",
+                "array",
+                "id",
+                "rest",
+                "order",
+                "upsert"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": ["list_delta"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LowGpuFile": {
+      "type": "object",
+      "properties": {
+        "holders": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Who holds it on, and since when (ms since the epoch)."
+        },
+        "models": {
+          "$ref": "shared/voiceSetup.schema.json#/$defs/VoiceChoices",
+          "description": "Parts set by hand, over the light tier."
+        },
+        "now": {
+          "type": "number",
+          "description": "Asked to switch now, a call going on (ms since the epoch): the server acts on a newer one than it saw."
+        }
+      },
+      "required": ["holders"],
+      "additionalProperties": false,
+      "description": "The low-GPU voice profile: while something else needs the GPU (a game, another job), the voice helper starts with a lighter set of models, the setup assistant's light tier (voice-models.ts recommendedChoices) among the models already here: Parakeet only (no Whisper reading again), Pocket TTS reading on the CPU, else Kokoro (no Qwen3-TTS), the speaker and turn models, which run on the CPU. voice.json is never written: the set is put over it (configPatch) on the configuration the helper starts with.\n\nIt is on while a holder holds it (`roamgate voice profile low-gpu on\n--by <name>`, the settings' switch) or GameMode runs as a call starts. The holders are kept in the voice's data directory (lowGpuPath): the CLI writes them there, the server watches the file. A helper running with the other set stops once nothing needs it (a call ending), the next request starting it with the right one; `--now` restarts it at once, its call made again after a short notice.\n\nOn for a game (the \"gaming\" holder, GameMode), the helper also yields the CPU to it (yieldCpu): a low priority and CPU weight, idle I/O, and its ONNX models (Parakeet, Kokoro, the speaker and turn checks) sharing a few threads that do not spin, where each would otherwise take one per core, and Pocket TTS computing on as few, its workers parking between steps: a game freezes when the voice takes the cores it runs on."
+    },
+    "MatchDecision": {
+      "type": "object",
+      "properties": {
+        "accepted": {
+          "type": "string",
+          "description": "The upstream commit confirmed as this one."
+        },
+        "rejected": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Upstream commits said not to be this one: never proposed again."
+        },
+        "at": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string",
+          "enum": ["user", "agent"]
+        }
+      },
+      "required": ["rejected", "at", "by"],
+      "additionalProperties": false,
+      "description": "A person's decisions on a commit's fuzzy matches (D14)."
+    },
+    "MemoryFile": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "updated": {
+          "type": "number"
+        }
+      },
+      "required": ["file", "name", "description", "type", "body", "updated"],
+      "additionalProperties": false
+    },
+    "PermissionRequest": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "input": {},
+        "canAlways": {
+          "type": "boolean"
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "$ref": "shared/review.schema.json#/$defs/AgentQuestion"
+          },
+          "description": "Claude's questions, answered with the chosen options."
+        },
+        "noTerminal": {
+          "type": "boolean",
+          "description": "No terminal asks instead (a headless claude): only here."
+        },
+        "timeoutMs": {
+          "type": "number",
+          "description": "How long the hook waits before the terminal asks instead."
+        },
+        "signal": {
+          "type": "object",
+          "properties": {
+            "aborted": {
+              "type": "boolean"
+            },
+            "onabort": {
+              "anyOf": [
+                {
+                  "$comment": "(this: AbortSignal, ev: Event) => any",
+                  "type": "object",
+                  "properties": {
+                    "namedArgs": {
+                      "type": "object",
+                      "properties": {
+                        "this": {
+                          "$ref": "#/$defs/interface-1609902973-89304-91271-1609902973-0-2349323"
+                        },
+                        "ev": {
+                          "type": "object",
+                          "properties": {
+                            "bubbles": {
+                              "type": "boolean"
+                            },
+                            "cancelBubble": {
+                              "type": "boolean"
+                            },
+                            "cancelable": {
+                              "type": "boolean"
+                            },
+                            "composed": {
+                              "type": "boolean"
+                            },
+                            "currentTarget": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "defaultPrevented": {
+                              "type": "boolean"
+                            },
+                            "eventPhase": {
+                              "type": "number"
+                            },
+                            "isTrusted": {
+                              "type": "boolean"
+                            },
+                            "returnValue": {
+                              "type": "boolean"
+                            },
+                            "srcElement": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "target": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "timeStamp": {
+                              "type": "number"
+                            },
+                            "type": {
+                              "type": "string"
+                            },
+                            "NONE": {
+                              "type": "number",
+                              "const": 0
+                            },
+                            "CAPTURING_PHASE": {
+                              "type": "number",
+                              "const": 1
+                            },
+                            "AT_TARGET": {
+                              "type": "number",
+                              "const": 2
+                            },
+                            "BUBBLING_PHASE": {
+                              "type": "number",
+                              "const": 3
+                            }
+                          },
+                          "required": [
+                            "bubbles",
+                            "cancelBubble",
+                            "cancelable",
+                            "composed",
+                            "currentTarget",
+                            "defaultPrevented",
+                            "eventPhase",
+                            "isTrusted",
+                            "returnValue",
+                            "srcElement",
+                            "target",
+                            "timeStamp",
+                            "type",
+                            "NONE",
+                            "CAPTURING_PHASE",
+                            "AT_TARGET",
+                            "BUBBLING_PHASE"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": ["this", "ev"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {}
+          },
+          "required": ["aborted", "onabort", "reason"],
+          "additionalProperties": false,
+          "description": "The hook went away: the terminal is asking now."
+        }
+      },
+      "required": [
+        "connectionId",
+        "paneId",
+        "agent",
+        "tool",
+        "input",
+        "canAlways",
+        "timeoutMs"
+      ],
+      "additionalProperties": false,
+      "description": "What an agent's permission hook asks, for the browser to answer."
+    },
+    "PreparedTask": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "$ref": "shared/assistant.schema.json#/$defs/AssistantTaskInput"
+        },
+        "config": {
+          "$ref": "shared/assistant.schema.json#/$defs/AssistantConfig"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecoveryTarget"
+          }
+        },
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "shared/assistant.schema.json#/$defs/AssistantWorkspace"
+          }
+        }
+      },
+      "required": ["input", "config", "targets", "workspaces"],
+      "additionalProperties": false
+    },
+    "PresenceReply": {
+      "type": "object",
+      "properties": {
+        "recording": {
+          "type": "boolean"
+        },
+        "idle_seconds": {
+          "type": "number"
+        },
+        "attention": {
+          "type": "boolean",
+          "description": "Whether this page's report counts as attention: else it reports its next input."
+        }
+      },
+      "required": ["recording", "idle_seconds", "attention"],
+      "additionalProperties": false
+    },
+    "RecordingGap": {
+      "$ref": "#/$defs/ActivityGap"
+    },
+    "RecoveryTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "endpoint_fingerprint": {
+          "type": "string"
+        },
+        "herdr_boot_id": {
+          "type": "string"
+        },
+        "workspace_identity": {
+          "type": "string"
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection_id",
+        "endpoint_fingerprint",
+        "herdr_boot_id",
+        "workspace_id",
+        "workspace_identity"
+      ],
+      "description": "Private recovery metadata. Never include these identities in model context."
+    },
+    "SavedTaskState": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "task": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["active", "paused", "cancelled"]
+                  },
+                  "created_at": {
+                    "type": "string"
+                  },
+                  "updated_at": {
+                    "type": "string"
+                  },
+                  "next_run_at": {
+                    "type": ["string", "null"]
+                  }
+                },
+                "required": [
+                  "id",
+                  "status",
+                  "created_at",
+                  "updated_at",
+                  "next_run_at"
+                ],
+                "additionalProperties": false
+              },
+              "runs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "manual": {
+                      "type": "boolean"
+                    },
+                    "input": {
+                      "$ref": "shared/assistant.schema.json#/$defs/AssistantTaskInput"
+                    },
+                    "config": {
+                      "$ref": "shared/assistant.schema.json#/$defs/AssistantConfig"
+                    },
+                    "targets": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/RecoveryTarget"
+                      }
+                    },
+                    "workspaces": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "shared/assistant.schema.json#/$defs/AssistantWorkspace"
+                      }
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "task_id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "waiting",
+                        "succeeded",
+                        "failed",
+                        "stopped"
+                      ]
+                    },
+                    "scheduled_at": {
+                      "type": "string"
+                    },
+                    "started_at": {
+                      "type": "string"
+                    },
+                    "finished_at": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": ["string", "null"]
+                    },
+                    "notice": {
+                      "type": "string",
+                      "description": "What the run left out, such as workspaces past the limit."
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "id",
+                    "manual",
+                    "scheduled_at",
+                    "status",
+                    "task_id"
+                  ]
+                }
+              },
+              "notifications": {
+                "type": "array",
+                "items": {
+                  "$ref": "shared/assistant.schema.json#/$defs/AssistantNotificationReceipt"
+                }
+              },
+              "due_at": {
+                "type": "string"
+              },
+              "input": {
+                "$ref": "shared/assistant.schema.json#/$defs/AssistantTaskInput"
+              },
+              "config": {
+                "$ref": "shared/assistant.schema.json#/$defs/AssistantConfig"
+              },
+              "targets": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/RecoveryTarget"
+                }
+              },
+              "workspaces": {
+                "type": "array",
+                "items": {
+                  "$ref": "shared/assistant.schema.json#/$defs/AssistantWorkspace"
+                }
+              }
+            },
+            "required": [
+              "config",
+              "input",
+              "runs",
+              "targets",
+              "task",
+              "workspaces"
+            ]
+          }
+        },
+        "proposals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "proposal": {
+                "$ref": "shared/assistant.schema.json#/$defs/AssistantTaskProposal"
+              },
+              "prepared": {
+                "$ref": "#/$defs/PreparedTask"
+              }
+            },
+            "required": ["proposal", "prepared"],
+            "additionalProperties": false
+          }
+        },
+        "requests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "task_id": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "task_id"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["tasks", "proposals", "requests"],
+      "additionalProperties": false
+    },
+    "SshForwardDirection": {
+      "type": "string",
+      "enum": ["local", "remote"],
+      "description": "Which way the tunnel runs.\n\n`local` (ssh -L) puts a remote service on a local port: the browser reaches something running on the far host. `remote` (ssh -R) is the mirror, a service on this machine appears on the far host, so processes there, agents included, can reach it.\n\nThe trust story is not symmetric. A local forward exposes the far host's service to this machine alone; a remote forward exposes ours to everything on the far host. Both ask for loopback, which is the only reason the second is reasonable at all; see sshForwardArgv for where the far host can override that."
+    },
+    "SshForwardState": {
+      "type": "string",
+      "enum": ["starting", "open", "failed", "closed"]
+    },
+    "Subject": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string",
+          "description": "The nearest group."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["explicit", "directory"]
+        },
+        "path": {
+          "type": ["string", "null"],
+          "description": "Directory of the nearest group, when it has one."
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SubjectGroup"
+          },
+          "description": "From the top-level group to the nearest."
+        }
+      },
+      "required": ["id", "label", "source", "path", "groups"],
+      "additionalProperties": false,
+      "description": "The schema's Subject: the user's grouping of a workspace."
+    },
+    "SubjectGroup": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "label"],
+      "additionalProperties": false
+    },
+    "SubjectTotals": {
+      "type": "object",
+      "properties": {
+        "subject_id": {
+          "type": ["string", "null"]
+        },
+        "label": {
+          "type": ["string", "null"]
+        },
+        "attended_ms": {
+          "type": "number"
+        },
+        "browser_ms": {
+          "type": "number"
+        },
+        "phone_ms": {
+          "type": "number"
+        },
+        "herdr_ms": {
+          "type": "number"
+        },
+        "working_ms": {
+          "type": "number",
+          "description": "Time at least one agent of the subject's workspaces was working."
+        },
+        "blocked_ms": {
+          "type": "number"
+        },
+        "workspace_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "subject_id",
+        "label",
+        "attended_ms",
+        "browser_ms",
+        "phone_ms",
+        "herdr_ms",
+        "working_ms",
+        "blocked_ms",
+        "workspace_ids"
+      ],
+      "additionalProperties": false,
+      "description": "A subject's workspaces together; `subject_id` null for those with none."
+    },
+    "SuspendReply": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "const": "suspend"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "description": "The conversation's title, for the stopped job's line."
+        },
+        "agent": {
+          "type": "string"
+        },
+        "terminal_args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["action", "session_id", "cwd"],
+      "additionalProperties": false,
+      "description": "What a holder is told to stop as a shell job (the chat's Ctrl+Z): its child ended, it stops with the shell prompt back, and `fg` there brings the conversation back. It keeps what the lease said of the session and gives it back with its `fg` (Roamgate keeps no lease meanwhile)."
+    },
+    "TaskEvent": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["completed", "blocked"]
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "Absent for Herdr notifications that are not tied to a pane."
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        },
+        "workspaceLabel": {
+          "type": "string"
+        },
+        "tabLabel": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "description": "Herdr-rendered text; status-derived events leave these unset."
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": ["kind", "agent"],
+      "additionalProperties": false
+    },
+    "TasteFile": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "updated": {
+          "type": "number",
+          "description": "When the profile was folded (ms); 0 when there is none."
+        },
+        "tried": {
+          "type": "number",
+          "description": "When a refresh was last tried, whatever came of it."
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TasteProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The parts Spotify did not give the last time, and why."
+        },
+        "needs_login": {
+          "type": "boolean",
+          "description": "Spotify asked to log in again (403): the user must re-authorize."
+        },
+        "avoid": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "what": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "at": {
+                "type": "number"
+              }
+            },
+            "required": ["what", "at"],
+            "additionalProperties": false
+          },
+          "description": "What was turned down: a URI or search words, and when."
+        },
+        "picks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "what": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "at": {
+                "type": "number"
+              }
+            },
+            "required": ["what", "at"],
+            "additionalProperties": false
+          },
+          "description": "The last picks of open requests, the newest last."
+        }
+      },
+      "required": [
+        "version",
+        "updated",
+        "tried",
+        "profile",
+        "missing",
+        "needs_login",
+        "avoid",
+        "picks"
+      ],
+      "additionalProperties": false
+    },
+    "TasteProfile": {
+      "type": "object",
+      "properties": {
+        "genres": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "weight": {
+                "type": "number"
+              }
+            },
+            "required": ["name", "weight"],
+            "additionalProperties": false
+          },
+          "description": "Genres from the top artists, the heaviest first (weights 0-100)."
+        },
+        "artists": {
+          "type": "object",
+          "properties": {
+            "short": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "medium": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "long": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["short", "medium", "long"],
+          "additionalProperties": false,
+          "description": "Top artists' names, per range."
+        },
+        "anchors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "artists": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": ["name", "artists"],
+            "additionalProperties": false
+          },
+          "description": "Top tracks of the last weeks and months."
+        },
+        "playlists": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "own": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": ["name", "own"]
+          },
+          "description": "The user's own playlists, then followed ones."
+        },
+        "liked": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "artists": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": ["name", "artists"],
+            "additionalProperties": false
+          },
+          "description": "The latest liked songs."
+        },
+        "contexts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "plays": {
+                "type": "number"
+              },
+              "name": {
+                "type": "string"
+              },
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": ["name", "plays"]
+          },
+          "description": "Playlists, albums and artists played lately, the most played first."
+        },
+        "recent": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "artists": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "uri": {
+                "type": "string"
+              }
+            },
+            "required": ["artists", "at", "name"]
+          },
+          "description": "The last days' plays, the newest first."
+        },
+        "hours": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Hours (local, 0-23) most played at, the most first."
+        }
+      },
+      "required": [
+        "genres",
+        "artists",
+        "anchors",
+        "playlists",
+        "liked",
+        "contexts",
+        "recent",
+        "hours"
+      ],
+      "additionalProperties": false
+    },
+    "Timeline": {
+      "type": "object",
+      "properties": {
+        "recording": {
+          "type": "boolean",
+          "const": true
+        },
+        "day_start": {
+          "type": "string"
+        },
+        "now": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "recorder_running": {
+          "type": "boolean",
+          "description": "False when the recorder is not running: open spans end at its last stamp."
+        },
+        "days": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TimelineDay"
+          }
+        },
+        "workspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TimelineWorkspace"
+          }
+        }
+      },
+      "required": [
+        "recording",
+        "day_start",
+        "now",
+        "from",
+        "to",
+        "recorder_running",
+        "days",
+        "workspaces"
+      ],
+      "additionalProperties": false
+    },
+    "TimelineDay": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "Local date the day starts on, `YYYY-MM-DD`."
+        },
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        },
+        "focus": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FocusSpan"
+          }
+        },
+        "attention": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AttentionSegment"
+          }
+        },
+        "idle": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IdleSpan"
+          }
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentLane"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecordingGap"
+          },
+          "description": "The schema's RecordingGap, clipped to the day; `end` null while open."
+        },
+        "totals": {
+          "$ref": "#/$defs/DayTotals"
+        }
+      },
+      "required": [
+        "date",
+        "start",
+        "end",
+        "focus",
+        "attention",
+        "idle",
+        "agents",
+        "gaps",
+        "totals"
+      ],
+      "additionalProperties": false
+    },
+    "TimelineReply": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Timeline"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "recording": {
+              "type": "boolean",
+              "const": false
+            }
+          },
+          "required": ["recording"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "TimelineSource": {
+      "type": "string",
+      "enum": ["browser", "phone", "herdr"],
+      "description": "browser and phone are Roamgate clients; herdr is Herdr's TUI focus."
+    },
+    "TimelineWorkspace": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": ["string", "null"]
+        },
+        "herdr_workspace_id": {
+          "type": ["string", "null"]
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Subject"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "connection_id",
+        "name",
+        "path",
+        "herdr_workspace_id",
+        "subject"
+      ],
+      "additionalProperties": false
+    },
+    "VoiceEvent": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "enum": [
+            "speech_start",
+            "speech_end",
+            "text",
+            "partial",
+            "final",
+            "error",
+            "audio",
+            "listen_loading",
+            "listen_ready"
+          ]
+        },
+        "session": {
+          "type": "number"
+        },
+        "bytes": {
+          "type": "number",
+          "description": "On `audio`: how much came, as 16 kHz mono S16LE."
+        },
+        "text": {
+          "type": "string"
+        },
+        "speech_ms": {
+          "type": "number"
+        },
+        "error": {
+          "type": "string"
+        },
+        "pause": {
+          "type": "boolean",
+          "description": "On a partial: the words at a pause, which may end the utterance."
+        },
+        "pause_ms": {
+          "type": "number",
+          "description": "On a partial at a pause: how far into it the words were read, whether the speaker sounds to be thinking (\"euh\"), and at speechgate's checks, how finished the voice (`turn`) and the words (`words`) sound, 0 to 1."
+        },
+        "thinking": {
+          "type": "boolean"
+        },
+        "turn": {
+          "type": "number"
+        },
+        "words": {
+          "type": "number"
+        },
+        "raw": {
+          "type": "string",
+          "description": "On a cleaned final: the words as heard, and whether to the agent."
+        },
+        "for_agent": {
+          "type": "boolean"
+        },
+        "voice": {
+          "$ref": "#/$defs/VoiceTag",
+          "description": "On a final, with a speaker model: whose voice (voice-speakers.ts)."
+        },
+        "voice_label": {
+          "type": "string",
+          "description": "On a final relayed to a page: the voice's label for the companion."
+        },
+        "recoverable": {
+          "type": "boolean",
+          "description": "On a session's `error`: the helper stopped under it, and runs again from the next request. The session is over, nothing else is."
+        }
+      },
+      "required": ["event"],
+      "additionalProperties": false,
+      "description": "What the helper says about a listening session."
+    },
+    "VoiceTag": {
+      "type": "object",
+      "properties": {
+        "voices": {
+          "type": "number",
+          "description": "The set of voices its names belong to: a new one each call."
+        },
+        "id": {
+          "type": ["string", "null"],
+          "description": "The voice most heard, null when too little was heard to tell."
+        },
+        "share": {
+          "type": "number",
+          "description": "That voice's share of the utterance's voice, 0 to 1."
+        },
+        "mixed": {
+          "type": "boolean"
+        },
+        "mix": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "share": {
+                "type": "number"
+              }
+            },
+            "required": ["id", "share"],
+            "additionalProperties": false
+          },
+          "description": "Each voice heard and its share, the most heard first."
+        },
+        "similarity": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "How close the utterance is to each voice known, -1 to 1."
+        },
+        "merged": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Voices found to be one: gone name to kept name."
+        },
+        "print": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "The utterance's print (the helper's; not sent on to the page)."
+        },
+        "prints": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "description": "The print of each voice in it (likewise)."
+        },
+        "utterance": {
+          "type": "number",
+          "description": "Which utterance it is, for its print kept here (observe())."
+        },
+        "seconds": {
+          "type": "number",
+          "description": "Seconds of voice in it."
+        }
+      },
+      "required": ["voices", "id", "share", "mixed", "mix", "similarity"],
+      "additionalProperties": false,
+      "description": "What the helper says of an utterance's voices (a final's `voice`)."
+    },
+    "WorkspaceTotals": {
+      "type": "object",
+      "properties": {
+        "workspace_id": {
+          "type": "string"
+        },
+        "attended_ms": {
+          "type": "number",
+          "description": "browser_ms + phone_ms + herdr_ms."
+        },
+        "browser_ms": {
+          "type": "number"
+        },
+        "phone_ms": {
+          "type": "number"
+        },
+        "herdr_ms": {
+          "type": "number",
+          "description": "Herdr's TUI focus, only where no browser or phone had attention and within `idle_seconds` of a sign of a person."
+        },
+        "working_ms": {
+          "type": "number",
+          "description": "Time at least one of the workspace's agents was working."
+        },
+        "blocked_ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "workspace_id",
+        "attended_ms",
+        "browser_ms",
+        "phone_ms",
+        "herdr_ms",
+        "working_ms",
+        "blocked_ms"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,18 @@
+Update the standalone roamgate executable to the latest release.
+
+Usage:
+  roamgate update [--check] [--json]
+
+Options:
+  --check   only report whether a newer release exists
+  --json    print machine-readable output (with --check)
+
+The release manifest, archive checksum, package VERSION and binary version are
+verified before the executable is replaced in place. The previous executable is
+kept as roamgate.previous; `roamgate rollback` restores it. A running managed
+service that uses this executable is restarted afterwards.
+
+ROAMGATE_UPDATE_BASE_URL selects a mirror (from the shell, else the service
+config). To install a specific version, rerun the installer with
+ROAMGATE_VERSION=X.Y.Z. Windows builds update by downloading a release.
+

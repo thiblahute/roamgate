@@ -1,0 +1,11 @@
+{
+  "x-inventory": "terminal_clipboard",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/bridge/terminal-bridge.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["terminal_clipboard"],
+  "properties": {
+    "terminal_clipboard": {}
+  }
+}

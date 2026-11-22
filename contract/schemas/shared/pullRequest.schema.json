@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/pullRequest.schema.json",
+  "x-generated-from": "shared/pullRequest.ts",
+  "$defs": {
+    "PullRequest": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "number": {
+          "type": "number"
+        },
+        "title": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "number",
+        "title",
+        "author",
+        "source",
+        "target",
+        "state",
+        "draft",
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "PullRequestStatus": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "select_remote",
+            "select_match",
+            "unsupported",
+            "missing_cli",
+            "unauthenticated",
+            "no_match",
+            "detached",
+            "error"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "rebasing": {
+          "type": "boolean",
+          "description": "The branch was recovered from an in-progress rebase on a detached HEAD."
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "A provider or transport failure that cannot disprove an existing link. Errors without this flag, such as a branch change during refresh, invalidate the previous association."
+        },
+        "refreshedAt": {
+          "type": "string"
+        },
+        "remotes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReviewRemote"
+          }
+        },
+        "remote": {
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/ReviewProvider"
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PullRequest"
+          }
+        },
+        "request": {
+          "$ref": "#/$defs/PullRequest"
+        },
+        "ci": {
+          "type": "string"
+        },
+        "review": {
+          "type": "string"
+        },
+        "cached": {
+          "type": "object",
+          "properties": {
+            "fetchedAt": {
+              "type": "string"
+            },
+            "stale": {
+              "type": "boolean"
+            }
+          },
+          "required": ["fetchedAt", "stale"],
+          "additionalProperties": false,
+          "description": "Served from the server's cache: when the forge was read, and whether that is older than its state allows (a read is then under way, and the answer is pushed when it changes)."
+        }
+      },
+      "required": ["state", "root", "branch", "refreshedAt", "remotes"],
+      "additionalProperties": false
+    },
+    "PullRequestSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stale": {
+          "type": "object",
+          "properties": {
+            "failedAt": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "The last successful result, awaiting verification or after a failed refresh. `refreshedAt` remains the last successful refresh time."
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "select_remote",
+            "select_match",
+            "unsupported",
+            "missing_cli",
+            "unauthenticated",
+            "no_match",
+            "detached",
+            "error"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "refreshedAt": {
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/ReviewProvider"
+        },
+        "request": {
+          "$ref": "#/$defs/PullRequest"
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "A provider or transport failure that cannot disprove an existing link. Errors without this flag, such as a branch change during refresh, invalidate the previous association."
+        }
+      },
+      "required": ["refreshedAt", "state"]
+    },
+    "ReviewProvider": {
+      "type": "string",
+      "enum": ["github", "gitlab"]
+    },
+    "ReviewRemote": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        }
+      },
+      "required": ["name", "host", "repository"],
+      "additionalProperties": false
+    }
+  }
+}

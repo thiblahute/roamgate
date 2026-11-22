@@ -1,0 +1,11 @@
+{
+  "method": "git.diff_summary",
+  "family": "git",
+  "scope": "connection",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

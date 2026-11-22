@@ -1,0 +1,18 @@
+{
+  "x-inventory": "event:agent_chat.block_stop",
+  "x-kind": "event",
+  "x-sent-by": ["server/src/conversation/service.ts"],
+  "x-status": "typed",
+  "allOf": [
+    {
+      "$ref": "../schemas/shared/agentChat.schema.json#/$defs/AgentChatEventEnvelope"
+    },
+    {
+      "properties": {
+        "event": {
+          "const": "agent_chat.block_stop"
+        }
+      }
+    }
+  ]
+}

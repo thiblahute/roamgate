@@ -1,0 +1,11 @@
+{
+  "x-inventory": "assistant_notification",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/index.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["assistant_notification"],
+  "properties": {
+    "assistant_notification": {}
+  }
+}

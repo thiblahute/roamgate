@@ -1,0 +1,11 @@
+{
+  "method": "review.rendered.storage",
+  "family": "review",
+  "scope": "connection",
+  "handler": "server/src/review/rpc.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

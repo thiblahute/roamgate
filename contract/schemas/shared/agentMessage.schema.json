@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/agentMessage.schema.json",
+  "x-generated-from": "shared/agentMessage.ts",
+  "$defs": {
+    "AgentMessageSender": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "Its address, `connection/pane`: what a reply is sent to."
+        },
+        "name": {
+          "type": "string",
+          "description": "Its session's title, or its workspace's name."
+        },
+        "workspace": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string",
+          "description": "Claude, Codex, Pi... as Herdr names it."
+        }
+      },
+      "required": ["address", "name", "workspace", "agent"],
+      "additionalProperties": false,
+      "description": "Who sent a message: an agent session Roamgate manages."
+    }
+  }
+}

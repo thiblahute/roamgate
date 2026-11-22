@@ -1,0 +1,32 @@
+Usage: roamgate voice profile low-gpu on|off|status|models [options]
+       roamgate voice gaming on|off|status [options]
+
+The low-GPU profile: while it is on, the voice helper starts with a lighter
+set of models, leaving the GPU to a game or another job: the setup
+assistant's light tier among the models already here (Parakeet without
+Whisper reading again, Kokoro reading on the CPU, the speaker and turn
+models). voice.json is not changed. A helper running with the other set
+switches once the call or listening it serves ends, or at once with --now
+(the call goes on after a short notice and a few seconds' gap).
+
+It is on while someone holds it, or while GameMode (gamemoded) runs as a
+call starts. `gaming` is `profile low-gpu --by gaming`.
+
+Actions:
+  on              hold it on (as --by, "manual" by default)
+  off             let it go (as --by; without --by, every holder)
+  status          who holds it, and the models it uses
+  models [PART=ID ...]
+                  set parts of its set by hand (the ids `roamgate setup
+                  voice list` shows; PART is speech, reread, tts, stock_voices, speaker, turn, text_turn);
+                  --reset goes back to the light tier
+
+Options:
+  --by NAME       who holds it: a game hook, a job ("gaming", "render")
+  --now           switch a call going on now, not when it ends
+  --reset         with models: the light tier for every part
+  --json          status as JSON
+
+The state is kept in low-gpu.json in the voice data directory
+(~/.local/share/roamgate/voice), which the running server follows.
+

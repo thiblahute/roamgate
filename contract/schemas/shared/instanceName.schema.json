@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/instanceName.schema.json",
+  "x-generated-from": "shared/instanceName.ts",
+  "$defs": {
+    "InstanceSettings": {
+      "type": "object",
+      "properties": {
+        "title_suffix": {
+          "type": "string"
+        }
+      },
+      "required": ["title_suffix"],
+      "additionalProperties": false
+    }
+  }
+}

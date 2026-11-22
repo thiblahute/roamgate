@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/agentProfiles.schema.json",
+  "x-generated-from": "shared/agentProfiles.ts",
+  "$defs": {
+    "AgentProfile": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "agent": {
+          "$ref": "#/$defs/ProfileAgent",
+          "description": "The agent driver (claude; more once their drivers exist)."
+        },
+        "command": {
+          "type": "string",
+          "description": "The program; absent: the driver's own (`claude`)."
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ProfileEnvValue"
+          },
+          "description": "Set for the agent; `{file}` values are read at start, never shown."
+        },
+        "unset": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Removed from the agent's environment (besides the implied ones)."
+        }
+      },
+      "required": ["name", "agent"],
+      "additionalProperties": false
+    },
+    "ProfileAgent": {
+      "type": "string",
+      "const": "claude"
+    },
+    "ProfileEnvValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string"
+            }
+          },
+          "required": ["file"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ProfilesSettings": {
+      "type": "object",
+      "properties": {
+        "list": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentProfile"
+          },
+          "description": "The user's profiles; the built-in Claude is added unless redefined."
+        },
+        "default": {
+          "type": "string",
+          "description": "Used for new sessions, headless runs and Roamgate's helpers."
+        },
+        "return_after_reset": {
+          "type": "boolean",
+          "description": "After a usage limit sent a session to another profile, go back to the default once the limit resets."
+        }
+      },
+      "required": ["list", "default", "return_after_reset"],
+      "additionalProperties": false
+    },
+    "ProfileView": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "agent": {
+          "$ref": "#/$defs/ProfileAgent"
+        },
+        "command": {
+          "type": "string"
+        },
+        "builtin": {
+          "type": "boolean"
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        },
+        "unset": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["name", "agent", "builtin", "env", "unset"],
+      "additionalProperties": false,
+      "description": "What a browser is shown of a profile: secret files by path only."
+    },
+    "UsageLimit": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "\"5-hour\", \"weekly\", \"session\", \"Opus\"...; \"usage\" when not said."
+        },
+        "resets": {
+          "type": ["string", "null"],
+          "description": "The message's own reset words (\"5:20pm (America/Santiago)\")."
+        },
+        "resets_at": {
+          "type": ["number", "null"],
+          "description": "When it resets, if the message says (epoch ms)."
+        },
+        "zone": {
+          "type": "string",
+          "description": "The time zone the message gave its reset in, if any."
+        },
+        "at": {
+          "type": "number",
+          "description": "When the agent reported it (the transcript record's time, epoch ms)."
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["kind", "resets", "resets_at", "message"],
+      "additionalProperties": false,
+      "description": "A usage limit an agent hit, from its message."
+    }
+  }
+}

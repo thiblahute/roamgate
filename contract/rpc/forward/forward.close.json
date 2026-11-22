@@ -1,0 +1,11 @@
+{
+  "method": "forward.close",
+  "family": "forward",
+  "scope": "connection",
+  "handler": "server/src/bridge/forward-rpc.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

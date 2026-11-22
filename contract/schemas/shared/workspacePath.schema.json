@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/workspacePath.schema.json",
+  "x-generated-from": "shared/workspacePath.ts",
+  "$defs": {
+    "WorkspacePathInfo": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "error": {
+          "type": ["string", "null"]
+        },
+        "directories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["path", "error", "directories"],
+      "additionalProperties": false
+    }
+  }
+}

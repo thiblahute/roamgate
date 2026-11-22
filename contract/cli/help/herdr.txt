@@ -1,0 +1,12 @@
+Install and start the local Herdr server.
+
+Usage:
+  roamgate herdr setup
+  roamgate herdr status
+
+Setup installs the Roamgate-verified Herdr 0.9.4 release
+when no herdr binary is found, then installs and starts a user service running
+`herdr server` (systemd user service on Linux, launchd LaunchAgent on macOS,
+per-user Task Scheduler task on Windows). An existing herdr binary is used as
+is and never replaced. Status prints the detected state.
+

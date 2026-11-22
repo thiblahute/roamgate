@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/bashMode.schema.json",
+  "x-generated-from": "shared/bashMode.ts",
+  "$defs": {
+    "BashModePart": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "A run read back from a transcript: its command, its output, or both."
+    },
+    "BashModeRun": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        }
+      },
+      "required": ["command", "stdout", "stderr"],
+      "additionalProperties": false,
+      "description": "One command run in bash mode and what it printed."
+    }
+  }
+}

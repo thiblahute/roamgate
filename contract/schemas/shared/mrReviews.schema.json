@@ -1,0 +1,1978 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/mrReviews.schema.json",
+  "x-generated-from": "shared/mrReviews.ts",
+  "$defs": {
+    "MrAgentMessage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "assistant"]
+        },
+        "text": {
+          "type": "string"
+        },
+        "sent_at": {
+          "type": "string"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["running", "completed", "failed"]
+              },
+              "arguments": {
+                "type": "string"
+              },
+              "output": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "name", "status"],
+            "additionalProperties": false
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "assistant.schema.json#/$defs/AssistantSource"
+          },
+          "description": "None: its tools cite no workspace."
+        },
+        "thinking": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "opens": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrItem"
+          }
+        },
+        "failed": {
+          "type": "boolean",
+          "description": "The turn ended in an error."
+        }
+      },
+      "required": ["id", "role", "text", "sent_at", "tools", "sources"],
+      "additionalProperties": false,
+      "description": "A message of the reviews agent's chat, shaped as Ranger's (its tools as activity); `opens` are the requests whose review it showed, opened by the browser that asked (`request_id`)."
+    },
+    "MrAgentSnapshot": {
+      "type": "object",
+      "properties": {
+        "instance_id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The Claude Code session the next question resumes."
+        },
+        "model": {
+          "type": "string"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": ["string", "null"]
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrAgentMessage"
+          }
+        },
+        "queue": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "const": "follow_up"
+              },
+              "text": {
+                "type": "string"
+              },
+              "sent_at": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "mode", "text", "sent_at"],
+            "additionalProperties": false
+          },
+          "description": "Questions waiting for the running one, oldest first."
+        }
+      },
+      "required": [
+        "instance_id",
+        "revision",
+        "model",
+        "running",
+        "error",
+        "messages",
+        "queue"
+      ],
+      "additionalProperties": false,
+      "description": "The reviews agent's chat, as `bridge.mr_reviews.agent.*` gives it."
+    },
+    "MrBranchInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "connectionLabel": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "workspaceLabel": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string",
+          "description": "The target it is compared with (\"origin/main\")."
+        },
+        "ahead": {
+          "type": "number"
+        },
+        "behind": {
+          "type": "number"
+        },
+        "dirty": {
+          "type": "number",
+          "description": "Files changed and not committed."
+        },
+        "unpushed": {
+          "type": "number",
+          "description": "Commits not pushed to its own upstream branch."
+        },
+        "below": {
+          "type": "string",
+          "description": "The branch it sits on (an effort's part's base, or a listed branch whose commits it holds): its commits and ahead are its own beyond it."
+        },
+        "url": {
+          "type": "string",
+          "description": "Its page on the forge, when it is pushed."
+        },
+        "commits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sha": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": ["sha", "subject", "at"],
+            "additionalProperties": false
+          },
+          "description": "Its own commits beyond the target, newest first (at most 50 here)."
+        },
+        "group": {
+          "type": "string",
+          "description": "The Headed upstream group it is in."
+        }
+      },
+      "required": [
+        "name",
+        "connectionId",
+        "connectionLabel",
+        "workspaceId",
+        "workspaceLabel",
+        "path",
+        "target",
+        "ahead",
+        "behind",
+        "dirty",
+        "commits",
+        "group"
+      ],
+      "additionalProperties": false,
+      "description": "A branch headed upstream, as its workspace's checkout has it."
+    },
+    "MrCheckoutMode": {
+      "type": "string",
+      "enum": ["immediately", "on_demand"]
+    },
+    "MrCurationState": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["idle", "running", "off", "error"]
+        },
+        "at": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["state"],
+      "additionalProperties": false
+    },
+    "MrDisposition": {
+      "type": "string",
+      "enum": [
+        "upstream",
+        "in_review",
+        "in_part",
+        "planned",
+        "not_for_upstream",
+        "superseded",
+        "unsorted"
+      ],
+      "description": "What happens to one commit of an effort."
+    },
+    "MrEffort": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "group": {
+          "type": "string",
+          "description": "Its home: the Workspaces-tree group node, or a workspace's `upstreamWorkspaceHome`."
+        },
+        "name": {
+          "type": "string"
+        },
+        "clone": {
+          "type": "object",
+          "properties": {
+            "connectionId": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": ["connectionId", "path"],
+          "additionalProperties": false,
+          "description": "The clone the source is read in."
+        },
+        "source": {
+          "type": "string",
+          "description": "An exact ref: refs/remotes/<remote>/<branch> or refs/heads/<branch>."
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "remote": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            }
+          },
+          "required": ["remote", "branch"],
+          "additionalProperties": false,
+          "description": "The upstream project's branch."
+        },
+        "feeders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Exact refs whose commits land into the source."
+        },
+        "head": {
+          "type": "object",
+          "properties": {
+            "connectionId": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "workspaceId": {
+              "type": "string"
+            }
+          },
+          "required": ["connectionId", "path"],
+          "additionalProperties": false,
+          "description": "The head workspace (its Claude session leads the effort)."
+        }
+      },
+      "required": [
+        "id",
+        "group",
+        "name",
+        "clone",
+        "source",
+        "target",
+        "feeders"
+      ],
+      "additionalProperties": false,
+      "description": "An upstreaming effort: a large branch (the source) followed commit by commit until all of it is upstream, declared on a group headed upstream or on a workspace headed upstream by itself."
+    },
+    "MrEffortChanges": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "type": ["string", "null"]
+        },
+        "unsorted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Commits unsorted now that were not before (new on the source, or put back)."
+        },
+        "landed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Commits upstream now that were not."
+        },
+        "inReview": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Commits in review now that were not."
+        },
+        "feeders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string"
+              },
+              "landed": {
+                "type": "number"
+              }
+            },
+            "required": ["ref", "landed"],
+            "additionalProperties": false
+          },
+          "description": "Feeders whose commits reached the source: how many."
+        },
+        "partsMerged": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Plans whose part is all upstream now."
+        },
+        "proposals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Commits with proposals to confirm or reject."
+        },
+        "upstreamAnyway": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Said not for upstream, yet upstream."
+        }
+      },
+      "required": [
+        "since",
+        "unsorted",
+        "landed",
+        "inReview",
+        "feeders",
+        "partsMerged",
+        "proposals",
+        "upstreamAnyway"
+      ],
+      "additionalProperties": false,
+      "description": "What changed in an effort since the user last looked."
+    },
+    "MrEffortSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "group": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "total": {
+          "type": "number"
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "upstream": {
+              "type": "number"
+            },
+            "in_review": {
+              "type": "number"
+            },
+            "in_part": {
+              "type": "number"
+            },
+            "planned": {
+              "type": "number"
+            },
+            "not_for_upstream": {
+              "type": "number"
+            },
+            "superseded": {
+              "type": "number"
+            },
+            "unsorted": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        },
+        "notReady": {
+          "type": "number",
+          "description": "Feeders' commits not on the source yet."
+        },
+        "at": {
+          "type": "string",
+          "description": "When the ledger was last derived."
+        },
+        "error": {
+          "type": "string",
+          "description": "Read problem (the clone is unreachable, a ref is gone)."
+        },
+        "overlaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrOverlap"
+          },
+          "description": "Other efforts or branches holding some of its commits."
+        },
+        "head": {
+          "type": "object",
+          "properties": {
+            "connectionId": {
+              "type": "string"
+            },
+            "workspaceId": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": ["connectionId"],
+          "additionalProperties": false
+        },
+        "proposals": {
+          "type": "number",
+          "description": "Unsorted commits with a fuzzy match to confirm or reject."
+        },
+        "plans": {
+          "type": "object",
+          "properties": {
+            "proposed": {
+              "type": "number"
+            },
+            "accepted": {
+              "type": "number"
+            }
+          },
+          "required": ["proposed", "accepted"],
+          "additionalProperties": false,
+          "description": "Planned requests, by state."
+        },
+        "changed": {
+          "type": "number",
+          "description": "What changed since the user last looked (What changed)."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "group",
+        "source",
+        "target",
+        "total",
+        "counts",
+        "notReady",
+        "overlaps"
+      ],
+      "additionalProperties": false,
+      "description": "An effort as the inbox shows it: its card."
+    },
+    "MrFeedback": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "verdict": {
+          "$ref": "#/$defs/MrVerdict"
+        },
+        "at": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "key",
+        "verdict",
+        "at",
+        "title",
+        "project",
+        "author",
+        "files"
+      ],
+      "additionalProperties": false
+    },
+    "MrHiddenEntry": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "forge.schema.json#/$defs/ForgeProvider"
+        },
+        "host": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "number": {
+          "type": "number"
+        },
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "provider",
+        "host",
+        "project",
+        "number",
+        "url",
+        "title"
+      ],
+      "additionalProperties": false,
+      "description": "A request the user removed from the view, for the Restore list."
+    },
+    "MrHostState": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "forge.schema.json#/$defs/ForgeProvider"
+        },
+        "state": {
+          "type": "string",
+          "enum": ["ok", "not_signed_in", "unavailable", "error", "pending"]
+        },
+        "user": {
+          "type": "string",
+          "description": "The user there, once known."
+        },
+        "message": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "string"
+        }
+      },
+      "required": ["host", "provider", "state"],
+      "additionalProperties": false
+    },
+    "MrInbox": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrInboxEntry"
+          }
+        },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrHostState"
+          }
+        },
+        "curation": {
+          "$ref": "#/$defs/MrCurationState"
+        },
+        "inference": {
+          "$ref": "#/$defs/MrCurationState",
+          "description": "The inference of whose move it is (section 7)."
+        },
+        "refreshedAt": {
+          "type": "string",
+          "description": "When the latest refresh ended."
+        },
+        "refreshing": {
+          "type": "boolean",
+          "description": "A refresh is running."
+        },
+        "order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The user's order (the settings' `order`), when they set one."
+        },
+        "orderVersion": {
+          "type": "number",
+          "description": "Counts every change of the order, the pins and the removals: a page keeps what has the higher one."
+        },
+        "hidden": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrHiddenEntry"
+          },
+          "description": "Removed by the user and quiet since: the \"N hidden\" list."
+        },
+        "views": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrSavedView"
+          },
+          "description": "The user's saved searches."
+        },
+        "panel": {
+          "$ref": "#/$defs/MrPanelState",
+          "description": "The search and filter kept across runs and devices."
+        },
+        "efforts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrEffortSummary"
+          },
+          "description": "Upstreaming efforts' cards."
+        },
+        "upstreamGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The Workspaces-tree groups headed upstream."
+        },
+        "upstreamWorkspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "workspaceTree.schema.json#/$defs/WorkspaceRef"
+          },
+          "description": "The workspaces headed upstream by themselves, outside such a group."
+        }
+      },
+      "required": ["entries", "hosts", "curation", "refreshing", "hidden"],
+      "additionalProperties": false
+    },
+    "MrInboxEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "section": {
+          "$ref": "#/$defs/MrSection"
+        },
+        "unread": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MrUnread"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null: never looked at."
+        },
+        "isNew": {
+          "type": "boolean",
+          "description": "Never opened in Roamgate."
+        },
+        "reason": {
+          "type": "string",
+          "description": "A suggestion: why Claude picked it, in one line."
+        },
+        "feedback": {
+          "$ref": "#/$defs/MrVerdict",
+          "description": "The user's word on a suggestion."
+        },
+        "review": {
+          "type": "object",
+          "properties": {
+            "connectionId": {
+              "type": "string"
+            },
+            "workspaceId": {
+              "type": "string"
+            },
+            "sessionId": {
+              "type": "string"
+            }
+          },
+          "required": ["connectionId", "sessionId"],
+          "additionalProperties": false,
+          "description": "Its review in Roamgate, once opened."
+        },
+        "unavailable": {
+          "type": "string",
+          "description": "A pinned request the forge did not give (not found, no access, host down), or not read yet: the row shows this instead of its state, and only the remove button works."
+        },
+        "override": {
+          "$ref": "#/$defs/MrOverride",
+          "description": "What the user (or an agent) set on it by hand."
+        },
+        "overrideOutdated": {
+          "type": "boolean",
+          "description": "The override's whose-move and next step were set before the request moved on (its activity marker changed): shown dimmed, \"changed since\"."
+        },
+        "inferred": {
+          "$ref": "#/$defs/MrInferred",
+          "description": "What Roamgate inferred of one's own work (section 7), when it did."
+        },
+        "inferredOutdated": {
+          "type": "boolean",
+          "description": "The inference no longer holds: the request moved on meaningfully since."
+        },
+        "lane": {
+          "$ref": "#/$defs/MrLane",
+          "description": "One's own work: whose move it is (override, inference, else rules)."
+        },
+        "laneWhy": {
+          "type": "string",
+          "description": "Why it is in its lane, in a few words (the rule, or who set it)."
+        },
+        "next": {
+          "$ref": "#/$defs/MrNextStep",
+          "description": "The next step, and where it comes from."
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The requests it waits for (keys), override first."
+        },
+        "parent": {
+          "type": "string",
+          "description": "Drawn under this request (an open request it depends on, in the list): the key of its parent. Absent for cycles and for dependencies not listed."
+        },
+        "unsent": {
+          "type": "boolean",
+          "description": "A branch the user said will be a request (not proposed yet)."
+        },
+        "branch": {
+          "$ref": "#/$defs/MrBranchInfo",
+          "description": "A branch headed upstream (no request yet): its key is `branch:<provider>:<host>/<project>@<branch>`, its project the target's."
+        },
+        "fromBranch": {
+          "type": "string",
+          "description": "A request opened from a branch headed upstream: that branch."
+        },
+        "local": {
+          "type": "object",
+          "properties": {
+            "unpushed": {
+              "type": "number"
+            },
+            "dirty": {
+              "type": "number"
+            },
+            "workspace": {
+              "type": "string"
+            }
+          },
+          "required": ["unpushed", "dirty", "workspace"],
+          "additionalProperties": false,
+          "description": "Its checkout here: commits not pushed, local changes."
+        },
+        "effort": {
+          "type": "string",
+          "description": "The upstreaming effort it is a part of (its name)."
+        },
+        "merge": {
+          "$ref": "mrReviewsMerge.schema.json#/$defs/MrMergeInfo",
+          "description": "A merge scheduled by a label, or a bot merging it (section 15)."
+        },
+        "key": {
+          "type": "string",
+          "description": "forgeRefKey of the ref."
+        },
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "forge.schema.json#/$defs/ForgeRequestState"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "headSha": {
+          "type": "string"
+        },
+        "baseSha": {
+          "type": "string",
+          "description": "The diff's base, when the forge said."
+        },
+        "sourceBranch": {
+          "type": "string"
+        },
+        "targetBranch": {
+          "type": "string"
+        },
+        "pipeline": {
+          "anyOf": [
+            {
+              "$ref": "forge.schema.json#/$defs/ForgePipelineStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notes": {
+          "type": "number",
+          "description": "Comments by people (not the system's notes)."
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrReason"
+          },
+          "description": "Why it is the user's: empty for a suggestion."
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Changed paths, for the suggestions (capped)."
+        },
+        "drafts": {
+          "type": "number",
+          "description": "The user's pending drafts on the forge: GitHub says with the list; GitLab only on a read of the merge request's draft notes."
+        },
+        "own": {
+          "$ref": "#/$defs/MrOwnStatus",
+          "description": "The user's own request: where it stands."
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The forge's labels (at most 10)."
+        },
+        "number": {
+          "type": "number"
+        },
+        "provider": {
+          "$ref": "forge.schema.json#/$defs/ForgeProvider"
+        },
+        "host": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "author",
+        "draft",
+        "headSha",
+        "host",
+        "isNew",
+        "key",
+        "notes",
+        "number",
+        "pipeline",
+        "project",
+        "provider",
+        "reasons",
+        "section",
+        "sourceBranch",
+        "state",
+        "targetBranch",
+        "title",
+        "unread",
+        "updatedAt",
+        "url"
+      ]
+    },
+    "MrInferred": {
+      "type": "object",
+      "properties": {
+        "whose": {
+          "$ref": "#/$defs/MrWhose"
+        },
+        "next": {
+          "type": "string"
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Request keys it waits for (references found, branch containment, the model)."
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "string",
+          "description": "The row's version when inferred (head, notes, state, pipeline...)."
+        },
+        "facts": {
+          "type": "string",
+          "description": "The facts it stood on, to tell a meaningful change (D7)."
+        },
+        "at": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string",
+          "enum": ["model", "local"],
+          "description": "model: Claude read it; local: only what was found without a model."
+        }
+      },
+      "required": [
+        "whose",
+        "next",
+        "dependsOn",
+        "stale",
+        "version",
+        "facts",
+        "at",
+        "by"
+      ],
+      "additionalProperties": false,
+      "description": "What Roamgate inferred of one of the user's own requests or branches: derived (state.json), never synced nor exported. Overrides win over it."
+    },
+    "MrItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "forgeRefKey of the ref."
+        },
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "forge.schema.json#/$defs/ForgeRequestState"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "headSha": {
+          "type": "string"
+        },
+        "baseSha": {
+          "type": "string",
+          "description": "The diff's base, when the forge said."
+        },
+        "sourceBranch": {
+          "type": "string"
+        },
+        "targetBranch": {
+          "type": "string"
+        },
+        "pipeline": {
+          "anyOf": [
+            {
+              "$ref": "forge.schema.json#/$defs/ForgePipelineStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notes": {
+          "type": "number",
+          "description": "Comments by people (not the system's notes)."
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrReason"
+          },
+          "description": "Why it is the user's: empty for a suggestion."
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Changed paths, for the suggestions (capped)."
+        },
+        "drafts": {
+          "type": "number",
+          "description": "The user's pending drafts on the forge: GitHub says with the list; GitLab only on a read of the merge request's draft notes."
+        },
+        "own": {
+          "$ref": "#/$defs/MrOwnStatus",
+          "description": "The user's own request: where it stands."
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The forge's labels (at most 10)."
+        },
+        "number": {
+          "type": "number"
+        },
+        "provider": {
+          "$ref": "forge.schema.json#/$defs/ForgeProvider"
+        },
+        "host": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "author",
+        "draft",
+        "headSha",
+        "host",
+        "key",
+        "notes",
+        "number",
+        "pipeline",
+        "project",
+        "provider",
+        "reasons",
+        "sourceBranch",
+        "state",
+        "targetBranch",
+        "title",
+        "updatedAt",
+        "url"
+      ],
+      "description": "One merge or pull request as the inbox lists it."
+    },
+    "MrLane": {
+      "type": "string",
+      "enum": [
+        "your_move",
+        "waiting",
+        "merging",
+        "blocked",
+        "not_sent",
+        "stale",
+        "done"
+      ],
+      "description": "The lanes one's own work is grouped in: whose move it is. \"done\": merged or closed lately."
+    },
+    "MrMatchProposal": {
+      "type": "object",
+      "properties": {
+        "sha": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number",
+          "description": "0 to 1."
+        },
+        "why": {
+          "type": "string",
+          "description": "What made it close: \"same files, subject words, size\"."
+        }
+      },
+      "required": ["sha", "subject", "author", "score", "why"],
+      "additionalProperties": false,
+      "description": "An upstream commit proposed as the same change as an effort's commit (D14)."
+    },
+    "MrNextStep": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string",
+          "enum": ["override", "rule", "inferred"],
+          "description": "override: set by hand; rule: from the forge's status."
+        },
+        "by": {
+          "type": "string",
+          "enum": ["user", "agent"],
+          "description": "For an override: who set it."
+        }
+      },
+      "required": ["text", "from"],
+      "additionalProperties": false,
+      "description": "The next step on a request, and who said it."
+    },
+    "MrOverlap": {
+      "type": "object",
+      "properties": {
+        "with": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["effort", "branch"],
+          "description": "effort or branch key."
+        },
+        "shared": {
+          "type": "number"
+        },
+        "relation": {
+          "type": "string",
+          "enum": ["same", "contains", "contained", "partial"],
+          "description": "same: the same commits; contains: all of one is in the other."
+        },
+        "proposal": {
+          "type": "string"
+        }
+      },
+      "required": ["with", "kind", "shared", "relation", "proposal"],
+      "additionalProperties": false,
+      "description": "Commits two branches or efforts share (D23)."
+    },
+    "MrOverride": {
+      "type": "object",
+      "properties": {
+        "whose": {
+          "$ref": "#/$defs/MrWhose"
+        },
+        "next": {
+          "type": "string"
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Request keys it waits for."
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "link": {
+          "type": "string",
+          "description": "A URL, or a path on the workspace that has it (notes, a plan)."
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "at": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string",
+          "enum": ["user", "agent"]
+        },
+        "marker": {
+          "type": "string",
+          "description": "The request's activity marker when it was set (mrActivityMarker)."
+        }
+      },
+      "required": ["at", "by", "marker"],
+      "additionalProperties": false,
+      "description": "What the user (or an agent) set by hand on one of their requests: each field set wins over what Roamgate infers. Kept in settings.json (`mr_reviews.overrides`), on every device."
+    },
+    "MrOverrideField": {
+      "type": "string",
+      "enum": ["whose", "next", "dependsOn", "labels", "link", "stale"]
+    },
+    "MrOwnStatus": {
+      "type": "object",
+      "properties": {
+        "approvedBy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Who approved it."
+        },
+        "approved": {
+          "type": ["boolean", "null"],
+          "description": "Approved as the forge requires (null: the forge did not say)."
+        },
+        "changesRequested": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "GitHub: who asked for changes."
+        },
+        "unresolved": {
+          "type": ["number", "null"],
+          "description": "Threads still to resolve (null: unknown)."
+        },
+        "conflicts": {
+          "type": "boolean",
+          "description": "Conflicts with its target branch."
+        },
+        "needsRebase": {
+          "type": "boolean",
+          "description": "GitLab: the target moved on and it must be rebased to merge."
+        }
+      },
+      "required": [
+        "approvedBy",
+        "approved",
+        "changesRequested",
+        "unresolved",
+        "conflicts",
+        "needsRebase"
+      ],
+      "additionalProperties": false,
+      "description": "Where one of the user's own requests stands, from the same list query (no call per request): reviews, threads and whether it merges cleanly."
+    },
+    "MrPanelState": {
+      "type": "object",
+      "properties": {
+        "search": {
+          "type": "string"
+        },
+        "filter": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": ["search", "filter", "at"],
+      "additionalProperties": false,
+      "description": "The search and filter the Reviews panel shows, kept across runs and devices (`mr_reviews.panel`): `at` orders the writes, so an older answer never takes a newer search back."
+    },
+    "MrPlan": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "commits": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ledger keys, in source order."
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Plans it comes after (ids)."
+        },
+        "state": {
+          "type": "string",
+          "enum": ["proposed", "accepted"]
+        },
+        "part": {
+          "type": "object",
+          "properties": {
+            "connectionId": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "workspaceId": {
+              "type": "string"
+            },
+            "from": {
+              "type": "string",
+              "description": "Made from this existing branch's commit, nothing picked."
+            },
+            "ported": {
+              "type": "boolean",
+              "description": "That branch is a port of the plan: it sits on the part's base, its content its own (not the plan's commits as they are)."
+            },
+            "base": {
+              "type": "string",
+              "description": "Picked on this part's branch (a plan it depends on or fixes), not the target."
+            },
+            "unfolded": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The fixups its branch still holds as commits (their subjects), as read from it; the plan's other fixups are folded there."
+            },
+            "refreshed": {
+              "type": "string",
+              "description": "When the record was last read again from its branch (Refresh part)."
+            },
+            "conflict": {
+              "type": "object",
+              "properties": {
+                "sha": {
+                  "type": "string"
+                },
+                "subject": {
+                  "type": "string"
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "folding": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["sha", "subject", "files"],
+              "additionalProperties": false,
+              "description": "The pick stopped here: the commit and its conflicting files; folding when it was the fixups being folded (a rebase), not a pick."
+            }
+          },
+          "required": ["connectionId", "path", "branch"],
+          "additionalProperties": false
+        },
+        "at": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string",
+          "enum": ["user", "agent"]
+        }
+      },
+      "required": ["id", "name", "commits", "dependsOn", "state", "at", "by"],
+      "additionalProperties": false,
+      "description": "A planned request of an effort (D25): commits the leader session proposed (or the user made) to go upstream together. Accepted, it gets its part: a worktree in the effort's group with its commits picked."
+    },
+    "MrPushKind": {
+      "type": "string",
+      "enum": [
+        "order",
+        "pinned",
+        "hidden",
+        "overrides",
+        "views",
+        "unsent",
+        "upstream",
+        "efforts",
+        "effort",
+        "panel"
+      ]
+    },
+    "MrReason": {
+      "type": "string",
+      "enum": ["review_requested", "assigned", "mentioned", "authored"],
+      "description": "Why a request is the user's: in \"To review\" (review requested, assigned, mentioned), or in \"Mine\" (authored by the user)."
+    },
+    "MrReviewsPush": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number"
+        },
+        "order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changed": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrPushKind"
+          }
+        },
+        "by": {
+          "type": "string",
+          "enum": ["user", "agent"]
+        },
+        "summary": {
+          "type": "string",
+          "description": "What the agent did, in a few words, for a toast with Undo."
+        },
+        "undo": {
+          "type": "number",
+          "description": "The version Undo takes back."
+        },
+        "effort": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "journal": {
+              "type": "number"
+            }
+          },
+          "required": ["id"],
+          "additionalProperties": false,
+          "description": "An effort's ledger changed: which, and the bulk change Undo takes back."
+        }
+      },
+      "required": ["version", "order", "changed", "by"],
+      "additionalProperties": false,
+      "description": "Pushed to every page when what the user authored here changes (the order, pins, removals, overrides...: `{mr_reviews: ...}`): the order itself, so the list follows at once."
+    },
+    "MrReviewsSettings": {
+      "type": "object",
+      "properties": {
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "provider": {
+                "$ref": "forge.schema.json#/$defs/ForgeProvider"
+              }
+            },
+            "required": ["host", "provider"],
+            "additionalProperties": false
+          },
+          "description": "Forge hosts whose requests for the user are listed. Empty: the hosts glab and gh are signed in to on the bridge's machine."
+        },
+        "followed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "provider": {
+                "$ref": "forge.schema.json#/$defs/ForgeProvider"
+              },
+              "project": {
+                "type": "string"
+              }
+            },
+            "required": ["host", "provider", "project"],
+            "additionalProperties": false
+          },
+          "description": "Projects whose open requests are candidates for suggestions."
+        },
+        "checkout": {
+          "$ref": "#/$defs/MrCheckoutMode",
+          "description": "When the review worktree follows the selected request."
+        },
+        "retentionDays": {
+          "type": "number",
+          "description": "Per-request state is dropped this long after a merge or close."
+        },
+        "curation": {
+          "type": "boolean",
+          "description": "Claude picks suggestions in the background."
+        },
+        "inference": {
+          "type": "boolean",
+          "description": "Claude infers whose move it is and the next step of one's own work."
+        },
+        "inferenceHours": {
+          "type": "number",
+          "description": "Hours between two inference runs over what moved (D7)."
+        },
+        "inferenceModel": {
+          "type": "string",
+          "description": "The model the inference runs on, any name the agent takes; empty: automatic (Sonnet, D27)."
+        },
+        "suggestDays": {
+          "type": "number",
+          "description": "Only requests updated this many days ago at most are suggested; an older one is considered again once it changes."
+        },
+        "hints": {
+          "type": "string",
+          "description": "The user's own hints for the suggestions (areas they maintain, people they work with), in their words; the rest comes from their history."
+        },
+        "treeGroups": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": "Where each project's review workspace goes in the Workspaces tree: \"host/project\" -> a path of names (groups, or workspaces). Absent: a \"Reviews\" group under the clone's workspace, else at the top."
+        },
+        "clones": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "connectionId": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": ["connectionId", "path"],
+            "additionalProperties": false
+          },
+          "description": "Clones picked by the user: \"host/project\" -> where."
+        },
+        "order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The inbox in the user's order, as request keys; requests not in it come first, in the inbox's own order. Empty: the inbox's order."
+        },
+        "orderVersion": {
+          "type": "number",
+          "description": "Read only: the inbox version, counting every change of what the user authored here (order, pins, removals, overrides...)."
+        },
+        "pinned": {
+          "type": "array",
+          "items": {
+            "$ref": "forge.schema.json#/$defs/ForgeRef"
+          },
+          "description": "Requests the user added by URL, newest first."
+        },
+        "hidden": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "marker": {
+                "type": "string"
+              }
+            },
+            "required": ["key", "marker"],
+            "additionalProperties": false
+          },
+          "description": "Requests the user removed from the view, with their activity marker (mrActivityMarker) at that time: shown again once it changes."
+        },
+        "overrides": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/MrOverride"
+          },
+          "description": "What was set by hand on requests, by request key."
+        },
+        "staleDays": {
+          "type": "number",
+          "description": "A request quiet this many days is Stale."
+        },
+        "views": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrSavedView"
+          },
+          "description": "Saved searches, shown as chips after All / To review / Mine."
+        },
+        "upstreamGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Workspaces-tree groups headed upstream (node ids; nested ones too)."
+        },
+        "upstreamSkip": {
+          "type": "array",
+          "items": {
+            "$ref": "workspaceTree.schema.json#/$defs/WorkspaceRef"
+          },
+          "description": "Workspaces in such a group that are not (the tree's references)."
+        },
+        "upstreamWorkspaces": {
+          "type": "array",
+          "items": {
+            "$ref": "workspaceTree.schema.json#/$defs/WorkspaceRef"
+          },
+          "description": "Workspaces headed upstream by themselves, in no such group (the tree's references; a workspace needs no node of the tree for it)."
+        },
+        "unsent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrUnsent"
+          },
+          "description": "Branches said to be requests, not proposed yet (D25: \"not sent\")."
+        },
+        "efforts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrEffort"
+          },
+          "description": "Upstreaming efforts, each declared on a group headed upstream."
+        },
+        "merge": {
+          "$ref": "mrReviewsMerge.schema.json#/$defs/MrMergeSettings",
+          "description": "Scheduled merges and merge bots: patterns and names, per scope."
+        },
+        "panel": {
+          "$ref": "#/$defs/MrPanelState",
+          "description": "The search and filter the panel shows, on every device."
+        },
+        "homePrompt": {
+          "type": "string",
+          "description": "The first prompt of a request's home agent ({url} {ref} {title} {author} {target} {source} {project}); empty: DEFAULT_MR_HOME_PROMPT."
+        },
+        "reviewWorktrees": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "project": {
+                "type": "string"
+              },
+              "connectionId": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": ["project", "connectionId", "path"],
+            "additionalProperties": false
+          },
+          "description": "Read only: each project's review worktree, where it is."
+        },
+        "discoveredHosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "provider": {
+                "$ref": "forge.schema.json#/$defs/ForgeProvider"
+              }
+            },
+            "required": ["host", "provider"],
+            "additionalProperties": false
+          },
+          "description": "Read only: the hosts found signed in, when `hosts` is empty."
+        }
+      },
+      "required": [
+        "hosts",
+        "followed",
+        "checkout",
+        "retentionDays",
+        "curation",
+        "inference",
+        "inferenceHours",
+        "inferenceModel",
+        "suggestDays",
+        "hints",
+        "treeGroups",
+        "clones",
+        "order",
+        "pinned",
+        "hidden",
+        "overrides",
+        "staleDays",
+        "views",
+        "upstreamGroups",
+        "upstreamSkip",
+        "upstreamWorkspaces",
+        "unsent",
+        "efforts",
+        "merge",
+        "panel",
+        "homePrompt"
+      ],
+      "additionalProperties": false
+    },
+    "MrSavedView": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": ["name", "query"],
+      "additionalProperties": false,
+      "description": "A saved search: its name and its query (section 5's tokens and words)."
+    },
+    "MrSection": {
+      "type": "string",
+      "enum": ["pinned", "mine", "authored", "suggested"],
+      "description": "\"pinned\": added by the user (by URL, or pinned from the list), listed whether or not a query finds it; \"mine\": to review (requested, assigned, mentioned); \"authored\": the user's own requests."
+    },
+    "MrSeen": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "headSha": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "number"
+        },
+        "state": {
+          "$ref": "forge.schema.json#/$defs/ForgeRequestState",
+          "description": "Absent in records from before they were kept: no change said."
+        },
+        "pipeline": {
+          "anyOf": [
+            {
+              "$ref": "forge.schema.json#/$defs/ForgePipelineStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "approvedBy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unresolved": {
+          "type": ["number", "null"]
+        },
+        "conflicts": {
+          "type": "boolean"
+        }
+      },
+      "required": ["at", "updatedAt", "headSha", "notes"],
+      "additionalProperties": false,
+      "description": "What the user saw last time they looked."
+    },
+    "MrUnread": {
+      "type": "object",
+      "properties": {
+        "newCommits": {
+          "type": "boolean",
+          "description": "The head moved since the user looked."
+        },
+        "newNotes": {
+          "type": "number",
+          "description": "Comments added since."
+        },
+        "changed": {
+          "type": "boolean",
+          "description": "Anything changed since (a new note, a push, a state change)."
+        },
+        "state": {
+          "$ref": "forge.schema.json#/$defs/ForgeRequestState",
+          "description": "Merged or closed since."
+        },
+        "pipeline": {
+          "anyOf": [
+            {
+              "$ref": "forge.schema.json#/$defs/ForgePipelineStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The pipeline's status since, when it changed."
+        },
+        "newApprovals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Who approved it since."
+        },
+        "conflicts": {
+          "type": "boolean",
+          "description": "Conflicts appeared (true) or went (false)."
+        },
+        "unresolved": {
+          "type": "number",
+          "description": "Threads to resolve now, when their number changed."
+        }
+      },
+      "required": ["newCommits", "newNotes", "changed"],
+      "additionalProperties": false
+    },
+    "MrUnsent": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string",
+          "description": "Its target branch, when not the default one."
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": ["key", "at"],
+      "additionalProperties": false,
+      "description": "A branch said to be a request before it is one."
+    },
+    "MrVerdict": {
+      "type": "string",
+      "enum": ["not_interested", "more_like_this"]
+    },
+    "MrWhose": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "me"
+        },
+        {
+          "type": "string",
+          "const": "reviewer"
+        },
+        {
+          "type": "string",
+          "const": "external"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "person": {
+              "type": "string"
+            }
+          },
+          "required": ["person"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Whose move it is on one's own request."
+    },
+    "MrWorkspaceLink": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "connectionLabel": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "why": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["home", "branch", "name", "review"]
+          }
+        }
+      },
+      "required": [
+        "connectionId",
+        "connectionLabel",
+        "workspaceId",
+        "label",
+        "why"
+      ],
+      "additionalProperties": false,
+      "description": "A workspace that is a request's (`bridge.mr_reviews.links`): on its branch, named after it, made as its home (\"Start a review with a home\"), or its review workspace, on any connection."
+    }
+  }
+}

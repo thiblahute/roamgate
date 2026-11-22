@@ -1,0 +1,29 @@
+Usage: roamgate setup voice [list | remove-unused] [options]
+
+Set up voice chat's models: detect the GPU, memory and CPU, propose models
+for each part of the voice helper, download them (resumed, checksums
+checked) into the models directory and point voice.json at them. Run it
+again to change a model, switch tier, or free disk.
+
+Actions:
+  (none)            choose the models, download them, write voice.json
+  list              show the hardware, the models and what is installed
+  remove-unused     delete the models in the models directory voice.json
+                    no longer uses, and unfinished downloads
+
+Options:
+  --tier heavy|light   start from this tier's models (default: the
+                       hardware's, keeping what voice.json uses)
+  --speech ID          speech recognition
+  --reread ID|none     Whisper reading Parakeet's English again
+  --tts ID             the reading voice
+  --stock-voices ID|none
+  --speaker ID|none    who speaks
+  --turn ID|none       end of turn, from the voice
+  --text-turn ID|none  end of turn, from the words
+  --helper PATH        the voice helper voice.json names
+  --verify             check the checksums of files already in place
+  --yes, -y            no questions: the choices as given
+  --json               list as JSON
+
+`roamgate setup voice list` shows each part's model ids.

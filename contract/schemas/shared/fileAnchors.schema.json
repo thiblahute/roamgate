@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/fileAnchors.schema.json",
+  "x-generated-from": "shared/fileAnchors.ts",
+  "$defs": {
+    "FilePlace": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "type": "number"
+        },
+        "endLine": {
+          "type": "number"
+        },
+        "text": {
+          "type": "string",
+          "description": "Its last line's source, as it reads now."
+        },
+        "quote": {
+          "type": "string",
+          "description": "The words it quotes: as written, or as its lines read now when found by them."
+        },
+        "how": {
+          "type": "string",
+          "enum": ["kept", "text", "words"],
+          "description": "Kept where it was, found by its line's text elsewhere, or by its words."
+        }
+      },
+      "required": ["line", "text", "how"],
+      "additionalProperties": false,
+      "description": "A thread's place in the file as it reads now."
+    }
+  }
+}

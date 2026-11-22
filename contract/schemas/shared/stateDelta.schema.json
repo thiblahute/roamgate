@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/stateDelta.schema.json",
+  "x-generated-from": "shared/stateDelta.ts",
+  "$defs": {
+    "StateDelta": {
+      "type": "object",
+      "properties": {
+        "set": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "unset": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lists": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "by": {
+                "type": "string",
+                "description": "The field that identifies the items."
+              },
+              "order": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "upsert": {
+                "type": "array",
+                "items": {},
+                "description": "Items the base lacks."
+              },
+              "patch": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/StateDelta"
+                },
+                "description": "Changes to items the base has, by id."
+              }
+            },
+            "required": ["by", "order", "upsert"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["set", "unset", "lists"],
+      "additionalProperties": false,
+      "description": "Changes between two versions of a JSON state object, as a small payload: the top-level fields that changed, and, for a field that is a list of objects with unique string ids (`id`, or another `*_id` field all its items share), the order of all ids, the items that are new, and for an item that changed, its own changes, found the same way. Unchanged values are recognized by identity first, so a producer that keeps its unchanged parts pays nothing to compare them."
+    }
+  }
+}

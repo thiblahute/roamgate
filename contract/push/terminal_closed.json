@@ -1,0 +1,11 @@
+{
+  "x-inventory": "terminal_closed",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/bridge/terminal-bridge.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["terminal_closed"],
+  "properties": {
+    "terminal_closed": {}
+  }
+}

@@ -1,0 +1,1 @@
+Usage: roamgate plugin <start|restart|status|url|version|uninstall|panel>

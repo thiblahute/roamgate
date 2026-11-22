@@ -1,0 +1,635 @@
+{
+  "description": "Files and tables the server reads or writes. data:<path> is under the data root (~/.config/roamgate, %APPDATA%\\roamgate on Windows; legacy ~/.config/herdr-gui migrated by copy); file:<name> is a file joined by name anywhere (data, an agent's own files, service definitions); sqlite:<module>:<table> is a table the module creates, its DDL in sqlite/. Private files are 0600 in 0700 directories, opened with O_NOFOLLOW and checked for one link.",
+  "entries": {
+    "data:agent-seen.json": {
+      "kind": "data",
+      "used_in": ["server/src/agent/agent-seen.ts"],
+      "format": "json",
+      "description": "the agents' seen marks per connection and pane",
+      "status": "inventoried"
+    },
+    "data:assistant": {
+      "kind": "data",
+      "used_in": ["server/src/assistant/service.ts"],
+      "format": "dir",
+      "description": "Ranger: state.json, tasks.sqlite, pi-durable execution.sqlite, models.json (ROAMGATE_ASSISTANT_DIR)",
+      "status": "inventoried"
+    },
+    "data:auth-token": {
+      "kind": "data",
+      "used_in": ["server/src/config/auth-token.ts"],
+      "format": "text",
+      "description": "the generated login token (0600)",
+      "status": "inventoried"
+    },
+    "data:claude-mod-inbox.json": {
+      "kind": "data",
+      "used_in": ["server/src/index.ts"],
+      "format": "json",
+      "description": "the Claude mod hub's inbox",
+      "status": "inventoried"
+    },
+    "data:connections.json": {
+      "kind": "data",
+      "used_in": [
+        "server/src/cli/service-context.ts",
+        "server/src/connections/profiles.ts",
+        "server/src/history/area.ts"
+      ],
+      "format": "json",
+      "description": "connection profiles, version 2 (ROAMGATE_CONNECTIONS_PATH; connections.json.legacy-cleared marks a cleared legacy copy)",
+      "status": "inventoried"
+    },
+    "data:conversation-leases.json": {
+      "kind": "data",
+      "used_in": ["server/src/conversation/lease.ts"],
+      "format": "json",
+      "description": "conversation mode's pane leases, version 1",
+      "status": "inventoried"
+    },
+    "data:limit-resume.json": {
+      "kind": "data",
+      "used_in": ["server/src/limit-resume/store.ts"],
+      "format": "json",
+      "description": "sessions paused on a usage limit, version 1",
+      "status": "inventoried"
+    },
+    "data:mr-cache/state.json": {
+      "kind": "data",
+      "used_in": ["server/src/mr-cache/cache.ts"],
+      "format": "json",
+      "description": "the forge cache (version, entries)",
+      "status": "inventoried"
+    },
+    "data:mr-reviews/agent.json": {
+      "kind": "data",
+      "used_in": ["server/src/mr-reviews/agent.ts"],
+      "format": "json",
+      "description": "the reviews agent's session",
+      "status": "inventoried"
+    },
+    "data:mr-reviews/efforts": {
+      "kind": "data",
+      "used_in": ["server/src/mr-reviews/module.ts"],
+      "format": "dir",
+      "description": "upstreaming efforts: <id>/ledger.json, derived.json, seen.json, history.jsonl",
+      "status": "inventoried"
+    },
+    "data:mr-reviews/state.json": {
+      "kind": "data",
+      "used_in": ["server/src/mr-reviews/store.ts"],
+      "format": "json",
+      "description": "the Reviews inbox state: order, pins, overrides, marks",
+      "status": "inventoried"
+    },
+    "data:notifications.json": {
+      "kind": "data",
+      "used_in": ["server/src/notifications/notification-feed.ts"],
+      "format": "json",
+      "description": "the notification feed: version 1, last id, events (ROAMGATE_NOTIFICATIONS_PATH)",
+      "status": "inventoried"
+    },
+    "data:profiles": {
+      "kind": "data",
+      "used_in": ["server/src/config/server-config.ts"],
+      "format": "dir",
+      "description": "CPU profiles of --profile: cpu.json and summary.txt per capture",
+      "status": "inventoried"
+    },
+    "data:rendered-storage.json": {
+      "kind": "data",
+      "used_in": ["server/src/http/rendered-storage.ts"],
+      "format": "json",
+      "description": "localStorage of listed rendered sites",
+      "status": "inventoried"
+    },
+    "data:reviews": {
+      "kind": "data",
+      "used_in": ["server/src/history/area.ts", "server/src/review/storage.ts"],
+      "format": "dir",
+      "description": "reviews.sqlite and review images (ROAMGATE_REVIEW_DIR)",
+      "status": "inventoried"
+    },
+    "data:session-profiles.json": {
+      "kind": "data",
+      "used_in": ["server/src/profiles/profiles.ts"],
+      "format": "json",
+      "description": "agent profile chosen per session, version 1",
+      "status": "inventoried"
+    },
+    "data:session-secret-*.json": {
+      "kind": "data",
+      "used_in": ["server/src/config/session-secret.ts"],
+      "format": "json",
+      "description": "the same, per settings file when ROAMGATE_SETTINGS_PATH is set: session-secret-<sha256 of its resolved path>.json",
+      "status": "inventoried"
+    },
+    "data:session-secret.json": {
+      "kind": "data",
+      "used_in": ["server/src/config/session-secret.ts"],
+      "format": "json",
+      "description": "cookie signing material, rotated when the login credentials change",
+      "status": "inventoried"
+    },
+    "data:settings.json": {
+      "kind": "data",
+      "used_in": [
+        "server/src/config/gui-settings.ts",
+        "server/src/history/area.ts"
+      ],
+      "format": "json",
+      "description": "GUI and server settings (ROAMGATE_SETTINGS_PATH); single writer per process",
+      "status": "inventoried"
+    },
+    "data:voice": {
+      "kind": "data",
+      "used_in": ["server/src/voice/voice-models.ts"],
+      "format": "dir",
+      "description": "voice models and their downloads",
+      "status": "inventoried"
+    },
+    "data:voice-gst-registry.bin": {
+      "kind": "data",
+      "used_in": ["server/src/voice/voice-helper.ts"],
+      "format": "binary",
+      "description": "the voice helper's GStreamer registry cache",
+      "status": "inventoried"
+    },
+    "data:voice.json": {
+      "kind": "data",
+      "used_in": ["server/src/voice/voice-helper.ts"],
+      "format": "json",
+      "description": "voice configuration: models, tiers, choices",
+      "status": "inventoried"
+    },
+    "data:voices": {
+      "kind": "data",
+      "used_in": ["server/src/voice/voice-library.ts"],
+      "format": "dir",
+      "description": "the voice library: voices.json and samples",
+      "status": "inventoried"
+    },
+    "data:web-push.json": {
+      "kind": "data",
+      "used_in": ["server/src/notifications/web-push.ts"],
+      "format": "json",
+      "description": "Web Push VAPID keys and device registry (ROAMGATE_WEB_PUSH_PATH)",
+      "status": "inventoried"
+    },
+    "data:work": {
+      "kind": "data",
+      "used_in": ["server/src/history/area.ts", "server/src/work/store.ts"],
+      "format": "dir",
+      "description": "the Work board: work.json and history.jsonl (ROAMGATE_WORK_DIR)",
+      "status": "inventoried"
+    },
+    "file:activity.sqlite": {
+      "kind": "file",
+      "used_in": ["server/src/activity/store.ts"],
+      "description": "the activity recorder's database (<data>/activity.sqlite)",
+      "status": "inventoried"
+    },
+    "file:agent-seen.json": {
+      "kind": "file",
+      "used_in": ["server/src/agent/agent-seen.ts"],
+      "description": "see data:agent-seen.json",
+      "status": "inventoried"
+    },
+    "file:agent.json": {
+      "kind": "file",
+      "used_in": ["server/src/mr-reviews/agent.ts"],
+      "description": "see data:mr-reviews/agent.json",
+      "status": "inventoried"
+    },
+    "file:chat_history.jsonl": {
+      "kind": "file",
+      "used_in": ["server/src/agent/grok-session.ts"],
+      "description": "Grok's chat history, read",
+      "status": "inventoried"
+    },
+    "file:claude-mod-inbox.json": {
+      "kind": "file",
+      "used_in": ["server/src/index.ts"],
+      "description": "the Claude mod hub's inbox (<data>/claude-mod-inbox.json)",
+      "status": "inventoried"
+    },
+    "file:companion-memory.json": {
+      "kind": "file",
+      "used_in": ["server/src/history/files.ts"],
+      "schema": "../schemas/server.schema.json#/$defs/MemoryFile",
+      "description": "the voice companion's memory (<data>/companion-memory.json)",
+      "status": "inventoried"
+    },
+    "file:config.json": {
+      "kind": "file",
+      "used_in": [
+        "server/src/voice/voice-library.ts",
+        "server/src/voice/voice-stock.ts"
+      ],
+      "description": "a voice library voice's configuration",
+      "status": "inventoried"
+    },
+    "file:connections.json": {
+      "kind": "file",
+      "used_in": ["server/src/archive/hosts.ts"],
+      "description": "see data:connections.json; also read on archive hosts",
+      "status": "inventoried"
+    },
+    "file:conversation-leases.json": {
+      "kind": "file",
+      "used_in": ["server/src/conversation/lease.ts"],
+      "description": "see data:conversation-leases.json",
+      "status": "inventoried"
+    },
+    "file:conversation-suspended.json": {
+      "kind": "file",
+      "used_in": ["server/src/connections/runtime.ts"],
+      "description": "conversations stopped as shell jobs, version 1 (<data>)",
+      "status": "inventoried"
+    },
+    "file:cpu.json": {
+      "kind": "file",
+      "used_in": ["server/src/utils/cpu-profile.ts"],
+      "description": "a CPU profile capture",
+      "status": "inventoried"
+    },
+    "file:derived.json": {
+      "kind": "file",
+      "used_in": ["server/src/mr-reviews/efforts.ts"],
+      "description": "an effort's derived state",
+      "status": "inventoried"
+    },
+    "file:dev.herdr.herdr-gui.plist": {
+      "kind": "file",
+      "used_in": ["server/src/config/service-definitions.ts"],
+      "description": "the legacy launchd plist, migrated",
+      "status": "inventoried"
+    },
+    "file:execution.sqlite": {
+      "kind": "file",
+      "used_in": [
+        "server/src/assistant/durable-storage.ts",
+        "server/src/assistant/pi-driver.ts"
+      ],
+      "description": "pi-durable's execution store (Ranger with Pi)",
+      "status": "inventoried"
+    },
+    "file:herdr-gui.env": {
+      "kind": "file",
+      "used_in": ["server/src/config/service-definitions.ts"],
+      "description": "the legacy service env file, migrated",
+      "status": "inventoried"
+    },
+    "file:herdr-gui.service": {
+      "kind": "file",
+      "used_in": ["server/src/config/service-definitions.ts"],
+      "description": "the legacy systemd unit, migrated",
+      "status": "inventoried"
+    },
+    "file:history.jsonl": {
+      "kind": "file",
+      "used_in": [
+        "server/src/history/mr-reviews.ts",
+        "server/src/history/work.ts",
+        "server/src/mr-reviews/efforts.ts",
+        "server/src/work/store.ts"
+      ],
+      "description": "append-only change history of the Work board and of efforts",
+      "status": "inventoried"
+    },
+    "file:index.sqlite": {
+      "kind": "file",
+      "used_in": [
+        "server/src/archive/file-access.ts",
+        "server/src/archive/store.ts",
+        "server/src/cli/archive.ts"
+      ],
+      "description": "the session archive's FTS5 index, INDEX_VERSION 1",
+      "status": "inventoried"
+    },
+    "file:ledger.json": {
+      "kind": "file",
+      "used_in": [
+        "server/src/history/mr-reviews.ts",
+        "server/src/mr-reviews/efforts.ts"
+      ],
+      "schema": "../schemas/server.schema.json#/$defs/LedgerFile",
+      "description": "an effort's ledger",
+      "status": "inventoried"
+    },
+    "file:limit-resume.json": {
+      "kind": "file",
+      "used_in": ["server/src/limit-resume/store.ts"],
+      "description": "see data:limit-resume.json",
+      "status": "inventoried"
+    },
+    "file:low-gpu.json": {
+      "kind": "file",
+      "used_in": [
+        "server/src/history/files.ts",
+        "server/src/voice/voice-low-gpu.ts"
+      ],
+      "schema": "../schemas/server.schema.json#/$defs/LowGpuFile",
+      "description": "the voice low-GPU profile",
+      "status": "inventoried"
+    },
+    "file:manifest.json": {
+      "kind": "file",
+      "used_in": ["server/src/archive/text-search.ts"],
+      "description": "the archive text repository's manifest",
+      "status": "inventoried"
+    },
+    "file:models.json": {
+      "kind": "file",
+      "used_in": ["server/src/assistant/pi-driver.ts"],
+      "description": "Pi's model list for Ranger",
+      "status": "inventoried"
+    },
+    "file:move-hosts.json": {
+      "kind": "file",
+      "used_in": ["server/src/history/files.ts"],
+      "description": "settings history: host moves",
+      "status": "inventoried"
+    },
+    "file:notifications.json": {
+      "kind": "file",
+      "used_in": ["server/src/notifications/notification-feed.ts"],
+      "description": "see data:notifications.json",
+      "status": "inventoried"
+    },
+    "file:rendered-storage.json": {
+      "kind": "file",
+      "used_in": ["server/src/http/rendered-storage.ts"],
+      "description": "see data:rendered-storage.json",
+      "status": "inventoried"
+    },
+    "file:reviews.sqlite": {
+      "kind": "file",
+      "used_in": ["server/src/cli/history.ts", "server/src/review/storage.ts"],
+      "description": "reviews database, user_version 1",
+      "status": "inventoried"
+    },
+    "file:roamgate-herdr.service": {
+      "kind": "file",
+      "used_in": ["server/src/herdr/service.ts"],
+      "description": "the systemd user unit of the local Herdr server",
+      "status": "inventoried"
+    },
+    "file:roamgate.env": {
+      "kind": "file",
+      "used_in": ["server/src/config/service-definitions.ts"],
+      "description": "the service's environment file",
+      "status": "inventoried"
+    },
+    "file:roamgate.service": {
+      "kind": "file",
+      "used_in": ["server/src/config/service-definitions.ts"],
+      "description": "the systemd user unit of the service",
+      "status": "inventoried"
+    },
+    "file:seen.json": {
+      "kind": "file",
+      "used_in": ["server/src/mr-reviews/efforts.ts"],
+      "description": "an effort's seen marks",
+      "status": "inventoried"
+    },
+    "file:session-profiles.json": {
+      "kind": "file",
+      "used_in": [
+        "server/src/history/files.ts",
+        "server/src/profiles/profiles.ts"
+      ],
+      "description": "see data:session-profiles.json",
+      "status": "inventoried"
+    },
+    "file:settings.json": {
+      "kind": "file",
+      "used_in": [
+        "server/src/cli/activity.ts",
+        "server/src/cli/archive.ts",
+        "server/src/cli/reviews.ts"
+      ],
+      "description": "see data:settings.json (the CLI resolves it on its own)",
+      "status": "inventoried"
+    },
+    "file:snapshot.db": {
+      "kind": "file",
+      "used_in": ["server/src/archive/sync.ts"],
+      "description": "the archive's sync snapshot",
+      "status": "inventoried"
+    },
+    "file:state.db": {
+      "kind": "file",
+      "used_in": ["server/src/connections/agent-tab-title.ts"],
+      "description": "Codex's state database, read for tab titles",
+      "status": "inventoried"
+    },
+    "file:state.json": {
+      "kind": "file",
+      "used_in": [
+        "server/src/assistant/service.ts",
+        "server/src/assistant/tasks.ts",
+        "server/src/mr-cache/cache.ts",
+        "server/src/mr-reviews/store.ts"
+      ],
+      "description": "Ranger's state, the forge cache, the Reviews state",
+      "status": "inventoried"
+    },
+    "file:summary.json": {
+      "kind": "file",
+      "used_in": ["server/src/agent/grok-session.ts"],
+      "description": "Grok's session summaries, read",
+      "status": "inventoried"
+    },
+    "file:summary.txt": {
+      "kind": "file",
+      "used_in": ["server/src/utils/cpu-profile.ts"],
+      "description": "a CPU profile's summary",
+      "status": "inventoried"
+    },
+    "file:tasks.sqlite": {
+      "kind": "file",
+      "used_in": ["server/src/assistant/task-storage.ts"],
+      "description": "Ranger's scheduled tasks, user_version 3",
+      "status": "inventoried"
+    },
+    "file:taste.json": {
+      "kind": "file",
+      "used_in": ["server/src/history/files.ts"],
+      "schema": "../schemas/server.schema.json#/$defs/TasteFile",
+      "description": "the voice companion's taste",
+      "status": "inventoried"
+    },
+    "file:voice-gst-registry.bin": {
+      "kind": "file",
+      "used_in": ["server/src/voice/voice-helper.ts"],
+      "description": "see data:voice-gst-registry.bin",
+      "status": "inventoried"
+    },
+    "file:voice-waiting-answers.json": {
+      "kind": "file",
+      "used_in": ["server/src/voice/voice-waiting.ts"],
+      "description": "voice answers waiting to be heard",
+      "status": "inventoried"
+    },
+    "file:voice.json": {
+      "kind": "file",
+      "used_in": [
+        "server/src/history/files.ts",
+        "server/src/voice/voice-helper.ts"
+      ],
+      "description": "see data:voice.json",
+      "status": "inventoried"
+    },
+    "file:voices.json": {
+      "kind": "file",
+      "used_in": ["server/src/voice/voice-library.ts"],
+      "description": "the voice library's index",
+      "status": "inventoried"
+    },
+    "file:web-push.json": {
+      "kind": "file",
+      "used_in": ["server/src/notifications/web-push.ts"],
+      "description": "see data:web-push.json",
+      "status": "inventoried"
+    },
+    "file:wire.jsonl": {
+      "kind": "file",
+      "used_in": ["server/src/agent/session-resolver.ts"],
+      "description": "Kimi's session wire log, read",
+      "status": "inventoried"
+    },
+    "file:work.json": {
+      "kind": "file",
+      "used_in": ["server/src/history/work.ts", "server/src/work/store.ts"],
+      "description": "the Work board's store",
+      "status": "inventoried"
+    },
+    "sqlite:activity/store.ts:connection_gaps": {
+      "kind": "sqlite",
+      "used_in": ["server/src/activity/store.ts"],
+      "sql": "sqlite/activity.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:activity/store.ts:events": {
+      "kind": "sqlite",
+      "used_in": ["server/src/activity/store.ts"],
+      "sql": "sqlite/activity.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:activity/store.ts:recorder_sessions": {
+      "kind": "sqlite",
+      "used_in": ["server/src/activity/store.ts"],
+      "sql": "sqlite/activity.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:activity/store.ts:workspaces": {
+      "kind": "sqlite",
+      "used_in": ["server/src/activity/store.ts"],
+      "sql": "sqlite/activity.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:archive/store.ts:docs": {
+      "kind": "sqlite",
+      "used_in": ["server/src/archive/store.ts"],
+      "sql": "sqlite/archive-index.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:archive/store.ts:files": {
+      "kind": "sqlite",
+      "used_in": ["server/src/archive/store.ts"],
+      "sql": "sqlite/archive-index.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:archive/store.ts:fts": {
+      "kind": "sqlite",
+      "used_in": ["server/src/archive/store.ts"],
+      "sql": "sqlite/archive-index.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:archive/store.ts:fts_words": {
+      "kind": "sqlite",
+      "used_in": ["server/src/archive/store.ts"],
+      "sql": "sqlite/archive-index.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:archive/store.ts:hist_fts": {
+      "kind": "sqlite",
+      "used_in": ["server/src/archive/store.ts"],
+      "sql": "sqlite/archive-index.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:archive/store.ts:history": {
+      "kind": "sqlite",
+      "used_in": ["server/src/archive/store.ts"],
+      "sql": "sqlite/archive-index.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:archive/store.ts:meta": {
+      "kind": "sqlite",
+      "used_in": ["server/src/archive/store.ts"],
+      "sql": "sqlite/archive-index.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:assistant/task-storage.ts:proposals": {
+      "kind": "sqlite",
+      "used_in": ["server/src/assistant/task-storage.ts"],
+      "sql": "sqlite/tasks.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:assistant/task-storage.ts:requests": {
+      "kind": "sqlite",
+      "used_in": ["server/src/assistant/task-storage.ts"],
+      "sql": "sqlite/tasks.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:assistant/task-storage.ts:run_notices": {
+      "kind": "sqlite",
+      "used_in": ["server/src/assistant/task-storage.ts"],
+      "sql": "sqlite/tasks.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:assistant/task-storage.ts:runs": {
+      "kind": "sqlite",
+      "used_in": ["server/src/assistant/task-storage.ts"],
+      "sql": "sqlite/tasks.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:assistant/task-storage.ts:tasks": {
+      "kind": "sqlite",
+      "used_in": ["server/src/assistant/task-storage.ts"],
+      "sql": "sqlite/tasks.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:review/storage.ts:sessions": {
+      "kind": "sqlite",
+      "used_in": ["server/src/review/storage.ts"],
+      "sql": "sqlite/reviews.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    },
+    "sqlite:review/storage.ts:threads": {
+      "kind": "sqlite",
+      "used_in": ["server/src/review/storage.ts"],
+      "sql": "sqlite/reviews.sql",
+      "description": "a table; its DDL and PRAGMAs in the sql file",
+      "status": "inventoried"
+    }
+  }
+}

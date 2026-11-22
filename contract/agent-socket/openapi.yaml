@@ -1,0 +1,576 @@
+openapi: 3.1.0
+info:
+  title: Roamgate agent socket
+  version: "1"
+  description: "HTTP over the per-connection unix socket (0600 in a 0700 directory) that agents, the roamgate-review client, the holder and the Claude mod call. Every command is POST /v1/<command> with an application/x-www-form-urlencoded body, at most 1 MiB (hold_output: 64 MiB); replies are JSON, {error} with 400, 404, 413 or 500 on failure. watch and hold are long polls without a server timeout."
+paths:
+  /v1/add:
+    post:
+      summary: add
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/claude_start:
+    post:
+      summary: claude_start
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/comments:
+    post:
+      summary: comments
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/delete:
+    post:
+      summary: delete
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/edit:
+    post:
+      summary: edit
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/fg:
+    post:
+      summary: fg
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/get:
+    post:
+      summary: get
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/groups:
+    post:
+      summary: groups
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/handback:
+    post:
+      summary: handback
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/hold:
+    post:
+      summary: hold
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/hold_output:
+    post:
+      summary: hold_output
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/launch:
+    post:
+      summary: launch
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/list:
+    post:
+      summary: list
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/message:
+    post:
+      summary: message
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/mod_ack:
+    post:
+      summary: mod_ack
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/mod_event:
+    post:
+      summary: mod_event
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/mod_poll:
+    post:
+      summary: mod_poll
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/mod_tools:
+    post:
+      summary: mod_tools
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/notify:
+    post:
+      summary: notify
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/open:
+    post:
+      summary: open
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/permission:
+    post:
+      summary: permission
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/place:
+    post:
+      summary: place
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/questions:
+    post:
+      summary: questions
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/reopen:
+    post:
+      summary: reopen
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/reply:
+    post:
+      summary: reply
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/resolve:
+    post:
+      summary: resolve
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/reviews:
+    post:
+      summary: reviews
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/sessions:
+    post:
+      summary: sessions
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/skill:
+    post:
+      summary: skill
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/stop_check:
+    post:
+      summary: stop_check
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/summary:
+    post:
+      summary: summary
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/update:
+    post:
+      summary: update
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/waiting:
+    post:
+      summary: waiting
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/watch:
+    post:
+      summary: watch
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/work:
+    post:
+      summary: work
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/working:
+    post:
+      summary: working
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/workspace:
+    post:
+      summary: workspace
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}
+  /v1/worktree:
+    post:
+      summary: worktree
+      x-status: inventoried
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: "The command's JSON reply."
+          content:
+            application/json:
+              schema: {}

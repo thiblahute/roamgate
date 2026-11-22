@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/archiveSearch.schema.json",
+  "x-generated-from": "shared/archiveSearch.ts",
+  "$defs": {
+    "OpenedMessage": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "tool": {
+          "type": ["string", "null"]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": ["role", "kind", "tool", "text"],
+      "additionalProperties": false
+    },
+    "OpenedRecord": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "type": "number",
+          "description": "The record's line in the transcript, from 1."
+        },
+        "ts": {
+          "type": ["string", "null"]
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OpenedMessage"
+          }
+        },
+        "hit": {
+          "type": "boolean"
+        }
+      },
+      "required": ["line", "ts", "messages", "hit"],
+      "additionalProperties": false
+    },
+    "OpenedSession": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "relpath": {
+          "type": "string"
+        },
+        "session": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "title": {
+          "type": ["string", "null"]
+        },
+        "cwd": {
+          "type": ["string", "null"]
+        },
+        "hit": {
+          "type": ["number", "null"],
+          "description": "The hit's record line; null when it was not found."
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OpenedRecord"
+          }
+        },
+        "before": {
+          "type": "boolean",
+          "description": "More records before the first and after the last shown."
+        },
+        "after": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "host",
+        "agent",
+        "relpath",
+        "session",
+        "project",
+        "title",
+        "cwd",
+        "hit",
+        "records",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "SearchHit": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "subagent": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": ["string", "null"]
+        },
+        "ts": {
+          "type": ["string", "null"]
+        },
+        "role": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "tool": {
+          "type": ["string", "null"]
+        },
+        "snippet": {
+          "type": "string"
+        },
+        "doc": {
+          "type": "number",
+          "description": "The text repo's line (a raw/ record's line with toolOutput)."
+        },
+        "cost_usd": {
+          "type": ["number", "null"]
+        },
+        "matches": {
+          "type": "number",
+          "description": "Matching messages in this session."
+        },
+        "snippets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "A few matching messages of this session, latest last."
+        },
+        "path": {
+          "type": "string",
+          "description": "The session's file in the text repo."
+        },
+        "key": {
+          "type": "string",
+          "description": "Its raw/ file: host/agent/relpath (what `openArchived` opens)."
+        }
+      },
+      "required": [
+        "session",
+        "agent",
+        "host",
+        "project",
+        "subagent",
+        "title",
+        "ts",
+        "role",
+        "kind",
+        "tool",
+        "snippet",
+        "doc",
+        "cost_usd"
+      ],
+      "additionalProperties": false,
+      "description": "The archive search's wire shapes: what `roamgate archive search --json`, Ranger's tools and the search view (`bridge.archive.search`, `bridge.archive.open`) get."
+    },
+    "SearchResult": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "total": {
+          "type": "number"
+        },
+        "hits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SearchHit"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "ts": {
+                "type": ["string", "null"]
+              },
+              "project": {
+                "type": ["string", "null"]
+              },
+              "snippet": {
+                "type": "string"
+              }
+            },
+            "required": ["host", "ts", "project", "snippet"],
+            "additionalProperties": false
+          }
+        },
+        "warning": {
+          "type": "string"
+        },
+        "sessions": {
+          "type": "number",
+          "description": "Sessions with a match (hits are one per session)."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["text", "raw", "index"],
+          "description": "Where the results come from."
+        }
+      },
+      "required": ["query", "total", "hits", "truncated"],
+      "additionalProperties": false
+    }
+  }
+}

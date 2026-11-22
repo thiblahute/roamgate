@@ -1,0 +1,11 @@
+{
+  "method": "bridge.notifications.status",
+  "family": "bridge.notifications",
+  "scope": "bridge",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

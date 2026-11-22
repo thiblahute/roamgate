@@ -1,0 +1,626 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/work.schema.json",
+  "x-generated-from": "shared/work.ts",
+  "$defs": {
+    "WorkBoard": {
+      "type": "object",
+      "properties": {
+        "projects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkProject"
+          },
+          "maxItems": 50
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkItem"
+          },
+          "maxItems": 2000
+        },
+        "deployed": {
+          "type": "string",
+          "description": "The deployed build, when known (the Roamgate project's rule)."
+        }
+      },
+      "required": ["projects", "items"],
+      "additionalProperties": false
+    },
+    "WorkDoneRule": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "deployed"
+            }
+          },
+          "required": ["kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "branch"
+            },
+            "root": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "connectionId": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "root", "branch"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "When an item's commit counts as landed. `deployed`: the running build of this Roamgate holds it (server/public/.built-from). `branch`: it is reachable from that branch in that checkout (`gstreamer2/main`)."
+    },
+    "WorkItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 302
+        },
+        "state": {
+          "$ref": "#/$defs/WorkState"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "maxItems": 12,
+          "uniqueItems": true
+        },
+        "owner": {
+          "$ref": "#/$defs/WorkOwner"
+        },
+        "source": {
+          "type": "string",
+          "description": "Where it came from, in a few words: a review thread id, \"imported from STATUS.md line 12\", a voice job. One item per source: adding the same source again changes the item instead.",
+          "maxLength": 302
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkLink"
+          },
+          "maxItems": 30
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "doneAt": {
+          "type": "string",
+          "description": "When it entered done (cleared when reopened)."
+        },
+        "by": {
+          "type": "string",
+          "enum": ["user", "agent"],
+          "description": "Who last changed it."
+        },
+        "review": {
+          "type": "string",
+          "description": "The item's review (its thread), once one was made."
+        },
+        "needsTriage": {
+          "type": "boolean",
+          "const": true,
+          "description": "Added as free text by the user and not sorted yet: its title is the text's first line until its owner (the coordinator) gives it a clear one, tags and a state, splits it when it holds several tasks, and clears this."
+        },
+        "ask": {
+          "type": "string",
+          "description": "For you and Verify: what the user has to do, in one or two sentences (\"Choose: media to the car with the phone mic, or no music on car links\", \"Dictate once after 10 idle minutes; text should appear\"). Cleared when the item leaves those states.",
+          "maxLength": 402
+        },
+        "answers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": "For a decision: a few short answers, one tap each (a comment).",
+          "maxItems": 6
+        },
+        "questions": {
+          "type": "number",
+          "description": "The questions its owner asks on parts of its description, still open (workOpenQuestions); none when it has none."
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "title",
+        "state",
+        "tags",
+        "links",
+        "createdAt",
+        "updatedAt",
+        "by"
+      ],
+      "additionalProperties": false
+    },
+    "WorkLink": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "review"
+            },
+            "id": {
+              "type": "string"
+            },
+            "thread": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "id"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "effort"
+            },
+            "id": {
+              "type": "string"
+            },
+            "part": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "id"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "pr"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "url"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "commit"
+            },
+            "sha": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "root": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "sha"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "branch"
+            },
+            "name": {
+              "type": "string"
+            },
+            "root": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "name"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "decision"
+            },
+            "path": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "path", "id"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "file"
+            },
+            "path": {
+              "type": "string"
+            },
+            "root": {
+              "type": "string"
+            },
+            "line": {
+              "type": "number"
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "path"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "item"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "id"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "deploy"
+            },
+            "sha": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "sha"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "chat"
+            },
+            "session": {
+              "type": "string"
+            },
+            "chat": {
+              "type": "string"
+            },
+            "entry": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "session"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WorkLinkGroup": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/WorkLinkGroupKind"
+        },
+        "label": {
+          "type": "string"
+        },
+        "count": {
+          "type": "number"
+        },
+        "title": {
+          "type": "string",
+          "description": "Its links in words (the chip's tooltip), no ids."
+        }
+      },
+      "required": ["kind", "label", "count", "title"],
+      "additionalProperties": false,
+      "description": "A card's chip: the links of a kind, as a word and a count."
+    },
+    "WorkLinkGroupKind": {
+      "type": "string",
+      "enum": [
+        "effort",
+        "pr",
+        "thread",
+        "review",
+        "branch",
+        "commit",
+        "file",
+        "decision",
+        "item",
+        "deploy",
+        "chat"
+      ]
+    },
+    "WorkLinkNames": {
+      "type": "object",
+      "properties": {
+        "effort": {
+          "$comment": "(id: string) => string | undefined",
+          "type": "object",
+          "properties": {
+            "namedArgs": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "pr": {
+          "$comment": "(url: string) => string | undefined",
+          "type": "object",
+          "properties": {
+            "namedArgs": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": ["url"],
+              "additionalProperties": false
+            }
+          },
+          "description": "A request's title, by its URL."
+        },
+        "review": {
+          "$comment": "(\n    id: string,\n    thread?: string) => { title?: string; thread?: string } | undefined",
+          "type": "object",
+          "properties": {
+            "namedArgs": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "thread": {
+                  "type": "string"
+                }
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          },
+          "description": "A review's title, and the first words of the thread named."
+        },
+        "item": {
+          "$comment": "(id: string) => string | undefined",
+          "type": "object",
+          "properties": {
+            "namedArgs": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          },
+          "description": "Another item's title."
+        },
+        "session": {
+          "$comment": "(address: string) => string | undefined",
+          "type": "object",
+          "properties": {
+            "namedArgs": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string"
+                }
+              },
+              "required": ["address"],
+              "additionalProperties": false
+            }
+          },
+          "description": "A session's name (its title, or its workspace's), by its address."
+        }
+      },
+      "additionalProperties": false,
+      "description": "What the page knows that names a link better than its id."
+    },
+    "WorkLinkRoot": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": ["path"],
+      "additionalProperties": false,
+      "description": "A checkout a link's commit or branch may be in, on its connection."
+    },
+    "WorkOwner": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string",
+          "description": "The session's address, `connection/pane`, as agent_sessions lists it."
+        },
+        "task": {
+          "type": "string",
+          "description": "A background task (subagent) of that session: its id."
+        }
+      },
+      "required": ["session"],
+      "additionalProperties": false,
+      "description": "Who works on an item: a session, or one of its background subagents."
+    },
+    "WorkPlace": {
+      "type": "object",
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string",
+          "description": "Its name, as Herdr shows it."
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Its checkout and its panes' working directories, the checkout first."
+        },
+        "paneIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Its panes' ids (the coordinator's pane is one of them, or not)."
+        }
+      },
+      "required": ["connectionId", "label", "paths", "paneIds"],
+      "additionalProperties": false,
+      "description": "A workspace, as the board places it: where it is, and its panes."
+    },
+    "WorkProject": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "connectionId": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": ["connectionId", "path"],
+            "additionalProperties": false
+          },
+          "description": "The checkouts it spans, on their connections."
+        },
+        "done": {
+          "$ref": "#/$defs/WorkDoneRule"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Tags it suggests (the ones its items used are suggested too)."
+        },
+        "coordinator": {
+          "type": "object",
+          "properties": {
+            "session": {
+              "type": "string"
+            }
+          },
+          "required": ["session"],
+          "additionalProperties": false,
+          "description": "The session that takes the project's items nobody owns: an item added or reopened with no owner is its, and told to it as a review comment is; so is a comment on an item whose owner is gone."
+        },
+        "parent": {
+          "type": "string",
+          "description": "The project it is a part of (its id): a subproject's items show on its parent's board too, each card naming its subproject."
+        }
+      },
+      "required": ["id", "name", "roots", "done"],
+      "additionalProperties": false
+    },
+    "WorkPush": {
+      "type": "object",
+      "properties": {
+        "changed": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkPushKind"
+          }
+        },
+        "item": {
+          "type": "string",
+          "description": "The item changed, when one was."
+        },
+        "by": {
+          "type": "string",
+          "enum": ["user", "agent"]
+        },
+        "summary": {
+          "type": "string",
+          "description": "What the agent did, in a few words."
+        }
+      },
+      "required": ["changed", "by"],
+      "additionalProperties": false,
+      "description": "What the server pushes to every page when the board changes."
+    },
+    "WorkPushKind": {
+      "type": "string",
+      "enum": ["items", "projects", "item"]
+    },
+    "WorkState": {
+      "type": "string",
+      "enum": ["you", "doing", "verify", "open", "done"]
+    }
+  }
+}

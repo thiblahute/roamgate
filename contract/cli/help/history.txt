@@ -1,0 +1,18 @@
+Local history: a git repository of what was authored in Roamgate.
+
+Usage:
+  roamgate history status [--json]
+  roamgate history commit [--json]
+
+status shows where the history repository is, whether it is written, its
+last commit, its size, how many files each area has, and what the last
+pass kept out (a secret found in a file) or could not write.
+
+commit writes every area now and commits what changed, as the server does
+on its own 30 seconds after a change (at most 5 minutes after the first).
+It waits for nothing: run while the server runs, the two take turns.
+
+The repository is <data>/history unless Settings, History and backup, sets
+another location. ROAMGATE_HISTORY=off turns it off by default (test
+servers); the setting can turn it on again.
+

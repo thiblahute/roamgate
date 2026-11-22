@@ -1,0 +1,32 @@
+List, test and edit saved Herdr connection profiles.
+
+Usage:
+  roamgate connections list [--json]
+  roamgate connections test [<id>...] [--json]
+  roamgate connections add <id> --ssh <destination> [ssh options] [common options]
+  roamgate connections add <id> --control-socket <path> --client-socket <path>
+                                [common options]
+  roamgate connections remove <id> [--restart]
+  roamgate connections set-default <id> [--restart]
+
+Common add options:
+  --label <text>     display name (default: the id)
+  --auto-connect     connect when Roamgate starts
+  --default          make it the default connection
+  --restart          see below
+
+SSH add options:
+  --remote-control-socket <path>, --remote-client-socket <path>
+                     remote socket paths (default: inferred from the remote home)
+  --windows          the SSH host runs Windows
+  --herdr-path <path>, --session <name>
+                     Windows host executable and Herdr session
+
+The profiles are the same ones the connection selector edits. A running
+Roamgate keeps its own copy and would overwrite a change made here, so edits
+are refused while it serves; with --restart a running managed service is
+restarted to load the change. Only the address in the service config is
+checked: stop any other roamgate process that shares this registry, such as
+a foreground run on another port, before editing here. SSH tests need a
+running remote Herdr and non-interactive SSH authentication.
+

@@ -1,0 +1,11 @@
+Check Web Push delivery to enrolled devices.
+
+Usage:
+  roamgate push test [--json]
+
+Sends one test notification to every device enrolled for task notifications,
+using the service's VAPID keys, and reports each push provider's answer. The
+registry is only read: expired subscriptions are reported, and the server
+removes them on its next delivery. A device must still allow notifications
+for the alert to appear.
+

@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/limitResume.schema.json",
+  "x-generated-from": "shared/limitResume.ts",
+  "$defs": {
+    "LimitPause": {
+      "type": "object",
+      "properties": {
+        "connection_id": {
+          "type": "string"
+        },
+        "pane_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string",
+          "enum": ["terminal", "conversation"]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "resets_at": {
+          "type": "number",
+          "description": "When the limit resets (epoch ms)."
+        },
+        "resume_at": {
+          "type": ["number", "null"],
+          "description": "When it is resumed (reset + margin); null when it will not be."
+        },
+        "stopped_at": {
+          "type": ["number", "null"]
+        },
+        "state": {
+          "$ref": "#/$defs/LimitPauseState"
+        },
+        "resumed_at": {
+          "type": "number",
+          "description": "When Roamgate sent the resume for this reset (state `resumed`)."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why the last try failed (state `failed`)."
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection_id",
+        "pane_id",
+        "session_id",
+        "owner",
+        "kind",
+        "resets_at",
+        "resume_at",
+        "stopped_at",
+        "state",
+        "message"
+      ],
+      "additionalProperties": false,
+      "description": "A session paused by a usage limit, as the browsers are told."
+    },
+    "LimitPauseState": {
+      "type": "string",
+      "enum": [
+        "scheduled",
+        "off",
+        "skipped",
+        "missed",
+        "resuming",
+        "resumed",
+        "failed"
+      ],
+      "description": "What becomes of a paused session: `scheduled`, resumed at resume_at; `off`, the setting is off; `skipped`, the user chose \"Don't resume\" for it; `missed`, its reset passed before Roamgate saw it paused (only \"Resume now\"); `resuming`, being sent; `resumed`, sent for this reset already and stopped on it again (never sent twice for one reset); `failed`, the message could not be sent (`reason`): tried again at resume_at, or not any more when that is null."
+    },
+    "LimitResumeSettings": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Sessions a usage limit stopped are sent `message` once it resets."
+        },
+        "message": {
+          "type": "string",
+          "description": "What a resumed session is sent, as if the user typed it."
+        },
+        "margin_seconds": {
+          "type": "number",
+          "description": "Seconds after the reset before it is sent."
+        }
+      },
+      "required": ["enabled", "message", "margin_seconds"],
+      "additionalProperties": false,
+      "description": "The `limit_resume` settings (settings.json), defaults included."
+    },
+    "UsageLimitStop": {
+      "type": "object",
+      "properties": {
+        "resets_at": {
+          "type": "number",
+          "description": "When the limit resets (epoch ms)."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Claude Code's rateLimitType (\"five_hour\", \"seven_day\", ...)."
+        },
+        "stopped_at": {
+          "type": ["number", "null"],
+          "description": "When the session stopped (the record's time, epoch ms), if said."
+        },
+        "uuid": {
+          "type": ["string", "null"],
+          "description": "The stop record's uuid, if it has one."
+        },
+        "message": {
+          "type": "string",
+          "description": "What Claude Code showed (\"You've hit your 5-hour limit ...\")."
+        }
+      },
+      "required": ["resets_at", "kind", "stopped_at", "uuid", "message"],
+      "additionalProperties": false,
+      "description": "A usage limit a session stopped on, from Claude Code's own fields."
+    }
+  }
+}

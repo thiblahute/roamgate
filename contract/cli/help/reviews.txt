@@ -1,0 +1,17 @@
+Export or import what the Reviews panel authored, without the server.
+
+Usage:
+  roamgate reviews export [--out FILE]
+  roamgate reviews import FILE [--apply]
+
+export prints (or writes to FILE) the Reviews' own authored state as stable,
+key-sorted JSON: the order, pins, removals, what was set by hand, saved
+views, requests not proposed yet, groups and workspaces headed upstream,
+upstreaming efforts, and each effort's ledger with its commits' history.
+Never secrets, never what is read again from the forges or derived.
+
+import shows what FILE would change (added, removed, changed; a local value
+newer than the imported one is flagged) and changes nothing unless --apply
+is given. Ledgers are replaced and histories merged. A running server reads
+the settings again on its next use; reload the Reviews panel.
+

@@ -1,0 +1,65 @@
+{
+  "description": "Hand reconciliation of the generated schemas: limits the server enforces, nullability and literal unions the TypeScript types leave open. Each change names the code that decides it; scripts/contract/schemas.ts applies them after generation and fails when a pointer no longer exists.",
+  "reconciliations": [
+    {
+      "schema": "shared/work.schema.json",
+      "pointer": "/$defs/WorkItem/properties/title",
+      "set": { "minLength": 1, "maxLength": 302 },
+      "why": "server/src/work/store.ts: oneLine(title, WORK_LIMITS.titleChars = 300) cuts to 299 characters plus \"...\", so a cut title is 302 characters long (its comment says at most 300)."
+    },
+    {
+      "schema": "shared/work.schema.json",
+      "pointer": "/$defs/WorkItem/properties/source",
+      "set": { "maxLength": 302 },
+      "why": "server/src/work/store.ts: oneLine(source, 300), the same cut as the title."
+    },
+    {
+      "schema": "shared/work.schema.json",
+      "pointer": "/$defs/WorkItem/properties/ask",
+      "set": { "maxLength": 402 },
+      "why": "server/src/work/store.ts: an ask over WORK_LIMITS.askChars (400) is refused; a stored one is read back through oneLine(ask, 400), which makes an older, longer one 402 characters."
+    },
+    {
+      "schema": "shared/work.schema.json",
+      "pointer": "/$defs/WorkItem/properties/answers",
+      "set": { "maxItems": 6 },
+      "why": "server/src/work/store.ts: more than WORK_LIMITS.answers (6) answers are refused."
+    },
+    {
+      "schema": "shared/work.schema.json",
+      "pointer": "/$defs/WorkItem/properties/answers/items",
+      "set": { "minLength": 1, "maxLength": 80 },
+      "why": "shared/work.ts: an answer is cut to WORK_LIMITS.answerChars (80) with an ellipsis, empty ones dropped."
+    },
+    {
+      "schema": "shared/work.schema.json",
+      "pointer": "/$defs/WorkItem/properties/tags",
+      "set": { "maxItems": 12, "uniqueItems": true },
+      "why": "shared/work.ts normalizeWorkTags: deduplicated, at most WORK_LIMITS.tagsPerItem (12)."
+    },
+    {
+      "schema": "shared/work.schema.json",
+      "pointer": "/$defs/WorkItem/properties/tags/items",
+      "set": { "minLength": 1, "maxLength": 40 },
+      "why": "shared/work.ts normalizeWorkTag: at most WORK_LIMITS.tagChars (40), empty tags dropped."
+    },
+    {
+      "schema": "shared/work.schema.json",
+      "pointer": "/$defs/WorkItem/properties/links",
+      "set": { "maxItems": 30 },
+      "why": "server/src/work/store.ts: links are cut to WORK_LIMITS.linksPerItem (30)."
+    },
+    {
+      "schema": "shared/work.schema.json",
+      "pointer": "/$defs/WorkBoard/properties/items",
+      "set": { "maxItems": 2000 },
+      "why": "server/src/work/store.ts: an add past WORK_LIMITS.items (2000) is refused."
+    },
+    {
+      "schema": "shared/work.schema.json",
+      "pointer": "/$defs/WorkBoard/properties/projects",
+      "set": { "maxItems": 50 },
+      "why": "server/src/work/store.ts: a project past WORK_LIMITS.projects (50) is refused."
+    }
+  ]
+}

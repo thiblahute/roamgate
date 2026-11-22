@@ -1,0 +1,11 @@
+{
+  "method": "terminal.input",
+  "family": "terminal",
+  "scope": "connection",
+  "handler": "server/src/bridge/terminal-bridge.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

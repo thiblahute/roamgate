@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/slashCommand.schema.json",
+  "x-generated-from": "shared/slashCommand.ts",
+  "$defs": {
+    "SlashCommand": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "With its slash: \"/exit\"."
+        },
+        "args": {
+          "type": "string",
+          "description": "What followed it, trimmed: often empty."
+        }
+      },
+      "required": ["name", "args"],
+      "additionalProperties": false,
+      "description": "A slash command the user typed in Claude Code's terminal, as its transcript writes it: `<command-name>/exit</command-name>`, then `<command-message>` and `<command-args>`. The chat shows the command, not the tags."
+    }
+  }
+}

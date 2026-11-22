@@ -1,0 +1,13 @@
+{
+  "x-inventory": "forge_cache",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/index.ts"],
+  "x-status": "typed",
+  "type": "object",
+  "required": ["forge_cache"],
+  "properties": {
+    "forge_cache": {
+      "$ref": "../schemas/shared/forge.schema.json#/$defs/MrCachePush"
+    }
+  }
+}

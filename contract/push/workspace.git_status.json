@@ -1,0 +1,16 @@
+{
+  "x-inventory": "event:workspace.git_status",
+  "x-kind": "event",
+  "x-sent-by": ["server/src/connections/runtime.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["event", "data"],
+  "properties": {
+    "event": {
+      "const": "workspace.git_status"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

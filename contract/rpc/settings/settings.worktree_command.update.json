@@ -1,0 +1,11 @@
+{
+  "method": "settings.worktree_command.update",
+  "family": "settings",
+  "scope": "connection",
+  "handler": "server/src/bridge/settings-rpc.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

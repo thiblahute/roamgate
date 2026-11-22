@@ -1,0 +1,11 @@
+{
+  "method": "bridge.assistant.mentions",
+  "family": "bridge.assistant",
+  "scope": "bridge",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

@@ -1,0 +1,17 @@
+Inspect and rotate login credentials of the managed service.
+
+Usage:
+  roamgate auth show [--reveal] [--json]
+  roamgate auth rotate [--no-restart]
+  roamgate auth revoke-sessions [--no-restart]
+
+show             print the login method, token file and PIN state; the token
+                 is masked unless --reveal is given
+rotate           replace the generated login token, which also signs out every
+                 browser, then restart the running service and print new URLs
+revoke-sessions  sign out every browser without changing the token or password
+
+Both changes take effect when the server restarts. They restart a running
+managed service unless --no-restart is given; restart foreground runs yourself.
+Use `roamgate config set ROAMGATE_PASSWORD=- --restart` to change a fixed password.
+

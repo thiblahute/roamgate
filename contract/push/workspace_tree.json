@@ -1,0 +1,13 @@
+{
+  "x-inventory": "workspace_tree",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/index.ts"],
+  "x-status": "typed",
+  "type": "object",
+  "required": ["workspace_tree"],
+  "properties": {
+    "workspace_tree": {
+      "$ref": "../schemas/shared/workspaceTree.schema.json#/$defs/WorkspaceTree"
+    }
+  }
+}

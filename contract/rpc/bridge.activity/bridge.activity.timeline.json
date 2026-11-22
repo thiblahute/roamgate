@@ -1,0 +1,13 @@
+{
+  "method": "bridge.activity.timeline",
+  "family": "bridge.activity",
+  "scope": "bridge",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {
+    "$ref": "../../schemas/server.schema.json#/$defs/TimelineReply"
+  },
+  "status": "inventoried"
+}

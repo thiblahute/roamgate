@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/voiceLowGpu.schema.json",
+  "x-generated-from": "shared/voiceLowGpu.ts",
+  "$defs": {
+    "LowGpuModel": {
+      "type": "object",
+      "properties": {
+        "component": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "description": "The part, as the setup assistant names it (\"Reading voice\")."
+        },
+        "name": {
+          "type": "string",
+          "description": "The model, or \"none\"."
+        },
+        "runsOn": {
+          "type": "string",
+          "enum": ["gpu", "cpu", "any", "none"]
+        }
+      },
+      "required": ["component", "title", "name", "runsOn"],
+      "additionalProperties": false
+    },
+    "LowGpuStatus": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean",
+          "description": "Whether a helper starting now loads the low-GPU set."
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "description": "Who it is on for (\"gaming, GameMode\"), null when off."
+        },
+        "holders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The holders set with the CLI or the settings (not GameMode)."
+        },
+        "gameMode": {
+          "type": ["boolean", "null"],
+          "description": "GameMode as found at the last call start; null when not checked."
+        },
+        "running": {
+          "type": ["string", "null"],
+          "enum": ["low-gpu", "full", null],
+          "description": "The models the running helper has: null when none runs."
+        },
+        "pending": {
+          "type": "boolean",
+          "description": "The running helper switches once the call or listening ends."
+        },
+        "choices": {
+          "$ref": "voiceSetup.schema.json#/$defs/VoiceChoices",
+          "description": "The low-GPU set on this machine, as the setup assistant's options."
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LowGpuModel"
+          }
+        },
+        "gpuBytes": {
+          "type": "number",
+          "description": "GPU memory the set takes, as the catalog estimates it."
+        },
+        "overrides": {
+          "$ref": "voiceSetup.schema.json#/$defs/VoiceChoices",
+          "description": "The parts set by hand (`low-gpu models`), the light tier for the rest."
+        },
+        "path": {
+          "type": "string",
+          "description": "Where the profile's state is kept."
+        },
+        "error": {
+          "type": "string",
+          "description": "Why the set could not be made: the full set is used."
+        }
+      },
+      "required": [
+        "active",
+        "reason",
+        "holders",
+        "gameMode",
+        "running",
+        "pending",
+        "choices",
+        "models",
+        "gpuBytes",
+        "overrides",
+        "path"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

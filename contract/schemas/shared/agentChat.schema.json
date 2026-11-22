@@ -1,0 +1,2242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/agentChat.schema.json",
+  "x-generated-from": "shared/agentChat.ts",
+  "$defs": {
+    "AgentChatApiKeyChoice": {
+      "type": "string",
+      "enum": ["api_key", "login"],
+      "description": "The user's answer: the API key (billed to the API), or the login."
+    },
+    "AgentChatApiKeyQuestion": {
+      "type": "object",
+      "properties": {
+        "asked_at": {
+          "type": "string"
+        }
+      },
+      "required": ["asked_at"],
+      "additionalProperties": false,
+      "description": "The pane's environment has an Anthropic API key that Claude Code has no answer for yet (the TUI asks once: use it, or the subscription login). Claude does not start in conversation mode until the user answers; the answer is filed where Claude Code keeps it, so the terminal asks no more."
+    },
+    "AgentChatAsleep": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "type": "string",
+          "description": "When it was stopped."
+        }
+      },
+      "required": ["since"],
+      "additionalProperties": false,
+      "description": "The headless process was stopped after the session sat idle (the `conversation.idle_stop_minutes` setting): the next message wakes it."
+    },
+    "AgentChatBlockType": {
+      "type": "string",
+      "enum": ["text", "thinking", "tool_use"]
+    },
+    "AgentChatCapabilities": {
+      "type": "object",
+      "properties": {
+        "steer": {
+          "type": "boolean",
+          "description": "A message written mid-turn steers it."
+        },
+        "questions": {
+          "type": "boolean",
+          "description": "Structured questions to the user (cards with choices)."
+        },
+        "alwaysAllow": {
+          "type": "boolean",
+          "description": "Permission cards may offer \"always\"."
+        },
+        "rewind": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "conversation": {
+                  "type": "boolean"
+                },
+                "code": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["conversation", "code"],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`code`: the code is restored too, not only the conversation."
+        },
+        "promptSuggestions": {
+          "type": "boolean",
+          "description": "The agent guesses the next message (the next-prompt chip)."
+        },
+        "shellLines": {
+          "type": ["string", "null"],
+          "enum": ["prelude", "native", null],
+          "description": "`!` lines: run by Roamgate and read by the agent with the next message (\"prelude\"), run by the agent itself (\"native\"), or not offered."
+        },
+        "backgroundTasks": {
+          "type": "boolean",
+          "description": "Work that outlives a turn is tracked (/tasks, the background chip)."
+        },
+        "images": {
+          "type": "string",
+          "enum": ["base64", "path"],
+          "description": "Images go inline (\"base64\") or as the uploaded file's host path."
+        },
+        "slashCommands": {
+          "type": ["string", "null"],
+          "enum": ["claude", null],
+          "description": "Which slash command palette the composer offers."
+        },
+        "models": {
+          "type": "boolean",
+          "description": "The running agent's model is listed and switched (/model)."
+        },
+        "mcp": {
+          "type": "boolean",
+          "description": "The running agent's MCP servers are listed and acted on (/mcp)."
+        },
+        "backgroundTools": {
+          "type": "boolean",
+          "description": "A running command or subagent can be moved to the background (Ctrl+B), and a background task stopped. Absent from older servers."
+        }
+      },
+      "required": [
+        "steer",
+        "questions",
+        "alwaysAllow",
+        "rewind",
+        "promptSuggestions",
+        "shellLines",
+        "backgroundTasks",
+        "images",
+        "slashCommands",
+        "models",
+        "mcp"
+      ],
+      "additionalProperties": false,
+      "description": "What a conversation's agent can do; the chat hides what it cannot."
+    },
+    "AgentChatEvent": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "block_start"
+            },
+            "message_id": {
+              "type": "string"
+            },
+            "index": {
+              "type": "number"
+            },
+            "block": {
+              "$ref": "#/$defs/AgentChatBlockType"
+            },
+            "tool_use_id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "message_id", "index", "block"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "delta"
+            },
+            "message_id": {
+              "type": "string"
+            },
+            "index": {
+              "type": "number"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "message_id", "index", "text"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "block_stop"
+            },
+            "message_id": {
+              "type": "string"
+            },
+            "index": {
+              "type": "number"
+            },
+            "text": {
+              "type": "string",
+              "description": "The block's full text, or a tool call's input as JSON."
+            },
+            "command_output": {
+              "type": "object",
+              "properties": {
+                "uuid": {
+                  "type": "string"
+                }
+              },
+              "required": ["uuid"],
+              "additionalProperties": false,
+              "description": "The text is what a command run in Claude Code itself printed: the uuid of the transcript record that has it."
+            }
+          },
+          "required": ["type", "message_id", "index"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "abandoned"
+            },
+            "message_id": {
+              "type": "string"
+            },
+            "from_index": {
+              "type": "number"
+            }
+          },
+          "required": ["type", "message_id", "from_index"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "tool_use"
+            },
+            "tool_use_id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "input": {},
+            "message_id": {
+              "type": "string"
+            },
+            "index": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "type",
+            "tool_use_id",
+            "name",
+            "input",
+            "message_id",
+            "index"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "tool_result"
+            },
+            "tool_use_id": {
+              "type": "string"
+            },
+            "is_error": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "tool_use_id", "is_error", "text"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "user"
+            },
+            "uuid": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "images": {
+              "type": "number"
+            }
+          },
+          "required": ["type", "uuid", "text", "images"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "status"
+            },
+            "status": {
+              "$ref": "#/$defs/AgentChatStatus"
+            },
+            "tools_running": {
+              "type": "boolean"
+            },
+            "running_tools": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "activity": {
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["type", "status", "tools_running", "activity"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "queue"
+            },
+            "queue": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/AgentChatQueued"
+              }
+            }
+          },
+          "required": ["type", "queue"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "shell"
+            },
+            "shell": {
+              "$ref": "#/$defs/AgentChatShell"
+            }
+          },
+          "required": ["type", "shell"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "interrupted"
+            },
+            "interrupted": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AgentChatInterrupted"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["type", "interrupted"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "lost"
+            },
+            "lost": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AgentChatLost"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["type", "lost"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "stuck"
+            },
+            "stuck": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AgentChatStuck"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["type", "stuck"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "asleep"
+            },
+            "asleep": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AgentChatAsleep"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["type", "asleep"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "model_notice"
+            },
+            "model_notice": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AgentChatModelNotice"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["type", "model_notice"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "api_key_question"
+            },
+            "api_key_question": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AgentChatApiKeyQuestion"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["type", "api_key_question"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "result"
+            },
+            "subtype": {
+              "type": "string"
+            },
+            "is_error": {
+              "type": "boolean"
+            },
+            "interrupted": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": "string"
+            },
+            "cost_usd": {
+              "type": "number"
+            },
+            "duration_ms": {
+              "type": "number"
+            }
+          },
+          "required": ["type", "subtype", "is_error", "interrupted", "text"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "next_prompt"
+            },
+            "next_prompt": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AgentChatNextPrompt"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["type", "next_prompt"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "session"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "previous": {
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["type", "session_id", "previous"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "rewound"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "uuid"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "lease"
+            },
+            "owner": {
+              "$ref": "#/$defs/AgentChatOwner"
+            },
+            "phase": {
+              "$ref": "#/$defs/AgentChatPhase"
+            },
+            "session_id": {
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["type", "owner", "phase", "session_id"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "notice"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "api_retry",
+                "compact",
+                "permission_denied",
+                "process_exited",
+                "error"
+              ]
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "kind", "text"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Events pushed to the browsers subscribed to a pane, as `{event: \"agent_chat.<type>\", data}` in a connection envelope. Text blocks are keyed by API message id and block index, which history entries carry too (`message_id`, `block_index`); tools by their tool_use id."
+    },
+    "AgentChatEventEnvelope": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "enum": [
+            "agent_chat.block_start",
+            "agent_chat.delta",
+            "agent_chat.block_stop",
+            "agent_chat.abandoned",
+            "agent_chat.tool_use",
+            "agent_chat.tool_result",
+            "agent_chat.user",
+            "agent_chat.status",
+            "agent_chat.queue",
+            "agent_chat.shell",
+            "agent_chat.interrupted",
+            "agent_chat.lost",
+            "agent_chat.stuck",
+            "agent_chat.asleep",
+            "agent_chat.model_notice",
+            "agent_chat.api_key_question",
+            "agent_chat.result",
+            "agent_chat.next_prompt",
+            "agent_chat.session",
+            "agent_chat.rewound",
+            "agent_chat.lease",
+            "agent_chat.notice"
+          ]
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "block_start"
+                },
+                "message_id": {
+                  "type": "string"
+                },
+                "index": {
+                  "type": "number"
+                },
+                "block": {
+                  "$ref": "#/$defs/AgentChatBlockType"
+                },
+                "tool_use_id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "block",
+                "index",
+                "message_id",
+                "pane_id",
+                "session_id",
+                "type"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "delta"
+                },
+                "message_id": {
+                  "type": "string"
+                },
+                "index": {
+                  "type": "number"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "index",
+                "message_id",
+                "pane_id",
+                "session_id",
+                "text",
+                "type"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "block_stop"
+                },
+                "message_id": {
+                  "type": "string"
+                },
+                "index": {
+                  "type": "number"
+                },
+                "text": {
+                  "type": "string",
+                  "description": "The block's full text, or a tool call's input as JSON."
+                },
+                "command_output": {
+                  "type": "object",
+                  "properties": {
+                    "uuid": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["uuid"],
+                  "additionalProperties": false,
+                  "description": "The text is what a command run in Claude Code itself printed: the uuid of the transcript record that has it."
+                }
+              },
+              "required": [
+                "index",
+                "message_id",
+                "pane_id",
+                "session_id",
+                "type"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "abandoned"
+                },
+                "message_id": {
+                  "type": "string"
+                },
+                "from_index": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "from_index",
+                "message_id",
+                "pane_id",
+                "session_id",
+                "type"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "tool_use"
+                },
+                "tool_use_id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "input": {},
+                "message_id": {
+                  "type": "string"
+                },
+                "index": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "index",
+                "input",
+                "message_id",
+                "name",
+                "pane_id",
+                "session_id",
+                "tool_use_id",
+                "type"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "tool_result"
+                },
+                "tool_use_id": {
+                  "type": "string"
+                },
+                "is_error": {
+                  "type": "boolean"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "is_error",
+                "pane_id",
+                "session_id",
+                "text",
+                "tool_use_id",
+                "type"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "user"
+                },
+                "uuid": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "images": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "images",
+                "pane_id",
+                "session_id",
+                "text",
+                "type",
+                "uuid"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "status"
+                },
+                "status": {
+                  "$ref": "#/$defs/AgentChatStatus"
+                },
+                "tools_running": {
+                  "type": "boolean"
+                },
+                "running_tools": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "activity": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": [
+                "activity",
+                "pane_id",
+                "session_id",
+                "status",
+                "tools_running",
+                "type"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "queue"
+                },
+                "queue": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/AgentChatQueued"
+                  }
+                }
+              },
+              "required": ["pane_id", "queue", "session_id", "type"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "shell"
+                },
+                "shell": {
+                  "$ref": "#/$defs/AgentChatShell"
+                }
+              },
+              "required": ["pane_id", "session_id", "shell", "type"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "interrupted"
+                },
+                "interrupted": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/AgentChatInterrupted"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["interrupted", "pane_id", "session_id", "type"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "lost"
+                },
+                "lost": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/AgentChatLost"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["lost", "pane_id", "session_id", "type"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "stuck"
+                },
+                "stuck": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/AgentChatStuck"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["pane_id", "session_id", "stuck", "type"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "asleep"
+                },
+                "asleep": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/AgentChatAsleep"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["asleep", "pane_id", "session_id", "type"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "model_notice"
+                },
+                "model_notice": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/AgentChatModelNotice"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["model_notice", "pane_id", "session_id", "type"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "api_key_question"
+                },
+                "api_key_question": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/AgentChatApiKeyQuestion"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["api_key_question", "pane_id", "session_id", "type"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "result"
+                },
+                "subtype": {
+                  "type": "string"
+                },
+                "is_error": {
+                  "type": "boolean"
+                },
+                "interrupted": {
+                  "type": "boolean"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "cost_usd": {
+                  "type": "number"
+                },
+                "duration_ms": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "interrupted",
+                "is_error",
+                "pane_id",
+                "session_id",
+                "subtype",
+                "text",
+                "type"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "next_prompt"
+                },
+                "next_prompt": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/AgentChatNextPrompt"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": ["next_prompt", "pane_id", "session_id", "type"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "const": "session"
+                },
+                "previous": {
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["pane_id", "previous", "session_id", "type"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "rewound"
+                },
+                "uuid": {
+                  "type": "string"
+                }
+              },
+              "required": ["pane_id", "session_id", "type", "uuid"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "lease"
+                },
+                "owner": {
+                  "$ref": "#/$defs/AgentChatOwner"
+                },
+                "phase": {
+                  "$ref": "#/$defs/AgentChatPhase"
+                }
+              },
+              "required": ["owner", "pane_id", "phase", "session_id", "type"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pane_id": {
+                  "type": "string"
+                },
+                "session_id": {
+                  "type": ["string", "null"]
+                },
+                "type": {
+                  "type": "string",
+                  "const": "notice"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "api_retry",
+                    "compact",
+                    "permission_denied",
+                    "process_exited",
+                    "error"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": ["kind", "pane_id", "session_id", "text", "type"]
+            }
+          ]
+        }
+      },
+      "required": ["event", "data"],
+      "additionalProperties": false
+    },
+    "AgentChatHandoverResult": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": true
+            },
+            "owner": {
+              "$ref": "#/$defs/AgentChatOwner"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "confirmed": {
+              "type": "boolean"
+            },
+            "detail": {
+              "type": "string"
+            },
+            "suspended": {
+              "type": "boolean",
+              "description": "Handed back stopped (the chat's Ctrl+Z): the pane's shell has its prompt, and `fg` there brings the conversation back."
+            }
+          },
+          "required": ["ok", "owner", "session_id"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": false
+            },
+            "reason": {
+              "type": "string"
+            },
+            "waiting": {
+              "type": "string",
+              "const": "background_tasks",
+              "description": "Refused for now, not for good: Claude's background work (a shell, a monitor) would stop with it. A switch asked \"when idle\" waits on."
+            },
+            "writer": {
+              "$ref": "#/$defs/AgentChatOtherWriter",
+              "description": "Refused because another Claude runs the session in another pane: which, so the user can go there or, when it is idle, have it quit (`quit_writer` on the next switch)."
+            }
+          },
+          "required": ["ok", "reason"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "A refused or accepted handover, with the reason when refused."
+    },
+    "AgentChatInterrupted": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["restart", "process_exited"]
+        }
+      },
+      "required": ["at", "reason"],
+      "additionalProperties": false,
+      "description": "A turn cut short before its end: by a Roamgate restart, or by the headless process exiting (a crash, a kill, an SSH connection lost). What Claude Code had written stays in the transcript; the rest is gone."
+    },
+    "AgentChatLease": {
+      "type": "object",
+      "properties": {
+        "connection_id": {
+          "type": "string"
+        },
+        "pane_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "owner": {
+          "$ref": "#/$defs/AgentChatOwner"
+        },
+        "phase": {
+          "$ref": "#/$defs/AgentChatPhase"
+        },
+        "agent": {
+          "$ref": "#/$defs/ConversationAgent",
+          "description": "The agent conversation mode drives here; absent: claude."
+        },
+        "terminal_pid": {
+          "type": "number",
+          "description": "The interactive claude's pid while it is being stopped."
+        },
+        "headless_pid": {
+          "type": "number",
+          "description": "The headless claude's pid while it runs (local connections)."
+        },
+        "headless_session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The session ids headless processes were resumed with (their argv), newest last: after /clear a process still names the old one. A probe looks for any of them before another writer starts."
+        },
+        "terminal_args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The flags the pane's claude ran with (--model, --permission-mode...): handing back resumes the session with them."
+        },
+        "queue": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentChatQueued"
+          },
+          "description": "Roamgate's queue of messages typed while a turn ran, kept here while no process holds it (the connection was replaced, Roamgate restarted)."
+        },
+        "turn_started_at": {
+          "type": "string",
+          "description": "When the turn that runs was written to the headless process: a restart, or the process exiting, while this is set cut the turn short."
+        },
+        "interrupted": {
+          "$ref": "#/$defs/AgentChatInterrupted",
+          "description": "The last turn was cut short; cleared by the next turn or a dismiss."
+        },
+        "asleep_at": {
+          "type": "string",
+          "description": "Since when its headless process is stopped for being idle (idle stop): the holder keeps the pane, and the next message starts it again."
+        },
+        "holder": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "offset": {
+              "type": "number"
+            },
+            "pending": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "seq": {
+                    "type": "number"
+                  },
+                  "op": {
+                    "type": "string"
+                  }
+                },
+                "required": ["seq", "op"],
+                "additionalProperties": {}
+              }
+            },
+            "resume": {
+              "type": "object",
+              "properties": {
+                "child": {
+                  "type": "number"
+                },
+                "epoch_offset": {
+                  "type": "number"
+                },
+                "offset": {
+                  "type": "number"
+                },
+                "state": {}
+              },
+              "required": ["child", "epoch_offset", "offset", "state"],
+              "additionalProperties": false,
+              "description": "Where the latest child's lines were handled to, with the state they left the conversation in: the next runtime reads only what follows."
+            }
+          },
+          "required": ["id", "offset"],
+          "additionalProperties": false,
+          "description": "The pane holder that runs the headless claude: how far Roamgate read its log, and the commands it had not confirmed yet. A runtime after this one reads on from there."
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection_id",
+        "pane_id",
+        "session_id",
+        "cwd",
+        "owner",
+        "phase",
+        "updated_at"
+      ],
+      "additionalProperties": false
+    },
+    "AgentChatLost": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why, as Roamgate last saw it."
+        }
+      },
+      "required": ["at", "reason"],
+      "additionalProperties": false,
+      "description": "Roamgate cannot read the conversation process the pane holder runs (its log does not come through, say): nothing is delivered until it is recovered, which ends that process and starts a new one on the session."
+    },
+    "AgentChatMcp": {
+      "type": "object",
+      "properties": {
+        "servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentChatMcpServer"
+          }
+        }
+      },
+      "required": ["servers"],
+      "additionalProperties": false,
+      "description": "The session's MCP servers (agent_chat.mcp)."
+    },
+    "AgentChatMcpAction": {
+      "type": "string",
+      "enum": ["reconnect", "enable", "disable", "authenticate"],
+      "description": "What can be asked of an MCP server as it is now."
+    },
+    "AgentChatMcpRequest": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/AgentChatMcpAction"
+            },
+            "server": {
+              "type": "string"
+            }
+          },
+          "required": ["action", "server"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "const": "finish-sign-in"
+            },
+            "server": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": ["action", "server", "url"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "What /mcp asks of a server (agent_chat.mcp.action)."
+    },
+    "AgentChatMcpResult": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": true
+            },
+            "signIn": {
+              "$ref": "#/$defs/AgentChatMcpSignIn"
+            }
+          },
+          "required": ["ok"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": false
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": ["ok", "reason"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "What a /mcp action did."
+    },
+    "AgentChatMcpServer": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/AgentChatMcpStatus"
+        },
+        "scope": {
+          "type": "string",
+          "description": "Where it comes from (\"user\", \"project\", \"plugin\", \"claudeai\"...)."
+        },
+        "transport": {
+          "type": "string",
+          "description": "How it is reached (\"stdio\", \"http\", \"claude.ai\"...)."
+        },
+        "target": {
+          "type": "string",
+          "description": "Its host or command: never its arguments, headers or environment."
+        },
+        "version": {
+          "type": "string",
+          "description": "What it calls itself once connected (\"github 1.2.0\")."
+        },
+        "error": {
+          "type": "string"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentChatMcpTool"
+          }
+        },
+        "toolCount": {
+          "type": "number",
+          "description": "How many tools it has, when the agent gives no list."
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentChatMcpAction"
+          }
+        }
+      },
+      "required": ["name", "status", "actions"],
+      "additionalProperties": false,
+      "description": "An MCP server of the session, as /mcp lists it."
+    },
+    "AgentChatMcpSignIn": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": ["string", "null"],
+          "description": "The page to open; null: the agent needed no sign-in after all."
+        },
+        "redirects": {
+          "type": "boolean",
+          "description": "The page redirects back to the agent's machine: the address it lands on can be pasted (finish-sign-in) where that machine is out of reach."
+        }
+      },
+      "required": ["url", "redirects"],
+      "additionalProperties": false,
+      "description": "How a sign-in goes on once the agent has started it."
+    },
+    "AgentChatMcpStatus": {
+      "type": "string",
+      "enum": ["connected", "failed", "needs-auth", "pending", "disabled"],
+      "description": "What an MCP server of the session is doing (/mcp)."
+    },
+    "AgentChatMcpTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "destructive": {
+          "type": "boolean"
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    },
+    "AgentChatModel": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "What is asked for: an alias (\"sonnet\"), \"default\", or a model id."
+        },
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "resolved": {
+          "type": "string",
+          "description": "The model id the value stands for, when the agent says."
+        },
+        "disabled": {
+          "type": "boolean",
+          "description": "Listed, but not to be picked (the agent says why in description)."
+        }
+      },
+      "required": ["value", "label"],
+      "additionalProperties": false,
+      "description": "A model /model offers, as its picker lists it."
+    },
+    "AgentChatModelNotice": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "requested": {
+          "type": "string",
+          "description": "What was asked for (\"sonnet\")."
+        },
+        "model": {
+          "type": ["string", "null"],
+          "description": "The model the agent runs from then on, as it names it."
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": ["at", "ok", "requested", "model", "text"],
+      "additionalProperties": false,
+      "description": "What the chat says of the last /model, after its last entry."
+    },
+    "AgentChatModelResult": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": true
+            },
+            "model": {
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["ok", "model"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": false
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": ["ok", "reason"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "What a /model switch did (agent_chat.model)."
+    },
+    "AgentChatModels": {
+      "type": "object",
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentChatModel"
+          }
+        },
+        "current": {
+          "type": ["string", "null"],
+          "description": "The model the session runs, as the agent names it; null: not known."
+        },
+        "chosen": {
+          "type": ["string", "null"],
+          "description": "The value last picked for it, kept for its next start; null: none."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["agent", "profile", "both"],
+          "description": "Where the list came from: the running agent, the profile's endpoint, or both together."
+        },
+        "error": {
+          "type": "string",
+          "description": "The profile's list could not be read."
+        }
+      },
+      "required": ["models", "current", "chosen", "source"],
+      "additionalProperties": false,
+      "description": "The models /model offers in conversation mode (agent_chat.models)."
+    },
+    "AgentChatNextPrompt": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": ["uuid", "text"],
+      "additionalProperties": false,
+      "description": "Claude Code's predicted next user message. Never sent by itself."
+    },
+    "AgentChatOtherWriter": {
+      "type": "object",
+      "properties": {
+        "pane_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        },
+        "tab_id": {
+          "type": "string"
+        },
+        "workspace_label": {
+          "type": "string",
+          "description": "As Herdr names them; a browser that knows the pane names it itself."
+        },
+        "tab_label": {
+          "type": "string"
+        },
+        "agent_name": {
+          "type": "string",
+          "description": "The agent's name, as shown: \"Claude\"."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["idle", "working", "blocked", "unknown"],
+          "description": "What Herdr says it does: idle (at its prompt, no turn running), working (a turn or a background task), blocked (it waits for an answer in its terminal), or unknown."
+        },
+        "quit_refusal": {
+          "type": "string",
+          "description": "Why it did not quit when the user asked it to, if they did."
+        }
+      },
+      "required": ["pane_id", "agent_name", "status"],
+      "additionalProperties": false,
+      "description": "Another Claude on the same session, in another pane of the pane's Herdr: a switch to conversation mode waits until it is gone, as two writers would mix their turns in one transcript. Only an idle one may be asked to quit."
+    },
+    "AgentChatOwner": {
+      "type": "string",
+      "enum": ["terminal", "conversation"],
+      "description": "Who writes to the session now."
+    },
+    "AgentChatPhase": {
+      "type": "string",
+      "enum": ["terminal", "to_conversation", "conversation", "to_terminal"],
+      "description": "Where a session is in its life: owned by the terminal, being handed to conversation mode (the TUI is exiting), owned by conversation mode, or being handed back (the headless process is exiting)."
+    },
+    "AgentChatQueued": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Upload paths of the images sent with it."
+        },
+        "queued_at": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "text", "images", "queued_at"],
+      "additionalProperties": false
+    },
+    "AgentChatRewindCheck": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": ["restorable", "none", "no_checkpoint", "unknown"]
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["code"],
+      "additionalProperties": false,
+      "description": "What a rewind to before a message could do to the code, known before the user picks, from the transcript: \"none\" when the turns after it edited no file with Claude's file tools, \"no_checkpoint\" when they did (`files`) but Claude Code kept no checkpoint for the message, \"restorable\" when it did, \"unknown\" when the transcript does not tell."
+    },
+    "AgentChatRewindMode": {
+      "type": "string",
+      "enum": ["both", "conversation", "code"],
+      "description": "What a rewind restores: as Claude Code's /rewind offers it."
+    },
+    "AgentChatRewindResult": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": true
+            },
+            "prefill": {
+              "type": "string"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "code": {
+              "type": "string",
+              "enum": ["restored", "none"]
+            }
+          },
+          "required": ["ok"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ok": {
+              "type": "boolean",
+              "const": false
+            },
+            "reason": {
+              "type": "string"
+            },
+            "no_checkpoint": {
+              "type": "boolean",
+              "const": true
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["ok", "reason"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "A rewind in conversation mode. `prefill` is the message rewound to, for the chat's box; `files` the files the code restore changed. `code`, when the code was asked for: \"restored\", or \"none\" when the turns rewound changed no file Claude Code can restore (the conversation alone was cut). Refused with `no_checkpoint`: files were edited (`files`, when known), but Claude Code kept no checkpoint of them (edits from before checkpoints were on); nothing was rewound, and the conversation alone still can be."
+    },
+    "AgentChatShell": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["running", "done", "stopped", "failed"]
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "Output past the cap was left out (Claude reads the cap only)."
+        },
+        "exit_code": {
+          "type": ["number", "null"],
+          "description": "Null while it runs, and when it was stopped or could not start."
+        },
+        "cwd": {
+          "type": "string",
+          "description": "The directory it runs in, on the pane's host."
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string",
+          "description": "Why it could not start or finish."
+        },
+        "delivered": {
+          "type": "boolean",
+          "description": "Sent to Claude with a message: the transcript shows it from now on. The browser keeps the last few sent, for what the transcript does not keep of them (how they ended)."
+        }
+      },
+      "required": [
+        "id",
+        "command",
+        "status",
+        "stdout",
+        "stderr",
+        "truncated",
+        "exit_code",
+        "started_at"
+      ],
+      "additionalProperties": false,
+      "description": "A `!` line run from the chat on the pane's host, as Claude Code's bash mode: its output so far, each stream cut at BASH_OUTPUT_LIMIT."
+    },
+    "AgentChatState": {
+      "type": "object",
+      "properties": {
+        "pane_id": {
+          "type": "string"
+        },
+        "owner": {
+          "$ref": "#/$defs/AgentChatOwner"
+        },
+        "phase": {
+          "$ref": "#/$defs/AgentChatPhase"
+        },
+        "session_id": {
+          "type": ["string", "null"]
+        },
+        "cwd": {
+          "type": ["string", "null"]
+        },
+        "status": {
+          "$ref": "#/$defs/AgentChatStatus"
+        },
+        "agent": {
+          "$ref": "#/$defs/ConversationAgent",
+          "description": "The agent conversation mode drives in the pane, and what it can do (see chatCapabilities); sent while a lease exists. An older server sends neither: claude."
+        },
+        "capabilities": {
+          "$ref": "#/$defs/AgentChatCapabilities"
+        },
+        "tools_running": {
+          "type": "boolean",
+          "description": "A tool call is running: speech steers the turn instead of stopping it."
+        },
+        "running_tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The tool calls that run, by tool_use id; absent from older servers."
+        },
+        "activity": {
+          "type": ["string", "null"],
+          "description": "What it is doing: a tool's name, \"thinking\", \"compacting\"."
+        },
+        "queue": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentChatQueued"
+          }
+        },
+        "interrupted": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentChatInterrupted"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The last turn was cut short, until the next one starts."
+        },
+        "lost": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentChatLost"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The conversation process cannot be read: Recover starts a new one."
+        },
+        "stuck": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentChatStuck"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The turn seems to hang: Interrupt, or Restart Claude."
+        },
+        "asleep": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentChatAsleep"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its process is stopped while idle; the next message wakes it."
+        },
+        "api_key_question": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentChatApiKeyQuestion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Claude waits to start until the user says which account pays."
+        },
+        "shells": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentChatShell"
+          },
+          "description": "`!` lines run from the chat that Claude has not read yet: running, or done and waiting for the next message, which takes them to Claude."
+        },
+        "streamed": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentChatStreamedText"
+          },
+          "description": "On a subscription only: the reply text already streamed of the turn that runs, so a browser that comes in the middle of it (a reload) draws all of it, not just what streams after."
+        },
+        "next_prompt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentChatNextPrompt"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What Claude Code guesses the user will say next, after its last turn (prompt suggestions on); gone once another turn starts."
+        },
+        "model_notice": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentChatModelNotice"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the last /model did, until the next message goes."
+        }
+      },
+      "required": [
+        "pane_id",
+        "owner",
+        "phase",
+        "session_id",
+        "cwd",
+        "status",
+        "tools_running",
+        "activity",
+        "queue",
+        "interrupted"
+      ],
+      "additionalProperties": false
+    },
+    "AgentChatStatus": {
+      "type": "string",
+      "enum": ["stopped", "starting", "idle", "working", "blocked"],
+      "description": "What the headless process is doing."
+    },
+    "AgentChatStreamedText": {
+      "type": "object",
+      "properties": {
+        "message_id": {
+          "type": "string"
+        },
+        "index": {
+          "type": "number"
+        },
+        "text": {
+          "type": "string"
+        },
+        "done": {
+          "type": "boolean",
+          "description": "Its complete text came (the CLI's assistant message)."
+        }
+      },
+      "required": ["message_id", "index", "text", "done"],
+      "additionalProperties": false,
+      "description": "A text block of the running turn, as streamed so far."
+    },
+    "AgentChatStuck": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "type": "string",
+          "description": "When Claude last said something."
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["silent", "stop_unanswered"]
+        }
+      },
+      "required": ["since", "reason"],
+      "additionalProperties": false
+    },
+    "AgentChatVoiceAction": {
+      "type": "string",
+      "enum": [
+        "sent",
+        "queued",
+        "interrupted",
+        "interrupted_then_sent",
+        "steered"
+      ],
+      "description": "What a spoken message did while Claude was working (the barge-in mix)."
+    },
+    "ClaudeStartMode": {
+      "type": "string",
+      "enum": ["terminal", "conversation"],
+      "description": "Where a `claude` started by hand in a Herdr pane goes: it stays in the terminal, or conversation mode takes it as soon as it is up."
+    },
+    "ConversationAgent": {
+      "type": "string",
+      "const": "claude",
+      "description": "The agents conversation mode drives (Herdr's agent names): each has a driver on the server, a headless protocol and its terminal side."
+    }
+  }
+}

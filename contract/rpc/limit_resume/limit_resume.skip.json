@@ -1,0 +1,11 @@
+{
+  "method": "limit_resume.skip",
+  "family": "limit_resume",
+  "scope": "connection",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

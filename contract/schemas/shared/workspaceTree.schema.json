@@ -1,0 +1,435 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/workspaceTree.schema.json",
+  "x-generated-from": "shared/workspaceTree.ts",
+  "$defs": {
+    "ClosedWorkspace": {
+      "type": "object",
+      "properties": {
+        "workspace_id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": ["workspace_id"],
+      "additionalProperties": false,
+      "description": "What Herdr says of a workspace it just closed or removed the worktree of."
+    },
+    "LiveWorkspaceIdentity": {
+      "type": "object",
+      "properties": {
+        "workspace_id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": ["workspace_id", "label"],
+      "additionalProperties": false,
+      "description": "What a live workspace offers to be recognised by."
+    },
+    "ResolvedWorkspaceNode": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "live"
+            },
+            "connectionId": {
+              "type": "string"
+            },
+            "workspaceId": {
+              "type": "string"
+            }
+          },
+          "required": ["state", "connectionId", "workspaceId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "offline"
+            }
+          },
+          "required": ["state"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "type": "string",
+              "const": "gone"
+            }
+          },
+          "required": ["state"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ResolvedWorkspaceTree": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "object",
+          "properties": {
+            "size": {
+              "type": "number"
+            }
+          },
+          "required": ["size"],
+          "additionalProperties": false
+        },
+        "nodeByWorkspace": {
+          "type": "object",
+          "properties": {
+            "size": {
+              "type": "number"
+            }
+          },
+          "required": ["size"],
+          "additionalProperties": false,
+          "description": "`${connectionId}\\0${workspaceId}` to its node."
+        },
+        "refreshes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "node": {
+                "type": "string"
+              },
+              "ref": {
+                "$ref": "#/$defs/WorkspaceRef"
+              }
+            },
+            "required": ["node", "ref"],
+            "additionalProperties": false
+          },
+          "description": "Live ids or labels that differ from what the tree has."
+        }
+      },
+      "required": ["nodes", "nodeByWorkspace", "refreshes"],
+      "additionalProperties": false
+    },
+    "WorkspaceRef": {
+      "type": "object",
+      "properties": {
+        "connection_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string",
+          "description": "The checkout path on the connection's host: survives restarts."
+        },
+        "label": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string",
+          "description": "Herdr's id when last seen: a hint, not an identity."
+        }
+      },
+      "required": ["connection_id"],
+      "additionalProperties": false
+    },
+    "WorkspaceTree": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkspaceTreeNode"
+          }
+        }
+      },
+      "required": ["version", "nodes"],
+      "additionalProperties": false
+    },
+    "WorkspaceTreeGroupNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "const": "group"
+        },
+        "parent": {
+          "type": ["string", "null"]
+        },
+        "label": {
+          "type": "string"
+        },
+        "collapsed": {
+          "type": "boolean"
+        },
+        "root": {
+          "type": "string",
+          "const": "bottom",
+          "description": "Only with no parent: \"bottom\" shows it below the list, else above."
+        }
+      },
+      "required": ["id", "kind", "parent", "label"],
+      "additionalProperties": false
+    },
+    "WorkspaceTreeNode": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorkspaceTreeGroupNode"
+        },
+        {
+          "$ref": "#/$defs/WorkspaceTreeWorkspaceNode"
+        }
+      ]
+    },
+    "WorkspaceTreeOp": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "move",
+              "description": "Under `parent`, before `before` (else last). A root place puts it at the top level; null sends a workspace back to its usual place (and a group to the top)."
+            },
+            "subject": {
+              "$ref": "#/$defs/WorkspaceTreeTarget"
+            },
+            "parent": {
+              "$ref": "#/$defs/WorkspaceTreeParent"
+            },
+            "before": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/WorkspaceTreeTarget"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["op", "subject", "parent"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "create_group"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "parent": {
+              "$ref": "#/$defs/WorkspaceTreeParent"
+            },
+            "before": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/WorkspaceTreeTarget"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": ["op", "id", "label", "parent"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "rename_group"
+            },
+            "node": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": ["op", "node", "label"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "set_collapsed"
+            },
+            "node": {
+              "type": "string"
+            },
+            "collapsed": {
+              "type": "boolean"
+            }
+          },
+          "required": ["op", "node", "collapsed"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "delete_group"
+            },
+            "node": {
+              "type": "string"
+            }
+          },
+          "required": ["op", "node"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "remove"
+            },
+            "node": {
+              "type": "string"
+            }
+          },
+          "required": ["op", "node"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "refresh"
+            },
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "node": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "$ref": "#/$defs/WorkspaceRef"
+                  }
+                },
+                "required": ["node", "ref"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["op", "nodes"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WorkspaceTreeParent": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorkspaceTreeTarget"
+        },
+        {
+          "$ref": "#/$defs/WorkspaceTreeRoot"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Where a move or a new group goes: a parent, the top level, or null."
+    },
+    "WorkspaceTreeRoot": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/WorkspaceTreeRootPlace"
+        }
+      },
+      "required": ["root"],
+      "additionalProperties": false,
+      "description": "The top level, as a place to move something to."
+    },
+    "WorkspaceTreeRootPlace": {
+      "type": "string",
+      "enum": ["top", "list", "bottom"],
+      "description": "Where a node placed at the top level shows: above, in or below Herdr's list."
+    },
+    "WorkspaceTreeTarget": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "node": {
+              "type": "string"
+            }
+          },
+          "required": ["node"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "workspace": {
+              "$ref": "#/$defs/WorkspaceRef"
+            }
+          },
+          "required": ["workspace"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "A node by id, or a workspace that may not have a node yet."
+    },
+    "WorkspaceTreeWorkspaceNode": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "const": "workspace"
+        },
+        "parent": {
+          "type": ["string", "null"]
+        },
+        "ref": {
+          "$ref": "#/$defs/WorkspaceRef"
+        },
+        "root": {
+          "$ref": "#/$defs/WorkspaceTreeRootPlace",
+          "description": "Only with no parent: placed at the top level by the user."
+        }
+      },
+      "required": ["id", "kind", "parent", "ref"],
+      "additionalProperties": false
+    }
+  }
+}

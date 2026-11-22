@@ -1,0 +1,11 @@
+Print a shell completion script.
+
+Usage:
+  roamgate completion <bash|zsh|fish>
+
+Install it with one of:
+  bash: roamgate completion bash > ~/.local/share/bash-completion/completions/roamgate
+  zsh:  roamgate completion zsh > "${fpath[1]}/_roamgate"
+        (or add `source <(roamgate completion zsh)` to ~/.zshrc)
+  fish: roamgate completion fish > ~/.config/fish/completions/roamgate.fish
+

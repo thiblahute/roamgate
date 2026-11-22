@@ -1,0 +1,11 @@
+{
+  "x-inventory": "control",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/index.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["control"],
+  "properties": {
+    "control": {}
+  }
+}

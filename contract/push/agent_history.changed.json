@@ -1,0 +1,16 @@
+{
+  "x-inventory": "event:agent_history.changed",
+  "x-kind": "event",
+  "x-sent-by": ["server/src/agent/history-watch.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["event", "data"],
+  "properties": {
+    "event": {
+      "const": "agent_history.changed"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

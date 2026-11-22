@@ -1,0 +1,16 @@
+{
+  "method": "forward.list",
+  "family": "forward",
+  "scope": "connection",
+  "handler": "server/src/bridge/forward-rpc.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {
+    "type": "array",
+    "items": {
+      "$ref": "../../schemas/server.schema.json#/$defs/ForwardWire"
+    }
+  },
+  "status": "inventoried"
+}

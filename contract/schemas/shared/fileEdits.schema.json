@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/fileEdits.schema.json",
+  "x-generated-from": "shared/fileEdits.ts",
+  "$defs": {
+    "FileEdit": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "created": {
+          "type": "boolean",
+          "description": "A file the call created (a Write of a new file)."
+        },
+        "added": {
+          "type": "number"
+        },
+        "removed": {
+          "type": "number"
+        },
+        "hunks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FileEditHunk"
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "Lines past what is carried were left out (the counts are whole)."
+        }
+      },
+      "required": ["path", "added", "removed", "hunks"],
+      "additionalProperties": false
+    },
+    "FileEditHunk": {
+      "type": "object",
+      "properties": {
+        "old_start": {
+          "type": "number",
+          "description": "Where the hunk starts in the old and new file; absent: not known."
+        },
+        "new_start": {
+          "type": "number"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["lines"],
+      "additionalProperties": false,
+      "description": "What a file-editing tool call did (Claude Code's Edit, MultiEdit, Write, NotebookEdit), as the chat shows it: the file, its line counts, and its diff in hunks of unified-diff lines (\"+added\", \"-removed\", \" context\"). Taken from Claude Code's own patch of the result when the transcript has it (with line numbers and context, as its terminal shows), else from the call's arguments. Bounded: a chat entry carries it even when the call's payload is withheld from the wire."
+    }
+  }
+}

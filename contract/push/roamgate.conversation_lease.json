@@ -1,0 +1,16 @@
+{
+  "x-inventory": "event:roamgate.conversation_lease",
+  "x-kind": "event",
+  "x-sent-by": ["server/src/connections/runtime.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["event", "data"],
+  "properties": {
+    "event": {
+      "const": "roamgate.conversation_lease"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

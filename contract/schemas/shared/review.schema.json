@@ -1,0 +1,1294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/review.schema.json",
+  "x-generated-from": "shared/review.ts",
+  "$defs": {
+    "AgentPermissionAnswer": {
+      "type": "string",
+      "enum": ["allow", "always", "deny", "dismiss"],
+      "description": "\"dismiss\": the user puts the prompt away without answering it. The agent is told so (a denial saying the user dismissed it) and goes on."
+    },
+    "AgentPermissionPrompt": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string",
+          "description": "What it would do: the command, the file, the URL."
+        },
+        "detail": {
+          "type": "string",
+          "description": "The tool's input, shortened."
+        },
+        "file_edit": {
+          "$ref": "fileEdits.schema.json#/$defs/FileEdit",
+          "description": "A file edit it asks to make (Edit, Write...): the change, shown."
+        },
+        "canAlways": {
+          "type": "boolean",
+          "description": "\"Allow, and don't ask again\" applies, as the terminal offers it."
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string",
+          "description": "When the hook stops waiting and the terminal asks instead."
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AgentQuestion"
+          },
+          "description": "Claude's multiple-choice questions (AskUserQuestion), not a permission."
+        },
+        "noTerminal": {
+          "type": "boolean",
+          "description": "No terminal can ask it instead (conversation mode's headless claude): unanswered, the tool is denied."
+        }
+      },
+      "required": [
+        "id",
+        "connectionId",
+        "paneId",
+        "agent",
+        "tool",
+        "summary",
+        "canAlways",
+        "createdAt",
+        "expiresAt"
+      ],
+      "additionalProperties": false,
+      "description": "An agent asking leave to use a tool (Claude Code's permission prompt), sent by its hook: answered from the phone, or by the terminal once it gives up."
+    },
+    "AgentPromptAnswer": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentPermissionAnswer"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "answers": {
+              "$ref": "#/$defs/AgentQuestionAnswers"
+            }
+          },
+          "required": ["answers"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "AgentQuestion": {
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string"
+        },
+        "header": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "required": ["label"],
+            "additionalProperties": false
+          }
+        },
+        "multiSelect": {
+          "type": "boolean"
+        }
+      },
+      "required": ["question", "options", "multiSelect"],
+      "additionalProperties": false,
+      "description": "One of Claude's questions, as its AskUserQuestion tool puts it."
+    },
+    "AgentQuestionAnswers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Each question's text to the chosen labels (\", \"-joined) or the user's own."
+    },
+    "ReviewActivity": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "newCommits": {
+          "type": "boolean",
+          "description": "The branch moved since the diff was last shown."
+        },
+        "headSha": {
+          "type": "string"
+        },
+        "gone": {
+          "$ref": "#/$defs/ReviewGoneCode",
+          "description": "Its checkout or a commit of its range was found gone lately."
+        },
+        "unreadable": {
+          "type": "boolean",
+          "const": true,
+          "description": "Its checkout did not answer in time: whether it moved is not known."
+        }
+      },
+      "required": ["sessionId", "newCommits"],
+      "additionalProperties": false
+    },
+    "ReviewAgentStatus": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "The agent session that ran in that pane when it was bound: should the pane go, the comments follow the session to the pane running it."
+        },
+        "working": {
+          "type": "object",
+          "properties": {
+            "at": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": ["at"],
+          "additionalProperties": false,
+          "description": "What the agent says it is doing; `threadId` when on one thread."
+        },
+        "update": {
+          "type": "object",
+          "properties": {
+            "at": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": ["at"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReviewAnchor": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "type": "number"
+        },
+        "endLine": {
+          "type": "number"
+        },
+        "side": {
+          "$ref": "#/$defs/ReviewSide"
+        },
+        "text": {
+          "type": "string"
+        },
+        "contextOld": {
+          "type": "number",
+          "description": "The old-side number of an unchanged line anchored on the new side."
+        },
+        "oldPath": {
+          "type": "string",
+          "description": "The path before a rename, when it differs."
+        },
+        "commit": {
+          "type": "string",
+          "description": "Written on one commit's diff (absent: on the whole change)."
+        },
+        "commitSubject": {
+          "type": "string",
+          "description": "That commit's subject, to find it again after a rebase."
+        },
+        "commitParent": {
+          "type": "string",
+          "description": "That commit's parent: the base of a GitLab position on it."
+        },
+        "outdated": {
+          "type": "boolean",
+          "const": true,
+          "description": "Its commit was rewritten (amended, rebased) and neither the change it became nor its line was found again: kept where it was written."
+        },
+        "message": {
+          "$ref": "#/$defs/ReviewMessagePart",
+          "description": "On a part of an earlier message: the thread and comment it is in, and the words quoted from it. The rest of the anchor is that thread's."
+        },
+        "chat": {
+          "$ref": "#/$defs/ReviewChatPart",
+          "description": "On a part of a message of an agent chat (a chat review). With a path, on a file a tool call of the chat changed (its diff card): the path, and the lines with their text when on lines, say where, as on a diff."
+        },
+        "effort": {
+          "$ref": "#/$defs/ReviewEffortPart",
+          "description": "On what an effort's view shows (an effort review)."
+        },
+        "work": {
+          "$ref": "#/$defs/ReviewWorkPart",
+          "description": "On a work item (a work review): the item, and where it came from."
+        },
+        "render": {
+          "$ref": "#/$defs/ReviewRenderPart",
+          "description": "On what a rendered review shows: the words, the graphic's region or the page's element pointed at. `path` and the lines, when known, are where it comes from in the source."
+        },
+        "terminal": {
+          "type": "object",
+          "properties": {
+            "pane": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "quote": {
+              "type": "string"
+            }
+          },
+          "required": ["pane", "title", "quote"],
+          "additionalProperties": false,
+          "description": "On words selected in a terminal: its pane, as named then."
+        },
+        "feedback": {
+          "type": "string",
+          "description": "A comment written in a workspace view or on terminal text: its note there (JSON), which Copy and Send read back word for word."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Where a thread was written. No path: the whole review. A path without a line: the file. `line` (and `endLine` for a range) count on `side`. `text` is the anchored line as it read then, so the thread can find its line again after the code moves, or be shown as outdated once it is gone."
+    },
+    "ReviewChatPart": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "type": "string",
+          "description": "The chat message's id in the agent's history."
+        },
+        "at": {
+          "type": "string",
+          "description": "When it was written, and how it starts: for the agent to find it."
+        },
+        "excerpt": {
+          "type": "string"
+        },
+        "quote": {
+          "type": "string",
+          "description": "The words commented on."
+        },
+        "call": {
+          "type": "string",
+          "description": "On a file change: the id of the tool call that made it, which keeps when the chat reads the call with another entry id."
+        }
+      },
+      "required": ["entry", "quote"],
+      "additionalProperties": false
+    },
+    "ReviewComment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "gitlabDraftId": {
+          "type": "number",
+          "description": "A draft reply in a GitLab discussion: on GitLab, not published yet."
+        }
+      },
+      "required": ["id", "author", "body", "createdAt", "updatedAt"],
+      "additionalProperties": false
+    },
+    "ReviewCommit": {
+      "type": "object",
+      "properties": {
+        "sha": {
+          "type": "string"
+        },
+        "parent": {
+          "type": ["string", "null"]
+        },
+        "author": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "history": {
+          "type": "boolean",
+          "const": true,
+          "description": "History of a branch with no commits of its own (the default branch itself), latest first: not the branch's work."
+        }
+      },
+      "required": ["sha", "parent", "author", "date", "subject", "body"],
+      "additionalProperties": false
+    },
+    "ReviewCounts": {
+      "type": "object",
+      "properties": {
+        "threads": {
+          "type": "number",
+          "description": "Every thread, the forge's discussions too."
+        },
+        "open": {
+          "type": "number",
+          "description": "Threads not resolved."
+        },
+        "drafts": {
+          "type": "number",
+          "description": "Draft comments."
+        },
+        "comments": {
+          "type": "number",
+          "description": "Threads other than the forge's discussions."
+        },
+        "waiting": {
+          "type": "number",
+          "description": "Open discussions whose last word is not the user's."
+        }
+      },
+      "required": ["threads", "open", "drafts", "comments", "waiting"],
+      "additionalProperties": false
+    },
+    "ReviewDiff": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReviewDiffFile"
+          }
+        },
+        "baseSha": {
+          "type": "string",
+          "description": "Resolved commits, when the target has them."
+        },
+        "headSha": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "view": {
+          "type": ["string", "null"],
+          "description": "Asked for the view a review opens on (`first`): the commit it is the diff of, the oldest of the review's; null for all the changes."
+        },
+        "summary": {
+          "type": "boolean",
+          "const": true,
+          "description": "The files only, no hunks (asked with `summary`): each is read with `files` and the two commits above, a few at a time, whatever the size of the whole change."
+        }
+      },
+      "required": ["files", "truncated"],
+      "additionalProperties": false
+    },
+    "ReviewDiffFile": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "oldPath": {
+          "type": "string"
+        },
+        "binary": {
+          "type": "boolean"
+        },
+        "commitMessage": {
+          "type": "boolean",
+          "const": true,
+          "description": "The commit's message, shown as a file so its lines can be commented."
+        },
+        "hunks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReviewDiffHunk"
+          }
+        },
+        "status": {
+          "$ref": "#/$defs/ReviewFileStatus",
+          "description": "In a summary (`ReviewDiff.summary`): what git says of the file, its hunks read file by file later."
+        },
+        "additions": {
+          "type": "number"
+        },
+        "deletions": {
+          "type": "number"
+        },
+        "generated": {
+          "type": "boolean",
+          "description": "Marked generated (linguist-generated, gitlab-generated)."
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "Its patch was cut at the per-file limit: the hunks read end there."
+        }
+      },
+      "required": ["path", "oldPath", "hunks"],
+      "additionalProperties": false
+    },
+    "ReviewDiffHunk": {
+      "type": "object",
+      "properties": {
+        "header": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReviewDiffLine"
+          }
+        }
+      },
+      "required": ["header", "lines"],
+      "additionalProperties": false
+    },
+    "ReviewDiffLine": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ReviewLineKind"
+        },
+        "old": {
+          "type": ["number", "null"]
+        },
+        "new": {
+          "type": ["number", "null"]
+        },
+        "text": {
+          "type": "string"
+        },
+        "expanded": {
+          "type": "boolean",
+          "const": true,
+          "description": "Context the reviewer revealed around a hunk; not part of the patch."
+        }
+      },
+      "required": ["kind", "old", "new", "text"],
+      "additionalProperties": false
+    },
+    "ReviewEffortItemKind": {
+      "type": "string",
+      "enum": [
+        "plan",
+        "commit",
+        "counter",
+        "directory",
+        "feeder",
+        "change",
+        "card"
+      ]
+    },
+    "ReviewEffortPart": {
+      "type": "object",
+      "properties": {
+        "tab": {
+          "$ref": "#/$defs/ReviewEffortTab"
+        },
+        "item": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "$ref": "#/$defs/ReviewEffortItemKind"
+            },
+            "key": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string",
+              "description": "How it read: a plan's name, a commit's sha and subject."
+            }
+          },
+          "required": ["kind", "key"],
+          "additionalProperties": false
+        },
+        "plan": {
+          "type": "string",
+          "description": "A commit shown in a plan: that plan's id."
+        },
+        "quote": {
+          "type": "string",
+          "description": "The words commented on."
+        }
+      },
+      "required": ["tab"],
+      "additionalProperties": false,
+      "description": "Where a thread of an effort review is: the tab, what was pointed at in it by a stable key (absent: the tab itself), and the words selected."
+    },
+    "ReviewEffortTab": {
+      "type": "string",
+      "enum": ["board", "progress", "ledger", "plans", "feeders", "changes"]
+    },
+    "ReviewFileStatus": {
+      "type": "string",
+      "enum": ["added", "deleted", "renamed", "modified"],
+      "description": "A file's change in a review summary."
+    },
+    "ReviewGoneCode": {
+      "type": "string",
+      "enum": ["checkout-gone", "base-gone", "head-gone"],
+      "description": "What a review can no longer find: its checkout, or an end of its range."
+    },
+    "ReviewHead": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "$ref": "#/$defs/ReviewSummarySession"
+        },
+        "mergeRequest": {
+          "$ref": "#/$defs/ReviewMergeRequest"
+        }
+      },
+      "required": ["session"],
+      "additionalProperties": false,
+      "description": "What a summary and a snapshot both say of a review."
+    },
+    "ReviewLineKind": {
+      "type": "string",
+      "enum": [" ", "+", "-"]
+    },
+    "ReviewMergeRequest": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "headSha": {
+          "type": "string"
+        },
+        "security": {
+          "type": "boolean",
+          "description": "Confidential: never sent to the agent."
+        }
+      },
+      "required": ["url", "title", "state", "headSha", "security"],
+      "additionalProperties": false
+    },
+    "ReviewMergeRequestLink": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "number": {
+          "type": "number",
+          "description": "Its `!` number."
+        }
+      },
+      "required": ["url", "title", "number"],
+      "additionalProperties": false,
+      "description": "The GitLab merge request of a local review's branch, whose review opens from there; for a review of a merge request, the same one, when the checkout is on its branch."
+    },
+    "ReviewMessagePart": {
+      "type": "object",
+      "properties": {
+        "thread": {
+          "type": "string"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "quote": {
+          "type": "string",
+          "description": "The words quoted from it; none for an answer to the whole message."
+        }
+      },
+      "required": ["thread", "comment"],
+      "additionalProperties": false
+    },
+    "ReviewPush": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "prompts"
+            },
+            "connectionId": {
+              "type": "string"
+            },
+            "prompts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/AgentPermissionPrompt"
+              }
+            }
+          },
+          "required": ["type", "connectionId", "prompts"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "session"
+            },
+            "snapshot": {
+              "$ref": "#/$defs/ReviewSnapshot"
+            }
+          },
+          "required": ["type", "snapshot"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "removed"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "connectionId": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "sessionId", "connectionId"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "open"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "connectionId": {
+              "type": "string"
+            },
+            "paneId": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": ["type", "sessionId", "connectionId"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ReviewRegion": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "w": {
+          "type": "number"
+        },
+        "h": {
+          "type": "number"
+        }
+      },
+      "required": ["x", "y", "w", "h"],
+      "additionalProperties": false,
+      "description": "A box (or a point: no size) in fractions of a graphic's drawn size."
+    },
+    "ReviewRenderPart": {
+      "type": "object",
+      "properties": {
+        "quote": {
+          "type": "string",
+          "description": "The words selected, as shown."
+        },
+        "url": {
+          "type": "string",
+          "description": "A site's page or an HTML file's page: its path and query."
+        },
+        "selector": {
+          "type": "string",
+          "description": "The page's element, as a CSS selector."
+        },
+        "region": {
+          "$ref": "#/$defs/ReviewRegion",
+          "description": "Where on a graphic (diagram, SVG, image)."
+        },
+        "graphic": {
+          "type": "string",
+          "description": "Which graphic: \"diagram 2\", an image's name."
+        },
+        "element": {
+          "type": "string",
+          "description": "The SVG element clicked: its id, else its text."
+        },
+        "moment": {
+          "type": "string",
+          "description": "An animated graphic's state when the comment started (it is paused then): its time, as \"2.4 s\", or its frame."
+        },
+        "snapshot": {
+          "type": "string",
+          "description": "The region's crop, an image saved with the review (absolute path)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReviewSession": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string",
+          "description": "Repository root on the connection's host."
+        },
+        "title": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/ReviewTarget"
+        },
+        "automaticBase": {
+          "type": "boolean",
+          "description": "A range opened against Automatic's base (no base named): it follows that base when it moves between the local default branch and its remote counterpart, its comments with it. False for a base someone named; absent on reviews from before."
+        },
+        "gitlab": {
+          "type": "boolean",
+          "description": "A review of a GitLab merge request (target `mr`): its discussions and draft notes are shown. Always false for a local review."
+        },
+        "summary": {
+          "type": "string",
+          "description": "The overall comment of the draft review."
+        },
+        "summaryUnsent": {
+          "type": "boolean",
+          "description": "A merge request's review: the overall comment was written by the agent and is not on GitLab yet; it goes with the user's other drafts."
+        },
+        "summarySent": {
+          "type": "string",
+          "description": "The overall comment as the agent last had it (or wrote it)."
+        },
+        "agent": {
+          "$ref": "#/$defs/ReviewAgentStatus"
+        },
+        "handoffAt": {
+          "type": "string",
+          "description": "Set when the user hands the open threads to the agent."
+        },
+        "seenHeadSha": {
+          "type": "string",
+          "description": "The head commit the last time the diff was shown."
+        },
+        "autoSend": {
+          "type": "boolean",
+          "description": "Send the user's discussion comments to the agent as they are written."
+        },
+        "holdComments": {
+          "type": "boolean",
+          "description": "Hold the user's discussion comments until they hand the review over (Send to the agent), instead of sending each as it is written."
+        },
+        "deliveredAt": {
+          "type": "string",
+          "description": "Up to when the user's comments were delivered to the agent."
+        },
+        "deliveryError": {
+          "type": "string",
+          "description": "Why the last delivery to the agent failed, until one succeeds."
+        },
+        "reviewed": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Files the user marked reviewed, as tuicr does: `view:path` (the view is a commit, or `all`) to a fingerprint of the file's diff then. A file whose diff changed since is no longer reviewed. Hunks are marked the same way, `view:path\\nid` to \"1\" (the id hashes the hunk's changed lines, so a hunk whose lines change is no longer reviewed); \"\" keeps an unmark in that view."
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "connectionId",
+        "root",
+        "title",
+        "target",
+        "gitlab",
+        "summary",
+        "agent",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "ReviewSide": {
+      "type": "string",
+      "enum": ["old", "new"]
+    },
+    "ReviewSnapshot": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "$ref": "#/$defs/ReviewSession"
+        },
+        "threads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReviewThread"
+          }
+        },
+        "shared": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReviewThread"
+          },
+          "description": "The threads of the checkout's other reviews on what this one shows: in a code review, those of its rendered files; in a rendered file, those of the code reviews on it (a merge request's GitLab threads too). Each stays in its own review (its sessionId), which delivers it to the agent and takes what is written on it."
+        },
+        "mergeRequest": {
+          "$ref": "#/$defs/ReviewMergeRequest",
+          "description": "A merge request's review: the merge request, once read."
+        },
+        "gitlabError": {
+          "type": "string",
+          "description": "A merge request's review could not reach the merge request."
+        }
+      },
+      "required": ["session", "threads"],
+      "additionalProperties": false
+    },
+    "ReviewSummary": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "$ref": "#/$defs/ReviewSummarySession"
+        },
+        "mergeRequest": {
+          "$ref": "#/$defs/ReviewMergeRequest"
+        },
+        "gitlabError": {
+          "type": "string"
+        },
+        "counts": {
+          "$ref": "#/$defs/ReviewCounts"
+        }
+      },
+      "required": ["session", "counts"],
+      "additionalProperties": false
+    },
+    "ReviewSummarySession": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "connectionId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "root": {
+          "type": "string",
+          "description": "Repository root on the connection's host."
+        },
+        "title": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/ReviewTarget"
+        },
+        "automaticBase": {
+          "type": "boolean",
+          "description": "A range opened against Automatic's base (no base named): it follows that base when it moves between the local default branch and its remote counterpart, its comments with it. False for a base someone named; absent on reviews from before."
+        },
+        "gitlab": {
+          "type": "boolean",
+          "description": "A review of a GitLab merge request (target `mr`): its discussions and draft notes are shown. Always false for a local review."
+        },
+        "summary": {
+          "type": "string",
+          "description": "The overall comment of the draft review."
+        },
+        "summaryUnsent": {
+          "type": "boolean",
+          "description": "A merge request's review: the overall comment was written by the agent and is not on GitLab yet; it goes with the user's other drafts."
+        },
+        "agent": {
+          "$ref": "#/$defs/ReviewAgentStatus"
+        },
+        "handoffAt": {
+          "type": "string",
+          "description": "Set when the user hands the open threads to the agent."
+        },
+        "seenHeadSha": {
+          "type": "string",
+          "description": "The head commit the last time the diff was shown."
+        },
+        "autoSend": {
+          "type": "boolean",
+          "description": "Send the user's discussion comments to the agent as they are written."
+        },
+        "holdComments": {
+          "type": "boolean",
+          "description": "Hold the user's discussion comments until they hand the review over (Send to the agent), instead of sending each as it is written."
+        },
+        "deliveredAt": {
+          "type": "string",
+          "description": "Up to when the user's comments were delivered to the agent."
+        },
+        "deliveryError": {
+          "type": "string",
+          "description": "Why the last delivery to the agent failed, until one succeeds."
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "connectionId",
+        "root",
+        "title",
+        "target",
+        "gitlab",
+        "summary",
+        "agent",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false,
+      "description": "A review as the list gives it to a page: its session without the files marked reviewed or the overall comment the agent had, and counts of its threads instead of them. A page reads the whole snapshot of only the reviews it shows (review.snapshots): every review of a desktop with its threads is megabytes."
+    },
+    "ReviewTarget": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "range"
+            },
+            "base": {
+              "type": "string"
+            },
+            "head": {
+              "type": "string"
+            },
+            "compare": {
+              "type": "boolean",
+              "description": "Compare the two trees (`git diff BASE HEAD`) instead of what HEAD adds since their merge-base: what changed between two versions of a rewritten branch, such as before and after a force-push."
+            }
+          },
+          "required": ["kind", "base", "head"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "worktree"
+            }
+          },
+          "required": ["kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "step"
+            },
+            "step": {
+              "type": "string",
+              "description": "The step's id: its snapshot refs' name."
+            },
+            "before": {
+              "type": "string",
+              "description": "The trees before and after the step."
+            },
+            "after": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "description": "When the step ended."
+            },
+            "skipped": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Untracked files left out of the snapshots: too large."
+            }
+          },
+          "required": ["kind", "step", "before", "after"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "mr"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "url"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "chat"
+            },
+            "chat": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "chat"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "path": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": ["kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "effort"
+            },
+            "effort": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "effort"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "work"
+            },
+            "item": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "item"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "What is being reviewed. Ranges keep ref names so they follow rebases."
+    },
+    "ReviewThread": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ReviewThreadKind"
+        },
+        "anchor": {
+          "$ref": "#/$defs/ReviewAnchor"
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReviewComment"
+          }
+        },
+        "resolved": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "gitlab": {
+          "type": "object",
+          "properties": {
+            "draftId": {
+              "type": "number"
+            },
+            "discussionId": {
+              "type": "string"
+            },
+            "headSha": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Set for threads that live on GitLab."
+        },
+        "gitlabReplyTo": {
+          "type": "string",
+          "description": "A local review comment answering a GitLab discussion (its id): it becomes a draft reply there when the drafts go to GitLab."
+        },
+        "pendingFor": {
+          "type": "string",
+          "description": "A local review comment: the merge request (URL) of the branch it was written on. It waits in that merge request's review, whatever the checkout is on later."
+        },
+        "held": {
+          "type": "number",
+          "description": "Held in the workspace's Review feedback until the user sends it: the agent does not hear of it, and its value orders the feedback list."
+        },
+        "handedAt": {
+          "type": "string",
+          "description": "Handed to the agent in one prompt: what it says then has been heard."
+        }
+      },
+      "required": [
+        "id",
+        "sessionId",
+        "kind",
+        "anchor",
+        "comments",
+        "resolved",
+        "createdAt",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "ReviewThreadKind": {
+      "type": "string",
+      "enum": ["discussion", "draft", "merge-request"],
+      "description": "`merge-request`: a discussion on the GitLab merge request, shown read-only apart from replying, which posts publicly."
+    },
+    "ReviewWorkPart": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "type": "string"
+        },
+        "from": {
+          "type": "object",
+          "properties": {
+            "review": {
+              "type": "string"
+            },
+            "thread": {
+              "type": "string"
+            }
+          },
+          "required": ["review", "thread"],
+          "additionalProperties": false
+        },
+        "quote": {
+          "type": "string"
+        },
+        "description": {
+          "type": "boolean",
+          "const": true,
+          "description": "The thread made with the item: its first comment is the item's description (the text given when it was added), shown as such."
+        },
+        "triage": {
+          "type": "boolean",
+          "const": true,
+          "description": "The item was added as free text and waits to be sorted: its owner is asked to retitle, tag, set its state and split it (needsTriage)."
+        }
+      },
+      "required": ["item"],
+      "additionalProperties": false,
+      "description": "Where a thread of a work review is: its item, the thread it was promoted or imported from (its comments copied), and the words it quoted there."
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/compareRefs.schema.json",
+  "x-generated-from": "shared/compareRefs.ts",
+  "$defs": {
+    "CompareRef": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "date": {
+          "type": "number",
+          "description": "Its commit's (or tag's) date, in seconds."
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false,
+      "description": "A ref the Changes scope picker offers to compare: its full name."
+    },
+    "CompareRefs": {
+      "type": "object",
+      "properties": {
+        "current": {
+          "type": "string",
+          "description": "The checked-out branch's full ref; none when detached."
+        },
+        "upstream": {
+          "type": "string",
+          "description": "Its upstream, when it has one."
+        },
+        "base": {
+          "type": "string",
+          "description": "Automatic's base (resolveDefaultBase)."
+        },
+        "near": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The local branches nearest HEAD in its history, the newest first: the layers of a stack below it, then those above it."
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CompareRef"
+          },
+          "description": "Local and remote-tracking branches, and the newest tags."
+        }
+      },
+      "required": ["near", "refs"],
+      "additionalProperties": false,
+      "description": "What the scope picker searches to pick both sides of a comparison."
+    }
+  }
+}

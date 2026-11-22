@@ -1,0 +1,345 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/forge.schema.json",
+  "x-generated-from": "shared/forge.ts",
+  "$defs": {
+    "ForgePipeline": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/ForgePipelineStatus"
+        },
+        "failed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "allowFailure": {
+                "type": "boolean"
+              }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          },
+          "description": "Failed jobs (GitLab) or checks (GitHub), a few at most."
+        }
+      },
+      "required": ["status", "failed"],
+      "additionalProperties": false
+    },
+    "ForgePipelineStatus": {
+      "type": "string",
+      "enum": [
+        "running",
+        "pending",
+        "success",
+        "failed",
+        "canceled",
+        "skipped",
+        "manual"
+      ],
+      "description": "What its CI says, folded to the states a chip shows."
+    },
+    "ForgeProject": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ForgeProvider"
+        },
+        "host": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": ["provider", "host", "project"],
+      "additionalProperties": false,
+      "description": "A repository on a forge: `group/sub/project` or `owner/repo`."
+    },
+    "ForgeProvider": {
+      "type": "string",
+      "enum": ["gitlab", "github"],
+      "description": "Merge requests (GitLab) and pull requests (GitHub) as the agent chats show them: chips for references in messages, the session's own in the header, and the list of every one the conversation touched. Read only, through the user's glab and gh logins on the checkout's host."
+    },
+    "ForgeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "type": "number"
+        },
+        "provider": {
+          "$ref": "#/$defs/ForgeProvider"
+        },
+        "host": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": ["host", "number", "project", "provider"],
+      "description": "One merge request or pull request."
+    },
+    "ForgeRequest": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Its own https web page, as the forge answered it."
+        },
+        "project": {
+          "type": "string",
+          "description": "The canonical project path, as the forge answered it."
+        },
+        "title": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ForgeRequestState"
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "author": {
+          "type": "string"
+        },
+        "sourceBranch": {
+          "type": "string"
+        },
+        "targetBranch": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "pipeline": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ForgePipeline"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null: no pipeline (or check) reported."
+        },
+        "approvals": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "approved": {
+                  "type": ["boolean", "null"]
+                },
+                "count": {
+                  "type": "number"
+                }
+              },
+              "required": ["approved", "count"],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null: the forge did not say."
+        },
+        "unresolved": {
+          "type": ["number", "null"],
+          "description": "Unresolved threads; null when the forge did not say."
+        }
+      },
+      "required": [
+        "url",
+        "project",
+        "title",
+        "state",
+        "draft",
+        "author",
+        "sourceBranch",
+        "targetBranch",
+        "updatedAt",
+        "pipeline",
+        "approvals",
+        "unresolved"
+      ],
+      "additionalProperties": false
+    },
+    "ForgeRequestState": {
+      "type": "string",
+      "enum": ["open", "merged", "closed", "locked"]
+    },
+    "ForgeSession": {
+      "type": "object",
+      "properties": {
+        "defaultProject": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ForgeProject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What `!123` and `#123` mean: the pane's repository's project."
+        },
+        "repos": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ForgeSessionRepo"
+          }
+        },
+        "refreshedAt": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean",
+          "description": "Older than allowed: a read is under way, an update follows."
+        }
+      },
+      "required": ["defaultProject", "repos", "refreshedAt"],
+      "additionalProperties": false
+    },
+    "ForgeSessionRepo": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ForgeProject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where its merge requests live; null for a remote no forge answers."
+        },
+        "request": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "number": {
+                  "type": "number"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": ["url", "number", "title"],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its branch's open request (GitLab) or latest one (GitHub)."
+        }
+      },
+      "required": ["root", "branch", "project", "request"],
+      "additionalProperties": false,
+      "description": "A repository the session works in, and its branch's request."
+    },
+    "ForgeStatus": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/ForgeRef"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "not_signed_in",
+            "unavailable",
+            "security",
+            "not_found",
+            "error"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/ForgeRequest"
+        },
+        "fetchedAt": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean",
+          "description": "Older than its state allows: a read is under way, an update follows."
+        }
+      },
+      "required": ["ref", "state", "fetchedAt"],
+      "additionalProperties": false
+    },
+    "MrCachePush": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "status"
+            },
+            "status": {
+              "$ref": "#/$defs/ForgeStatus"
+            }
+          },
+          "required": ["kind", "status"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "card"
+            },
+            "status": {
+              "$ref": "pullRequest.schema.json#/$defs/PullRequestStatus"
+            },
+            "fetchedAt": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "status", "fetchedAt"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "session"
+            },
+            "session": {
+              "$ref": "#/$defs/ForgeSession"
+            }
+          },
+          "required": ["kind", "session"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "What the clients are told when the server's MR cache learns something."
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "x-inventory": "event:roamgate.agent_note",
+  "x-kind": "event",
+  "x-sent-by": ["server/src/index.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["event", "data"],
+  "properties": {
+    "event": {
+      "const": "roamgate.agent_note"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

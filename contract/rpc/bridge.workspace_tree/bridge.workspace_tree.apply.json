@@ -1,0 +1,11 @@
+{
+  "method": "bridge.workspace_tree.apply",
+  "family": "bridge.workspace_tree",
+  "scope": "bridge",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

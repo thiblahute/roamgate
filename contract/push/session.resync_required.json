@@ -1,0 +1,16 @@
+{
+  "x-inventory": "event:session.resync_required",
+  "x-kind": "event",
+  "x-sent-by": ["server/src/connections/runtime.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["event", "data"],
+  "properties": {
+    "event": {
+      "const": "session.resync_required"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

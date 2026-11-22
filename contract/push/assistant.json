@@ -1,0 +1,12 @@
+{
+  "x-inventory": "assistant",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/index.ts"],
+  "x-coalescing": "assistant",
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["assistant"],
+  "properties": {
+    "assistant": {}
+  }
+}

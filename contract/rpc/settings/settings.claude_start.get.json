@@ -1,0 +1,11 @@
+{
+  "method": "settings.claude_start.get",
+  "family": "settings",
+  "scope": "connection",
+  "handler": "server/src/bridge/settings-rpc.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

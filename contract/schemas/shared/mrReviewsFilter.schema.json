@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/mrReviewsFilter.schema.json",
+  "x-generated-from": "shared/mrReviewsFilter.ts",
+  "$defs": {
+    "MrFilter": {
+      "type": "object",
+      "properties": {
+        "tokens": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrFilterToken"
+          }
+        },
+        "words": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "not": {
+                "type": "boolean"
+              }
+            },
+            "required": ["text", "not"],
+            "additionalProperties": false
+          },
+          "description": "Free words; a negated word (`-word`) is one the request must not hold."
+        }
+      },
+      "required": ["tokens", "words"],
+      "additionalProperties": false
+    },
+    "MrFilterKey": {
+      "type": "string",
+      "enum": [
+        "project",
+        "label",
+        "waiting",
+        "lane",
+        "state",
+        "stale",
+        "draft",
+        "author",
+        "pipeline",
+        "effort",
+        "merge-after",
+        "bot",
+        "is"
+      ]
+    },
+    "MrFilterToken": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/MrFilterKey"
+        },
+        "value": {
+          "type": "string"
+        },
+        "not": {
+          "type": "boolean"
+        }
+      },
+      "required": ["key", "value", "not"],
+      "additionalProperties": false
+    }
+  }
+}

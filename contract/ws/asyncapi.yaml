@@ -1,0 +1,491 @@
+asyncapi: 3.0.0
+info:
+  title: Roamgate WebSockets
+  version: "1"
+  description: "The browser bridge /ws (its RPC and pushes are under contract/rpc and contract/push), the notification feed, the voice socket and a call's signalling."
+channels:
+  bridge:
+    address: /ws
+    description: "Hello with bridge_protocol_version 2 and capabilities; requests {id, method, params, connection_id?, connection_generation?, lane?}; replies {id, result} or {id, error: {message, code?}}, enveloped per connection; chunks marked with \\u0001 and {\"ack\": n} flow-control windows of 64 KiB to 8 MiB; per-message deflate from 1 KiB with a dedicated compressor; backpressure 8 and 64 MiB, a 30 s stall closes the socket; close 4001 on logout."
+  notifications:
+    address: /api/notifications/ws
+    description: "The Android app's notification feed."
+    messages:
+      notifications_in_action:
+        $ref: "#/components/messages/notifications_in_action"
+      notifications_in_hello:
+        $ref: "#/components/messages/notifications_in_hello"
+      notifications_in_ping:
+        $ref: "#/components/messages/notifications_in_ping"
+      notifications_out_action:
+        $ref: "#/components/messages/notifications_out_action"
+      notifications_out_notification:
+        $ref: "#/components/messages/notifications_out_notification"
+      notifications_out_notification_clear:
+        $ref: "#/components/messages/notifications_out_notification_clear"
+      notifications_out_pong:
+        $ref: "#/components/messages/notifications_out_pong"
+      notifications_out_ready:
+        $ref: "#/components/messages/notifications_out_ready"
+  voice:
+    address: /api/voice/ws
+    description: "Listening, speech and calls."
+    messages:
+      voice_in_call_audio:
+        $ref: "#/components/messages/voice_in_call_audio"
+      voice_in_call_carry:
+        $ref: "#/components/messages/voice_in_call_carry"
+      voice_in_call_carry_end:
+        $ref: "#/components/messages/voice_in_call_carry_end"
+      voice_in_call_handoff:
+        $ref: "#/components/messages/voice_in_call_handoff"
+      voice_in_call_hush:
+        $ref: "#/components/messages/voice_in_call_hush"
+      voice_in_call_ice:
+        $ref: "#/components/messages/voice_in_call_ice"
+      voice_in_call_microphone:
+        $ref: "#/components/messages/voice_in_call_microphone"
+      voice_in_call_mute:
+        $ref: "#/components/messages/voice_in_call_mute"
+      voice_in_call_mute_state:
+        $ref: "#/components/messages/voice_in_call_mute_state"
+      voice_in_call_output:
+        $ref: "#/components/messages/voice_in_call_output"
+      voice_in_call_output_state:
+        $ref: "#/components/messages/voice_in_call_output_state"
+      voice_in_call_resume:
+        $ref: "#/components/messages/voice_in_call_resume"
+      voice_in_finish:
+        $ref: "#/components/messages/voice_in_finish"
+      voice_in_listen:
+        $ref: "#/components/messages/voice_in_listen"
+      voice_in_release:
+        $ref: "#/components/messages/voice_in_release"
+      voice_in_resume:
+        $ref: "#/components/messages/voice_in_resume"
+      voice_in_stop:
+        $ref: "#/components/messages/voice_in_stop"
+      voice_in_warm:
+        $ref: "#/components/messages/voice_in_warm"
+      voice_out_call_audio:
+        $ref: "#/components/messages/voice_out_call_audio"
+      voice_out_call_carrier:
+        $ref: "#/components/messages/voice_out_call_carrier"
+      voice_out_call_carry:
+        $ref: "#/components/messages/voice_out_call_carry"
+      voice_out_call_error:
+        $ref: "#/components/messages/voice_out_call_error"
+      voice_out_call_handoff:
+        $ref: "#/components/messages/voice_out_call_handoff"
+      voice_out_call_microphone:
+        $ref: "#/components/messages/voice_out_call_microphone"
+      voice_out_call_music:
+        $ref: "#/components/messages/voice_out_call_music"
+      voice_out_call_mute:
+        $ref: "#/components/messages/voice_out_call_mute"
+      voice_out_call_output:
+        $ref: "#/components/messages/voice_out_call_output"
+      voice_out_call_output_state:
+        $ref: "#/components/messages/voice_out_call_output_state"
+      voice_out_call_replies_peer:
+        $ref: "#/components/messages/voice_out_call_replies_peer"
+      voice_out_call_restarted:
+        $ref: "#/components/messages/voice_out_call_restarted"
+      voice_out_error:
+        $ref: "#/components/messages/voice_out_error"
+      voice_out_final:
+        $ref: "#/components/messages/voice_out_final"
+      voice_out_listening:
+        $ref: "#/components/messages/voice_out_listening"
+      voice_out_loading:
+        $ref: "#/components/messages/voice_out_loading"
+      voice_out_partial:
+        $ref: "#/components/messages/voice_out_partial"
+      voice_out_ready:
+        $ref: "#/components/messages/voice_out_ready"
+      voice_out_resume_failed:
+        $ref: "#/components/messages/voice_out_resume_failed"
+      voice_out_resumed:
+        $ref: "#/components/messages/voice_out_resumed"
+      voice_out_speech_start:
+        $ref: "#/components/messages/voice_out_speech_start"
+      voice_out_stalled:
+        $ref: "#/components/messages/voice_out_stalled"
+      voice_out_warm:
+        $ref: "#/components/messages/voice_out_warm"
+  signalling:
+    address: /api/voice/call/signalling
+    description: "A call's WebRTC signalling: relayed between the page and the voice helper's signalling server, which the server also reads."
+    messages:
+      signalling_upstream_list:
+        $ref: "#/components/messages/signalling_upstream_list"
+      signalling_upstream_peerStatusChanged:
+        $ref: "#/components/messages/signalling_upstream_peerStatusChanged"
+      signalling_upstream_welcome:
+        $ref: "#/components/messages/signalling_upstream_welcome"
+components:
+  messages:
+    notifications_in_action:
+      x-inventory: notifications in action
+      name: action
+      summary: "Received: action"
+      payload:
+        type: object
+      x-status: inventoried
+    notifications_in_hello:
+      x-inventory: notifications in hello
+      name: hello
+      summary: "Received: hello"
+      payload:
+        type: object
+      x-status: inventoried
+    notifications_in_ping:
+      x-inventory: notifications in ping
+      name: ping
+      summary: "Received: ping"
+      payload:
+        type: object
+      x-status: inventoried
+    notifications_out_action:
+      x-inventory: notifications out action
+      name: action
+      summary: "Sent: action"
+      payload:
+        type: object
+      x-status: inventoried
+    notifications_out_notification:
+      x-inventory: notifications out notification
+      name: notification
+      summary: "Sent: notification"
+      payload:
+        type: object
+      x-status: inventoried
+    notifications_out_notification_clear:
+      x-inventory: notifications out notification_clear
+      name: notification_clear
+      summary: "Sent: notification_clear"
+      payload:
+        type: object
+      x-status: inventoried
+    notifications_out_pong:
+      x-inventory: notifications out pong
+      name: pong
+      summary: "Sent: pong"
+      payload:
+        type: object
+      x-status: inventoried
+    notifications_out_ready:
+      x-inventory: notifications out ready
+      name: ready
+      summary: "Sent: ready"
+      payload:
+        type: object
+      x-status: inventoried
+    signalling_upstream_list:
+      x-inventory: signalling upstream list
+      name: list
+      summary: "Read from upstream: list"
+      payload:
+        type: object
+      x-status: inventoried
+    signalling_upstream_peerStatusChanged:
+      x-inventory: signalling upstream peerStatusChanged
+      name: peerStatusChanged
+      summary: "Read from upstream: peerStatusChanged"
+      payload:
+        type: object
+      x-status: inventoried
+    signalling_upstream_welcome:
+      x-inventory: signalling upstream welcome
+      name: welcome
+      summary: "Read from upstream: welcome"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_audio:
+      x-inventory: voice in call_audio
+      name: call_audio
+      summary: "Received: call_audio"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_carry:
+      x-inventory: voice in call_carry
+      name: call_carry
+      summary: "Received: call_carry"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_carry_end:
+      x-inventory: voice in call_carry_end
+      name: call_carry_end
+      summary: "Received: call_carry_end"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_handoff:
+      x-inventory: voice in call_handoff
+      name: call_handoff
+      summary: "Received: call_handoff"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_hush:
+      x-inventory: voice in call_hush
+      name: call_hush
+      summary: "Received: call_hush"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_ice:
+      x-inventory: voice in call_ice
+      name: call_ice
+      summary: "Received: call_ice"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_microphone:
+      x-inventory: voice in call_microphone
+      name: call_microphone
+      summary: "Received: call_microphone"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_mute:
+      x-inventory: voice in call_mute
+      name: call_mute
+      summary: "Received: call_mute"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_mute_state:
+      x-inventory: voice in call_mute_state
+      name: call_mute_state
+      summary: "Received: call_mute_state"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_output:
+      x-inventory: voice in call_output
+      name: call_output
+      summary: "Received: call_output"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_output_state:
+      x-inventory: voice in call_output_state
+      name: call_output_state
+      summary: "Received: call_output_state"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_call_resume:
+      x-inventory: voice in call_resume
+      name: call_resume
+      summary: "Received: call_resume"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_finish:
+      x-inventory: voice in finish
+      name: finish
+      summary: "Received: finish"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_listen:
+      x-inventory: voice in listen
+      name: listen
+      summary: "Received: listen"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_release:
+      x-inventory: voice in release
+      name: release
+      summary: "Received: release"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_resume:
+      x-inventory: voice in resume
+      name: resume
+      summary: "Received: resume"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_stop:
+      x-inventory: voice in stop
+      name: stop
+      summary: "Received: stop"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_in_warm:
+      x-inventory: voice in warm
+      name: warm
+      summary: "Received: warm"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_audio:
+      x-inventory: voice out call_audio
+      name: call_audio
+      summary: "Sent: call_audio"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_carrier:
+      x-inventory: voice out call_carrier
+      name: call_carrier
+      summary: "Sent: call_carrier"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_carry:
+      x-inventory: voice out call_carry
+      name: call_carry
+      summary: "Sent: call_carry"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_error:
+      x-inventory: voice out call_error
+      name: call_error
+      summary: "Sent: call_error"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_handoff:
+      x-inventory: voice out call_handoff
+      name: call_handoff
+      summary: "Sent: call_handoff"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_microphone:
+      x-inventory: voice out call_microphone
+      name: call_microphone
+      summary: "Sent: call_microphone"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_music:
+      x-inventory: voice out call_music
+      name: call_music
+      summary: "Sent: call_music"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_mute:
+      x-inventory: voice out call_mute
+      name: call_mute
+      summary: "Sent: call_mute"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_output:
+      x-inventory: voice out call_output
+      name: call_output
+      summary: "Sent: call_output"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_output_state:
+      x-inventory: voice out call_output_state
+      name: call_output_state
+      summary: "Sent: call_output_state"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_replies_peer:
+      x-inventory: voice out call_replies_peer
+      name: call_replies_peer
+      summary: "Sent: call_replies_peer"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_call_restarted:
+      x-inventory: voice out call_restarted
+      name: call_restarted
+      summary: "Sent: call_restarted"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_error:
+      x-inventory: voice out error
+      name: error
+      summary: "Sent: error"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_final:
+      x-inventory: voice out final
+      name: final
+      summary: "Sent: final"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_listening:
+      x-inventory: voice out listening
+      name: listening
+      summary: "Sent: listening"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_loading:
+      x-inventory: voice out loading
+      name: loading
+      summary: "Sent: loading"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_partial:
+      x-inventory: voice out partial
+      name: partial
+      summary: "Sent: partial"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_ready:
+      x-inventory: voice out ready
+      name: ready
+      summary: "Sent: ready"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_resume_failed:
+      x-inventory: voice out resume_failed
+      name: resume_failed
+      summary: "Sent: resume_failed"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_resumed:
+      x-inventory: voice out resumed
+      name: resumed
+      summary: "Sent: resumed"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_speech_start:
+      x-inventory: voice out speech_start
+      name: speech_start
+      summary: "Sent: speech_start"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_stalled:
+      x-inventory: voice out stalled
+      name: stalled
+      summary: "Sent: stalled"
+      payload:
+        type: object
+      x-status: inventoried
+    voice_out_warm:
+      x-inventory: voice out warm
+      name: warm
+      summary: "Sent: warm"
+      payload:
+        type: object
+      x-status: inventoried

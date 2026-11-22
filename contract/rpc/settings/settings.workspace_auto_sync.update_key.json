@@ -1,0 +1,11 @@
+{
+  "method": "settings.workspace_auto_sync.update_key",
+  "family": "settings",
+  "scope": "connection",
+  "handler": "server/src/bridge/settings-rpc.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

@@ -1,0 +1,26 @@
+Read and change the managed service's environment file.
+
+Usage:
+  roamgate config show [--reveal] [--json]
+  roamgate config get <KEY>
+  roamgate config set <KEY=VALUE>... [--restart]
+  roamgate config unset <KEY>... [--restart]
+  roamgate config edit [--restart]
+  roamgate config path
+
+Changes are validated as a whole before the file is replaced, so the service
+never receives a configuration it would refuse to start with. Changed settings
+get stricter checks; existing values the server accepts are left alone. Comments and
+ordering are preserved. A running service keeps its old settings until it
+restarts; --restart restarts it when it is running.
+
+Set paired values in one command, for example
+  roamgate config set ROAMGATE_TLS_CERT=/path/cert.pem ROAMGATE_TLS_KEY=/path/key.pem
+
+Use KEY=- to read a value from standard input instead of the command line,
+which keeps secrets such as ROAMGATE_PASSWORD out of shell history:
+  printf '%s' "$PASSWORD" | roamgate config set ROAMGATE_PASSWORD=-
+
+Shell flags and exported variables apply only to foreground `roamgate` runs;
+this command manages the file the service reads.
+

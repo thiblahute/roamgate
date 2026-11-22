@@ -1,0 +1,11 @@
+{
+  "x-inventory": "popup",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/bridge/terminal-bridge.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["popup"],
+  "properties": {
+    "popup": {}
+  }
+}

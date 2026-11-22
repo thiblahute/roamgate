@@ -1,0 +1,520 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/voiceSetup.schema.json",
+  "x-generated-from": "shared/voiceSetup.ts",
+  "$defs": {
+    "Acceleration": {
+      "type": "string",
+      "enum": ["cuda", "metal", "cpu"],
+      "description": "What runs the voice helper's GPU models: CUDA, Metal, or nothing."
+    },
+    "ChoiceRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/VoiceComponent"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "requires": {
+            "type": "object",
+            "properties": {
+              "component": {
+                "$ref": "#/$defs/VoiceComponent"
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["component", "options"],
+            "additionalProperties": false
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "requires": {
+                  "type": "object",
+                  "properties": {
+                    "component": {
+                      "$ref": "#/$defs/VoiceComponent"
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["component", "options"],
+                  "additionalProperties": false
+                }
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["id", "optional", "options"],
+        "additionalProperties": false
+      },
+      "description": "The parts' rules a choice follows: VoiceComponentInfo, or the catalog."
+    },
+    "GpuInfo": {
+      "type": "object",
+      "properties": {
+        "vendor": {
+          "$ref": "#/$defs/GpuVendor"
+        },
+        "name": {
+          "type": "string"
+        },
+        "vramBytes": {
+          "type": "number",
+          "description": "Its own memory; an Apple GPU shares the machine's (unified)."
+        },
+        "unifiedMemory": {
+          "type": "boolean"
+        },
+        "driver": {
+          "type": "string"
+        },
+        "computeCapability": {
+          "type": "string",
+          "description": "NVIDIA's compute capability (\"8.6\"), which CUDA code the helper needs."
+        }
+      },
+      "required": ["vendor", "name"],
+      "additionalProperties": false
+    },
+    "GpuVendor": {
+      "type": "string",
+      "enum": ["nvidia", "amd", "apple", "intel", "other"],
+      "description": "The voice setup assistant's shapes, shared by the server (voice-setup.ts), the CLI (`roamgate setup voice`) and the Voice settings' assistant: the hardware found, the models proposed for each part of the voice helper, and the downloads' progress."
+    },
+    "VoiceChoices": {
+      "type": "object",
+      "properties": {
+        "speech": {
+          "type": "string"
+        },
+        "reread": {
+          "type": "string"
+        },
+        "tts": {
+          "type": "string"
+        },
+        "stock_voices": {
+          "type": "string"
+        },
+        "speaker": {
+          "type": "string"
+        },
+        "turn": {
+          "type": "string"
+        },
+        "text_turn": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "description": "An option id, NO_MODEL or CUSTOM_MODEL for each part."
+    },
+    "VoiceComponent": {
+      "type": "string",
+      "enum": [
+        "speech",
+        "reread",
+        "tts",
+        "stock_voices",
+        "speaker",
+        "turn",
+        "text_turn"
+      ]
+    },
+    "VoiceComponentInfo": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/VoiceComponent"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "NO_MODEL is a choice."
+        },
+        "requires": {
+          "type": "object",
+          "properties": {
+            "component": {
+              "$ref": "#/$defs/VoiceComponent"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["component", "options"],
+          "additionalProperties": false,
+          "description": "Only with this choice of another part (reread only with Parakeet...)."
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VoiceModelOption"
+          }
+        }
+      },
+      "required": ["id", "title", "description", "optional", "options"],
+      "additionalProperties": false
+    },
+    "VoiceHardware": {
+      "type": "object",
+      "properties": {
+        "platform": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "osName": {
+          "type": "string",
+          "description": "\"Fedora Linux 43\", \"macOS 15.1\"... when known."
+        },
+        "cpu": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "cores": {
+              "type": "number"
+            }
+          },
+          "required": ["model", "cores"],
+          "additionalProperties": false
+        },
+        "ramBytes": {
+          "type": "number"
+        },
+        "gpus": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GpuInfo"
+          }
+        },
+        "acceleration": {
+          "$ref": "#/$defs/Acceleration"
+        },
+        "gpuBytes": {
+          "type": "number",
+          "description": "Memory the GPU models may take: the best GPU's, or part of unified memory."
+        },
+        "note": {
+          "type": "string",
+          "description": "Why a GPU found is not used, or what limits it."
+        }
+      },
+      "required": [
+        "platform",
+        "arch",
+        "cpu",
+        "ramBytes",
+        "gpus",
+        "acceleration",
+        "gpuBytes"
+      ],
+      "additionalProperties": false
+    },
+    "VoiceModelOption": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The packages it downloads (VoiceSetupState's packages)."
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "number",
+          "description": "Bytes on disk, every package it needs counted."
+        },
+        "downloadBytes": {
+          "type": "number",
+          "description": "Bytes still to download, for what is not on disk yet."
+        },
+        "speed": {
+          "type": "string",
+          "description": "How fast it is, roughly, where it runs best."
+        },
+        "runsOn": {
+          "type": "string",
+          "enum": ["gpu", "cpu", "any"],
+          "description": "Where it runs: the GPU (CUDA, Metal), the CPU, or either."
+        },
+        "gpuBytes": {
+          "type": "number",
+          "description": "GPU memory it takes when it runs there."
+        },
+        "requires": {
+          "type": "object",
+          "properties": {
+            "component": {
+              "$ref": "#/$defs/VoiceComponent"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["component", "options"],
+          "additionalProperties": false,
+          "description": "Only with this choice of another part (stock voices of one size)."
+        },
+        "installed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "packages",
+        "name",
+        "description",
+        "sizeBytes",
+        "downloadBytes",
+        "speed",
+        "runsOn",
+        "installed"
+      ],
+      "additionalProperties": false
+    },
+    "VoiceSetupFile": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "type": "number"
+        },
+        "done": {
+          "type": "number"
+        }
+      },
+      "required": ["name", "size", "done"],
+      "additionalProperties": false
+    },
+    "VoiceSetupJob": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["downloading", "writing", "done", "failed", "cancelled"]
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VoiceSetupFile"
+          }
+        },
+        "totalBytes": {
+          "type": "number"
+        },
+        "doneBytes": {
+          "type": "number"
+        },
+        "current": {
+          "type": "string",
+          "description": "The file downloading now."
+        },
+        "bytesPerSecond": {
+          "type": "number"
+        },
+        "startedAt": {
+          "type": "number"
+        },
+        "finishedAt": {
+          "type": "number"
+        },
+        "error": {
+          "type": "string"
+        },
+        "reload": {
+          "type": "string",
+          "enum": ["now", "after-call", "not-running"],
+          "description": "What happens to the running helper: stopped so the next voice request loads the new models, or stopped once the call in progress ends."
+        }
+      },
+      "required": [
+        "state",
+        "files",
+        "totalBytes",
+        "doneBytes",
+        "bytesPerSecond",
+        "startedAt"
+      ],
+      "additionalProperties": false
+    },
+    "VoiceSetupState": {
+      "type": "object",
+      "properties": {
+        "hardware": {
+          "$ref": "#/$defs/VoiceHardware"
+        },
+        "tier": {
+          "$ref": "#/$defs/VoiceTier",
+          "description": "The tier the hardware calls for, and its choices."
+        },
+        "recommended": {
+          "type": "object",
+          "properties": {
+            "heavy": {
+              "$ref": "#/$defs/VoiceChoices"
+            },
+            "light": {
+              "$ref": "#/$defs/VoiceChoices"
+            }
+          },
+          "required": ["heavy", "light"],
+          "additionalProperties": false
+        },
+        "current": {
+          "$ref": "#/$defs/VoiceChoices",
+          "description": "What voice.json uses now, CUSTOM_MODEL for what is not in the catalog."
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VoiceComponentInfo"
+          }
+        },
+        "modelsDir": {
+          "type": "string"
+        },
+        "configPath": {
+          "type": "string"
+        },
+        "configError": {
+          "type": "string",
+          "description": "voice.json's error, as the server reads it, if any."
+        },
+        "helper": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "found": {
+              "type": "boolean"
+            }
+          },
+          "required": ["path", "found"],
+          "additionalProperties": false
+        },
+        "freeBytes": {
+          "type": "number"
+        },
+        "packages": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "sizeBytes": {
+                "type": "number"
+              },
+              "downloadBytes": {
+                "type": "number"
+              }
+            },
+            "required": ["sizeBytes", "downloadBytes"],
+            "additionalProperties": false
+          },
+          "description": "Each package's size, and what is left to download of it."
+        },
+        "unused": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VoiceUnusedModel"
+          }
+        },
+        "job": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VoiceSetupJob"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "hardware",
+        "tier",
+        "recommended",
+        "current",
+        "components",
+        "modelsDir",
+        "configPath",
+        "helper",
+        "packages",
+        "unused",
+        "job"
+      ],
+      "additionalProperties": false
+    },
+    "VoiceTier": {
+      "type": "string",
+      "enum": ["heavy", "light"]
+    },
+    "VoiceUnusedModel": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The package id, or \"partial\" for a download left unfinished."
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "number"
+        }
+      },
+      "required": ["id", "name", "path", "sizeBytes"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "x-inventory": "event:settings.terminal_transport.updated",
+  "x-kind": "event",
+  "x-sent-by": ["server/src/connections/runtime.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["event", "data"],
+  "properties": {
+    "event": {
+      "const": "settings.terminal_transport.updated"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

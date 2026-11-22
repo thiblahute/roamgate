@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/history.schema.json",
+  "x-generated-from": "shared/history.ts",
+  "$defs": {
+    "HistoryBlocked": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "number"
+        },
+        "kind": {
+          "type": "string",
+          "description": "What was found, never the secret itself (\"glpat-... token\")."
+        }
+      },
+      "required": ["file", "line", "kind"],
+      "additionalProperties": false,
+      "description": "A secret found in a file: the file stays out of the commit."
+    },
+    "HistoryCommitInfo": {
+      "type": "object",
+      "properties": {
+        "sha": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "description": "Its author date (ISO 8601)."
+        },
+        "author": {
+          "type": "string"
+        }
+      },
+      "required": ["sha", "subject", "at", "author"],
+      "additionalProperties": false,
+      "description": "The history repo's status (server/src/history), for Settings' \"History and backup\" section and `roamgate history status`."
+    },
+    "HistoryError": {
+      "type": "object",
+      "properties": {
+        "area": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": ["message", "at"],
+      "additionalProperties": false
+    },
+    "HistorySettings": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "False turns local history off (on by default)."
+        },
+        "location": {
+          "type": "string",
+          "description": "The repo's directory (absent: `<data>/history`)."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The history setting in settings.json."
+    },
+    "HistoryStatus": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Local history is on (it is by default)."
+        },
+        "location": {
+          "type": "string",
+          "description": "Where the repo is."
+        },
+        "defaultLocation": {
+          "type": "string",
+          "description": "Where it is when Settings set none."
+        },
+        "exists": {
+          "type": "boolean",
+          "description": "The repo exists there."
+        },
+        "lastCommit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HistoryCommitInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "commits": {
+          "type": "number"
+        },
+        "sizeBytes": {
+          "type": "number",
+          "description": "The repo's size on disk, its .git included."
+        },
+        "files": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Tracked files by area (top-level directory or file)."
+        },
+        "lastPass": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "string"
+                },
+                "ms": {
+                  "type": "number"
+                },
+                "commits": {
+                  "type": "number"
+                }
+              },
+              "required": ["at", "ms", "commits"],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The last pass: when, how long, how many commits."
+        },
+        "blocked": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HistoryBlocked"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HistoryError"
+          }
+        },
+        "pending": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Areas changed and waiting for the next pass (the server only)."
+        },
+        "running": {
+          "type": "boolean",
+          "description": "A pass is running now (the server only)."
+        },
+        "deferred": {
+          "type": ["string", "null"],
+          "description": "Why the heavy work waits (\"a game is running\"), when it does."
+        }
+      },
+      "required": [
+        "enabled",
+        "location",
+        "defaultLocation",
+        "exists",
+        "lastCommit",
+        "commits",
+        "sizeBytes",
+        "files",
+        "lastPass",
+        "blocked",
+        "errors",
+        "pending",
+        "running",
+        "deferred"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

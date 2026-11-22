@@ -1,0 +1,12 @@
+{
+  "x-inventory": "terminal",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/bridge/terminal-bridge.ts"],
+  "x-coalescing": "terminal:<terminal id and viewport>",
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["terminal"],
+  "properties": {
+    "terminal": {}
+  }
+}

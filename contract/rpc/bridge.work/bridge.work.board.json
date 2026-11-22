@@ -1,0 +1,13 @@
+{
+  "method": "bridge.work.board",
+  "family": "bridge.work",
+  "scope": "bridge",
+  "handler": "server/src/work/rpc.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {
+    "$ref": "../../schemas/shared/work.schema.json#/$defs/WorkBoard"
+  },
+  "status": "inventoried"
+}

@@ -1,0 +1,16 @@
+{
+  "x-inventory": "event:workspace.last_step_completed",
+  "x-kind": "event",
+  "x-sent-by": ["server/src/connections/runtime.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["event", "data"],
+  "properties": {
+    "event": {
+      "const": "workspace.last_step_completed"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

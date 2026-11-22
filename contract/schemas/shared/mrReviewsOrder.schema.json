@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/mrReviewsOrder.schema.json",
+  "x-generated-from": "shared/mrReviewsOrder.ts",
+  "$defs": {
+    "MrOrderOp": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": ["top", "bottom"]
+            },
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["op", "keys"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": ["before", "after"]
+            },
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": ["op", "keys", "target"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "arrange"
+            },
+            "keys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["op", "keys"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "What an order operation does. `keys` keep the order they are given in."
+    },
+    "MrOrderOutcome": {
+      "type": "object",
+      "properties": {
+        "sections": {
+          "$ref": "#/$defs/MrOrderSections"
+        },
+        "moved": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Keys whose place changed."
+        },
+        "unknown": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Keys that are not listed in the inbox."
+        },
+        "elsewhere": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Keys left alone: they are in another section than the target."
+        }
+      },
+      "required": ["sections", "moved", "unknown", "elsewhere"],
+      "additionalProperties": false
+    },
+    "MrOrderSection": {
+      "type": "string",
+      "enum": ["pinned", "mine", "authored", "suggested"]
+    },
+    "MrOrderSections": {
+      "type": "object",
+      "properties": {
+        "pinned": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "mine": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "authored": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "suggested": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["pinned", "mine", "authored", "suggested"],
+      "additionalProperties": false
+    }
+  }
+}

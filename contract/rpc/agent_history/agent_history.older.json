@@ -1,0 +1,11 @@
+{
+  "method": "agent_history.older",
+  "family": "agent_history",
+  "scope": "connection",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

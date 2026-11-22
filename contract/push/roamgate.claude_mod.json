@@ -1,0 +1,16 @@
+{
+  "x-inventory": "event:roamgate.claude_mod",
+  "x-kind": "event",
+  "x-sent-by": ["server/src/index.ts"],
+  "x-status": "inventoried",
+  "type": "object",
+  "required": ["event", "data"],
+  "properties": {
+    "event": {
+      "const": "roamgate.claude_mod"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

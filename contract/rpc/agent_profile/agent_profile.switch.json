@@ -1,0 +1,11 @@
+{
+  "method": "agent_profile.switch",
+  "family": "agent_profile",
+  "scope": "connection",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

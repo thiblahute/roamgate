@@ -1,0 +1,13 @@
+{
+  "x-inventory": "mr_reviews",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/index.ts"],
+  "x-status": "typed",
+  "type": "object",
+  "required": ["mr_reviews"],
+  "properties": {
+    "mr_reviews": {
+      "$ref": "../schemas/shared/mrReviews.schema.json#/$defs/MrReviewsPush"
+    }
+  }
+}

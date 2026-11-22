@@ -1,0 +1,13 @@
+{
+  "x-inventory": "work",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/index.ts"],
+  "x-status": "typed",
+  "type": "object",
+  "required": ["work"],
+  "properties": {
+    "work": {
+      "$ref": "../schemas/shared/work.schema.json#/$defs/WorkPush"
+    }
+  }
+}

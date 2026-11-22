@@ -1,0 +1,11 @@
+{
+  "method": "review.open",
+  "family": "review",
+  "scope": "connection",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

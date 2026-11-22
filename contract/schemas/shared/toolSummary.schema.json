@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/toolSummary.schema.json",
+  "x-generated-from": "shared/toolSummary.ts",
+  "$defs": {
+    "RoamgateWrite": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/RoamgateWriteAction"
+        },
+        "description": {
+          "type": "string",
+          "description": "The call's own description argument, when it gave one."
+        },
+        "review": {
+          "type": "string",
+          "description": "The review the thread is in, its thread and the comment written."
+        },
+        "thread": {
+          "type": "string"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "where": {
+          "type": "string",
+          "description": "Where it went, in a few words: the words quoted, file:line."
+        },
+        "item": {
+          "type": "string",
+          "description": "The Work item it added or changed: its id, its title, its state."
+        },
+        "title": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "change": {
+          "type": "string",
+          "description": "What a Work item's change did, in a few words (\"moved to Verify\")."
+        },
+        "text": {
+          "type": "string",
+          "description": "The words written, up to ROAMGATE_WRITE_TEXT_LIMIT characters."
+        },
+        "clipped": {
+          "type": "boolean",
+          "const": true,
+          "description": "Longer than that: the call's arguments have it whole."
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false,
+      "description": "What a call wrote in Roamgate, read from its arguments and its result: the chat shows it as a tool row that says where it went and links there, so the agent need not repeat it in the chat."
+    },
+    "RoamgateWriteAction": {
+      "type": "string",
+      "enum": [
+        "reply",
+        "comment",
+        "draft",
+        "edit",
+        "item_add",
+        "item_update",
+        "item_done",
+        "item_reopen"
+      ],
+      "description": "What a call wrote in Roamgate: a comment in a thread, or a Work item added or changed."
+    },
+    "ToolSummaryContext": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "type": "string",
+          "description": "The call's result, when it has one."
+        },
+        "agentName": {
+          "$comment": "(id: string) => string | undefined",
+          "type": "object",
+          "properties": {
+            "namedArgs": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          },
+          "description": "Who a background agent is (\"the cutover agent\"), from its id."
+        },
+        "threadLabel": {
+          "$comment": "(id: string) => string | undefined",
+          "type": "object",
+          "properties": {
+            "namedArgs": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          },
+          "description": "What a review thread is about, from its id or id prefix."
+        },
+        "sessionName": {
+          "$comment": "(address: string) => string | undefined",
+          "type": "object",
+          "properties": {
+            "namedArgs": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string"
+                }
+              },
+              "required": ["address"],
+              "additionalProperties": false
+            }
+          },
+          "description": "A Roamgate agent session's name, from its address."
+        },
+        "codexCommand": {
+          "$comment": "(sessionId: string) => string | undefined",
+          "type": "object",
+          "properties": {
+            "namedArgs": {
+              "type": "object",
+              "properties": {
+                "sessionId": {
+                  "type": "string"
+                }
+              },
+              "required": ["sessionId"],
+              "additionalProperties": false
+            }
+          },
+          "description": "The command a Codex terminal session runs, from its id."
+        }
+      },
+      "additionalProperties": false,
+      "description": "What the rest of the session tells about a call. All optional."
+    }
+  }
+}

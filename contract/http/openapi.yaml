@@ -1,0 +1,542 @@
+openapi: 3.1.0
+info:
+  title: Roamgate HTTP routes
+  version: "1"
+  description: "Every path of the listener, from scripts/contract/inventory.ts. Authentication: every route but /health, /healthz, the login routes, /login, the icon, the call handoff and /rendered/* requires the session cookie (or a loopback development listener). WebSocket routes are documented in contract/ws/asyncapi.yaml."
+paths:
+  /api/agent-session/atif:
+    get:
+      summary: /api/agent-session/atif
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/agent-session/download:
+    get:
+      summary: /api/agent-session/download
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  "/api/connections/{connection_id}/agent-session/atif":
+    get:
+      summary: "/api/connections/{connection_id}/agent-session/atif"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  "/api/connections/{connection_id}/agent-session/download":
+    get:
+      summary: "/api/connections/{connection_id}/agent-session/download"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  "/api/connections/{connection_id}/file/delete":
+    post:
+      summary: "/api/connections/{connection_id}/file/delete"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  "/api/connections/{connection_id}/file/download":
+    get:
+      summary: "/api/connections/{connection_id}/file/download"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  "/api/connections/{connection_id}/file/upload":
+    post:
+      summary: "/api/connections/{connection_id}/file/upload"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  "/api/connections/{connection_id}/herdr-info":
+    get:
+      summary: "/api/connections/{connection_id}/herdr-info"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  "/api/connections/{connection_id}/terminal-upload":
+    post:
+      summary: "/api/connections/{connection_id}/terminal-upload"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  "/api/connections/{connection_id}/upload-image":
+    post:
+      summary: "/api/connections/{connection_id}/upload-image"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/file/delete:
+    post:
+      summary: /api/file/delete
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/file/download:
+    get:
+      summary: /api/file/download
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/file/upload:
+    post:
+      summary: /api/file/upload
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/health:
+    get:
+      summary: /api/health
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/herdr-info:
+    get:
+      summary: /api/herdr-info
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/herdr/setup:
+    post:
+      summary: /api/herdr/setup
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/herdr/status:
+    get:
+      summary: /api/herdr/status
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/history:
+    get:
+      summary: /api/history
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+    put:
+      summary: /api/history
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/history/commit:
+    post:
+      summary: /api/history/commit
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/instance-settings:
+    get:
+      summary: /api/instance-settings
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+    put:
+      summary: /api/instance-settings
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/login:
+    post:
+      summary: /api/login
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/login/pin:
+    post:
+      summary: /api/login/pin
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/logout:
+    post:
+      summary: /api/logout
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/notifications/push:
+    get:
+      summary: /api/notifications/push
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+    post:
+      summary: /api/notifications/push
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+    delete:
+      summary: /api/notifications/push
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/notifications/ws:
+    get:
+      summary: WebSocket upgrade (see contract/ws/asyncapi.yaml)
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/review/image:
+    get:
+      summary: /api/review/image
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/terminal-upload:
+    post:
+      summary: /api/terminal-upload
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/update/check:
+    get:
+      summary: /api/update/check
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/update/install:
+    post:
+      summary: /api/update/install
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/upload-image:
+    post:
+      summary: /api/upload-image
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice:
+    get:
+      summary: /api/voice
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/answers:
+    get:
+      summary: /api/voice/answers
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/answers/heard:
+    post:
+      summary: /api/voice/answers/heard
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/answers/mentioned:
+    post:
+      summary: /api/voice/answers/mentioned
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/call/handoff:
+    post:
+      summary: /api/voice/call/handoff
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/call/signalling:
+    get:
+      summary: WebSocket upgrade (see contract/ws/asyncapi.yaml)
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/companion/reset:
+    post:
+      summary: /api/voice/companion/reset
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/errand:
+    get:
+      summary: /api/voice/errand
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/event:
+    post:
+      summary: /api/voice/event
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/forward:
+    post:
+      summary: /api/voice/forward
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/image:
+    get:
+      summary: /api/voice/image
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/low-gpu:
+    get:
+      summary: /api/voice/low-gpu
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+    post:
+      summary: /api/voice/low-gpu
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/research:
+    get:
+      summary: /api/voice/research
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/research/cancel:
+    post:
+      summary: /api/voice/research/cancel
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/route:
+    post:
+      summary: /api/voice/route
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/settings:
+    post:
+      summary: /api/voice/settings
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/setup:
+    get:
+      summary: /api/voice/setup
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+    post:
+      summary: /api/voice/setup
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/setup/cancel:
+    post:
+      summary: /api/voice/setup/cancel
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/setup/remove:
+    post:
+      summary: /api/voice/setup/remove
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/speak:
+    post:
+      summary: /api/voice/speak
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/timing:
+    post:
+      summary: /api/voice/timing
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/tools:
+    get:
+      summary: /api/voice/tools
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/tools/answer:
+    post:
+      summary: /api/voice/tools/answer
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/tools/cancel:
+    post:
+      summary: /api/voice/tools/cancel
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/trace:
+    post:
+      summary: /api/voice/trace
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/voices:
+    get:
+      summary: /api/voice/voices
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+    post:
+      summary: /api/voice/voices
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/voices/assign:
+    post:
+      summary: /api/voice/voices/assign
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/voices/sample:
+    post:
+      summary: /api/voice/voices/sample
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/voices/surprise:
+    post:
+      summary: /api/voice/voices/surprise
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  "/api/voice/voices/{id}":
+    patch:
+      summary: "/api/voice/voices/{id}"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+    delete:
+      summary: "/api/voice/voices/{id}"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /api/voice/ws:
+    get:
+      summary: WebSocket upgrade (see contract/ws/asyncapi.yaml)
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /health:
+    get:
+      summary: /health
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /healthz:
+    get:
+      summary: /healthz
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /login:
+    get:
+      summary: /login
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  "/rendered/{token}/{path}":
+    get:
+      summary: "/rendered/{token}/{path}"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+    head:
+      summary: "/rendered/{token}/{path}"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /roamgate-icon-192.png:
+    get:
+      summary: /roamgate-icon-192.png
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  /ws:
+    get:
+      summary: WebSocket upgrade (see contract/ws/asyncapi.yaml)
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+  "/{static}":
+    get:
+      summary: "/{static}"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.
+    head:
+      summary: "/{static}"
+      x-status: inventoried
+      responses:
+        default:
+          description: See the handler.

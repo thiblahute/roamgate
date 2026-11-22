@@ -1,0 +1,11 @@
+{
+  "method": "connections.agent_sessions",
+  "family": "connections",
+  "scope": "bridge",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

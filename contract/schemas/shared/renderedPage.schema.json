@@ -1,0 +1,526 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/renderedPage.schema.json",
+  "x-generated-from": "shared/renderedPage.ts",
+  "$defs": {
+    "RenderedFrameMessage": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "ready"
+            },
+            "url": {
+              "type": "string",
+              "description": "The page shown: its path and query under the token."
+            },
+            "title": {
+              "type": "string"
+            },
+            "root": {
+              "$ref": "#/$defs/RenderedRootMap",
+              "description": "Where its root-absolute URLs go: a path under `base` is written under `to`, a `/rendered/<token>/` path (rendered-pages.ts rootMap)."
+            }
+          },
+          "required": ["roamgate", "type", "url", "title"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "stray"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": ["roamgate", "type", "url"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "select"
+            },
+            "url": {
+              "type": "string"
+            },
+            "quote": {
+              "type": "string"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "rect": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "w": {
+                  "type": "number"
+                },
+                "h": {
+                  "type": "number"
+                }
+              },
+              "required": ["x", "y", "w", "h"],
+              "additionalProperties": false,
+              "description": "The selection's box in the frame's viewport, in CSS pixels."
+            }
+          },
+          "required": ["roamgate", "type", "url", "quote", "selector", "rect"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "point"
+            },
+            "url": {
+              "type": "string"
+            },
+            "selector": {
+              "type": "string"
+            },
+            "element": {
+              "type": "string",
+              "description": "The element pointed at: an SVG element's id, else its text."
+            },
+            "region": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "w": {
+                  "type": "number"
+                },
+                "h": {
+                  "type": "number"
+                }
+              },
+              "required": ["x", "y", "w", "h"],
+              "additionalProperties": false,
+              "description": "In fractions of the element's box (the graphic)."
+            },
+            "rect": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "w": {
+                  "type": "number"
+                },
+                "h": {
+                  "type": "number"
+                }
+              },
+              "required": ["x", "y", "w", "h"],
+              "additionalProperties": false
+            },
+            "moment": {
+              "type": "string",
+              "description": "Where its animations were when they were paused: \"2.4 s\"."
+            },
+            "snapshot": {
+              "type": "string",
+              "description": "A PNG of the region as the page drew it, when it could be made."
+            }
+          },
+          "required": ["roamgate", "type", "url", "selector", "region", "rect"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "clear"
+            }
+          },
+          "required": ["roamgate", "type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "key"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": ["roamgate", "type", "key"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "history"
+            },
+            "step": {
+              "type": "number",
+              "enum": [-1, 1]
+            }
+          },
+          "required": ["roamgate", "type", "step"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "scroll"
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": ["roamgate", "type", "y"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "location"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": ["roamgate", "type", "url"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "missing"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": ["roamgate", "type", "url"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "home"
+            }
+          },
+          "required": ["roamgate", "type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "size"
+            },
+            "height": {
+              "type": "number"
+            }
+          },
+          "required": ["roamgate", "type", "height"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "set"
+            },
+            "key": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "storage"
+            }
+          },
+          "required": ["key", "op", "roamgate", "type", "value"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "remove"
+            },
+            "key": {
+              "type": "string"
+            },
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "storage"
+            }
+          },
+          "required": ["key", "op", "roamgate", "type"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "clear"
+            },
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "storage"
+            }
+          },
+          "required": ["op", "roamgate", "type"]
+        }
+      ],
+      "description": "The frame's script to the parent."
+    },
+    "RenderedMode": {
+      "type": "string",
+      "enum": ["static", "site"],
+      "description": "static: the page's own scripts are blocked (only Roamgate's runs) and it reaches nothing but its own files. site: a site the user listed, its scripts and forms on, still in an opaque origin."
+    },
+    "RenderedParentMessage": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "show",
+              "description": "Scroll to a thread's place and flash it."
+            },
+            "selector": {
+              "type": "string"
+            },
+            "quote": {
+              "type": "string"
+            }
+          },
+          "required": ["roamgate", "type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "pointMode",
+              "description": "A click (or drag) points at a graphic instead of following it."
+            },
+            "on": {
+              "type": "boolean"
+            }
+          },
+          "required": ["roamgate", "type", "on"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "resume",
+              "description": "The comment is written or dropped: the graphic moves again."
+            }
+          },
+          "required": ["roamgate", "type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "roamgate": {
+              "type": "string",
+              "const": "rendered"
+            },
+            "type": {
+              "type": "string",
+              "const": "scrollTo",
+              "description": "Back or Forward to this page: where it was left."
+            },
+            "y": {
+              "type": "number"
+            }
+          },
+          "required": ["roamgate", "type", "y"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "The parent to the frame's script."
+    },
+    "RenderedRootMap": {
+      "type": "object",
+      "properties": {
+        "base": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        }
+      },
+      "required": ["base", "to"],
+      "additionalProperties": false,
+      "description": "Where a page's root-absolute URLs go (RenderedFrameMessage ready), and `home`: the directory of the file or URL the frame was opened on, as a path under the token (\"\" or ending in `/`)."
+    },
+    "RenderedStorageWrite": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "set"
+            },
+            "key": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": ["op", "key", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "remove"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "required": ["op", "key"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "clear"
+            }
+          },
+          "required": ["op"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

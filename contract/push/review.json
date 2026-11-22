@@ -1,0 +1,14 @@
+{
+  "x-inventory": "review",
+  "x-kind": "keyed",
+  "x-sent-by": ["server/src/index.ts"],
+  "x-coalescing": "review:<session id> for a session snapshot, review-prompts:<connection id> for prompts; other review pushes are not coalesced",
+  "x-status": "typed",
+  "type": "object",
+  "required": ["review"],
+  "properties": {
+    "review": {
+      "$ref": "../schemas/shared/review.schema.json#/$defs/ReviewPush"
+    }
+  }
+}

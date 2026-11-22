@@ -1,0 +1,13 @@
+{
+  "method": "bridge.workspace_tree.get",
+  "family": "bridge.workspace_tree",
+  "scope": "bridge",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {
+    "$ref": "../../schemas/shared/workspaceTree.schema.json#/$defs/WorkspaceTree"
+  },
+  "status": "inventoried"
+}

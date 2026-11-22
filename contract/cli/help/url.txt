@@ -1,0 +1,15 @@
+Print the login URLs of the managed Roamgate service.
+
+Usage:
+  roamgate url [--qr] [--address <host>] [--json]
+
+Options:
+  --qr               also print a QR code to open the URL on a phone
+  --address <host>   use this host name or IP in the URL, for example a VPN
+                     or Tailscale name, instead of the detected addresses
+  --json             print machine-readable output
+
+URLs come from the service environment file and include the generated login
+token unless the service uses a fixed password. The QR code contains that
+token: anyone who scans it can sign in, so do not share screenshots of it.
+

@@ -1,0 +1,14 @@
+Check the Roamgate installation and report problems with fixes.
+
+Usage:
+  roamgate doctor [--offline] [--json]
+
+Options:
+  --offline   skip the release update check
+  --json      print machine-readable results
+
+Checks the service configuration, credentials, TLS certificate, user service,
+listener, network exposure, local Herdr server, saved connections, Web Push
+registry and available updates. Exits 1 when any check fails. Include the
+output (it contains no secrets) when reporting an issue.
+

@@ -1,0 +1,12 @@
+{
+  "method": "workspace.list",
+  "family": "workspace",
+  "scope": "connection",
+  "handler": "server/src/index.ts",
+  "herdr": "intercepted",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

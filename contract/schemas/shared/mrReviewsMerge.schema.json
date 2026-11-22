@@ -1,0 +1,329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/mrReviewsMerge.schema.json",
+  "x-generated-from": "shared/mrReviewsMerge.ts",
+  "$defs": {
+    "MrMergeEvent": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "labeled",
+            "assigned",
+            "unassigned",
+            "review_requested",
+            "review_removed",
+            "approved",
+            "queued",
+            "dequeued",
+            "auto_merge_on",
+            "auto_merge_off"
+          ]
+        },
+        "at": {
+          "type": "string"
+        },
+        "actor": {
+          "type": "string",
+          "description": "Who did it."
+        },
+        "who": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Whom it is about (assigned / unassigned...), or the label."
+        },
+        "label": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why (a queue removal, an aborted automatic merge)."
+        }
+      },
+      "required": ["kind", "at"],
+      "additionalProperties": false,
+      "description": "What happened on a request that tells about merging, as the details read it (GitLab system notes, GitHub timeline events), oldest first."
+    },
+    "MrMergeFacts": {
+      "type": "object",
+      "properties": {
+        "assignees": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reviewers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "autoMerge": {
+          "type": "object",
+          "properties": {
+            "by": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Auto-merge (merge when the pipeline succeeds) is set: by whom."
+        },
+        "queue": {
+          "type": "object",
+          "properties": {
+            "position": {
+              "type": "number"
+            },
+            "at": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "description": "In the forge's merge queue (GitHub): its position, when said."
+        },
+        "approvedAt": {
+          "type": "string",
+          "description": "The latest approval's time, when the forge says."
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MrMergeEvent"
+          }
+        },
+        "labelsAddedAt": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "When each label was last added (by label, as written)."
+        }
+      },
+      "required": ["assignees", "reviewers", "events"],
+      "additionalProperties": false,
+      "description": "What a request's details say about merging (state.json, derived)."
+    },
+    "MrMergeInfo": {
+      "type": "object",
+      "properties": {
+        "after": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "delayMs": {
+              "type": "number"
+            },
+            "delay": {
+              "type": "string",
+              "description": "\"2 days\"."
+            },
+            "from": {
+              "type": "string",
+              "enum": ["label", "approval", "update"],
+              "description": "What the delay counts from."
+            },
+            "since": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string",
+              "description": "When it becomes mergeable."
+            },
+            "ready": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "label",
+            "delayMs",
+            "delay",
+            "from",
+            "since",
+            "at",
+            "ready"
+          ],
+          "additionalProperties": false
+        },
+        "bot": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The bot's name, or the forge's queue (\"merge queue\", \"auto-merge\")."
+            },
+            "via": {
+              "type": "string",
+              "enum": ["assignee", "reviewer", "label", "queue", "auto_merge"]
+            },
+            "queued": {
+              "type": "boolean"
+            },
+            "position": {
+              "type": "number"
+            },
+            "by": {
+              "type": "string",
+              "description": "Who set auto-merge."
+            },
+            "failed": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": ["reason", "at"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["name", "via", "queued"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "The merge state of a row, as the board shows it."
+    },
+    "MrMergeNote": {
+      "type": "object",
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": ["author", "at", "body"],
+      "additionalProperties": false,
+      "description": "A note as the merge state reads it."
+    },
+    "MrMergeRuleKey": {
+      "type": "string",
+      "enum": ["afterLabels", "bots", "botFailures", "queueLabels"]
+    },
+    "MrMergeRules": {
+      "type": "object",
+      "properties": {
+        "afterLabels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Labels that schedule the merge after a delay (regexes, `delay` group)."
+        },
+        "bots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Merge bots' user names."
+        },
+        "botFailures": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "A bot's note saying an attempt failed (regexes, `reason` group)."
+        },
+        "queueLabels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Labels saying the request is queued for a bot (regexes)."
+        }
+      },
+      "required": ["afterLabels", "bots", "botFailures", "queueLabels"],
+      "additionalProperties": false,
+      "description": "The four lists, in effect for one project."
+    },
+    "MrMergeSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scopes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "afterLabels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Labels that schedule the merge after a delay (regexes, `delay` group)."
+              },
+              "bots": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Merge bots' user names."
+              },
+              "botFailures": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "A bot's note saying an attempt failed (regexes, `reason` group)."
+              },
+              "queueLabels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Labels saying the request is queued for a bot (regexes)."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "afterLabels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Labels that schedule the merge after a delay (regexes, `delay` group)."
+        },
+        "bots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Merge bots' user names."
+        },
+        "botFailures": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "A bot's note saying an attempt failed (regexes, `reason` group)."
+        },
+        "queueLabels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Labels saying the request is queued for a bot (regexes)."
+        }
+      },
+      "required": ["scopes"],
+      "description": "`mr_reviews.merge`: lists set by the user (absent: the defaults), and scopes (\"host\", \"host/group/*\", \"host/project\") whose lists replace the inherited ones."
+    }
+  }
+}

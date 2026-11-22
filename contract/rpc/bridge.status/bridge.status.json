@@ -1,0 +1,11 @@
+{
+  "method": "bridge.status",
+  "family": "bridge.status",
+  "scope": "bridge",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

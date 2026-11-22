@@ -1,0 +1,12 @@
+{
+  "method": "integration.list",
+  "family": "integration",
+  "scope": "connection",
+  "handler": "server/src/index.ts",
+  "herdr": "intercepted",
+  "params": {
+    "type": "object"
+  },
+  "reply": {},
+  "status": "inventoried"
+}

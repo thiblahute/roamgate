@@ -1,0 +1,13 @@
+{
+  "method": "activity.presence",
+  "family": "activity",
+  "scope": "connection",
+  "handler": "server/src/index.ts",
+  "params": {
+    "type": "object"
+  },
+  "reply": {
+    "$ref": "../../schemas/server.schema.json#/$defs/PresenceReply"
+  },
+  "status": "inventoried"
+}

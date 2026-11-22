@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/voiceLibrary.schema.json",
+  "x-generated-from": "shared/voiceLibrary.ts",
+  "$defs": {
+    "VoiceLanguage": {
+      "type": "string",
+      "enum": ["en", "fr", "es", "it", "pt", "ja", "zh"]
+    }
+  }
+}

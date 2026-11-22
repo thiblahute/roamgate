@@ -1,0 +1,23 @@
+Options (flags override env vars; ROAMGATE_* overrides HERDR_GUI_*):
+  --host <addr>              listen address        (env HOST,            default 127.0.0.1)
+  --port <n>                 listen port           (env PORT,            default 8787)
+  --password <pw>            fixed login password, 8..1024 characters
+                             (env ROAMGATE_PASSWORD; otherwise a token is generated)
+  (env ROAMGATE_PIN)         optional 6..12 digit convenience login; private networks only
+  --tls-cert <path>          PEM certificate chain (env ROAMGATE_TLS_CERT; requires --tls-key)
+  --tls-key <path>           PEM private key       (env ROAMGATE_TLS_KEY; requires --tls-cert)
+  --socket-path <path>       control socket        (env HERDR_SOCKET_PATH)
+  --client-socket-path <p>   render socket         (env HERDR_CLIENT_SOCKET_PATH)
+  --ssh-host <user@host>     remote Herdr over SSH (env HERDR_SSH_HOST)
+  --session <name>           named herdr session   (env HERDR_SESSION)
+  --public-dir <path>        static assets dir     (env PUBLIC_DIR,      default: embedded)
+  --log-level <level>        error|warn|info|debug  (env ROAMGATE_LOG_LEVEL, default: info)
+  --notification-source <s>  herdr|status: task alerts follow Herdr notifications or
+                             Roamgate's own status tracker (env ROAMGATE_NOTIFICATION_SOURCE, default: herdr)
+  --profile                  capture server CPU samples (env ROAMGATE_PROFILE=1)
+  --profile-duration <secs>   capture for 1..300 seconds (env ROAMGATE_PROFILE_DURATION, default: 30)
+  --profile-dir <path>        output parent directory (env ROAMGATE_PROFILE_DIR, default: Roamgate data dir/profiles)
+  --open                     open browser on start (env OPEN_BROWSER=1)
+  -V, --version              show version
+  -h, --help                 show this help
+
