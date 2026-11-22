@@ -835,6 +835,64 @@ installed as a whole, it needs only the NVIDIA driver on the host. Kokoro
 also needs espeak-ng installed (`brew install espeak-ng`, or the
 distribution's `espeak-ng` package).
 
+### Voice setup assistant
+
+`roamgate setup voice`, or **Set up voice** in Configuration > Speech, sets
+up the models: it detects the hardware (the GPUs with `nvidia-smi`,
+`rocm-smi` and Linux's `/sys/class/drm`, `system_profiler` on macOS, and
+PowerShell's video controllers on Windows; the memory and the CPU),
+proposes a tier and a model for each part the helper loads, downloads the
+chosen ones into `~/.local/share/roamgate/voice/models`
+(`%APPDATA%\roamgate\voice\models` on Windows) and writes their paths to
+`voice.json`, its other settings untouched.
+
+The helper runs its GPU models with CUDA on Linux and Windows (an NVIDIA
+card and its driver's `nvidia-smi`) and with Metal on Apple silicon; an AMD
+or Intel GPU is listed but not used, as there is no ROCm or Vulkan build.
+With about 6 GB or more for the GPU, the **heavy** tier is proposed: Parakeet,
+Whisper large-v3-turbo reading again, Qwen3-TTS (1.7B from 8 GB, 0.6B
+below) with Kokoro-82M beside it, WeSpeaker, Smart Turn and Qwen3 0.6B
+(about 7 GB on disk). Otherwise the **light** tier runs everything on the
+CPU: Parakeet, Kokoro's ONNX model (int8 under 8 GB of memory), WeSpeaker,
+Smart Turn, and Qwen3 0.6B from 12 GB of memory (about 1.7 GB). Each part
+can be chosen on its own, or left out when optional:
+
+| Part (flag)                        | Options                                                                                                  | voice.json                                                            |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Speech recognition (`--speech`)    | `parakeet`, `whisper-large-v3-turbo`, `whisper-small`, `whisper-base`                                    | `parakeet_model` or `whisper_model`                                   |
+| Second reading (`--reread`)        | `whisper-large-v3-turbo`, `whisper-small`, `none` (with Parakeet only)                                   | `whisper_model`                                                       |
+| Reading voice (`--tts`)            | `qwen3-tts-1.7b`, `qwen3-tts-0.6b`, `kokoro-82m` (any-tts, GPU), `kokoro-onnx`, `kokoro-onnx-int8` (CPU) | `tts_models` and `clone_model`, or `kokoro_model` and `kokoro_voices` |
+| Stock voices (`--stock-voices`)    | `customvoice` (the reading voice's size), `none`                                                         | `stock_model`                                                         |
+| Who speaks (`--speaker`)           | `wespeaker`, `none`                                                                                      | `speaker_model`                                                       |
+| End of turn, voice (`--turn`)      | `smart-turn`, `none`                                                                                     | `turn_model`                                                          |
+| End of turn, words (`--text-turn`) | `qwen3-0.6b`, `none` (with Parakeet only)                                                                | `text_turn_model`                                                     |
+
+```sh
+roamgate setup voice                 # asks each part, Enter keeps the proposal
+roamgate setup voice --tier light --yes
+roamgate setup voice --tts kokoro-onnx --yes   # change one part
+roamgate setup voice list            # hardware, options, sizes, what is here
+roamgate setup voice remove-unused   # delete models voice.json no longer uses
+```
+
+The files come from Hugging Face and the projects' GitHub releases, pinned
+to one revision, each checked against its SHA-256 before it is put in
+place; an interrupted download resumes from its `.part` file the next time,
+and the setup stops before downloading when the disk has too little room.
+Models voice.json already names elsewhere (put in place by hand) are
+recognised by their files and kept there. Running it again changes a part
+or the tier; a Qwen3-TTS entry reading a recorded voice and Kokoro's own
+fields in `tts_models` are kept. `remove-unused` (**Remove them** in the
+assistant) only ever deletes inside the models directory, and leaves what
+voice.json names. The Claude models (`clean_model`, `dictation_model`,
+`route_model`, `front_model`) are not downloads and are not changed; the
+echo canceller needs no model. The helper itself is not downloaded: build it
+as above and install it as `~/.local/share/roamgate/voice/roamgate-voice`,
+where the assistant names it in voice.json, or pass `--helper`. From the
+page, the running helper stops once nothing uses it, so the next voice
+request loads the new models; after `roamgate setup voice`,
+`roamgate service restart` loads them at once.
+
 With `GST_DEBUG_DUMP_DOT_DIR` set in Roamgate's environment, the helper
 writes its pipelines' graphs there (`roamgate-voice-speak.dot`,
 `roamgate-voice-listen.dot`) when they start
@@ -1891,6 +1949,7 @@ and 2 on bad arguments; many accept `--json`.
 | `roamgate config show\|get\|set\|unset\|edit\|path`               | Read or change `roamgate.env` atomically. `--restart` restarts the service; `KEY=-` reads a secret from stdin.                                                                                                                                                                                   |
 | `roamgate auth show\|rotate\|revoke-sessions`                     | Show the login method, replace the token, or sign out every browser.                                                                                                                                                                                                                             |
 | `roamgate connections list\|test\|add\|remove\|set-default`       | Manage [connection profiles](#multiple-and-remote-herdr-connections). Edits are refused while the managed service runs unless `--restart` is given. Only the service config's address is checked, so stop other processes sharing the registry (such as a foreground run on another port) first. |
+| `roamgate setup voice [list\|remove-unused]`                      | Detect the hardware and download the [voice chat](#voice-setup-assistant) models it calls for, then point `voice.json` at them.                                                                                                                                                                  |
 | `roamgate push test`                                              | Send a test [Web Push](#web-push-notifications) notification.                                                                                                                                                                                                                                    |
 | `roamgate activity today\|day\|range\|events\|workspaces\|status` | Read the [activity log](./activity.md#command-line) read-only, without the server.                                                                                                                                                                                                               |
 | `roamgate update [--check]` / `roamgate rollback`                 | Update to the latest release or restore `roamgate.previous` (Linux/macOS).                                                                                                                                                                                                                       |

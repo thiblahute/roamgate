@@ -210,6 +210,7 @@ import {
 } from "./http/terminal-upload";
 import { tastePath, VoiceTaste } from "./voice/voice-taste";
 import { createVoiceRoutes, withSearches } from "./http/voice";
+import { createVoiceSetupRoute } from "./http/voice-setup";
 import { createVoiceSocket } from "./http/voice-socket";
 import { configuredCleaner } from "./voice/voice-cleaner";
 import { configuredDictation } from "./voice/voice-dictation";
@@ -230,8 +231,12 @@ import {
   frontMode,
   readVoiceConfig,
   VoiceHelper,
+  voiceConfigPath,
   writeFrontMode,
 } from "./voice/voice-helper";
+import { detectHardware, systemProbe } from "./voice/voice-hardware";
+import { defaultHelperPath, defaultModelsDir } from "./voice/voice-models";
+import { VoiceSetupRunner } from "./voice/voice-setup";
 import { VoiceLibrary } from "./voice/voice-library";
 import { VoiceProfiles, voiceProfilesDir } from "./voice/voice-profiles";
 import {
@@ -457,6 +462,27 @@ const notifications = createNotificationFeed({
 const notifiedPrompts = new Map<string, Set<string>>();
 // Voice chat's helper starts on the first voice request.
 const voiceHelper = new VoiceHelper(() => readVoiceConfig());
+// The Voice settings' setup assistant: models downloaded, voice.json
+// pointed at them, the helper restarted with them once it is free.
+const voiceSetup = new VoiceSetupRunner(
+  {
+    hardware: () => detectHardware(systemProbe()),
+    modelsDir: defaultModelsDir(),
+    configPath: voiceConfigPath(),
+    helperPath: defaultHelperPath(),
+  },
+  () => {
+    const reload = voiceHelper.reloadModels();
+    if (reload === "after-call") {
+      const retry = setInterval(() => {
+        if (voiceHelper.reloadModels() !== "after-call") clearInterval(retry);
+      }, 15_000);
+      retry.unref?.();
+    }
+    return reload;
+  },
+);
+const handleVoiceSetup = createVoiceSetupRoute(voiceSetup);
 // The people whose voices calls know again (voice-profiles.ts).
 voiceHelper.speakers.useLibrary(new VoiceProfiles(voiceProfilesDir()));
 // A job's answer nobody heard (the page reloaded, the call ended): kept
@@ -4825,6 +4851,8 @@ function main() {
           if (url.pathname.startsWith("/api/voice")) {
             // Transcribing a long recording can outlast the default timeout.
             server.timeout(req, VOICE_HTTP_IDLE_TIMEOUT_SECONDS);
+            const setup = await handleVoiceSetup(req, url.pathname);
+            if (setup) return setup;
             const response = await handleVoice(req, url.pathname);
             if (response) return response;
           }

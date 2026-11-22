@@ -1,0 +1,137 @@
+/*
+ * Voice settings' "Set up voice": the hardware, a model per part of the
+ * voice helper, the download's progress, the unused models.
+ */
+.voice-setup {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.voice-setup-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.voice-setup-head > span {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.voice-setup-head strong {
+  color: var(--text-strong);
+  font-size: 15px;
+}
+
+.voice-setup-head > span > span,
+.voice-setup-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.voice-setup-error {
+  margin: 0;
+  color: var(--danger-text);
+  font-size: 13px;
+}
+
+.voice-setup button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.voice-setup-hardware {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.voice-setup-hardware dt {
+  color: var(--muted);
+}
+
+.voice-setup-hardware dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.voice-setup-hardware .voice-setup-note {
+  grid-column: 1 / -1;
+}
+
+.voice-setup-tiers,
+.voice-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.voice-setup-part {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.voice-setup-part label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.voice-setup-part select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+}
+
+.voice-setup-primary {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+}
+
+.voice-setup-job {
+  display: grid;
+  gap: 6px;
+}
+
+.voice-setup-job p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.voice-setup-job progress {
+  width: 100%;
+}
+
+.voice-setup-job button {
+  justify-self: start;
+}
+
+.voice-setup-unused p {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.voice-setup-unused ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}

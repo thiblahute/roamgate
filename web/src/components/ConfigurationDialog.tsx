@@ -87,6 +87,11 @@ const VoiceSettings = lazyWithReload("voices", () =>
     default: module.VoiceSettings,
   })),
 );
+const VoiceSetup = lazyWithReload("voice-setup", () =>
+  import("./VoiceSetup").then((module) => ({
+    default: module.VoiceSetup,
+  })),
+);
 const MobileLayoutDialog = lazyWithReload("mobile-layout", () =>
   import("./MobileLayoutDialog").then((module) => ({
     default: module.MobileLayoutDialog,
@@ -888,6 +893,11 @@ export function ConfigurationDialog({
                       fallback={<p className="muted">Loading the voices...</p>}
                     >
                       <VoiceSettings />
+                    </Suspense>
+                  }
+                  voiceSetup={
+                    <Suspense fallback={null}>
+                      <VoiceSetup />
                     </Suspense>
                   }
                 />

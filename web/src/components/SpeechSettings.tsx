@@ -72,9 +72,15 @@ export function browserCallNote(block: BrowserCallBlock): string {
 
 export function SpeechSettings({
   serverVoices,
+  voiceSetup,
 }: {
   /** The server engine's voices and speed (VoiceSettings), when it has one. */
   serverVoices?: ReactNode;
+  /**
+   * The voice setup assistant (VoiceSetup), for a server without its voice
+   * engine yet; VoiceSettings shows it otherwise.
+   */
+  voiceSetup?: ReactNode;
 } = {}) {
   const id = useId();
   const preferences = useSpeechPreferences();
@@ -273,6 +279,9 @@ export function SpeechSettings({
       ) : null}
       {speech.server && serverVoices ? (
         <div className="speech-settings-server">{serverVoices}</div>
+      ) : null}
+      {speech.server === false && voiceSetup ? (
+        <div className="speech-settings-server">{voiceSetup}</div>
       ) : null}
     </fieldset>
   );

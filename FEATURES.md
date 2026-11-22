@@ -693,7 +693,13 @@ Inspector state is scoped to each checkout; see
   the browser default). **Configuration > Speech** says which
   engine reads and whether voice chat can listen, sets the browser voice and
   rate, and with the server engine its reading speed and whether this browser
-  reads with its own voices instead. Both engines read the same text: code
+  reads with its own voices instead. **Set up voice** there (or
+  `roamgate setup voice`) shows the GPU, memory and CPU found, proposes a
+  heavy (GPU) or light (CPU) set of voice models with each one's size and
+  speed, lets each part be changed, downloads them with their progress
+  (resumed when stopped, checksums checked), and removes the models no
+  longer used ([setup](docs/DEPLOYMENT.md#voice-setup-assistant)).
+  Both engines read the same text: code
   blocks, Mermaid diagrams, oversized tables, and long hashes/values are
   omitted or announced instead of read aloud, simple tables retain column
   labels, and raw HTML blocks are omitted. On desktop, Speak appears on hover

@@ -1,0 +1,49 @@
+import type { VoiceChoices, VoiceSetupState } from "../../shared/voiceSetup";
+
+/**
+ * The server's voice setup assistant (server/src/http/voice-setup.ts): the
+ * hardware and models, a download started, followed and cancelled, unused
+ * models removed.
+ */
+
+const VOICE_HEADERS = { "x-roamgate-voice": "1" };
+
+async function answer<T>(response: Response): Promise<T> {
+  const body = (await response.json().catch(() => ({}))) as T & {
+    error?: string;
+  };
+  if (!response.ok) throw new Error(body.error ?? response.statusText);
+  return body;
+}
+
+const post = (path: string, body: unknown) =>
+  fetch(path, {
+    method: "POST",
+    headers: { ...VOICE_HEADERS, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+export async function fetchVoiceSetup(): Promise<VoiceSetupState> {
+  return answer(await fetch("/api/voice/setup", { cache: "no-store" }));
+}
+
+export async function startVoiceSetup(
+  choices: VoiceChoices,
+): Promise<VoiceSetupState> {
+  return answer(await post("/api/voice/setup", { choices }));
+}
+
+export async function cancelVoiceSetup(): Promise<VoiceSetupState> {
+  return answer(await post("/api/voice/setup/cancel", {}));
+}
+
+export async function removeUnusedVoiceModels(
+  ids: string[] | "all",
+): Promise<VoiceSetupState & { freedBytes: number }> {
+  return answer(await post("/api/voice/setup/remove", { ids }));
+}
+
+/** Whether a download is going on, the page following it. */
+export function setupRunning(state: VoiceSetupState | null): boolean {
+  return state?.job?.state === "downloading" || state?.job?.state === "writing";
+}

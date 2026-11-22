@@ -73,6 +73,7 @@ import {
   type VoiceLibraryState,
 } from "../voiceLibrary";
 import { useSpeechEngine } from "../speechEngine";
+import { VoiceSetup } from "./VoiceSetup";
 import "./VoiceSettings.css";
 
 const METER_BARS = [0.5, 0.8, 1, 0.8, 0.5];
@@ -323,6 +324,7 @@ export function VoiceSettings() {
 
   return (
     <div className="voice-settings">
+      <VoiceSetup />
       <p className="configuration-scope">
         Who reads voice replies aloud, on this server.
       </p>

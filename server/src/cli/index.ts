@@ -26,6 +26,7 @@ import { createDoctorCommand } from "./doctor";
 import { createPushCommand } from "./push";
 import { createReviewsCommand } from "./reviews";
 import { serviceRuntime } from "./service-context";
+import { createSetupCommand } from "./setup";
 import { runServiceLogs } from "./service-logs";
 import { createUpdateCommand, rollbackCommand } from "./update";
 import { urlCommand } from "./url";
@@ -97,6 +98,7 @@ export function cliCommands(): CliCommand[] {
   const commands: CliCommand[] = [
     serviceCommand,
     herdrCommand,
+    createSetupCommand(),
     createDoctorCommand(),
     urlCommand,
     configCommand,

@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   isSpeechRate,
   playbackRateFor,
@@ -579,11 +579,25 @@ export function writeFrontMode(mode: FrontMode, path = voiceConfigPath()) {
 }
 
 function writeVoiceSetting(key: string, value: unknown, path: string) {
-  const config = JSON.parse(readFileSync(path, "utf8")) as Record<
-    string,
-    unknown
-  >;
-  config[key] = value;
+  updateVoiceConfig({ [key]: value }, path);
+}
+
+/**
+ * Keeps `patch` in the voice.json at `path` (made when missing), its other
+ * settings untouched; a key whose value is undefined is removed. Replaced
+ * whole, so a reader never sees half of it.
+ */
+export function updateVoiceConfig(
+  patch: Record<string, unknown>,
+  path = voiceConfigPath(),
+) {
+  const config = existsSync(path)
+    ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>)
+    : {};
+  for (const [key, value] of Object.entries(patch))
+    if (value === undefined) delete config[key];
+    else config[key] = value;
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`);
   renameSync(temporary, path);
@@ -1810,6 +1824,24 @@ export class VoiceHelper {
       heard: typeof reply.heard === "string" ? reply.heard : "",
       seconds: typeof reply.seconds === "number" ? reply.seconds : 0,
     };
+  }
+
+  /**
+   * voice.json's models changed (voice-setup.ts): a helper doing nothing
+   * stops now, so the next voice request starts one with them. One still
+   * needed (a call, a listening, speech) is left to finish: "after-call".
+   */
+  reloadModels(): "now" | "after-call" | "not-running" {
+    if (!this.process) return "not-running";
+    if (
+      this.calls.size ||
+      this.listeners.size ||
+      this.speaking ||
+      this.pending.size
+    )
+      return "after-call";
+    this.stop();
+    return "now";
   }
 
   stop() {
