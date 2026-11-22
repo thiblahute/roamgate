@@ -9,7 +9,7 @@ if (
     30_000,
   )
 ) {
-  test("own requests, workspaces, pins, zz, the command line, fullscreen and height", async () => {
+  test("own requests, workspaces, pins, zz, the command line and the inspector filling the window", async () => {
     const { Window } = await import("happy-dom");
     const browser = new Window({
       url: "http://localhost/",
@@ -55,19 +55,6 @@ if (
           block: options?.block,
         });
     };
-    // The page's workspace surfaces, where Ranger sits: the panel matches them.
-    const surfaces = document.createElement("div");
-    surfaces.className = "workspace-surfaces";
-    surfaces.getBoundingClientRect = () =>
-      ({
-        top: 44,
-        left: 260,
-        right: 1270,
-        bottom: 770,
-        width: 1010,
-        height: 726,
-      }) as DOMRect;
-    document.body.append(surfaces);
 
     const React = await import("react");
     const { act } = React;
@@ -200,10 +187,20 @@ if (
       }
       return { ok: true };
     };
+    // The shortcut asks the page for the inspector's Reviews tab: here the
+    // panel alone, shown or closed as the tab would be.
     const { handleMrReviewsShortcut } = await import("../mrReviewsOpen");
+    const { showMrReviews, closeMrReviews } = await import(
+      "./boardPanel.testkit"
+    );
+    let expanded = false;
     window.addEventListener(
       "keydown",
-      (event) => handleMrReviewsShortcut(event),
+      (event) =>
+        handleMrReviewsShortcut(event, () => {
+          if (document.querySelector(".mr-reviews-panel")) closeMrReviews();
+          else showMrReviews({ expanded });
+        }),
       { capture: true },
     );
     const wait = (ms: number) =>
@@ -241,13 +238,10 @@ if (
         (node) => node.firstChild?.textContent,
       );
 
-    // The toggle shortcut brings it up, as tall as the surfaces Ranger fills.
+    // The toggle shortcut brings it up.
     await toggle();
     expect(panel()).not.toBeNull();
-    expect(panel()!.className).toContain("is-floating");
-    expect(panel()!.style.top).toBe("44px");
-    expect(panel()!.style.bottom).toBe("30px");
-    expect(panel()!.style.right).toBe("10px");
+    expect(panel()!.className).not.toContain("is-maximized");
 
     // Own requests: Mine, with where each stands; what changed is marked.
     expect(titles()).toEqual(["To review", "Mine", "Suggested"]);
@@ -415,17 +409,13 @@ if (
       calls.filter(([method]) => method === "bridge.mr_reviews.pin"),
     ).toHaveLength(2);
 
-    // Full screen: Esc hides it (search closed first), and it comes back
-    // full screen.
-    await act(async () =>
-      document
-        .querySelector<HTMLButtonElement>(
-          "button[aria-label='Maximize Reviews']",
-        )!
-        .click(),
-    );
+    // The inspector filling the window: the board says so; Esc closes the
+    // search first, then the board (the inspector, in the page).
+    await toggle();
+    expect(panel()).toBeNull();
+    expanded = true;
+    await toggle();
     expect(panel()!.className).toContain("is-maximized");
-    expect(panel()!.style.left).toBe("260px");
     panel()!.focus();
     await press("/");
     expect(document.activeElement?.getAttribute("aria-label")).toBe(
@@ -433,24 +423,8 @@ if (
     );
     await press("Escape");
     expect(panel()).not.toBeNull();
-    expect(panel()!.className).toContain("is-maximized");
     await press("Escape");
-    expect(panel()).toBeNull();
-    await toggle();
-    expect(panel()!.className).toContain("is-maximized");
-    // Restored by its button only, and remembered so.
-    await act(async () =>
-      document
-        .querySelector<HTMLButtonElement>(
-          "button[aria-label='Restore Reviews']",
-        )!
-        .click(),
-    );
-    await press("Escape");
-    expect(panel()).toBeNull();
-    await toggle();
-    expect(panel()!.className).toContain("is-floating");
-    await press("m", { altKey: true, code: "KeyM" });
+    await wait(10);
     expect(panel()).toBeNull();
   });
 }

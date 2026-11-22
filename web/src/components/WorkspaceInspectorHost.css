@@ -1,4 +1,5 @@
 .workspace-inspector {
+  container: workspace-inspector / inline-size;
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -15,7 +16,7 @@
 .workspace-inspector-head {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) auto auto;
+  grid-template-columns: minmax(100px, 1fr) minmax(0, max-content) auto;
   align-items: center;
   gap: 8px;
   min-height: 40px;
@@ -116,6 +117,60 @@
   color: var(--muted);
   opacity: 0.42;
   cursor: default;
+}
+
+/*
+ * One row of view tabs: a narrow inspector names only the view shown (the
+ * others by their icon and tooltip); the tabs scroll when even that does
+ * not fit.
+ */
+.workspace-inspector-tabs {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.workspace-inspector-tabs button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@container workspace-inspector (max-width: 900px) {
+  .workspace-inspector-tabs
+    button:not(.is-active)
+    .workspace-inspector-tab-label {
+    display: none;
+  }
+}
+
+.workspace-inspector-more .rv-menu-button {
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.workspace-inspector-more .rv-menu-button:hover {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
+
+/* The board in the Work and Reviews tabs fills the view: the panel's own
+   frame gives way to the inspector's. */
+.workspace-inspector-resource.inspector-board-resource:not(.is-hidden) {
+  display: flex;
+  min-height: 0;
+  padding: 0;
+}
+
+.inspector-board-resource > .mr-reviews-panel {
+  flex: 1 1 auto;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .workspace-inspector-count {
@@ -324,15 +379,23 @@
 
 /* Keep mobile styling in sync with the saved layout and URL override. */
 :where(html[data-layout="mobile"]) {
-  .workspace-inspector-actions .workspace-inspector-dock-action,
   .workspace-inspector-actions .workspace-inspector-expand-action {
     display: none;
   }
 
-  /* The bottom mobile nav already switches between Files/Changes/Commits/History
-     and highlights the active view, so the in-inspector tab bar only costs
-     vertical space on phones. */
+  /* The tabs on a phone: one row of icons that scrolls sideways, the
+     view shown named; the bottom nav keeps its own ways in. */
   .workspace-inspector-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .workspace-inspector-tabs button {
+    flex: 0 0 auto;
+    min-height: 36px;
+  }
+  .workspace-inspector-tabs
+    button:not(.is-active)
+    .workspace-inspector-tab-label {
     display: none;
   }
 
@@ -424,78 +487,29 @@ body:has(.inspector-changes-resource.is-review-only:not(.is-hidden)) .topbar {
 }
 
 /*
- * The app's Zen with the inspector expanded on the review in Changes: the
- * inspector's header shrinks into the review's row (InspectorZenEnd), so
- * the screen has one row above the diff. Elsewhere that end is not shown.
- */
-.diff-inspector-end {
-  order: 4;
-  display: none;
-  flex: none;
-  align-items: center;
-  gap: 0;
-}
-
-.app.zen
-  .workspace-inspector.is-expanded[data-view="changes"]
-  .diff-inspector-end {
-  display: flex;
-}
-
-.app.zen .workspace-inspector.has-zen-end > .workspace-inspector-head {
-  display: none;
-}
-
-.diff-inspector-end-button {
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.diff-inspector-end-button:hover:not(:disabled) {
-  background: var(--input-bg);
-  color: var(--text);
-}
-
-.diff-inspector-end-button:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.diff-inspector-end .zen-dock-island {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-/*
  * The header's controls take room in the row: its words go sooner, and the
  * scope's name gives way before the change and find controls.
  */
 @container review-head (max-width: 1100px) {
-  .app.zen
-    .workspace-inspector.is-expanded[data-view="changes"]
+  .workspace-inspector[data-view="changes"]
     :is(.diff-head-word, .changes-scope-facts, .changes-scope-hint) {
     display: none;
   }
-  .app.zen
-    .workspace-inspector.is-expanded[data-view="changes"]
+  .workspace-inspector[data-view="changes"]
     .diff-content-head.is-review
     .diff-content-title {
     min-width: 3em;
   }
-  .app.zen
-    .workspace-inspector.is-expanded[data-view="changes"]
+  .workspace-inspector[data-view="changes"]
     .diff-content-head.is-review
     .diff-content-actions {
     flex-shrink: 0;
+  }
+  /* The agent's last word: in its tooltip, unless it is at work. */
+  .workspace-inspector[data-view="changes"]
+    .diff-content-head.is-review
+    .changes-review-status:not(.is-working) {
+    display: none;
   }
 }
 

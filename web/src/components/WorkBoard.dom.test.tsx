@@ -343,6 +343,7 @@ if (
       initialWorkItem?: string;
       mode?: "work" | "mr";
       initialWork?: import("../workOpen").WorkOpen;
+      expanded?: boolean;
     } = {},
   ) {
     const container = document.createElement("div");
@@ -354,6 +355,7 @@ if (
       root.render(
         <MrReviewsPanel
           mode={props.mode ?? "work"}
+          expanded={props.expanded ?? false}
           onClose={(options) => {
             closed++;
             closes.push(options);
@@ -439,22 +441,13 @@ if (
     calls.length = 0;
     const view = await mount();
     try {
-      // The view's own shell: floating, in Work mode, the modes in its head.
+      // The board in Work mode (the inspector's tabs name the modes, and
+      // close and expand it).
       expect(view.panel.getAttribute("aria-label")).toBe("Work");
-      expect(view.panel.classList.contains("is-floating")).toBe(true);
+      expect(view.panel.classList.contains("is-maximized")).toBe(false);
       expect(view.panel.classList.contains("is-work")).toBe(true);
       expect(view.panel.classList.contains("is-board")).toBe(true);
-      const modes = () =>
-        [
-          ...view.panel.querySelectorAll<HTMLButtonElement>(
-            ".assistant-panel-head .mr-reviews-modes button",
-          ),
-        ].map(
-          (button) =>
-            `${button.getAttribute("aria-pressed") === "true" ? "*" : ""}${button.textContent}`,
-        );
-      // The Work tab wears the For you count of every project.
-      expect(modes()).toEqual(["*Work2", "Reviews"]);
+      expect(view.panel.querySelector(".mr-reviews-modes")).toBeNull();
       expect(view.text(".assistant-panel-meta .work-scope-name")).toBe(
         "gst2-caps",
       );
@@ -463,10 +456,7 @@ if (
       );
       expect(
         view.panel.querySelector('button[aria-label="Close Work (Esc)"]'),
-      ).not.toBeNull();
-      expect(
-        view.panel.querySelector('button[aria-label="Maximize Work"]'),
-      ).not.toBeNull();
+      ).toBeNull();
       // The search and the filter row, then the columns: the inbox's
       // board, its lanes, its cards.
       const body = view.panel.querySelector(".mr-reviews-body.is-work")!;
@@ -577,11 +567,10 @@ if (
       await view.key("Escape");
       expect(view.closed()).toBe(1);
 
-      // ] switches to the inbox, [ back; the head's buttons too.
+      // ] switches to the inbox, [ back (the inspector's tabs, in the page).
       await view.key("]");
       expect(view.panel.classList.contains("is-mr")).toBe(true);
       expect(view.panel.getAttribute("aria-label")).toBe("Reviews");
-      expect(modes()).toEqual(["Work2", "*Reviews"]);
       expect(view.panel.querySelector(".mr-reviews-body.is-work")).toBeNull();
       expect(
         view.panel.querySelector(
@@ -590,15 +579,6 @@ if (
       ).not.toBeNull();
       await view.key("[");
       expect(view.panel.classList.contains("is-work")).toBe(true);
-      await view.click(
-        view.panel.querySelector(".mr-reviews-modes button:last-child"),
-      );
-      expect(view.panel.classList.contains("is-mr")).toBe(true);
-      await view.click(
-        view.panel.querySelector(".mr-reviews-modes button:first-child"),
-      );
-      expect(view.panel.classList.contains("is-work")).toBe(true);
-      expect(localStorage.getItem("roamgate:mrReviewsMode")).toBe("work");
 
       // An item added as free text and not sorted yet says so on its card.
       const sorting = (id: string) =>
@@ -1809,7 +1789,6 @@ if (
     const { TASK_NOTIFICATION_ACTIVATE_EVENT } = await import(
       "../taskNotifications"
     );
-    const { roamgateLocalStorage } = await import("../browserStorage");
     const activated: unknown[] = [];
     const onActivate = (event: Event) =>
       activated.push((event as CustomEvent).detail);
@@ -1825,9 +1804,11 @@ if (
         ),
       ].find((button) => button.textContent === "Open the session") ?? null;
     try {
-      // Filling the window: the pane would stay under it.
-      roamgateLocalStorage.setItem("mrReviewsMaximized", "1");
-      const full = await mount({ initialWorkItem: "2400000000000000" });
+      // The inspector filling the window: the pane would stay under it.
+      const full = await mount({
+        initialWorkItem: "2400000000000000",
+        expanded: true,
+      });
       try {
         await full.click(openSession(full));
         expect(activated).toEqual([
@@ -1842,8 +1823,7 @@ if (
       } finally {
         await full.unmount();
       }
-      // A floating view beside the page: the pane shows, the view stays.
-      roamgateLocalStorage.setItem("mrReviewsMaximized", "0");
+      // The inspector docked beside the page: the pane shows, the board stays.
       const floating = await mount({ initialWorkItem: "2400000000000000" });
       try {
         await floating.click(openSession(floating));
@@ -1854,7 +1834,6 @@ if (
       }
     } finally {
       window.removeEventListener(TASK_NOTIFICATION_ACTIVATE_EVENT, onActivate);
-      roamgateLocalStorage.removeItem("mrReviewsMaximized");
       board.items = board.items.filter((each) => each.id !== ownerItem.id);
     }
   });

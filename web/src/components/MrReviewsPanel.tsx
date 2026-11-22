@@ -11,14 +11,11 @@ import {
   HousePlus,
   Keyboard,
   LoaderCircle,
-  Maximize2,
-  Minimize2,
   Pin,
   PinOff,
   Plus,
   RefreshCw,
   Settings,
-  X,
 } from "lucide-react";
 import {
   type CSSProperties,
@@ -99,8 +96,7 @@ import {
   mrLaneSiblings,
   storedFoldedLanes,
 } from "../mrReviewsLanes";
-import { requestMrFileOpen } from "../mrReviewsOpen";
-import { shortcutLabel } from "../shortcutPreferences";
+import { type BoardMode, requestMrFileOpen } from "../mrReviewsOpen";
 import { MrOverrideForm, MrOverrideSummary, refOfKey } from "./MrOverrideForm";
 import { store } from "../store";
 import { formatUiDateTime } from "../uiLocale";
@@ -122,9 +118,10 @@ import "./AgentTasksSheet.css";
 import "./MrReviewsPanel.css";
 
 /**
- * The board view, Ranger's sibling: the same right-hand panel, head, list
- * rows and state chips, list/detail split and Escape order, in two modes
- * switched from its head ([ ], the Work and Reviews shortcuts): the
+ * The board, Ranger's sibling: the same panel, head, list rows and state
+ * chips, list/detail split and Escape order, in two modes that are two of
+ * the workspace inspector's tabs, Work and Reviews ([ ], gt, the Work and
+ * Reviews shortcuts, WorkspaceInspectorHost): the
  * reviews inbox (two sections: the requests that are the user's, review
  * requested, assigned, mentioned, and Claude's suggestions from the
  * followed projects, one's own requests in lanes) and the Work board (the
@@ -133,17 +130,7 @@ import "./MrReviewsPanel.css";
  */
 
 /** The view's modes: the reviews inbox, the Work board. */
-export type BoardMode = "mr" | "work";
-const MODE_KEY = "mrReviewsMode";
-
-/** The mode the view was last shown in (the inbox at first). */
-export function storedBoardMode(): BoardMode {
-  try {
-    return roamgateLocalStorage.getItem(MODE_KEY) === "work" ? "work" : "mr";
-  } catch {
-    return "mr";
-  }
-}
+export type { BoardMode };
 
 const MODE_TITLE: Record<BoardMode, string> = { mr: "Reviews", work: "Work" };
 
@@ -419,7 +406,6 @@ const SEARCH_KEY = "mrReviewsSearch";
 const PANEL_AT_KEY = "mrReviewsPanelAt";
 /** How long the search waits for more typing before it is kept. */
 const SEARCH_SAVE_MS = 600;
-const MAXIMIZED_KEY = "mrReviewsMaximized";
 
 function storedFilter(): MrFilter {
   try {
@@ -690,12 +676,6 @@ function linkTitle(link: MrWorkspaceLink): string {
 function goTitle(link: MrWorkspaceLink, home: boolean, count: number): string {
   const more = count > 1 ? `; ${count - 1} more in its details (2w...)` : "";
   return `Go to its ${home ? "home" : "workspace"}: ${link.label || link.workspaceId} (w)${more}`;
-}
-
-/** The close button: Esc, and the global key that opens and closes it. */
-function closeTitle(): string {
-  const global = shortcutLabel("reviews.inbox");
-  return `Close (Esc${global === "Unassigned" ? "" : ` or ${global}`})`;
 }
 
 function draftsLabel(entry: MrInboxEntry): string | null {
@@ -1548,14 +1528,6 @@ function MrBranchDetail({
   );
 }
 
-/** Where the workspace's surfaces are: Ranger's panel fills their height. */
-type SurfaceRect = { top: number; right: number; bottom: number; left: number };
-
-/**
- * The page's workspace surfaces (where Ranger's panel sits), as distances
- * from the window's edges, followed as the window and the page move. Null
- * while there are none (a phone, a test): the stylesheet's place then.
- */
 /**
  * The pane width from which the lanes show as a board's columns: two
  * columns of 420 px, with the body's padding and the gap.
@@ -1586,63 +1558,6 @@ export function usePanelWidth(
   return enabled ? width : 0;
 }
 
-export function useSurfaceRect(enabled: boolean): SurfaceRect | null {
-  const [rect, setRect] = useState<SurfaceRect | null>(null);
-  useLayoutEffect(() => {
-    if (!enabled) {
-      setRect(null);
-      return;
-    }
-    let observed: Element | null = null;
-    const measure = () => {
-      const surfaces = document.querySelector(".workspace-surfaces");
-      if (surfaces !== observed) {
-        if (observed) observer?.unobserve(observed);
-        if (surfaces) observer?.observe(surfaces);
-        observed = surfaces;
-      }
-      if (!surfaces) {
-        setRect(null);
-        return;
-      }
-      const box = surfaces.getBoundingClientRect();
-      if (!box.width || !box.height) {
-        setRect(null);
-        return;
-      }
-      const next = {
-        top: box.top,
-        left: box.left,
-        right: window.innerWidth - box.right,
-        bottom: window.innerHeight - box.bottom,
-      };
-      setRect((current) =>
-        current &&
-        current.top === next.top &&
-        current.left === next.left &&
-        current.right === next.right &&
-        current.bottom === next.bottom
-          ? current
-          : next,
-      );
-    };
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => measure());
-    measure();
-    window.addEventListener("resize", measure);
-    // The sidebar or a bar may come and go without a resize of the window.
-    const timer = setInterval(measure, 1_000);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener("resize", measure);
-      clearInterval(timer);
-    };
-  }, [enabled]);
-  return rect;
-}
-
 export function MrReviewsPanel({
   onClose,
   initialSelect,
@@ -1652,23 +1567,31 @@ export function MrReviewsPanel({
   renderActions,
   onOpenEntry,
   mode: modeAsked,
-  modeAt,
+  onModeChange,
+  expanded = false,
+  onExpand,
+  onKeyFirst,
   initialWorkItem,
   initialWork,
-  onMode,
 }: {
   /** keepFocus: a review was shown; the focus is the review's now. */
   onClose: (options?: BoardCloseOptions) => void;
-  /** The mode to show (the last one otherwise); with modeAt, asked again. */
+  /**
+   * The mode shown: the inspector's tab. With onModeChange, the panel's
+   * own switches ([ ], an effort's link) ask for the other tab.
+   */
   mode?: BoardMode;
-  /** A new value: the mode asked is taken, whatever is shown. */
-  modeAt?: number;
+  onModeChange?: (mode: BoardMode) => void;
+  /** The inspector fills the window: a session or a review opened steps aside. */
+  expanded?: boolean;
+  /** Asks the inspector to fill the window (an effort's view). */
+  onExpand?: () => void;
+  /** The inspector's keys first (gt, gT): true when it took the key. */
+  onKeyFirst?: (event: KeyboardEvent) => boolean;
   /** The Work board: an item to open on (a notification's link). */
   initialWorkItem?: string;
   /** The Work board: a session's items, or its add form started. */
   initialWork?: Pick<WorkOpen, "owner" | "add">;
-  /** Told the mode shown, as it changes. */
-  onMode?: (mode: BoardMode) => void;
   /** A request to open at once (the command menu). */
   initialOpen?: string;
   /** The request to show selected (from a review: the one shown). */
@@ -1687,42 +1610,15 @@ export function MrReviewsPanel({
   const [view, setView] = useState<View>(
     initialView === "chat" ? "chat" : "list",
   );
-  // Kept in the browser: shown again as it was left, full or beside the page.
-  const [maximized, setMaximizedState] = useState(() => {
-    try {
-      return roamgateLocalStorage.getItem(MAXIMIZED_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const setMaximized = (next: boolean | ((current: boolean) => boolean)) =>
-    setMaximizedState((current) => {
-      const value = typeof next === "function" ? next(current) : next;
-      keep(MAXIMIZED_KEY, value ? "1" : "0");
-      return value;
-    });
-  // The mode: Work or Reviews, the last one shown kept in the browser.
-  const [mode, setModeState] = useState<BoardMode>(
-    () =>
-      modeAsked ??
-      (initialWorkItem || initialWork ? "work" : storedBoardMode()),
+  // The inspector's tab, or the panel's own mode (a test's panel alone).
+  const [ownMode, setOwnMode] = useState<BoardMode>(
+    () => modeAsked ?? (initialWorkItem || initialWork ? "work" : "mr"),
   );
-  const setMode = (next: BoardMode) => setModeState(next);
-  const modeAtSeen = useRef(modeAt);
-  useEffect(() => {
-    if (modeAt === modeAtSeen.current) return;
-    modeAtSeen.current = modeAt;
-    if (modeAsked) setMode(modeAsked);
-    // The mode asked for with a new modeAt is the whole request.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modeAt]);
-  const onModeRef = useRef(onMode);
-  onModeRef.current = onMode;
-  // The mode shown, however it came (a switch, a shortcut), comes back.
-  useEffect(() => {
-    keep(MODE_KEY, mode);
-    onModeRef.current?.(mode);
-  }, [mode]);
+  const mode: BoardMode = onModeChange && modeAsked ? modeAsked : ownMode;
+  const setMode = (next: BoardMode) => {
+    if (onModeChange) onModeChange(next);
+    else setOwnMode(next);
+  };
   const [storedChoice, setFilterState] = useState<MrFilter>(storedFilter);
   const views = useMemo(() => inbox?.views ?? [], [inbox]);
   const filters: MrFilter[] = [
@@ -1744,7 +1640,6 @@ export function MrReviewsPanel({
     keep(FILTER_KEY, next);
     queuePanel({ filter: next }, 0);
   };
-  const surface = useSurfaceRect(!mobile);
   const [selected, setSelected] = useState<string | null>(
     initialSelect ?? null,
   );
@@ -1937,7 +1832,7 @@ export function MrReviewsPanel({
     enabled: mode === "work",
     mobile,
     board,
-    maximized,
+    maximized: expanded,
     panelRef,
     onClose,
     ...(initialWorkItem ? { initialItem: initialWorkItem } : {}),
@@ -1982,6 +1877,8 @@ export function MrReviewsPanel({
     useMemo(() => entries.map((entry) => entry.key), [entries]),
   );
   const [helpOpen, setHelpOpen] = useState(false);
+  const helpOpenRef = useRef(helpOpen);
+  helpOpenRef.current = helpOpen;
   const [orderError, setOrderError] = useState<string | null>(null);
   const detailEntry = detail
     ? entries.find((entry) => entry.key === detail)
@@ -2656,7 +2553,7 @@ export function MrReviewsPanel({
     setDetail(null);
     setDeclaring(false);
     setEffortView(id);
-    if (!mobile) setMaximized(true);
+    if (!mobile && !expanded) onExpand?.();
   };
   const closeEffort = () => {
     setEffortView(null);
@@ -3387,11 +3284,20 @@ export function MrReviewsPanel({
   // handlers (a chat's, a terminal's) while the focus is in the panel.
   const onKeyRef = useRef(onKey);
   onKeyRef.current = onKey;
+  const onKeyFirstRef = useRef(onKeyFirst);
+  onKeyFirstRef.current = onKeyFirst;
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       const panel = panelRef.current;
       const target = event.target as Node | null;
       if (!panel || !target || !panel.contains(target)) return;
+      // The inspector's own keys (gt, gT) come first: they leave the tab.
+      if (!helpOpenRef.current && onKeyFirstRef.current?.(event)) {
+        keyState.current = EMPTY_KEY_STATE;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
       if (onKeyRef.current(event)) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -3450,18 +3356,8 @@ export function MrReviewsPanel({
     <aside
       ref={panelRef}
       tabIndex={-1}
-      className={`assistant-panel mr-reviews-panel ${mobile ? "is-mobile" : maximized ? "is-maximized" : "is-floating"}${board ? " is-board" : ""} is-${mode}`}
+      className={`assistant-panel mr-reviews-panel${mobile ? " is-mobile" : ""}${expanded ? " is-maximized" : ""}${board ? " is-board" : ""} is-${mode}`}
       aria-label={MODE_TITLE[mode]}
-      style={
-        surface && !mobile
-          ? ({
-              top: surface.top,
-              bottom: surface.bottom,
-              right: surface.right,
-              ...(maximized ? { left: surface.left } : {}),
-            } satisfies CSSProperties)
-          : undefined
-      }
       onKeyDown={(event) => {
         // The chat's Vim editor keeps an Escape it takes (insert mode);
         // one it leaves gives the keys back to the panel.
@@ -3500,34 +3396,6 @@ export function MrReviewsPanel({
     >
       <header className="assistant-panel-head">
         <div>
-          <div className="assistant-panel-title">
-            <nav className="mr-reviews-modes" aria-label="Board">
-              <button
-                type="button"
-                aria-pressed={mode === "work"}
-                title={`The Work board: your work items by state ([ ], ${shortcutLabel("work.board")})`}
-                onClick={() => setMode("work")}
-              >
-                Work
-                {work.forYou ? (
-                  <span
-                    className="mr-reviews-mode-badge"
-                    aria-label={`${work.forYou} for you`}
-                  >
-                    {work.forYou}
-                  </span>
-                ) : null}
-              </button>
-              <button
-                type="button"
-                aria-pressed={mode === "mr"}
-                title={`The reviews inbox: merge and pull requests ([ ], ${shortcutLabel("reviews.inbox")})`}
-                onClick={() => setMode("mr")}
-              >
-                Reviews
-              </button>
-            </nav>
-          </div>
           <div className="assistant-panel-meta">
             {mode === "work" ? (
               work.meta
@@ -3592,22 +3460,6 @@ export function MrReviewsPanel({
             </button>
           </>
         )}
-        {!mobile ? (
-          <button
-            type="button"
-            className="assistant-icon-button"
-            title={
-              maximized
-                ? "Restore: back to a floating window"
-                : "Maximize: fill the window"
-            }
-            aria-label={`${maximized ? "Restore" : "Maximize"} ${MODE_TITLE[mode]}`}
-            aria-pressed={maximized}
-            onClick={() => setMaximized((current) => !current)}
-          >
-            {maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </button>
-        ) : null}
         <button
           type="button"
           className="assistant-icon-button"
@@ -3634,15 +3486,6 @@ export function MrReviewsPanel({
             <Settings size={16} />
           </button>
         ) : null}
-        <button
-          type="button"
-          className="assistant-icon-button"
-          aria-label={`Close ${MODE_TITLE[mode]} (Esc)`}
-          title={mode === "work" ? "Close (Esc)" : closeTitle()}
-          onClick={() => onClose()}
-        >
-          <X size={16} />
-        </button>
       </header>
       {error ? (
         <div className="assistant-error" role="alert">

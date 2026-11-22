@@ -152,7 +152,7 @@ if (
       const found = calls.filter(([m]) => m === "bridge.mr_reviews.override");
       return found[found.length - 1];
     };
-    const { showMrReviews } = await import("./MrReviewsRoot");
+    const { showMrReviews } = await import("./boardPanel.testkit");
     const wait = (ms: number) =>
       act(async () => {
         await new Promise((resolve) => setTimeout(resolve, ms));

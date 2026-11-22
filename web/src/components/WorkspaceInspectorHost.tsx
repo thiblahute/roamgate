@@ -1,13 +1,15 @@
 import {
+  ClipboardList,
+  Ellipsis,
   FileDiff,
   FolderTree,
   GitFork,
   GitGraph,
+  GitPullRequest,
   History,
+  type LucideIcon,
   Maximize2,
   Minimize2,
-  PanelBottom,
-  PanelRight,
   X,
 } from "lucide-react";
 import {
@@ -68,6 +70,7 @@ import {
   type InspectorDock,
   type InspectorSplitView,
   type InspectorView,
+  isBoardInspectorView,
   type WorkspaceInspectorState,
 } from "../workspaceResource";
 import { fileLinkAt } from "../reviewFileLinks";
@@ -99,7 +102,6 @@ import { useInspectorCommandFrame } from "./useInspectorCommandFrame";
 import {
   ChangesFrameButtons,
   changesFrameCommands,
-  InspectorZenEnd,
   ReviewOnlyEnd,
   useChangesTreeHidden,
   useStoredFlag,
@@ -134,11 +136,19 @@ import {
   writeWorkspaceReviews,
 } from "../reviewPins";
 import type { ReviewActivity } from "../../../shared/review";
+import { ReviewMenu } from "./ReviewMenu";
+import { useLayoutPreferences } from "../layoutPreferences";
 import "./WorkspaceInspectorHost.css";
 
 const DiffContentView = lazyWithReload("diff-content-view", () =>
   import("./DiffContentView").then((module) => ({
     default: module.DiffContentView,
+  })),
+);
+/** The Work and Reviews tabs' board, loaded when first shown. */
+const InspectorBoard = lazyWithReload("mr-reviews", () =>
+  import("./InspectorBoard").then((module) => ({
+    default: module.InspectorBoard,
   })),
 );
 const GitCommitHistory = lazyWithReload("git-commit-history", () =>
@@ -170,6 +180,28 @@ const VIEW_NOTES: Record<InspectorView, string> = {
   changes: "the working tree's changes",
   commits: "the commit history",
   history: "the agent's history",
+  work: "the Work board: your work items by state",
+  reviews: "the reviews inbox: merge and pull requests",
+};
+/** The tab strip: each view's name, icon and the shortcut that opens it. */
+const VIEW_TABS: Record<
+  InspectorView,
+  {
+    label: string;
+    icon: LucideIcon;
+    shortcut?: Parameters<typeof shortcutTitle>[1];
+  }
+> = {
+  files: { label: "Files", icon: FolderTree, shortcut: "files.toggle" },
+  changes: { label: "Changes", icon: FileDiff, shortcut: "diff.toggle" },
+  commits: { label: "Commits", icon: GitGraph },
+  history: { label: "History", icon: History },
+  work: { label: "Work", icon: ClipboardList, shortcut: "work.board" },
+  reviews: {
+    label: "Reviews",
+    icon: GitPullRequest,
+    shortcut: "reviews.inbox",
+  },
 };
 const FILES_TREE_HIDDEN_KEY = "inspectorFilesTreeHidden";
 /** No threads given: the review's files read from none. */
@@ -262,6 +294,8 @@ export function WorkspaceInspectorHost({
   onCloseReview,
   onShowReviews,
   onBack,
+  workForYou = 0,
+  onStepAside,
 }: {
   state: WorkspaceInspectorState;
   onReady?: () => void;
@@ -331,7 +365,16 @@ export function WorkspaceInspectorHost({
   /** `:reviews` in Changes: the reviews in progress. */
   onShowReviews?: () => void;
   onBack: () => void;
+  /** The Work items waiting on the user, in every project: the Work tab's badge. */
+  workForYou?: number;
+  /**
+   * The board opened a session, a workspace or a review: the inspector,
+   * filling the window or a phone's screen, steps aside (hidden, the focus
+   * left where that went).
+   */
+  onStepAside?: () => void;
 }) {
+  const { mobile } = useLayoutPreferences();
   // Its views load again once the connection is back.
   const connectionClient = useLiveClient(givenClient);
   const hostRef = useRef<HTMLElement | null>(null);
@@ -434,6 +477,8 @@ export function WorkspaceInspectorHost({
   const changesTabRef = useRef<HTMLButtonElement | null>(null);
   const commitsTabRef = useRef<HTMLButtonElement | null>(null);
   const historyTabRef = useRef<HTMLButtonElement | null>(null);
+  const workTabRef = useRef<HTMLButtonElement | null>(null);
+  const reviewsTabRef = useRef<HTMLButtonElement | null>(null);
   const diffViewerRef = useRef<DiffViewerPanelHandle | null>(null);
   const splitId = useId();
   const [hostWidth, setHostWidth] = useState(0);
@@ -1005,6 +1050,8 @@ export function WorkspaceInspectorHost({
     changes: false,
     commits: false,
     history: false,
+    work: false,
+    reviews: false,
   }));
   const [commitsVisitedKey, setCommitsVisitedKey] = useState("");
   useEffect(() => {
@@ -1150,8 +1197,29 @@ export function WorkspaceInspectorHost({
    * Read before the views (capture), which go on reading `g` as theirs.
    */
   const viewKeys = useKeyMachine(["gt", "gT"]);
+  /** The keys the board gave first: not fed again on their way up. */
+  const fedFirst = useRef(new WeakSet<Event>());
+  /** gt, gT from the board, before its own keys: true when taken. */
+  const boardViewKey = (event: KeyboardEvent): boolean => {
+    let taken = false;
+    onViewKey({
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      key: event.key,
+      target: event.target,
+      nativeEvent: event,
+      preventDefault: () => {
+        taken = true;
+      },
+      stopPropagation: () => {},
+    } as unknown as ReactKeyboardEvent<HTMLElement>);
+    fedFirst.current.add(event);
+    return taken;
+  };
   const onViewKey = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (
+      fedFirst.current.has(event.nativeEvent) ||
       commandFrame.busy ||
       event.ctrlKey ||
       event.metaKey ||
@@ -1216,6 +1284,8 @@ export function WorkspaceInspectorHost({
     changes: changesTabRef,
     commits: commitsTabRef,
     history: historyTabRef,
+    work: workTabRef,
+    reviews: reviewsTabRef,
   };
   const viewNames = INSPECTOR_VIEW_NAMES.filter(
     (view) => view !== "history" || historyAvailable,
@@ -1251,6 +1321,15 @@ export function WorkspaceInspectorHost({
           tabRefs[view].current?.focus({ preventScroll: true });
         },
       },
+      ...(["work", "reviews"] as const).map((view) => ({
+        name: view,
+        ...(view === "reviews" ? { aliases: ["inbox"] } : {}),
+        description: `the ${VIEW_TABS[view].label} tab: ${VIEW_NOTES[view]}`,
+        run: () => {
+          onViewChange(view);
+          tabRefs[view].current?.focus({ preventScroll: true });
+        },
+      })),
       ...(state.view === "files" && treeHideable
         ? [
             {
@@ -1344,9 +1423,6 @@ export function WorkspaceInspectorHost({
    * back to its tree, then the view (App).
    */
   const changesShown = visible && state.open && state.view === "changes";
-  /** The inspector's header can shrink into the review's row (app Zen). */
-  const zenEnd =
-    state.view === "changes" && state.expanded && !compact && !changesOnly;
   useSystemBack(
     changesShown && commandFrame.commandLineOpen,
     commandFrame.leaveCommandLine,
@@ -1391,7 +1467,7 @@ export function WorkspaceInspectorHost({
       } ${compact ? "is-compact" : ""} ${hasDetail ? "has-detail" : ""} ${
         // Classes, not :has(): typing in a comment restyles nothing.
         changesOnly && state.view === "changes" ? "is-review-only" : ""
-      } ${zenEnd ? "has-zen-end" : ""}`}
+      }`}
       aria-label="Workspace Inspector"
       data-view={state.view}
       onKeyDownCapture={onViewKey}
@@ -1422,88 +1498,57 @@ export function WorkspaceInspectorHost({
             // own) or a command (:view): the keys go on to its view.
             onFocus={arriveInView}
           >
-            <button
-              ref={filesTabRef}
-              type="button"
-              role="tab"
-              aria-selected={state.view === "files"}
-              tabIndex={state.view === "files" ? 0 : -1}
-              className={state.view === "files" ? "is-active" : ""}
-              onClick={() => onViewChange("files")}
-              onKeyDown={handleTabKeyDown}
-            >
-              <FolderTree size={14} /> Files
-            </button>
-            <button
-              ref={changesTabRef}
-              type="button"
-              role="tab"
-              aria-selected={state.view === "changes"}
-              tabIndex={state.view === "changes" ? 0 : -1}
-              className={state.view === "changes" ? "is-active" : ""}
-              onClick={() => onViewChange("changes")}
-              onKeyDown={handleTabKeyDown}
-            >
-              <FileDiff size={14} /> Changes
-              {changeCount > 0 ? (
-                <span className="workspace-inspector-count">{changeCount}</span>
-              ) : null}
-            </button>
-            <button
-              ref={commitsTabRef}
-              type="button"
-              role="tab"
-              aria-selected={state.view === "commits"}
-              tabIndex={state.view === "commits" ? 0 : -1}
-              className={state.view === "commits" ? "is-active" : ""}
-              onClick={() => onViewChange("commits")}
-              onKeyDown={handleTabKeyDown}
-            >
-              <GitGraph size={14} /> Commits
-            </button>
-            <button
-              ref={historyTabRef}
-              type="button"
-              role="tab"
-              aria-selected={state.view === "history"}
-              tabIndex={state.view === "history" ? 0 : -1}
-              className={state.view === "history" ? "is-active" : ""}
-              title={
-                historyAvailable
-                  ? "Agent history"
-                  : "Select an active agent pane to view history"
-              }
-              disabled={!historyAvailable && state.view !== "history"}
-              onClick={() => {
-                if (historyAvailable) onViewChange("history");
-              }}
-              onKeyDown={handleTabKeyDown}
-            >
-              <History size={14} /> History
-            </button>
+            {INSPECTOR_VIEW_NAMES.map((view) => {
+              const tab = VIEW_TABS[view];
+              const Icon = tab.icon;
+              const unavailable =
+                view === "history" && !historyAvailable && state.view !== view;
+              const badge =
+                view === "changes"
+                  ? changeCount
+                  : view === "work"
+                    ? workForYou
+                    : 0;
+              return (
+                <button
+                  key={view}
+                  ref={tabRefs[view]}
+                  type="button"
+                  role="tab"
+                  aria-selected={state.view === view}
+                  tabIndex={state.view === view ? 0 : -1}
+                  className={state.view === view ? "is-active" : ""}
+                  title={
+                    view === "history"
+                      ? historyAvailable
+                        ? "Agent history"
+                        : "Select an active agent pane to view history"
+                      : tab.shortcut
+                        ? shortcutTitle(tab.label, tab.shortcut)
+                        : tab.label
+                  }
+                  {...(view === "work" && badge
+                    ? { "aria-description": `${badge} for you` }
+                    : {})}
+                  disabled={unavailable}
+                  onClick={() => {
+                    if (view !== "history" || historyAvailable)
+                      onViewChange(view);
+                  }}
+                  onKeyDown={handleTabKeyDown}
+                >
+                  <Icon size={14} aria-hidden="true" />
+                  <span className="workspace-inspector-tab-label">
+                    {tab.label}
+                  </span>
+                  {badge > 0 ? (
+                    <span className="workspace-inspector-count">{badge}</span>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
           <div className="workspace-inspector-actions">
-            <button
-              type="button"
-              className="workspace-inspector-dock-action"
-              title={
-                state.dock === "right" ? "Dock at bottom" : "Dock at right"
-              }
-              aria-label={
-                state.dock === "right"
-                  ? "Dock Inspector at bottom"
-                  : "Dock Inspector at right"
-              }
-              onClick={() =>
-                onDockChange(state.dock === "right" ? "bottom" : "right")
-              }
-            >
-              {state.dock === "right" ? (
-                <PanelBottom size={15} />
-              ) : (
-                <PanelRight size={15} />
-              )}
-            </button>
             <button
               type="button"
               className="workspace-inspector-expand-action"
@@ -1523,6 +1568,32 @@ export function WorkspaceInspectorHost({
                 <Maximize2 size={15} />
               )}
             </button>
+            <ReviewMenu
+              className="workspace-inspector-more"
+              title="More: dock, keys and commands"
+              label={<Ellipsis size={15} aria-label="More" />}
+              items={[
+                {
+                  label:
+                    state.dock === "right" ? "Dock at bottom" : "Dock at right",
+                  hint: ":dock",
+                  onSelect: () =>
+                    onDockChange(state.dock === "right" ? "bottom" : "right"),
+                },
+                !mobile && {
+                  label: state.expanded
+                    ? "Restore Inspector dock"
+                    : "Expand Inspector",
+                  hint: ":expand",
+                  onSelect: () => onExpandedChange(!state.expanded),
+                },
+                {
+                  label: "Commands",
+                  hint: ":",
+                  onSelect: () => commandFrame.registry.run("help"),
+                },
+              ]}
+            />
             <button
               type="button"
               title="Close Inspector"
@@ -1946,20 +2017,7 @@ export function WorkspaceInspectorHost({
                                 />
                               ),
                             }
-                          : zenEnd
-                            ? {
-                                // The app's Zen: the inspector's
-                                // header in the review's row.
-                                headEnd: (
-                                  <InspectorZenEnd
-                                    onView={onViewChange}
-                                    historyAvailable={historyAvailable}
-                                    onRestore={() => onExpandedChange(false)}
-                                    onClose={onClose}
-                                  />
-                                ),
-                              }
-                            : {})}
+                          : {})}
                         onGitAction={(action, path) =>
                           diffViewerRef.current?.runFileAction(action, path) ??
                           false
@@ -2060,6 +2118,31 @@ export function WorkspaceInspectorHost({
                     <span>Select an agent pane to inspect its history.</span>
                   </div>
                 )}
+              </div>
+            </InspectorViewContext.Provider>
+            <InspectorViewContext.Provider value={state.view}>
+              <div
+                className={`workspace-inspector-resource inspector-board-resource ${
+                  isBoardInspectorView(state.view) ? "" : "is-hidden"
+                }`}
+              >
+                {visible && state.open && isBoardInspectorView(state.view) ? (
+                  <Suspense fallback={null}>
+                    <InspectorBoard
+                      view={state.view}
+                      expanded={state.expanded || mobile}
+                      onView={(view) => {
+                        onViewChange(view);
+                      }}
+                      onExpand={() => onExpandedChange(true)}
+                      onClose={onClose}
+                      onStepAside={() => {
+                        if (state.expanded || mobile) onStepAside?.();
+                      }}
+                      onKeyFirst={boardViewKey}
+                    />
+                  </Suspense>
+                ) : null}
               </div>
             </InspectorViewContext.Provider>
           </div>

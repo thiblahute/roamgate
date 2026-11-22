@@ -201,7 +201,9 @@ if (
         };
       return { ok: true };
     };
-    const { showMrReviews, closeMrReviews } = await import("./MrReviewsRoot");
+    const { showMrReviews, closeMrReviews } = await import(
+      "./boardPanel.testkit"
+    );
     const wait = (ms: number) =>
       act(async () => {
         await new Promise((resolve) => setTimeout(resolve, ms));

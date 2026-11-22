@@ -190,6 +190,11 @@ export function inspectorViewContent(
         ? first(resource, [".agent-history-chat", ".agent-history-content"])
         : null;
     }
+    case "work":
+    case "reviews":
+      return host.querySelector<HTMLElement>(
+        ".inspector-board-resource .mr-reviews-panel",
+      );
   }
 }
 

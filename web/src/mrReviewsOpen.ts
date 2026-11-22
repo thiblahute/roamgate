@@ -1,7 +1,8 @@
-import { importWithReload } from "./lazyWithReload";
+import type { MrDeclarePrefill } from "./components/MrEffortView";
 import type { ShortcutEvent } from "./shortcutBindings";
 import { shortcutMatches } from "./shortcutPreferences";
 import type { WorkOpen } from "./workOpen";
+import type { BoardInspectorView } from "./workspaceResource";
 
 /** The Reviews entry, in the application menu and the command menu. */
 export const MR_REVIEWS_ENTRY = {
@@ -21,70 +22,108 @@ export const MR_REVIEWS_ENTRY = {
 };
 
 /**
- * The last element focused outside the panel and the menus: Esc gives
- * the focus back there (a chat's message box, a terminal).
+ * The board (the Work board and the reviews inbox) is two of the
+ * workspace inspector's tabs, Work and Reviews. Opening it is asking the
+ * page for the inspector on that tab (BOARD_INSPECTOR_EVENT), with what
+ * to show once there (a request, an item, a chat) kept here until the
+ * board takes it.
  */
-let lastFocus: HTMLElement | null = null;
-if (typeof document !== "undefined")
-  document.addEventListener(
-    "focusin",
-    (event) => {
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        !target.closest(
-          ".mr-reviews-panel, [role='menu'], [role='dialog'], .command-popover",
-        )
-      )
-        lastFocus = target;
-    },
-    true,
-  );
+export type BoardMode = "mr" | "work";
+export const BOARD_INSPECTOR_EVENT = "roamgate:board-inspector";
+export type BoardInspectorRequest = {
+  view: BoardInspectorView;
+  /** The shortcut's toggle: shown on that tab, the inspector closes. */
+  toggle: boolean;
+};
 
-export function focusBeforeMrReviews(): HTMLElement | null {
-  return lastFocus?.isConnected ? lastFocus : null;
+/**
+ * What the board opens on: a request selected or opened, the reviews
+ * agent's chat or an effort declared; for the Work board an item, a
+ * session's items or the add form.
+ */
+export type BoardOpenRequest = {
+  seq: number;
+  select?: string;
+  open?: string;
+  view?: "chat" | "declare";
+  declare?: MrDeclarePrefill;
+} & WorkOpen;
+
+let pending: BoardOpenRequest | null = null;
+let seq = 0;
+const listeners = new Set<() => void>();
+const emit = () => {
+  for (const listener of listeners) listener();
+};
+
+export function boardModeView(mode: BoardMode): BoardInspectorView {
+  return mode === "work" ? "work" : "reviews";
 }
 
-function loadRoot() {
-  return importWithReload(
-    "mr-reviews",
-    () => import("./components/MrReviewsRoot"),
+function requestBoard(
+  mode: BoardMode,
+  toggle: boolean,
+  what?: Omit<BoardOpenRequest, "seq">,
+) {
+  if (what && Object.values(what).some((value) => value !== undefined)) {
+    pending = { seq: ++seq, ...what };
+    emit();
+  }
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<BoardInspectorRequest>(BOARD_INSPECTOR_EVENT, {
+      detail: { view: boardModeView(mode), toggle },
+    }),
   );
 }
 
-/** Opens the board view on the reviews inbox (loaded on first use), or its chat. */
+/** What the board was asked to open on, not yet taken. */
+export function pendingBoardOpen(): BoardOpenRequest | null {
+  return pending;
+}
+
+/** Taken by the board (or dropped: no inspector to show it in). */
+export function takeBoardOpen(at?: number) {
+  if (!pending || (at !== undefined && pending.seq !== at)) return;
+  pending = null;
+  emit();
+}
+
+export function onBoardOpen(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Opens the Reviews tab on the inbox, or its chat. */
 export function openMrReviews(select?: string, view?: "chat") {
-  void loadRoot().then((module) =>
-    module.showMrReviews(select, undefined, view, undefined, { mode: "mr" }),
-  );
+  requestBoard("mr", false, { select, view });
 }
 
-/** Opens a request's review, through the panel (it asks what it needs). */
+/** Opens a request's review, through the inbox (it asks what it needs). */
 export function openMrReviewByKey(key: string) {
-  void loadRoot().then((module) =>
-    module.showMrReviews(key, key, undefined, undefined, { mode: "mr" }),
-  );
+  requestBoard("mr", false, { select: key, open: key });
+}
+
+/** The Reviews tab, declaring an upstreaming effort (a menu's home filled in). */
+export function openMrDeclare(declare: MrDeclarePrefill) {
+  requestBoard("mr", false, { view: "declare", declare });
+}
+
+/** Opens the board's tab (the Work board on an item when given). */
+export function openBoard(board: { mode: BoardMode } & WorkOpen) {
+  const { mode, ...what } = board;
+  requestBoard(mode, false, what);
 }
 
 /**
- * The view's modes: the reviews inbox and the Work board, one panel. Opens
- * the view on a mode (the Work board on an item when given).
+ * A tab's shortcut: opens the inspector on it; shown on it, closes the
+ * inspector; on another tab, switches.
  */
-export function openBoard(board: { mode: "mr" | "work" } & WorkOpen) {
-  void loadRoot().then((module) =>
-    module.showMrReviews(undefined, undefined, undefined, undefined, board),
-  );
+export function toggleBoard(mode: BoardMode) {
+  requestBoard(mode, true);
 }
 
-/**
- * A mode's shortcut: opens the view on it; open on it, closes the view;
- * open on the other mode, switches.
- */
-export function toggleBoard(mode: "mr" | "work") {
-  void loadRoot().then((module) => module.toggleMrReviews(mode));
-}
-
-/** Opens the view on the inbox, or closes it when it shows the inbox. */
+/** Opens the Reviews tab, or closes the inspector when it shows it. */
 export function toggleMrReviews() {
   toggleBoard("mr");
 }

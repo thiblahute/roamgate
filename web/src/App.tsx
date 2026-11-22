@@ -55,9 +55,12 @@ import { roamgateLocalStorage, subscribeLocalStorage } from "./browserStorage";
 import { askCompanion, callCompanion } from "./companionCallOpen";
 import { handleActivityShortcut } from "./activityTimelineOpen";
 import {
+  BOARD_INSPECTOR_EVENT,
+  type BoardInspectorRequest,
   handleMrReviewsShortcut,
   onMrFileOpen,
   openMrReviews,
+  takeBoardOpen,
   takeMrFileOpen,
 } from "./mrReviewsOpen";
 import { handleWorkShortcut, openWork, watchWorkHash } from "./workOpen";
@@ -137,6 +140,7 @@ import {
   FileDiff,
   FolderTree,
   GitGraph,
+  GitPullRequest,
   GitPullRequestArrow,
   History,
   Info,
@@ -636,6 +640,14 @@ type MobileView =
   | "annotations"
   | "assistant"
   | InspectorView;
+const INSPECTOR_VIEW_LABELS: Record<InspectorView, string> = {
+  files: "Files",
+  changes: "Changes",
+  commits: "Commits",
+  history: "History",
+  work: "Work",
+  reviews: "Reviews",
+};
 type OpenInspectorOptions = {
   entry?: FileExplorerEntry;
   path?: string;
@@ -1879,7 +1891,6 @@ export default function App() {
   const [mobileTabSheetOpen, setMobileTabSheetOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   // The phone menu's Work entry wears the For you count.
-  const workForYou = useWorkForYouCount(mobile);
   const [mobileInputTarget, setMobileInputTarget] =
     useState<HTMLDivElement | null>(null);
   useSystemBack(
@@ -1915,6 +1926,8 @@ export default function App() {
   const [inspectorState, setInspectorState] =
     useState<WorkspaceInspectorState | null>(null);
   const inspectorStateRef = useRef<WorkspaceInspectorState | null>(null);
+  /** The Work items for you: the phone's Work entry and the Work tab wear it. */
+  const workForYou = useWorkForYouCount(mobile || !!inspectorState?.open);
   const resourceUiKey = connectionClientScopeKey(
     connectionClient,
     "resource-ui",
@@ -2786,15 +2799,7 @@ export default function App() {
       if (!workspace) {
         store.notify({
           kind: "error",
-          message: `Cannot open ${
-            view === "files"
-              ? "Files"
-              : view === "changes"
-                ? "Changes"
-                : view === "commits"
-                  ? "Commits"
-                  : "History"
-          }`,
+          message: `Cannot open ${INSPECTOR_VIEW_LABELS[view]}`,
           detail: "The target workspace is no longer open.",
         });
         return;
@@ -4596,6 +4601,56 @@ export default function App() {
         handleInspectorRequest,
       );
   }, [connectionClient, openInspector]);
+  /**
+   * The board's tabs asked for (Alt+W, Alt+M, a notification's item, a
+   * menu): the focused workspace's inspector on that tab; the shortcut's
+   * toggle closes it when it shows that tab already.
+   */
+  const mobileViewRef = useRef(mobileView);
+  mobileViewRef.current = mobileView;
+  useEffect(() => {
+    const handleBoardRequest = (event: Event) => {
+      const detail = (event as CustomEvent<BoardInspectorRequest>).detail;
+      if (!detail || !connectionClient.isCurrent()) return;
+      const workspace = store.get().workspaces.find((each) => each.focused);
+      if (!workspace) {
+        takeBoardOpen();
+        store.notify({
+          kind: "error",
+          message: `Cannot open ${INSPECTOR_VIEW_LABELS[detail.view]}`,
+          detail:
+            "Open a workspace first: the board is one of its inspector's tabs.",
+        });
+        return;
+      }
+      const current = inspectorStateRef.current;
+      if (
+        detail.toggle &&
+        current?.open &&
+        current.view === detail.view &&
+        current.scope.workspaceId === workspace.workspace_id &&
+        (!mobile || mobileViewRef.current === detail.view)
+      ) {
+        closeInspector();
+        return;
+      }
+      openInspector(detail.view, workspace.workspace_id);
+    };
+    window.addEventListener(BOARD_INSPECTOR_EVENT, handleBoardRequest);
+    return () =>
+      window.removeEventListener(BOARD_INSPECTOR_EVENT, handleBoardRequest);
+  }, [closeInspector, connectionClient, mobile, openInspector]);
+  /**
+   * The board opened a session, a workspace or a review over the inspector
+   * filling the window: it steps aside, the focus left where that went.
+   */
+  const stepInspectorAside = useCallback(() => {
+    const current = inspectorStateRef.current;
+    if (!current?.open) return;
+    inspectorReturnFocusRef.current = null;
+    commitInspectorState({ ...current, open: false });
+    if (mobile) setMobileView("session");
+  }, [commitInspectorState, mobile]);
   useEffect(() => {
     const handleAnnotationRequest = (event: Event) => {
       const detail = (event as CustomEvent<WorkspaceAnnotationRequest>).detail;
@@ -6425,6 +6480,7 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={mobileView === "work" ? "active" : ""}
             title={shortcutTitle("Work", "work.board")}
             aria-label="Open the Work board"
             aria-description={
@@ -6442,6 +6498,19 @@ export default function App() {
                 {workForYou}
               </span>
             ) : null}
+          </button>
+          <button
+            type="button"
+            className={mobileView === "reviews" ? "active" : ""}
+            title={shortcutTitle("Reviews", "reviews.inbox")}
+            aria-label="Open the reviews inbox"
+            onClick={() => {
+              setMobileMoreOpen(false);
+              openMrReviews();
+            }}
+          >
+            <GitPullRequest size={16} />
+            <span className="mobile-nav-label">Reviews</span>
           </button>
           <button
             type="button"
@@ -7133,6 +7202,8 @@ export default function App() {
                       }}
                       onShowReviews={() => setReviewListOpen(true)}
                       onBack={clearInspectorDetail}
+                      workForYou={workForYou}
+                      onStepAside={stepInspectorAside}
                     />
                   </Suspense>
                 </div>

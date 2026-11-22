@@ -12,17 +12,6 @@
   white-space: nowrap;
 }
 
-/* The Work tab's For you count. */
-.mr-reviews-modes .mr-reviews-mode-badge {
-  margin-left: 4px;
-  border-radius: 8px;
-  padding: 0 5px;
-  background: var(--accent);
-  color: var(--bg, #fff);
-  font-size: 9px;
-  font-weight: 600;
-}
-
 /* The filter row: the project shown (tags are searched for, #tag). */
 .work-filter-row {
   position: relative;

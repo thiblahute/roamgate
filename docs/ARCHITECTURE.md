@@ -1811,21 +1811,29 @@ items its parts, their threads a review delivered to the item's owner as an
 effort's are to its leader. The store is this server's, machine-wide, and
 every page shows it.
 
-Page: the Work board is a mode of the board view, the reviews inbox's
-panel (`web/src/components/MrReviewsPanel.tsx`, one root,
-`MrReviewsRoot.tsx`): one shell (floating, maximized, full screen on a
-phone, the surface rect followed), one head with the mode switch
-(`mr-reviews-modes`, `[` / `]`, the mode kept as `mrReviewsMode`), one
-key capture, one help, the inbox's columns (`mr-reviews-board` /
-`mr-reviews-lane`, side by side from `MR_BOARD_MIN_WIDTH`) and card frame
-(`BoardCard.tsx`) and walk (`boardNavigation.ts`: `nextRow`,
-`nextColumn`, used by both modes). `useWorkMode` (WorkBoard.tsx) gives the
-view the mode's head line, buttons, body (the filter row and the state
-columns, the item's detail with its thread, the add form) and key handler;
-the view takes `[` `]`, `?` and the closing Esc itself. `mrReviewsOpen.ts`
-(`openBoard`, `toggleBoard`) and `workOpen.ts` open the view on a mode: a
-mode's shortcut opens the view on it, closes it when it shows that mode,
-switches when it shows the other.
+Page: the Work board is a mode of the board, the reviews inbox's panel
+(`web/src/components/MrReviewsPanel.tsx`), shown in two of the workspace
+inspector's tabs, `work` and `reviews` (`InspectorView`,
+`WorkspaceInspectorHost.tsx`, `InspectorBoard.tsx`): one panel for both
+tabs (its `mode` the tab, its `[` `]` asking the host for the other tab
+through `onModeChange`), the inspector's frame (dock, expand, Zen, close,
+the phone's screen), its `:` commands (`:work`, `:reviews`) and `gt` /
+`gT` (given first through `onKeyFirst`), one key capture, one help, the
+inbox's columns (`mr-reviews-board` / `mr-reviews-lane`, side by side
+from `MR_BOARD_MIN_WIDTH`) and card frame (`BoardCard.tsx`) and walk
+(`boardNavigation.ts`: `nextRow`, `nextColumn`, used by both modes).
+`useWorkMode` (WorkBoard.tsx) gives the panel the mode's head line,
+buttons, body (the filter row and the state columns, the item's detail
+with its thread, the add form) and key handler; the panel takes `[` `]`,
+`?` and the closing Esc itself. `mrReviewsOpen.ts` (`openBoard`,
+`toggleBoard`, `openMrReviews`, `openMrDeclare`) and `workOpen.ts` keep
+what the board is opened on (an item, a request, a chat) until the board
+takes it, once, and ask the page (`BOARD_INSPECTOR_EVENT`, App.tsx) for
+the focused workspace's inspector on the tab: a tab's shortcut opens it,
+closes the inspector when it shows that tab, switches otherwise. A
+session, workspace or review the board opens hides the inspector when it
+fills the window or a phone's screen (`onStepAside`), and leaves it
+docked otherwise.
 
 Store: `<data>/work/work.json` (`ROAMGATE_WORK_DIR`), written whole on each
 change: `projects` (`{id, name, roots: [{connectionId, path}], done, tags?,

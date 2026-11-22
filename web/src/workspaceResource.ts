@@ -4,7 +4,20 @@ import { matchesShortcut, type ShortcutBindings } from "./shortcutBindings";
 import type { Workspace } from "./types";
 import { connectionStorageKey } from "./connectionStorage";
 
-export type InspectorView = "files" | "changes" | "commits" | "history";
+export type InspectorView =
+  | "files"
+  | "changes"
+  | "commits"
+  | "history"
+  | "work"
+  | "reviews";
+/** The inspector's tabs that show the board: the Work board, the reviews inbox. */
+export type BoardInspectorView = Extract<InspectorView, "work" | "reviews">;
+export function isBoardInspectorView(
+  view: InspectorView | null | undefined,
+): view is BoardInspectorView {
+  return view === "work" || view === "reviews";
+}
 export type WorkspaceSurface = "terminal" | "annotations" | InspectorView;
 export const WORKSPACE_INSPECTOR_REQUEST_EVENT =
   "roamgate:workspace-inspector-request";
@@ -339,7 +352,9 @@ export function readInspectorPreferences(
       view:
         value.view === "changes" ||
         value.view === "commits" ||
-        value.view === "history"
+        value.view === "history" ||
+        value.view === "work" ||
+        value.view === "reviews"
           ? value.view
           : "files",
       dock: value.dock === "bottom" ? "bottom" : "right",

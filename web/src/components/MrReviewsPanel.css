@@ -1,77 +1,13 @@
-/* The reviews panel: Ranger's panel (AssistantPanel.css) and task list
-   (AssistantTasks.css), placed over the page from its own root. */
-
-.mr-reviews-root {
-  position: fixed;
-  /* Over the reviews list (5500), under the toasts (6001). */
-  z-index: 5700;
-  inset: 0;
-  pointer-events: none;
-}
+/* The board: Ranger's panel (AssistantPanel.css) and task list
+   (AssistantTasks.css), in the workspace inspector's Work and Reviews tabs
+   (WorkspaceInspectorHost.css places it). */
 
 .mr-reviews-panel {
-  pointer-events: auto;
   outline: none;
-}
-
-.mr-reviews-panel.is-floating {
-  position: absolute;
-  top: 52px;
-  right: 8px;
-  bottom: 8px;
-  width: min(var(--assistant-panel-width, 420px), calc(100% - 16px));
-}
-
-.mr-reviews-panel.is-maximized {
-  position: absolute;
-  inset: 52px 8px 8px;
-}
-
-.mr-reviews-panel.is-mobile {
-  position: absolute;
-  inset: 0;
-  border-radius: 0;
 }
 
 .mr-reviews-back {
   padding: 10px 12px 0;
-}
-
-/* The view's modes in its head: Work, Reviews; the one shown stands out. */
-.mr-reviews-modes {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--viewer-border);
-  border-radius: 7px;
-  background: var(--viewer-code-bg);
-}
-
-.mr-reviews-modes > button {
-  display: inline-flex;
-  align-items: center;
-  min-height: 0;
-  padding: 1px 8px;
-  border: 0;
-  border-radius: 5px;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.5;
-  cursor: pointer;
-}
-
-.mr-reviews-modes > button[aria-pressed="true"] {
-  background: var(--viewer-panel-bg);
-  color: var(--text-strong);
-  box-shadow: var(--shadow-sm, 0 1px 3px rgb(0 0 0 / 25%));
-}
-
-.is-mobile .mr-reviews-modes > button {
-  min-height: 28px;
-  padding: 2px 10px;
 }
 
 /* The Work mode's body: the search, the filter row, then the columns. */

@@ -167,6 +167,9 @@ export function isTypingTarget(value: EventTarget | null): boolean {
 export const INSPECTOR_COMMAND_WORDS: readonly string[] = [
   "view",
   "v",
+  "work",
+  "reviews",
+  "inbox",
   "dock",
   "expand",
   "refresh",
@@ -187,6 +190,8 @@ export const INSPECTOR_VIEW_NAMES = [
   "changes",
   "commits",
   "history",
+  "work",
+  "reviews",
 ] as const;
 
 /**

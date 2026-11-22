@@ -197,6 +197,7 @@ import {
   dragTarget,
   type WorkspaceDragItem,
 } from "../workspaceTreeDrop";
+import { openMrDeclare } from "../mrReviewsOpen";
 import "./WorkspaceTree.css";
 import "./WorkspaceAutoSyncDialog.css";
 
@@ -1602,10 +1603,7 @@ export function WorkspaceTree({
               : workspaceRefFor(menuConnectionId, menu.workspace),
           parent: menuNode?.parent ?? null,
           branch: menu.workspace.worktree?.git_status?.branch,
-          declare: (prefill) =>
-            void import("./MrReviewsRoot").then((module) =>
-              module.showMrReviews(undefined, undefined, "declare", prefill),
-            ),
+          declare: (prefill) => openMrDeclare(prefill),
         }),
       ]
     : [];

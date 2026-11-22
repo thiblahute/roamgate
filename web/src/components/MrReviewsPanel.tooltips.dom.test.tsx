@@ -1,6 +1,4 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 if (process.env.ROAMGATE_MR_REVIEWS_TOOLTIPS_DOM_TEST !== "1") {
   test("the reviews panel's icon buttons say what they do, in an isolated browser runtime", async () => {
@@ -17,17 +15,6 @@ if (process.env.ROAMGATE_MR_REVIEWS_TOOLTIPS_DOM_TEST !== "1") {
     if (code !== 0) throw new Error(`${stdout}\n${stderr}`);
     expect(code).toBe(0);
   }, 60_000);
-
-  test("the tooltip is drawn over the Reviews pane", () => {
-    const zIndex = (file: string, selector: string) => {
-      const css = readFileSync(join(import.meta.dir, file), "utf8");
-      const block = css.slice(css.indexOf(`${selector} {`));
-      return Number(/z-index:\s*(\d+)/.exec(block)?.[1]);
-    };
-    expect(zIndex("GlobalTooltip.css", ".global-tooltip")).toBeGreaterThan(
-      zIndex("MrReviewsPanel.css", ".mr-reviews-root"),
-    );
-  });
 } else {
   test("every icon-only button has a name and a title naming its action and key", async () => {
     const { Window } = await import("happy-dom");
@@ -161,7 +148,9 @@ if (process.env.ROAMGATE_MR_REVIEWS_TOOLTIPS_DOM_TEST !== "1") {
         };
       return { ok: true };
     };
-    const { showMrReviews, closeMrReviews } = await import("./MrReviewsRoot");
+    const { showMrReviews, closeMrReviews } = await import(
+      "./boardPanel.testkit"
+    );
     const wait = (ms: number) =>
       act(async () => {
         await new Promise((resolve) => setTimeout(resolve, ms));
@@ -247,7 +236,6 @@ if (process.env.ROAMGATE_MR_REVIEWS_TOOLTIPS_DOM_TEST !== "1") {
     for (const title of [
       "Refresh (r)",
       "Keys (?)",
-      "Maximize: fill the window",
       "Settings: hosts, followed projects, checkout",
       "Go to its home: webrtc-ice-restart (w)",
       "Go to its home: pitch fix (w); 2 more in its details (2w...)",
@@ -258,8 +246,5 @@ if (process.env.ROAMGATE_MR_REVIEWS_TOOLTIPS_DOM_TEST !== "1") {
       "Move down (J)",
     ])
       expect(seen).toContain(title);
-    expect([...seen].some((title) => title.startsWith("Close (Esc"))).toBe(
-      true,
-    );
   });
 }

@@ -2,9 +2,9 @@ import { expect, spyOn, test } from "bun:test";
 
 /**
  * The Work board on a phone, at the app level: More options has a Work
- * entry wearing the For you count, which opens the board view on its Work
- * mode, full screen, and closes the sheet; the view's close returns to
- * the page.
+ * entry wearing the For you count, which opens the inspector on its Work
+ * tab, the phone's screen, and closes the sheet; the inspector's close
+ * returns to the page.
  */
 if (process.env.ROAMGATE_APP_WORK_PHONE_TEST !== "1") {
   test("the Work board on a phone, in an isolated DOM runtime", async () => {
@@ -26,6 +26,7 @@ if (process.env.ROAMGATE_APP_WORK_PHONE_TEST !== "1") {
     "./App.review.testkit"
   );
   await installAppReviewDom("http://localhost/?layout=mobile");
+  const React = await import("react");
   const { bridge } = await import("./api");
   const item = (id: string, state: string) => ({
     id,
@@ -65,7 +66,7 @@ if (process.env.ROAMGATE_APP_WORK_PHONE_TEST !== "1") {
   });
   spyOn(bridge, "onStatus").mockImplementation(() => () => {});
 
-  test("More options' Work wears the For you count, opens the board full screen and closes the sheet; the board closes back", async () => {
+  test("More options' Work wears the For you count, opens the inspector on its Work tab and closes the sheet; the inspector closes back", async () => {
     const app = await mountAppWithReviews({ reviews: [] });
     try {
       const more = () =>
@@ -94,6 +95,8 @@ if (process.env.ROAMGATE_APP_WORK_PHONE_TEST !== "1") {
         ),
       ].map((label) => label.textContent);
       expect(labels.indexOf("Work")).toBe(labels.indexOf("Review") + 1);
+      // The reviews inbox, the inspector's other board tab, next to it.
+      expect(labels.indexOf("Reviews")).toBe(labels.indexOf("Work") + 1);
       expect(work().querySelector("svg")).not.toBeNull();
       expect(work().querySelector(".mobile-nav-badge")?.textContent).toBe("2");
       expect(work().getAttribute("aria-description")).toBe("2 for you");
@@ -101,35 +104,16 @@ if (process.env.ROAMGATE_APP_WORK_PHONE_TEST !== "1") {
       await app.click(work());
       await app.settle(100);
       expect(more().getAttribute("aria-expanded")).toBe("false");
-      // The board view, on its Work mode, full screen.
-      const panel = () =>
-        document.querySelector<HTMLElement>(
-          ".mr-reviews-root .mr-reviews-panel",
-        );
-      expect(panel()).not.toBeNull();
-      expect(panel()!.classList.contains("is-mobile")).toBe(true);
-      expect(panel()!.classList.contains("is-work")).toBe(true);
-      expect(panel()!.getAttribute("aria-label")).toBe("Work");
-      expect(
-        panel()!
-          .querySelector(".mr-reviews-modes button[aria-pressed='true']")
-          ?.textContent?.startsWith("Work"),
-      ).toBe(true);
-      // Scoped to the page's workspace: its checkout is the project's root.
-      expect(panel()!.querySelector(".work-scope-name")?.textContent).toBe(
-        "Workspace 1",
-      );
-      expect(panel()!.querySelector(".work-status")?.textContent).toBe(
-        "2 for you · 3 open",
-      );
-      // The board's close: the panel goes, the page stays.
-      await app.click(
-        panel()!.querySelector<HTMLButtonElement>(
-          'button[aria-label="Close Work (Esc)"]',
-        )!,
-      );
+      // The inspector on its Work tab, the phone's screen; it wears the
+      // For you count on that tab (the board itself: the inspector's tests).
+      expect(app.inspector()).toMatchObject({ open: true, view: "work" });
+      expect(app.inspectorProps().visible).toBe(true);
+      expect(app.inspectorProps().workForYou).toBe(2);
+      expect(work().classList.contains("active")).toBe(true);
+      // The inspector's close: the board goes, the page stays.
+      await React.act(async () => app.inspectorProps().onClose());
       await app.settle(50);
-      expect(panel()).toBeNull();
+      expect(app.inspector()?.open).toBe(false);
       expect(more()).not.toBeNull();
 
       // A push changes the count on the entry.

@@ -1,5 +1,5 @@
 import type { WorkLink } from "../../shared/work";
-import { focusBeforeMrReviews, openBoard, toggleBoard } from "./mrReviewsOpen";
+import { openBoard, toggleBoard } from "./mrReviewsOpen";
 import type { ShortcutEvent } from "./shortcutBindings";
 import { shortcutMatches } from "./shortcutPreferences";
 import type { WorkWorkspace } from "./workScope";
@@ -13,15 +13,6 @@ export const WORK_ENTRY = {
 
 /** The page's hash that opens the board on an item (a notification's link). */
 const WORK_HASH = "#roamgate-work=";
-
-/**
- * The last element focused outside the view and the menus: Esc gives the
- * focus back there (a chat's message box, a terminal). The Work board is
- * a mode of the board view: its focus memory is the view's.
- */
-export function focusBeforeWork(): HTMLElement | null {
-  return focusBeforeMrReviews();
-}
 
 /**
  * An item added from a session's chat, as the board's add form starts
@@ -45,8 +36,8 @@ export type WorkAddDraft = {
 export type WorkOpen = { item?: string; owner?: string; add?: WorkAddDraft };
 
 /**
- * Opens the board view on the Work board (loaded on first use), on an
- * item, a session's items or an add form when given.
+ * Opens the inspector's Work tab, on an item, a session's items or an
+ * add form when given.
  */
 export function openWork(open?: string | WorkOpen) {
   const what = typeof open === "string" ? { item: open } : (open ?? {});
@@ -54,8 +45,8 @@ export function openWork(open?: string | WorkOpen) {
 }
 
 /**
- * Opens the view on the Work board; open on it, closes the view; open on
- * the reviews inbox, switches to the Work board.
+ * Opens the inspector on its Work tab; shown there, closes the inspector;
+ * on another tab, switches to Work.
  */
 export function toggleWork() {
   toggleBoard("work");

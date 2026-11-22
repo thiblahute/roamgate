@@ -66,6 +66,7 @@ import {
 } from "./treeKeyboard";
 import { TREE_DEPTH_INDENT } from "./treeIndent";
 import { connectionDotColor } from "../workspaceTreeBadges";
+import { openMrDeclare } from "../mrReviewsOpen";
 import "./WorkspaceTreeArrange.css";
 
 export type { TreeDragItem } from "../workspaceTreeDrop";
@@ -792,12 +793,7 @@ export function ArrangeNodeMenu({
         label: "Declare an upstreaming effort…",
         title:
           "Follow a large branch of this group commit by commit until it is all upstream",
-        action: () =>
-          void import("./MrReviewsRoot").then((module) =>
-            module.showMrReviews(undefined, undefined, "declare", {
-              home: headed,
-            }),
-          ),
+        action: () => openMrDeclare({ home: headed }),
       });
   }
   items.push({

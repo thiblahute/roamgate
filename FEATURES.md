@@ -163,9 +163,17 @@ Herdr 0.9.1+ resolves URLs that wrap across lines. See
 
 ## Workspace Inspector
 
-Open **Files**, **Changes**, **Commits**, or **Agent History** from the
-Inspector button, shortcuts, or workspace/agent menus.
+Open **Files**, **Changes**, **Commits**, **Agent History**, **Work** or
+**Reviews** from the Inspector button, shortcuts, or workspace/agent menus.
 
+- The header is one row: the checkout, then the six view tabs, each with its
+  icon and a tooltip naming it and its shortcut (a narrow inspector names
+  only the tab shown; the tabs scroll sideways when even that does not fit,
+  on a phone too), then Expand, **More** (dock right or bottom, expand,
+  the commands) and Close; expanded in the app's Zen, Zen's way out joins
+  them. The view's own controls are its own row under it (Changes' review
+  head, Files' preview bar); Changes' row, narrow, drops its words and the
+  agent's last line (shown again while the agent works).
 - Dock right or bottom, resize, or expand. Narrow layouts use drill-down views.
 - Single-click opens a temporary preview tab; double-click keeps it. Open files
   are restored per connection and checkout. A file outside the checkout, and
@@ -182,7 +190,13 @@ Inspector button, shortcuts, or workspace/agent menus.
 - Changes counts the lines of untracked files when there are at most 500 of
   them; a larger untracked tree is listed without line counts.
 - `gt` / `gT` go to the next and previous view (`2gt` to the second), from
-  anywhere in the inspector but a text field; the tabs' arrow keys stay.
+  anywhere in the inspector but a text field, the Work and Reviews board
+  too; the tabs' arrow keys stay.
+- **Work** and **Reviews** hold the board (see [Work board](#work-board) and
+  [Reviews inbox](#reviews-inbox)): `Option+W` (`Alt+W`) and `Option+M`
+  (`Alt+M`) open the focused workspace's inspector on them, close it when it
+  shows that tab, and switch tabs otherwise; the Work tab wears the For you
+  count.
 - Changes is the review (see [Review](#review)), with its cursor and keys,
   Vim keys on or off (`:novim` only makes the comment editor plain): `j`/`k` (counts too),
   `J`/`K`, `gg`/`G` and `12G` or `:12` (line 12 of all the changes),
@@ -1604,18 +1618,19 @@ key or a button already does, where that one is; the shown view's come
 first, then the inspector's own. `?` (or `:help`) lists them with the view's
 keys, filtered as you type; `:help WORD` opens the list filtered:
 
-| Command                      | Does                                                                                                                        |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `:view NAME` (`:v`)          | the Files, Changes, Commits or History tab; the start of a name is enough (`:v c` is Changes)                               |
-| `:files`                     | Files, beside a file: hides or shows the file tree (its button); Changes: its changed files' tree; Commits: its commit list |
-| `:only` (`:o`)               | Changes: Review only, the diff alone over the app; Esc, `:only` or **Show all** bring the inspector back                    |
-| `:dock` (`right` / `bottom`) | the dock button                                                                                                             |
-| `:expand`                    | the expand button, or restore                                                                                               |
-| `:vim`, `:novim`             | Vim keys in comment editors, message boxes and the previews, on / off (one setting); the review's other keys stay           |
-| `:set vim` / `novim`         | the same                                                                                                                    |
-| `:set wide` / `nowide`       | full width diffs (the review's view menu's **Full width diffs**), or diffs in a centred column of code width (the default)  |
-| `:help` (`WORD`)             | the shortcut list (`?`), filtered by the word                                                                               |
-| `:q` (`:quit`, `:close`)     | Files: closes the file's tab; elsewhere closes the inspector                                                                |
+| Command                        | Does                                                                                                                        |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `:view NAME` (`:v`)            | the Files, Changes, Commits, History, Work or Reviews tab; the start of a name is enough (`:v c` is Changes)                |
+| `:work`, `:reviews` (`:inbox`) | the Work or Reviews tab (in Changes, `:reviews` stays the reviews in progress: `:inbox` there)                              |
+| `:files`                       | Files, beside a file: hides or shows the file tree (its button); Changes: its changed files' tree; Commits: its commit list |
+| `:only` (`:o`)                 | Changes: Review only, the diff alone over the app; Esc, `:only` or **Show all** bring the inspector back                    |
+| `:dock` (`right` / `bottom`)   | the dock button                                                                                                             |
+| `:expand`                      | the expand button, or restore                                                                                               |
+| `:vim`, `:novim`               | Vim keys in comment editors, message boxes and the previews, on / off (one setting); the review's other keys stay           |
+| `:set vim` / `novim`           | the same                                                                                                                    |
+| `:set wide` / `nowide`         | full width diffs (the review's view menu's **Full width diffs**), or diffs in a centred column of code width (the default)  |
+| `:help` (`WORD`)               | the shortcut list (`?`), filtered by the word                                                                               |
+| `:q` (`:quit`, `:close`)       | Files: closes the file's tab; elsewhere closes the inspector                                                                |
 
 The Files tree, its toolbar's:
 
@@ -1740,17 +1755,16 @@ rate limit stops two sessions answering each other in a loop.
 
 ## Reviews Inbox
 
-**Menu > Reviews**, the command menu or `Option+M` (`Alt+M`) opens the
-merge and pull requests waiting for you, from every GitLab and GitHub host
-glab and gh are signed in to on the Roamgate machine (or the hosts listed in
-its settings); the same key hides it again. It is one mode of the board
-view, the other being the [Work board](#work-board): the view's head says
-**Work** | **Reviews**, a click or `[` / `]` switches, and each mode's
-shortcut opens the view on it (or switches to it when the view shows the
-other); the mode last shown comes back. It sits beside the page as
-Ranger does, as tall as Ranger's panel, with the same head, list and detail.
-Maximized (its head's button) it covers the workspace; Esc hides it as it is,
-and it comes back maximized until you restore it (kept in the browser). **To
+**Menu > Reviews**, the command menu, `Option+M` (`Alt+M`) or, on a phone,
+**More options > Reviews** opens the merge and pull requests waiting for
+you, from every GitLab and GitHub host glab and gh are signed in to on the
+Roamgate machine (or the hosts listed in its settings), in the
+[Workspace Inspector](#workspace-inspector)'s **Reviews** tab; the same key
+closes the inspector again. Its neighbour tab is the
+[Work board](#work-board): a click on a tab, `[` / `]`, `gt` / `gT` or each
+one's shortcut switches. It is the inspector's: docked beside the page,
+expanded over it (the inspector's Expand, Zen too), full screen on a
+phone; Esc with nothing else to leave closes the inspector. **To
 review** lists the open requests where you are a
 requested reviewer, an assignee or mentioned (a pending GitLab to-do, a
 GitHub mention); **Mine** lists the requests you opened, open ones and those
@@ -2202,21 +2216,22 @@ is kept, and hints for the suggestions.
 ## Work board
 
 **Menu > Work**, the command menu, `Option+W` (`Alt+W`) or, on a phone,
-**More options > Work** (wearing the For you count) opens the board view
-on the Work board: your work items in columns by state, **For you** (waits
-on you), **Doing**, **Verify** (built, to be confirmed in real use),
-**Open** (nobody on it) and **Done** (folded until asked). The Work board
-and the [Reviews inbox](#reviews-inbox) are the two modes of one view: the
-same panel beside the page (floating, or the whole page with its head's
-button, full screen on a phone), the same head, where **Work** |
-**Reviews** switches (a click, `[` / `]`; the Work tab wears the For you
+**More options > Work** (wearing the For you count) opens the
+[Workspace Inspector](#workspace-inspector) on its **Work** tab: your work
+items in columns by state, **For you** (waits on you), **Doing**,
+**Verify** (built, to be confirmed in real use), **Open** (nobody on it)
+and **Done** (folded until asked). Work and the
+[Reviews inbox](#reviews-inbox) are the inspector's two board tabs, one
+board: the inspector's place (docked, expanded, Zen, full screen on a
+phone), its close and `:` commands (`:work`, `:reviews`), the tabs
+switching (a click, `[` / `]`, `gt` / `gT`; the Work tab wears the For you
 count), the same columns (side by side on a wide pane, each scrolling on
 its own, the row scrolling sideways when more are shown than fit; one
 list on a narrow pane or a phone), the same cards and keys (`j`/`k`,
-`h`/`l`, `gg`/`G`, `za`, `/`, `?`, Esc). `Option+W` opens the view on
-Work, closes it when it shows Work, and switches to Work when it shows
-Reviews; `Option+M` does the same for Reviews; the mode last shown comes
-back next time. The board is the workspace's: it shows the project whose
+`h`/`l`, `gg`/`G`, `za`, `/`, `?`, Esc). `Option+W` opens the inspector on
+Work, closes it when it shows Work, and switches to Work from another tab;
+`Option+M` does the same for Reviews; each workspace's inspector shows
+the tab it was left on. The board is the workspace's: it shows the project whose
 root holds the workspace's checkout, or its panes' directories, the most
 closely (`roamgate` for a Roamgate worktree, `gst2` for the GStreamer 2.0
 ones, `gstreamer` for the other GStreamer checkouts), or the project whose
@@ -2252,8 +2267,9 @@ column's top right corner, or `zf`, shows that column alone at the
 board's width: `h`/`l` move to the next column, the button again, `zf` or
 Esc show every column.
 
-Hidden (its close button, Esc, Alt+W, or stepping aside for a session it
-opened while it filled the window) and shown again, the board is where it
+Hidden (the inspector closed, another tab, Esc, Alt+W, or stepping aside
+for a session it opened while the inspector filled the window or the
+phone's screen; docked beside the page, it stays) and shown again, the board is where it
 was left in that workspace, through a reload of the page too: the search,
 the selected card, the focused column, the item's detail or the new item
 form, and where each list was scrolled. Opened on an item (a notification,

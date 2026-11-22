@@ -55,6 +55,13 @@ export type ShownReviews = {
 
 type InspectorProps = {
   fileSelection?: unknown;
+  /** Shown (a phone: its view is the inspector's). */
+  visible?: boolean;
+  /** The Work tab's For you count. */
+  workForYou?: number;
+  onClose: () => void;
+  /** The board stepping aside for what it opened. */
+  onStepAside?: () => void;
   onViewChange: (view: "files" | "changes" | "commits" | "history") => void;
   onExpandedChange: (expanded: boolean) => void;
   onShowInReview?: (path: string, line?: number) => void;

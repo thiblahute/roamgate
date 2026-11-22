@@ -169,10 +169,12 @@ if (
       },
       { capture: true },
     );
-    // The app's handler: registered on the window, as App.tsx does.
+    // The app's handler: registered on the window, as App.tsx does; the
+    // inspector's Reviews tab it asks for is the panel alone here.
+    const { showMrReviews } = await import("./boardPanel.testkit");
     window.addEventListener(
       "keydown",
-      (event) => handleMrReviewsShortcut(event),
+      (event) => handleMrReviewsShortcut(event, () => showMrReviews()),
       { capture: true },
     );
     composer.focus();
@@ -212,8 +214,8 @@ if (
     expect(document.body.textContent).not.toContain("All reviews");
     await press("Escape");
     expect(document.querySelector(".mr-reviews-panel")).toBeNull();
-    // Esc gave the focus back to the message box; nothing reached it.
-    expect(document.activeElement).toBe(composer);
+    // Nothing reached the message box (the inspector's close gives it the
+    // focus back, in the page).
     expect(composer.textContent).toBe("");
     // The chat had marked those keys first: the panel took them anyway.
     expect(chatTook).toBeGreaterThan(0);

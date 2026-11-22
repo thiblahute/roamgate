@@ -385,6 +385,11 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
           "Select an active agent pane to view history",
         );
         await inspector.key("Changes", "End");
+        expect(inspector.views.slice(-1)[0]).toBe("reviews");
+        // Left from the board's tabs skips History for Commits.
+        await inspector.key("Reviews", "ArrowLeft");
+        expect(inspector.views.slice(-1)[0]).toBe("work");
+        await inspector.key("Work", "ArrowLeft");
         expect(inspector.views.slice(-1)[0]).toBe("commits");
       } finally {
         await inspector.unmount();
@@ -394,6 +399,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         expect(withAgent.tab("History").disabled).toBe(false);
         expect(withAgent.tab("History").title).toBe("Agent history");
         await withAgent.key("Changes", "End");
+        await withAgent.key("Reviews", "ArrowLeft");
+        await withAgent.key("Work", "ArrowLeft");
         expect(withAgent.views.slice(-1)[0]).toBe("history");
       } finally {
         await withAgent.unmount();
@@ -408,6 +415,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
           false,
           false,
           false,
+          false,
+          false,
         ]);
         await inspector.key("Files", "ArrowRight");
         expect(inspector.views.slice(-1)[0]).toBe("changes");
@@ -418,15 +427,20 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         });
         await inspector.key("Changes", "ArrowRight");
         expect(inspector.views.slice(-1)[0]).toBe("commits");
-        // Without History, Right from Commits wraps to Files.
+        // Without History, Right from Commits goes to Work; from Reviews,
+        // the last tab, it wraps to Files.
         await inspector.key("Commits", "ArrowRight");
+        expect(inspector.views.slice(-1)[0]).toBe("work");
+        await inspector.key("Work", "ArrowRight");
+        expect(inspector.views.slice(-1)[0]).toBe("reviews");
+        await inspector.key("Reviews", "ArrowRight");
         expect(inspector.views.slice(-1)[0]).toBe("files");
         await inspector.key("Files", "ArrowLeft");
-        expect(inspector.views.slice(-1)[0]).toBe("commits");
+        expect(inspector.views.slice(-1)[0]).toBe("reviews");
         await inspector.key("Commits", "Home");
         expect(inspector.views.slice(-1)[0]).toBe("files");
         await inspector.key("Files", "End");
-        expect(inspector.views.slice(-1)[0]).toBe("commits");
+        expect(inspector.views.slice(-1)[0]).toBe("reviews");
         // Other keys leave the tab alone.
         const count = inspector.views.length;
         await inspector.key("Commits", "a");
@@ -990,7 +1004,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       }
     });
 
-    test("expanded, the review's row ends with the inspector's header (shown in the app's Zen): the other views, Restore, Close and Zen's way out", async () => {
+    test("expanded, the inspector keeps its one row of tabs above the review's own row: the six views, Restore, More, Close and Zen's way out", async () => {
       const { PREFS_KEY } = await import("../reviewPrefs");
       localStorage.setItem(PREFS_KEY, JSON.stringify({}));
       const calls: string[] = [];
@@ -1000,54 +1014,53 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         calls,
       });
       try {
-        const end = () =>
-          inspector.host.querySelector<HTMLElement>(
-            "[data-stub=head-end] .diff-inspector-end",
-          );
-        expect(end()).not.toBeNull();
+        const head = inspector.host.querySelector<HTMLElement>(
+          ".workspace-inspector-head",
+        )!;
         expect(
-          [...(end()?.querySelectorAll("button") ?? [])].map((button) =>
-            button.getAttribute("aria-label"),
+          [...head.querySelectorAll("[role=tab]")].map(
+            (tab) =>
+              tab.querySelector(".workspace-inspector-tab-label")?.textContent,
           ),
         ).toEqual([
-          "Show Files",
-          "Show Commits",
-          "Show History",
-          "Restore Inspector dock",
-          "Close Workspace Inspector",
+          "Files",
+          "Changes",
+          "Commits",
+          "History",
+          "Work",
+          "Reviews",
         ]);
-        // No agent pane: no history to show.
+        // Every tab says what it is, its key when it has one.
+        for (const tab of head.querySelectorAll<HTMLElement>("[role=tab]"))
+          expect(tab.title).toBeTruthy();
+        // The review's row holds no copy of the header any more.
+        expect(inspector.host.querySelector(".diff-inspector-end")).toBeNull();
+        expect(head.querySelector(".zen-dock[data-zen-dock]")).not.toBeNull();
+        // Docking is in More; the header's buttons are Restore and Close.
         expect(
-          end()?.querySelector<HTMLButtonElement>("[aria-label='Show History']")
-            ?.disabled,
-        ).toBe(true);
-        expect(end()?.querySelector(".zen-dock[data-zen-dock]")).not.toBeNull();
+          head
+            .querySelector(".workspace-inspector-more")
+            ?.getAttribute("data-menu-items")
+            ?.split("\n"),
+        ).toEqual(["Dock at bottom", "Restore Inspector dock", "Commands"]);
         await act(async () =>
-          end()
-            ?.querySelector<HTMLButtonElement>(
+          head
+            .querySelector<HTMLButtonElement>(
               "[aria-label='Restore Inspector dock']",
             )
             ?.click(),
         );
         await act(async () =>
-          end()
-            ?.querySelector<HTMLButtonElement>(
+          head
+            .querySelector<HTMLButtonElement>(
               "[aria-label='Close Workspace Inspector']",
             )
             ?.click(),
         );
         expect(calls).toEqual(["expanded false", "close"]);
-        await act(async () =>
-          end()
-            ?.querySelector<HTMLButtonElement>("[aria-label='Show Commits']")
-            ?.click(),
-        );
-        expect(inspector.views).toEqual(["commits"]);
-        // Review only has its own end instead.
-        await act(async () => inspector.tab("Changes").click());
+        // Review only has its own end.
         await act(async () => diffSeen.run?.("only"));
         await act(async () => {});
-        expect(end()).toBeNull();
         expect(
           inspector.host.querySelector(
             "[data-stub=head-end] .diff-review-only-end",
@@ -1057,37 +1070,16 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
         await inspector.unmount();
         localStorage.removeItem(PREFS_KEY);
       }
-      // Docked, the inspector's own header is the way: no end.
-      const docked = await mountInspector({ root: "/repo" });
-      try {
-        localStorage.setItem(PREFS_KEY, JSON.stringify({}));
-        expect(docked.host.querySelector(".diff-inspector-end")).toBeNull();
-      } finally {
-        await docked.unmount();
-        localStorage.removeItem(PREFS_KEY);
-      }
     });
 
-    test("in the app's Zen, an expanded inspector on Changes hides its header for the review's row, which shows its end; elsewhere that end stays hidden", () => {
+    test("the app's Zen hides no inspector header: the tabs stay one row above the view", () => {
       const css = readFileSync(
         new URL("./WorkspaceInspectorHost.css", import.meta.url),
         "utf8",
       );
-      const rule = (selector: string) =>
-        new RegExp(
-          `${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*")}\\s*\\{([^}]*)\\}`,
-        ).exec(css)?.[1] ?? "";
-      expect(rule(".diff-inspector-end")).toContain("display: none");
-      expect(
-        rule(
-          '.app.zen .workspace-inspector.is-expanded[data-view="changes"] .diff-inspector-end',
-        ),
-      ).toContain("display: flex");
-      expect(
-        rule(
-          ".app.zen .workspace-inspector.has-zen-end > .workspace-inspector-head",
-        ),
-      ).toContain("display: none");
+      expect(css).not.toContain("has-zen-end");
+      expect(css).not.toContain(".diff-inspector-end");
+      expect(css).toContain("container: workspace-inspector / inline-size");
     });
 
     test("in Changes, Review only hides the merge request card; Show all brings it back", async () => {

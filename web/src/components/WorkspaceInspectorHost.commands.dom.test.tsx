@@ -265,6 +265,8 @@ if (
           "refresh",
           "reload",
           "view",
+          "work",
+          "reviews",
           "dock",
           "expand",
           "vim",
@@ -395,6 +397,8 @@ if (
           "view files",
           "view changes",
           "view commits",
+          "view work",
+          "view reviews",
         ]);
         await inspector.type("view c");
         expect(inspector.completions()).toEqual([
@@ -415,7 +419,7 @@ if (
         await inspector.command(inspector.tab("Changes"), "view history");
         expect(inspector.views.slice(-1)[0]).toBe("changes");
         expect(told).toEqual([
-          "Not a view here: history (files, changes, commits)",
+          "Not a view here: history (files, changes, commits, work, reviews)",
         ]);
       } finally {
         await inspector.unmount();
@@ -534,6 +538,8 @@ if (
           ":refresh",
           ":reload :refresh",
           ":view :v",
+          ":work",
+          ":reviews :inbox",
           ":dock",
           ":expand",
           ":vim",
@@ -672,13 +678,20 @@ if (
         await inspector.press(tab, "g");
         await inspector.press(tab, "t");
         expect(inspector.views.slice(-1)[0]).toBe("commits");
-        // Past the last view, the first.
+        // Past Commits (no History here), the board's tabs; past the last
+        // view, the first.
         await inspector.press(inspector.tab("Commits"), "g");
         await inspector.press(inspector.tab("Commits"), "t");
+        expect(inspector.views.slice(-1)[0]).toBe("work");
+        await inspector.press(inspector.tab("Work"), "g");
+        await inspector.press(inspector.tab("Work"), "t");
+        expect(inspector.views.slice(-1)[0]).toBe("reviews");
+        await inspector.press(inspector.tab("Reviews"), "g");
+        await inspector.press(inspector.tab("Reviews"), "t");
         expect(inspector.views.slice(-1)[0]).toBe("files");
         await inspector.press(inspector.tab("Files"), "g");
         await inspector.press(inspector.tab("Files"), "T");
-        expect(inspector.views.slice(-1)[0]).toBe("commits");
+        expect(inspector.views.slice(-1)[0]).toBe("reviews");
         await inspector.press(inspector.tab("Commits"), "2");
         await inspector.press(inspector.tab("Commits"), "g");
         await inspector.press(inspector.tab("Commits"), "t");
