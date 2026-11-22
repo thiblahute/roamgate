@@ -9,7 +9,7 @@ import type {
 import type { PendingWrite } from "../reviewPending";
 import { type MessageParts, NoteBody } from "./ReviewNoteBody";
 import { MessageReplyButton, ThreadCard } from "./ThreadCard";
-import { type ThreadBox, ThreadEditor } from "./ThreadEditor";
+import { type DraftPlace, type ThreadBox, ThreadEditor } from "./ThreadEditor";
 
 /*
  * Messages with threads on their parts, one way for an agent chat's
@@ -319,6 +319,8 @@ export type MessageThreadsScope = {
     kept?: ThreadBox;
     autoFocus?: boolean;
     onAddImage?: (file: File) => Promise<string>;
+    /** Where its unsent words outlive it. */
+    draft?: DraftPlace;
   };
   /** A box closed, with the id of what it last sent (a failed write goes). */
   onCloseBox?: (id?: string) => void;

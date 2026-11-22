@@ -35,6 +35,7 @@ import {
   undeliveredComments,
   writeThenReadBack,
 } from "./ChatThreads";
+import type { DraftPlace } from "./ThreadEditor";
 import {
   MessageNotes,
   OnMessageHead,
@@ -118,6 +119,8 @@ export function pointOf(
 type Draft = { point: EffortPoint; quote?: string };
 
 export type EffortThreads = {
+  /** The effort: where its boxes' unsent words are kept (effortDraft). */
+  effort?: string;
   snapshot: ReviewSnapshot | undefined;
   threads: ReviewThread[];
   /** Threads at a place, oldest first. */
@@ -355,7 +358,13 @@ export function useEffortThreads(
     error,
     clearError: () => setError(""),
     back,
+    effort,
   };
+}
+
+/** Where a box of an effort's threads keeps its unsent words. */
+function effortDraft(api: EffortThreads, key: string): { draft?: DraftPlace } {
+  return api.effort ? { draft: { session: `effort:${api.effort}`, key } } : {};
 }
 
 /**
@@ -518,6 +527,7 @@ function EffortThreadCard({
         <ThreadEditor
           placeholder="Reply..."
           onAddImage={api.addImage}
+          {...effortDraft(api, `reply:${thread.id}`)}
           onLeave={api.back}
           onClose={() => {
             setReplying(false);
@@ -577,6 +587,7 @@ function EffortMessageReply({
       <ThreadEditor
         placeholder="Reply..."
         onAddImage={api.addImage}
+        {...effortDraft(api, `part:${draft.comment}\0${draft.quote ?? ""}`)}
         onLeave={api.back}
         onClose={() => {
           api.cancel();
@@ -633,6 +644,10 @@ export function EffortThreadsAt({
           <ThreadEditor
             placeholder="Comment for the leader session..."
             onAddImage={api.addImage}
+            {...effortDraft(
+              api,
+              `new:${pointKey(drafting.point)}\0${drafting.quote ?? ""}`,
+            )}
             onLeave={api.back}
             onClose={() => {
               api.cancel();

@@ -541,6 +541,8 @@ function ChatThreadsScope({
       kept: box,
       autoFocus: !restored.has(key),
       onAddImage: (file: File) => addImage(file),
+      // Its words outlive the page too: a reload, the chat closed.
+      draft: { session: `chat:${connectionId}:${chat}`, key },
     };
   };
   const snapshots = useReviewSnapshots({ connectionId, chat });

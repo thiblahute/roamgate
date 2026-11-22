@@ -1,4 +1,11 @@
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type DraftImage,
+  dropDraftImages,
+  keepDraftImages,
+  keepReviewDraft,
+  peekReviewDraft,
+} from "../reviewDrafts";
 import { vimKeys } from "../vimKeys";
 import { ImagePickButton } from "./ImagePickButton";
 import type { CommentEditorHandle } from "./ReviewCommentEditor";
@@ -9,6 +16,76 @@ import "./ChatThreads.css";
 
 /** A comment box's words, and the id they were last sent with. */
 export type ThreadBox = { text: string; sent?: { text: string; id: string } };
+
+/**
+ * Where a box's unsent words are kept in the browser (reviewDrafts): its
+ * place (`work:ITEM`, `chat:...`) and the box's key in it.
+ */
+export type DraftPlace = { session: string; key: string };
+
+/**
+ * Keeps a box's unsent words as its draft as it goes away (another view,
+ * the page hidden or reloaded) and hands them back when it is drawn
+ * again (peekReviewDraft); sending or cancelling forgets them. `text`:
+ * the box's words as they are; `images`, those it holds as bytes until it
+ * sends (named in its words by their tokens), kept with them.
+ */
+export function useBoxDraft(
+  draft: DraftPlace | undefined,
+  text: { current: string },
+  images?: { current: readonly DraftImage[] },
+) {
+  /** Sent or cancelled: nothing to keep. */
+  const done = useRef(false);
+  const place = useRef(draft);
+  place.current = draft;
+  const keep = useRef(() => {});
+  keep.current = () => {
+    const at = place.current;
+    if (!at || done.current) return;
+    keepReviewDraft(at.session, at.key, text.current);
+    if (images)
+      keepDraftImages(
+        at.session,
+        at.key,
+        text.current.trim()
+          ? images.current.filter((image) => text.current.includes(image.token))
+          : [],
+      );
+  };
+  useEffect(() => {
+    const onHide = () => keep.current();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") keep.current();
+    };
+    window.addEventListener("pagehide", onHide);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      document.removeEventListener("visibilitychange", onVisibility);
+      keep.current();
+    };
+  }, []);
+  const hasImages = !!images;
+  // The same functions each render: effects may depend on them.
+  return useMemo(
+    () => ({
+      /** Sent or cancelled: the draft goes. */
+      forget: () => {
+        done.current = true;
+        const at = place.current;
+        if (!at) return;
+        keepReviewDraft(at.session, at.key, "");
+        if (hasImages) dropDraftImages(at.session, at.key);
+      },
+      /** Its words are the box's again (a send failed, the box stays). */
+      resume: () => {
+        done.current = false;
+      },
+    }),
+    [hasImages],
+  );
+}
 
 /**
  * A comment box: Cmd+Enter or :w saves, Esc on an empty one closes. A save
@@ -27,6 +104,7 @@ export function ThreadEditor({
   onChange,
   sendLabel = "Send",
   onAddImage,
+  draft,
 }: {
   placeholder: string;
   /** Sends the text with its id; settles once it is saved or failed. */
@@ -50,16 +128,44 @@ export function ThreadEditor({
    * for it. Without it, the box takes no images.
    */
   onAddImage?: (file: File) => Promise<string>;
+  /**
+   * Where its unsent words outlive it (a reload, another view): drawn
+   * again, it has them; Send or Cancel forgets them.
+   */
+  draft?: DraftPlace;
 }) {
-  const text = useRef(kept?.text ?? "");
-  const [initial] = useState(() => kept?.text ?? "");
+  const [initial] = useState(() => {
+    if (kept?.text) return kept.text;
+    const stored = draft ? peekReviewDraft(draft.session, draft.key) : "";
+    if (stored && kept) kept.text = stored;
+    return stored ?? "";
+  });
+  const text = useRef(initial);
+  const drafted = useBoxDraft(draft, text);
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
+  // A send answered and the box still drawn after (it was not closed: the
+  // send failed): its words are its draft again.
+  const [answered, setAnswered] = useState(0);
+  const { resume } = drafted;
+  useEffect(() => {
+    if (answered) resume();
+  }, [answered, resume]);
   const [vim] = useState(vimKeys);
   const sending = useRef(false);
   const [busy, setBusy] = useState(false);
   const [waiting, setWaiting] = useState("");
   const sent = useRef<{ text: string; id: string } | null>(kept?.sent ?? null);
   const handle = useRef<CommentEditorHandle | null>(null);
-  const close = () => onClose(sent.current?.id);
+  const close = () => {
+    drafted.forget();
+    onClose(sent.current?.id);
+  };
   const save = () => {
     if (sending.current || !text.current.trim()) return;
     // Sent now, it would keep the placeholder and lose the image.
@@ -72,9 +178,14 @@ export function ThreadEditor({
       sent.current = { text: value, id: newClientId() };
       if (kept) kept.sent = sent.current;
     }
+    // Sent: the draft goes (the box closes with the answer, the same
+    // render); still drawn after it, its words are kept again.
+    drafted.forget();
     void onSave(value, sent.current.id).finally(() => {
       sending.current = false;
+      if (!mounted.current) return;
       setBusy(false);
+      setAnswered((count) => count + 1);
     });
   };
   return (

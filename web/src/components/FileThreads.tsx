@@ -52,7 +52,7 @@ import {
 } from "./MessageThreads";
 import { type MessageParts, NoteBody } from "./ReviewNoteBody";
 import { ThreadCard } from "./ThreadCard";
-import { ThreadEditor } from "./ThreadEditor";
+import { type DraftPlace, ThreadEditor } from "./ThreadEditor";
 import { ThreadsPanel, useOpenOnly } from "./ThreadsPanel";
 import type { ThreadKeys } from "./useThreadKeys";
 import type { NavPlace } from "../unresolvedThreads";
@@ -477,6 +477,7 @@ export function FileThread({
         <ThreadEditor
           placeholder="Draft reply..."
           {...imageStore(api, thread)}
+          {...fileDraft(thread, { reply: true })}
           onLeave={view.backToKeys}
           onClose={close}
           onSave={(text, id) => api.reply(thread, text, id).then(close)}
@@ -574,6 +575,7 @@ export function FileThread({
         <ThreadEditor
           placeholder={placeholder}
           {...imageStore(api, thread)}
+          {...fileDraft(thread, { part: draft })}
           onLeave={view.backToKeys}
           onClose={done}
           onSave={(text, id) => addPart(thread, draft, text, id).then(done)}
@@ -753,6 +755,7 @@ export function FileThread({
           <ThreadEditor
             placeholder="Reply..."
             {...imageStore(api, thread)}
+            {...fileDraft(thread, { reply: true })}
             onLeave={view.backToKeys}
             onClose={close}
             onSave={(text, id) => api.reply(thread, text, id).then(close)}
@@ -770,6 +773,25 @@ export function imageStore(
 ): { onAddImage?: (file: File) => Promise<string> } {
   const { addImage } = api;
   return addImage ? { onAddImage: (file) => addImage(thread, file) } : {};
+}
+
+/**
+ * Where a box of a file's threads keeps its unsent words: the thread's
+ * review, the box (a reply, a thread on a part of a comment).
+ */
+export function fileDraft(
+  thread: ReviewThread,
+  box: { reply: true } | { part: ReviewMessagePart },
+): { draft: DraftPlace } {
+  return {
+    draft: {
+      session: `files:${thread.sessionId}`,
+      key:
+        "reply" in box
+          ? `reply:${thread.id}`
+          : `part:${box.part.comment}\0${box.part.quote ?? ""}`,
+    },
+  };
 }
 
 /** The narrowest a thread's card is drawn in a table's column. */
@@ -1460,6 +1482,7 @@ export function ThreadsList({
                 <ThreadEditor
                   placeholder="Reply..."
                   {...imageStore(api, byId.get(replying)!)}
+                  {...fileDraft(byId.get(replying)!, { reply: true })}
                   onLeave={() => {}}
                   onClose={() => setReplying(null)}
                   onSave={(text, id) =>
