@@ -1,4 +1,4 @@
-import type { ReviewSnapshot } from "../../shared/review";
+import type { ReviewHead, ReviewSnapshot } from "../../shared/review";
 import { reviewAgentPanes } from "./annotations";
 import {
   clearReviewOpenRequest,
@@ -30,7 +30,7 @@ const LAST_KEY = "roamgate.review.last";
  * Returns the review to show, or null after saying why there is none.
  */
 export async function openWorkspaceReview(
-  sessions: ReadonlyMap<string, ReviewSnapshot>,
+  sessions: ReadonlyMap<string, ReviewHead>,
   options: {
     root?: string;
     /** Review its uncommitted work: it has no commits of its own. */
@@ -124,7 +124,7 @@ export async function openWorkspaceReview(
   const agentName = agentPane?.agent ?? "agent";
   const agentLabel = agentName.charAt(0).toUpperCase() + agentName.slice(1);
   // Attach the workspace's agent when the review has none.
-  const attachAgent = async (snapshot: ReviewSnapshot) => {
+  const attachAgent = async (snapshot: ReviewHead) => {
     if (!agentPane || snapshot.session.agent.paneId) return;
     try {
       rememberReviewSnapshot(
@@ -136,7 +136,7 @@ export async function openWorkspaceReview(
       );
     } catch {}
   };
-  const show = (snapshot: ReviewSnapshot) => {
+  const show = (snapshot: ReviewHead) => {
     void attachAgent(snapshot);
     writeReviewMemory(
       LAST_KEY,

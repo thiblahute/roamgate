@@ -1,5 +1,6 @@
 import { expect, mock, test } from "bun:test";
-import type { ReviewSnapshot } from "../../../shared/review";
+import { type ReviewSnapshot, summarizeReview } from "../../../shared/review";
+import { mockReviewStore } from "../reviewState.testkit";
 
 /**
  * The reviews list (Option+Shift+R), at the behavior level: keys in, the
@@ -29,6 +30,8 @@ if (process.env.ROAMGATE_REVIEW_LIST_DOM_TEST !== "1") {
   const calls: { method: string; params: Record<string, unknown> }[] = [];
   const remembered: ReviewSnapshot[] = [];
   let activity: unknown[] = [];
+  /** The reviews listed, whole, by id. */
+  const whole = new Map<string, ReviewSnapshot>();
   mock.module("../review", () => ({
     reviewCall: async (
       _connection: string,
@@ -37,13 +40,16 @@ if (process.env.ROAMGATE_REVIEW_LIST_DOM_TEST !== "1") {
     ) => {
       calls.push({ method, params });
       if (method === "review.activity") return { activity };
+      // The whole review, read before a discard for its undo.
+      if (method === "review.get")
+        return whole.get(params.session_id as string);
       if (method === "review.import") return params.snapshot;
       return {};
     },
     rememberReviewSnapshot: (snapshot: ReviewSnapshot) => {
       remembered.push(snapshot);
     },
-    useReviewState: () => ({ sessions: new Map(), openRequest: null }),
+    ...mockReviewStore(() => ({ sessions: new Map(), openRequest: null })),
   }));
   const { act } = await import("react");
   const { createRoot } = await import("react-dom/client");
@@ -100,6 +106,7 @@ if (process.env.ROAMGATE_REVIEW_LIST_DOM_TEST !== "1") {
   async function mountList(sessions: ReviewSnapshot[]) {
     calls.length = 0;
     remembered.length = 0;
+    for (const each of sessions) whole.set(each.session.id, each);
     const opened: string[] = [];
     let closed = 0;
     const notices: string[] = [];
@@ -115,7 +122,7 @@ if (process.env.ROAMGATE_REVIEW_LIST_DOM_TEST !== "1") {
       root.render(
         <ReviewList
           connectionId="desktop"
-          sessions={sessions}
+          sessions={sessions.map(summarizeReview)}
           onOpen={(id) => opened.push(id)}
           onClose={() => closed++}
         />,
@@ -163,7 +170,7 @@ if (process.env.ROAMGATE_REVIEW_LIST_DOM_TEST !== "1") {
           root.render(
             <ReviewList
               connectionId="desktop"
-              sessions={next}
+              sessions={next.map(summarizeReview)}
               onOpen={(id) => opened.push(id)}
               onClose={() => closed++}
             />,

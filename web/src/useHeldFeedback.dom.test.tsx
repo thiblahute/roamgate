@@ -1,5 +1,6 @@
 import { inIsolatedChild } from "./testIsolated";
 import { describe, expect, jest, mock, test } from "bun:test";
+import { mockReviewStore } from "./reviewState.testkit";
 
 /**
  * The workspace's held Review feedback (`useHeldFeedback`): review threads
@@ -35,7 +36,7 @@ if (
   const calls: { connection: string; method: string; params: unknown }[] = [];
   let failing = false;
   mock.module("./review", () => ({
-    useReviewState: () =>
+    ...mockReviewStore(() =>
       useSyncExternalStore(
         (listener: () => void) => {
           listeners.add(listener);
@@ -43,6 +44,7 @@ if (
         },
         () => state,
       ),
+    ),
     reviewCall: async (
       connection: string,
       method: string,

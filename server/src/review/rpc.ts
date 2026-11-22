@@ -3,11 +3,17 @@ import {
   type RenderedMode,
   type RenderedStorageWrite,
 } from "../../../shared/renderedPage";
-import { REVIEW_USER, type ReviewTarget } from "../../../shared/review";
+import {
+  REVIEW_SNAPSHOTS_MAX,
+  REVIEW_SUMMARIES_VERSION,
+  REVIEW_USER,
+  type ReviewSnapshot,
+  type ReviewTarget,
+} from "../../../shared/review";
 import { isHostPath, type ReviewRepo } from "../workspace/review-patch";
 import { RENDERED_SVG_MAX_BYTES } from "../http/rendered-pages";
 import { saveReviewImage } from "./images";
-import { listReviewsSince } from "./list-since";
+import { listReviewsSince, listSummariesSince } from "./list-since";
 import { renderedFileTarget } from "./rendered-target";
 import { parseReviewTarget, ReviewError, type ReviewService } from "./service";
 import { reviewDirectory } from "./storage";
@@ -142,13 +148,57 @@ export async function handleReviewRpc(
 
   switch (method) {
     case "review.list":
-      // The page shows a chat's threads in the chat, from these too: without
-      // them a reload would lose them until the next change.
+      // A page asks for summaries (`summaries: 1`) and reads the snapshots
+      // it shows with review.snapshots; one from before gets them whole.
+      // Chats' and efforts' reviews too: the page shows a chat's threads in
+      // the chat.
+      if (raw.summaries === REVIEW_SUMMARIES_VERSION)
+        return {
+          ...listSummariesSince(
+            service.summaries({ connectionId: connection.id, chats: true }),
+            raw.known,
+            raw.limit,
+          ),
+          version: REVIEW_SUMMARIES_VERSION,
+        };
       return listReviewsSince(
         service.list({ connectionId: connection.id, chats: true }),
         raw.known,
         raw.limit,
       );
+    case "review.snapshots": {
+      // The whole reviews a page shows, by id: one gone, or of another
+      // connection, is named in `missing`. Only a rendered file's comes
+      // with `shared` (its code reviews' threads on it, drawn in the Files
+      // preview): a code review's shared threads, its rendered files',
+      // are those reviews' own, read when they show.
+      const ids = Array.isArray(raw.ids)
+        ? [
+            ...new Set(
+              raw.ids.filter((id): id is string => typeof id === "string"),
+            ),
+          ].slice(0, REVIEW_SNAPSHOTS_MAX)
+        : [];
+      const snapshots: ReviewSnapshot[] = [];
+      const missing: string[] = [];
+      for (const id of ids) {
+        try {
+          const snapshot = service.get({ sessionId: id });
+          if (snapshot.session.connectionId !== connection.id) missing.push(id);
+          else if (
+            snapshot.shared &&
+            snapshot.session.target.kind !== "rendered"
+          ) {
+            const own: ReviewSnapshot = { ...snapshot };
+            delete own.shared;
+            snapshots.push(own);
+          } else snapshots.push(snapshot);
+        } catch {
+          missing.push(id);
+        }
+      }
+      return { snapshots, missing };
+    }
     case "review.activity":
       return service.activity({ connectionId: connection.id });
     case "review.import":

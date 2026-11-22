@@ -12,6 +12,7 @@ import {
   REVIEW_USER,
   type ReviewComment,
   type ReviewMessagePart,
+  type ReviewHead,
   type ReviewSnapshot,
   type ReviewThread,
   unheardComments,
@@ -22,7 +23,12 @@ import {
   anchoredInFile,
   placeInFile,
 } from "../../../shared/fileAnchors";
-import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
+import {
+  rememberReviewSnapshot,
+  reviewCall,
+  useReviewSnapshots,
+  useReviewState,
+} from "../review";
 import { writeReviewSession } from "../reviewSessionCall";
 import {
   cellPlacement,
@@ -106,7 +112,7 @@ export type FileThreadsApi = ThreadWrites & {
 };
 
 /** A review of the checkout's code: a branch, a range, its work, an MR. */
-function codeReview(snapshot: ReviewSnapshot): boolean {
+function codeReview(snapshot: ReviewHead): boolean {
   const { kind } = snapshot.session.target;
   return kind === "range" || kind === "worktree" || kind === "mr";
 }
@@ -195,8 +201,11 @@ export function useFileThreads(
   file: { absolute?: string; url?: string },
   source?: string | null,
 ): FileThreadsApi {
-  const { sessions } = useReviewState();
   const { absolute, url } = file;
+  // The file's rendered review, and the code reviews of its checkout.
+  const sessions = useReviewSnapshots(
+    absolute || url ? { connectionId, file: absolute, url } : null,
+  );
   const snapshot = useMemo(() => {
     for (const each of sessions.values()) {
       const { session } = each;
@@ -364,7 +373,7 @@ function snapshotUrl(thread: ReviewThread): string | null {
 
 /** The forge of a merge or pull request review's thread: its labels. */
 function forgeOf(
-  sessions: ReadonlyMap<string, ReviewSnapshot>,
+  sessions: ReadonlyMap<string, ReviewHead>,
   thread: ReviewThread,
 ) {
   const target = sessions.get(thread.sessionId)?.session.target;
@@ -451,7 +460,7 @@ export function FileThread({
   /** Drawn under the message it is on (a thread on the whole of it): its head says so. */
   onMessage?: boolean;
 }) {
-  const { sessions } = useReviewState();
+  const { summaries: sessions } = useReviewState();
   const close = () => {
     view.setReplying(null);
     view.setEditing(null);
@@ -1404,7 +1413,7 @@ export function ThreadsList({
   editor?: (thread: ReviewThread, close: () => void) => ReactNode;
 }) {
   const [replying, setReplying] = useState<string | null>(null);
-  const { sessions } = useReviewState();
+  const { summaries: sessions } = useReviewState();
   const byId = useMemo(
     () => new Map(threads.map((thread) => [thread.id, thread])),
     [threads],
@@ -1494,7 +1503,7 @@ export function WorkspaceConversations({
   /** Closes the panel it is in (Esc, q in the list). */
   onClose: () => void;
 }) {
-  const { sessions } = useReviewState();
+  const sessions = useReviewSnapshots({ connectionId, workspaceId });
   const found = useMemo(() => {
     const list: { thread: ReviewThread; snapshot: ReviewSnapshot }[] = [];
     for (const snapshot of sessions.values()) {

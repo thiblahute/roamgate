@@ -1,5 +1,6 @@
 import { inIsolatedChild } from "../testIsolated";
 import { describe, expect, mock, test } from "bun:test";
+import { mockReviewStore } from "../reviewState.testkit";
 
 /**
  * The workspace's threads panel (it took over Review feedback): the
@@ -91,7 +92,7 @@ if (
     openRequest: null,
   };
   mock.module("../review", () => ({
-    useReviewState: () => state,
+    ...mockReviewStore(() => state),
     reviewCall: async () => ({}),
     rememberReviewSnapshot: () => {},
   }));

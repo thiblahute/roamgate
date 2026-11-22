@@ -1,4 +1,4 @@
-import type { ReviewSnapshot } from "../../shared/review";
+import type { ReviewSummary, ReviewSummarySession } from "../../shared/review";
 import { BoundedCache } from "./boundedCache";
 import { plural } from "./components/MrThreadCard";
 import { reviewCall } from "./review";
@@ -52,8 +52,8 @@ export function scanRepos(
  */
 export function workspaceRepos(
   scanned: readonly WorkspaceRepo[],
-  sessions: Iterable<ReviewSnapshot>,
-  session: ReviewSnapshot["session"],
+  sessions: Iterable<ReviewSummary>,
+  session: ReviewSummarySession,
 ): WorkspaceRepo[] {
   const byRoot = new Map<string, WorkspaceRepo>();
   for (const repo of scanned) byRoot.set(repo.root, { ...repo });
@@ -71,9 +71,7 @@ export function workspaceRepos(
     )
       continue;
     const entry = byRoot.get(other.root) ?? { root: other.root };
-    entry.comments =
-      (entry.comments ?? 0) +
-      snapshot.threads.filter((t) => t.kind !== "merge-request").length;
+    entry.comments = (entry.comments ?? 0) + snapshot.counts.comments;
     byRoot.set(other.root, entry);
   }
   if (!byRoot.has(session.root))

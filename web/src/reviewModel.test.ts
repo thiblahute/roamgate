@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { ReviewDiff, ReviewThread } from "../../shared/review";
+import {
+  type ReviewDiff,
+  type ReviewThread,
+  summarizeReview,
+} from "../../shared/review";
 import {
   commitChoices,
   contextForLine,
@@ -208,7 +212,7 @@ test("reviews needing you come first", () => {
       snap("recent", "2026-10-10", [thread("d", { path: "a" })]),
       snap("asked", "2026-10-02", [asked]),
       snap("moved", "2026-10-03"),
-    ],
+    ].map(summarizeReview),
     new Set(["moved"]),
   );
   expect(ranked.map((item) => item.snapshot.session.id)).toEqual([

@@ -473,6 +473,90 @@ export type ReviewSnapshot = {
   gitlabError?: string;
 };
 
+/**
+ * A review as the list gives it to a page: its session without the files
+ * marked reviewed or the overall comment the agent had, and counts of its
+ * threads instead of them. A page reads the whole snapshot of only the
+ * reviews it shows (review.snapshots): every review of a desktop with its
+ * threads is megabytes.
+ */
+export type ReviewSummarySession = Omit<
+  ReviewSession,
+  "reviewed" | "summarySent"
+>;
+
+export type ReviewCounts = {
+  /** Every thread, the forge's discussions too. */
+  threads: number;
+  /** Threads not resolved. */
+  open: number;
+  /** Draft comments. */
+  drafts: number;
+  /** Threads other than the forge's discussions. */
+  comments: number;
+  /** Open discussions whose last word is not the user's. */
+  waiting: number;
+};
+
+export type ReviewSummary = {
+  session: ReviewSummarySession;
+  mergeRequest?: ReviewMergeRequest;
+  gitlabError?: string;
+  counts: ReviewCounts;
+};
+
+/**
+ * The summaries' form of review.list, which a page asks for by it: a page
+ * from before gets whole snapshots, and one given those (a server from
+ * before) summarizes them itself.
+ */
+export const REVIEW_SUMMARIES_VERSION = 1;
+
+/** The most snapshots one review.snapshots call reads. */
+export const REVIEW_SNAPSHOTS_MAX = 100;
+
+/** What a summary and a snapshot both say of a review. */
+export type ReviewHead = {
+  session: ReviewSummarySession;
+  mergeRequest?: ReviewMergeRequest;
+};
+
+/** The counts of a review's threads, as its summary gives them. */
+export function reviewCounts(threads: readonly ReviewThread[]): ReviewCounts {
+  const counts: ReviewCounts = {
+    threads: threads.length,
+    open: 0,
+    drafts: 0,
+    comments: 0,
+    waiting: 0,
+  };
+  for (const thread of threads) {
+    if (!thread.resolved) counts.open += 1;
+    if (thread.kind === "draft") counts.drafts += 1;
+    if (thread.kind !== "merge-request") counts.comments += 1;
+    if (thread.kind === "discussion" && !thread.resolved) {
+      const last = thread.comments[thread.comments.length - 1];
+      if (last !== undefined && last.author !== REVIEW_USER)
+        counts.waiting += 1;
+    }
+  }
+  return counts;
+}
+
+/** A review's summary, from its snapshot (`shared` threads not counted). */
+export function summarizeReview(snapshot: ReviewSnapshot): ReviewSummary {
+  const session: Partial<ReviewSession> = { ...snapshot.session };
+  delete session.reviewed;
+  delete session.summarySent;
+  return {
+    session: session as ReviewSummarySession,
+    ...(snapshot.mergeRequest ? { mergeRequest: snapshot.mergeRequest } : {}),
+    ...(snapshot.gitlabError ? { gitlabError: snapshot.gitlabError } : {}),
+    // A snapshot made elsewhere (a test's, a page's own) may have none.
+    counts: reviewCounts(snapshot.threads ?? []),
+  };
+}
+
 /** Pushed to every browser; each keeps the sessions of its connections. */
 /**
  * An agent asking leave to use a tool (Claude Code's permission prompt), sent

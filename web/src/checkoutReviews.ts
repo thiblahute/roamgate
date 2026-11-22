@@ -1,7 +1,7 @@
 import {
   isMetadataRef,
-  type ReviewSession,
-  type ReviewSnapshot,
+  type ReviewHead,
+  type ReviewSummarySession,
 } from "../../shared/review";
 import { trimRoot } from "./filesystemPaths";
 
@@ -20,7 +20,7 @@ import { trimRoot } from "./filesystemPaths";
  * tree, or a range of its commits (not a compare of two versions of a
  * branch, a step, a merge request, a chat or a rendered page).
  */
-export function checkoutCodeReview(session: ReviewSession): boolean {
+export function checkoutCodeReview(session: ReviewSummarySession): boolean {
   const { target } = session;
   return (
     target.kind === "worktree" || (target.kind === "range" && !target.compare)
@@ -28,14 +28,14 @@ export function checkoutCodeReview(session: ReviewSession): boolean {
 }
 
 /** The checkout's code reviews, the last updated first. */
-export function checkoutReviews(
-  sessions: Iterable<ReviewSnapshot>,
+export function checkoutReviews<T extends ReviewHead>(
+  sessions: Iterable<T>,
   connectionId: string,
   root: string | null | undefined,
-): ReviewSnapshot[] {
+): T[] {
   if (!root) return [];
   const own = trimRoot(root);
-  const found: ReviewSnapshot[] = [];
+  const found: T[] = [];
   for (const snapshot of sessions) {
     const { session } = snapshot;
     if (
@@ -55,6 +55,6 @@ export function checkoutReviews(
  * HEAD naming Entire's checkpoints): no longer the Branch scope's, whose
  * first comment moves it onto the default branch.
  */
-export function onMetadataBase(session: ReviewSession): boolean {
+export function onMetadataBase(session: ReviewSummarySession): boolean {
   return session.target.kind === "range" && isMetadataRef(session.target.base);
 }

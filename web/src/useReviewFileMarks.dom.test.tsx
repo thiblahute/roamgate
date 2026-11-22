@@ -1,6 +1,7 @@
 import { inIsolatedChild } from "./testIsolated";
 import { expect, test } from "bun:test";
 import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
+import { mockReviewStore } from "./reviewState.testkit";
 
 /**
  * The checkout's review as Files shows it: a changed file's tick read from
@@ -75,7 +76,7 @@ if (
       throw new Error(`unexpected ${method}`);
     },
     rememberReviewSnapshot: remember,
-    useReviewState: () => {
+    ...mockReviewStore(() => {
       const current = useSyncExternalStore(
         (listener) => {
           listeners.add(listener);
@@ -84,7 +85,7 @@ if (
         () => sessions,
       );
       return { sessions: current, openRequest: null };
-    },
+    }),
   }));
   const summary = {
     root: "/repo",

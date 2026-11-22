@@ -95,6 +95,96 @@ test("the page's list has the chats, so their threads survive a reload", async (
   expect(service.list({ connectionId: "local" })).toHaveLength(1);
 });
 
+test("a page asks for summaries: each review counted, its threads read only for what it shows", async () => {
+  const service = setup();
+  const opened = (await handleReviewRpc(service, local, "review.open", {
+    workspace_id: "w1",
+    target: { kind: "worktree" },
+  })) as { session: { id: string } };
+  await handleReviewRpc(service, local, "review.thread.add", {
+    session_id: opened.session.id,
+    text: "Why?",
+    path: "a.ts",
+    line: 1,
+  });
+  await handleReviewRpc(service, local, "review.open", {
+    workspace_id: "w1",
+    target: { kind: "chat", chat: "claude-session-1" },
+  });
+  const list = (await handleReviewRpc(service, local, "review.list", {
+    summaries: 1,
+    limit: 10,
+  })) as {
+    version: number;
+    summaries: {
+      session: Record<string, unknown>;
+      counts: Record<string, number>;
+      threads?: unknown;
+    }[];
+    stamps: Record<string, string>;
+    remaining: number;
+  };
+  expect(list.version).toBe(1);
+  expect(list.remaining).toBe(0);
+  // The chats' too, as the whole list has them.
+  expect(
+    list.summaries
+      .map((each) => (each.session.target as { kind: string }).kind)
+      .sort(),
+  ).toEqual(["chat", "worktree"]);
+  const worktree = list.summaries.find(
+    (each) => each.session.id === opened.session.id,
+  )!;
+  expect(worktree.threads).toBeUndefined();
+  expect(worktree.session.reviewed).toBeUndefined();
+  expect(worktree.counts).toEqual({
+    threads: 1,
+    open: 1,
+    drafts: 0,
+    comments: 1,
+    waiting: 0,
+  });
+  // Sent back, an unchanged summary is only named.
+  const again = (await handleReviewRpc(service, local, "review.list", {
+    summaries: 1,
+    limit: 10,
+    known: list.stamps,
+  })) as { summaries: unknown[]; unchanged: string[] };
+  expect(again.summaries).toEqual([]);
+  expect(again.unchanged).toHaveLength(2);
+  // A page from before still gets the whole snapshots.
+  const old = (await handleReviewRpc(service, local, "review.list", {})) as {
+    sessions: { threads: unknown[] }[];
+  };
+  expect(old.sessions.map((each) => each.threads.length).sort()).toEqual([
+    0, 1,
+  ]);
+
+  // The snapshots it shows, whole; one of another connection or gone is
+  // named missing.
+  const read = (await handleReviewRpc(service, local, "review.snapshots", {
+    ids: [opened.session.id, "nope", opened.session.id],
+  })) as {
+    snapshots: { session: { id: string }; threads: unknown[] }[];
+    missing: string[];
+  };
+  expect(read.snapshots.map((each) => each.session.id)).toEqual([
+    opened.session.id,
+  ]);
+  expect(read.snapshots[0]!.threads).toHaveLength(1);
+  expect(read.missing).toEqual(["nope"]);
+  const elsewhere = (await handleReviewRpc(
+    service,
+    remote,
+    "review.snapshots",
+    {
+      ids: [opened.session.id],
+    },
+  )) as { snapshots: unknown[]; missing: string[] };
+  expect(elsewhere.snapshots).toEqual([]);
+  expect(elsewhere.missing).toEqual([opened.session.id]);
+});
+
 test("the browser finds a review's merge request on its own connection only", async () => {
   const { service } = reviewServiceForTest({
     gitlab: {

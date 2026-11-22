@@ -755,7 +755,18 @@ state; sends are never replayed.
 Review sessions and their threads live in `reviews.sqlite` in the data
 directory (`ROAMGATE_REVIEW_DIR` overrides), written through on every change
 and pushed to every browser as `review` messages; browsers call
-connection-scoped `review.*` methods and always write as the user. Browsers
+connection-scoped `review.*` methods and always write as the user. A page
+lists summaries (`review.list` with `summaries: 1`: each session without its
+reviewed marks, with counts of its threads, `ReviewSummary` in
+`shared/review.ts`), in pages of up to 1000, each with a stamp the page sends
+back so an unchanged one is only named; it keeps the last list per connection
+in IndexedDB. It reads whole snapshots (`review.snapshots`, by id) only for the
+reviews its views show (`useReviewSnapshots` in `web/src/review.ts`: a
+checkout's, a workspace's reviews with threads, a chat's, a file's, a review
+by id), keeps them current from the pushes, reads them again after a
+reconnect, and lets go of one no view wants after two minutes. Only a
+rendered file's snapshot comes with `shared` there. A page from before
+summaries still gets whole snapshots from `review.list`. Browsers
 drop a malformed pushed or listed review, and keep comment text not yet saved
 per review in `localStorage` (20 per review, 200k characters in all). A diff is
 one shell script on the checkout host. A local review (a range or the

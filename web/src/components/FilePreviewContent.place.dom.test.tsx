@@ -1,5 +1,6 @@
 import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
+import { mockReviewStore } from "../reviewState.testkit";
 
 /*
  * A Files preview tab shown again is where it was left: after another view
@@ -48,7 +49,7 @@ if (
       return {};
     },
     rememberReviewSnapshot: () => {},
-    useReviewState: () => ({ sessions: new Map(), openRequest: null }),
+    ...mockReviewStore(() => ({ sessions: new Map(), openRequest: null })),
   }));
   mock.module("../sitesWeWorkOn", () => ({
     loadSitesWeWorkOn: async () => [],

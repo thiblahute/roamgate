@@ -2,6 +2,7 @@ import type {
   ReviewAnchor,
   ReviewRenderPart,
   ReviewSession,
+  ReviewHead,
   ReviewSnapshot,
   ReviewThread,
   ReviewThreadKind,
@@ -429,7 +430,7 @@ export async function paneChat(
     cwd?: string;
     foreground_cwd?: string | null;
   },
-  sessions: Iterable<ReviewSnapshot>,
+  sessions: Iterable<ReviewHead>,
   connectionId: string,
 ): Promise<PaneChat | undefined> {
   const agent = pane.agent?.trim();

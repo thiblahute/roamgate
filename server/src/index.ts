@@ -925,6 +925,7 @@ const REVIEW_POLL_METHODS = new Set([
   "review.state",
   "review.prompts",
   "review.list",
+  "review.snapshots",
   "review.activity",
 ]);
 

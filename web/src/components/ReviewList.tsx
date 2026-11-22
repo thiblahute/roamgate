@@ -3,6 +3,7 @@ import type {
   ReviewActivity,
   ReviewGoneCode,
   ReviewSnapshot,
+  ReviewSummary,
 } from "../../../shared/review";
 import { rememberReviewSnapshot, reviewCall } from "../review";
 import { describeReviewTarget, rankReviews } from "../reviewModel";
@@ -46,7 +47,7 @@ export function ReviewList({
   onClose,
 }: {
   connectionId: string;
-  sessions: ReviewSnapshot[];
+  sessions: ReviewSummary[];
   onOpen: (sessionId: string) => void;
   onClose: () => void;
 }) {
@@ -106,11 +107,17 @@ export function ReviewList({
       ?.focus({ preventScroll: false });
   }, [current, items.length, listed]);
 
-  async function discard(snapshot: ReviewSnapshot) {
-    discarded.current = snapshot;
+  async function discard(summary: ReviewSummary) {
+    const sessionId = summary.session.id;
     try {
+      // The whole review, read first: u brings it back with its threads.
+      discarded.current = await reviewCall<ReviewSnapshot>(
+        connectionId,
+        "review.get",
+        { session_id: sessionId },
+      );
       await reviewCall(connectionId, "review.remove", {
-        session_id: snapshot.session.id,
+        session_id: sessionId,
       });
       store.notify({
         kind: "info",

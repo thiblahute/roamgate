@@ -20,7 +20,11 @@ import {
   type NotificationTarget,
   type RangerTaskNotificationTarget,
 } from "./taskNotifications";
-import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
+import type {
+  ReviewHead,
+  ReviewSnapshot,
+  ReviewThread,
+} from "../../shared/review";
 import { useReviewAnnotationDraft } from "./useReviewAnnotationDraft";
 import { useHeldFeedback } from "./useHeldFeedback";
 import { pendingFeedback } from "./feedbackPending";
@@ -64,12 +68,13 @@ import {
 import { voiceFronting } from "./voiceFrontFlag";
 import { passwordManagerIgnore } from "./passwordManagerIgnore";
 import {
-  getReviewSnapshot,
+  getReviewSummary,
   rememberReviewSnapshot,
   reviewCall,
   loadedReviewConnections,
   loadReviews,
   startReviewClient,
+  useReviewSnapshots,
   useReviewState,
 } from "./review";
 import {
@@ -1920,12 +1925,12 @@ export default function App() {
   useEffect(() => {
     // A loaded list publishes its sessions, which runs this again.
     setChangesPins((pins) =>
-      livePins(pins, reviewState.sessions, loadedReviewConnections()),
+      livePins(pins, reviewState.summaries, loadedReviewConnections()),
     );
-  }, [reviewState.sessions]);
+  }, [reviewState.summaries]);
   const changesPinned = changesPins[reviewPinKey];
   const changesPinnedSnapshot = changesPinned
-    ? reviewState.sessions.get(changesPinned)
+    ? reviewState.summaries.get(changesPinned)
     : undefined;
   const changesPinnedId =
     changesPinned &&
@@ -1938,7 +1943,7 @@ export default function App() {
     const current = store.get();
     const focused =
       current.workspaces.find((w) => w.focused)?.workspace_id ?? "";
-    const snapshot = getReviewSnapshot(sessionId);
+    const snapshot = getReviewSummary(sessionId);
     const key = makeReviewPinKey(
       snapshot?.session.connectionId ?? current.activeConnectionId ?? "",
       snapshot?.session.workspaceId || focused,
@@ -2444,6 +2449,15 @@ export default function App() {
     s.activeConnectionId,
     annotationWorkspace?.workspace_id,
   );
+  // The annotations panel's workspace's reviews, whose threads it lists.
+  const annotationReviews = useReviewSnapshots(
+    s.activeConnectionId && annotationWorkspace
+      ? {
+          connectionId: s.activeConnectionId,
+          workspaceId: annotationWorkspace.workspace_id,
+        }
+      : null,
+  );
   const heldAnnotations = heldComments.annotations;
   // One list: the review threads held for Send, and any note the server
   // has not taken yet, kept in this browser so it is never lost.
@@ -2886,7 +2900,7 @@ export default function App() {
   useEffect(() => startReviewClient(), []);
   /** A file or a site an agent opened: the Files preview shows it. */
   const showRenderedInFiles = useCallback(
-    (snapshot: ReviewSnapshot) => {
+    (snapshot: ReviewHead) => {
       const { session } = snapshot;
       if (session.target.kind !== "rendered") return;
       const workspaceId =
@@ -2915,7 +2929,7 @@ export default function App() {
    * review, whose home is Changes.
    */
   const showReviewHome = useCallback(
-    (snapshot: ReviewSnapshot): boolean => {
+    (snapshot: ReviewHead): boolean => {
       const { session } = snapshot;
       if (session.target.kind === "rendered") showRenderedInFiles(snapshot);
       else if (session.target.kind === "effort") openMrReviews();
@@ -2927,7 +2941,7 @@ export default function App() {
   );
   /** A thread of the panel, shown where it is. */
   const goToWorkspaceThread = useCallback(
-    (thread: ReviewThread, snapshot: ReviewSnapshot) => {
+    (thread: ReviewThread, snapshot: ReviewHead) => {
       if (thread.anchor.terminal && snapshot.session.target.kind !== "rendered")
         void store.focusPane(thread.anchor.terminal.pane);
       else if (!showReviewHome(snapshot))
@@ -2971,7 +2985,7 @@ export default function App() {
    */
   const showReviewInChanges = useCallback(
     async (sessionId: string) => {
-      const snapshot = getReviewSnapshot(sessionId);
+      const snapshot = getReviewSummary(sessionId);
       const workspaceId = snapshot?.session.workspaceId;
       const { workspaces } = store.get();
       if (
@@ -2997,7 +3011,7 @@ export default function App() {
     void import("./reviewOpen").then(({ takeOpenRequest }) => {
       const sessionId = takeOpenRequest(request, s.activeConnectionId);
       if (!sessionId) return;
-      const snapshot = getReviewSnapshot(sessionId);
+      const snapshot = getReviewSummary(sessionId);
       if (snapshot && showReviewHome(snapshot)) return;
       // A review asked for in this workspace (the Reviews inbox jumps
       // there first), or of none left, shows in its Changes; another
@@ -3206,18 +3220,22 @@ export default function App() {
     }
   };
   // The comments written in the inspector's views, drawn there as threads.
+  const inspectorReviews = useReviewSnapshots(
+    s.activeConnectionId && inspectorState?.scope.workspaceId
+      ? {
+          connectionId: s.activeConnectionId,
+          workspaceId: inspectorState.scope.workspaceId,
+        }
+      : null,
+  );
   const inspectorFeedback = useMemo(
     () =>
       workspaceFeedback(
-        reviewState.sessions.values(),
+        inspectorReviews.values(),
         s.activeConnectionId,
         inspectorState?.scope.workspaceId,
       ),
-    [
-      reviewState.sessions,
-      s.activeConnectionId,
-      inspectorState?.scope.workspaceId,
-    ],
+    [inspectorReviews, s.activeConnectionId, inspectorState?.scope.workspaceId],
   );
   const inspectorFeedbackThreads = useMemo(
     () => inspectorFeedback.map((entry) => entry.thread),
@@ -3282,8 +3300,8 @@ export default function App() {
     },
     [s.panes, s.workspaces],
   );
-  const reviewSessionsRef = useRef(reviewState.sessions);
-  reviewSessionsRef.current = reviewState.sessions;
+  const reviewSessionsRef = useRef(reviewState.summaries);
+  reviewSessionsRef.current = reviewState.summaries;
   /**
    * Where a note goes, a terminal's with the chat of the agent in its pane
    * (its comment goes to that chat's review); a pane running no agent keeps
@@ -3982,8 +4000,8 @@ export default function App() {
         void (async () => {
           const { openWorkspaceReview } = await import("./reviewOpen");
           const picked =
-            sessionId ?? (await openWorkspaceReview(reviewState.sessions));
-          const snapshot = picked ? getReviewSnapshot(picked) : undefined;
+            sessionId ?? (await openWorkspaceReview(reviewState.summaries));
+          const snapshot = picked ? getReviewSummary(picked) : undefined;
           // No review to pick (it said why): Changes as it was left.
           if (!picked || !snapshot || !stillShown()) return;
           const { changesReviewChoice } = await import("./changesReviewOpen");
@@ -3996,7 +4014,7 @@ export default function App() {
               .panes.filter(
                 (pane) => pane.workspace_id === workspace.workspace_id,
               ),
-            sessions: reviewState.sessions.values(),
+            sessions: reviewState.summaries.values(),
             lastRoot: lastChangesRepo(owner),
             changed: (mode, root) =>
               (
@@ -4122,7 +4140,7 @@ export default function App() {
       mobile,
       openDiffViewer,
       changesPinnedId,
-      reviewState.sessions,
+      reviewState.summaries,
       setInspectorExpanded,
       showReviewHome,
     ],
@@ -6853,7 +6871,7 @@ export default function App() {
               <Suspense fallback={null}>
                 <ReviewList
                   connectionId={s.activeConnectionId}
-                  sessions={[...reviewState.sessions.values()].filter(
+                  sessions={[...reviewState.summaries.values()].filter(
                     (snapshot) =>
                       snapshot.session.connectionId === s.activeConnectionId &&
                       snapshot.session.target.kind !== "chat" &&
@@ -7108,7 +7126,7 @@ export default function App() {
                 ) : null
               }
               onGo={(id) => {
-                for (const snapshot of reviewState.sessions.values()) {
+                for (const snapshot of annotationReviews.values()) {
                   const thread = snapshot.threads.find(
                     (each) => each.id === id,
                   );

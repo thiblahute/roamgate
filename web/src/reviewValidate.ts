@@ -1,4 +1,4 @@
-import type { ReviewSnapshot } from "../../shared/review";
+import type { ReviewSnapshot, ReviewSummary } from "../../shared/review";
 
 /*
  * Reviews come from the server, pushed or listed: checked before the app
@@ -44,10 +44,7 @@ function isTarget(value: unknown) {
   return true;
 }
 
-/** Whether a value is a review the app can draw. */
-export function isReviewSnapshot(value: unknown): value is ReviewSnapshot {
-  if (!isObject(value) || !isObject(value.session)) return false;
-  const session = value.session;
+function isSession(session: Record<string, unknown>) {
   return (
     typeof session.id === "string" &&
     typeof session.connectionId === "string" &&
@@ -57,7 +54,15 @@ export function isReviewSnapshot(value: unknown): value is ReviewSnapshot {
     typeof session.summary === "string" &&
     isTarget(session.target) &&
     isObject(session.agent) &&
-    typeof session.updatedAt === "string" &&
+    typeof session.updatedAt === "string"
+  );
+}
+
+/** Whether a value is a review the app can draw. */
+export function isReviewSnapshot(value: unknown): value is ReviewSnapshot {
+  if (!isObject(value) || !isObject(value.session)) return false;
+  return (
+    isSession(value.session) &&
     Array.isArray(value.threads) &&
     value.threads.every(isThread) &&
     (value.shared === undefined ||
@@ -68,4 +73,22 @@ export function isReviewSnapshot(value: unknown): value is ReviewSnapshot {
 /** The valid reviews of a list, the others dropped. */
 export function validReviewSnapshots(value: unknown): ReviewSnapshot[] {
   return Array.isArray(value) ? value.filter(isReviewSnapshot) : [];
+}
+
+const COUNTS = ["threads", "open", "drafts", "comments", "waiting"] as const;
+
+/** Whether a value is a review's summary the app can list. */
+export function isReviewSummary(value: unknown): value is ReviewSummary {
+  if (!isObject(value) || !isObject(value.session)) return false;
+  const counts = value.counts;
+  return (
+    isSession(value.session) &&
+    isObject(counts) &&
+    COUNTS.every((name) => typeof counts[name] === "number")
+  );
+}
+
+/** The valid summaries of a list, the others dropped. */
+export function validReviewSummaries(value: unknown): ReviewSummary[] {
+  return Array.isArray(value) ? value.filter(isReviewSummary) : [];
 }

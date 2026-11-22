@@ -1,6 +1,7 @@
 import { inIsolatedChild } from "./testIsolated";
 import { expect, test } from "bun:test";
 import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
+import { mockReviewStore } from "./reviewState.testkit";
 
 /**
  * How a review's comments reach its agent (reviewDelivery): talk, hold, held
@@ -22,7 +23,7 @@ if (
     rememberReviewSnapshot: (snapshot: ReviewSnapshot) => {
       remembered.push(snapshot);
     },
-    useReviewState: () => ({ sessions: new Map(), openRequest: null }),
+    ...mockReviewStore(() => ({ sessions: new Map(), openRequest: null })),
   }));
   const { installReviewDom } = await import(
     "./components/reviewSurface.testkit"

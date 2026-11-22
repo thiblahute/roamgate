@@ -19,7 +19,11 @@ import {
   type ReviewThread,
 } from "../../../shared/review";
 import { mrReviewsCall } from "../mrReviews";
-import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
+import {
+  rememberReviewSnapshot,
+  reviewCall,
+  useReviewSnapshots,
+} from "../review";
 import {
   type PendingWrite,
   pendingWriteCall,
@@ -155,7 +159,7 @@ export function useEffortThreads(
   effort: string,
   back: () => void,
 ): EffortThreads {
-  const reviews = useReviewState();
+  const snapshots = useReviewSnapshots({ effort });
   const [sessionId, setSessionId] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -174,12 +178,12 @@ export function useEffortThreads(
   }, [effort]);
   const snapshot = useMemo(
     () =>
-      (sessionId ? reviews.sessions.get(sessionId) : undefined) ??
-      [...reviews.sessions.values()].find(
+      (sessionId ? snapshots.get(sessionId) : undefined) ??
+      [...snapshots.values()].find(
         ({ session }) =>
           session.target?.kind === "effort" && session.target.effort === effort,
       ),
-    [reviews.sessions, sessionId, effort],
+    [snapshots, sessionId, effort],
   );
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;

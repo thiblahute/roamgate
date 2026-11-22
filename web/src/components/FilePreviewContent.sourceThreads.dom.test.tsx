@@ -1,5 +1,6 @@
 import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
+import { mockReviewStore } from "../reviewState.testkit";
 
 /*
  * The Files preview's source view (CodeMirror): its threads drawn under
@@ -109,10 +110,10 @@ if (
       return {};
     },
     rememberReviewSnapshot: () => {},
-    useReviewState: () => ({
+    ...mockReviewStore(() => ({
       sessions: new Map<string, unknown>([["s1", review]]),
       openRequest: null,
-    }),
+    })),
   }));
   mock.module("../sitesWeWorkOn", () => ({
     loadSitesWeWorkOn: async () => [],

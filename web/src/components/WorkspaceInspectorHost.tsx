@@ -23,6 +23,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import type {
+  ReviewHead,
   ReviewSnapshot,
   ReviewThread,
   ReviewThreadKind,
@@ -217,7 +218,7 @@ export function sameDiffPath(entryPath: string, path: string): boolean {
  * A review shown as the scope, named by its title; one titled by its range
  * of shas (an agent's, Review this commit) as what it shows instead.
  */
-function shownReviewName(snapshot: ReviewSnapshot): string {
+function shownReviewName(snapshot: ReviewHead): string {
   const { title, target } = snapshot.session;
   return target.kind === "range" &&
     !target.compare &&
@@ -601,7 +602,7 @@ export function WorkspaceInspectorHost({
   }, [shownReview]);
   /** A repository the workspace does not hold, shown from elsewhere. */
   const [elsewhereRoot, setElsewhereRoot] = useState<string | null>(null);
-  const { sessions: reviewSessions } = useReviewState();
+  const { summaries: reviewSessions } = useReviewState();
   const shownReviewSnapshot = shownReview
     ? reviewSessions.get(shownReview)
     : undefined;
@@ -949,7 +950,7 @@ export function WorkspaceInspectorHost({
       setGoneReviews((known) =>
         known.has(sessionId) ? known : new Set([...known, sessionId]),
       );
-      if (snapshot?.threads.length) return;
+      if (snapshot?.counts.threads) return;
       setWorkspaceReviews((value) => {
         const next = withoutReview(value, sessionId);
         writeWorkspaceReviews(reviewsKey, next);

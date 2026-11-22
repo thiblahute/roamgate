@@ -2,6 +2,7 @@ import { expect, mock, spyOn, test } from "bun:test";
 import * as React from "react";
 import type { ReviewSnapshot } from "../../shared/review";
 import type { Pane } from "./types";
+import { mockReviewStore } from "./reviewState.testkit";
 
 /**
  * The reviews list over the workspace's review in Changes: it opens over
@@ -160,8 +161,7 @@ if (process.env.ROAMGATE_APP_REVIEW_LIST_TEST !== "1") {
     const reviewModule = await import("./review");
     mock.module("./review", () => ({
       ...reviewModule,
-      useReviewState: () => reviewState,
-      getReviewSnapshot: (id: string) => reviewState.sessions.get(id),
+      ...mockReviewStore(() => reviewState),
       reviewCall: async (_connection: string, method: string) =>
         method === "review.activity" ? { activity: [] } : {},
     }));

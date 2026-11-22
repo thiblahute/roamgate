@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { listReviewsSince } from "./list-since";
+import { listReviewsSince, listSummariesSince } from "./list-since";
 
 test("a review list sends again only the reviews the page does not hold", () => {
   const snapshot = (id: string, title: string) =>
@@ -39,4 +39,22 @@ test("a list read in pages sends the most recent reviews first, then the rest", 
   expect(last.unchanged).toEqual(["a", "b"]);
   expect(last.sessions.map((each) => each.session.id)).toEqual(["c"]);
   expect(last.remaining).toBe(0);
+});
+
+test("summaries come in larger pages than whole snapshots", () => {
+  const summary = (id: string) =>
+    ({
+      session: { id, title: id },
+      counts: { threads: 0, open: 0, drafts: 0, comments: 0, waiting: 0 },
+    }) as unknown as Parameters<typeof listSummariesSince>[0][number];
+  const all = Array.from({ length: 1200 }, (_, at) => summary(`s${at}`));
+  const page = listSummariesSince(all, {}, 5000);
+  expect(page.summaries).toHaveLength(1000);
+  expect(page.remaining).toBe(200);
+  const snapshots = listReviewsSince(
+    all.map((each) => ({ ...each, threads: [] })) as never,
+    {},
+    5000,
+  );
+  expect(snapshots.sessions).toHaveLength(200);
 });

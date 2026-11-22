@@ -3,7 +3,12 @@ import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
 import type { ConnectionClient } from "./api";
 import { worktreeReview } from "./changesReview";
 import { useGitDiffSummaryState } from "./gitDiffSummaryStore";
-import { rememberReviewSnapshot, reviewCall, useReviewState } from "./review";
+import {
+  rememberReviewSnapshot,
+  reviewCall,
+  useReviewSnapshots,
+  useReviewState,
+} from "./review";
 import {
   changedFileMarks,
   changedFileReviewed,
@@ -58,14 +63,23 @@ export function useReviewFileMarks(args: {
     resourceKey,
   ).summary;
   const root = summary?.root;
-  const { sessions } = useReviewState();
-  const snapshot = useMemo(
+  const { summaries } = useReviewState();
+  // The checkout's worktree review, found among the summaries; its marks
+  // once its snapshot is read.
+  const foundId = useMemo(
     () =>
       enabled && root
-        ? worktreeReview(sessions.values(), client.connectionId, root)
+        ? (worktreeReview(summaries.values(), client.connectionId, root)
+            ?.session.id ?? null)
         : null,
-    [client.connectionId, enabled, root, sessions],
+    [client.connectionId, enabled, root, summaries],
   );
+  const snapshots = useReviewSnapshots(
+    enabled && root
+      ? { connectionId: client.connectionId, roots: [root] }
+      : null,
+  );
+  const snapshot = (foundId && snapshots.get(foundId)) || null;
   const reviewed = snapshot?.session.reviewed;
   const changedPaths = useMemo(
     () => new Set((summary?.entries ?? []).map((entry) => entry.path)),
@@ -140,9 +154,10 @@ export function useReviewFileMarks(args: {
   const ownThreads = useMemo(() => {
     // The worktree review's own: an older rendered file's review keeps its
     // threads (shown in the file's preview, and in Changes on a change).
-    const id = snapshot?.session.id;
-    return id ? threads.filter((thread) => thread.sessionId === id) : [];
-  }, [snapshot, threads]);
+    return foundId
+      ? threads.filter((thread) => thread.sessionId === foundId)
+      : [];
+  }, [foundId, threads]);
   const marks = useMemo(() => {
     if (!enabled || !root) return NO_MARKS;
     const found = new Map<string, ReviewFileMark>();
@@ -164,10 +179,24 @@ export function useReviewFileMarks(args: {
   }, [changedPaths, ownThreads, diffs, enabled, reviewed, root, changes]);
   const snapshotRef = useRef<ReviewSnapshot | null>(snapshot);
   snapshotRef.current = snapshot;
+  const foundIdRef = useRef(foundId);
+  foundIdRef.current = foundId;
   const toggle = useCallback(
     async (path: string) => {
       if (!root) throw new Error("no repository to review");
-      const current = snapshotRef.current;
+      const id = foundIdRef.current;
+      // Not read yet: read now, its marks are what the change is made on.
+      const current =
+        snapshotRef.current ??
+        (id
+          ? await reviewCall<ReviewSnapshot>(
+              client.connectionId,
+              "review.get",
+              {
+                session_id: id,
+              },
+            )
+          : null);
       const now = current?.session.reviewed ?? {};
       let writes: Record<string, string | null>;
       if (changedPaths.has(path)) {

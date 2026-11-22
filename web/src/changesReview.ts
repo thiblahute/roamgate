@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   REVIEW_USER,
+  type ReviewHead,
   type ReviewSnapshot,
   type ReviewTarget,
   type ReviewThread,
@@ -8,7 +9,12 @@ import {
 import { onMetadataBase } from "./checkoutReviews";
 import { trimRoot } from "./filesystemPaths";
 import type { LastStepTarget } from "./types";
-import { rememberReviewSnapshot, reviewCall, useReviewState } from "./review";
+import {
+  rememberReviewSnapshot,
+  reviewCall,
+  useReviewSnapshots,
+  useReviewState,
+} from "./review";
 import {
   heldCommentCount,
   paneToAttach,
@@ -29,13 +35,13 @@ import { handoffStatus, notSavedStatus, saveOrKeep } from "./reviewSave";
  * The worktree review of a checkout: the one last updated when the bridge
  * keeps several; null when none was opened yet (the first comment opens it).
  */
-export function worktreeReview(
-  sessions: Iterable<ReviewSnapshot>,
+export function worktreeReview<T extends ReviewHead>(
+  sessions: Iterable<T>,
   connectionId: string,
   root: string | null | undefined,
-): ReviewSnapshot | null {
+): T | null {
   if (!root) return null;
-  let found: ReviewSnapshot | null = null;
+  let found: T | null = null;
   for (const snapshot of sessions) {
     const { session } = snapshot;
     if (
@@ -95,12 +101,12 @@ export function stepTarget(
  * several; null when none was opened yet (the first comment opens it).
  * Read only: showing a scope never opens or touches a session.
  */
-export function scopeReview(
-  sessions: Iterable<ReviewSnapshot>,
+export function scopeReview<T extends ReviewHead>(
+  sessions: Iterable<T>,
   connectionId: string,
   root: string | null | undefined,
   scope: ChangesScope = WORKING_SCOPE,
-): ReviewSnapshot | null {
+): T | null {
   if (scope.kind === "review") {
     for (const snapshot of sessions)
       if (
@@ -113,7 +119,7 @@ export function scopeReview(
   if (scope.kind === "working")
     return worktreeReview(sessions, connectionId, root);
   if (!root) return null;
-  let found: ReviewSnapshot | null = null;
+  let found: T | null = null;
   let foundRank = 0;
   for (const snapshot of sessions) {
     const { session } = snapshot;
@@ -252,15 +258,23 @@ export function useChangesAgent(
   /** The workspace's agent panes: the agent when the review has none. */
   agentPanes: readonly { paneId: string; agent: string }[] = [],
 ): ChangesAgent {
-  const { sessions } = useReviewState();
+  const { summaries } = useReviewState();
   const shownScope = useScopeByValue(scope);
-  const snapshot = useMemo(
-    () => scopeReview([...sessions.values()], connectionId, root, shownScope),
-    [connectionId, root, sessions, shownScope],
+  // The scope's review, found among the summaries; its threads once read.
+  const found = useMemo(
+    () => scopeReview(summaries.values(), connectionId, root, shownScope),
+    [connectionId, root, summaries, shownScope],
   );
+  const sessionId = found?.session.id;
+  const snapshots = useReviewSnapshots(
+    root || sessionId
+      ? { connectionId, roots: [root], ids: [sessionId] }
+      : null,
+  );
+  const snapshot = (sessionId && snapshots.get(sessionId)) || null;
   const [status, setStatus] = useState("");
-  const agent = snapshot ? reviewAgent(snapshot, agentPanes) : null;
-  const sessionId = snapshot?.session.id;
+  const head = snapshot ?? found;
+  const agent = head ? reviewAgent(head, agentPanes) : null;
   /** Writes to review `id`, its new snapshot kept. */
   const write = async (
     id: string,
@@ -303,7 +317,7 @@ export function useChangesAgent(
     return made.session.id;
   };
   const threads: readonly ReviewThread[] = snapshot?.threads ?? [];
-  const session = snapshot?.session;
+  const session = head?.session;
   const name = agent?.agentName ?? "Agent";
   // "Live" with the workspace's agent pane, the review naming none (an
   // agent that opened it without its pane): the review is told that pane,

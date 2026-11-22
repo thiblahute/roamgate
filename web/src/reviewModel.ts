@@ -8,7 +8,7 @@ import {
   type ReviewDiffFile,
   type ReviewDiffHunk,
   type ReviewDiffLine,
-  type ReviewSnapshot,
+  type ReviewSummary,
   type ReviewTarget,
   type ReviewThread,
 } from "../../shared/review";
@@ -230,7 +230,7 @@ export function expandDiff(
 }
 
 export type ReviewListItem = {
-  snapshot: ReviewSnapshot;
+  snapshot: ReviewSummary;
   comments: number;
   waiting: number;
   newCommits: boolean;
@@ -243,22 +243,15 @@ export type ReviewListItem = {
  * on your answer, then the rest, most recently worked on first.
  */
 export function rankReviews(
-  snapshots: readonly ReviewSnapshot[],
+  summaries: readonly ReviewSummary[],
   newCommits: ReadonlySet<string>,
 ): ReviewListItem[] {
-  return snapshots
-    .map((snapshot) => {
-      const comments = snapshot.threads.filter(
-        (thread) => thread.kind === "draft",
-      ).length;
-      const waiting = snapshot.threads.filter((thread) => {
-        if (thread.kind !== "discussion" || thread.resolved) return false;
-        const last = thread.comments[thread.comments.length - 1];
-        return last !== undefined && last.author !== REVIEW_USER;
-      }).length;
-      const moved = newCommits.has(snapshot.session.id);
+  return summaries
+    .map((summary) => {
+      const { drafts: comments, waiting } = summary.counts;
+      const moved = newCommits.has(summary.session.id);
       return {
-        snapshot,
+        snapshot: summary,
         comments,
         waiting,
         newCommits: moved,

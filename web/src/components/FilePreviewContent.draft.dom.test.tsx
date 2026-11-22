@@ -1,5 +1,6 @@
 import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
+import { mockReviewStore } from "../reviewState.testkit";
 
 /*
  * A comment written in the rendered view of a Markdown file: its box is
@@ -45,10 +46,10 @@ if (
     reviewCall: async (_connection: string, method: string) =>
       method === "review.get" ? review : {},
     rememberReviewSnapshot: () => {},
-    useReviewState: () => ({
+    ...mockReviewStore(() => ({
       sessions: new Map<string, unknown>([["s1", review]]),
       openRequest: null,
-    }),
+    })),
   }));
   mock.module("../sitesWeWorkOn", () => ({
     loadSitesWeWorkOn: async () => [],

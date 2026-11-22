@@ -1,5 +1,6 @@
 import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
+import { mockReviewStore } from "../reviewState.testkit";
 
 if (
   inIsolatedChild(
@@ -83,10 +84,10 @@ if (
     reviewCall: async (_connection: string, method: string) =>
       method === "review.get" ? review : {},
     rememberReviewSnapshot: () => {},
-    useReviewState: () => ({
+    ...mockReviewStore(() => ({
       sessions: new Map([["s1", review]]),
       openRequest: null,
-    }),
+    })),
   }));
 
   const settle = async () => {

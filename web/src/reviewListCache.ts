@@ -1,16 +1,20 @@
-import type { ReviewSnapshot } from "../../shared/review";
-import { validReviewSnapshots } from "./reviewValidate";
+import type { ReviewSummary } from "../../shared/review";
+import { validReviewSummaries } from "./reviewValidate";
 
 /**
  * The last review list of each connection with its stamps, kept in
  * IndexedDB: after a reload the page sends those stamps back and only the
- * reviews that changed come again, instead of every review (megabytes on a
- * busy desktop, slow to carry on a mobile link). One entry per connection.
+ * reviews that changed come again, instead of every review (slow to carry
+ * on a mobile link). One entry per connection, under a key of its own
+ * (`summaries:` and the connection): the entries of pages from before
+ * summaries, whole snapshots, are left to those.
  */
 export type CachedReviewList = {
   stamps: Record<string, string>;
-  sessions: ReviewSnapshot[];
+  summaries: ReviewSummary[];
 };
+
+const KEY_PREFIX = "summaries:";
 
 const DB_NAME = "roamgate-review-list";
 const STORE = "lists";
@@ -39,13 +43,13 @@ function openDatabase(): Promise<IDBDatabase | null> {
 
 function parse(value: unknown): CachedReviewList | null {
   if (!value || typeof value !== "object") return null;
-  const { stamps, sessions } = value as Record<string, unknown>;
+  const { stamps, summaries } = value as Record<string, unknown>;
   if (!stamps || typeof stamps !== "object" || Array.isArray(stamps))
     return null;
   const valid: Record<string, string> = {};
   for (const [id, stamp] of Object.entries(stamps))
     if (typeof stamp === "string") valid[id] = stamp;
-  return { stamps: valid, sessions: validReviewSnapshots(sessions) };
+  return { stamps: valid, summaries: validReviewSummaries(summaries) };
 }
 
 export function readReviewListCache(
@@ -59,7 +63,7 @@ export function readReviewListCache(
           const request = db
             .transaction(STORE, "readonly")
             .objectStore(STORE)
-            .get(connectionId);
+            .get(KEY_PREFIX + connectionId);
           request.onsuccess = () => resolve(parse(request.result));
           request.onerror = () => resolve(null);
         } catch {
@@ -91,7 +95,7 @@ export function saveReviewListCache(
         try {
           db.transaction(STORE, "readwrite")
             .objectStore(STORE)
-            .put(value, connectionId);
+            .put(value, KEY_PREFIX + connectionId);
         } catch {
           // Storage may be full or unavailable: the next reload lists all.
         }

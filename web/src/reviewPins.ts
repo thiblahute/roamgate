@@ -1,4 +1,4 @@
-import type { ReviewSnapshot } from "../../shared/review";
+import type { ReviewHead, ReviewSummary } from "../../shared/review";
 import { roamgateLocalStorage } from "./browserStorage";
 
 /*
@@ -17,7 +17,7 @@ export function reviewPinKey(connectionId: string, workspaceId: string) {
  * was pinned). A review opened again from another workspace moves there;
  * the old pin would show it, and un-close it, in that other workspace.
  */
-export function pinHolds(key: string, snapshot: ReviewSnapshot): boolean {
+export function pinHolds(key: string, snapshot: ReviewHead): boolean {
   const { connectionId, workspaceId } = snapshot.session;
   if (!key.startsWith(`${connectionId}\n`)) return false;
   return !workspaceId || key === reviewPinKey(connectionId, workspaceId);
@@ -36,7 +36,7 @@ function pinConnection(key: string) {
  */
 export function livePins(
   pins: Record<string, string>,
-  sessions: ReadonlyMap<string, ReviewSnapshot>,
+  sessions: ReadonlyMap<string, ReviewHead>,
   loaded: ReadonlySet<string>,
 ): Record<string, string> {
   const stale = Object.entries(pins).filter(([key, id]) => {
@@ -213,7 +213,7 @@ export function withoutReview(
  */
 export function workspaceReviewStanding(
   entry: WorkspaceReview,
-  snapshot: ReviewSnapshot | undefined,
+  snapshot: ReviewSummary | undefined,
   { loaded, gone, now }: { loaded: boolean; gone: boolean; now: number },
 ): "live" | "outdated" | "drop" {
   // Shown a moment ago: its review may not be listed yet.
@@ -226,11 +226,9 @@ export function workspaceReviewStanding(
     gone ||
     state === "merged" ||
     state === "closed" ||
-    (!snapshot.threads.length && now - entry.at > WORKSPACE_REVIEW_IDLE_MS);
+    (!snapshot.counts.threads && now - entry.at > WORKSPACE_REVIEW_IDLE_MS);
   if (!obsolete) return "live";
-  return snapshot.threads.some((thread) => !thread.resolved)
-    ? "outdated"
-    : "drop";
+  return snapshot.counts.open ? "outdated" : "drop";
 }
 
 /**
@@ -240,7 +238,7 @@ export function workspaceReviewStanding(
  */
 export function liveWorkspaceReviews(
   value: WorkspaceReviews,
-  sessions: ReadonlyMap<string, ReviewSnapshot>,
+  sessions: ReadonlyMap<string, ReviewSummary>,
   {
     loaded,
     gone,

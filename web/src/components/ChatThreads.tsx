@@ -28,7 +28,11 @@ import {
   onFileEdit,
   selectedRows,
 } from "../fileEditComments";
-import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
+import {
+  rememberReviewSnapshot,
+  reviewCall,
+  useReviewSnapshots,
+} from "../review";
 import { looseText } from "../reviewMessageParts";
 import {
   type PendingWrite,
@@ -539,16 +543,16 @@ function ChatThreadsScope({
       onAddImage: (file: File) => addImage(file),
     };
   };
-  const reviews = useReviewState();
+  const snapshots = useReviewSnapshots({ connectionId, chat });
   const snapshot = useMemo(
     () =>
-      [...reviews.sessions.values()].find(
+      [...snapshots.values()].find(
         ({ session }) =>
           session.connectionId === connectionId &&
           session.target.kind === "chat" &&
           session.target.chat === chat,
       ),
-    [reviews.sessions, connectionId, chat],
+    [snapshots, connectionId, chat],
   );
   /**
    * Comments on their way: shown at once in their thread, pending, until

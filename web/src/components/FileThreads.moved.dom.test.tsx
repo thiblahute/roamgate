@@ -1,5 +1,6 @@
 import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
+import { mockReviewStore } from "../reviewState.testkit";
 
 /*
  * The Files preview's threads follow the file: read again after an edit,
@@ -131,7 +132,7 @@ if (
       return method === "review.get" ? review : {};
     },
     rememberReviewSnapshot: () => {},
-    useReviewState: () => ({
+    ...mockReviewStore(() => ({
       // The file's own rendered review, or the checkout's (the review in
       // Changes, where the Files preview writes on checkout files).
       sessions: new Map<string, unknown>([
@@ -150,7 +151,7 @@ if (
         ],
       ]),
       openRequest: null,
-    }),
+    })),
   }));
 
   const settle = async () => {

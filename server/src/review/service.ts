@@ -18,6 +18,7 @@ import {
   type ReviewPush,
   type ReviewSession,
   type ReviewSnapshot,
+  type ReviewSummary,
   type ReviewTarget,
   type ReviewThread,
   type ReviewThreadKind,
@@ -31,6 +32,7 @@ import {
   REVIEW_EFFORT_TABS,
   threadNeedsAnswer,
   agentJoined,
+  summarizeReview,
   unheardComments,
 } from "../../../shared/review";
 import {
@@ -919,12 +921,16 @@ export function createReviewService(args: {
     );
   }
 
-  function snapshot(session: ReviewSession): ReviewSnapshot {
+  /** Without `shared`: a summary counts only the review's own threads. */
+  function snapshot(
+    session: ReviewSession,
+    { withShared = true }: { withShared?: boolean } = {},
+  ): ReviewSnapshot {
     const local = [...(threads.get(session.id)?.values() ?? [])];
     const remote = gitlabMode(session)
       ? gitlabState.get(session.id)
       : undefined;
-    const shared = sharedThreads(session);
+    const shared = withShared ? sharedThreads(session) : [];
     return {
       session,
       threads: remote
@@ -1590,6 +1596,20 @@ export function createReviewService(args: {
   }
 
   function list(params: Record<string, unknown> = {}): ReviewSnapshot[] {
+    return listed(params).map((each) => snapshot(each));
+  }
+
+  /**
+   * The summaries of what `list` gives: its sessions with their threads
+   * counted, for the page's list (the page reads the snapshots it shows).
+   */
+  function summaries(params: Record<string, unknown> = {}): ReviewSummary[] {
+    return listed(params).map((each) =>
+      summarizeReview(snapshot(each, { withShared: false })),
+    );
+  }
+
+  function listed(params: Record<string, unknown>): ReviewSession[] {
     const connectionId =
       typeof params.connectionId === "string" ? params.connectionId : undefined;
     const root = typeof params.root === "string" ? params.root : undefined;
@@ -1608,7 +1628,7 @@ export function createReviewService(args: {
       migrateEntryAnchors(each);
       void reanchorFile(each);
     }
-    return shown.map(snapshot);
+    return shown;
   }
 
   /** Worktree reviews whose Changes anchors are being migrated. */
@@ -4327,6 +4347,7 @@ export function createReviewService(args: {
     previewFile: async (params: Record<string, unknown>) =>
       fileOf(preview(params), params),
     list,
+    summaries,
     roots,
     refreshGitlab,
     findGitlab,

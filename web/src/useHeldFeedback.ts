@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReviewAnnotation } from "./annotations";
-import { useReviewState } from "./review";
+import { useReviewSnapshots } from "./review";
 import { writeReviewSession } from "./reviewSessionCall";
 import { type HeldFeedback, heldFeedback } from "./workspaceFeedback";
 
@@ -14,7 +14,9 @@ export function useHeldFeedback(
   connectionId: string | null | undefined,
   workspaceId: string | undefined,
 ) {
-  const { sessions } = useReviewState();
+  const sessions = useReviewSnapshots(
+    connectionId && workspaceId ? { connectionId, workspaceId } : null,
+  );
   const held = useMemo(
     () => heldFeedback(sessions.values(), connectionId, workspaceId),
     [sessions, connectionId, workspaceId],

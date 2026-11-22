@@ -39,7 +39,7 @@ import {
   type ReviewThread,
   type ReviewThreadKind,
 } from "../../../shared/review";
-import { reviewCall, useReviewState } from "../review";
+import { reviewCall, useReviewSnapshots, useReviewState } from "../review";
 import {
   latestAnswerAt,
   reviewAgent,
@@ -1589,7 +1589,7 @@ function DiffContentViewInner({
   reviewOnly?: boolean;
 } & ViewProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
-  const { sessions: reviewSessions } = useReviewState();
+  const { summaries: reviewSummaries } = useReviewState();
   // Only the shown repository's: another one's file of the same path never
   // gets its threads.
   const repoRoot = repo?.root;
@@ -1602,29 +1602,38 @@ function DiffContentViewInner({
       ? (file?.root ?? Object.values(files)[0]?.root ?? repoRoot)
       : null;
   const shownScope = useScopeByValue(reviewScope);
+  // The threads of the checkout's reviews and of the scope's, read whole.
+  const reviewSessions = useReviewSnapshots({
+    connectionId: connectionClient.connectionId,
+    roots: [heldRoot],
+    ids: [shownScope.kind === "review" ? shownScope.sessionId : null],
+  });
   // The scope's review's threads the host does not give: a question held
   // for Send, and threads written elsewhere than in Changes (the review
   // pane, an agent's review_add) on the scope's lines.
   const held = useMemo(() => {
-    const own = scopeReview(
-      [...reviewSessions.values()],
+    const ownSummary = scopeReview(
+      reviewSummaries.values(),
       connectionClient.connectionId,
       heldRoot,
       shownScope,
     );
+    const own = ownSummary
+      ? reviewSessions.get(ownSummary.session.id)
+      : undefined;
     const given = new Set((givenThreads ?? []).map((thread) => thread.id));
     // One review per checkout: the threads of its other code reviews too
     // (the working tree's, the branch's against another base, an agent's
     // range), whatever this scope compares. Not beside a merge request's,
     // which shows the local ones meant for it as pending.
     const siblings =
-      forgeView || own?.session.target.kind === "mr"
+      forgeView || ownSummary?.session.target.kind === "mr"
         ? []
         : checkoutReviews(
             reviewSessions.values(),
             connectionClient.connectionId,
             heldRoot,
-          ).filter((each) => each.session.id !== own?.session.id);
+          ).filter((each) => each.session.id !== ownSummary?.session.id);
     const seen = new Set<string>();
     const fresh = (thread: ReviewThread) => {
       if (given.has(thread.id) || seen.has(thread.id)) return false;
@@ -1668,6 +1677,7 @@ function DiffContentViewInner({
     givenThreads,
     heldRoot,
     reviewSessions,
+    reviewSummaries,
     shownScope,
     forgeView,
     viewCommit,
@@ -1690,7 +1700,7 @@ function DiffContentViewInner({
             ]
           : givenAnnotations,
         held.length ? [...(givenThreads ?? []), ...held] : (givenThreads ?? []),
-        (sessionId) => reviewSessions.get(sessionId)?.session.root,
+        (sessionId) => reviewSummaries.get(sessionId)?.session.root,
         repoRoot === undefined ? undefined : { root: repoRoot, own: !!repoOwn },
       ),
     [
@@ -1699,7 +1709,7 @@ function DiffContentViewInner({
       held,
       repoOwn,
       repoRoot,
-      reviewSessions,
+      reviewSummaries,
       scopeNoteKind,
     ],
   );
@@ -1713,7 +1723,7 @@ function DiffContentViewInner({
     // A step's review is drawn on that step only: not on the
     // working tree, the branch or another step.
     for (const thread of scoped.threads) {
-      const target = reviewSessions.get(thread.sessionId)?.session.target;
+      const target = reviewSummaries.get(thread.sessionId)?.session.target;
       if (
         target?.kind === "step" &&
         !(
@@ -1761,7 +1771,7 @@ function DiffContentViewInner({
     scoped,
     viewCommit,
     viewSingleCommit,
-    reviewSessions,
+    reviewSummaries,
     shownScope,
     forgeView,
   ]);
@@ -2128,7 +2138,7 @@ function DiffContentViewInner({
   const deliveryOf = (
     thread: ReviewThread,
   ): { delivery: ThreadDelivery; canSend: boolean; gitlab: boolean } => {
-    const snapshot = reviewSessions.get(thread.sessionId);
+    const snapshot = reviewSummaries.get(thread.sessionId);
     const session = snapshot?.session ?? ownSnapshot?.session;
     if (snapshot && thread.sessionId !== ownSessionId && ownAgent) {
       const own = snapshot.session;
@@ -2175,7 +2185,7 @@ function DiffContentViewInner({
     };
   };
   const forgeOfThread = (thread: ReviewThread) => {
-    const target = reviewSessions.get(thread.sessionId)?.session.target;
+    const target = reviewSummaries.get(thread.sessionId)?.session.target;
     return target?.kind === "mr" && /\/pull\/\d+/.test(target.url)
       ? "GitHub"
       : "GitLab";
@@ -3094,12 +3104,12 @@ function DiffContentViewInner({
     () =>
       new Set(
         checkoutReviews(
-          reviewSessions.values(),
+          reviewSummaries.values(),
           connectionClient.connectionId,
           heldRoot,
         ).map((each) => each.session.id),
       ),
-    [connectionClient.connectionId, heldRoot, reviewSessions],
+    [connectionClient.connectionId, heldRoot, reviewSummaries],
   );
   // The commit shown keeps its own marks (its sha).
   const reviewView = changesReviewView(viewCommit);
@@ -6841,14 +6851,29 @@ export function DiffContentView({
   const first = Object.values(files)[0] ?? file ?? null;
   const root = repo?.root ?? first?.root ?? "";
   const workspaceId = first?.workspace_id ?? "";
-  const { sessions } = useReviewState();
+  const { summaries: sessions } = useReviewState();
   const connectionId = connectionClient.connectionId;
   const viewsScope =
     reviewing &&
     (reviewScope.kind === "branch" || reviewScope.kind === "review");
   const bound = viewsScope
-    ? scopeReview([...sessions.values()], connectionId, root, reviewScope)
+    ? scopeReview(sessions.values(), connectionId, root, reviewScope)
     : null;
+  // The threads of the scope's review, read whole.
+  const wholeReviews = useReviewSnapshots(
+    reviewing
+      ? {
+          connectionId,
+          ids: [
+            bound?.session.id,
+            reviewScope.kind === "review" ? reviewScope.sessionId : null,
+          ],
+        }
+      : null,
+  );
+  const boundThreads = bound
+    ? wholeReviews.get(bound.session.id)?.threads
+    : undefined;
   const branchBase =
     reviewScope.kind === "branch"
       ? (reviewScope.base ?? reviewScope.automaticBase)
@@ -6905,7 +6930,9 @@ export function DiffContentView({
   const relocations = useForgeRelocations({
     connectionId,
     sessionId: forgeSnapshot?.session.id ?? null,
-    threads: forgeSnapshot?.threads ?? NO_THREADS,
+    threads:
+      (forgeSnapshot && wholeReviews.get(forgeSnapshot.session.id)?.threads) ??
+      NO_THREADS,
     headSha: views.headSha,
     enabled: forgeOn && views.sha === null,
     worktree: forgeSnapshot?.session.target.kind === "worktree",
@@ -7073,7 +7100,7 @@ export function DiffContentView({
     if (!views.active || !views.commits?.length) return false;
     const order = views.commits.map((commit) => commit.sha);
     const seen = new Set<string>();
-    const candidates = [...(bound?.threads ?? []), ...(props.threads ?? [])]
+    const candidates = [...(boundThreads ?? []), ...(props.threads ?? [])]
       .filter((thread) => {
         if (seen.has(thread.id)) return false;
         seen.add(thread.id);

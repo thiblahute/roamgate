@@ -1,4 +1,4 @@
-import type { ReviewSnapshot } from "../../shared/review";
+import type { ReviewHead, ReviewSummary } from "../../shared/review";
 import type { Pane } from "./types";
 import { paneDir, workspaceRepoDirs } from "./changesRepo";
 import { insideRoot, sameRoot } from "./filesystemPaths";
@@ -54,14 +54,14 @@ export async function changesReviewChoice({
   changed,
   lastRoot,
 }: {
-  snapshot: ReviewSnapshot;
+  snapshot: ReviewHead;
   /** The inspector's checkout, null when it is the workspace's own. */
   checkoutRoot: string | null;
   connectionId: string;
   /** The workspace's panes: their directories hold its repositories. */
   panes: readonly Pane[];
   /** Every review known: the workspace's others name repositories too. */
-  sessions: Iterable<ReviewSnapshot>;
+  sessions: Iterable<ReviewSummary>;
   /**
    * Whether a Changes scope holds anything (null: not known), in the
    * repository `root` (absent: the checkout's).

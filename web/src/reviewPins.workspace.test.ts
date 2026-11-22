@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
+import {
+  type ReviewSnapshot,
+  type ReviewThread,
+  summarizeReview,
+} from "../../shared/review";
 import {
   liveWorkspaceReviews,
   readWorkspaceReviews,
@@ -164,11 +168,15 @@ test("obsolete reviews are dropped: discarded, gone, merged or closed, idle with
     snapshot: ReviewSnapshot | undefined,
     { at = NOW - DAY, gone = false, loaded = true } = {},
   ) =>
-    workspaceReviewStanding({ id: "x", at }, snapshot, {
-      loaded,
-      gone,
-      now: NOW,
-    });
+    workspaceReviewStanding(
+      { id: "x", at },
+      snapshot && summarizeReview(snapshot),
+      {
+        loaded,
+        gone,
+        now: NOW,
+      },
+    );
   const open = { threads: [{ resolved: false }] };
   const resolved = { threads: [{ resolved: true }] };
   expect(standing(snap("a"))).toBe("live");
@@ -204,12 +212,14 @@ test("a workspace's list loses its obsolete reviews, the one shown only once its
       { id: "kept", at: NOW - DAY },
     ],
   };
-  const sessions = new Map([
-    ["merged", snap("merged", { state: "merged" })],
-    ["live", snap("live")],
-    ["gone", snap("gone")],
-    ["kept", snap("kept", { threads: [{ resolved: false }] })],
-  ]);
+  const sessions = new Map(
+    [
+      snap("merged", { state: "merged" }),
+      snap("live"),
+      snap("gone"),
+      snap("kept", { threads: [{ resolved: false }] }),
+    ].map((each) => [each.session.id, summarizeReview(each)]),
+  );
   const result = liveWorkspaceReviews(value, sessions, {
     loaded: true,
     gone: new Set(["gone", "kept"]),

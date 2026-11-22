@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { workspaceRepoDirs } from "../changesRepo";
 import type { InspectorCommand } from "../inspectorCommands";
 import { useReviewState } from "../review";
-import type { ReviewSnapshot } from "../../../shared/review";
+import type { ReviewHead, ReviewSummarySession } from "../../../shared/review";
 import type { GitDiffSummaryMode } from "../gitDiffSummaryStore";
 import type { WorkspaceRepo } from "../reviewModel";
 import {
@@ -70,7 +70,7 @@ export function useChangesRepos(
       cancelled = true;
     };
   }, [connectionId, ownRoot, dirsKey, agentKey, shown]);
-  const { sessions } = useReviewState();
+  const { summaries } = useReviewState();
   return useMemo(() => {
     if (!ownRoot) return [];
     // The workspace's own checkout stands for the review the list is of.
@@ -78,9 +78,9 @@ export function useChangesRepos(
       root: ownRoot,
       connectionId,
       workspaceId,
-    } as ReviewSnapshot["session"];
-    return workspaceRepos(scanned, sessions.values(), own);
-  }, [connectionId, ownRoot, scanned, sessions, workspaceId]);
+    } as ReviewSummarySession;
+    return workspaceRepos(scanned, summaries.values(), own);
+  }, [connectionId, ownRoot, scanned, summaries, workspaceId]);
 }
 
 /**
@@ -210,7 +210,7 @@ function shortRef(ref: string): string {
  * !12 Title", "Last step".
  */
 export function workspaceReviewLabel(
-  snapshot: ReviewSnapshot | undefined,
+  snapshot: ReviewHead | undefined,
   remembered?: string,
 ): string {
   if (!snapshot) return remembered ?? "A review";

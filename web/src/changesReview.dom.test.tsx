@@ -1,6 +1,7 @@
 import { inIsolatedChild } from "./testIsolated";
 import { expect, test } from "bun:test";
 import type { ReviewSnapshot, ReviewThread } from "../../shared/review";
+import { mockReviewStore } from "./reviewState.testkit";
 
 /**
  * The checkout's own review in Changes: the lookup of its worktree review,
@@ -30,7 +31,7 @@ if (
     rememberReviewSnapshot: (snapshot: ReviewSnapshot) => {
       remembered.push(snapshot);
     },
-    useReviewState: () => ({ sessions: snapshots, openRequest: null }),
+    ...mockReviewStore(() => ({ sessions: snapshots, openRequest: null })),
   }));
   const { installReviewDom } = await import(
     "./components/reviewSurface.testkit"

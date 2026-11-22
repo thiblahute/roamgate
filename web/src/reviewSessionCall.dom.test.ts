@@ -1,6 +1,7 @@
 import { inIsolatedChild } from "./testIsolated";
 import { expect, test } from "bun:test";
 import type { ReviewSnapshot } from "../../shared/review";
+import { mockReviewStore } from "./reviewState.testkit";
 
 /**
  * Calls on one review session (reviewSessionCall, taken out of the review
@@ -35,7 +36,7 @@ if (
     rememberReviewSnapshot: (snapshot: ReviewSnapshot) => {
       remembered.push(snapshot);
     },
-    useReviewState: () => ({ sessions: new Map(), openRequest: null }),
+    ...mockReviewStore(() => ({ sessions: new Map(), openRequest: null })),
   }));
   const { callReviewSession, REVIEW_WRITES } = await import(
     "./reviewSessionCall"

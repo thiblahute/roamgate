@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ReviewSnapshot } from "../../shared/review";
+import { type ReviewSnapshot, summarizeReview } from "../../shared/review";
 import { changesReviewChoice } from "./changesReviewOpen";
 
 /** A review of the checkout /repo, of `target`. */
@@ -27,7 +27,7 @@ const choose = (snapshot: ReviewSnapshot) =>
     checkoutRoot: "/repo",
     connectionId: "no-such-connection",
     panes: [],
-    sessions: [snapshot],
+    sessions: [summarizeReview(snapshot)],
     changed: async () => true,
   });
 

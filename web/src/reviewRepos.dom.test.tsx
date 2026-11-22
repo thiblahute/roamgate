@@ -1,7 +1,8 @@
 import { inIsolatedChild } from "./testIsolated";
 import { expect, test } from "bun:test";
-import type { ReviewSnapshot } from "../../shared/review";
+import { type ReviewSnapshot, summarizeReview } from "../../shared/review";
 import type { WorkspaceRepo } from "./reviewModel";
+import { mockReviewStore } from "./reviewState.testkit";
 
 /**
  * The repositories of a review's workspace (reviewRepos): scans reused for a
@@ -32,7 +33,7 @@ if (
       return { repos: scanned };
     },
     rememberReviewSnapshot: () => {},
-    useReviewState: () => ({ sessions: new Map(), openRequest: null }),
+    ...mockReviewStore(() => ({ sessions: new Map(), openRequest: null })),
   }));
   const { installReviewDom } = await import(
     "./components/reviewSurface.testkit"
@@ -52,10 +53,15 @@ if (
       ...more,
     }) as unknown as Session;
   const review = (more: Partial<Session>, threads: string[] = []) =>
-    ({
+    summarizeReview({
       session: session(more),
-      threads: threads.map((kind, index) => ({ id: `t${index}`, kind })),
-    }) as unknown as ReviewSnapshot;
+      threads: threads.map((kind, index) => ({
+        id: `t${index}`,
+        kind,
+        comments: [],
+        resolved: false,
+      })),
+    } as unknown as ReviewSnapshot);
 
   test("a scan is one background call, reused whatever the order of the directories", async () => {
     clearRepoScans();

@@ -14,6 +14,7 @@ import { jest, mock, spyOn } from "bun:test";
 import * as React from "react";
 import type { ReviewSnapshot } from "../../shared/review";
 import type { Pane } from "./types";
+import { mockReviewStore } from "./reviewState.testkit";
 
 export async function installAppReviewDom(url = "http://localhost/") {
   const { installTestDom } = await import("./testDom");
@@ -310,8 +311,7 @@ async function mockApp(before?: () => Promise<void> | void) {
   const reviewModule = await import("./review");
   mock.module("./review", () => ({
     ...reviewModule,
-    useReviewState: () => now().reviewState,
-    getReviewSnapshot: (id: string) => now().sessions.get(id),
+    ...mockReviewStore(() => now().reviewState),
     loadReviews: async () => {},
     loadedReviewConnections: () => new Set(["local"]),
     startReviewClient: () => {},

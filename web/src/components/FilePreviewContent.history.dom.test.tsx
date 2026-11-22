@@ -1,5 +1,6 @@
 import { inIsolatedChild } from "../testIsolated";
 import { expect, test } from "bun:test";
+import { mockReviewStore } from "../reviewState.testkit";
 
 /*
  * Back and Forward in the Files preview, as a browser's: the files a link
@@ -34,7 +35,7 @@ if (
       return {};
     },
     rememberReviewSnapshot: () => {},
-    useReviewState: () => ({ sessions: new Map(), openRequest: null }),
+    ...mockReviewStore(() => ({ sessions: new Map(), openRequest: null })),
   }));
   mock.module("../sitesWeWorkOn", () => ({
     loadSitesWeWorkOn: async () => [],

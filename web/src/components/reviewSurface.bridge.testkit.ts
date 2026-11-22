@@ -16,6 +16,7 @@ import {
   type SurfaceOptions,
   settle as settleTimers,
 } from "./reviewSurface.testkit";
+import { mockReviewStore } from "../reviewState.testkit";
 
 type Call = { method: string; params: Record<string, unknown> };
 
@@ -165,7 +166,10 @@ export function mockReviewBackend() {
       if (snapshot?.session && Array.isArray(snapshot.threads))
         backend.remember(snapshot);
     },
-    useReviewState: () => ({ sessions: backend.sessions, openRequest: null }),
+    ...mockReviewStore(() => ({
+      sessions: backend.sessions,
+      openRequest: null,
+    })),
   }));
   mock.module("../connectionReady", () => ({
     connectionReady: () => backend.connected,
