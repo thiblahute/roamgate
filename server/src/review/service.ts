@@ -4206,8 +4206,14 @@ export function createReviewService(args: {
    * on the thread) nor was reminded of since, and the work item to triage
    * when its triage was among them. Each is returned once per delivery:
    * the end-of-turn check that asks never asks twice for the same one.
+   * `endedMsAgo`: when the turn being checked ended. A thread delivered
+   * after that went to the next turn, which the agent may be on now: it
+   * is left for that turn's own check, not reminded of.
    */
-  function agentDue(sessionId: string): {
+  function agentDue(
+    sessionId: string,
+    options: { endedMsAgo?: number } = {},
+  ): {
     threads: ReviewThread[];
     triageItem?: string;
   } {
@@ -4215,10 +4221,15 @@ export function createReviewService(args: {
     if (!target) return { threads: [] };
     const agent = target.agent.name ?? "agent";
     const at = now();
+    const ended =
+      options.endedMsAgo === undefined
+        ? undefined
+        : new Date(clock() - options.endedMsAgo).toISOString();
     let triageItem: string | undefined;
     const threads = [...threadsOf(sessionId).values()].filter((thread) => {
       const sent = heard.get(thread.id);
       if (!sent || (reminded.get(thread.id) ?? "") >= sent) return false;
+      if (ended !== undefined && sent > ended) return false;
       if (thread.anchor.work?.triage && target.target.kind === "work") {
         triageItem = target.target.item;
         reminded.set(thread.id, at);

@@ -652,8 +652,11 @@ test("work_update and work_list are listed, the other work tools deferred, with 
     expect(described[name]).not.toContain("Without this tool");
 });
 
-/** A Roamgate whose stop_check answers `answer` (then nothing). */
-function stopChecks(on: On, answer: unknown) {
+/**
+ * A Roamgate whose stop_check answers `answer` (then nothing), after
+ * `during` when given: what happens while the request is in flight.
+ */
+function stopChecks(on: On, answer: unknown, during?: () => Promise<void>) {
   const asked: Record<string, unknown>[] = [];
   // The settings hooks beneath: none blocks.
   on("classic.Stop", () => ({}));
@@ -663,13 +666,14 @@ function stopChecks(on: On, answer: unknown) {
     return { value: undefined };
   });
   on("fs.exists", () => ({ value: true }));
-  on("http.fetch", (_, e) => {
+  on("http.fetch", async (_, e) => {
     const command = e.url.replace(/^.*\/v1\//, "");
     const body = JSON.parse(e.init?.body ?? "{}") as Record<string, unknown>;
     let value: unknown = {};
     if (command === "stop_check") {
       asked.push(body);
       value = asked.length === 1 ? answer : { threads: [], triage: [] };
+      await during?.();
     }
     if (command === "mod_poll")
       value = { protocol: 1, epoch: "e1", messages: [] };
@@ -872,6 +876,77 @@ test(
     expect(submitted).toHaveLength(1);
   },
 );
+
+test(
+  "with classic.Stop passed over, a turn a delivery starts as the session idles is checked at its own end, not before",
+  { plugins: [SEC_DEFAULT] },
+  async ($, on) => {
+    const clock = mock.clock(on);
+    session(on);
+    registry(on);
+    on("turn.start", (_, e) => ({ turnId: e.turnId }));
+    // By the end of the delivery's turn the thread is answered and resolved.
+    const asked = stopChecks(on, { threads: [], triage: [] });
+    const { submitted } = conversation(on);
+
+    await $.session.start(START);
+    await clock.settle();
+    await $.turn.complete(ENDED);
+    // Roamgate delivers a comment the moment the session goes idle.
+    await $.turn.start({ text: "A comment from me", turnId: "t2" });
+    await clock.advance(1_000);
+    // The ended turn never had it: nothing asked, nothing sent.
+    expect(asked).toHaveLength(0);
+    expect(submitted).toHaveLength(0);
+    // The delivery's turn ends: its check runs, saying when it ended.
+    await $.turn.complete({ ...ENDED, turnId: "t2" });
+    await clock.advance(1_000);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ ended_ms_ago: "1000" });
+    expect(submitted).toHaveLength(0);
+  },
+);
+
+test(
+  "with classic.Stop passed over, a check a new turn overtakes in flight is dropped",
+  { plugins: [SEC_DEFAULT] },
+  async ($, on) => {
+    const clock = mock.clock(on);
+    session(on);
+    registry(on);
+    on("turn.start", (_, e) => ({ turnId: e.turnId }));
+    // Roamgate answers with the thread it delivered meanwhile, as an
+    // older server would; the turn it started is the one answering it.
+    const asked = stopChecks(
+      on,
+      { threads: [{ id: "e6725c47", review: "696679c2", title: "Work: H" }] },
+      async () => {
+        await $.turn.start({ text: "A comment from me", turnId: "t2" });
+      },
+    );
+    const { submitted } = conversation(on);
+
+    await $.session.start(START);
+    await clock.settle();
+    await $.turn.complete(ENDED);
+    await clock.advance(1_000);
+    expect(asked).toHaveLength(1);
+    expect(submitted).toHaveLength(0);
+  },
+);
+
+test("classic.Stop asks the check for the turn ending now", async ($, on) => {
+  const clock = mock.clock(on);
+  session(on);
+  registry(on);
+  const asked = stopChecks(on, { threads: [], triage: [] });
+
+  await $.session.start(START);
+  await clock.settle();
+  const ended = await $.classic.Stop({ stop_hook_active: false });
+  expect(ended.block).toBeUndefined();
+  expect(asked[0]).toMatchObject({ ended_ms_ago: "0" });
+});
 
 test("where classic.Stop reaches the mod, the end of the turn checks nothing more", async ($, on) => {
   const clock = mock.clock(on);

@@ -1293,13 +1293,20 @@ export function createReviewAgentServer(args: {
    * The mod's end-of-turn check (`stop_check`): the threads delivered to
    * the asking session that it left unanswered and did not take, and the
    * work items it was asked to triage that still need it. Each once per
-   * delivery: asking again after a reminder answers nothing new.
+   * delivery: asking again after a reminder answers nothing new. With
+   * `ended_ms_ago` (how long ago the checked turn ended), what was
+   * delivered since is the next turn's.
    */
   async function stopCheck(connectionId: string, form: URLSearchParams) {
     const paneId = form.get("pane") ?? "";
     const claude = form.get("claude_session") ?? "";
     if (!paneId && !claude)
       throw new ReviewError("stop_check runs inside an agent session");
+    const ago = Number(form.get("ended_ms_ago") ?? "");
+    const endedMsAgo =
+      form.has("ended_ms_ago") && Number.isFinite(ago) && ago >= 0
+        ? Math.min(ago, 60_000)
+        : undefined;
     const threads: { id: string; review: string; title: string }[] = [];
     const items: string[] = [];
     for (const { session } of args.service.list({
@@ -1318,7 +1325,7 @@ export function createReviewAgentServer(args: {
         !args.service.agentMayRead({ sessionId: session.id })
       )
         continue;
-      const due = args.service.agentDue(session.id);
+      const due = args.service.agentDue(session.id, { endedMsAgo });
       for (const thread of due.threads)
         threads.push({
           id: thread.id.slice(0, 8),

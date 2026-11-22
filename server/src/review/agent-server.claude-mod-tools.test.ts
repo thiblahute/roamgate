@@ -425,6 +425,27 @@ test("the end-of-turn check names what was delivered and left, once, and items s
   expect(asked).toEqual([]);
 });
 
+test("the end-of-turn check leaves what was delivered after the turn ended", async () => {
+  const prompted: string[] = [];
+  const { service, call, raw } = setup({ prompted });
+  const opened = (await call("review_open", {})) as {
+    session: { id: string };
+  };
+  const ended = Date.now();
+  await service.addThread({ sessionId: opened.session.id, text: "Why?" });
+  await Bun.sleep(60);
+  expect(prompted).toHaveLength(1);
+  const check = (ago: number) =>
+    raw("stop_check", {
+      ...identityBody(IDENTITY),
+      ended_ms_ago: String(ago),
+    });
+  // Delivered after the checked turn ended: the next turn's.
+  expect((await check(Date.now() - ended + 5)).threads).toEqual([]);
+  // Left at the end of the next one: reminded then.
+  expect((await check(0)).threads).toHaveLength(1);
+});
+
 test("what the model gets wrong is said back before any request", () => {
   const reply = roamgateTool("review_reply")!;
   expect(() => toolRequest(reply, { comment_id: "a" }, IDENTITY)).toThrow(

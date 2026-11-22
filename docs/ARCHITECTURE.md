@@ -843,7 +843,10 @@ End-of-turn check: the same sessions' `classic.Stop` asks `stop_check`
 agent runs in the pane or is the session that a delivery sent it
 (`ReviewService.agentDue`: in memory, by thread) and that still wait on
 its answer, unless it took them since (`review_working` on the thread)
-or was reminded of them since that delivery; and the work items a triage
+or was reminded of them since that delivery, or it was delivered after
+the checked turn ended (`ended_ms_ago`: that turn's end, so a comment
+delivered the moment the session went idle is the next turn's); and the
+work items a triage
 delivery sent it that `work_list` still lists `needs_triage`. With any,
 the hook answers `{block}` with one line each naming the id and the tool
 (`stopCheckText`: `Not answered yet: [c7804e28] in "...":
@@ -854,7 +857,9 @@ never loops. A settings hook beneath that blocks keeps its own reason.
 Where `classic.Stop` never reaches the mod (passed over as above), the
 check runs a second after the main turn's `turn.complete` (reason
 `answer`) and sends its lines as the mod's own prompt; the turn that
-prompt starts ends without a check, as `stop_hook_active` would. The
+prompt starts ends without a check, as `stop_hook_active` would. A main
+turn that starts before the check is sent (a delivery that came as the
+session went idle) drops it: that turn's own end checks again. The
 mod's `classic.PermissionRequest` hook is passed over the same way, and
 no other event tells a person's permission ask from one auto mode's
 classifier settles: there a permission ask never reads blocked

@@ -924,3 +924,65 @@ test("the end-of-turn check returns each delivered unanswered thread once, leavi
     left.id,
   ]);
 });
+
+test("the end-of-turn check leaves a thread delivered after the turn ended to the next turn", async () => {
+  const { service } = deliverySetup({ tools: ["w1:p2"], rules: ["w1:p2"] });
+  const session = openSession(service);
+  // The turn ends; the session goes idle and the comment is delivered at
+  // once, starting the next turn before the check of the first one runs.
+  const ended = Date.now();
+  const left = await comment(service, session.id, "Delivered as it idled");
+  const endedMsAgo = () => Date.now() - ended + 5;
+  // The checked turn never had it: no reminder, and none counted.
+  expect(service.agentDue(session.id, { endedMsAgo: endedMsAgo() })).toEqual({
+    threads: [],
+  });
+  // The next turn answers and resolves it: its own check names nothing.
+  await service.reply({
+    sessionId: session.id,
+    commentId: left.id,
+    author: "Claude",
+    text: "Done",
+  });
+  service.resolve({ sessionId: session.id, commentId: left.id });
+  expect(service.agentDue(session.id, { endedMsAgo: 0 }).threads).toEqual([]);
+});
+
+test("a thread delivered after the checked turn ended is still reminded at the end of the next one", async () => {
+  const { service } = deliverySetup({ tools: ["w1:p2"], rules: ["w1:p2"] });
+  const session = openSession(service);
+  const ended = Date.now();
+  const left = await comment(service, session.id, "Left by the next turn");
+  expect(
+    service.agentDue(session.id, { endedMsAgo: Date.now() - ended + 5 })
+      .threads,
+  ).toEqual([]);
+  // The next turn ends without answering it: reminded then, once.
+  expect(
+    service.agentDue(session.id, { endedMsAgo: 0 }).threads.map((t) => t.id),
+  ).toEqual([left.id]);
+  expect(service.agentDue(session.id, { endedMsAgo: 0 }).threads).toEqual([]);
+});
+
+test("a thread answered or resolved after its delivery is never reminded", async () => {
+  const { service } = deliverySetup({ tools: ["w1:p2"], rules: ["w1:p2"] });
+  const session = openSession(service);
+  const answered = await comment(service, session.id, "Answered");
+  const resolved = await comment(service, session.id, "Resolved");
+  const both = await comment(service, session.id, "Both");
+  await service.reply({
+    sessionId: session.id,
+    commentId: answered.id,
+    author: "Claude",
+    text: "Done",
+  });
+  service.resolve({ sessionId: session.id, commentId: resolved.id });
+  await service.reply({
+    sessionId: session.id,
+    commentId: both.id,
+    author: "Claude",
+    text: "Done",
+  });
+  service.resolve({ sessionId: session.id, commentId: both.id });
+  expect(service.agentDue(session.id, { endedMsAgo: 0 }).threads).toEqual([]);
+});

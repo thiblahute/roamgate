@@ -92,6 +92,12 @@ let turnEnded = false;
 let stopReached = false;
 /** The check sent its own prompt: the turn it starts ends as it is. */
 let reminded = false;
+/**
+ * Main turns started in this process: a check after a turn's end that
+ * another turn overtook (Roamgate delivered a comment the moment the
+ * session went idle) is that turn's to make, at its own end.
+ */
+let turnsStarted = 0;
 /** Says the hello again at once (the rules are in now). */
 let helloNow: (() => Promise<void>) | null = null;
 /**
@@ -511,11 +517,13 @@ function checkAfterTurn($: EngineInterface, reason: string): void {
     return;
   }
   if (stopReached || reason !== "answer") return;
+  const turn = turnsStarted;
   $.clock.after(STOP_GRACE_MS, () => {
-    if (stopReached) return;
+    if (stopReached || turnsStarted !== turn) return;
     void (async () => {
-      const reminder = await stopReminder($);
-      if (!reminder || stopReached) return;
+      const reminder = await stopReminder($, STOP_GRACE_MS);
+      // What it names may be what the turn that began meanwhile is on.
+      if (!reminder || stopReached || turnsStarted !== turn) return;
       reminded = true;
       const entered = await submitOwn($, reminder, false).catch(
         (error: unknown) => ({ drop: messageOf(error) }),
@@ -531,17 +539,19 @@ function checkAfterTurn($: EngineInterface, reason: string): void {
 /**
  * The end-of-turn check: what Roamgate delivered to this session that it
  * left (unanswered threads, items still to triage), as the reason to go
- * on; null when nothing waits or Roamgate cannot tell.
+ * on; null when nothing waits or Roamgate cannot tell. `endedMsAgo`: when
+ * the turn ended, so what Roamgate delivered after it waits for the next.
  */
-async function stopReminder($: EngineInterface): Promise<string | null> {
+async function stopReminder(
+  $: EngineInterface,
+  endedMsAgo: number,
+): Promise<string | null> {
   if (!(await $.fs.exists(toolsSocket).catch(() => false))) return null;
   try {
-    const answer = await request(
-      $,
-      toolsSocket,
-      "stop_check",
-      identityBody(await toolIdentity($)),
-    );
+    const answer = await request($, toolsSocket, "stop_check", {
+      ...identityBody(await toolIdentity($)),
+      ended_ms_ago: String(endedMsAgo),
+    });
     return stopCheckText(answer, toolName);
   } catch (error) {
     debug($, `stop check failed: ${messageOf(error)}`);
@@ -611,7 +621,7 @@ export const register: Register = (on) => {
     const decided = await next(e);
     // Once: a turn this check already sent on ends as it is.
     if (!rulesWanted || e.stop_hook_active || decided.block) return decided;
-    const reminder = await stopReminder($);
+    const reminder = await stopReminder($, 0);
     return reminder ? { ...decided, block: reminder } : decided;
   }).catch(($, e, next) => next(e));
 
@@ -626,6 +636,7 @@ export const register: Register = (on) => {
   );
 
   on("turn.start", async ($, e, next) => {
+    if (e.agentId === undefined) turnsStarted++;
     if (e.agentId === undefined && client) {
       client.setSession(await $.session.id());
       client.report({ type: "turn_start" });
