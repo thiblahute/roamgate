@@ -49,6 +49,8 @@ export type BoardOpenRequest = {
   open?: string;
   view?: "chat" | "declare";
   declare?: MrDeclarePrefill;
+  /** An upstreaming effort's view. */
+  effort?: string;
 } & WorkOpen;
 
 let pending: BoardOpenRequest | null = null;
@@ -104,6 +106,11 @@ export function openMrReviews(select?: string, view?: "chat") {
 /** Opens a request's review, through the inbox (it asks what it needs). */
 export function openMrReviewByKey(key: string) {
   requestBoard("mr", false, { select: key, open: key });
+}
+
+/** The Reviews tab on an upstreaming effort's view (its review's home). */
+export function openMrEffort(effort: string) {
+  requestBoard("mr", false, { effort });
 }
 
 /** The Reviews tab, declaring an upstreaming effort (a menu's home filled in). */

@@ -7,8 +7,14 @@ import {
 
 const openersSeeing = (shown: string[]) => ({
   connectionId: () => "desktop",
-  showReview: (connection: string, review: string) => {
-    shown.push(`review ${connection} ${review}`);
+  showReview: (
+    connection: string,
+    review: string,
+    at: { thread?: string; comment?: string },
+  ) => {
+    shown.push(
+      `review ${connection} ${review}${at.thread ? ` ${at.thread}` : ""}${at.comment ? ` ${at.comment}` : ""}`,
+    );
   },
   showItem: (item: string) => {
     shown.push(`item ${item}`);
@@ -22,6 +28,7 @@ test("a write's link shows the review it wrote in, where that review lives", () 
     action: "reply" as const,
     review: "4aad5bedb15e09e5",
     thread: "3bad5213aaaa0000",
+    comment: "77c0ffee00000001",
   };
   expect(canOpenRoamgateWrite(write)).toBe(true);
   expect(openRoamgateWrite(write, openers)).toBe(true);
@@ -33,7 +40,8 @@ test("a write's link shows the review it wrote in, where that review lives", () 
     ),
   ).toBe(true);
   expect(shown).toEqual([
-    "review desktop 4aad5bedb15e09e5",
+    // At the comment written.
+    "review desktop 4aad5bedb15e09e5 3bad5213aaaa0000 77c0ffee00000001",
     "item 3878370a636e490e",
   ]);
   // Before its result, a call does not say where: nothing to open.

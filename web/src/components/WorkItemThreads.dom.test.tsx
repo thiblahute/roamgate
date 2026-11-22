@@ -897,4 +897,44 @@ if (
       longHost.remove();
     }
   });
+
+  test("a link to a comment opens its thread unfolded, the cursor on that comment, highlighted", async () => {
+    const { requestOpenAt, pendingOpenAt } = await import("../reviewOpenAt");
+    // Folded by hand first.
+    const fold = [
+      ...card(nested.id)!.querySelectorAll<HTMLButtonElement>(
+        ".chat-thread-bar button",
+      ),
+    ].find((button) => button.textContent === "Fold")!;
+    await act(async () => {
+      fold.click();
+      await wait(10);
+    });
+    expect(card(nested.id)!.classList.contains("is-folded")).toBe(true);
+    expect(
+      host.querySelector('[data-chat-stop="m:c000000000000003"]'),
+    ).toBeNull();
+    await act(async () => {
+      requestOpenAt({ thread: nested.id, comment: "c000000000000003" });
+      await wait(60);
+    });
+    // Taken by the item's detail: unfolded, on that comment, highlighted.
+    expect(pendingOpenAt()).toBeNull();
+    expect(card(nested.id)!.classList.contains("is-folded")).toBe(false);
+    expect(focusedKey()).toBe("m:c000000000000003");
+    const stop = host.querySelector<HTMLElement>(
+      '[data-chat-stop="m:c000000000000003"]',
+    )!;
+    expect(stop.dataset.openAt).toBe("");
+    expect(document.activeElement).toBe(list());
+    // A thread this view does not draw is left for another.
+    await act(async () => {
+      requestOpenAt({
+        thread: "f000000000000009",
+        comment: "c00000000000000f",
+      });
+      await wait(30);
+    });
+    expect(pendingOpenAt()?.thread).toBe("f000000000000009");
+  });
 }

@@ -4,7 +4,8 @@ import {
   isThreadWrite,
   type RoamgateWrite,
 } from "../../shared/toolSummary";
-import { getReviewSummary, requestReviewShown } from "./review";
+import { getReviewSummary } from "./review";
+import { openReviewAt } from "./reviewOpenAt";
 import { store } from "./store";
 import { openWork } from "./workOpen";
 
@@ -12,15 +13,23 @@ import { openWork } from "./workOpen";
 export type RoamgateWriteOpeners = {
   /** The connection the chat's session is on. */
   connectionId: () => string | null;
-  /** Shows a review where it lives: Changes, a chat's pane, its view. */
-  showReview: (connectionId: string, review: string) => void;
+  /**
+   * Shows a review where it lives (Changes, a chat's pane, its view), at
+   * a thread and a comment when given.
+   */
+  showReview: (
+    connectionId: string,
+    review: string,
+    at: { thread?: string; comment?: string },
+  ) => void;
   /** Opens the Work board on an item. */
   showItem: (item: string) => void;
 };
 
 const OPENERS: RoamgateWriteOpeners = {
   connectionId: () => store.get().activeConnectionId,
-  showReview: requestReviewShown,
+  showReview: (connectionId, review, at) =>
+    void openReviewAt(connectionId, review, at),
   showItem: (item) => openWork(item),
 };
 
@@ -32,7 +41,8 @@ export function canOpenRoamgateWrite(write: RoamgateWrite): boolean {
 /**
  * Opens what a call wrote in (a chat tool row's link): a Work item's card
  * on the board, else the thread's review where that review lives (a Work
- * item's on the board too). False when the call did not say where.
+ * item's on the board too), scrolled to the comment written and
+ * highlighted. False when the call did not say where.
  */
 export function openRoamgateWrite(
   write: RoamgateWrite,
@@ -44,7 +54,10 @@ export function openRoamgateWrite(
   }
   const connectionId = openers.connectionId();
   if (!write.review || !connectionId) return false;
-  openers.showReview(connectionId, write.review);
+  openers.showReview(connectionId, write.review, {
+    ...(write.thread ? { thread: write.thread } : {}),
+    ...(write.comment ? { comment: write.comment } : {}),
+  });
   return true;
 }
 

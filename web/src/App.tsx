@@ -60,12 +60,14 @@ import {
   handleMrReviewsShortcut,
   onMrFileOpen,
   openLocalReviews,
+  openMrEffort,
   openMrReviews,
   takeBoardOpen,
   takeMrFileOpen,
   toggleLocalReviews,
 } from "./mrReviewsOpen";
 import { handleWorkShortcut, openWork, watchWorkHash } from "./workOpen";
+import { watchReviewHash } from "./reviewOpenAt";
 import { useWorkForYouCount } from "./work";
 import {
   CompanionChip,
@@ -2898,6 +2900,12 @@ export default function App() {
   useEffect(() => startReviewClient(), []);
   // A notification's link to a work item opens the board on it.
   useEffect(() => watchWorkHash(), []);
+  // A link to a review's comment opens the review there, on this
+  // connection.
+  useEffect(() => {
+    void s.activeConnectionId;
+    return watchReviewHash(() => store.get().activeConnectionId);
+  }, [s.activeConnectionId]);
   /** A file or a site an agent opened: the Files preview shows it. */
   const showRenderedInFiles = useCallback(
     (snapshot: ReviewHead) => {
@@ -2932,7 +2940,8 @@ export default function App() {
     (snapshot: ReviewHead): boolean => {
       const { session } = snapshot;
       if (session.target.kind === "rendered") showRenderedInFiles(snapshot);
-      else if (session.target.kind === "effort") openMrReviews();
+      else if (session.target.kind === "effort")
+        openMrEffort(session.target.effort);
       else if (session.target.kind === "work") openWork(session.target.item);
       else if (session.target.kind !== "chat") return false;
       else if (session.agent.paneId) void store.focusPane(session.agent.paneId);

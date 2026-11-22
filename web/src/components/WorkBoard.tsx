@@ -75,6 +75,7 @@ import {
   useReviewSnapshots,
   useReviewState,
 } from "../review";
+import { openReviewAt, requestOpenAt } from "../reviewOpenAt";
 import {
   EMPTY_KEY_STATE,
   feedKey,
@@ -1090,13 +1091,28 @@ export function useWorkMode({
       switch (link.kind) {
         case "review": {
           const snapshot = reviews.summaries.get(link.id);
-          if (snapshot) {
-            requestReviewShown(snapshot.session.connectionId, link.id);
-            stepAside();
-          } else
+          if (!snapshot) {
             setFailure(
               `review ${link.id.slice(0, 8)} is not loaded on this page`,
             );
+            return;
+          }
+          // A thread of an item: that item's detail, at the thread.
+          const target = snapshot.session.target;
+          if (target?.kind === "work") {
+            if (link.thread)
+              requestOpenAt({ review: link.id, thread: link.thread });
+            setDetail(target.item);
+            setSelected(target.item);
+            return;
+          }
+          // Elsewhere, its review where it lives, at the thread.
+          void openReviewAt(
+            snapshot.session.connectionId,
+            link.id,
+            link.thread ? { thread: link.thread } : undefined,
+          );
+          stepAside();
           return;
         }
         case "effort":

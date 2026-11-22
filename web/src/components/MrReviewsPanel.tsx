@@ -1596,9 +1596,12 @@ export function MrReviewsPanel({
   initialWorkItem,
   initialWork,
   initialLocal,
+  initialEffort,
 }: {
   /** The Reviews mode on its Local reviews: the first one selected. */
   initialLocal?: boolean;
+  /** An upstreaming effort's view at once (a link to its review). */
+  initialEffort?: string;
   /** keepFocus: a review was shown; the focus is the review's now. */
   onClose: (options?: BoardCloseOptions) => void;
   /**
@@ -2659,7 +2662,9 @@ export function MrReviewsPanel({
   };
 
   // Upstreaming efforts: their view, their declaration, their leader.
-  const [effortView, setEffortView] = useState<string | null>(null);
+  const [effortView, setEffortView] = useState<string | null>(
+    initialEffort ?? null,
+  );
   const [declaring, setDeclaring] = useState(initialView === "declare");
   const [leaderAsk, setLeaderAsk] = useState<{
     id: string;
@@ -2672,6 +2677,14 @@ export function MrReviewsPanel({
     setEffortView(id);
     if (!mobile && !expanded) onExpand?.();
   };
+  // Opened on an effort (a link to its review): as openEffort shows it,
+  // once.
+  const effortExpanded = useRef(false);
+  useEffect(() => {
+    if (!initialEffort || effortExpanded.current) return;
+    effortExpanded.current = true;
+    if (!mobile && !expanded) onExpand?.();
+  }, [initialEffort, mobile, expanded, onExpand]);
   const closeEffort = () => {
     setEffortView(null);
     setDeclaring(false);

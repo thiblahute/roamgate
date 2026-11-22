@@ -7,6 +7,7 @@ import {
   reviewTargetInHash,
   takeOpenAt,
 } from "./reviewOpenAt";
+import { workTargetInHash } from "./workOpen";
 
 test("a target asked for waits for its view, then is taken or dropped", () => {
   requestOpenAt({ thread: "a100000000000001" }, 1_000);
@@ -53,7 +54,7 @@ test("a review opened at a comment: the target kept, its list read first when un
   expect(pendingOpenAt()).toBeNull();
 });
 
-test("links name a review, and the thread and comment in it", () => {
+test("links name a review or a Work item, and the thread and comment in it", () => {
   expect(
     reviewTargetInHash(
       "#roamgate-review=4aad5bedb15e09e5&thread=3bad5213aaaa0000&comment=77c0ffee00000001",
@@ -74,4 +75,17 @@ test("links name a review, and the thread and comment in it", () => {
   ).toEqual({ review: "4aad5bedb15e09e5" });
   expect(reviewTargetInHash("#roamgate-review=<script>")).toBeNull();
   expect(reviewTargetInHash("#roamgate-work=3878370a636e490e")).toBeNull();
+  expect(workTargetInHash("#roamgate-work=3878370a636e490e")).toEqual({
+    item: "3878370a636e490e",
+  });
+  expect(
+    workTargetInHash(
+      "#roamgate-work=3878370a636e490e&thread=c1f2069a3a8d17a1&comment=5a43ff20639281cd",
+    ),
+  ).toEqual({
+    item: "3878370a636e490e",
+    thread: "c1f2069a3a8d17a1",
+    comment: "5a43ff20639281cd",
+  });
+  expect(workTargetInHash("#roamgate-work=nope")).toBeNull();
 });

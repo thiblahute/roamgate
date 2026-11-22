@@ -80,6 +80,7 @@ export function InspectorBoard({
       {...(shown?.declare ? { initialDeclare: shown.declare } : {})}
       {...(shown?.item ? { initialWorkItem: shown.item } : {})}
       {...(shown?.local ? { initialLocal: true } : {})}
+      {...(shown?.effort ? { initialEffort: shown.effort } : {})}
       {...(shown?.owner || shown?.add
         ? {
             initialWork: {
