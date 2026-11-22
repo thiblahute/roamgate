@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import { agentAddress } from "../../../shared/agentMessage";
 import type { WorkLink } from "../../../shared/work";
+import { copyTextWithFeedback } from "../copyText";
 import { useStoreSelector } from "../store";
 import { useWorkOwnedCount } from "../work";
 import { openWork } from "../workOpen";
@@ -21,9 +22,10 @@ import "./ChatWork.css";
 
 /*
  * Add to Work from an agent's chat: the conversation's header, a
- * message's own buttons and the + beside a part of a message (beside
- * Comment) start the Work board's add form for that session, quoting the
- * words and linking the message. The item lands in the project holding
+ * message's own buttons, a part's menu (a right-click or a long-press on
+ * it, beside Comment and Copy) and the words selected start the Work
+ * board's add form for that session, quoting the words and linking the
+ * message. The item lands in the project holding
  * the session's workspace, owned by the session, which sorts it (a clear
  * title, tags, a state) as the coordinator does the board's. The header
  * says how many live items the session owns and opens the board on them.
@@ -40,13 +42,17 @@ export type ChatWork = {
   add: (quote?: string, entry?: string) => void;
 };
 
-/** A part's + with more than Comment: where it is and what it offers. */
+/** A part's menu (a right-click on it): where it opens, what it offers. */
 export type ChatPartMenu = {
+  /** The words selected in the message, else the part's. */
   quote: string;
-  at: HTMLElement;
+  /** Where it opens: the pointer, or under the part for the keys. */
+  at: { x: number; y: number };
+  /** What gets the focus back when Esc closes it. */
+  back?: HTMLElement | null;
   /** The message the part is in. */
   entry?: string;
-  /** Comment on the part, as the + does without a menu. */
+  /** Comment on the words, as the part's + does. */
   comment?: () => void;
 };
 
@@ -135,7 +141,7 @@ export function useChatWorkAdd({
 
 /**
  * The chat's Add to Work for what it holds: its messages' buttons and
- * the menu a part's + opens (Comment, Add to Work).
+ * the menu a right-click on a part opens (Comment, Add to Work, Copy).
  */
 export function ChatWorkProvider({
   work,
@@ -164,9 +170,10 @@ export function ChatWorkProvider({
 }
 
 /**
- * The menu a part's + opens: Comment, Add to Work. Under the +, on the
- * page (not in the part, whose words it would join); the arrows or j / k
- * and Enter, Esc gives the focus back to the +.
+ * The menu a right-click or a long-press on a part opens: Comment, Add to
+ * Work, Copy. Where it was asked for, on the page (not in the part, whose
+ * words it would join); the arrows or j / k and Enter, Esc gives the
+ * focus back.
  */
 export function ChatPartMenuView({
   menu,
@@ -182,11 +189,13 @@ export function ChatPartMenuView({
     null,
   );
   useLayoutEffect(() => {
-    const rect = menu.at.getBoundingClientRect();
+    const { x, y } = menu.at;
     const width = ref.current?.offsetWidth ?? 160;
+    const height = ref.current?.offsetHeight ?? 100;
     setPlace({
-      top: rect.bottom + 2,
-      left: Math.max(4, Math.min(rect.left, window.innerWidth - width - 4)),
+      // Above the point when there is no room under it.
+      top: y + height + 4 > window.innerHeight ? Math.max(4, y - height) : y,
+      left: Math.max(4, Math.min(x, window.innerWidth - width - 4)),
     });
   }, [menu.at]);
   useEffect(() => {
@@ -195,10 +204,10 @@ export function ChatPartMenuView({
   const close = useCallback(
     (refocus: boolean) => {
       onClose();
-      if (refocus && menu.at.isConnected)
-        menu.at.focus({ preventScroll: true });
+      if (refocus && menu.back?.isConnected)
+        menu.back.focus({ preventScroll: true });
     },
-    [onClose, menu.at],
+    [onClose, menu.back],
   );
   useEffect(() => {
     const away = (event: Event) => {
@@ -222,6 +231,7 @@ export function ChatPartMenuView({
   const items: { label: string; run: () => void }[] = [
     ...(menu.comment ? [{ label: "Comment", run: menu.comment }] : []),
     { label: "Add to Work", run: onAdd },
+    { label: "Copy", run: () => void copyTextWithFeedback(menu.quote) },
   ];
   return createPortal(
     <div

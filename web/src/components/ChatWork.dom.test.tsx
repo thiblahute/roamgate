@@ -3,8 +3,8 @@ import { inIsolatedChild } from "../testIsolated";
 
 /**
  * Add to Work from an agent's chat: the header's button and count, a
- * message's own button, and the menu a part's + opens (Comment, Add to
- * Work), each starting the Work board's add form for the session: the
+ * message's own button, and the menu a right-click on a part opens
+ * (Comment, Add to Work, Copy), each starting the Work board's add form for the session: the
  * words quoted, the message linked, the session's workspace given.
  */
 if (
@@ -21,6 +21,12 @@ if (
   const { act } = React;
 
   const opened: unknown[] = [];
+  const copied: string[] = [];
+  mock.module("../copyText", () => ({
+    copyTextWithFeedback: async (text: string) => {
+      copied.push(text);
+    },
+  }));
   mock.module("../workOpen", () => ({
     openWork: (open: unknown) => opened.push(open),
   }));
@@ -59,29 +65,36 @@ if (
   const { NoteBody } = await import("./ReviewNoteBody");
   const { createRoot } = await import("react-dom/client");
 
-  /** A message drawn in parts, its + going to the chat's menu. */
+  /** A message drawn in parts, a right-click on one opening the chat's menu. */
   function Part({ onComment }: { onComment: (quote: string) => void }) {
     const work = useChatWork();
+    const back = React.useRef<HTMLButtonElement>(null);
     return (
-      <NoteBody
-        text={"First part.\n\nSecond part."}
-        parts={{
-          notes: [],
-          focused: null,
-          onComment,
-          ...(work
-            ? {
-                onMenu: (quote: string, at: HTMLElement) =>
-                  work.menu({
-                    quote,
-                    at,
-                    entry: "msg-7",
-                    comment: () => onComment(quote),
-                  }),
-              }
-            : {}),
-        }}
-      />
+      <>
+        <button ref={back} type="button" className="chat-list">
+          the chat
+        </button>
+        <NoteBody
+          text={"First part.\n\nSecond part."}
+          parts={{
+            notes: [],
+            focused: null,
+            onComment,
+            ...(work
+              ? {
+                  onPartMenu: (quote, at) =>
+                    work.menu({
+                      quote,
+                      at: { x: at.x, y: at.y },
+                      back: back.current,
+                      entry: "msg-7",
+                      comment: () => onComment(quote),
+                    }),
+                }
+              : {}),
+          }}
+        />
+      </>
     );
   }
 
@@ -137,7 +150,7 @@ if (
     expect(workQuote("  ")).toBe("");
   });
 
-  test("the header, a message and a part's + start the board's add form for the session", async () => {
+  test("the header, a message and a part's menu start the board's add form for the session", async () => {
     const comments: string[] = [];
     owned = 3;
     const container = document.createElement("div");
@@ -167,25 +180,42 @@ if (
         draft("> The whole message.\n> Two lines.\n\n", "msg-8"),
       );
 
-      // A part's +: a menu under it, Comment first, outside the message.
+      // A part's +: a comment at once, no menu.
       const plus = container.querySelectorAll<HTMLElement>(".rc-part-add")[1]!;
-      expect(plus.getAttribute("aria-haspopup")).toBe("menu");
-      await click(plus);
+      expect(plus.getAttribute("aria-haspopup")).toBeNull();
       const menu = () =>
         document.body.querySelector<HTMLElement>(".chat-part-menu");
+      await click(plus);
+      expect(comments).toEqual(["Second part."]);
+      expect(menu()).toBeNull();
+
+      // A right-click on a part: a menu where it was, outside the message.
+      const part = container.querySelector<HTMLElement>('[data-part="1"]')!;
+      const rightClick = async () =>
+        act(async () => {
+          part.dispatchEvent(
+            new MouseEvent("contextmenu", {
+              bubbles: true,
+              cancelable: true,
+              clientX: 30,
+              clientY: 40,
+            }),
+          );
+        });
+      await rightClick();
       expect(container.contains(menu())).toBe(false);
       expect(
         [...menu()!.querySelectorAll("[role='menuitem']")].map(
           (item) => item.textContent,
         ),
-      ).toEqual(["Comment", "Add to Work"]);
+      ).toEqual(["Comment", "Add to Work", "Copy"]);
       expect(document.activeElement?.textContent).toBe("Comment");
-      // Comment: the thread on the part, as the + did alone.
+      // Comment: the thread on the part, as its + opens.
       await click(menu()!.querySelector("[role='menuitem']"));
-      expect(comments).toEqual(["Second part."]);
+      expect(comments).toEqual(["Second part.", "Second part."]);
       expect(menu()).toBeNull();
       // Add to Work: the part quoted, its message linked.
-      await click(plus);
+      await rightClick();
       await act(async () =>
         menu()!.dispatchEvent(
           new KeyboardEvent("keydown", { key: "j", bubbles: true }),
@@ -195,15 +225,26 @@ if (
       await click(document.activeElement);
       expect(opened.pop()).toEqual(draft("> Second part.\n\n", "msg-7"));
       expect(menu()).toBeNull();
-      // Esc closes it, the focus back on the +.
-      await click(plus);
+      // Copy: the part's words.
+      await rightClick();
+      await click(
+        [...menu()!.querySelectorAll("[role='menuitem']")].find(
+          (item) => item.textContent === "Copy",
+        ),
+      );
+      expect(copied).toEqual(["Second part."]);
+      expect(menu()).toBeNull();
+      // Esc closes it, the focus back where the menu says.
+      await rightClick();
       await act(async () =>
         menu()!.dispatchEvent(
           new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
         ),
       );
       expect(menu()).toBeNull();
-      expect(document.activeElement).toBe(plus);
+      expect(document.activeElement).toBe(
+        container.querySelector<HTMLElement>(".chat-list"),
+      );
       expect(opened).toEqual([]);
 
       // No items: no count, Add to Work still there.

@@ -2305,11 +2305,16 @@ once; the notification, on the page, on your phone's Web Push or in the
 Android app, opens the view on the item's detail.
 
 **Add to Work** from an agent's chat: the conversation's header (the list
-icon), a message's own buttons (beside Copy: the whole message quoted) and
-the `+` beside a part of a message, which offers **Comment** and **Add to
-Work** (the arrows or `j`/`k`, Enter, Esc), open the board's add form for
-that session, its words quoted and the message linked (a **message** link:
-opening it shows the session's chat on that message). The item lands in
+icon), a message's own buttons (beside Copy: the whole message quoted),
+**Add to Work** beside **Comment** on words selected, and a part's menu,
+open the board's add form for that session, its words quoted and the
+message linked. A right-click on a part of a message (a long-press on a
+phone, the menu key or `Shift+F10` on the part `j`/`k` are on) opens its
+menu: **Comment**, **Add to Work** and **Copy**, for the words selected in
+the message if any, else the part's (the arrows or `j`/`k`, Enter, Esc);
+links and images keep the browser's own menu, and the part's `+` still
+comments at once. The **message** link opens the session's chat on that
+message. The item lands in
 the project holding the session's workspace, owned by that session, which
 sorts it as the coordinator sorts yours (a clear title, its tags, its
 state). The header says how many live items the session owns ("3 items");

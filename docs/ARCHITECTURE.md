@@ -1908,10 +1908,15 @@ workspace, a `chat` link); the board puts the item in
 (`web/src/work.ts`, the one way every add form builds its call). A free
 text item with an owner other than the agent that added it is
 `needsTriage`, so the owner session, not the coordinator, gets the
-triage prompt. `ChatWorkProvider` hands the chat's parts their menu: the
-`+` of a part (`NoteBody`'s `MessageParts.onMenu`, set by
-`ChatThreads.tsx`'s `partsFor`) opens `ChatPartMenuView` on the page
-(Comment, Add to Work), a message's meta row draws
+triage prompt. `ChatWorkProvider` hands the chat's parts their menu: a
+right-click or a long-press on a part (`NoteBody`'s
+`MessageParts.onPartMenu`, with the words selected in the message or the
+part's, set by `ChatThreads.tsx`'s `partsFor`; the menu key or Shift+F10
+on the cursor's part there too) opens `ChatPartMenuView` at that point
+on the page (Comment, Add to Work, Copy); links and images keep the
+browser's menu, and the part's `+` comments at once. The words selected
+offer Add to Work beside Comment (`SelectionOffer`'s `more`). A
+message's meta row draws
 `ChatMessageWorkButton`, and the header `ChatWorkHeader` (the session's
 live items, `useWorkOwnedCount`, opening `openWork({owner})`: the search
 `owner:ADDRESS`, every project).

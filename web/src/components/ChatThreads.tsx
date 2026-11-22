@@ -77,6 +77,12 @@ import { useThreadKeys } from "./useThreadKeys";
 export { ThreadEditor };
 import "./ChatThreads.css";
 
+/** A part's words as drawn, without its + (the c key's, the menu key's). */
+function partWords(here: HTMLElement): string {
+  const add = here.querySelector(":scope > .rc-part-add");
+  return (here.textContent ?? "").replace(add?.textContent ?? "", "").trim();
+}
+
 /**
  * Comment threads on parts of an agent chat's messages: a review of the chat
  * (target `chat`), whose threads the agent gets as it gets review comments
@@ -756,6 +762,21 @@ function ChatThreadsScope({
     [setDraft],
   );
 
+  /** A part's menu at `at`: Comment, Add to Work, Copy for `quote`. */
+  const partMenu = (
+    entry: HistoryEntry,
+    quote: string,
+    at: { x: number; y: number },
+    back: HTMLElement | null,
+  ) =>
+    work?.menu({
+      quote,
+      at: { x: at.x, y: at.y },
+      back,
+      entry: entry.id,
+      comment: () => comment(entry, quote),
+    });
+
   /** A comment on the rows `from` to `to` of a call's card (-1: the file). */
   const commentFile = useCallback(
     (entry: string, from: number, to: number) => {
@@ -859,17 +880,12 @@ function ChatThreadsScope({
       onComment: (quote) => comment(entry, quote),
       single: true,
     });
-    // Add to Work beside Comment: the + opens their menu.
+    // A right-click on a part: Comment, Add to Work, Copy.
     return work
       ? {
           ...parts,
-          onMenu: (quote, at) =>
-            work.menu({
-              quote,
-              at,
-              entry: entry.id,
-              comment: () => comment(entry, quote),
-            }),
+          onPartMenu: (quote, at) =>
+            partMenu(entry, quote, at, chatList()?.list ?? null),
         }
       : parts;
   };
@@ -1344,11 +1360,7 @@ function ChatThreadsScope({
         here.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
       const message = entry ? entries.current.get(entry) : undefined;
       if (!message) return false;
-      const add = here.querySelector(":scope > .rc-part-add");
-      comment(
-        message,
-        (here.textContent ?? "").replace(add?.textContent ?? "", "").trim(),
-      );
+      comment(message, partWords(here));
       return true;
     },
     pastEnd: backToBox,
@@ -1392,6 +1404,49 @@ function ChatThreadsScope({
     return () => messages.removeEventListener(CHAT_PARTS_EVENT, onEnter);
     // biome-ignore lint/correctness/useExhaustiveDependencies: found once, as the keys are
   }, [setCursor]);
+  // The menu key or Shift+F10 on the part the cursor is on: its menu, as
+  // a right-click on it opens (the contextmenu they fire after is ours).
+  const partMenuRef = useRef(partMenu);
+  partMenuRef.current = partMenu;
+  useEffect(() => {
+    const list = chatList()?.list;
+    if (!list) return;
+    let byKey = 0;
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        event.key !== "ContextMenu" &&
+        !(event.key === "F10" && event.shiftKey)
+      )
+        return;
+      const here = list.querySelector<HTMLElement>(
+        ".chat-review [data-part].is-focused",
+      );
+      if (!here || here.closest(".chat-file-edit, .chat-thread")) return;
+      const id = here.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
+      const entry = id ? entries.current.get(id) : undefined;
+      if (!entry) return;
+      event.preventDefault();
+      event.stopPropagation();
+      byKey = Date.now();
+      const rect = here.getBoundingClientRect();
+      partMenuRef.current(
+        entry,
+        partWords(here),
+        { x: rect.left, y: rect.bottom },
+        list,
+      );
+    };
+    const onMenu = (event: MouseEvent) => {
+      if (Date.now() - byKey < 1000) event.preventDefault();
+    };
+    list.addEventListener("keydown", onKey);
+    list.addEventListener("contextmenu", onMenu);
+    return () => {
+      list.removeEventListener("keydown", onKey);
+      list.removeEventListener("contextmenu", onMenu);
+    };
+    // biome-ignore lint/correctness/useExhaustiveDependencies: found once, as the keys are
+  }, []);
 
   // Words selected in a message offer a comment on them; lines selected in
   // a file a call changed, a comment on those lines.
@@ -1586,6 +1641,20 @@ function ChatThreadsScope({
             }
             clearSelection();
           }}
+          more={
+            work && !selection.rows
+              ? [
+                  {
+                    label: "Add to Work",
+                    onClick: () => {
+                      work.add(selection.quote, selection.entry);
+                      window.getSelection()?.removeAllRanges();
+                      clearSelection();
+                    },
+                  },
+                ]
+              : undefined
+          }
         />
       ) : null}
     </ChatThreadsContext.Provider>
