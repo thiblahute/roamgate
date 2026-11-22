@@ -311,6 +311,13 @@ export interface BridgeControlMsg {
   reason?: string;
 }
 
+/**
+ * The client generation of a call pinned to its connection
+ * (`callConnection`): the page's active connection changing does not
+ * reject it.
+ */
+const PINNED_CALL = -1;
+
 type Pending = {
   resolve: (v: any) => void;
   reject: (e: Error) => void;
@@ -631,7 +638,9 @@ export class Bridge {
     this._clientGeneration += 1;
     this.rejectPending(
       "connection changed during request",
-      (pending) => pending.connectionId !== null,
+      (pending) =>
+        pending.connectionId !== null &&
+        pending.clientGeneration !== PINNED_CALL,
     );
     return this._clientGeneration;
   }
@@ -742,6 +751,61 @@ export class Bridge {
       method,
       {},
       RPC_TIMEOUT_MS,
+    );
+  }
+
+  /**
+   * A call on the connection it names, whichever connection the page has
+   * active, and kept when the page switches during it: for what lives on
+   * its own connection (a review and its comments, images and replies, a
+   * Work item's review), so its writes are not refused because the page
+   * shows another connection. It fails when that connection's runtime is
+   * unknown or changes during the call (its reply's generation is checked).
+   */
+  callConnection(
+    connectionId: string,
+    method: string,
+    params: Record<string, unknown> = {},
+    timeoutMs: number | null = RPC_TIMEOUT_MS,
+    options: RpcCallOptions = {},
+  ): Promise<any> {
+    const send = (lane: RpcLane): Promise<any> => {
+      if (!this.helloAcceptedForSocket) {
+        return Promise.reject(new Error("bridge hello is unavailable"));
+      }
+      if (isBridgeGlobalMethod(method)) {
+        return Promise.reject(
+          new Error(`global RPC cannot use a connection client: ${method}`),
+        );
+      }
+      const serverRuntimeGeneration =
+        this.runtimeGenerations.get(connectionId) ?? null;
+      if (
+        this._hello?.capabilities?.connection_runtime_generation === true &&
+        serverRuntimeGeneration === null
+      ) {
+        return Promise.reject(
+          new Error("connection runtime generation is unavailable"),
+        );
+      }
+      return this.sendCall(
+        connectionId,
+        PINNED_CALL,
+        serverRuntimeGeneration,
+        method,
+        params,
+        timeoutMs,
+        lane,
+      );
+    };
+    if (options.lane !== "background") return send("interactive");
+    return this.backgroundLane(connectionId).run(
+      backgroundCallKey(
+        `pinned:${this.runtimeGenerations.get(connectionId) ?? null}`,
+        method,
+        params,
+      ),
+      () => send("background"),
     );
   }
 
@@ -1253,6 +1317,7 @@ export class Bridge {
         pending.reject(new Error("response connection_generation mismatch"));
       } else if (
         pending.connectionId !== null &&
+        pending.clientGeneration !== PINNED_CALL &&
         pending.clientGeneration !== this._clientGeneration
       ) {
         pending.reject(new Error("connection changed during request"));

@@ -40,21 +40,23 @@ if (process.env.ROAMGATE_REVIEW_LOAD_TEST !== "1") {
   });
   mock.module("./api", () => ({
     bridge: {
-      connection: (connectionId: string) => ({
-        call: async (method: string) => {
-          if (connectionId !== "desktop") {
-            calls.push(`${connectionId}:${method}`);
-            return answers.get(connectionId)!();
-          }
-          calls.push(method);
-          if (!ready) throw new Error("connection is not ready: desktop");
-          return method === "review.list"
-            ? { sessions: [snapshot("s1", "desktop")] }
-            : {};
-        },
-      }),
+      callConnection: (connectionId: string, method: string) =>
+        connectionClient(connectionId).call(method),
     },
   }));
+  const connectionClient = (connectionId: string) => ({
+    call: async (method: string) => {
+      if (connectionId !== "desktop") {
+        calls.push(`${connectionId}:${method}`);
+        return answers.get(connectionId)!();
+      }
+      calls.push(method);
+      if (!ready) throw new Error("connection is not ready: desktop");
+      return method === "review.list"
+        ? { sessions: [snapshot("s1", "desktop")] }
+        : {};
+    },
+  });
   mock.module("./store", () => ({
     store: {
       get: () => ({

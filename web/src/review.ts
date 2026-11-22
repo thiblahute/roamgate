@@ -161,9 +161,22 @@ function runtimeGeneration(connectionId: string): number | null {
   );
 }
 
-/** A client for the connection's current runtime, as the store knows it. */
+/**
+ * A client for the review's own connection: a review names its connection,
+ * so its reads and writes go there even while the page has another one
+ * active (a Work item's review on the desktop while the page shows the
+ * Mac), and a switch during a send does not drop it.
+ */
 function reviewClient(connectionId: string) {
-  return bridge.connection(connectionId, runtimeGeneration(connectionId));
+  return {
+    call: (
+      method: string,
+      params: Record<string, unknown> = {},
+      timeoutMs?: number,
+      options?: RpcCallOptions,
+    ) =>
+      bridge.callConnection(connectionId, method, params, timeoutMs, options),
+  };
 }
 
 export function startReviewClient(): () => void {

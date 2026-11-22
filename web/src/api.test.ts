@@ -1066,6 +1066,85 @@ describe("bridge connection lifecycle", () => {
     );
   });
 
+  test("keeps a call pinned to its connection while the page switches", async () => {
+    class ManualWebSocket extends HangingWebSocket {
+      static instance: ManualWebSocket;
+      sent: string[] = [];
+
+      constructor() {
+        super();
+        ManualWebSocket.instance = this;
+        queueMicrotask(() => {
+          this.readyState = ManualWebSocket.OPEN;
+          this.onopen?.();
+        });
+      }
+
+      send(raw = "") {
+        this.sent.push(raw);
+      }
+    }
+    installBrowserGlobals(ManualWebSocket as unknown as typeof WebSocket);
+    const bridge = createTestBridge();
+    bridge.connect();
+    await Bun.sleep(1);
+    sendHello(ManualWebSocket.instance, "local", {
+      connection_runtime_generation: true,
+    });
+    bridge.setConnectionRuntimeGenerations([
+      { id: "local", generation: 1 },
+      { id: "desktop", generation: 4 },
+    ]);
+    // The page shows the Mac; a Work item's review lives on the desktop.
+    bridge.setActiveConnection("local");
+    const reply = (index: number, generation: number, result: unknown) => {
+      const request = JSON.parse(ManualWebSocket.instance.sent[index]);
+      ManualWebSocket.instance.onmessage?.({
+        data: JSON.stringify({
+          id: request.id,
+          connection_id: request.connection_id,
+          connection_generation: generation,
+          result,
+        }),
+      } as MessageEvent);
+      return request;
+    };
+
+    const image = bridge.callConnection("desktop", "review.image.add", {
+      session_id: "s1",
+    });
+    // The page switches during the send: the call still lands.
+    bridge.setActiveConnection("desktop");
+    bridge.setActiveConnection("local");
+    expect(reply(0, 4, { path: "/i.png" })).toMatchObject({
+      method: "review.image.add",
+      connection_id: "desktop",
+      connection_generation: 4,
+    });
+    await expect(image).resolves.toEqual({ path: "/i.png" });
+
+    const comment = bridge.callConnection("desktop", "review.thread.add", {
+      session_id: "s1",
+      text: "hello",
+    });
+    bridge.advanceActiveConnectionGeneration();
+    reply(1, 4, { ok: true });
+    await expect(comment).resolves.toEqual({ ok: true });
+
+    // Its own connection's runtime changing still fails it.
+    const stale = bridge.callConnection("desktop", "review.get", {});
+    reply(2, 5, {});
+    await expect(stale).rejects.toThrow(
+      "response connection_generation mismatch",
+    );
+    await expect(
+      bridge.callConnection("nowhere", "review.get", {}),
+    ).rejects.toThrow("connection runtime generation is unavailable");
+    await expect(
+      bridge.callConnection("desktop", "bridge.work.add", {}),
+    ).rejects.toThrow("global RPC cannot use a connection client");
+  });
+
   test("invalidates pending work across a same-ID client generation change", async () => {
     class ManualWebSocket extends HangingWebSocket {
       static instance: ManualWebSocket;
