@@ -110,6 +110,7 @@ import {
   MrEffortView,
 } from "./MrEffortView";
 import { MrReviewsSettingsView } from "./MrReviewsSettings";
+import { ShortcutHelp } from "./ShortcutHelp";
 import "./AssistantPanel.css";
 import "./AssistantTasks.css";
 import "./AgentTasksSheet.css";
@@ -2958,6 +2959,8 @@ export function MrReviewsPanel({
 
   /** One key in the panel; true when the panel took it. */
   const onKey = (event: KeyboardEvent): boolean => {
+    // The help takes its own keys (ShortcutHelp).
+    if (helpOpen) return false;
     // An effort's view, or the declaration, has its own keys.
     if ((effortView || declaring) && view === "list") return false;
     // An effort's card has the focus: Enter, i and c are its own.
@@ -3079,7 +3082,6 @@ export function MrReviewsPanel({
       else if (view === "settings") setView("list");
       else if (detail) setDetail(null);
       else if (hiddenOpen) setHiddenOpen(false);
-      else if (helpOpen) setHelpOpen(false);
       else if (query) setQuery("");
       // Hidden as it is: brought back full screen when it was.
       else onClose();
@@ -3464,18 +3466,16 @@ export function MrReviewsPanel({
             {maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
         ) : null}
-        {!mobile ? (
-          <button
-            type="button"
-            className="assistant-icon-button"
-            aria-label="Keys (?)"
-            title="Keys (?)"
-            aria-pressed={helpOpen}
-            onClick={() => setHelpOpen((open) => !open)}
-          >
-            <Keyboard size={16} />
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className="assistant-icon-button"
+          aria-label="Keys (?)"
+          title="Keys (?)"
+          aria-pressed={helpOpen}
+          onClick={() => setHelpOpen((open) => !open)}
+        >
+          <Keyboard size={16} />
+        </button>
         <button
           type="button"
           className="assistant-icon-button"
@@ -4204,26 +4204,13 @@ export function MrReviewsPanel({
         </div>
       ) : null}
       {helpOpen ? (
-        <div className="agent-tasks-help" role="note" aria-label="Keys">
-          <dl>
-            {MR_REVIEWS_KEYS.map(([keys, label]) => (
-              <div key={keys}>
-                <dt>
-                  {keys
-                    .split(" ")
-                    .map((key, index) =>
-                      key === "/" ? (
-                        <span key={index}> / </span>
-                      ) : (
-                        <kbd key={index}>{key}</kbd>
-                      ),
-                    )}
-                </dt>
-                <dd>{label}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
+        <ShortcutHelp
+          title="Reviews keys"
+          rows={MR_REVIEWS_KEYS}
+          command={runCommand}
+          target={() => panelRef.current}
+          onClose={() => setHelpOpen(false)}
+        />
       ) : null}
     </aside>
   );

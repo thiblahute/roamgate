@@ -48,7 +48,7 @@ test("the reviews inbox: its toggle and its own keys, pin and zz included", () =
   ]);
   const inbox = groups.find((group) => group.group === REVIEWS_INBOX_GROUP);
   const pin = inbox?.rows.find((row) => row.combos.some((c) => c[0] === "P"));
-  expect(pin?.label).toContain(":pin");
+  expect(pin?.combos.flat()).toContain(":pin");
   expect(
     inbox?.rows.find((row) => row.combos.some((c) => c[0] === "zz"))?.label,
   ).toContain("middle");

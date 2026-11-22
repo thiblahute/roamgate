@@ -52,6 +52,7 @@ import {
 } from "./EffortThreads";
 import { SelectionOffer } from "./MessageThreads";
 import { ConfirmDialog } from "./ModalDialogs";
+import { ShortcutHelp } from "./ShortcutHelp";
 import {
   type BoardCard,
   boardColumns,
@@ -1083,8 +1084,7 @@ export function MrEffortView({
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      if (helpOpen) setHelpOpen(false);
-      else if (editing) setEditing(null);
+      if (editing) setEditing(null);
       else if (diff) setDiff(null);
       else if (history) setHistory(null);
       else if (selected.size) setSelected(new Set());
@@ -1667,26 +1667,13 @@ export function MrEffortView({
           </p>
         ) : null}
         {helpOpen ? (
-          <div className="agent-tasks-help" role="note" aria-label="Keys">
-            <dl>
-              {EFFORT_KEYS.map(([keys, label]) => (
-                <div key={keys}>
-                  <dt>
-                    {keys
-                      .split(" ")
-                      .map((key, index) =>
-                        key === "/" ? (
-                          <span key={index}> / </span>
-                        ) : (
-                          <kbd key={index}>{key}</kbd>
-                        ),
-                      )}
-                  </dt>
-                  <dd>{label}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
+          <ShortcutHelp
+            title="Effort keys"
+            rows={EFFORT_KEYS}
+            command={runCommand}
+            target={() => rootRef.current}
+            onClose={() => setHelpOpen(false)}
+          />
         ) : null}
         {selection ? (
           <SelectionOffer

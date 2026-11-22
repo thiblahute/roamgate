@@ -31,6 +31,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_ORDER_DOM_TEST !== "1") {
       localStorage: browser.localStorage,
       sessionStorage: browser.sessionStorage,
       MutationObserver: browser.MutationObserver,
+      ResizeObserver: browser.ResizeObserver,
       Event: browser.Event,
       CustomEvent: browser.CustomEvent,
       KeyboardEvent: browser.KeyboardEvent,
@@ -38,6 +39,7 @@ if (process.env.ROAMGATE_MR_REVIEWS_ORDER_DOM_TEST !== "1") {
       CSS: { escape: (value: string) => value.replace(/["\\]/g, "\\$&") },
       getComputedStyle: browser.getComputedStyle.bind(browser),
       requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
+      cancelAnimationFrame: (id: number) => clearTimeout(id),
       IS_REACT_ACT_ENVIRONMENT: true,
     }))
       Object.defineProperty(globalThis, key, {
@@ -194,11 +196,11 @@ if (process.env.ROAMGATE_MR_REVIEWS_ORDER_DOM_TEST !== "1") {
 
     // ? lists the keys; Esc puts it away first.
     await key("?");
-    expect(host.querySelector(".agent-tasks-help")?.textContent).toContain(
-      "move it down / up in your order",
+    expect(host.querySelector(".shortcut-help")?.textContent).toContain(
+      "move it down in your order",
     );
     await key("Escape");
-    expect(host.querySelector(".agent-tasks-help")).toBeNull();
+    expect(host.querySelector(".shortcut-help")).toBeNull();
 
     // / searches: title, author, branch, number, project.
     const search = host.querySelector<HTMLInputElement>(".mr-reviews-search")!;

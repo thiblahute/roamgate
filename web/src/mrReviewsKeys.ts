@@ -1,63 +1,89 @@
+import type { ShortcutRow } from "./components/ShortcutHelp";
+
+/*
+ * The board view's shortcut lists, for its help (?, ShortcutHelp) and the
+ * shortcut cheat sheet: picked in the help, a row runs as its keys typed
+ * in the view (the first of them where it lists synonyms).
+ */
+
 /**
  * An effort's view's keys, for its help (?): its tabs, its ledger and the
  * comments one leaves there for its leader session.
  */
-export const EFFORT_KEYS: [string, string][] = [
+export const EFFORT_KEYS: readonly ShortcutRow[] = [
   [
-    "B P L R F W",
-    "Board (a card per planned request, in the inbox's lanes), Progress, Ledger, Plans (planned requests), Feeders, What changed; the last one shown opens next time",
+    "B",
+    "Board: a card per planned request, in the inbox's lanes (the last tab shown opens next time)",
+  ],
+  ["P", "Progress"],
+  ["L", "Ledger"],
+  ["R", "Plans (planned requests)"],
+  ["F", "Feeders"],
+  ["W", "What changed"],
+  [
+    "j ↓",
+    "on the Board: the next card in its column (through every column on a phone); in the ledger: the next commit; elsewhere the next thing one comments on",
+    "j",
   ],
   [
-    "j k h l",
-    "on the Board: the next / previous card in its column (through every column on a phone), the column on the left / right",
+    "k ↑",
+    "on the Board: the previous card in its column; in the ledger: the previous commit; elsewhere the previous thing one comments on",
+    "k",
   ],
+  ["h ←", "on the Board: the column on the left", "h"],
+  ["l →", "on the Board: the column on the right", "l"],
   [
-    "Enter o e w za",
-    "on the Board: the card's review in its home (a part's workspace, a plan's place in Plans), its request on the forge, set its next step and who it is on, its workspace, fold or unfold its column (Done starts folded)",
+    "Enter",
+    "on the Board: the card's review in its home (a part's workspace, a plan's place in Plans); in the ledger: the commit's versions",
   ],
-  [
-    "j k / Down Up",
-    "the next / previous commit in the ledger, the next / previous thing one comments on elsewhere (a click points at one too)",
-  ],
-  ["x V", "in the ledger: select the commit, select a range"],
+  ["o", "on the Board: the card's request on the forge"],
+  ["e", "on the Board: set the card's next step and who it is on"],
+  ["w", "on the Board: the card's workspace"],
+  ["za", "on the Board: fold or unfold its column (Done starts folded)"],
+  ["x", "in the ledger: select the commit"],
+  ["V", "in the ledger: select a range"],
   ["/", "filter the ledger: words, disposition:, dir:, file:, author:"],
   [
     "d",
     "in the ledger: goes to its head workspace and shows the commit's diff in its Changes; with two versions picked in its history (Enter): the two compared there",
   ],
-  ["Enter", "in the ledger: the commit's versions"],
   [
     "c",
     "comment on the words selected, else on what the cursor is on (a card of the Board, a commit, a plan, a count, a directory, a feeder, a part of What changed): the thread goes to the leader session, which answers in it; held while none runs",
   ],
   ["C", "comment on the tab"],
-  ["n N", "the next / previous thread"],
-  ["gn gN", "the next / previous open thread, on any tab"],
-  [
-    "r R dd za",
-    "on a thread: resolve or reopen it, reply, delete your lone comment, fold it",
-  ],
+  ["n", "the next thread"],
+  ["N", "the previous thread"],
+  ["gn", "the next open thread, on any tab"],
+  ["gN", "the previous open thread, on any tab"],
+  ["r", "on a thread: resolve or reopen it"],
+  ["R", "on a thread: reply"],
+  ["dd", "on a thread: delete your lone comment"],
+  ["za", "on a thread: fold it"],
   ["gl", "its leader: the Claude session of its head workspace"],
   ["u", "undo the last change"],
   [
     ":",
-    "mark not-upstream REASON, supersede REF, plan NAME, confirm [N], reject [N|all], accept NAME, split NEW (the selected commits out of their plan), part [NAME], drop NAME, seen, unsort, refresh, delete (the effort, after a confirmation, with Undo)",
+    "a command: mark not-upstream REASON, supersede REF, plan NAME, confirm [N], reject [N|all], accept NAME, split NEW (the selected commits out of their plan), part [NAME], drop NAME, seen, unsort, refresh, delete (the effort, after a confirmation, with Undo)",
   ],
-  ["?", "this list"],
-  ["Esc", "close this list, clear the selection, then back to the requests"],
+  [":seen", "mark what changed as seen"],
+  [":refresh", "read the effort again"],
+  ["?", "this list", false],
+  ["Esc", "clear the selection, then back to the requests"],
 ];
 
 /**
  * The reviews panel's keys, for its help (?) and the shortcut cheat sheet:
  * alone, so the cheat sheet does not load the panel's code.
  */
-export const MR_REVIEWS_KEYS: [string, string][] = [
-  ["j k / Down Up", "next / previous request (a count repeats: 3j)"],
-  ["gg G / Home End", "first / last"],
-  [
-    "zz zt zb",
-    "show the selected request in the middle, at the top, at the bottom",
-  ],
+export const MR_REVIEWS_KEYS: readonly ShortcutRow[] = [
+  ["j ↓", "next request (a count repeats: 3j)", "j"],
+  ["k ↑", "previous request", "k"],
+  ["gg Home", "first", "gg"],
+  ["G End", "last", "G"],
+  ["zz", "show the selected request in the middle"],
+  ["zt", "show the selected request at the top"],
+  ["zb", "show the selected request at the bottom"],
   [
     "Enter",
     "its review in its home (its workspace: on its branch, named after it, or made for it); with none, in the project's review workspace",
@@ -66,42 +92,50 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
   ["c", "its Claude session"],
   ["o", "open it on GitLab or GitHub"],
   ["w", "go to its workspace (2w: the second)"],
-  ["P", "pin it on top, or unpin it (:pin, :unpin)"],
+  ["P :pin :unpin", "pin it on top, or unpin it", "P"],
   [
     "e",
     "set by hand: who it is on, next step, what it waits for, labels, link",
   ],
-  ["E", "clear what was set by hand (:clear [FIELD])"],
+  ["E :clear", "clear what was set by hand (:clear FIELD: one of them)", "E"],
   ["za", "fold the requests after it, or its lane"],
   ["gx", "open its link (a URL, or a file in its workspace)"],
   [
+    "gH :home",
+    "start a review with a home: a workspace of its own on its head, with a Claude session told its job",
     "gH",
-    "start a review with a home: a workspace of its own on its head, with a Claude session told its job (:home)",
   ],
-  ["h l / Tab", "on a wide pane (columns): the lane on the left / right"],
+  ["h", "on a wide pane (columns): the lane on the left"],
+  ["l Tab", "on a wide pane (columns): the lane on the right", "l"],
   [
-    "f F",
-    "next / previous of all, to review, mine and your saved views (:all, :review, :mine, :view NAME)",
+    "f",
+    "next of all, to review, mine and your saved views (:view NAME: one of them)",
   ],
-  ["J K / Alt+Down Alt+Up", "move it down / up in your order (3J)"],
+  ["F", "previous of all, to review, mine and your saved views"],
+  [":all", "all the requests"],
+  [":review", "the requests to review"],
+  [":mine", "your own requests"],
+  ["J Alt+Down", "move it down in your order (3J)", "J"],
+  ["K Alt+Up", "move it up in your order", "K"],
   [
     "/",
     "search: words and project:, label:, lane:, waiting:, state:, author:, pipeline:, is: (-key: negates; Tab completes)",
   ],
   [
     ":",
-    "a command: note TEXT, whose me|reviewer|external|NAME, after REF, label X, unlabel X, link URL, stale, clear [FIELD], save NAME (the search as a view), view NAME, delview NAME, infer (who it is on, read again now), pin, unpin, add URL (or pin URL: adds a request), all, review, mine, refresh",
+    "a command: note TEXT, whose me|reviewer|external|NAME, after REF, label X, unlabel X, link URL, stale, clear [FIELD], save NAME (the search as a view), view NAME, delview NAME, infer, pin, unpin, add URL (or pin URL: adds a request), all, review, mine, refresh",
   ],
+  [":infer", "who it is on and its next step, read again now"],
   [
     "p",
     "add a request: a prompt to paste its URL in (Enter adds, Esc closes); a URL pasted in the search, or pasted or dropped in the panel, adds it too",
   ],
-  ["dd / Delete", "remove it from the view (a pinned one is unpinned)"],
+  ["dd Delete", "remove it from the view (a pinned one is unpinned)", "dd"],
   ["u", "undo the last removal"],
   ["H", "the hidden requests, to restore"],
   ["x", "not interested (a suggestion), else remove it as dd"],
   ["+", "more like this (a suggestion)"],
-  ["r", "refresh"],
+  ["r :refresh", "refresh", "r"],
   ["a", "ask the reviews agent"],
   [
     "P L R F W",
@@ -110,6 +144,7 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
   [
     "d",
     "in an effort's ledger: goes to its head workspace and shows the commit's diff in its Changes; with two versions picked in its history (Enter): the two compared there",
+    false,
   ],
   [
     "c (effort)",
@@ -119,6 +154,6 @@ export const MR_REVIEWS_KEYS: [string, string][] = [
     ": (effort)",
     "mark not-upstream REASON, supersede REF, plan NAME, confirm [N], reject [N|all], accept NAME, split NEW (the selected commits out of their plan), part [NAME], drop NAME, seen, unsort, delete (the effort, after a confirmation, with Undo)",
   ],
-  ["?", "this list"],
-  ["Esc", "close the list, clear the search, then hide the panel"],
+  ["?", "this list", false],
+  ["Esc", "clear the search, then hide the panel"],
 ];

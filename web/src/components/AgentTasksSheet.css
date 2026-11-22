@@ -430,56 +430,6 @@
   }
 }
 
-/* The keys, over the sheet's foot. */
-.agent-tasks-help {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  left: 8px;
-  z-index: 2;
-  max-height: 70%;
-  padding: 8px 12px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--shell-panel);
-  box-shadow: 0 6px 24px rgb(0 0 0 / 40%);
-  font-size: 12px;
-}
-
-.agent-tasks-help dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 4px 12px;
-  margin: 0;
-}
-
-.agent-tasks-help dl > div {
-  display: contents;
-}
-
-.agent-tasks-help dt {
-  white-space: nowrap;
-}
-
-.agent-tasks-help dd {
-  margin: 0;
-  color: var(--muted);
-}
-
-.agent-tasks-help kbd {
-  margin-right: 2px;
-  padding: 0 4px;
-  border: 1px solid var(--border-soft);
-  border-radius: 4px;
-  font-family: var(--mono-font);
-  font-size: 11px;
-}
-
-:where(html[data-layout="mobile"]) .agent-tasks-keys-button {
-  display: none;
-}
-
 .agent-task-back {
   display: inline-flex;
   align-items: center;
