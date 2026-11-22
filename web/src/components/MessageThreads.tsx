@@ -448,12 +448,15 @@ export function ThreadMessageBody({
   message,
   single = false,
   actions = false,
+  breaks = true,
 }: {
   scope: MessageThreadsScope;
   thread: ReviewThread;
   message: ReviewComment;
   single?: boolean;
   actions?: boolean;
+  /** false: a document, its single line breaks its source's wrapping. */
+  breaks?: boolean;
 }) {
   const comment = message.id;
   const { onMessage } = splitMessageThreads(scope.byMessage.get(comment));
@@ -463,6 +466,7 @@ export function ThreadMessageBody({
       <NoteBody
         text={message.body}
         parts={threadMessageParts(scope, thread, comment, { single })}
+        breaks={breaks}
       />
       {actions ? (
         <div className="chat-thread-message-actions">

@@ -2111,6 +2111,14 @@ function WorkCard({
         <strong>{item.title}</strong>
         <WorkAsk item={item} />
         <span className="mr-reviews-dense-chips" aria-label="Tags and owner">
+          {item.decisions ? (
+            <span
+              className="mr-reviews-chip is-wait work-decisions"
+              title="Decisions its description leaves open: comment on their lines in the item"
+            >
+              {item.decisions} decision{item.decisions === 1 ? "" : "s"} open
+            </span>
+          ) : null}
           {item.needsTriage ? (
             <span
               className="mr-reviews-chip is-wait work-triage"

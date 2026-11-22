@@ -2279,13 +2279,21 @@ never grows in its column: opening it (`Enter`, `i`, a tap or a click)
 shows the item's detail in the view, as a request's detail is shown, with
 **Back** to return to the view it came from (Esc too): its title and state, its
 **description** (the text it was added with, images at the detail's
-width), a state menu (`s`), tags (`t`), its owner with **Open the agent's
+width; an item's design doc is its description: with a heading it reads
+as a document, its wrapped lines joined, its headings, tables and task
+lists drawn, at a larger size on a phone, and you comment on its parts,
+a decision's line included, right there), a state menu (`s`), tags (`t`), its owner with **Open the agent's
 work** (`o`: the owner's pane, and its subagent's task in the Background
 tasks sheet), its project, links (a commit, a branch or a landing opens its review in
 Changes, in whichever of the project's repositories holds it, or says it
 is in none of them; the copy button beside takes its sha or name; a
 file, listed with its path, opens in Files, rendered for Markdown, HTML,
 SVG and images, at its line when it names one),
+A card whose description leaves decisions open (`- [ ] **D3** ...`
+lines) says how many: **3 decisions open**. The owner revises the doc in
+the description as you comment, and ticks a decision with your words once
+you answer it (`- [x] **D3** (2026-11-22, user: "as recommended")`);
+every earlier version stays in the item's history.
 **Done when** (how it becomes done by itself: its commit landing, or
 every decision ticked; in Verify or For you, only the user's word) and
 dates, **Done**

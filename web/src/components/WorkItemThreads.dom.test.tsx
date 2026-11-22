@@ -615,4 +615,82 @@ if (
       ),
     ).toBeNull();
   });
+
+  test("a design doc as the description reads as a document: wrapped lines joined, headings, each decision a part with its comments under it", async () => {
+    const doc = thread(
+      "d000000000000009",
+      { work: { item, description: true } },
+      [
+        comment(
+          "c000000000000090",
+          "Claude",
+          [
+            "# Data history",
+            "",
+            "Keep the stores and write a copy",
+            "of what changes into git.",
+            "",
+            "## Decisions",
+            "",
+            "- [ ] **D1** Approach. Recommendation: B.",
+            "- [ ] **D2** Scope: every area.",
+          ].join("\n"),
+        ),
+      ],
+    );
+    const onD2 = thread(
+      "b000000000000009",
+      {
+        work: { item },
+        message: {
+          thread: doc.id,
+          comment: "c000000000000090",
+          quote: "D2 Scope: every area.",
+        },
+      },
+      [comment("c000000000000091", "you", "Only Work and reviews")],
+    );
+    function DocDetail() {
+      const view = useWorkItemView();
+      const api = {
+        ...data,
+        threads: [doc, onD2],
+        ...view,
+      } as Api;
+      return (
+        <WorkDescription
+          api={api}
+          item={item}
+          thread={doc}
+          onLeave={() => {}}
+        />
+      );
+    }
+    const docHost = document.createElement("div");
+    document.body.appendChild(docHost);
+    const docRoot = createRoot(docHost);
+    await act(async () => docRoot.render(<DocDetail />));
+    const box = docHost.querySelector<HTMLElement>(".work-description")!;
+    expect(box.classList.contains("is-document")).toBe(true);
+    expect(box.querySelector("h1")?.textContent).toBe("Data history");
+    expect(box.querySelector("h2")?.textContent).toBe("Decisions");
+    // The source's wrapping is no line break.
+    const paragraph = [...box.querySelectorAll("p")].find((p) =>
+      p.textContent?.includes("Keep the stores"),
+    )!;
+    expect(paragraph.querySelector("br")).toBeNull();
+    // Each decision is a part of its own, a + beside it; the comment on D2
+    // is drawn under its line.
+    const parts = [...box.querySelectorAll<HTMLElement>(".rc-part")];
+    const d1 = parts.find((part) => part.textContent?.includes("D1 Approach"))!;
+    const d2 = parts.find((part) => part.textContent?.includes("D2 Scope"))!;
+    expect(d1).not.toBe(d2);
+    expect(d2.querySelector(".rc-part-add")).not.toBeNull();
+    expect(d2.classList.contains("has-notes")).toBe(true);
+    expect(d2.nextElementSibling?.textContent).toContain(
+      "Only Work and reviews",
+    );
+    await act(async () => docRoot.unmount());
+    docHost.remove();
+  });
 }

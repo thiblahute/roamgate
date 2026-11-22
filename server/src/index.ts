@@ -1460,6 +1460,12 @@ function getWorkService(): WorkService {
           threadId: input.threadId,
           anchor: input.anchor,
         }),
+      setAnchor: (input) =>
+        review.setThreadAnchor({
+          sessionId: input.sessionId,
+          threadId: input.threadId,
+          anchor: input.anchor,
+        }),
       // An image an item is added with: stored as a pasted one is.
       addImage: (sessionId, type, data) =>
         saveReviewImage(reviewDirectory(), sessionId, type, data),

@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import {
   filterWorkItems,
+  tickWorkDecision,
+  workDecisions,
+  workDescriptionIsDocument,
+  workOpenDecisions,
   normalizeWorkAnswers,
   parseWorkQuery,
   provisionalWorkTitle,
@@ -511,4 +515,41 @@ test("done when: doing and open items go done when their commit lands; verify an
   expect(workDoneWhen({ state: "you", links: [commit] }, project)).toContain(
     "the item stays For you",
   );
+});
+
+test("a description's decisions: open and ticked lines, counted and ticked with the user's words", () => {
+  const doc = [
+    "# Plan",
+    "",
+    "- [ ] **D1** Approach. Recommendation: B.",
+    "  - [ ] not a decision",
+    '- [x] **D2** (2026-11-20, user: "yes") Scope.',
+    "* [ ] **D10 Big folders** in restic.",
+    "- [ ] **Dx** no id",
+  ].join("\n");
+  expect(workDecisions(doc)).toEqual([
+    { id: "D1", open: true, line: 2 },
+    { id: "D2", open: false, line: 4 },
+    { id: "D10", open: true, line: 5 },
+  ]);
+  expect(workOpenDecisions(doc)).toBe(2);
+  const one = tickWorkDecision(doc, "d1", "as  recommended\n", "2026-11-22")!;
+  expect(one.split("\n")[2]).toBe(
+    '- [x] **D1** (2026-11-22, user: "as recommended") Approach. Recommendation: B.',
+  );
+  // After the bold words of a title in bold; D1 does not tick D10.
+  const ten = tickWorkDecision(one, "D10", "yes", "2026-11-22")!;
+  expect(ten.split("\n")[5]).toBe(
+    '* [x] **D10 Big folders** (2026-11-22, user: "yes") in restic.',
+  );
+  expect(workOpenDecisions(ten)).toBe(0);
+  expect(tickWorkDecision(ten, "D1", "again", "2026-11-22")).toBeNull();
+  expect(tickWorkDecision(doc, "D3", "no such", "2026-11-22")).toBeNull();
+});
+
+test("a description with a heading reads as a document", () => {
+  expect(workDescriptionIsDocument("# Data history\n\nwords")).toBe(true);
+  expect(workDescriptionIsDocument("intro\n\n## Decisions")).toBe(true);
+  expect(workDescriptionIsDocument("Fix the #12 bug\nplease")).toBe(false);
+  expect(workDescriptionIsDocument("#nospace")).toBe(false);
 });

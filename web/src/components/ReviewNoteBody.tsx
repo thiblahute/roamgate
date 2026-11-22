@@ -458,15 +458,17 @@ export const FileLinksContext = createContext<FileLinks | null>(null);
 export function messageLayout(
   text: string,
   fileLinks?: FileLinkScope,
+  /** Single line breaks are breaks (a chat's); false: a document's wrapping. */
+  breaks = true,
 ): MessageLayout {
-  const key = fileLinks ? `${JSON.stringify(fileLinks)}\u0000${text}` : text;
+  const key = `${breaks ? "" : "\u0001"}${fileLinks ? `${JSON.stringify(fileLinks)}\u0000` : ""}${text}`;
   const known = messageLayouts.get(key);
   if (known) return known;
   const blocks = messageBlocks(text);
   const html = blocks.map((block) =>
     block.kind === "markdown"
       ? renderMarkdown(block.source, {
-          breaks: true,
+          breaks,
           imageUrlResolver: reviewImageUrl,
           fileLinks,
         })
@@ -614,6 +616,7 @@ export function NoteBody({
   path,
   root,
   parts,
+  breaks = true,
 }: {
   text: string;
   newLines?: ReadonlyMap<number, string>;
@@ -630,6 +633,11 @@ export function NoteBody({
    */
   root?: string;
   parts?: MessageParts;
+  /**
+   * Single line breaks break the line (a chat message); false for a
+   * document, whose lines are its source's wrapping.
+   */
+  breaks?: boolean;
 }) {
   const links = useContext(FileLinksContext);
   const linkScope = useMemo<FileLinkScope | undefined>(() => {
@@ -646,7 +654,7 @@ export function NoteBody({
         : {}),
     };
   }, [links, root, path]);
-  const layout = messageLayout(text, linkScope);
+  const layout = messageLayout(text, linkScope, breaks);
   const { blocks, html, quotes } = layout;
   /** A click on a link to a file: the file in Files, the part not selected. */
   const openFileLink = (event: React.MouseEvent<HTMLElement>) => {

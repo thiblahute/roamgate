@@ -12,6 +12,7 @@ import {
   WORK_SESSION_PREFIX,
   type WorkItem,
   type WorkPush,
+  workDescriptionThread,
 } from "../../../shared/work";
 import { reviewServiceForTest } from "../review/testkit";
 import { handleWorkRpc, isWorkMethod } from "./rpc";
@@ -222,6 +223,13 @@ function realReviews(
         threadId: input.threadId,
         anchor: input.anchor,
       }),
+    setAnchor: (input) =>
+      review.setThreadAnchor({
+        sessionId: input.sessionId,
+        threadId: input.threadId,
+        anchor: input.anchor,
+      }),
+    editComment: (input) => review.edit(input),
   };
 }
 
@@ -1175,6 +1183,102 @@ describe("work service", () => {
     expect(gone.deleted).toBe(edited.thread!.id);
     expect(gone.thread).toBeNull();
     expect(reviews.sessions.get(sessionId)!.threads.length).toBe(2);
+  });
+
+  test("the design doc is the item's description: set whole, revised in place, its decisions ticked, its versions kept", async () => {
+    const kit = reviewServiceForTest({});
+    const service = createWorkService({
+      store: openWorkStore(dir()),
+      reviews: realReviews(kit.service),
+      defaultConnection: () => "desktop",
+      ownRoot: () => "/home/me/roamgate",
+      now: () => "2026-11-22T12:00:00.000Z",
+    });
+    const item = await service.add(
+      { title: "Data history", text: "Keep everything in git" },
+      { by: "user" },
+    );
+    const sessionId = service.threads({ item: item.id })!.session.id;
+    const users = service.threads({ item: item.id })!.threads[0]!;
+    // A comment of the user's on a part of their words.
+    await kit.service.addThread({
+      sessionId,
+      author: "you",
+      text: "Not too often",
+      anchor: {
+        work: { item: item.id },
+        message: {
+          thread: users.id,
+          comment: users.comments[0]!.id,
+          quote: "Keep everything",
+        },
+      },
+    });
+    // A doc longer than a comment may be, with two decisions.
+    const filler = "Some long words of the design. ".repeat(1000);
+    const doc = `# Data history\n\n${filler}\n\n## Decisions\n\n- [ ] **D1** Approach.\n  Recommendation: B.\n- [ ] **D2** Scope.\n`;
+    expect(doc.length).toBeGreaterThan(20_000);
+    const meta = {
+      by: "agent" as const,
+      caller: "Claude in roamgate",
+      address: "desktop/w35:p1",
+    };
+    const set = await service.update({ item: item.id, text: doc }, meta);
+    expect(set.decisions).toBe(2);
+    let threads = service.threads({ item: item.id })!.threads;
+    // The user's words stay theirs, an ordinary thread now; the doc is the
+    // agent's description.
+    const description = workDescriptionThread(threads, set)!;
+    expect(description.id).not.toBe(users.id);
+    expect(description.comments[0]!.author).toBe("Claude");
+    expect(description.comments[0]!.body).toBe(doc.trim());
+    expect(threads.find((t) => t.id === users.id)!.anchor.work).toEqual({
+      item: item.id,
+    });
+    // The user answers D1 on its line; the agent ticks it with their words.
+    const ticked = await service.update(
+      { item: item.id, tick: [{ decision: "D1", answer: "as recommended" }] },
+      meta,
+    );
+    expect(ticked.decisions).toBe(1);
+    threads = service.threads({ item: item.id })!.threads;
+    const same = workDescriptionThread(threads, ticked)!;
+    // Its own description: rewritten in place, its id kept.
+    expect(same.id).toBe(description.id);
+    expect(same.comments[0]!.body).toContain(
+      '- [x] **D1** (2026-11-22, user: "as recommended") Approach.',
+    );
+    await expect(
+      service.update(
+        { item: item.id, tick: [{ decision: "D1", answer: "again" }] },
+        meta,
+      ),
+    ).rejects.toThrow(/no open decision D1/);
+    // Every version is in the history, newest first.
+    const versions = service.descriptionVersions(ticked);
+    expect(versions.map((each) => each.text)).toEqual([
+      doc.trim(),
+      "Keep everything in git",
+    ]);
+    const listed = JSON.parse(
+      (
+        await workTool(
+          service,
+          "work_list",
+          { item: item.id, versions: true },
+          "Claude in roamgate",
+        )
+      ).split("\n")[1]!,
+    );
+    expect(listed.item.open_decisions).toBe(1);
+    expect(listed.description).toContain("**D2** Scope.");
+    expect(listed.description_versions).toHaveLength(2);
+    // The same text again changes nothing.
+    const again = await service.change(
+      { item: item.id, text: same.comments[0]!.body },
+      meta,
+    );
+    expect(again.changed).toEqual({});
   });
 
   test("an item's threads are a review of the item, its comments going to the owner's pane", async () => {

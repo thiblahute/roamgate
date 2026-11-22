@@ -103,8 +103,9 @@ itself. Change code in the thread's \`repo\` (\`get\` and \`watch\` give it).
 
 ## Discuss a file or a page, rendered
 
-To talk over a plan, a design doc, a diagram or an image as the user sees
-it, open it rendered: \`open --file PATH\` (Markdown, HTML, SVG, images;
+(A design doc for a Work item goes in the item's description instead:
+see the Work board below.) To talk over a file, a diagram or an image as
+the user sees it, open it rendered: \`open --file PATH\` (Markdown, HTML, SVG, images;
 absolute or relative to here), or \`open --url URL\` for a site's page
 (a dev server's docs, say: the user browses it in Roamgate; its scripts
 run only on sites the user listed). Add a thread per point or decision
@@ -335,6 +336,25 @@ the item); a move there without an ask is refused, and leaving those
 states clears them unless given:
 
     roamgate-review work work_update '{"item": "0123abcd", "state": "you", "ask": "Choose: media to the car with the phone mic, or no music on car links", "answers": ["Media with the phone mic", "No music on car links"]}'
+
+A design to agree on lives in the item itself: its design doc is the
+item's description, not a separate plan review nor a thread per question.
+Write it whole with \`work_update\` \`text\` (Markdown, up to 200,000
+characters: headings, tables, lists), with one line per decision the user
+has to take, \`- [ ] **D3** The question. Recommendation: ...\`, and
+revise it there as the work goes (your own description is rewritten; one
+the user wrote stays as a thread, and yours becomes the description; every
+earlier version stays in the item's history, \`work_list {"item": ...,
+"versions": true}\`). The user reads it in the item and comments on its
+parts there, a decision's line included: those comments reach you as the
+item's threads, quoting the words they are on. Once they answer a
+decision, tick it with their words, and answer their thread:
+
+    roamgate-review work work_update '{"item": "0123abcd", "tick": [{"decision": "D3", "answer": "as recommended"}]}'
+
+which makes the line \`- [x] **D3** (2026-11-22, user: "as recommended")
+...\`; the card says how many decisions are still open. A \`plans/\` file
+may mirror the doc, linked as a \`file\` link, but the item is the source.
 
 The user's comments on
 an item reach its owner as review comments: answer them with

@@ -731,3 +731,33 @@ button.work-link-open:focus-visible {
   font-weight: 600;
   text-transform: uppercase;
 }
+
+/* A design doc as the description: a document's size and rhythm, its
+   headings set apart, readable on a phone. */
+.work-description.is-document {
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.work-description.is-document :is(h1, h2, h3, h4) {
+  margin: 0.9em 0 0.35em;
+  line-height: 1.3;
+}
+
+.work-description.is-document h1 {
+  font-size: 1.35em;
+}
+
+.work-description.is-document h2 {
+  font-size: 1.2em;
+}
+
+.work-description.is-document h3 {
+  font-size: 1.08em;
+}
+
+.is-mobile .work-description.is-document {
+  padding: 8px 10px;
+  font-size: 14px;
+}

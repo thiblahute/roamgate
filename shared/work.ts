@@ -153,6 +153,11 @@ export type WorkItem = {
   ask?: string;
   /** For a decision: a few short answers, one tap each (a comment). */
   answers?: string[];
+  /**
+   * The decisions its description leaves open (`- [ ] **Dn**` lines), as
+   * last written through the board; none when it has none.
+   */
+  decisions?: number;
 };
 
 export type WorkPushKind = "items" | "projects" | "item";
@@ -1016,4 +1021,67 @@ export function workDescriptionThread<
     })
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   return early[0] ?? null;
+}
+
+/**
+ * A decision line of a design doc: `- [ ] **Dn ...` while open, `- [x]`
+ * once decided. Its id, whether it is open, and its line (0-based).
+ */
+const DECISION_LINE = /^\s*[-*+]\s+\[([ xX])\]\s+\*\*(D\d+)(?![0-9])/;
+
+export type WorkDecision = { id: string; open: boolean; line: number };
+
+/** The decisions of a description (a design doc), in order. */
+export function workDecisions(text: string): WorkDecision[] {
+  const out: WorkDecision[] = [];
+  text.split("\n").forEach((line, at) => {
+    const match = DECISION_LINE.exec(line);
+    if (match) out.push({ id: match[2]!, open: match[1] === " ", line: at });
+  });
+  return out;
+}
+
+/** How many decisions a description leaves open. */
+export function workOpenDecisions(text: string): number {
+  return workDecisions(text).filter((each) => each.open).length;
+}
+
+/**
+ * A decision ticked in a description: its box checked and, after its
+ * bold words, the day and the user's words, `- [x] **D3 Title.** (2026-11-22,
+ * user: "as recommended") ...`. Null when no open decision has that id.
+ */
+export function tickWorkDecision(
+  text: string,
+  id: string,
+  answer: string,
+  day: string,
+): string | null {
+  const lines = text.split("\n");
+  const key = id.trim().toUpperCase();
+  const at = lines.findIndex((line) => {
+    const match = DECISION_LINE.exec(line);
+    return !!match && match[1] === " " && match[2] === key;
+  });
+  if (at < 0) return null;
+  const line = lines[at]!;
+  const words = answer.replace(/\s+/g, " ").trim();
+  const note = ` (${day}, user: "${words}")`;
+  const open = line.indexOf("**");
+  const close = line.indexOf("**", open + 2);
+  const checked = line.replace(/\[ \]/, "[x]");
+  lines[at] =
+    close > open
+      ? `${checked.slice(0, close + 2)}${note}${checked.slice(close + 2)}`
+      : `${checked}${note}`;
+  return lines.join("\n");
+}
+
+/**
+ * Whether a description reads as a document (a design doc): it has a
+ * Markdown heading. Its single line breaks are then the source's wrapping,
+ * not breaks in the text.
+ */
+export function workDescriptionIsDocument(text: string): boolean {
+  return /^#{1,6}\s+\S/m.test(text);
 }

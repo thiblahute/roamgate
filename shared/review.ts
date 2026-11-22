@@ -741,6 +741,11 @@ export const REVIEW_DIFF_FILES_MAX = 32;
 
 export const REVIEW_LIMITS = {
   bodyChars: 20_000,
+  /**
+   * A work item's description (the first comment of its thread marked
+   * `work.description`): a whole design doc fits.
+   */
+  descriptionChars: 200_000,
   summaryChars: 20_000,
   threadsPerSession: 2_000,
   commentsPerThread: 500,

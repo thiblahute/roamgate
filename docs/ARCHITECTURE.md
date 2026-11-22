@@ -1980,6 +1980,26 @@ it as it tells a comment (the prompt says the item is theirs to take with
 `work_update`); an agent's own item without text gets no review until
 someone comments. `add`, `reopen` and `promote` are async for it.
 
+Design docs: an item's design doc is its description. `work_update` takes
+`text` (the description, whole, up to `REVIEW_LIMITS.descriptionChars`,
+200,000 characters, the review service's limit for the first comment of a
+thread marked `work.description`; other comments keep `bodyChars`) and
+`tick` (`[{decision, answer}]`: each open `- [ ] **Dn**` line checked
+with the day and the user's words, `tickWorkDecision` in shared/work.ts).
+`writeDescription` rewrites the description in place when it is the
+caller's own comment, and otherwise unmarks the old description thread
+(`setThreadAnchor`, review service: same review, anchor replaced) and adds
+a new one by the caller, so the user's words are never rewritten under
+their name. Threads on parts of the description quote its words
+(`message: {comment, quote}`) and are placed again by them on every
+render (`quotedPart`), so they survive edits. The history line of the
+change holds the text it replaced (`previous_description`), and
+`work_list {item, versions: true}` answers those versions, newest first
+(`WorkStore.historyOf`). The item keeps `decisions`, the count of open
+decision lines (`workOpenDecisions`), for the card's chip. The detail
+renders a description with a Markdown heading (`workDescriptionIsDocument`)
+without `breaks`: its single line breaks are the source's wrapping.
+
 From a chat (`web/src/components/ChatWork.tsx`): `useChatWorkAdd` gives a
 pane's conversation its session's address and `add(quote?, entry?)`,
 which opens the board on its add form (`openWork({add})`, a

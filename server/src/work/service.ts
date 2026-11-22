@@ -1,5 +1,6 @@
 import { parseAgentAddress } from "../../../shared/agentMessage";
 import {
+  REVIEW_LIMITS,
   REVIEW_USER,
   type ReviewSession,
   type ReviewSnapshot,
@@ -16,6 +17,9 @@ import {
   WORK_OPEN_STATES,
   type WorkBoard,
   workStateAsks,
+  tickWorkDecision,
+  workDescriptionThread,
+  workOpenDecisions,
   type WorkItem,
   isAbsoluteWorkPath,
   type WorkLink,
@@ -80,7 +84,9 @@ export type WorkMeta = {
 
 /** The most images an item is added with, and their tokens in its text. */
 export const WORK_ADD_IMAGES = 8;
-export const WORK_TEXT_CHARS = 20_000;
+/** The longest description an item is added with or given: a design doc. */
+export const WORK_TEXT_CHARS = REVIEW_LIMITS.descriptionChars;
+export const WORK_DESCRIPTION_CHARS = WORK_TEXT_CHARS;
 
 export type WorkGit = (
   root: string,
@@ -114,6 +120,15 @@ export type WorkReviews = {
    * timestamps kept, its anchor replaced.
    */
   moveThread(input: {
+    sessionId: string;
+    threadId: string;
+    anchor: Record<string, unknown>;
+  }): ReviewThread;
+  /**
+   * A thread's anchor replaced in its own review: the item's old
+   * description, unmarked when another thread becomes its description.
+   */
+  setAnchor?(input: {
     sessionId: string;
     threadId: string;
     anchor: Record<string, unknown>;
@@ -1012,6 +1027,20 @@ export function createWorkService(deps: WorkServiceDeps) {
       change.needs_triage = false;
     }
     settleWorkAsk(before, next, params, meta, change);
+    if (params.text !== undefined || params.tick !== undefined) {
+      const written = await writeDescription(before, params, meta);
+      if (written) {
+        change.description = {
+          chars: written.text.length,
+          ...(written.ticked.length ? { ticked: written.ticked } : {}),
+        };
+        // The text it replaced: every version stays in the history.
+        change.previous_description = written.previous;
+        const open = workOpenDecisions(written.text);
+        if (open) next.decisions = open;
+        else delete next.decisions;
+      }
+    }
     const linksChanged =
       JSON.stringify(next.links) !== JSON.stringify(before.links);
     if (linksChanged) change.links = next.links;
@@ -1034,6 +1063,127 @@ export function createWorkService(deps: WorkServiceDeps) {
       changed: change,
       ...(adopted ? { adopted } : {}),
     };
+  }
+
+  /**
+   * The item's description set (`text`, Markdown: a whole design doc
+   * fits) and its decisions ticked (`tick`: `- [ ] **Dn**` lines checked
+   * with the day and the user's words). The description is the first
+   * comment of the item's thread marked so: rewritten in place when it is
+   * the caller's own, else a new description thread is made and the old
+   * one stays as an ordinary thread (the user's words are never rewritten
+   * under their name). Threads on parts of the description quote its
+   * words and are found again by them. What it replaced is answered, for
+   * the history. Null when nothing changed.
+   */
+  async function writeDescription(
+    item: WorkItem,
+    params: Record<string, unknown>,
+    meta: WorkMeta,
+  ): Promise<{
+    text: string;
+    previous: string | null;
+    ticked: string[];
+  } | null> {
+    if (!deps.reviews)
+      throw new WorkError("reviews are unavailable", "unavailable");
+    const snapshot = threads({ item: item.id, open: true });
+    if (!snapshot) throw new WorkError("the item's review could not be opened");
+    const current = workDescriptionThread(snapshot.threads, item);
+    const old = current?.comments[0] ?? null;
+    let text = old?.body ?? "";
+    if (params.text !== undefined) {
+      if (typeof params.text !== "string" || !params.text.trim())
+        throw new WorkError("text is empty: an item keeps a description");
+      text = params.text.replace(/\r\n?/g, "\n").trim();
+      if (text.length > WORK_DESCRIPTION_CHARS)
+        throw new WorkError(
+          `text is too long (${WORK_DESCRIPTION_CHARS} characters at most)`,
+        );
+    }
+    const ticked: string[] = [];
+    if (params.tick !== undefined) {
+      if (!Array.isArray(params.tick))
+        throw new WorkError("tick is a list of {decision, answer}");
+      const day = now().slice(0, 10);
+      for (const raw of params.tick) {
+        if (!isRecord(raw)) throw new WorkError("tick: {decision, answer}");
+        const id = typeof raw.decision === "string" ? raw.decision.trim() : "";
+        const answer =
+          typeof raw.answer === "string" ? oneLine(raw.answer, 300) : "";
+        if (!/^D\d+$/i.test(id))
+          throw new WorkError("tick.decision is a decision's id: D1, D2...");
+        if (!answer) throw new WorkError("tick.answer: the user's words");
+        const next = tickWorkDecision(text, id, answer, day);
+        if (next === null)
+          throw new WorkError(
+            `the description has no open decision ${oneLine(id, 10)} (a line \`- [ ] **${oneLine(id, 10).toUpperCase()}**\`)`,
+            "not_found",
+          );
+        text = next;
+        ticked.push(id.toUpperCase());
+      }
+    }
+    if (!text) throw new WorkError("text is required");
+    // Read now: the review service rewrites the comment in place.
+    const previous = old?.body ?? null;
+    if (old && text === previous) return null;
+    const author = meta.by === "user" ? REVIEW_USER : agentNameOf(meta);
+    const own =
+      !!old &&
+      (old.author === author ||
+        (meta.by === "agent" && !!meta.caller && old.author === meta.caller));
+    if (current && old && own && deps.reviews.editComment)
+      await deps.reviews.editComment({
+        sessionId: snapshot.session.id,
+        commentId: old.id,
+        author: old.author,
+        text,
+      });
+    else {
+      if (current?.anchor.work?.description) {
+        if (!deps.reviews.setAnchor)
+          throw new WorkError(
+            "the description cannot be replaced here",
+            "unavailable",
+          );
+        deps.reviews.setAnchor({
+          sessionId: snapshot.session.id,
+          threadId: current.id,
+          anchor: {
+            work: {
+              item: item.id,
+              ...(current.anchor.work.triage ? { triage: true } : {}),
+            },
+          },
+        });
+      }
+      await deps.reviews.addThread({
+        sessionId: snapshot.session.id,
+        author,
+        text,
+        anchor: { work: { item: item.id, description: true } },
+      });
+    }
+    return { text, previous, ticked };
+  }
+
+  /**
+   * The versions an item's description had before its current one, from
+   * the history, newest first: when each was replaced, by whom, its text.
+   */
+  function descriptionVersions(
+    item: WorkItem,
+  ): { replaced: string; by: "user" | "agent"; text: string }[] {
+    return store
+      .historyOf(item.id)
+      .filter((line) => typeof line.change.previous_description === "string")
+      .map((line) => ({
+        replaced: line.at,
+        by: line.by,
+        text: line.change.previous_description as string,
+      }))
+      .reverse();
   }
 
   /** The item is done: what landed, when known, is linked. */
@@ -1922,6 +2072,7 @@ export function createWorkService(deps: WorkServiceDeps) {
     remove,
     threads,
     comment,
+    descriptionVersions,
     /** An agent rewrites one of its comments on an item. */
     commentEdit: (params: Record<string, unknown>, meta: WorkMeta) =>
       commentEdit(params, meta, "edit"),

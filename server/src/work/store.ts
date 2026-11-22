@@ -417,6 +417,11 @@ function normalItem(raw: unknown): WorkItem | null {
     ...(raw.needsTriage === true ? { needsTriage: true as const } : {}),
     ...(ask ? { ask } : {}),
     ...(answers.length ? { answers } : {}),
+    ...(typeof raw.decisions === "number" &&
+    Number.isInteger(raw.decisions) &&
+    raw.decisions > 0
+      ? { decisions: raw.decisions }
+      : {}),
   };
 }
 
@@ -577,6 +582,27 @@ export function openWorkStore(directory: string) {
       save();
       if (change && Object.keys(change).length)
         history({ at: item.updatedAt, item: item.id, by: item.by, change });
+    },
+    /**
+     * The history's lines of an item, oldest first (the file read whole:
+     * for one item's versions, on demand).
+     */
+    historyOf(id: string): WorkHistoryLine[] {
+      let text: string;
+      try {
+        text = readFileSync(historyPath, "utf8");
+      } catch {
+        return [];
+      }
+      const out: WorkHistoryLine[] = [];
+      for (const line of text.split("\n")) {
+        if (!line.includes(id)) continue;
+        try {
+          const parsed = JSON.parse(line) as WorkHistoryLine;
+          if (parsed.item === id) out.push(parsed);
+        } catch {}
+      }
+      return out;
     },
     removeItem(id: string) {
       items = items.filter((i) => i.id !== id);

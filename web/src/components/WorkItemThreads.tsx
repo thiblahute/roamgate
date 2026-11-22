@@ -15,6 +15,7 @@ import {
   withPendingWrites,
   writeLanded,
 } from "../reviewPending";
+import { workDescriptionIsDocument } from "../../../shared/work";
 import { workCall } from "../work";
 import { reviewImageMarkdown } from "../workspaceFeedback";
 import {
@@ -373,8 +374,14 @@ export function WorkDescription({
   const message = thread.comments[0];
   if (!message) return null;
   const scope = workThreadsScope(api, item, thread, onLeave);
+  // A design doc: its lines are its source's wrapping, its headings and
+  // tables read as a document's.
+  const document = workDescriptionIsDocument(message.body);
   return (
-    <div className="work-description" aria-label="Description">
+    <div
+      className={`work-description${document ? " is-document" : ""}`}
+      aria-label="Description"
+    >
       <div className="chat-review" data-message-id={message.id}>
         <ThreadMessageBody
           scope={scope}
@@ -382,6 +389,7 @@ export function WorkDescription({
           message={message}
           single
           actions
+          breaks={!document}
         />
       </div>
     </div>

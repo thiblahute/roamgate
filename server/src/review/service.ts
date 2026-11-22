@@ -177,10 +177,20 @@ function optionalText(
   return text(value, field, max);
 }
 
-function body(value: unknown): string {
-  const result = text(value, "text", REVIEW_LIMITS.bodyChars);
+function body(value: unknown, max: number = REVIEW_LIMITS.bodyChars): string {
+  const result = text(value, "text", max);
   if (!result.trim()) throw new ReviewError("text is empty");
   return result;
+}
+
+/**
+ * The longest a comment may be: a work item's description (the first
+ * comment of its thread marked so) holds a whole design doc.
+ */
+function bodyLimit(anchor: ReviewAnchor, first: boolean): number {
+  return first && anchor.work?.description
+    ? REVIEW_LIMITS.descriptionChars
+    : REVIEW_LIMITS.bodyChars;
 }
 
 /** An effort's id, as the reviews inbox makes them. */
@@ -2588,6 +2598,22 @@ export function createReviewService(args: {
     return found;
   }
 
+  /**
+   * A thread's anchor replaced in its own review: a work item's old
+   * description, unmarked when another thread becomes its description.
+   */
+  function setThreadAnchor(params: Record<string, unknown>): ReviewThread {
+    const target = session(params.sessionId);
+    const thread = threadsOf(target.id).get(
+      text(params.threadId, "thread", 200),
+    );
+    if (!thread || thread.kind === "merge-request")
+      throw new ReviewError("no such thread", 404);
+    thread.anchor = parseAnchor(params.anchor);
+    saveThread(target, thread);
+    return thread;
+  }
+
   /** The pushes in flight, by merge request review. */
   const pushes = new Map<string, Promise<ReviewSnapshot>>();
 
@@ -2803,16 +2829,17 @@ export function createReviewService(args: {
     if (existing.size >= REVIEW_LIMITS.threadsPerSession)
       throw new ReviewError("too many comments in this review");
     const at = now();
+    const anchor = parseAnchor(params.anchor);
     const thread: ReviewThread = {
       id: threadId ?? newId(),
       sessionId: target.id,
       kind,
-      anchor: parseAnchor(params.anchor),
+      anchor,
       comments: [
         {
           id: newId(),
           author: author(params.author),
-          body: body(params.text),
+          body: body(params.text, bodyLimit(anchor, true)),
           createdAt: at,
           updatedAt: at,
         },
@@ -2980,7 +3007,10 @@ export function createReviewService(args: {
     const writer = author(params.author);
     if (writer !== REVIEW_USER && comment.author !== writer)
       throw new ReviewError("an agent can only edit its own comments", 403);
-    const next = body(params.text);
+    const next = body(
+      params.text,
+      bodyLimit(thread.anchor, thread.comments[0] === comment),
+    );
     if (next !== comment.body) {
       comment.body = next;
       comment.updatedAt = now();
@@ -4804,6 +4834,7 @@ export function createReviewService(args: {
     pushLocalDrafts,
     adoptThread,
     moveThread,
+    setThreadAnchor,
     requestAgentReview,
     agentSummary,
     /**
