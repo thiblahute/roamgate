@@ -17,6 +17,8 @@ const helper = {
   status: () => ({ available: true }),
   speechRate: () => 1.2,
   maxPauseMs: () => 8000,
+  runningProfile: () => null,
+  lowGpuReason: () => null,
 } as unknown as VoiceHelper;
 
 function post(body: unknown, headers: Record<string, string> = {}) {
