@@ -687,6 +687,41 @@ export function useWorkItemKeys({
     const next = cards[(at + direction + cards.length) % cards.length];
     if (next?.dataset.threadId) goToThread(next.dataset.threadId);
   };
+  /**
+   * The threads the header's previous and next walk, as drawn: the open
+   * ones while any is open, else every one; `at`, the one the cursor is
+   * in (-1: none).
+   */
+  const navCards = (): ThreadNavCards | null => {
+    const list = getList();
+    if (!list) return null;
+    const cards = Array.from(
+      list.querySelectorAll<HTMLElement>(
+        ".chat-thread[data-thread-id]:not(.is-draft)",
+      ),
+    ).filter((card) => threadsById.has(card.dataset.threadId ?? ""));
+    const open = cards.filter(
+      (card) => !threadsById.get(card.dataset.threadId ?? "")?.resolved,
+    );
+    const shown = open.length ? open : cards;
+    const here = list
+      .querySelector("[data-chat-stop].is-focused, .rc-part.is-focused")
+      ?.closest<HTMLElement>(".chat-thread[data-thread-id]");
+    return {
+      cards: shown,
+      open: open.length > 0,
+      at: here ? shown.indexOf(here) : -1,
+    };
+  };
+  /** The header's previous (-1) or next (1) thread: the cursor goes there. */
+  const stepThread = (direction: 1 | -1) => {
+    const nav = navCards();
+    if (!nav?.cards.length) return;
+    const count = nav.cards.length;
+    const at = nav.at >= 0 ? nav.at : direction === 1 ? -1 : 0;
+    const next = nav.cards[(at + direction + count) % count];
+    if (next?.dataset.threadId) goToThread(next.dataset.threadId);
+  };
   const draftOpen = () => {
     const draft = getList()?.querySelector<HTMLElement>(
       ".chat-thread.is-draft .cm-content",
@@ -741,7 +776,17 @@ export function useWorkItemKeys({
       return fallback(key);
     },
   });
+  return { navCards, stepThread };
 }
+
+/** What the header's thread stepper walks (useWorkItemKeys' navCards). */
+export type ThreadNavCards = {
+  cards: HTMLElement[];
+  /** Only the open threads: some are. */
+  open: boolean;
+  /** The one the cursor is in, -1 for none. */
+  at: number;
+};
 
 /** Whether a thread's last word is the user's (for the card's badge). */
 export function lastByUser(thread: ReviewThread): boolean {

@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Copy,
   FileDiff,
   FileText,
@@ -39,6 +40,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { createPortal } from "react-dom";
 import { parseAgentAddress } from "../../../shared/agentMessage";
 import type { ReviewThread } from "../../../shared/review";
 import {
@@ -557,8 +559,14 @@ export type WorkMode = {
   forYou: number;
   /** The head's second line: the scope and the counts. */
   meta: ReactNode;
-  /** The head's own buttons: add, read again. */
+  /**
+   * The head's own buttons: add, read again; on a phone, Back from an
+   * item, previous and next (cards, an item's threads) and add, read
+   * again going to the view's overflow menu (`reload`).
+   */
   actions: ReactNode;
+  /** Reads the board again (r, the phone's overflow menu). */
+  reload: () => void;
   /** The search box's value and setter (the view draws the box). */
   query: string;
   setQuery: (next: string) => void;
@@ -658,6 +666,8 @@ export function useWorkMode({
   const [compose, setCompose] = useState<"comment" | "reply" | null>(null);
   /** The detail's list, where its keys are (the chat threads' keys). */
   const detailListRef = useRef<HTMLDivElement>(null);
+  /** A phone's head: where an item's detail draws its threads' stepper. */
+  const [navSlot, setNavSlot] = useState<HTMLElement | null>(null);
   const [adding, setAddingState] = useState(!!initialAdd || !!restored?.adding);
   /** The add form started from a chat: its words, owner and link. */
   const [draft, setDraft] = useState<WorkAddDraft | null>(
@@ -1542,8 +1552,43 @@ export function useWorkMode({
       </span>
     </>
   );
+  /** The list's cards, in order: the one selected, of how many. */
+  const cardAt = selected ? orderedKeys.indexOf(selected) + 1 : 0;
+  const showsDetail = !!detailItem && !adding;
   const actions = (
     <>
+      {mobile && showsDetail ? (
+        <button
+          type="button"
+          className="assistant-icon-button work-head-back"
+          aria-label="Back to the list"
+          title="Back to the list (Esc)"
+          onClick={closeDetail}
+        >
+          <ChevronLeft size={16} />
+        </button>
+      ) : null}
+      {mobile && showsDetail ? (
+        // The item's threads: its detail draws their stepper here.
+        <span className="work-nav-slot" ref={setNavSlot} />
+      ) : mobile && !inner && orderedKeys.length ? (
+        <WorkNav
+          noun="card"
+          at={cardAt}
+          total={orderedKeys.length}
+          title={`${cardAt ? `${cardAt} of ` : ""}${orderedKeys.length} cards`}
+          onStep={(direction) =>
+            select(
+              nextRow(
+                board ? columnKeys : null,
+                orderedKeys,
+                selected,
+                direction,
+              ),
+            )
+          }
+        />
+      ) : null}
       <button
         type="button"
         className="assistant-icon-button"
@@ -1563,15 +1608,17 @@ export function useWorkMode({
           <span className="work-draft-dot" aria-hidden="true" />
         ) : null}
       </button>
-      <button
-        type="button"
-        className="assistant-icon-button"
-        aria-label="Read again (r)"
-        title="Read again (r)"
-        onClick={() => void reload()}
-      >
-        <RefreshCw size={16} />
-      </button>
+      {mobile ? null : (
+        <button
+          type="button"
+          className="assistant-icon-button"
+          aria-label="Read again (r)"
+          title="Read again (r)"
+          onClick={() => void reload()}
+        >
+          <RefreshCw size={16} />
+        </button>
+      )}
     </>
   );
 
@@ -1710,6 +1757,7 @@ export function useWorkMode({
           stateRef={stateRef}
           tagsRef={tagsRef}
           listRef={detailListRef}
+          {...(mobile ? { navSlot, headBack: true } : {})}
         />
       ) : (
         <>
@@ -1949,6 +1997,7 @@ export function useWorkMode({
     forYou: forYouAll,
     meta,
     actions,
+    reload: () => void reload(),
     query,
     setQuery,
     searchRef,
@@ -2610,6 +2659,53 @@ export function WorkSortStatus({
 }
 
 /**
+ * A phone's previous and next in the board's head, and where it is: the
+ * list's cards, or an item's threads ("3/12"; "-/12" before the first).
+ */
+function WorkNav({
+  noun,
+  at,
+  total,
+  title,
+  onStep,
+}: {
+  noun: string;
+  /** 1-based; 0: none yet. */
+  at: number;
+  total: number;
+  title: string;
+  onStep: (direction: 1 | -1) => void;
+}) {
+  return (
+    <span className="work-nav" role="group" aria-label={`${noun}s`}>
+      <button
+        type="button"
+        className="assistant-icon-button"
+        aria-label={`Previous ${noun}`}
+        title={`Previous ${noun}`}
+        disabled={!total}
+        onClick={() => onStep(-1)}
+      >
+        <ChevronUp size={16} />
+      </button>
+      <span className="work-nav-count" title={title}>
+        {at ? at : "-"}/{total}
+      </span>
+      <button
+        type="button"
+        className="assistant-icon-button"
+        aria-label={`Next ${noun}`}
+        title={`Next ${noun}`}
+        disabled={!total}
+        onClick={() => onStep(1)}
+      >
+        <ChevronDown size={16} />
+      </button>
+    </span>
+  );
+}
+
+/**
  * An item's detail in the view, as a request's: its title and state, its
  * description (its text when it was added), what one sets (state, tags),
  * its owner (and the agent's work), its project, links and dates, its
@@ -2640,6 +2736,8 @@ function WorkDetail({
   stateRef,
   tagsRef,
   listRef,
+  navSlot = null,
+  headBack = false,
 }: {
   item: WorkItem;
   project: string | null;
@@ -2671,6 +2769,12 @@ function WorkDetail({
   stateRef: RefObject<HTMLSelectElement | null>;
   tagsRef: RefObject<HTMLInputElement | null>;
   listRef: RefObject<HTMLDivElement | null>;
+  /**
+   * A phone's head: the previous and next thread buttons are drawn there
+   * (the threads' stepper), Back too (`headBack`: no Back row here).
+   */
+  navSlot?: HTMLElement | null;
+  headBack?: boolean;
 }) {
   const api = useWorkItemThreads(item.id);
   const description = useMemo(
@@ -2683,7 +2787,7 @@ function WorkDetail({
     () => listRef.current?.focus({ preventScroll: true }),
     [listRef],
   );
-  useWorkItemKeys({
+  const { navCards, stepThread } = useWorkItemKeys({
     api,
     description,
     getList: () => listRef.current,
@@ -2704,6 +2808,28 @@ function WorkDetail({
   useEffect(() => {
     listRef.current?.focus({ preventScroll: true });
   }, [listRef]);
+  /** The head's stepper: which thread the cursor is in, of how many. */
+  const [threadNav, setThreadNav] = useState({ at: 0, total: 0, open: false });
+  const navCardsRef = useRef(navCards);
+  navCardsRef.current = navCards;
+  // Read from the threads as drawn, each time the cursor or they change.
+  useLayoutEffect(() => {
+    if (!navSlot) return;
+    const nav = navCardsRef.current();
+    const next = {
+      at: nav ? nav.at + 1 : 0,
+      total: nav?.cards.length ?? 0,
+      open: !!nav?.open,
+    };
+    setThreadNav((current) =>
+      current.at === next.at &&
+      current.total === next.total &&
+      current.open === next.open
+        ? current
+        : next,
+    );
+  }, [navSlot, api.cursor, api.threads, api.flipped]);
+  const threadNoun = threadNav.open ? "open thread" : "comment";
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the keys' list
     <div
@@ -2712,11 +2838,25 @@ function WorkDetail({
       tabIndex={-1}
       ref={listRef}
     >
-      <div className="assistant-section-heading">
-        <button type="button" className="ghost" onClick={onBack}>
-          <ChevronLeft size={13} /> Back
-        </button>
-      </div>
+      {navSlot
+        ? createPortal(
+            <WorkNav
+              noun={threadNoun}
+              at={threadNav.at}
+              total={threadNav.total}
+              title={`${threadNav.at ? `${threadNav.at} of ` : ""}${threadNav.total} ${threadNoun}s${threadNav.open ? " (the resolved ones skipped)" : ""}`}
+              onStep={stepThread}
+            />,
+            navSlot,
+          )
+        : null}
+      {headBack ? null : (
+        <div className="assistant-section-heading">
+          <button type="button" className="ghost" onClick={onBack}>
+            <ChevronLeft size={13} /> Back
+          </button>
+        </div>
+      )}
       <section
         className="assistant-task-overview mr-reviews-detail work-detail"
         data-work-detail={item.id}

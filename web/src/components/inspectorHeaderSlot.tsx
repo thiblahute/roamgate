@@ -3,10 +3,12 @@ import {
   type ReactNode,
   type RefObject,
   useContext,
+  useEffect,
 } from "react";
 import { createPortal } from "react-dom";
 import { InspectorViewContext } from "../useInspectorCommands";
 import type { InspectorView } from "../workspaceResource";
+import type { ReviewMenuItem } from "./ReviewMenu";
 
 /**
  * The workspace inspector's header row has one slot for the view shown:
@@ -18,6 +20,14 @@ export type InspectorHeaderSlot = {
   target: HTMLElement | null;
   /** The view the inspector shows: only its controls fill the slot. */
   view: InspectorView;
+  /**
+   * A view's entries for the inspector's More menu (null: none): a
+   * phone's row has room for one menu, the inspector's.
+   */
+  setMoreItems?: (
+    view: InspectorView,
+    items: readonly ReviewMenuItem[] | null,
+  ) => void;
 };
 
 export const InspectorHeaderSlotContext =
@@ -85,4 +95,23 @@ export function InspectorHeaderControls({
     </div>,
     slot.target,
   );
+}
+
+/**
+ * A view's entries in the inspector's More menu, while `items` is given
+ * and the part is in the inspector: true when they went there (the part
+ * then leaves its own menu out). `items` should be memoized.
+ */
+export function useInspectorMoreItems(
+  items: readonly ReviewMenuItem[] | null,
+): boolean {
+  const slot = useContext(InspectorHeaderSlotContext);
+  const view = useContext(InspectorViewContext);
+  const set = slot?.setMoreItems;
+  useEffect(() => {
+    if (!set || !view || !items) return;
+    set(view, items);
+    return () => set(view, null);
+  }, [set, view, items]);
+  return !!(set && view && items);
 }

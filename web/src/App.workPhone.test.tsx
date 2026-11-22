@@ -3,8 +3,9 @@ import { expect, spyOn, test } from "bun:test";
 /**
  * The Work board on a phone, at the app level: More options has a Work
  * entry wearing the For you count, which opens the inspector on its Work
- * tab, the phone's screen, and closes the sheet; the inspector's close
- * returns to the page.
+ * tab, the phone's screen, and closes the sheet; the rail and its agent
+ * message box step aside while it shows; the inspector's close returns
+ * to the page.
  */
 if (process.env.ROAMGATE_APP_WORK_PHONE_TEST !== "1") {
   test("the Work board on a phone, in an isolated DOM runtime", async () => {
@@ -110,10 +111,17 @@ if (process.env.ROAMGATE_APP_WORK_PHONE_TEST !== "1") {
       expect(app.inspectorProps().visible).toBe(true);
       expect(app.inspectorProps().workForYou).toBe(2);
       expect(work().classList.contains("active")).toBe(true);
+      // No agent message box under the board: the rail (its composer)
+      // steps aside, still mounted, while Work shows.
+      const rail = () =>
+        app.container.querySelector<HTMLElement>(".mobile-bottom-bar")!;
+      expect(rail().hidden).toBe(true);
+      expect(rail().querySelector(".mobile-bottom-input")).not.toBeNull();
       // The inspector's close: the board goes, the page stays.
       await React.act(async () => app.inspectorProps().onClose());
       await app.settle(50);
       expect(app.inspector()?.open).toBe(false);
+      expect(rail().hidden).toBe(false);
       expect(more()).not.toBeNull();
 
       // A push changes the count on the entry.

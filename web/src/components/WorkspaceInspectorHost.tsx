@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   ClipboardList,
   Ellipsis,
   FileDiff,
@@ -138,7 +139,7 @@ import {
   writeWorkspaceReviews,
 } from "../reviewPins";
 import type { ReviewActivity } from "../../../shared/review";
-import { ReviewMenu } from "./ReviewMenu";
+import { ReviewMenu, type ReviewMenuItem } from "./ReviewMenu";
 import {
   InspectorHeaderControls,
   InspectorHeaderSlotContext,
@@ -1304,6 +1305,8 @@ export function WorkspaceInspectorHost({
     tabRefs[nextView].current?.focus();
   };
 
+  /** A phone's view switcher (its tabs' place): the focus goes back there. */
+  const viewSwitcherRef = useRef<HTMLDivElement>(null);
   const tabRefs = {
     files: filesTabRef,
     changes: changesTabRef,
@@ -1323,7 +1326,10 @@ export function WorkspaceInspectorHost({
    */
   const commandFrame = useInspectorCommandFrame({
     view: state.view,
-    back: () => tabRefs[state.view].current,
+    back: () =>
+      tabRefs[state.view].current ??
+      viewSwitcherRef.current?.querySelector<HTMLElement>("button") ??
+      null,
     commands: (openShortcuts) => [
       {
         name: "view",
@@ -1488,9 +1494,23 @@ export function WorkspaceInspectorHost({
   const [headerSlotTarget, setHeaderSlotTarget] = useState<HTMLElement | null>(
     null,
   );
+  /** The views' own entries for More (a phone's Work: Read again, Keys). */
+  const [viewMoreItems, setViewMoreItems] = useState<
+    Partial<Record<InspectorView, readonly ReviewMenuItem[]>>
+  >({});
+  const setMoreItems = useCallback(
+    (view: InspectorView, items: readonly ReviewMenuItem[] | null) =>
+      setViewMoreItems((current) => {
+        const next = { ...current };
+        if (items) next[view] = items;
+        else delete next[view];
+        return next;
+      }),
+    [],
+  );
   const headerSlot = useMemo(
-    () => ({ target: headerSlotTarget, view: state.view }),
-    [headerSlotTarget, state.view],
+    () => ({ target: headerSlotTarget, view: state.view, setMoreItems }),
+    [headerSlotTarget, state.view, setMoreItems],
   );
 
   const body = (
@@ -1527,63 +1547,119 @@ export function WorkspaceInspectorHost({
               </span>
             ) : null}
           </div>
-          <div
-            className="workspace-inspector-tabs"
-            role="tablist"
-            // A tab picked, or focused by a shortcut (gt, the inspector's
-            // own) or a command (:view): the keys go on to its view.
-            onFocus={arriveInView}
-          >
-            {INSPECTOR_VIEW_NAMES.map((view) => {
-              const tab = VIEW_TABS[view];
-              const Icon = tab.icon;
-              const unavailable =
-                view === "history" && !historyAvailable && state.view !== view;
-              const badge =
-                view === "changes"
-                  ? changeCount
-                  : view === "work"
-                    ? workForYou
-                    : 0;
-              return (
-                <button
-                  key={view}
-                  ref={tabRefs[view]}
-                  type="button"
-                  role="tab"
-                  aria-selected={state.view === view}
-                  tabIndex={state.view === view ? 0 : -1}
-                  className={state.view === view ? "is-active" : ""}
-                  title={
-                    view === "history"
-                      ? historyAvailable
-                        ? "Agent history"
-                        : "Select an active agent pane to view history"
-                      : tab.shortcut
-                        ? shortcutTitle(tab.label, tab.shortcut)
-                        : tab.label
-                  }
-                  {...(view === "work" && badge
-                    ? { "aria-description": `${badge} for you` }
-                    : {})}
-                  disabled={unavailable}
-                  onClick={() => {
-                    if (view !== "history" || historyAvailable)
-                      onViewChange(view);
-                  }}
-                  onKeyDown={handleTabKeyDown}
-                >
-                  <Icon size={14} aria-hidden="true" />
-                  <span className="workspace-inspector-tab-label">
-                    {tab.label}
-                  </span>
-                  {badge > 0 ? (
-                    <span className="workspace-inspector-count">{badge}</span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
+          {mobile ? (
+            // A phone: the views behind one button (the view shown, its
+            // icon and name), the row left to the view's own controls.
+            <div className="workspace-inspector-views" ref={viewSwitcherRef}>
+              <ReviewMenu
+                className="workspace-inspector-view-menu"
+                title={`${VIEW_TABS[state.view].label}: switch views`}
+                buttonLabel={`Views: ${VIEW_TABS[state.view].label}`}
+                label={(() => {
+                  const Icon = VIEW_TABS[state.view].icon;
+                  const elsewhere = state.view !== "work" && workForYou > 0;
+                  return (
+                    <>
+                      <Icon size={15} aria-hidden="true" />
+                      <span className="workspace-inspector-tab-label">
+                        {VIEW_TABS[state.view].label}
+                      </span>
+                      <ChevronDown size={12} aria-hidden="true" />
+                      {elsewhere ? (
+                        <span
+                          className="workspace-inspector-views-dot"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                    </>
+                  );
+                })()}
+                items={INSPECTOR_VIEW_NAMES.map((view) => {
+                  const tab = VIEW_TABS[view];
+                  const Icon = tab.icon;
+                  const count =
+                    view === "changes"
+                      ? changeCount
+                      : view === "work"
+                        ? workForYou
+                        : 0;
+                  return {
+                    label: tab.label,
+                    icon: <Icon size={15} />,
+                    checked: state.view === view,
+                    ...(count ? { count } : {}),
+                    ...(view === "history" && !historyAvailable
+                      ? {
+                          disabled: state.view !== view,
+                          title: "Select an active agent pane to view history",
+                        }
+                      : {}),
+                    onSelect: () => onViewChange(view),
+                  };
+                })}
+              />
+            </div>
+          ) : (
+            <div
+              className="workspace-inspector-tabs"
+              role="tablist"
+              // A tab picked, or focused by a shortcut (gt, the inspector's
+              // own) or a command (:view): the keys go on to its view.
+              onFocus={arriveInView}
+            >
+              {INSPECTOR_VIEW_NAMES.map((view) => {
+                const tab = VIEW_TABS[view];
+                const Icon = tab.icon;
+                const unavailable =
+                  view === "history" &&
+                  !historyAvailable &&
+                  state.view !== view;
+                const badge =
+                  view === "changes"
+                    ? changeCount
+                    : view === "work"
+                      ? workForYou
+                      : 0;
+                return (
+                  <button
+                    key={view}
+                    ref={tabRefs[view]}
+                    type="button"
+                    role="tab"
+                    aria-selected={state.view === view}
+                    tabIndex={state.view === view ? 0 : -1}
+                    className={state.view === view ? "is-active" : ""}
+                    title={
+                      view === "history"
+                        ? historyAvailable
+                          ? "Agent history"
+                          : "Select an active agent pane to view history"
+                        : tab.shortcut
+                          ? shortcutTitle(tab.label, tab.shortcut)
+                          : tab.label
+                    }
+                    {...(view === "work" && badge
+                      ? { "aria-description": `${badge} for you` }
+                      : {})}
+                    disabled={unavailable}
+                    onClick={() => {
+                      if (view !== "history" || historyAvailable)
+                        onViewChange(view);
+                    }}
+                    onKeyDown={handleTabKeyDown}
+                  >
+                    <Icon size={14} aria-hidden="true" />
+                    <span className="workspace-inspector-tab-label">
+                      {tab.label}
+                    </span>
+                    {badge > 0 ? (
+                      <span className="workspace-inspector-count">{badge}</span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div
             ref={setHeaderSlotTarget}
             className="workspace-inspector-view-controls"
@@ -1616,6 +1692,7 @@ export function WorkspaceInspectorHost({
               }${checkout})`}
               label={<Ellipsis size={15} aria-label="More" />}
               items={[
+                ...(viewMoreItems[state.view] ?? []),
                 {
                   label:
                     state.dock === "right" ? "Dock at bottom" : "Dock at right",

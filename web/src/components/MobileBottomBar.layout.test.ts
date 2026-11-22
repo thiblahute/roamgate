@@ -250,7 +250,7 @@ test("a chat box holding a draft keeps the writing layout when the focus is else
   );
 });
 
-test("the review on a phone takes the rail's room: hidden, still mounted, only while Changes shows", async () => {
+test("the review and the Work board on a phone take the rail's room: hidden, still mounted, only while Changes or Work shows", async () => {
   const { mobileBottomBarHidden } = await import("./MobileBottomBar");
   const changes = { open: true, view: "changes" };
   expect(mobileBottomBarHidden("changes", changes)).toBe(true);
@@ -263,6 +263,16 @@ test("the review on a phone takes the rail's room: hidden, still mounted, only w
     mobileBottomBarHidden("changes", { open: false, view: "changes" }),
   ).toBe(false);
   expect(mobileBottomBarHidden("changes", null)).toBe(false);
+  // The Work board too: no agent message box under an item's comments.
+  expect(mobileBottomBarHidden("work", { open: true, view: "work" })).toBe(
+    true,
+  );
+  expect(mobileBottomBarHidden("work", { open: false, view: "work" })).toBe(
+    false,
+  );
+  expect(
+    mobileBottomBarHidden("reviews", { open: true, view: "reviews" }),
+  ).toBe(false);
   // The hidden attribute wins over the phone's display: block.
   expect(rule(nav, ".mobile-bottom-bar[hidden]")).toContain("display: none;");
 });

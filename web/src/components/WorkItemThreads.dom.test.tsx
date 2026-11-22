@@ -105,6 +105,8 @@ if (
   );
   const sends: Record<string, unknown>[] = [];
   const fallbacks: string[] = [];
+  /** The detail's thread stepper (a phone's header previous / next). */
+  let stepper: ReturnType<typeof useWorkItemKeys> | null = null;
   const data = {
     snapshot: undefined,
     threads: [description, parent, nested, onDescription],
@@ -126,7 +128,7 @@ if (
     const api = { ...data, ...view } as Api;
     const listRef = useRef<HTMLDivElement>(null);
     const leave = () => listRef.current?.focus();
-    useWorkItemKeys({
+    stepper = useWorkItemKeys({
       api,
       description,
       getList: () => listRef.current,
@@ -936,5 +938,48 @@ if (
       await wait(30);
     });
     expect(pendingOpenAt()?.thread).toBe("f000000000000009");
+  });
+
+  test("the header's previous / next walk the threads as drawn with the thread cursor, the open ones only while some are; navCards says where", async () => {
+    const order = [
+      ...host.querySelectorAll<HTMLElement>(
+        ".chat-thread[data-thread-id]:not(.is-draft)",
+      ),
+    ].map((each) => each.dataset.threadId);
+    expect(order.length).toBeGreaterThan(1);
+    // Before any: next goes to the first, previous wraps to the last.
+    await act(async () => {
+      host
+        .querySelector<HTMLElement>(".is-focused")
+        ?.classList.remove("is-focused");
+    });
+    const here = () =>
+      host
+        .querySelector("[data-chat-stop].is-focused, .rc-part.is-focused")
+        ?.closest<HTMLElement>(".chat-thread[data-thread-id]")?.dataset
+        .threadId;
+    for (let step = 0; step < order.length; step++) {
+      await act(async () => {
+        stepper!.stepThread(1);
+        await wait(10);
+      });
+      expect(here()).toBe(order[step]);
+      const nav = stepper!.navCards()!;
+      expect(nav.open).toBe(true);
+      expect(nav.cards.length).toBe(order.length);
+      expect(nav.at).toBe(step);
+    }
+    // Past the last: back to the first; previous from there: the last.
+    await act(async () => {
+      stepper!.stepThread(1);
+      await wait(10);
+    });
+    expect(here()).toBe(order[0]);
+    await act(async () => {
+      stepper!.stepThread(-1);
+      await wait(10);
+    });
+    expect(here()).toBe(order[order.length - 1]);
+    expect(document.activeElement).toBe(list());
   });
 }

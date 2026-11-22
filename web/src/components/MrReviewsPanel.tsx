@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  EllipsisVertical,
   EyeOff,
   ExternalLink,
   GripVertical,
@@ -136,7 +137,11 @@ import {
 import "./AssistantPanel.css";
 import "./AssistantTasks.css";
 import "./AgentTasksSheet.css";
-import { InspectorHeaderControls } from "./inspectorHeaderSlot";
+import {
+  InspectorHeaderControls,
+  useInspectorMoreItems,
+} from "./inspectorHeaderSlot";
+import { ReviewMenu } from "./ReviewMenu";
 import "./MrReviewsPanel.css";
 
 /**
@@ -2002,6 +2007,29 @@ export function MrReviewsPanel({
     useMemo(() => entries.map((entry) => entry.key), [entries]),
   );
   const [helpOpen, setHelpOpen] = useState(false);
+  /** A phone's Work head: Read again and Keys behind one More menu. */
+  const reloadWork = useRef(work.reload);
+  reloadWork.current = work.reload;
+  const workMore = useMemo(
+    () =>
+      mobile && mode === "work"
+        ? [
+            {
+              label: "Read again",
+              hint: "r",
+              onSelect: () => reloadWork.current(),
+            },
+            {
+              label: "Keys",
+              hint: "?",
+              checked: helpOpen,
+              onSelect: () => setHelpOpen((open) => !open),
+            },
+          ]
+        : null,
+    [mobile, mode, helpOpen],
+  );
+  const moreInInspector = useInspectorMoreItems(workMore);
   const helpOpenRef = useRef(helpOpen);
   helpOpenRef.current = helpOpen;
   const [orderError, setOrderError] = useState<string | null>(null);
@@ -3713,16 +3741,29 @@ export function MrReviewsPanel({
             </button>
           </>
         )}
-        <button
-          type="button"
-          className="assistant-icon-button"
-          aria-label="Keys (?)"
-          title="Keys (?)"
-          aria-pressed={helpOpen}
-          onClick={() => setHelpOpen((open) => !open)}
-        >
-          <Keyboard size={16} />
-        </button>
+        {workMore ? (
+          // A phone's head keeps its room for add and previous/next: the
+          // rest is behind one button, the inspector's More when in it.
+          moreInInspector ? null : (
+            <ReviewMenu
+              className="work-head-more"
+              title="More: read again, keys"
+              label={<EllipsisVertical size={16} aria-label="More" />}
+              items={workMore}
+            />
+          )
+        ) : (
+          <button
+            type="button"
+            className="assistant-icon-button"
+            aria-label="Keys (?)"
+            title="Keys (?)"
+            aria-pressed={helpOpen}
+            onClick={() => setHelpOpen((open) => !open)}
+          >
+            <Keyboard size={16} />
+          </button>
+        )}
         {mode === "mr" ? (
           <button
             type="button"

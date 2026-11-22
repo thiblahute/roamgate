@@ -3,19 +3,23 @@ import { useEffect, type ReactNode, type Ref } from "react";
 import { focusIfUnchanged } from "./dialogFocus";
 import { blurActiveInput } from "../activeTerminalInput";
 
+/** The inspector's views that fill a phone's screen, rail and all. */
+const FULL_SCREEN_VIEWS: ReadonlySet<string> = new Set(["changes", "work"]);
+
 /**
  * Whether the phone's rail gives its room to the view shown: the review
- * (Changes, always the review) fills the screen, with its own comment
- * boxes and its own way back (its Back, its X, the system Back).
+ * (Changes, always the review) and the Work board fill the screen, with
+ * their own comment boxes and their own way back (Back, X, the system
+ * Back); the rail's agent message box has nothing to do with them.
  */
 export function mobileBottomBarHidden(
   mobileView: string,
   inspector: { open: boolean; view: string } | null | undefined,
 ): boolean {
   return (
-    mobileView === "changes" &&
+    FULL_SCREEN_VIEWS.has(mobileView) &&
     inspector?.open === true &&
-    inspector.view === "changes"
+    inspector.view === mobileView
   );
 }
 

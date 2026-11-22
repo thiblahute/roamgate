@@ -373,6 +373,15 @@ if (
   ) {
     const header = document.createElement("header");
     if (props.inHeader) document.body.append(header);
+    /** The entries the board gives the inspector's More menu. */
+    let moreItems: readonly { label: string; onSelect: () => void }[] | null =
+      null;
+    const setMoreItems = (
+      _view: string,
+      items: readonly { label: string; onSelect: () => void }[] | null,
+    ) => {
+      moreItems = items;
+    };
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -401,7 +410,7 @@ if (
       props.inHeader ? (
         <InspectorViewContext.Provider value="work">
           <InspectorHeaderSlotContext.Provider
-            value={{ target: header, view: "work" }}
+            value={{ target: header, view: "work", setMoreItems }}
           >
             {panel}
           </InspectorHeaderSlotContext.Provider>
@@ -491,6 +500,7 @@ if (
       closed: () => closed,
       closes,
       pushBoard,
+      moreItems: () => moreItems,
       async unmount() {
         await act(async () => root.unmount());
         container.remove();
@@ -2263,6 +2273,63 @@ if (
     } finally {
       await view.unmount();
       sessionStorage.clear();
+    }
+  });
+
+  test("on a phone the head holds Back, previous / next with where it is (cards, an item's comments) and add; Read again and Keys go to the inspector's More", async () => {
+    const { updateLayoutPreferences } = await import("../layoutPreferences");
+    await act(async () => updateLayoutPreferences({ mode: "mobile" }));
+    const view = await mount({ inHeader: true });
+    try {
+      const button = (label: string) =>
+        view.header.querySelector<HTMLButtonElement>(
+          `button[aria-label="${label}"]`,
+        );
+      const count = () =>
+        view.header.querySelector(".work-nav-count")?.textContent;
+      expect(button("Add an item (a)")).not.toBeNull();
+      expect(button("Previous card")).not.toBeNull();
+      expect(button("Next card")).not.toBeNull();
+      // No Read again nor Keys in the row: in More, through the slot.
+      expect(button("Read again (r)")).toBeNull();
+      expect(button("Keys (?)")).toBeNull();
+      expect(view.header.querySelector(".work-head-more")).toBeNull();
+      expect(view.moreItems()?.map((item) => item.label)).toEqual([
+        "Read again",
+        "Keys",
+      ]);
+      const total = view.cards().length;
+      expect(total).toBeGreaterThan(1);
+      // Next walks the cards, the counter says which.
+      await view.click(button("Next card"));
+      const first = view.selected();
+      expect(first).not.toBeNull();
+      const at = view.cards().indexOf(first!) + 1;
+      expect(count()).toBe(`${at}/${total}`);
+      await view.click(button("Next card"));
+      expect(view.selected()).not.toBe(first);
+      await view.click(button("Previous card"));
+      expect(view.selected()).toBe(first);
+      // An item: Back and its comments' previous / next in the head, no
+      // Back row in the detail.
+      await view.key("Enter");
+      expect(view.panel.querySelector(".work-detail")).not.toBeNull();
+      expect(button("Back to the list")).not.toBeNull();
+      expect(button("Next card")).toBeNull();
+      expect(
+        button("Next comment") ?? button("Next open thread"),
+      ).not.toBeNull();
+      expect(
+        view.panel.querySelector(
+          ".work-detail-keys > .assistant-section-heading",
+        ),
+      ).toBeNull();
+      await view.click(button("Back to the list"));
+      expect(view.panel.querySelector(".work-detail")).toBeNull();
+      expect(button("Next card")).not.toBeNull();
+    } finally {
+      await view.unmount();
+      await act(async () => updateLayoutPreferences({ mode: "auto" }));
     }
   });
 }

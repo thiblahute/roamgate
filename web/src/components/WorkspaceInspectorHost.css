@@ -568,19 +568,40 @@
     display: none;
   }
 
-  /* The tabs on a phone: one row of icons that scrolls sideways, the
-     view shown marked; the bottom nav keeps its own ways in. The view's
-     controls follow them on the same row, scrolling too. */
-  .workspace-inspector-tabs {
-    overflow-x: auto;
-    scrollbar-width: none;
+  /* The views on a phone: one button, the view shown (its icon), that
+     opens the list of views; the row is the view's controls'. */
+  .workspace-inspector-views {
+    position: relative;
+    flex: none;
+    display: inline-flex;
   }
-  .workspace-inspector-tabs button {
-    flex: 0 0 auto;
-    min-height: 36px;
+  .workspace-inspector-views .rv-menu-button {
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 6px;
+    border: 1px solid var(--viewer-border);
+    border-radius: 8px;
+    background: var(--viewer-content-bg);
+    color: var(--text-strong);
   }
-  .workspace-inspector-tabs button .workspace-inspector-tab-label {
+  .workspace-inspector-views .workspace-inspector-tab-label {
     display: none;
+  }
+  .workspace-inspector-views-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  /* Its one row, close to its controls: the screen is the view's. */
+  .workspace-inspector.is-compact .workspace-inspector-head {
+    min-height: 0;
+    padding: 2px 4px;
   }
   .workspace-inspector-view-controls .inspector-view-head :is(button, select) {
     min-height: 32px;

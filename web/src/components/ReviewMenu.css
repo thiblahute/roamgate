@@ -60,6 +60,21 @@
   flex: 1;
 }
 
+.rv-menu-icon {
+  display: inline-flex;
+  color: var(--rv-faint, var(--muted));
+}
+
+.rv-menu-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  font-size: 11px;
+  text-align: center;
+}
+
 .rv-menu kbd {
   color: var(--rv-faint, var(--muted));
   font-size: 11px;

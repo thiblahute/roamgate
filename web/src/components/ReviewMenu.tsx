@@ -13,6 +13,10 @@ export type ReviewMenuItem = {
   title?: string;
   checked?: boolean;
   disabled?: boolean;
+  /** Drawn before its label (a view's icon). */
+  icon?: ReactNode;
+  /** A count after its label (a view's badge). */
+  count?: number;
   onSelect: () => void;
 };
 
@@ -27,11 +31,14 @@ export function ReviewMenu({
   label,
   title,
   className = "",
+  buttonLabel,
   items,
 }: {
   label: ReactNode;
   title: string;
   className?: string;
+  /** The button's accessible name, when its content is not one. */
+  buttonLabel?: string;
   items: readonly (ReviewMenuItem | null | false)[];
 }) {
   const [open, setOpen] = useState(false);
@@ -68,6 +75,7 @@ export function ReviewMenu({
             type="button"
             className={`btn ghost rv-sm rv-menu-button${open ? " on" : ""}`}
             aria-haspopup="menu"
+            {...(buttonLabel ? { "aria-label": buttonLabel } : {})}
             title={title}
           >
             {label}
@@ -141,7 +149,15 @@ export function ReviewMenu({
               <span className="rv-menu-check" aria-hidden="true">
                 {item.checked ? "✓" : ""}
               </span>
+              {item.icon ? (
+                <span className="rv-menu-icon" aria-hidden="true">
+                  {item.icon}
+                </span>
+              ) : null}
               <span className="rv-menu-label">{item.label}</span>
+              {item.count ? (
+                <span className="rv-menu-count">{item.count}</span>
+              ) : null}
               {item.hint ? <kbd>{item.hint}</kbd> : null}
             </button>
           ))}

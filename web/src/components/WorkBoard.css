@@ -770,3 +770,38 @@ button.work-link-open:focus-visible {
   padding: 8px 10px;
   font-size: 14px;
 }
+
+/*
+ * A phone's board head: Back from an item, previous and next with where
+ * the cursor is (the list's cards, an item's threads), then add.
+ */
+.work-nav,
+.work-nav-slot {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.work-nav-count {
+  min-width: 3ch;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* A phone's board fills the screen: thin margins, the item's frame
+   flattened, the room the description's and the comments'. */
+.assistant-panel.is-mobile.is-work .mr-reviews-body.is-work {
+  padding: 4px 4px 8px;
+}
+
+.assistant-panel.is-mobile .work-detail.mr-reviews-detail {
+  padding: 8px 6px;
+  border-width: 0;
+  border-radius: 0;
+}
+
+.assistant-panel.is-mobile .work-description.is-document {
+  padding: 6px 6px;
+}

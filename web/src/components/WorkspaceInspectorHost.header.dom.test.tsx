@@ -282,7 +282,7 @@ if (
     }
   });
 
-  test("on a phone the header is still one row: the tabs as icons, the view's controls and the inspector's More and Close, no Expand", async () => {
+  test("on a phone the header is still one row: the views behind one button (the view shown) whose menu switches them, the view's controls, the inspector's More (with the view's entries) and Close, no Expand", async () => {
     await act(async () => updateLayoutPreferences({ mode: "mobile" }));
     const inspector = await mountInspector("work", 390);
     try {
@@ -293,12 +293,26 @@ if (
         inspector.host.querySelectorAll(".workspace-inspector-head"),
       ).toHaveLength(1);
       const head = inspector.head();
-      expect(head.querySelectorAll("[role=tab]")).toHaveLength(6);
-      // Every tab has its icon and its name (shown or in its tooltip).
-      for (const each of head.querySelectorAll<HTMLElement>("[role=tab]")) {
-        expect(each.querySelector("svg")).not.toBeNull();
-        expect(each.title).toBeTruthy();
-      }
+      // No row of tabs: one button, the view shown, opens the views.
+      expect(head.querySelectorAll("[role=tab]")).toHaveLength(0);
+      expect([...head.children].map((each) => each.className)).toEqual([
+        "workspace-inspector-identity",
+        "workspace-inspector-views",
+        "workspace-inspector-view-controls",
+        "workspace-inspector-actions",
+      ]);
+      const views = () =>
+        head.querySelector<HTMLButtonElement>(
+          ".workspace-inspector-views button",
+        )!;
+      expect(views().getAttribute("aria-label")).toBe("Views: Work");
+      expect(views().getAttribute("aria-haspopup")).toBe("menu");
+      expect(views().querySelector("svg")).not.toBeNull();
+      expect(
+        views()
+          .closest<HTMLElement>("[data-menu-items]")
+          ?.dataset.menuItems?.split("\n"),
+      ).toEqual(Object.values(LABELS));
       expect(
         inspector.slot().querySelector("[data-view-head='work'] button")
           ?.textContent,
@@ -308,9 +322,29 @@ if (
       expect(
         head.querySelector('[aria-label="Close Workspace Inspector"]'),
       ).not.toBeNull();
-      // Another view: its controls take the row's slot.
-      await act(async () => inspector.tab("Changes").click());
+      // The views' menu: the one shown checked; another picked shows.
+      await act(async () => {
+        views().dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+        );
+        views().click();
+      });
+      const items = () => [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          ".rv-menu [role^='menuitem']",
+        ),
+      ];
+      expect(
+        items().find((each) => each.getAttribute("aria-checked") === "true")
+          ?.textContent,
+      ).toContain("Work");
+      await act(async () =>
+        items()
+          .find((each) => each.textContent?.includes("Changes"))!
+          .click(),
+      );
       await inspector.settle();
+      expect(views().getAttribute("aria-label")).toBe("Views: Changes");
       expect(
         [
           ...inspector
