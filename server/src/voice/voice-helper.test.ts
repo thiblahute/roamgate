@@ -1058,6 +1058,26 @@ describe("helper launch", () => {
     ).toEqual(["/opt/bin/gpu-lease", "--name=voice", "--", ...own]);
   });
 
+  test("Kokoro's ONNX model comes beside tts_models, for Kokoro's sentences", () => {
+    const models = [
+      { model: "qwen3-tts", path: "q" },
+      { model: "kokoro", path: "k" },
+    ];
+    const tts = ["--tts-models", JSON.stringify(models)];
+    const onnx = [
+      "--kokoro-model",
+      "kokoro.onnx",
+      "--kokoro-voices",
+      "voices.bin",
+    ];
+    const args = (config: VoiceConfig) => helperCommand(config).slice(3);
+    expect(args({ ...CONFIG, tts_models: models })).toEqual([...tts, ...onnx]);
+    // Without its voices, only any-tts reads.
+    expect(
+      args({ ...CONFIG, tts_models: models, kokoro_voices: undefined }),
+    ).toEqual(tts);
+  });
+
   test.skipIf(process.platform === "win32")(
     "frames go through a wrapper, which ends with the helper's input",
     async () => {

@@ -909,6 +909,13 @@ of its stock speakers (`"speaker"` or the element's `"voice"`, such as
 Base model and a voice saved with any-tts). A model that fails to load is
 left out.
 
+With `kokoro_model` and `kokoro_voices` too, a sentence only Kokoro reads
+(Kokoro's entries alone, as when a sentence another model failed is said
+again with Kokoro) is read by Kokoro's ONNX model on the CPU rather than
+any-tts's Kokoro: its phonemes come from espeak-ng, as Kokoro was trained
+with, where any-tts's own rules mangle French. any-tts's Kokoro still reads
+it when the ONNX model fails to load.
+
 The stock speakers are listed and chosen from the Speech section of
 Configuration next to the cloned voices and Kokoro, when a Qwen3-TTS
 CustomVoice model is found: `"stock_model"`, else the first Qwen3-TTS model

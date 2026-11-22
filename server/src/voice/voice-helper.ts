@@ -62,7 +62,12 @@ export type VoiceConfig = {
   whisper_model?: string;
   /** The Parakeet TDT ONNX directory (voice/helper/src/parakeet.rs). */
   parakeet_model?: string;
-  /** Kokoro's ONNX model and voices; needed without `tts_models`. */
+  /**
+   * Kokoro's ONNX model and voices; needed without `tts_models`. With them,
+   * a sentence only Kokoro reads (its entries alone, such as a sentence
+   * said again after another model failed) is read by this one: its
+   * phonemes are espeak-ng's, where any-tts's Kokoro mangles French.
+   */
   kokoro_model?: string;
   kokoro_voices?: string;
   /**
@@ -852,12 +857,17 @@ export function helperCommand(config: VoiceConfig): string[] {
     ...transcriberArgs(config),
     ...(config.tts_models
       ? ["--tts-models", JSON.stringify(helperTtsModels(config))]
-      : [
+      : []),
+    // Beside tts_models, it reads the sentences only Kokoro reads.
+    ...(!config.tts_models ||
+    (config.kokoro_model !== undefined && config.kokoro_voices !== undefined)
+      ? [
           "--kokoro-model",
           config.kokoro_model ?? "",
           "--kokoro-voices",
           config.kokoro_voices ?? "",
-        ]),
+        ]
+      : []),
     ...(config.speaker_model ? ["--speaker-model", config.speaker_model] : []),
     ...(config.speaker_model && config.drop_other_voices === true
       ? ["--drop-other-voices"]

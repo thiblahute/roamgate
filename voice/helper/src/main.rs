@@ -417,6 +417,87 @@ fn tts_models(json: &str) -> Result<gst::Array, String> {
     Ok(gst::Array::new(models))
 }
 
+/// Kokoro's ONNX speaker beside any-tts's (`--kokoro-model` with
+/// `--tts-models`), loaded in its own thread until a sentence needs it.
+enum OnnxKokoro {
+    Loading(std::thread::JoinHandle<Result<Speaker, String>>),
+    Loaded(Result<Speaker, String>),
+}
+
+impl OnnxKokoro {
+    /// Starts loading it, when `config` has both.
+    fn new(config: &Config) -> Option<Self> {
+        config.tts_models.as_ref()?;
+        let model = config.kokoro_model.clone()?;
+        let voices = config.kokoro_voices.clone();
+        Some(Self::Loading(std::thread::spawn(move || {
+            let speaker = Speaker::kokoro(&model, voices.as_deref());
+            if let Err(err) = &speaker {
+                eprintln!("[voice] Kokoro's ONNX model failed to load: {err}");
+            }
+            speaker
+        })))
+    }
+
+    /// The speaker, once loaded; None when it failed to.
+    fn speaker(&mut self) -> Option<&Speaker> {
+        if let Self::Loading(_) = self {
+            let Self::Loading(thread) = std::mem::replace(self, Self::Loaded(Err(String::new())))
+            else {
+                unreachable!()
+            };
+            *self = Self::Loaded(
+                thread
+                    .join()
+                    .unwrap_or_else(|_| Err("Kokoro's ONNX model failed to load".into())),
+            );
+        }
+        match self {
+            Self::Loaded(speaker) => speaker.as_ref().ok(),
+            Self::Loading(_) => unreachable!(),
+        }
+    }
+}
+
+/// What a `--tts-models` JSON asks of Kokoro, when Kokoro alone reads in
+/// it: its first entry's voice and speed.
+#[derive(Debug, PartialEq)]
+struct KokoroWanted {
+    voice: Option<String>,
+    speed: Option<f64>,
+}
+
+/// The fields of an any-tts Kokoro entry that Kokoro's ONNX speaker reads
+/// the same: a voice made from a recording (`voice_embedding`...) is
+/// any-tts's alone.
+const KOKORO_ONNX_FIELDS: &[&str] = &["model", "path", "voice", "speed", "device", "languages"];
+
+/// Whether the models of `json` (`--tts-models`' JSON) are only Kokoro
+/// entries Kokoro's ONNX speaker can read in their place, and with what.
+/// any-tts's Kokoro turns text into phonemes with its own rules, which
+/// mangle French (speech to text heard "je reviens vers toi dans cinq
+/// minutes" as "j'ai revis envers toi dans cinq maitais"); the ONNX
+/// speaker's are espeak-ng's, as Kokoro was trained with.
+fn kokoro_only(json: &str) -> Option<KokoroWanted> {
+    let models: Vec<serde_json::Map<String, Value>> = serde_json::from_str(json).ok()?;
+    let onnx_reads = |entry: &serde_json::Map<String, Value>| {
+        entry.get("model").and_then(Value::as_str) == Some("kokoro")
+            && entry
+                .keys()
+                .all(|field| KOKORO_ONNX_FIELDS.contains(&field.as_str()))
+    };
+    if models.is_empty() || !models.iter().all(onnx_reads) {
+        return None;
+    }
+    Some(KokoroWanted {
+        voice: models[0]
+            .get("voice")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        speed: models[0].get("speed").and_then(Value::as_f64),
+    })
+}
+
 /// Where frames go: the process's stdout, kept for them (frames::take_stdout).
 type Output = Arc<Mutex<Box<dyn std::io::Write + Send>>>;
 
@@ -473,6 +554,9 @@ struct Speaker {
     to_call: Arc<std::sync::atomic::AtomicBool>,
     /// anyttssynthesizer, whose models can change; None for Kokoro's.
     anytts: Option<gst::Element>,
+    /// kokorosynthesizer, whose voice and speed can change; None for
+    /// any-tts's.
+    kokoro: Option<gst::Element>,
     /// soundtouch's `pitch`, whose `tempo` is the next sentence's rate;
     /// None when this GStreamer has no soundtouch (speech is then made
     /// at 1).
@@ -519,16 +603,37 @@ impl Speaker {
                 (synthesizer, "any-tts")
             }
             (None, Some(model)) => {
-                let synthesizer = gst::ElementFactory::make("kokorosynthesizer")
-                    .property("model-path", model)
-                    .property("voices-path", config.kokoro_voices.as_deref().unwrap_or(""))
-                    .build()
-                    .map_err(|e| e.to_string())?;
-                (synthesizer, "kokoro")
+                return Self::kokoro(model, config.kokoro_voices.as_deref());
             }
             (None, None) => return Err("--tts-models or --kokoro-model is required".into()),
         };
         Self::with_synthesizer(synthesizer, name)
+    }
+
+    /// Kokoro's ONNX speaker (kokorosynthesizer): its phonemes are
+    /// espeak-ng's, as Kokoro was trained with, and it runs on the CPU.
+    fn kokoro(model: &str, voices: Option<&str>) -> Result<Self, String> {
+        let synthesizer = gst::ElementFactory::make("kokorosynthesizer")
+            .property("model-path", model)
+            .property("voices-path", voices.unwrap_or(""))
+            .build()
+            .map_err(|e| e.to_string())?;
+        Self::with_synthesizer(synthesizer, "kokoro")
+    }
+
+    /// Kokoro's ONNX speaker reads the next sentences with `wanted`'s voice
+    /// (when it is one of the sentence's language, its own voice otherwise)
+    /// and speed.
+    fn set_kokoro(&self, wanted: &KokoroWanted) {
+        let Some(synthesizer) = &self.kokoro else {
+            return;
+        };
+        synthesizer.set_property("voice", wanted.voice.as_deref());
+        let speed = wanted
+            .speed
+            .filter(|speed| speed.is_finite())
+            .unwrap_or(1.0);
+        synthesizer.set_property("speed", speed.clamp(MIN_RATE, MAX_RATE) as f32);
     }
 
     /// The speaker's pipeline around `synthesizer` (`name` says which).
@@ -623,6 +728,7 @@ impl Speaker {
             sink,
             raw,
             to_call,
+            kokoro: (name == "kokoro").then(|| synthesizer.clone()),
             anytts: (name == "any-tts").then_some(synthesizer),
             tempo,
         })
@@ -1125,6 +1231,11 @@ fn main() {
             // What every sentence is read with, and what the speaker has now.
             let mut models = config.tts_models.clone();
             let mut current = models.clone();
+            // Kokoro's ONNX model next to any-tts's: the sentences only
+            // Kokoro reads (its fallback when another model failed, or
+            // Kokoro alone) go to it (kokoro_only). Loaded meanwhile, on
+            // the CPU.
+            let mut onnx = OnnxKokoro::new(&config);
             for request in speak_rx {
                 if request.op == "set_tts_models" {
                     let result = match &request.tts_models {
@@ -1169,7 +1280,16 @@ fn main() {
                 progress("started");
                 // This sentence's own models, or back to everyone's.
                 let wanted = request.tts_models.or_else(|| models.clone());
+                // Not loaded, any-tts's Kokoro reads it.
+                let by_onnx = onnx
+                    .as_mut()
+                    .and_then(|onnx| Some((wanted.as_deref().and_then(kokoro_only)?, onnx)))
+                    .and_then(|(kokoro, onnx)| {
+                        onnx.speaker()
+                            .inspect(|speaker| speaker.set_kokoro(&kokoro))
+                    });
                 let switched = match &speaker {
+                    _ if by_onnx.is_some() => Ok(false),
                     Ok(speaker) if wanted != current => match &wanted {
                         Some(wanted) => {
                             progress("loading");
@@ -1193,8 +1313,15 @@ fn main() {
                 }
                 // Each voice has its own level, and any-tts reads each
                 // language with the first of its models that speaks it.
-                let voice = format!("{}|{language}", current.as_deref().unwrap_or(""));
+                let voice = match &by_onnx {
+                    Some(_) => format!("kokoro-onnx|{language}"),
+                    None => format!("{}|{language}", current.as_deref().unwrap_or("")),
+                };
                 let mut sentence = call.as_ref().map(|call| call.sentence_of(&voice));
+                let speaker = match by_onnx {
+                    Some(onnx) => Ok(onnx),
+                    None => speaker.as_ref(),
+                };
                 let result = match (&speaker, switched) {
                     (_, Err(err)) => Err(err),
                     (Ok(speaker), _) if language::has_words(&text) => speaker.speak(
@@ -1205,7 +1332,7 @@ fn main() {
                         &|| progress("audio"),
                     ),
                     (Ok(_), _) => Err("nothing to say".to_string()),
-                    (Err(err), _) => Err(err.clone()),
+                    (Err(err), _) => Err(err.to_string()),
                 };
                 let answer = match (result, sentence) {
                     (Ok((_, rate)), Some(sentence)) => {
@@ -1402,6 +1529,39 @@ mod tests {
         let seek = youtube_request(&seek);
         assert_eq!((seek.action.as_str(), seek.position), ("seek", Some(42.5)));
         assert!(seek.headers.is_empty());
+    }
+
+    /// Kokoro's ONNX speaker reads in place of any-tts's Kokoro entries
+    /// alone, with the first one's voice and speed.
+    #[test]
+    fn kokoro_entries_alone_go_to_the_onnx_speaker() {
+        assert_eq!(
+            kokoro_only(
+                r#"[{"model": "kokoro", "path": "/m/Kokoro-82M", "voice": "ff_siwis", "speed": 1.2},
+                    {"model": "kokoro", "path": "/m/Kokoro-82M"}]"#
+            ),
+            Some(KokoroWanted {
+                voice: Some("ff_siwis".into()),
+                speed: Some(1.2),
+            })
+        );
+        assert_eq!(
+            kokoro_only(r#"[{"model": "kokoro", "path": "/m/Kokoro-82M"}]"#),
+            Some(KokoroWanted {
+                voice: None,
+                speed: None,
+            })
+        );
+        // Another model among them, a voice made from a recording, none,
+        // or not JSON: any-tts reads.
+        for json in [
+            r#"[{"model": "qwen3-tts", "path": "/m/q"}, {"model": "kokoro", "path": "/m/k"}]"#,
+            r#"[{"model": "kokoro", "path": "/m/k", "voice_embedding": "/v.json"}]"#,
+            "[]",
+            "kokoro",
+        ] {
+            assert_eq!(kokoro_only(json), None, "{json}");
+        }
     }
 
     /// Without a call, a YouTube request says so.
