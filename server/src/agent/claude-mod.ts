@@ -107,6 +107,11 @@ type ToolsSession = {
    * name the review client's `work` command to it instead.
    */
   work: boolean;
+  /**
+   * Its mod puts Roamgate's rules in the system prompt (a `prompt.compose`
+   * section): what is delivered to it is the short form alone.
+   */
+  rules: boolean;
 };
 
 export class ClaudeModError extends Error {
@@ -290,6 +295,7 @@ export function createClaudeModHub(args: {
         sessionId: each.session_id,
         client: each.client,
         work: each.work === true,
+        rules: each.rules === true,
         seenAt: each.seen_at,
         headless: each.headless === true,
       });
@@ -336,6 +342,7 @@ export function createClaudeModHub(args: {
             client: each.client,
             seen_at: each.seenAt,
             ...(each.work ? { work: true } : {}),
+            ...(each.rules ? { rules: true } : {}),
             headless: each.headless,
           };
         }),
@@ -389,6 +396,8 @@ export function createClaudeModHub(args: {
     gone: boolean;
     /** The mod has the Work board's tools (one from before them says nothing). */
     work?: boolean;
+    /** The mod's system prompt section holds Roamgate's rules. */
+    rules?: boolean;
   }) {
     if (!input.client) throw new ClaudeModError("the mod sent no client id");
     const at = key(input.connectionId, input.paneId);
@@ -406,13 +415,15 @@ export function createClaudeModHub(args: {
       known.client !== input.client ||
       known.sessionId !== input.sessionId ||
       known.headless !== input.headless ||
-      known.work !== (input.work === true);
+      known.work !== (input.work === true) ||
+      known.rules !== (input.rules === true);
     toolSessions.set(at, {
       sessionId: input.sessionId,
       client: input.client,
       seenAt: now(),
       headless: input.headless,
       work: input.work === true,
+      rules: input.rules === true,
     });
     // Each hello moves the time; the file only needs it for a headless one.
     if (fresh || input.headless) save();
@@ -837,6 +848,11 @@ export function createClaudeModHub(args: {
     hasWorkTools(connectionId: string, paneId: string): boolean {
       const entry = toolSessions.get(key(connectionId, paneId));
       return !!entry && entry.work && toolsFresh(entry);
+    },
+    /** Whether the pane's Claude has Roamgate's rules in its system prompt. */
+    hasRules(connectionId: string, paneId: string): boolean {
+      const entry = toolSessions.get(key(connectionId, paneId));
+      return !!entry && entry.rules && toolsFresh(entry);
     },
     /** Whether the pane's Claude has the mod's tools (it said so lately). */
     hasTools(connectionId: string, paneId: string): boolean {

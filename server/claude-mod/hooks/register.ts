@@ -10,7 +10,10 @@ import {
   openedText,
   ROAMGATE_TOOLS,
   type RoamgateTool,
+  RULES_SECTION_ID,
   reviewTarget,
+  rulesSection,
+  stopCheckText,
   type ToolBody,
   type ToolIdentity,
   ToolInputError,
@@ -61,6 +64,16 @@ let headless = false;
 let toolsGone: (() => Promise<void>) | null = null;
 /** Random per module instance, as the inbox client's. */
 const toolsClient = randomId();
+/**
+ * A session Roamgate delivers to (a Herdr pane's, or Roamgate's headless
+ * one): its system prompt holds Roamgate's rules, and its turns end with a
+ * check of what it left unanswered.
+ */
+let rulesWanted = false;
+/** The rules went into a system prompt: Roamgate is told, once. */
+let rulesComposed = false;
+/** Says the hello again at once (the rules are in now). */
+let helloNow: (() => Promise<void>) | null = null;
 /**
  * Tool calls a permission ask stopped, by id, until they end: their tool,
  * the loop they run in (none on the main one), and whether a person is
@@ -209,9 +222,26 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** A tool's name as this session calls it (`mcp__roamgate__<name>`). */
+function toolName(name: string): string {
+  for (const [registered, tool] of served)
+    if (tool.name === name) return registered;
+  return `mcp__roamgate__${name}`;
+}
+
+/** Whether Roamgate delivers to this session: a pane's, or its headless one. */
+async function delivered($: EngineInterface): Promise<boolean> {
+  if ((await $.env.get("ROAMGATE_HEADLESS")) === "1")
+    return !!(await $.env.get("ROAMGATE_PANE_ID"));
+  if (!(await $.env.get("HERDR_PANE_ID"))) return false;
+  // A script's `claude -p` in a pane is not the pane's session.
+  return (await $.session.surfaces()).includes("terminal");
+}
+
 /** Registers the tools and the commands; each session has them. */
 async function startTools($: EngineInterface): Promise<void> {
   toolsSocket = await socketPath($);
+  rulesWanted = await delivered($).catch(() => false);
   served.clear();
   for (const tool of ROAMGATE_TOOLS) {
     try {
@@ -280,6 +310,8 @@ async function announceTools($: EngineInterface): Promise<void> {
       tools: ROAMGATE_TOOLS.length,
       // This mod has the Work board's tools: the prompts may name them.
       work: "1",
+      // Its system prompt holds the rules: the prompts are short.
+      ...(rulesComposed ? { rules: "1" } : {}),
       ...(headless ? { headless: "1" } : {}),
       ...(gone ? { gone: "1" } : {}),
     }).catch((error) => debug($, `tools hello failed: ${messageOf(error)}`));
@@ -287,6 +319,7 @@ async function announceTools($: EngineInterface): Promise<void> {
   toolsHello?.cancel();
   toolsHello = $.clock.every(TOOLS_HELLO_MS, () => void hello());
   toolsGone = () => hello(true);
+  helloNow = () => hello();
   await hello();
 }
 
@@ -394,6 +427,27 @@ function settleBlocked($: EngineInterface): void {
   });
 }
 
+/**
+ * The end-of-turn check: what Roamgate delivered to this session that it
+ * left (unanswered threads, items still to triage), as the reason to go
+ * on; null when nothing waits or Roamgate cannot tell.
+ */
+async function stopReminder($: EngineInterface): Promise<string | null> {
+  if (!(await $.fs.exists(toolsSocket).catch(() => false))) return null;
+  try {
+    const answer = await request(
+      $,
+      toolsSocket,
+      "stop_check",
+      identityBody(await toolIdentity($)),
+    );
+    return stopCheckText(answer, toolName);
+  } catch (error) {
+    debug($, `stop check failed: ${messageOf(error)}`);
+    return null;
+  }
+}
+
 export const register: Register = (on) => {
   on("session.start", async ($, e, next) => {
     // Before the session goes on: listed from the first prompt.
@@ -427,6 +481,35 @@ export const register: Register = (on) => {
     }
     return next(e);
   });
+
+  on("prompt.compose", async ($, e, next) => {
+    const composed = await next(e);
+    if (!rulesWanted) return composed;
+    if (!rulesComposed) {
+      rulesComposed = true;
+      void helloNow?.();
+    }
+    return {
+      sections: [
+        ...composed.sections.filter(
+          (section) => section.id !== RULES_SECTION_ID,
+        ),
+        {
+          id: RULES_SECTION_ID,
+          text: rulesSection(toolName),
+          scope: "session",
+        },
+      ],
+    };
+  }).catch(($, e, next) => next(e));
+
+  on("classic.Stop", async ($, e, next) => {
+    const decided = await next(e);
+    // Once: a turn this check already sent on ends as it is.
+    if (!rulesWanted || e.stop_hook_active || decided.block) return decided;
+    const reminder = await stopReminder($);
+    return reminder ? { ...decided, block: reminder } : decided;
+  }).catch(($, e, next) => next(e));
 
   on("command.run", async ($, e, next) => {
     const kind = commands.get(e.command);

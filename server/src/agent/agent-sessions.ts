@@ -1,3 +1,4 @@
+import { COMPACTION_TAIL_BYTES, compactedSince } from "./session-compaction";
 import { isRecord } from "./session-utils";
 import { type ClaudeModPane, overlayModPanes } from "./claude-mod";
 import { SessionImageGoneError, sessionImage } from "./session-images";
@@ -362,6 +363,25 @@ export function createAgentSessionHandlers(args: {
         args.files,
         resolverContext,
       ),
+    /**
+     * Whether the pane's agent session was compacted since `since` (ISO),
+     * read from its transcript's end; false when it has none.
+     */
+    compactedSince: async (paneId: string, since: string) => {
+      const path = (
+        await resolveAgentSession(
+          { pane_id: paneId },
+          args.herdrCall,
+          args.files,
+          resolverContext,
+        )
+      ).file?.path;
+      if (!path) return false;
+      const stat = await args.files.statFile(path);
+      if (stat && stat.mtimeMs <= Date.parse(since)) return false;
+      const tail = await args.files.readTail(path, COMPACTION_TAIL_BYTES);
+      return compactedSince(new TextDecoder().decode(tail), since);
+    },
     /** The session a pane's agent runs now; null when none is known. */
     paneSession: async (paneId: string) => {
       let result: unknown;

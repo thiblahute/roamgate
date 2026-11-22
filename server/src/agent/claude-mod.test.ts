@@ -341,6 +341,25 @@ test("a terminal session has the tools while it says so, until it leaves", () =>
   expect(made.hasWorkTools("local", "w1-2")).toBe(false);
 });
 
+test("a session whose system prompt holds the rules says so; a mod from before says nothing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rg-mod-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "claude-mod-inbox.json");
+  const first = hub({ file });
+  first.hub.tools({ ...TOOLS, work: true });
+  expect(first.hub.hasRules("local", "w1-2")).toBe(false);
+  first.hub.tools({ ...TOOLS, work: true, rules: true, headless: true });
+  expect(first.hub.hasRules("local", "w1-2")).toBe(true);
+  expect(first.hub.hasRules("local", "w1-3")).toBe(false);
+  first.hub.flush();
+  first.hub.dispose();
+  // Kept with the headless session across a restart.
+  const second = hub({ file });
+  expect(second.hub.hasRules("local", "w1-2")).toBe(true);
+  second.hub.tools({ ...TOOLS, gone: true });
+  expect(second.hub.hasRules("local", "w1-2")).toBe(false);
+});
+
 test("a headless session's tools outlive its process and a restart", () => {
   const dir = mkdtempSync(join(tmpdir(), "rg-mod-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));

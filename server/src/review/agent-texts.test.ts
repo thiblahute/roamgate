@@ -171,11 +171,14 @@ test("the skill names the mod's tools, those behind tool search apart", () => {
     REVIEW_SKILL.indexOf("\n## ", boardAt + 1),
   ).replace(/\s+/g, " ");
   expect(board).toContain(
-    "they are also tools, `mcp__roamgate__work_*`, behind tool search;",
+    "they are also tools, `mcp__roamgate__work_*` (`work_update` and `work_list` listed, the others behind tool search);",
   );
   expect(work.length).toBeGreaterThan(0);
   for (const tool of work) {
-    expect(tool.deferred).toBe(true);
+    // The prompts name work_update and work_list: listed from the start.
+    expect(tool.deferred).toBe(
+      tool.name !== "work_update" && tool.name !== "work_list",
+    );
     expect(board).toContain(`\`${tool.name}\``);
   }
 });

@@ -117,9 +117,14 @@ export function reviewDelivery(
   text: string,
 ): { title: string; count: number } | null {
   const body = text.replace(/^\s*<pasted_content[^>]*>\s*/, "");
+  const count = body.match(/^- \[[0-9a-f]{8}\]/gm)?.length ?? 0;
+  if (/^\[Roamgate chat comment\]/.test(body))
+    return { title: "this chat", count };
+  const item =
+    /^\[Roamgate work item [0-9a-f]{8} "([^"\n]*)" \([^)\n]*\)\]/.exec(body);
+  if (item) return { title: item[1]!, count };
   const head = /^\[Roamgate review "([^"\n]*)" \(([^)\n]*)\)\]/.exec(body);
   if (!head) return null;
-  const count = body.match(/^- \[[0-9a-f]{8}\]/gm)?.length ?? 0;
   return { title: head[2] === "chat" ? "this chat" : head[1]!, count };
 }
 

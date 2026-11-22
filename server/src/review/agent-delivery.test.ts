@@ -52,6 +52,12 @@ function deliverySetup(
     paneSession?: (paneId: string) => Promise<string | null>;
     /** Panes whose agent has Roamgate's tools. */
     tools?: string[];
+    /** Panes whose agent has the Work board's tools too. */
+    workTools?: string[];
+    /** Panes whose agent has Roamgate's rules in its system prompt. */
+    rules?: string[];
+    /** Whether the pane's session was compacted since then. */
+    compacted?: (pane: string, since: string) => Promise<boolean>;
     loadDiff?: () => Promise<{
       files: [];
       truncated: false;
@@ -79,6 +85,27 @@ function deliverySetup(
         ? {
             agentTools: (_connection: string, pane: string) =>
               options.tools!.includes(pane),
+          }
+        : {}),
+      ...(options.workTools
+        ? {
+            agentWorkTools: (_connection: string, pane: string) =>
+              options.workTools!.includes(pane),
+          }
+        : {}),
+      ...(options.rules
+        ? {
+            agentRules: (_connection: string, pane: string) =>
+              options.rules!.includes(pane),
+          }
+        : {}),
+      ...(options.compacted
+        ? {
+            agentCompactedSince: (
+              _connection: string,
+              pane: string,
+              since: string,
+            ) => options.compacted!(pane, since),
           }
         : {}),
       promptAgent: async (_connection, pane, text) => {
@@ -772,4 +799,128 @@ test("an effort's comments go to its leader with where they are, and wait while 
   await Bun.sleep(40);
   expect(panes).toEqual(["w3:p1", "w3:p7"]);
   expect(prompts[1]).toContain("on planned request p1 in the Plans tab:");
+});
+
+/** A user comment on a new thread of the review, and the time to deliver it. */
+async function comment(
+  service: ReviewService,
+  sessionId: string,
+  text: string,
+) {
+  const thread = await service.addThread({ sessionId, text });
+  await Bun.sleep(40);
+  return thread;
+}
+
+test("a session with the rules in its system prompt gets the short line alone, naming the mod's tool and id", async () => {
+  const { service, prompts } = deliverySetup({
+    tools: ["w1:p2"],
+    rules: ["w1:p2"],
+  });
+  const session = openSession(service);
+  const thread = await comment(service, session.id, "Why `x`?");
+  const id = thread.id.slice(0, 8);
+  expect(prompts).toEqual([
+    [
+      `[Roamgate review "main..HEAD" (main..HEAD)]`,
+      "",
+      `- [${id}] on the whole change:`,
+      "  Why `x`?",
+      "",
+      `Answer each, saying what you changed: mcp__roamgate__review_reply comment_id=${id} (mcp__roamgate__review_working comment_id=${id} first for long work).`,
+    ].join("\n"),
+  ]);
+});
+
+test("an agent without the rules gets each kind in full once, the short line after, and in full again after a compaction", async () => {
+  let compactedAt = "";
+  const asked: string[] = [];
+  const { service, prompts } = deliverySetup({
+    compacted: async (_pane, since) => {
+      asked.push(since);
+      return compactedAt > since;
+    },
+  });
+  const session = openSession(service);
+  await comment(service, session.id, "First");
+  expect(prompts[0]).toContain("A comment from me in the review:");
+  expect(prompts[0]).toContain("My next comments come here the same way.");
+  const second = await comment(service, session.id, "Second");
+  const id = second.id.slice(0, 8);
+  expect(prompts[1]).not.toContain("A comment from me");
+  expect(prompts[1]).toEndWith(
+    `Answer each, saying what you changed: ~/.cache/roamgate/bin/roamgate-review --session ${session.id.slice(0, 8)} --agent 'Claude' reply --comment ${id} -- TEXT (~/.cache/roamgate/bin/roamgate-review --session ${session.id.slice(0, 8)} --agent 'Claude' working --comment ${id} --message TEXT first for long work).`,
+  );
+  // Shorter by most of the paragraph.
+  expect(prompts[1]!.length).toBeLessThan(prompts[0]!.length);
+  // Compacted since it was told: told in full again, then short again.
+  compactedAt = new Date(Date.now() + 1000).toISOString();
+  await comment(service, session.id, "Third");
+  expect(prompts[2]).toContain("A comment from me in the review:");
+  expect(asked.length).toBeGreaterThan(0);
+  compactedAt = "";
+  await comment(service, session.id, "Fourth");
+  expect(prompts[3]).not.toContain("A comment from me");
+});
+
+test("a new session in the pane is told in full again", async () => {
+  let running = "s1";
+  const { service, prompts } = deliverySetup({
+    paneSession: async () => running,
+  });
+  const session = openSession(service);
+  await comment(service, session.id, "First");
+  await comment(service, session.id, "Second");
+  expect(prompts[1]).not.toContain("A comment from me");
+  running = "s2";
+  await comment(service, session.id, "Third");
+  expect(prompts[2]).toContain("A comment from me in the review:");
+});
+
+test("a chat's short line says the thread is where the answer goes", async () => {
+  const { service, prompts } = deliverySetup({
+    sessionPane: async () => "w2:p14",
+    tools: ["w2:p14"],
+    rules: ["w2:p14"],
+  });
+  const chat = openChat(service);
+  await chatComment(service, chat.id, "Still there?");
+  await Bun.sleep(40);
+  expect(prompts[0]).toStartWith("[Roamgate chat comment]\n");
+  expect(prompts[0]).toMatch(
+    /Answer in each thread, not in the chat: mcp__roamgate__review_reply comment_id=[0-9a-f]{8}\.$/,
+  );
+});
+
+test("the end-of-turn check returns each delivered unanswered thread once, leaving taken ones", async () => {
+  const { service } = deliverySetup({ tools: ["w1:p2"], rules: ["w1:p2"] });
+  const session = openSession(service);
+  // Not delivered yet: nothing to remind.
+  expect(service.agentDue(session.id).threads).toEqual([]);
+  const left = await comment(service, session.id, "Left");
+  const taken = await comment(service, session.id, "Taken");
+  const answered = await comment(service, session.id, "Answered");
+  service.agentStatus({
+    sessionId: session.id,
+    state: "working",
+    commentId: taken.id,
+    message: "on it",
+  });
+  await service.reply({
+    sessionId: session.id,
+    commentId: answered.id,
+    author: "Claude",
+    text: "Done",
+  });
+  expect(service.agentDue(session.id).threads.map((each) => each.id)).toEqual([
+    left.id,
+  ]);
+  // Once per delivery: asked again, nothing new.
+  expect(service.agentDue(session.id).threads).toEqual([]);
+  // The user comments again: delivered again, reminded again.
+  await service.reply({ sessionId: session.id, commentId: left.id, text: "?" });
+  await Bun.sleep(40);
+  expect(service.agentDue(session.id).threads.map((each) => each.id)).toEqual([
+    left.id,
+  ]);
 });

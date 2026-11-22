@@ -794,6 +794,7 @@ export function createReviewAgentServer(args: {
     )
       return claudeModRequest(connection.id, command, form, signal);
     if (command === "waiting") return waiting(connection.id, form);
+    if (command === "stop_check") return await stopCheck(connection.id, form);
     if (command === "launch") {
       const paneId = form.get("pane");
       const token = form.get("token") ?? "";
@@ -1265,6 +1266,72 @@ export function createReviewAgentServer(args: {
     return { reviews };
   }
 
+  /**
+   * The mod's end-of-turn check (`stop_check`): the threads delivered to
+   * the asking session that it left unanswered and did not take, and the
+   * work items it was asked to triage that still need it. Each once per
+   * delivery: asking again after a reminder answers nothing new.
+   */
+  async function stopCheck(connectionId: string, form: URLSearchParams) {
+    const paneId = form.get("pane") ?? "";
+    const claude = form.get("claude_session") ?? "";
+    if (!paneId && !claude)
+      throw new ReviewError("stop_check runs inside an agent session");
+    const threads: { id: string; review: string; title: string }[] = [];
+    const items: string[] = [];
+    for (const { session } of args.service.list({
+      connectionId,
+      chats: true,
+    })) {
+      const agentSession =
+        session.target.kind === "chat"
+          ? session.target.chat
+          : session.agent.sessionId;
+      if (
+        !(
+          (paneId && session.agent.paneId === paneId) ||
+          (claude && agentSession === claude)
+        ) ||
+        !args.service.agentMayRead({ sessionId: session.id })
+      )
+        continue;
+      const due = args.service.agentDue(session.id);
+      for (const thread of due.threads)
+        threads.push({
+          id: thread.id.slice(0, 8),
+          review: session.id.slice(0, 8),
+          title: session.title.slice(0, 120),
+        });
+      if (due.triageItem) items.push(due.triageItem);
+    }
+    // Still marked: the item's needs_triage, read from the board.
+    const triage: { item: string; title: string }[] = [];
+    for (const item of items) {
+      if (!args.work) break;
+      try {
+        const text = await args.work({
+          connectionId,
+          paneId,
+          workspaceId: form.get("workspace") ?? "",
+          agent: agentName(form),
+          tool: "work_list",
+          params: { item },
+        });
+        const listed = JSON.parse(text.slice(text.indexOf("{"))) as {
+          item?: { id?: string; title?: string; needs_triage?: boolean };
+        };
+        if (listed.item?.needs_triage)
+          triage.push({
+            item: item.slice(0, 8),
+            title: String(listed.item.title ?? "").slice(0, 120),
+          });
+      } catch {
+        // Gone or unreadable: nothing to remind.
+      }
+    }
+    return { threads, triage };
+  }
+
   /** A request of the Claude mod running in one of the connection's panes. */
   async function claudeModRequest(
     connectionId: string,
@@ -1290,6 +1357,7 @@ export function createReviewAgentServer(args: {
           headless: form.get("headless") === "1",
           gone: form.get("gone") === "1",
           work: form.get("work") === "1",
+          rules: form.get("rules") === "1",
         });
       if (command === "mod_poll")
         return await args.claudeMod.poll({

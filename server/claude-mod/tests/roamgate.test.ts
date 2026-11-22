@@ -552,3 +552,169 @@ test("AskUserQuestion reads blocked at once, until answered", async ($, on) => {
   await call;
   expect(blockedEvents(sent)).toEqual(["blocked", "unblocked"]);
 });
+
+/** The engine's own system prompt, beneath the mod. */
+function engineSections(on: On) {
+  on("prompt.compose", () => ({
+    sections: [{ id: "intro", text: "You are Claude Code.", scope: "shared" }],
+  }));
+}
+
+const COMPOSE = {
+  model: "claude-haiku-5-5",
+  promptModel: "claude-haiku-5-5",
+  surfaces: ["terminal"],
+  tools: [],
+  outputStyle: null,
+  traits: [],
+} as const;
+
+test("a pane's session has Roamgate's rules in its system prompt, and says so", async ($, on) => {
+  const clock = mock.clock(on);
+  session(on);
+  registry(on);
+  engineSections(on);
+  const sent = roamgate(on, []);
+
+  await $.session.start(START);
+  await clock.settle();
+  // Before any request: the hello does not claim the rules yet.
+  expect(
+    sent.find((each) => each.command === "mod_tools")?.body.rules,
+  ).toBeUndefined();
+
+  const composed = await $.prompt.compose(COMPOSE);
+  await clock.settle();
+  const rules = composed.sections.find(
+    (section) => section.id === "roamgate:rules",
+  );
+  expect(composed.sections[0]?.id).toBe("intro");
+  expect(rules?.scope).toBe("session");
+  expect(rules?.text).toContain("mcp__roamgate__review_reply");
+  expect(rules?.text).toContain("mcp__roamgate__agent_message");
+  expect(rules?.text).toContain("select:mcp__roamgate__work_add");
+  // Said at once, not at the next periodic hello.
+  const hellos = sent.filter((each) => each.command === "mod_tools");
+  expect(hellos.at(-1)?.body).toMatchObject({ rules: "1", work: "1" });
+  // Once per request, never twice.
+  const again = await $.prompt.compose(COMPOSE);
+  expect(
+    again.sections.filter((section) => section.id === "roamgate:rules"),
+  ).toHaveLength(1);
+});
+
+test("a claude -p run gets no rules section", async ($, on) => {
+  const clock = mock.clock(on);
+  session(on, []);
+  registry(on);
+  engineSections(on);
+  roamgate(on, []);
+
+  await $.session.start({ cwd: "/work", surface: null, isInteractive: false });
+  await clock.settle();
+  const composed = await $.prompt.compose(COMPOSE);
+  expect(composed.sections.map((section) => section.id)).toEqual(["intro"]);
+});
+
+test("work_update and work_list are listed, the other work tools deferred, with no client sentence", async ($, on) => {
+  const clock = mock.clock(on);
+  session(on);
+  const tools: { name: string; isDeferred?: boolean }[] = [];
+  const described: Record<string, string> = {};
+  on("tool.register", (_, e) => {
+    tools.push({ name: e.name, isDeferred: e.isDeferred });
+    described[e.name] = e.description;
+    return { value: { tool: `mcp__roamgate__${e.name}` } };
+  });
+  on("command.register", (_, e) => ({ value: { command: e.name } }));
+  roamgate(on, []);
+
+  await $.session.start(START);
+  await clock.settle();
+  const deferred = (name: string) =>
+    tools.find((each) => each.name === name)?.isDeferred;
+  expect(deferred("work_update")).toBe(false);
+  expect(deferred("work_list")).toBe(false);
+  expect(deferred("work_add")).toBe(true);
+  expect(deferred("work_done")).toBe(true);
+  for (const name of Object.keys(described).filter((each) =>
+    each.startsWith("work_"),
+  ))
+    expect(described[name]).not.toContain("Without this tool");
+});
+
+/** A Roamgate whose stop_check answers `answer` (then nothing). */
+function stopChecks(on: On, answer: unknown) {
+  const asked: Record<string, unknown>[] = [];
+  // The settings hooks beneath: none blocks.
+  on("classic.Stop", () => ({}));
+  const logged: string[] = [];
+  on("ui.log", (_, e) => {
+    logged.push(String(e.text));
+    return { value: undefined };
+  });
+  on("fs.exists", () => ({ value: true }));
+  on("http.fetch", (_, e) => {
+    const command = e.url.replace(/^.*\/v1\//, "");
+    const body = JSON.parse(e.init?.body ?? "{}") as Record<string, unknown>;
+    let value: unknown = {};
+    if (command === "stop_check") {
+      asked.push(body);
+      value = asked.length === 1 ? answer : { threads: [], triage: [] };
+    }
+    if (command === "mod_poll")
+      value = { protocol: 1, epoch: "e1", messages: [] };
+    return {
+      value: {
+        status: 200,
+        ok: true,
+        headers: {},
+        text: JSON.stringify(value),
+      },
+    };
+  });
+  return Object.assign(asked, { logged });
+}
+
+test("a turn that left delivered threads and triage goes on once, naming each id and tool", async ($, on) => {
+  const clock = mock.clock(on);
+  session(on);
+  registry(on);
+  const asked = stopChecks(on, {
+    threads: [{ id: "c7804e28", review: "1a2b3c4d", title: "Work: Dictation" }],
+    triage: [{ item: "fb590037", title: "On android the bubble" }],
+  });
+
+  await $.session.start(START);
+  await clock.settle();
+  const first = await $.classic.Stop({ stop_hook_active: false });
+  expect(first.block).toContain(
+    'Not answered yet: [c7804e28] in "Work: Dictation": mcp__roamgate__review_reply comment_id=c7804e28.',
+  );
+  expect(first.block).toContain("Still needs triage: fb590037");
+  expect(first.block).toContain("mcp__roamgate__work_update item=fb590037");
+  expect(first.block).toContain("mcp__roamgate__review_working");
+  expect(asked[0]).toMatchObject({ pane: "w1-2", claude_session: "session-1" });
+  // The turn it sent on ends as it is: no second ask.
+  const again = await $.classic.Stop({ stop_hook_active: true });
+  expect(again.block).toBeUndefined();
+  expect(asked).toHaveLength(1);
+  // A later turn with nothing new left ends at once.
+  const later = await $.classic.Stop({ stop_hook_active: false });
+  expect(later.block).toBeUndefined();
+});
+
+test("a claude -p run's turns end without the check", async ($, on) => {
+  const clock = mock.clock(on);
+  session(on, []);
+  registry(on);
+  const asked = stopChecks(on, {
+    threads: [{ id: "c7804e28", review: "1a2b3c4d", title: "Review" }],
+  });
+
+  await $.session.start({ cwd: "/work", surface: null, isInteractive: false });
+  await clock.settle();
+  const ended = await $.classic.Stop({ stop_hook_active: false });
+  expect(ended.block).toBeUndefined();
+  expect(asked).toHaveLength(0);
+});

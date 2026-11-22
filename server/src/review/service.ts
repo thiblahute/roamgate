@@ -465,6 +465,30 @@ export function describeTarget(target: ReviewTarget): string {
   return target.kind === "worktree" ? "working tree" : "review";
 }
 
+/** The review client, as agents run it wherever it is installed. */
+const REVIEW_CLIENT = "~/.cache/roamgate/bin/roamgate-review";
+
+/** How a Claude session with Roamgate's mod names its tools. */
+const MOD_TOOL_PREFIX = "mcp__roamgate__";
+
+/**
+ * The kinds of delivery, each explained in full once per agent session
+ * without Roamgate's rules: comments in a chat, in a review, on an effort's
+ * view, on a work item, a free-text item to triage, an item to do.
+ */
+type DeliveryKind = "chat" | "review" | "effort" | "work" | "triage" | "todo";
+
+/**
+ * The first line of what an agent is sent: what it is about, said once
+ * (a work item's title is not repeated after it).
+ */
+export function deliveryHeader(session: ReviewSession, triage = false): string {
+  if (session.target.kind === "chat") return "[Roamgate chat comment]";
+  if (session.target.kind === "work")
+    return `[Roamgate work item ${session.target.item.slice(0, 8)} "${oneLine(session.title.replace(/^Work: /, ""), 200)}" (yours${triage ? ", needs triage" : ""})]`;
+  return `[Roamgate review "${oneLine(session.title, 200)}" (${oneLine(describeTarget(session.target), 300)})]`;
+}
+
 /** A chat message's time, as the agent's chat shows it (local, HH:MM). */
 function chatTime(at: string): string {
   const date = new Date(at);
@@ -782,6 +806,22 @@ export function createReviewService(args: {
    * command instead.
    */
   agentWorkTools?: (connectionId: string, paneId: string) => boolean;
+  /**
+   * Whether the pane's agent has Roamgate's rules in its system prompt
+   * (its Claude Code mod adds them): what is sent there is the short form
+   * alone. Without them, each kind of delivery is explained in full once
+   * per session, and again after a compaction.
+   */
+  agentRules?: (connectionId: string, paneId: string) => boolean;
+  /**
+   * Whether the pane's agent session was compacted since `since` (ISO):
+   * what it was told before is gone, so the next delivery explains again.
+   */
+  agentCompactedSince?: (
+    connectionId: string,
+    paneId: string,
+    since: string,
+  ) => Promise<boolean>;
   gitlab?: {
     context: (session: ReviewSession) => GlabContext;
     /** The checkout's branch and what finding its merge request needs. */
@@ -3114,6 +3154,8 @@ export function createReviewService(args: {
       target.agent.working = threadId
         ? { at, message, threadId }
         : { at, message };
+      // Taken: the end-of-turn check leaves it to the agent.
+      if (threadId) taken.set(threadId, at);
     } else if (params.state === "done") {
       delete target.agent.working;
       if (message) target.agent.update = { at, message };
@@ -3144,6 +3186,14 @@ export function createReviewService(args: {
   const typing = new Map<string, Promise<number>>();
   /** Retries in a row of a delivery the agent was too busy for. */
   const retries = new Map<string, number>();
+  /**
+   * When each thread was last delivered to its agent, and when the agent
+   * took it (review_working on it) or was reminded of it at a turn's end:
+   * what the mod's end-of-turn check reads (agentDue). In memory only.
+   */
+  const heard = new Map<string, string>();
+  const taken = new Map<string, string>();
+  const reminded = new Map<string, string>();
   const DELIVERY_DELAY_MS = args.deliveryDelayMs ?? 2500;
   const RETRY_DELAY_MS = args.retryDelayMs ?? 15_000;
   /** A busy agent is tried this many times, waiting longer each time. */
@@ -3510,16 +3560,36 @@ export function createReviewService(args: {
       : due.every(onFile)
         ? "on files you changed"
         : "on parts of your messages and files you changed";
-    if (due.length)
+    const triage = work && due.some((thread) => thread.anchor.work?.triage);
+    const todo =
+      work && !triage && due.some((thread) => thread.anchor.work?.description);
+    const kind: DeliveryKind = chat
+      ? "chat"
+      : effort
+        ? "effort"
+        : triage
+          ? "triage"
+          : todo
+            ? "todo"
+            : work
+              ? "work"
+              : "review";
+    // The rules in full once per session and kind; the short line after.
+    const long = due.length > 0 && (await explainsFirst(target, paneId, kind));
+    if (due.length && (long || overall))
       lines.push(
         ...(overall ? [""] : []),
-        chat
-          ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me ${onWhat} in this chat:`
-          : effort
-            ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on the view of the upstreaming effort you lead (${oneLine(target.title, 200)}, id ${target.target.kind === "effort" ? target.target.effort : ""}) in Reviews:`
-            : work
-              ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on the work item you own (${oneLine(target.title, 200)}, id ${target.target.kind === "work" ? target.target.item : ""}) on the Work board:`
-              : `${due.length === 1 ? "A comment" : `${due.length} comments`} from me in the review:`,
+        ...(long
+          ? [
+              chat
+                ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me ${onWhat} in this chat:`
+                : effort
+                  ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on the view of the upstreaming effort you lead (${oneLine(target.title, 200)}, id ${target.target.kind === "effort" ? target.target.effort : ""}) in Reviews:`
+                  : work
+                    ? `${due.length === 1 ? "A comment" : `${due.length} comments`} from me on this work item of the Work board:`
+                    : `${due.length === 1 ? "A comment" : `${due.length} comments`} from me in the review:`,
+            ]
+          : []),
       );
     const since = target.deliveredAt ?? "";
     for (const thread of due) {
@@ -3574,7 +3644,9 @@ export function createReviewService(args: {
         lines.push("  (A suggested change: apply it, then reply.)");
     }
     const replyHow = chat ? args.chatReplyHow?.(target) : undefined;
-    if (due.length && effort)
+    if (due.length && !long)
+      lines.push("", shortLine(target, paneId, kind, due, onFiles));
+    else if (due.length && effort)
       lines.push(
         "",
         `These are threads on the effort's view (its ledger, plans and progress), not on code: read it with your effort_get tool when you need more. Answer each in its thread with ${how.reply}, and say there what you did or changed.`,
@@ -3582,9 +3654,9 @@ export function createReviewService(args: {
     else if (due.length && work)
       lines.push(
         "",
-        due.some((thread) => thread.anchor.work?.triage)
-          ? `The item is yours to sort: I added it as free text, and its title is only my text's first line. Triage it with ${how.workUpdate}: give it a clear short title, set its tags (it was given some from its words: add the missing ones, remove the wrong ones) and the state it is in (open, doing when you take it, you when it waits on me). When my text holds several tasks, keep one on this item and add each other one with ${how.workAdd}, a title, tags and its part of my text each, linking them to this one with an \`item\` link (add_links: [{"kind": "item", "id": "${target.target.kind === "work" ? target.target.item : ""}"}]). Then clear the mark with ${how.workUpdate} (needs_triage: false). Take it or give it to another session as any item of yours. These are threads on a work item of the Work board, not on code: read the item with ${how.workList} when you need more, and move it with ${how.workMove} as the work goes. Answer each in its thread with ${how.reply}, and say there how you sorted it.`
-          : due.some((thread) => thread.anchor.work?.description)
+        triage
+          ? `The item is yours to sort: I added it as free text, and its title is only my text's first line. Triage it with ${how.workUpdate}: give it a clear short title, set its tags (it was given some from its words: add the missing ones, remove the wrong ones) and the state it is in (open, doing when you take it, you when it waits on me); the first new title you give it clears its needs_triage mark (needs_triage: false clears it when the title stays). When my text holds several tasks, keep one on this item and add each other one with ${how.workAdd}, a title, tags and its part of my text each, linking them to this one with an \`item\` link (links: [{"kind": "item", "id": "${target.target.kind === "work" ? target.target.item : ""}"}]). Take it or give it to another session as any item of yours. These are threads on a work item of the Work board, not on code: read the item with ${how.workList} when you need more, and move it with ${how.workMove} as the work goes. Answer each in its thread with ${how.reply}, and say there how you sorted it.`
+          : todo
             ? `The item is yours to do (it was added or reopened with you as its owner): take it with ${how.workUpdate} (state: doing, owner: your session, or the subagent you give it to), or give it to another session. These are threads on a work item of the Work board, not on code: read the item with ${how.workList} when you need more, and move it with ${how.workMove} as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`
             : `These are threads on a work item of the Work board, not on code: read the item with ${how.workList} when you need more, and move it with ${how.workMove} as the work goes. Answer each in its thread with ${how.reply}, and say there what you did or changed.`,
       );
@@ -3606,7 +3678,7 @@ export function createReviewService(args: {
       await args.promptAgent(
         target.connectionId,
         paneId,
-        agentPrompt(target, lines, how),
+        agentPrompt(target, lines, how, triage),
       );
     } catch (error) {
       const gone = paneGone(target, paneId, error);
@@ -3630,6 +3702,8 @@ export function createReviewService(args: {
     retries.delete(target.id);
     if (overall) target.summarySent = overall;
     target.deliveredAt = sentAt;
+    if (long) explained(target, paneId, kind, sentAt);
+    for (const thread of due) heard.set(thread.id, sentAt);
     delete target.deliveryError;
     storage.saveSession(target);
     publishSession(target);
@@ -3750,7 +3824,121 @@ export function createReviewService(args: {
     // before names were checked is not typed.
     const saved = target.agent.name ?? "agent";
     const name = AGENT_NAME.test(saved) ? saved : "agent";
-    return `~/.cache/roamgate/bin/roamgate-review --session ${target.id.slice(0, 8)} --agent '${name}'`;
+    return `${REVIEW_CLIENT} --session ${target.id.slice(0, 8)} --agent '${name}'`;
+  }
+
+  /**
+   * The kinds of delivery each agent session had explained in full, by
+   * connection and pane: its session (a /clear or a new session in the
+   * pane forgets them), when the first was, and which.
+   */
+  const explainedTo = new Map<
+    string,
+    { session: string | null; at: string; kinds: Set<DeliveryKind> }
+  >();
+
+  /**
+   * Whether this delivery explains its kind in full: never to an agent
+   * with Roamgate's rules in its system prompt (the mod's section, Ranger's
+   * own), else the first time its session gets this kind, and again once
+   * its session was compacted or changed.
+   */
+  async function explainsFirst(
+    target: ReviewSession,
+    paneId: string,
+    kind: DeliveryKind,
+  ): Promise<boolean> {
+    if (args.agentRules?.(target.connectionId, paneId)) return false;
+    if (target.target.kind === "chat" && args.chatReplyHow?.(target))
+      return false;
+    const key = `${target.connectionId}\n${paneId}`;
+    const seen = explainedTo.get(key);
+    if (!seen?.kinds.has(kind)) return true;
+    const session = await args
+      .paneSession?.(target.connectionId, paneId)
+      .catch(() => seen.session);
+    const compacted =
+      (await args
+        .agentCompactedSince?.(target.connectionId, paneId, seen.at)
+        .catch(() => false)) ?? false;
+    if ((session ?? null) === seen.session && !compacted) return false;
+    explainedTo.delete(key);
+    return true;
+  }
+
+  /** Records that the pane's session had `kind` explained in full. */
+  function explained(
+    target: ReviewSession,
+    paneId: string,
+    kind: DeliveryKind,
+    at: string,
+  ): void {
+    const key = `${target.connectionId}\n${paneId}`;
+    const seen = explainedTo.get(key);
+    if (seen) {
+      seen.kinds.add(kind);
+      return;
+    }
+    const entry = {
+      session: null as string | null,
+      at,
+      kinds: new Set([kind]),
+    };
+    explainedTo.set(key, entry);
+    // Its session, to tell a new one in the pane; looked up after.
+    void args
+      .paneSession?.(target.connectionId, paneId)
+      .then((session) => {
+        if (explainedTo.get(key) === entry) entry.session = session ?? null;
+      })
+      .catch(() => {});
+  }
+
+  /**
+   * The one line closing a delivery once its kind is known to the agent:
+   * the exact tool and id to answer with, as this agent calls it (the
+   * mod's MCP name, Ranger's tool, or the review client's command).
+   */
+  function shortLine(
+    target: ReviewSession,
+    paneId: string,
+    kind: DeliveryKind,
+    due: ReviewThread[],
+    onFiles: boolean,
+  ): string {
+    const tools = !!args.agentTools?.(target.connectionId, paneId);
+    const workTools =
+      tools && !!args.agentWorkTools?.(target.connectionId, paneId);
+    const id = due.length === 1 ? due[0]!.id.slice(0, 8) : "<id in brackets>";
+    const command = clientCommand(target);
+    const reply = tools
+      ? `${MOD_TOOL_PREFIX}review_reply comment_id=${id}`
+      : `${command} reply --comment ${id} -- TEXT`;
+    const working = tools
+      ? `${MOD_TOOL_PREFIX}review_working comment_id=${id}`
+      : `${command} working --comment ${id} --message TEXT`;
+    const item =
+      target.target.kind === "work" ? target.target.item.slice(0, 8) : "";
+    const work = (name: string, fields: string) =>
+      workTools
+        ? `${MOD_TOOL_PREFIX}${name} ${fields}`
+        : `${REVIEW_CLIENT} work ${name} '${fields}'`;
+    switch (kind) {
+      case "chat": {
+        const ranger = args.chatReplyHow?.(target);
+        return `${onFiles ? "Those on a file you changed ask for a change in it. " : ""}Answer in each thread, not in the chat: ${ranger ?? reply}.`;
+      }
+      case "effort":
+        return `Answer each, saying what you changed: ${reply} (${working} first for long work). Read the view: your effort_get tool.`;
+      case "triage":
+        return `Triage: ${work("work_update", workTools ? `item=${item} (title, tags, state)` : `{"item": "${item}", "title": ..., "tags": [...], "state": ...}`)}; extra tasks: ${work("work_add", workTools ? `with links [{"kind":"item","id":"${item}"}]` : `{"title": ..., "text": ..., "links": [{"kind": "item", "id": "${item}"}]}`)}. Then ${reply}.`;
+      case "todo":
+        return `Take it: ${work("work_update", workTools ? `item=${item} state=doing owner=<your address or subagent>` : `{"item": "${item}", "state": "doing", "owner": {"session": "<your address>"}}`)}; or give it to another session. Answer: ${reply}.`;
+      case "work":
+        return `Answer: ${reply}. Move the item: ${work("work_update", workTools ? `item=${item}` : `{"item": "${item}", ...}`)} (or work_done, work_reopen).`;
+      default:
+        return `Answer each, saying what you changed: ${reply} (${working} first for long work).`;
+    }
   }
 
   /**
@@ -3774,10 +3962,10 @@ export function createReviewService(args: {
           workMove: "your work_update, work_done or work_reopen tools",
         }
       : {
-          workList: `\`roamgate-review work work_list '{"item": "${item}"}'\``,
-          workUpdate: `\`roamgate-review work work_update '{"item": "${item}", ...}'\``,
-          workAdd: `\`roamgate-review work work_add '{"title": ..., "text": ...}'\``,
-          workMove: `\`roamgate-review work work_update\`, \`work_done\` or \`work_reopen\` the same way (\`roamgate-review work help\` lists the parameters)`,
+          workList: `\`${REVIEW_CLIENT} work work_list '{"item": "${item}"}'\``,
+          workUpdate: `\`${REVIEW_CLIENT} work work_update '{"item": "${item}", ...}'\``,
+          workAdd: `\`${REVIEW_CLIENT} work work_add '{"title": ..., "text": ...}'\``,
+          workMove: `\`${REVIEW_CLIENT} work work_update\`, \`work_done\` or \`work_reopen\` the same way (\`${REVIEW_CLIENT} work help\` lists the parameters)`,
         };
     if (args.agentTools?.(target.connectionId, paneId)) {
       const review = `review: ${target.id.slice(0, 8)}`;
@@ -3816,13 +4004,9 @@ export function createReviewService(args: {
     target: ReviewSession,
     lines: string[],
     how: { get: string },
+    triage = false,
   ): string {
-    const prompt = typed(
-      [
-        `[Roamgate review "${oneLine(target.title, 200)}" (${oneLine(describeTarget(target.target), 300)})]`,
-        ...lines,
-      ].join("\n"),
-    );
+    const prompt = typed([deliveryHeader(target, triage), ...lines].join("\n"));
     if (prompt.length <= PROMPT_MAX_CHARS) return prompt;
     return `${prompt.slice(0, PROMPT_MAX_CHARS)}\n[Cut here: read every comment with ${how.get}.]`;
   }
@@ -3899,6 +4083,37 @@ export function createReviewService(args: {
     target.summarySent = text;
     await update({ sessionId: target.id, summary: text, summaryLocal: true });
     return { kept: true };
+  }
+
+  /**
+   * What a review's agent was sent and has left: the threads delivered to
+   * it that still wait on its answer, which it neither took (review_working
+   * on the thread) nor was reminded of since, and the work item to triage
+   * when its triage was among them. Each is returned once per delivery:
+   * the end-of-turn check that asks never asks twice for the same one.
+   */
+  function agentDue(sessionId: string): {
+    threads: ReviewThread[];
+    triageItem?: string;
+  } {
+    const target = sessions.get(sessionId);
+    if (!target) return { threads: [] };
+    const agent = target.agent.name ?? "agent";
+    const at = now();
+    let triageItem: string | undefined;
+    const threads = [...threadsOf(sessionId).values()].filter((thread) => {
+      const sent = heard.get(thread.id);
+      if (!sent || (reminded.get(thread.id) ?? "") >= sent) return false;
+      if (thread.anchor.work?.triage && target.target.kind === "work") {
+        triageItem = target.target.item;
+        reminded.set(thread.id, at);
+      }
+      if ((taken.get(thread.id) ?? "") >= sent) return false;
+      if (!needsAnswer(thread, target, agent)) return false;
+      reminded.set(thread.id, at);
+      return true;
+    });
+    return { threads, ...(triageItem ? { triageItem } : {}) };
   }
 
   function unanswered(sessionId: string, agent: string): ReviewThread[] {
@@ -4577,6 +4792,7 @@ export function createReviewService(args: {
     /** Whether agents may see this review now, without asking GitLab. */
     agentMayRead: (params: Record<string, unknown>) =>
       !agentRefusal(session(params.sessionId)),
+    agentDue,
     get: (params: Record<string, unknown>) => {
       const target = session(params.sessionId);
       void migrateEntryAnchors(target);

@@ -1321,7 +1321,8 @@ describe("work service", () => {
     expect(kit.prompts.slice(1).every((each) => each.paneId === "w35:p1")).toBe(
       true,
     );
-    expect(prompt).toContain("work item you own");
+    // The header names the item once; a later delivery has the short line.
+    expect(prompt).toContain(`[Roamgate work item ${item.id.slice(0, 8)} "`);
     expect(prompt).toContain(
       `on a part of a message in thread [${parent.id.slice(0, 8)}] (on the work item):`,
     );
@@ -1413,7 +1414,9 @@ describe("work service", () => {
     await Bun.sleep(80);
     expect(kit.prompts.length).toBe(1);
     expect(kit.prompts[0]!.paneId).toBe("w35:p1");
-    expect(kit.prompts[0]!.text).toContain("work item you own");
+    expect(kit.prompts[0]!.text).toStartWith(
+      `[Roamgate work item ${item.id.slice(0, 8)} "`,
+    );
     expect(kit.prompts[0]!.text).toContain("Please look");
     // No mod with the work tools in that pane: the client's work command.
     expect(kit.prompts[0]!.text).toContain(
@@ -1709,9 +1712,11 @@ test("the real review service tells the coordinator of the user's new item, and 
   await Bun.sleep(80);
   expect(kit.prompts.length).toBe(1);
   expect(kit.prompts[0]!.paneId).toBe("w35:p1");
-  expect(kit.prompts[0]!.text).toContain("work item you own");
-  expect(kit.prompts[0]!.text).toContain("Copy a picture");
-  expect(kit.prompts[0]!.text).toContain(item.id);
+  // The header says the title once, with the item's id.
+  expect(kit.prompts[0]!.text).toStartWith(
+    `[Roamgate work item ${item.id.slice(0, 8)} "Copy a picture" (yours)]\n`,
+  );
+  expect(kit.prompts[0]!.text.split("Copy a picture")).toHaveLength(2);
   expect(kit.prompts[0]!.text).toContain("its text when it was added");
   expect(kit.prompts[0]!.text).toContain("When adding a task, paste one.");
   expect(kit.prompts[0]!.text).toContain("yours to do");
@@ -2609,4 +2614,133 @@ describe("projects of projects and workspace tags", () => {
       /not known/,
     );
   });
+});
+
+test("with the rules and the work tools, a triage, a task and a comment each end with one line naming the tool and ids", async () => {
+  const kit = reviewServiceForTest({
+    deliveryDelayMs: 1,
+    retryDelayMs: 1,
+    agentSearchMs: 600_000,
+    sessionPane: async (connectionId, sessionId) =>
+      sessionId.startsWith(WORK_SESSION_PREFIX)
+        ? service.ownerPane(
+            sessionId.slice(WORK_SESSION_PREFIX.length),
+            connectionId,
+          )
+        : null,
+    paneSession: async () => null,
+    agentTools: () => true,
+    agentWorkTools: () => true,
+    agentRules: () => true,
+  });
+  const service = createWorkService({
+    store: openWorkStore(dir()),
+    reviews: realReviews(kit.service),
+    defaultConnection: () => "desktop",
+    ownRoot: () => "/home/me/roamgate",
+    panes: async () => [{ pane_id: "w35:p1" }],
+  });
+  service.projectSet(
+    { name: "roamgate", coordinator: "desktop/w35:p1" },
+    { by: "user" },
+  );
+  const free = await service.add(
+    { text: "the phone header scrolls away" },
+    { by: "user" },
+  );
+  await Bun.sleep(80);
+  const id = free.id.slice(0, 8);
+  const triage = kit.prompts[0]!.text;
+  expect(triage).toStartWith(
+    `[Roamgate work item ${id} "the phone header scrolls away" (yours, needs triage)]\n`,
+  );
+  const thread = /- \[([0-9a-f]{8})\]/.exec(triage)![1];
+  expect(triage).toEndWith(
+    `Triage: mcp__roamgate__work_update item=${id} (title, tags, state); extra tasks: mcp__roamgate__work_add with links [{"kind":"item","id":"${id}"}]. Then mcp__roamgate__review_reply comment_id=${thread}.`,
+  );
+  expect(triage).not.toContain("yours to sort");
+  // Left unanswered at the turn's end: the check names the item to triage.
+  const freeReview = service.threads({ item: free.id, open: true })!.session.id;
+  expect(kit.service.agentDue(freeReview)).toMatchObject({
+    triageItem: free.id,
+  });
+  expect(kit.service.agentDue(freeReview).threads).toEqual([]);
+  // A task given to it, and a comment on it.
+  const task = await service.add(
+    { title: "Fold the header", text: "Fold it on scroll." },
+    { by: "user" },
+  );
+  await Bun.sleep(80);
+  const todo = kit.prompts[1]!.text;
+  expect(todo).toMatch(
+    new RegExp(
+      `Take it: mcp__roamgate__work_update item=${task.id.slice(0, 8)} state=doing owner=<your address or subagent>; or give it to another session\\. Answer: mcp__roamgate__review_reply comment_id=[0-9a-f]{8}\\.$`,
+    ),
+  );
+  const snapshot = service.threads({ item: task.id, open: true })!;
+  await kit.service.addThread({
+    sessionId: snapshot.session.id,
+    author: "you",
+    text: "Any news?",
+    anchor: { work: { item: task.id } },
+    kind: "discussion",
+  });
+  await Bun.sleep(80);
+  expect(kit.prompts[2]!.text).toMatch(
+    new RegExp(
+      `Answer: mcp__roamgate__review_reply comment_id=[0-9a-f]{8}\\. Move the item: mcp__roamgate__work_update item=${task.id.slice(0, 8)} \\(or work_done, work_reopen\\)\\.$`,
+    ),
+  );
+  // Each far shorter than the paragraph it replaces.
+  for (const prompt of kit.prompts)
+    expect(prompt.text.length).toBeLessThan(600);
+});
+
+test("the owner's first new title clears needs_triage; another's, the user's or the same title do not", async () => {
+  const { service } = setup({
+    panes: async () => [{ pane_id: "w35:p1", workspace_id: "w35" }],
+  });
+  service.projectSet(
+    { name: "roamgate", coordinator: "desktop/w35:p1" },
+    { by: "user" },
+  );
+  const owner = {
+    by: "agent" as const,
+    caller: "Claude in roamgate",
+    address: "desktop/w35:p1",
+  };
+  const item = await service.add({ text: "words to sort" }, { by: "user" });
+  expect(item.needsTriage).toBe(true);
+  // Tags alone, or another agent's title: still marked.
+  const tagged = await service.update(
+    { item: item.id, add_tags: ["board"] },
+    owner,
+  );
+  expect(tagged.needsTriage).toBe(true);
+  const other = await service.update(
+    { item: item.id, title: "Someone else's" },
+    { by: "agent", caller: "Codex", address: "desktop/w9:p1" },
+  );
+  expect(other.needsTriage).toBe(true);
+  const user = await service.update(
+    { item: item.id, title: "The user's" },
+    { by: "user" },
+  );
+  expect(user.needsTriage).toBe(true);
+  // The owner's own title: sorted.
+  const sorted = await service.update(
+    { item: item.id, title: "Words, sorted" },
+    owner,
+  );
+  expect(sorted.needsTriage).toBeUndefined();
+  // Said as a change, as a cleared mark is.
+  const again = await service.add(
+    { text: "more words to sort" },
+    { by: "user" },
+  );
+  const kept = await service.update(
+    { item: again.id, title: "Sorted, still marked", needs_triage: true },
+    owner,
+  );
+  expect(kept.needsTriage).toBe(true);
 });

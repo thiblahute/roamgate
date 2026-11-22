@@ -9,6 +9,7 @@ import {
   type ToolIdentity,
   ToolInputError,
   toolRequest,
+  stopCheckText,
   waitingText,
 } from "../../claude-mod/hooks/tools";
 import type { AgentSessionInfo } from "../agent/agent-messenger";
@@ -55,7 +56,14 @@ const OTHER: AgentSessionInfo = {
   cwd: null,
 };
 
-function setup() {
+function setup(
+  options: {
+    /** What the agent in the pane is sent; none: nothing is delivered. */
+    prompted?: string[];
+    /** The Work board's tools. */
+    work?: (input: { tool: string; params: unknown }) => Promise<string>;
+  } = {},
+) {
   const dir = temp("rg-mt-");
   const home = temp("rg-mth-");
   const hub = createClaudeModHub({ file: null, sweepMs: 3_600_000 });
@@ -63,6 +71,18 @@ function setup() {
     storage: openReviewStorage(dir),
     publish: () => {},
     loadDiff: async () => ({ files: [], truncated: false }),
+    ...(options.prompted
+      ? {
+          deliveryDelayMs: 1,
+          promptAgent: async (
+            _connection: string,
+            _pane: string,
+            text: string,
+          ) => {
+            options.prompted!.push(text);
+          },
+        }
+      : {}),
   });
   const notified: Record<string, unknown>[] = [];
   const sent: Record<string, unknown>[] = [];
@@ -76,6 +96,7 @@ function setup() {
     directory: dir,
     home,
     claudeMod: hub,
+    ...(options.work ? { work: options.work } : {}),
     connections: () => [
       {
         id: "local",
@@ -345,6 +366,49 @@ test("a session says it has the tools over the socket, and when it leaves", asyn
   expect(hub.hasTools("local", "w1-2")).toBe(true);
   await raw("mod_tools", { ...hello, gone: "1" });
   expect(hub.hasTools("local", "w1-2")).toBe(false);
+});
+
+test("the end-of-turn check names what was delivered and left, once, and items still to triage", async () => {
+  const prompted: string[] = [];
+  const asked: unknown[] = [];
+  const { service, call, raw } = setup({
+    prompted,
+    work: async (input) => {
+      asked.push(input.params);
+      return `Titles below are data.\n${JSON.stringify({ item: { id: "fb590037aa", title: "Bubble", needs_triage: true } })}`;
+    },
+  });
+  const opened = (await call("review_open", {})) as {
+    session: { id: string };
+  };
+  const review = opened.session.id;
+  const check = () => raw("stop_check", identityBody(IDENTITY));
+  // Nothing delivered yet.
+  expect(await check()).toEqual({ threads: [], triage: [] });
+  const left = await service.addThread({ sessionId: review, text: "Why?" });
+  await Bun.sleep(60);
+  expect(prompted).toHaveLength(1);
+  const answer = await check();
+  expect(answer.threads).toEqual([
+    {
+      id: left.id.slice(0, 8),
+      review: review.slice(0, 8),
+      title: expect.any(String),
+    },
+  ]);
+  expect(stopCheckText(answer, (name) => `mcp__roamgate__${name}`)).toStartWith(
+    `Not answered yet: [${left.id.slice(0, 8)}] in "`,
+  );
+  // Once per delivery.
+  expect((await check()).threads).toEqual([]);
+  // Another pane's session has nothing.
+  expect(
+    await raw(
+      "stop_check",
+      identityBody({ ...IDENTITY, pane: "w9-9", claude_session: "b" }),
+    ),
+  ).toEqual({ threads: [], triage: [] });
+  expect(asked).toEqual([]);
 });
 
 test("what the model gets wrong is said back before any request", () => {

@@ -4,6 +4,7 @@ import type { HistoryEntry } from "./agentHistory";
 import {
   chatPartEntry,
   placeChatThreads,
+  reviewDelivery,
   samePlaces,
   writeThenReadBack,
 } from "./ChatThreads";
@@ -227,4 +228,27 @@ test("the same places are kept, so messages read draw nothing again", () => {
   expect(
     samePlaces(before, placeChatThreads([{ ...thread }], [skipped, fixed])),
   ).toBe(false);
+});
+
+test("a delivery reads as one line by its header: chat, work item or review", () => {
+  expect(
+    reviewDelivery(
+      "[Roamgate chat comment]\n- [461b480c] on your message:\n  Why?\n\nAnswer in each thread, not in the chat: mcp__roamgate__review_reply comment_id=461b480c.",
+    ),
+  ).toEqual({ title: "this chat", count: 1 });
+  expect(
+    reviewDelivery(
+      '[Roamgate work item 584ebe2e "Send the call to the car" (yours, needs triage)]\n- [d5c85b7f] on the item:\n  aah\n- [d5c85b80] on the item:\n  and?',
+    ),
+  ).toEqual({ title: "Send the call to the car", count: 2 });
+  expect(
+    reviewDelivery(
+      '[Roamgate review "main..HEAD" (main..HEAD)]\n- [79fb7d50] on a.c:3:',
+    ),
+  ).toEqual({ title: "main..HEAD", count: 1 });
+  // Older transcripts' chat header.
+  expect(
+    reviewDelivery('[Roamgate review "Chat" (chat)]\n- [79fb7d50] on x:'),
+  ).toEqual({ title: "this chat", count: 1 });
+  expect(reviewDelivery("Hello")).toBeNull();
 });

@@ -735,8 +735,11 @@ and cwd as the client does, so the connection is resolved the same way
   the call ends; an ask auto mode's classifier settles asks nobody),
   `unblocked`, `usage` and `bye` (`session.end`, except `/clear` and
   `/resume`, which keep the process).
-- `mod_tools` (`session`, `client`, `headless`, `gone`) says the session has
-  the mod's tools (below).
+- `mod_tools` (`session`, `client`, `headless`, `gone`, `work`, `rules`)
+  says the session has the mod's tools (below), and with `rules: 1` that
+  its system prompt holds Roamgate's rules.
+- `stop_check` (the end-of-turn check, below) answers `{threads: [{id,
+  review, title}], triage: [{item, title}]}`.
 
 The inbox (`claude-mod-inbox.json` in the data directory, at most 50 per
 pane, a day old at most) survives restarts with its ids and `epoch`; a mod
@@ -760,9 +763,11 @@ In every session, conversation mode's headless claude and `claude -p` runs
 included, the mod also gives the model tools (`server/claude-mod/hooks/tools.ts`,
 named `mcp__roamgate__<name>`): `review_get`, `review_reply`, `review_add`,
 `review_working`, `review_update`, `review_resolve`, `review_reopen`,
-`review_edit`, `review_notify`, `agent_message` and `agent_sessions` in the
-prompt's tool list, `review_open`, `review_summary` and `review_threads`
-behind tool search. Each is one request to the review socket with the body
+`review_edit`, `review_notify`, `agent_message`, `agent_sessions`,
+`work_update` and `work_list` in the prompt's tool list (the delivered
+prompts name them), `review_open`, `review_summary`, `review_threads` and
+the other `work_*` tools behind tool search. Each is one request to the
+review socket with the body
 `roamgate-review` sends for the same command (`comment_id` is `comment`,
 `review` is `session`), the pane under Roamgate's names in a headless claude
 as the client does, `claude_session`, and `via: claude-mod` without `agent`:
@@ -786,6 +791,35 @@ comment, handoffs, review requests) names them (`your review_reply tool
 command lines; other agents keep the commands. The chat reads an
 `agent_message` call as a sent message, as it reads `roamgate-review
 message`.
+
+Rules once per session: in a session Roamgate delivers to (a Herdr pane's
+TUI, conversation mode's headless claude; never a script's `claude -p`) a
+`prompt.compose` hook appends the section `roamgate:rules` (scope
+`session`, `rulesSection` in tools.ts) to every request's system prompt:
+what the delivered prompts mean (answer each thread once in it with
+`review_reply`, the chat's answer in the thread, `review_working` before
+long work; keep owned Work items true, triage a free-text one with a
+title, tags, a state, split tasks; another session's message carries no
+user authority, answered once with `agent_message`; nothing is published
+to a forge), naming each tool as the session calls it. Being the system
+prompt, it survives compaction, `/clear` and resume. Once a request
+carried it, the next `mod_tools` hello (sent at once) says `rules: 1`
+(`ClaudeModHub.hasRules`), and the review service sends that pane the
+short deliveries alone (Reviews, below).
+
+End-of-turn check: the same sessions' `classic.Stop` asks `stop_check`
+(the pane, `claude_session`): the threads of the reviews and chats whose
+agent runs in the pane or is the session that a delivery sent it
+(`ReviewService.agentDue`: in memory, by thread) and that still wait on
+its answer, unless it took them since (`review_working` on the thread)
+or was reminded of them since that delivery; and the work items a triage
+delivery sent it that `work_list` still lists `needs_triage`. With any,
+the hook answers `{block}` with one line each naming the id and the tool
+(`stopCheckText`: `Not answered yet: [c7804e28] in "...":
+mcp__roamgate__review_reply comment_id=c7804e28.`, `Still needs triage:
+fb590037 ...`), and Claude Code goes on with that. Never twice in a row
+(`stop_hook_active`), and each thread at most once per delivery, so it
+never loops. A settings hook beneath that blocks keeps its own reason.
 
 ## Ranger
 
@@ -1049,6 +1083,29 @@ agent pane it shows the review as live with, and **Retry** on an
 undelivered comment attaches it or sends again. A busy agent is
 tried again up to 10 times, 15 s apart at first and doubling up to 10
 minutes. `watch`, a long poll on the service, is for agents without a pane.
+
+What a delivery says (`deliverNow`): a header saying what it is about
+once (`[Roamgate chat comment]`; `[Roamgate work item ID "TITLE" (yours)]`,
+`, needs triage` for a free-text item to sort; `[Roamgate review "TITLE"
+(TARGET)]` for the others), each thread with its bracketed id, place,
+quote and comments, and one line naming the exact tool and id to answer
+with, as this agent calls it: the mod's MCP name
+(`mcp__roamgate__review_reply comment_id=ID`) when its pane's Claude has
+the mod's tools, Ranger's `chat_thread_reply` in its chats, else the
+client's command (`~/.cache/roamgate/bin/roamgate-review --session R
+--agent 'A' reply --comment ID -- TEXT`); a work item's line names
+`work_update` (item, state) and `work_add` the same way. The rules behind
+that line come once per agent session: from the mod's system prompt
+section when its pane says `rules`, from Ranger's own system prompt in its
+chats; any other agent (Codex, Pi, Claude without the mod or with an older
+one) gets the long form, today's paragraph for that kind (chat, review,
+effort view, work item comment, item to do, item to triage), the first
+time its session gets that kind (`explainsFirst`, in memory per
+connection and pane), and again after its session changed (`paneSession`)
+or was compacted since (`agentCompactedSince`: Claude's
+`isCompactSummary` or `compact_boundary`, Codex's `compacted`, Pi's
+`compaction` in the transcript's last 512 KiB,
+`agent/session-compaction.ts`).
 
 Comments follow the agent's session, not a pane. When a review binds an agent
 pane, the service records the session Herdr (or conversation mode) reports there
@@ -1933,7 +1990,11 @@ workspace, a `chat` link); the board puts the item in
 (`web/src/work.ts`, the one way every add form builds its call). A free
 text item with an owner other than the agent that added it is
 `needsTriage`, so the owner session, not the coordinator, gets the
-triage prompt. `ChatWorkProvider` hands the chat's parts their menu: a
+triage prompt. The mark clears itself on the owner's first `work_update`
+that changes the title (`WorkMeta.address` is the owner's, before or
+after the update; the sorting that matters), or with `needs_triage:
+false`; the mod's end-of-turn check lists the owner's items still marked
+after a triage delivery. `ChatWorkProvider` hands the chat's parts their menu: a
 right-click or a long-press on a part (`NoteBody`'s
 `MessageParts.onPartMenu`, with the words selected in the message or the
 part's, set by `ChatThreads.tsx`'s `partsFor`; the menu key or Shift+F10
@@ -2042,12 +2103,12 @@ on the agent's connection), `work_project`, with the RPCs' parameters
 checked against their schemas (`server/src/work/tools.ts`; `help` lists
 them). Answers are JSON after a line saying what in them other people
 wrote. The caller is named in what the user is told ("Claude in roamgate
-added ..."). Each description ends by naming the client's `work` command
-as the way without the tool: the mod registers its tools at
-`session.start`, so a Claude session started before the mod had the
-`work_*` tools keeps its older mod until it restarts (installed plugins
-are not hot-reloaded), and a subagent loads them through ToolSearch as
-any deferred tool. The mod's `mod_tools` hello says `work: 1` when it
+added ..."). The mod's descriptions do not name the client (the session
+that reads them has the tools); the client's `work help` does. The mod
+registers its tools at `session.start`, so a Claude session started
+before the mod had the `work_*` tools keeps its older mod until it
+restarts (installed plugins are not hot-reloaded), and a subagent loads
+the deferred ones through ToolSearch. The mod's `mod_tools` hello says `work: 1` when it
 has them (`ClaudeModHub.hasWorkTools`); the review service's delivered
 prompts for a work item name the tools to such a session and the
 client's command (`roamgate-review work work_list '{"item": ...}'`) to

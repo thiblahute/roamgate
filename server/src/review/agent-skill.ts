@@ -304,10 +304,14 @@ becomes an item's own, comments and ids kept), \`work_comment_edit\` /
 \`work_comment_delete\` (one of your own comments on an item, by its id),
 \`work_project\` (a project's checkouts and done rule: this Roamgate's
 deployed build, or a branch of a checkout). In Claude Code with Roamgate's
-mod they are also tools, \`mcp__roamgate__work_*\`, behind tool search;
-a session started before the mod had them, or a subagent that cannot load
-them, uses the client above the same way (\`roamgate-review work TOOL
-'JSON'\`). Importing existing work: \`work_add\` with
+mod they are also tools, \`mcp__roamgate__work_*\` (\`work_update\` and
+\`work_list\` listed, the others behind tool search); a session started
+before the mod had them, or a subagent that cannot load them, uses the
+client above the same way (\`roamgate-review work TOOL 'JSON'\`). An item
+the user added as free text comes to its owner marked \`needs_triage\`:
+give it a short title (your first new title clears the mark;
+\`needs_triage: false\` when the title stays), its tags and its state, and
+split extra tasks into new items linked to it. Importing existing work: \`work_add\` with
 \`source\` (one item per source: the same source again changes the item
 and says \`updated: true\` with what changed; a different title is refused
 unless \`replace: true\`), \`created_at\` / \`done_at\`, and \`adopt_thread\`

@@ -2010,6 +2010,15 @@ function getReviewService(): ReviewService {
       claudeModHub.hasTools(connectionId, paneId),
     agentWorkTools: (connectionId, paneId) =>
       claudeModHub.hasWorkTools(connectionId, paneId),
+    // Its mod's system prompt section holds the rules: short deliveries.
+    agentRules: (connectionId, paneId) =>
+      claudeModHub.hasRules(connectionId, paneId),
+    agentCompactedSince: async (connectionId, paneId, since) => {
+      if (rangerChatSession(paneId)) return false;
+      const runtime = connectionManager.readyRuntime(connectionId);
+      if (!runtime || runtime.remotePlatform === "windows") return false;
+      return runtime.agentSessions.compactedSince(paneId, since);
+    },
     onDeliveryError: (session, reason) =>
       logger.warn("review comments not delivered", {
         connection: session.connectionId,

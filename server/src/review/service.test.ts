@@ -1115,7 +1115,12 @@ test("the user's comments reach the agent by themselves, batched", async () => {
   });
   await Bun.sleep(80);
   expect(prompts).toHaveLength(2);
-  expect(prompts[1]).toContain("A comment from me");
+  // Its session had the rules in full once: the short line now, naming the
+  // exact command and id.
+  expect(prompts[1]).not.toContain("A comment from me");
+  expect(prompts[1]).toContain(
+    `reply --comment ${first.id.slice(0, 8)} -- TEXT`,
+  );
   expect(prompts[1]).toContain("line 4?");
   expect(prompts[1]).not.toContain("And the tests?");
 
@@ -1446,10 +1451,11 @@ test("a Ranger chat's threads go to Ranger, answered with its own tool", async (
   await Bun.sleep(60);
   expect(prompts).toHaveLength(1);
   expect(prompts[0]!.pane).toBe("ranger:chat-one");
-  expect(prompts[0]!.text).toStartWith('[Roamgate review "');
+  expect(prompts[0]!.text).toStartWith("[Roamgate chat comment]\n");
   expect(prompts[0]!.text).toContain(`[${thread.id.slice(0, 8)}]`);
-  expect(prompts[0]!.text).toContain(
-    "Answer each in its thread with your `chat_thread_reply` tool",
+  // Ranger's system prompt holds the rules: the short line, its own tool.
+  expect(prompts[0]!.text).toEndWith(
+    "Answer in each thread, not in the chat: your `chat_thread_reply` tool.",
   );
   expect(prompts[0]!.text).not.toContain("roamgate-review");
   // Its answer, by comment id prefix, lands in the thread.

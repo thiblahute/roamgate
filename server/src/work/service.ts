@@ -999,6 +999,17 @@ export function createWorkService(deps: WorkServiceDeps) {
       else delete next.needsTriage;
       if (!!next.needsTriage !== !!before.needsTriage)
         change.needs_triage = !!next.needsTriage;
+    } else if (
+      before.needsTriage &&
+      change.title !== undefined &&
+      meta.by === "agent" &&
+      !!meta.address &&
+      (meta.address === before.owner?.session ||
+        meta.address === next.owner?.session)
+    ) {
+      // Its owner's first title for it is the triage the mark waits for.
+      delete next.needsTriage;
+      change.needs_triage = false;
     }
     settleWorkAsk(before, next, params, meta, change);
     const linksChanged =
