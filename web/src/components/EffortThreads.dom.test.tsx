@@ -139,36 +139,39 @@ if (process.env.ROAMGATE_EFFORT_THREADS_DOM_TEST !== "1") {
       return { ok: true };
     };
     const reviewCalls: [string, Record<string, unknown>][] = [];
-    (bridge as any).connection = () => ({
-      call: async (method: string, params: Record<string, unknown>) => {
-        reviewCalls.push([method, params]);
-        if (method === "review.thread.add") {
-          const at = new Date().toISOString();
-          threads.push({
-            id: params.new_thread_id,
-            sessionId: session.id,
-            kind: params.kind,
-            anchor: params.anchor,
-            comments: [
-              {
-                id: `${params.new_thread_id}c`,
-                author: "you",
-                body: params.text,
-                createdAt: at,
-                updatedAt: at,
-              },
-            ],
-            resolved: false,
-            createdAt: at,
-            updatedAt: at,
-          });
-        } else if (method === "review.resolve") {
-          const thread = threads.find((each) => each.id === params.comment_id);
-          thread.resolved = params.resolved;
-        }
-        return snapshot();
-      },
-    });
+    // A review is read and written on its own connection.
+    (bridge as any).callConnection = async (
+      _connectionId: string,
+      method: string,
+      params: Record<string, unknown>,
+    ) => {
+      reviewCalls.push([method, params]);
+      if (method === "review.thread.add") {
+        const at = new Date().toISOString();
+        threads.push({
+          id: params.new_thread_id,
+          sessionId: session.id,
+          kind: params.kind,
+          anchor: params.anchor,
+          comments: [
+            {
+              id: `${params.new_thread_id}c`,
+              author: "you",
+              body: params.text,
+              createdAt: at,
+              updatedAt: at,
+            },
+          ],
+          resolved: false,
+          createdAt: at,
+          updatedAt: at,
+        });
+      } else if (method === "review.resolve") {
+        const thread = threads.find((each) => each.id === params.comment_id);
+        thread.resolved = params.resolved;
+      }
+      return snapshot();
+    };
 
     const { createRoot } = await import("react-dom/client");
     const { EditorView } = await import("@codemirror/view");
