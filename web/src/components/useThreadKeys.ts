@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { REVIEW_USER, type ReviewThread } from "../../../shared/review";
 import { latestComment } from "../reviewNavigation";
+import { useOpenAtTarget } from "../reviewOpenAt";
 
 /*
  * The keys of threads drawn where they are (an agent chat's, the Files
@@ -383,6 +384,23 @@ export function useThreadKeys(
       unpad();
     };
   }, [attach]);
+  // A link to one of the list's comments (reviewOpenAt.ts): its thread
+  // unfolded, gone to as g; goes to a comment, the comment highlighted.
+  useOpenAtTarget({
+    find: (id) => keys.current.threadsById.get(id),
+    threads: options.threadsById,
+    root: () => findList.current(),
+    go: (thread, comment) => {
+      const k = keys.current;
+      if (thread.resolved !== k.flipped.has(thread.id)) k.toggleFold(thread);
+      // Once drawn unfolded.
+      requestAnimationFrame(() => {
+        const now = keys.current;
+        if (comment && now.goToComment) now.goToComment(thread, comment);
+        else now.goToThread(thread.id);
+      });
+    },
+  });
 }
 
 /** What a click does by itself: a link, a control, a box, a thread. */

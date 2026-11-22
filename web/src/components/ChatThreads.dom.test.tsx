@@ -1370,4 +1370,96 @@ if (process.env.ROAMGATE_CHAT_THREADS_DOM_TEST !== "1") {
     chatReview.threads = kept;
     localStorage.clear();
   });
+
+  test("a link to a comment of the chat opens its thread unfolded, the cursor on that comment, highlighted", async () => {
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { ChatThreadsProvider, useChatParts } = await import("./ChatThreads");
+    const { requestOpenAt, pendingOpenAt } = await import("../reviewOpenAt");
+    localStorage.clear();
+    const kept = chatReview.threads;
+    const first = kept[0]!.comments[0]!;
+    // Resolved: drawn folded.
+    chatReview.threads = [
+      {
+        ...kept[0]!,
+        id: "a100000000000001",
+        anchor: { chat: { entry: "e1", quote: "Second part" } },
+        comments: [
+          { ...first, id: "c100000000000001", body: "Why?" },
+          {
+            ...first,
+            id: "c100000000000002",
+            author: "Claude",
+            body: "Because the box opens.",
+          },
+        ],
+        resolved: true,
+      },
+    ];
+    const entry = {
+      id: "e1",
+      kind: "message",
+      role: "assistant",
+      text: "First part. Second part. Third part.",
+    };
+    function Message() {
+      const parts = useChatParts(entry as never);
+      return (
+        <div className="agent-history-chat" data-entry-id={entry.id}>
+          {parts?.notes.map((note) => (
+            <div key={note.key}>{note.node}</div>
+          ))}
+        </div>
+      );
+    }
+    const host = document.createElement("div");
+    host.className = "agent-history-messages";
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <ChatThreadsProvider
+          connectionId="local"
+          workspaceId="w1"
+          chat="chat-1"
+          path="/repo"
+          agent="claude"
+          paneId="w1:p1"
+          entries={[entry] as never}
+        >
+          <div className="agent-history-chat-frame">
+            <Message />
+          </div>
+        </ChatThreadsProvider>,
+      ),
+    );
+    await act(settle);
+    const card = () =>
+      host.querySelector<HTMLElement>('[data-thread-id="a100000000000001"]');
+    expect(card()?.classList.contains("is-folded")).toBe(true);
+    await act(async () => {
+      requestOpenAt({
+        review: "s1",
+        thread: "a100000000000001",
+        comment: "c100000000000002",
+      });
+      await settle();
+    });
+    await act(settle);
+    expect(pendingOpenAt()).toBeNull();
+    expect(card()?.classList.contains("is-folded")).toBe(false);
+    const stop = host.querySelector<HTMLElement>(
+      '[data-chat-stop="m:c100000000000002"]',
+    )!;
+    expect(stop.classList.contains("is-focused")).toBe(true);
+    expect(stop.dataset.openAt).toBe("");
+    expect(document.activeElement).toBe(
+      host.querySelector(".agent-history-chat"),
+    );
+    await act(async () => root.unmount());
+    host.remove();
+    chatReview.threads = kept;
+    localStorage.clear();
+  });
 }

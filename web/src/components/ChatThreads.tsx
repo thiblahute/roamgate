@@ -1010,15 +1010,17 @@ function ChatThreadsScope({
    * The thread gone to whose message is older than those shown: older
    * messages are read, a page at a time, until it is drawn.
    */
-  const [seeking, setSeeking] = useState<{ id: string; pages: number } | null>(
-    null,
-  );
+  const [seeking, setSeeking] = useState<{
+    id: string;
+    comment?: string;
+    pages: number;
+  } | null>(null);
   const olderRef = useRef(older);
   olderRef.current = older;
   /** Goes to a thread, reading older messages for it if need be. */
   const goTo = useCallback(
-    (id: string) => {
-      if (goToThread(id)) {
+    (id: string, comment?: string) => {
+      if (goToThread(id, comment)) {
         setOverviewOpen(false);
         return;
       }
@@ -1029,7 +1031,7 @@ function ChatThreadsScope({
         return;
       }
       setOverviewOpen(false);
-      setSeeking({ id, pages: 0 });
+      setSeeking({ id, ...(comment ? { comment } : {}), pages: 0 });
     },
     [goToThread, setOverviewOpen],
   );
@@ -1038,7 +1040,7 @@ function ChatThreadsScope({
     if (!away.has(seeking.id)) {
       // Drawn: there once the chat has it on screen.
       const frame = requestAnimationFrame(() => {
-        goToThread(seeking.id);
+        goToThread(seeking.id, seeking.comment);
         setSeeking(null);
       });
       return () => cancelAnimationFrame(frame);
@@ -1052,7 +1054,7 @@ function ChatThreadsScope({
       );
       return;
     }
-    setSeeking({ id: seeking.id, pages: seeking.pages + 1 });
+    setSeeking({ ...seeking, pages: seeking.pages + 1 });
     older.load();
   }, [seeking, away, older, goToThread, setOverviewOpen]);
   /**
@@ -1263,8 +1265,9 @@ function ChatThreadsScope({
     openOnly,
     toggleFold,
     goToThread,
-    // g;: the comment written last, yours or the agent's, on the chat.
-    goToComment: (thread, comment) => void goToThread(thread.id, comment),
+    // g; (the comment written last, yours or the agent's, on the chat), a
+    // link to a comment: older messages read for it if need be.
+    goToComment: (thread, comment) => goTo(thread.id, comment),
     latestAmong: (thread) => !!(thread.anchor.chat || thread.anchor.message),
     openOverview,
     jumpUnresolved,
