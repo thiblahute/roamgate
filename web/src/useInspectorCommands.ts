@@ -60,7 +60,10 @@ export function inspectorShortcutList(set: InspectorCommandSet): {
           .filter((command) => {
             if (command.listed === false || seen.has(command.name))
               return false;
-            seen.add(command.name);
+            // A word completed on its own that is another's alias (:add's
+            // :new-item) is on that one's row.
+            for (const word of [command.name, ...(command.aliases ?? [])])
+              seen.add(word);
             return true;
           })
           .map(

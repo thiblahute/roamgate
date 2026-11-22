@@ -88,6 +88,7 @@ import {
   useStoreSelector,
 } from "../store";
 import { useSystemBack } from "../systemBack";
+import { useInspectorCommands } from "../useInspectorCommands";
 import { formatUiDateTime } from "../uiLocale";
 import {
   openWorkChat,
@@ -654,9 +655,30 @@ export function useWorkMode({
   const [draft, setDraft] = useState<WorkAddDraft | null>(
     initialAdd ?? restored?.draft ?? null,
   );
+  /** The words `:add WORDS` starts the form with. */
+  const [addText, setAddText] = useState<string | null>(null);
+  /** A new `:add WORDS` draws the form again, with its words. */
+  const [addSeq, setAddSeq] = useState(0);
   const setAdding = (next: boolean) => {
     setAddingState(next);
-    if (!next) setDraft(null);
+    if (!next) {
+      setDraft(null);
+      setAddText(null);
+    }
+  };
+  /**
+   * The add form, from anywhere in the view (the list, an item's detail:
+   * left open under it, it shows again on Cancel or Back); `text` starts
+   * it with those words.
+   */
+  const openAdd = (text?: string) => {
+    if (text) {
+      setDraft(null);
+      setAddText(text);
+      setAddSeq((seq) => seq + 1);
+    }
+    setCompose(null);
+    setAddingState(true);
   };
   /**
    * The item just added, as the add answered it: its detail stays open
@@ -673,15 +695,10 @@ export function useWorkMode({
   const keyState = useRef(EMPTY_KEY_STATE);
   /** s or t on a card: the detail opens with that box focused. */
   const pendingFocus = useRef<"state" | "tags" | null>(null);
-  // The phone's Back closes the detail, then the view.
-  useSystemBack(
-    enabled && (detail !== null || adding),
-    () => {
-      setDetail(null);
-      setAdding(false);
-    },
-    "popup",
-  );
+  // The phone's Back closes the form, then the detail (the form opened
+  // over an item goes back to it), then the view.
+  useSystemBack(enabled && detail !== null, () => setDetail(null), "popup");
+  useSystemBack(enabled && adding, () => setAdding(false), "popup");
 
   const projects = data?.projects ?? NO_PROJECTS;
   const boardItems = data?.items ?? NO_ITEMS;
@@ -1280,13 +1297,37 @@ export function useWorkMode({
       }
       return false;
     }
+    // The page keys of an item's detail, from out of its list: its list's.
+    if (
+      detailItem &&
+      !adding &&
+      event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      /^[dufb]$/.test(event.key) &&
+      !target?.closest("[data-work-keys]")
+    ) {
+      const list = detailListRef.current;
+      if (!list) return false;
+      list.focus({ preventScroll: true });
+      list.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: event.key,
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      return true;
+    }
     if (event.metaKey || event.ctrlKey || event.altKey) return false;
     if (event.key === "Escape") {
       keyState.current = EMPTY_KEY_STATE;
       if (drag) dragCancel();
       else if (adding) {
         setAdding(false);
-        back();
+        // Opened over an item: back to it (its keys take the focus).
+        if (!detail) back();
       } else if (detail) closeDetail();
       else if (focus) focusColumn(null);
       else if (query) setQuery("");
@@ -1312,13 +1353,22 @@ export function useWorkMode({
           key === "ArrowDown" ||
           key === "ArrowUp" ||
           key === "gg" ||
-          key === "G")
+          key === "G" ||
+          key === "zz" ||
+          key === "zt" ||
+          key === "zb" ||
+          key === "{" ||
+          key === "}")
       ) {
-        // The keys go to the list, and this one with them.
+        // The keys go to the list, and this one (its count) with them.
         list.focus({ preventScroll: true });
-        if (key.length === 1 || key.startsWith("Arrow"))
+        const typed = [
+          ...(fed.count && fed.count > 1 ? String(fed.count) : ""),
+          ...(key.startsWith("Arrow") ? [key] : key),
+        ];
+        for (const each of typed)
           list.dispatchEvent(
-            new KeyboardEvent("keydown", { key, bubbles: true }),
+            new KeyboardEvent("keydown", { key: each, bubbles: true }),
           );
       } else if (key === "c") setCompose("comment");
       else if (key === "r") setCompose("reply");
@@ -1327,6 +1377,7 @@ export function useWorkMode({
       else if (key === "o") void openOwner(detailItem);
       else if (key === "dd" && detailItem.state !== "done")
         markDone(detailItem);
+      else if (key === "a") openAdd();
       else return false;
       return true;
     }
@@ -1395,7 +1446,7 @@ export function useWorkMode({
       }
     } else if (key === "za" || key === "zc" || key === "zo") {
       if (current) toggleFold(current.state);
-    } else if (key === "a") setAdding(true);
+    } else if (key === "a") openAdd();
     else if (key === "/") {
       searchRef.current?.focus();
       searchRef.current?.select();
@@ -1412,6 +1463,25 @@ export function useWorkMode({
     } else return false;
     return true;
   };
+
+  // :add (:new-item), the inspector's prompt: the form, as a does;
+  // :add WORDS starts it with them.
+  const addCommand = {
+    aliases: [] as string[],
+    description:
+      "add a work item (a, the + button); :add WORDS starts it with them",
+    run: (argument: string) => openAdd(argument || undefined),
+  };
+  useInspectorCommands(
+    enabled
+      ? {
+          commands: [
+            { ...addCommand, name: "add", aliases: ["new-item"] },
+            { ...addCommand, name: "new-item" },
+          ],
+        }
+      : null,
+  );
 
   const deployed = data?.deployed;
   const inner = adding || !!detailItem;
@@ -1442,7 +1512,7 @@ export function useWorkMode({
         aria-label="Add an item (a)"
         title="Add an item (a)"
         aria-pressed={adding}
-        onClick={() => setAdding(true)}
+        onClick={() => openAdd()}
       >
         <Plus size={16} />
       </button>
@@ -1486,6 +1556,7 @@ export function useWorkMode({
       ) : null}
       {adding && addProject ? (
         <WorkAddForm
+          key={addSeq}
           project={addProject}
           projectName={projectName(addProject)}
           {...(draft
@@ -1493,10 +1564,13 @@ export function useWorkMode({
                 initialText: draft.text,
                 owner: draft.ownerName ?? draft.owner,
               }
-            : {})}
+            : addText
+              ? { initialText: addText }
+              : {})}
           onCancel={() => {
             setAdding(false);
-            back();
+            // Opened over an item: back to it (its keys take the focus).
+            if (!detail) back();
           }}
           // A failure throws: the form says why, until dismissed.
           onAdd={async (params) => {
@@ -1584,6 +1658,7 @@ export function useWorkMode({
                 }
               : null
           }
+          onAdd={() => openAdd()}
           stateRef={stateRef}
           tagsRef={tagsRef}
           listRef={detailListRef}
@@ -2494,6 +2569,7 @@ function WorkDetail({
   onReopen,
   onTags,
   onRemove,
+  onAdd,
   back,
   sorting = null,
   stateRef,
@@ -2519,6 +2595,8 @@ function WorkDetail({
   onReopen: () => void;
   onTags: (tags: string[]) => void;
   onRemove: () => void;
+  /** a: the add form, over the detail (shown again on Cancel). */
+  onAdd: () => void;
   back: () => void;
   /**
    * The item was just added: who sorts it (its owner, else the project's
@@ -2552,7 +2630,8 @@ function WorkDetail({
       else if (key === "o") onOpenOwner();
       else if (key === "dd") {
         if (item.state !== "done") onDone();
-      } else return false;
+      } else if (key === "a") onAdd();
+      else return false;
       return true;
     },
   });

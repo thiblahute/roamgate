@@ -13,7 +13,10 @@ import { useOpenAtTarget } from "../reviewOpenAt";
  * its first part) answers that message in a thread on the whole of it
  * (elsewhere, R answers the thread), r resolves, za folds, dd deletes a
  * lone comment of yours, T lists them, g; goes to the comment written
- * last (as in the review pane), gg / G and zz / zt / zb place. In a table, whose cells are stops, the keys
+ * last (as in the review pane), gg / G and zz / zt / zb place, Ctrl+D /
+ * Ctrl+U scroll half a page and Ctrl+F / Ctrl+B a page, the cursor moving
+ * with the page, { / } go to the previous / next heading (a document's,
+ * a work item's design doc). In a table, whose cells are stops, the keys
  * move as in a grid: h / l to the cell on the left or right, j / k down
  * and up its column (through the threads on a row), out of the table
  * past its last or first row. Only while the list itself has the focus:
@@ -23,8 +26,34 @@ import { useOpenAtTarget } from "../reviewOpenAt";
  * or a control is left to it.
  */
 
+/** Ctrl and these: how many pages the page keys scroll. */
+const PAGE_KEYS: Record<string, number> = { d: 0.5, u: -0.5, f: 1, b: -1 };
+
+const HEADING = /^H[1-6]$/;
+
+/**
+ * A stop that is a heading, in one, or one first (a document's part: its
+ * + aside, in the wrappers around its words).
+ */
+function isHeadingStop(stop: HTMLElement): boolean {
+  if (HEADING.test(stop.tagName)) return true;
+  let element = stop.firstElementChild;
+  while (element) {
+    if (element.classList.contains("rc-part-add")) {
+      element = element.nextElementSibling;
+      continue;
+    }
+    if (HEADING.test(element.tagName)) return true;
+    if (element.tagName !== "DIV") break;
+    element = element.firstElementChild;
+  }
+  return !!stop.parentElement?.closest("h1, h2, h3, h4, h5, h6");
+}
+
 /** The keys a count repeats: the moves. */
 const REPEATED = new Set([
+  "{",
+  "}",
   "j",
   "k",
   "ArrowDown",
@@ -92,6 +121,12 @@ export type ThreadKeys = {
   pastEnd?: () => void;
   /** i, a, Esc: the keys leave the list. */
   leave?: () => void;
+  /**
+   * zz / zt / zb and the page keys scroll the nearest scroller around the
+   * list when nothing from a stop up to the list scrolls (a work item's
+   * detail, in the board's scrolling body).
+   */
+  outerScroller?: boolean;
   /** The list's own other keys (the chat's J / K, g;): true when done. */
   otherKey?: (
     key: string,
@@ -140,8 +175,63 @@ export function useThreadKeys(
       if (padded) padded.style.paddingBottom = "";
       padded = null;
     };
+    /** The scroller a stop is placed in, and the page keys scroll. */
+    const scrollerFor = (stop: HTMLElement | undefined) => {
+      const inner = stop ? scrollerOf(stop, list) : list;
+      if (inner !== list || scrolls(list) || !keys.current.outerScroller)
+        return inner;
+      return outerScrollerOf(list) ?? list;
+    };
+    /**
+     * Ctrl+D / Ctrl+U / Ctrl+F / Ctrl+B: the scroller moves by `pages`
+     * (half a page, a page), and the cursor with it: kept where it was on
+     * the screen, or as far again where the scroller could not go (at
+     * the top or the bottom).
+     */
+    const page = (pages: number) => {
+      const k = keys.current;
+      const all = k.stops(list);
+      if (!all.length) return;
+      const here = all.find((stop) => k.keyOf(stop) === k.cursor);
+      const scroller = scrollerFor(here ?? all[0]);
+      const delta = Math.round(scroller.clientHeight * pages);
+      const from = here
+        ? here.getBoundingClientRect().top
+        : scroller.getBoundingClientRect().top;
+      const before = scroller.scrollTop;
+      scroller.scrollTop = before + delta;
+      const target = from + delta - (scroller.scrollTop - before);
+      let best = all[0]!;
+      let distance = Number.POSITIVE_INFINITY;
+      for (const stop of all) {
+        const away = Math.abs(stop.getBoundingClientRect().top - target);
+        if (away < distance) {
+          best = stop;
+          distance = away;
+        }
+      }
+      // Always a step, when there is one that way.
+      if (here && best === here) {
+        const at = all.indexOf(here);
+        best =
+          all[Math.max(0, Math.min(all.length - 1, at + Math.sign(delta)))]!;
+      }
+      moved = k.keyOf(best);
+      k.setCursor(moved);
+      list.focus({ preventScroll: true });
+    };
     const onKey = (event: KeyboardEvent) => {
-      if (event.target !== list || event.metaKey || event.ctrlKey) return;
+      if (event.target !== list || event.metaKey) return;
+      if (event.ctrlKey) {
+        const pages = PAGE_KEYS[event.key];
+        if (pages === undefined || event.altKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        machine.reset();
+        moved = undefined;
+        page(pages);
+        return;
+      }
       const result = machine.feed(event.key);
       if (result.type === "wait") {
         // A count (3j moves three stops) or a prefix: kept for the next key.
@@ -184,8 +274,9 @@ export function useThreadKeys(
         if (!here) return;
         // In the list's own scroller only: scrollIntoView would also
         // scroll the ancestors that clip it, the Files preview's content
-        // box among them, and move the whole preview.
-        const scroller = scrollerOf(here, list);
+        // box among them, and move the whole preview. (A list that does
+        // not scroll itself may say to use the one around it.)
+        const scroller = scrollerFor(here);
         // As Vim does at the end of a file: room below the last stops,
         // until the keys leave.
         if (block !== "end") {
@@ -266,7 +357,18 @@ export function useThreadKeys(
           if (stop) moved = k.keyOf(stop);
         }
       } else if (key === "T") k.openOverview();
-      else if (key === "gg") select(all[0]);
+      else if (key === "{" || key === "}") {
+        // The previous / next heading, from where the cursor is.
+        const headings = all.filter(isHeadingStop);
+        const next =
+          key === "}"
+            ? headings.find((stop) => all.indexOf(stop) > at)
+            : [...headings]
+                .reverse()
+                .find((stop) => at < 0 || all.indexOf(stop) < at);
+        if (!next) return false;
+        select(next);
+      } else if (key === "gg") select(all[0]);
       else if (key === "G") select(all[all.length - 1]);
       else if (key === "zz") place("center");
       else if (key === "zt") place("start");
@@ -502,6 +604,17 @@ export function scrollerOf(stop: HTMLElement, list: HTMLElement): HTMLElement {
   )
     if (scrolls(element)) found = element;
   return found ?? list;
+}
+
+/** The nearest scroller around `list`, out of it. */
+function outerScrollerOf(list: HTMLElement): HTMLElement | null {
+  for (
+    let element = list.parentElement;
+    element;
+    element = element.parentElement
+  )
+    if (scrolls(element)) return element;
+  return null;
 }
 
 /** How far `scroller` scrolls to put `stop` at its top, middle or bottom. */

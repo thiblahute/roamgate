@@ -298,8 +298,14 @@ if (
       replying: null,
       setReplying: () => {},
     }),
-    WorkItemThreads: (props: { description?: { id: string } | null }) => (
-      <div data-work-threads={props.description?.id ?? ""} />
+    WorkItemThreads: (props: {
+      description?: { id: string } | null;
+      compose?: string | null;
+    }) => (
+      <div data-work-threads={props.description?.id ?? ""}>
+        {/* The comment box c opens (the real one: a CodeMirror editor). */}
+        {props.compose ? <textarea aria-label="Comment" /> : null}
+      </div>
     ),
     WorkDescription: (props: { thread: { comments: { body: string }[] } }) => (
       <div className="work-description">{props.thread.comments[0]?.body}</div>
@@ -308,10 +314,12 @@ if (
   mock.module("./ReviewCommentEditorLazy", () => ({
     ReviewCommentEditorLazy: (props: {
       label?: string;
+      value?: string;
       onChange: (text: string) => void;
     }) => (
       <textarea
         aria-label={props.label}
+        defaultValue={props.value}
         onChange={(event) => props.onChange(event.target.value)}
       />
     ),
@@ -345,7 +353,10 @@ if (
   bridge.onMrReviews = (() => () => {}) as typeof bridge.onMrReviews;
   const { MrReviewsPanel } = await import("./MrReviewsPanel");
   const { InspectorHeaderSlotContext } = await import("./inspectorHeaderSlot");
-  const { InspectorViewContext } = await import("../useInspectorCommands");
+  const { InspectorViewContext, InspectorCommandsContext } = await import(
+    "../useInspectorCommands"
+  );
+  type CommandSet = import("../useInspectorCommands").InspectorCommandSet;
   const { createRoot } = await import("react-dom/client");
 
   async function mount(
@@ -356,6 +367,8 @@ if (
       expanded?: boolean;
       /** In the inspector: its header row's slot takes the controls. */
       inHeader?: boolean;
+      /** The inspector's prompt: the commands the board gives it. */
+      commands?: Map<string, CommandSet>;
     } = {},
   ) {
     const header = document.createElement("header");
@@ -365,6 +378,25 @@ if (
     const root = createRoot(container);
     let closed = 0;
     const closes: unknown[] = [];
+    const commands = props.commands;
+    const withCommands = (panel: React.ReactNode) =>
+      commands ? (
+        <InspectorViewContext.Provider value="work">
+          <InspectorCommandsContext.Provider
+            value={{
+              set: (id, _view, set) => {
+                if (set) commands.set(id, set);
+                else commands.delete(id);
+              },
+              run: () => {},
+            }}
+          >
+            {panel}
+          </InspectorCommandsContext.Provider>
+        </InspectorViewContext.Provider>
+      ) : (
+        panel
+      );
     const inSlot = (panel: React.ReactNode) =>
       props.inHeader ? (
         <InspectorViewContext.Provider value="work">
@@ -379,19 +411,21 @@ if (
       );
     await act(async () =>
       root.render(
-        inSlot(
-          <MrReviewsPanel
-            mode={props.mode ?? "work"}
-            expanded={props.expanded ?? false}
-            onClose={(options) => {
-              closed++;
-              closes.push(options);
-            }}
-            {...(props.initialWorkItem
-              ? { initialWorkItem: props.initialWorkItem }
-              : {})}
-            {...(props.initialWork ? { initialWork: props.initialWork } : {})}
-          />,
+        withCommands(
+          inSlot(
+            <MrReviewsPanel
+              mode={props.mode ?? "work"}
+              expanded={props.expanded ?? false}
+              onClose={(options) => {
+                closed++;
+                closes.push(options);
+              }}
+              {...(props.initialWorkItem
+                ? { initialWorkItem: props.initialWorkItem }
+                : {})}
+              {...(props.initialWork ? { initialWork: props.initialWork } : {})}
+            />,
+          ),
         ),
       ),
     );
@@ -770,7 +804,9 @@ if (
       expect(document.activeElement).toBe(help()!.querySelector("input"));
       // One key lists the rows holding it; words must all match.
       await search("j");
-      expect(titles()).toEqual(["next item (a count repeats: 3j)"]);
+      expect(titles()).toEqual([
+        "next item (a count repeats: 3j); in an item's detail, the next part of its description or comments",
+      ]);
       await search("column right");
       expect(titles()).toEqual([
         "on a wide pane (columns): the column on the right",
@@ -799,11 +835,17 @@ if (
         help()!
           .querySelector(".command-item[aria-selected='true']")
           ?.querySelector(".command-item-title")?.textContent;
-      expect(chosen()).toBe("next item (a count repeats: 3j)");
+      expect(chosen()).toBe(
+        "next item (a count repeats: 3j); in an item's detail, the next part of its description or comments",
+      );
       await view.key("ArrowDown");
-      expect(chosen()).toBe("previous item");
+      expect(chosen()).toBe(
+        "previous item; in an item's detail, the previous part",
+      );
       await view.key("k");
-      expect(chosen()).toBe("next item (a count repeats: 3j)");
+      expect(chosen()).toBe(
+        "next item (a count repeats: 3j); in an item's detail, the next part of its description or comments",
+      );
       await view.key("Escape");
       expect(help()).toBeNull();
       expect(view.closed()).toBe(0);
@@ -2108,6 +2150,118 @@ if (
       ).toMatch(/open/);
       await alone.unmount();
     } finally {
+      sessionStorage.clear();
+    }
+  });
+
+  test("a, the + button and :add open the form from an item's detail too, and Cancel goes back to it; a typed in a comment box stays there", async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    calls.length = 0;
+    const commands = new Map<string, CommandSet>();
+    const view = await mount({
+      initialWorkItem: "1200000000000000",
+      inHeader: true,
+      commands,
+    });
+    const form = () =>
+      view.panel.querySelector<HTMLFormElement>("form.work-add");
+    const detail = () =>
+      view.panel
+        .querySelector("[data-work-detail]")
+        ?.getAttribute("data-work-detail") ?? null;
+    const cancel = async () =>
+      view.click(
+        [...form()!.querySelectorAll("button")].find(
+          (each) => each.textContent === "Cancel",
+        ) ?? null,
+      );
+    try {
+      expect(detail()).toBe("1200000000000000");
+      // The detail's keys have the focus as it opens: a is the form.
+      const list = view.panel.querySelector<HTMLElement>("[data-work-keys]")!;
+      expect(document.activeElement).toBe(list);
+      await view.key("a");
+      expect(form()).not.toBeNull();
+      expect(detail()).toBeNull();
+      // Cancel: back to that item, its keys with the focus again.
+      await cancel();
+      expect(form()).toBeNull();
+      expect(detail()).toBe("1200000000000000");
+      expect(document.activeElement).toBe(
+        view.panel.querySelector("[data-work-keys]"),
+      );
+      // Esc in the form goes back to the item too (the first leaves its
+      // text box).
+      await view.key("a");
+      expect(form()).not.toBeNull();
+      form()!.querySelector("textarea")!.focus();
+      await view.key("Escape");
+      expect(form()).not.toBeNull();
+      await view.key("Escape");
+      expect(form()).toBeNull();
+      expect(detail()).toBe("1200000000000000");
+      expect(document.activeElement).toBe(
+        view.panel.querySelector("[data-work-keys]"),
+      );
+      // With the focus on the panel, out of the detail's list: a too.
+      view.panel.focus();
+      await view.key("a");
+      expect(form()).not.toBeNull();
+      await cancel();
+      expect(detail()).toBe("1200000000000000");
+      // The header's + is there in the detail and works.
+      const plus = view.header.querySelector<HTMLElement>(
+        'button[aria-label="Add an item (a)"]',
+      )!;
+      expect(plus).not.toBeNull();
+      await view.click(plus);
+      expect(form()).not.toBeNull();
+      await cancel();
+      expect(detail()).toBe("1200000000000000");
+      // :add and :new-item, in the inspector's prompt (Tab completes
+      // both), open it; :add WORDS starts it with them.
+      const given = [...commands.values()].flatMap((set) => set.commands);
+      const add = given.find((command) => command.name === "add")!;
+      const newItem = given.find((command) => command.name === "new-item")!;
+      expect(add.aliases).toEqual(["new-item"]);
+      expect(newItem.listed).not.toBe(false);
+      const { inspectorCompletions } = await import("../inspectorCommands");
+      expect(inspectorCompletions(given, "ne").map(([name]) => name)).toContain(
+        "new-item",
+      );
+      expect(inspectorCompletions(given, "ad").map(([name]) => name)).toEqual([
+        "add",
+      ]);
+      // In the shared shortcut help: one row for both.
+      const { inspectorShortcutList } = await import("../useInspectorCommands");
+      const rows = inspectorShortcutList({ commands: given }).groups.flatMap(
+        (group) => group.rows,
+      );
+      expect(rows.filter((row) => /:new-item/.test(String(row[0])))).toEqual([
+        [":add :new-item", add.description, ":add"],
+      ]);
+      await act(async () => newItem.run("", {} as never));
+      expect(form()).not.toBeNull();
+      await cancel();
+      await act(async () => add.run("Write the release notes", {} as never));
+      expect(
+        form()?.querySelector<HTMLTextAreaElement>("textarea")?.value,
+      ).toBe("Write the release notes");
+      await cancel();
+      expect(detail()).toBe("1200000000000000");
+      // a typed in the detail's comment box is a letter of the comment.
+      await view.key("c");
+      const box = view.panel.querySelector<HTMLTextAreaElement>(
+        "textarea[aria-label='Comment']",
+      )!;
+      expect(box).not.toBeNull();
+      box.focus();
+      await view.key("a");
+      expect(form()).toBeNull();
+      expect(detail()).toBe("1200000000000000");
+    } finally {
+      await view.unmount();
       sessionStorage.clear();
     }
   });

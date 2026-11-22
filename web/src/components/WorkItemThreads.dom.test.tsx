@@ -693,4 +693,183 @@ if (
     await act(async () => docRoot.unmount());
     docHost.remove();
   });
+
+  test("a long design doc reads with the movement keys: j / k part by part, counts, { } heading to heading, zz / zt / zb and the page keys in the board's scroller around it", async () => {
+    const doc = thread(
+      "d000000000000010",
+      { work: { item, description: true } },
+      [
+        comment(
+          "c000000000000100",
+          "Claude",
+          [
+            "# Data history",
+            "",
+            "Keep the stores.",
+            "",
+            "Write a copy into git.",
+            "",
+            "## Decisions",
+            "",
+            "- [ ] **D1** Approach.",
+            "- [ ] **D2** Scope.",
+            "",
+            "## Later",
+            "",
+            "More words.",
+            "",
+            "The end.",
+          ].join("\n"),
+        ),
+      ],
+    );
+    function LongDetail() {
+      const view = useWorkItemView();
+      const api = { ...data, threads: [doc], ...view } as Api;
+      const listRef = useRef<HTMLDivElement>(null);
+      useWorkItemKeys({
+        api,
+        description: doc,
+        getList: () => listRef.current,
+        fallback: () => false,
+      });
+      return (
+        <div className="board-body" style={{ overflowY: "auto" }}>
+          <div data-work-keys="" tabIndex={-1} ref={listRef}>
+            <WorkDescription
+              api={api}
+              item={item}
+              thread={doc}
+              onLeave={() => {}}
+            />
+          </div>
+        </div>
+      );
+    }
+    const longHost = document.createElement("div");
+    document.body.appendChild(longHost);
+    const longRoot = createRoot(longHost);
+    await act(async () => longRoot.render(<LongDetail />));
+    const scroller = longHost.querySelector<HTMLElement>(".board-body")!;
+    const keysList = longHost.querySelector<HTMLElement>("[data-work-keys]")!;
+    // The board's body: 200 pixels high; each stop 100 down the page.
+    let top = 0;
+    Object.defineProperty(scroller, "clientHeight", { value: 200 });
+    Object.defineProperty(scroller, "scrollTop", {
+      get: () => top,
+      set: (value: number) => {
+        top = Math.max(0, Math.min(600, value));
+      },
+    });
+    const stops = () => [
+      ...keysList.querySelectorAll<HTMLElement>(
+        "[data-part], [data-chat-stop]",
+      ),
+    ];
+    const rect = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      const at = stops().indexOf(this);
+      const y = this === scroller ? 0 : at >= 0 ? at * 100 - top : 0;
+      return {
+        top: y,
+        bottom: y + 100,
+        height: this === scroller ? 200 : 100,
+        left: 0,
+        right: 100,
+        width: 100,
+        x: 0,
+        y,
+        toJSON() {},
+      } as DOMRect;
+    };
+    const send = async (key: string, init: KeyboardEventInit = {}) => {
+      await act(async () => {
+        keysList.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key,
+            bubbles: true,
+            cancelable: true,
+            ...init,
+          }),
+        );
+        await wait(10);
+      });
+    };
+    const cursor = () => {
+      const stop = keysList.querySelector<HTMLElement>(".rc-part.is-focused");
+      return stop ? (stop.textContent ?? "").trim() : null;
+    };
+    try {
+      expect(stops().length).toBe(9);
+      keysList.focus();
+      // j / k part by part, a count repeating them.
+      await send("j");
+      expect(cursor()).toBe("Data history");
+      await send("j");
+      expect(cursor()).toBe("Keep the stores.");
+      await send("3");
+      await send("j");
+      expect(cursor()).toBe("D1 Approach.");
+      await send("k");
+      expect(cursor()).toBe("Decisions");
+      // } and { heading to heading.
+      await send("}");
+      expect(cursor()).toBe("Later");
+      await send("{");
+      expect(cursor()).toBe("Decisions");
+      await send("{");
+      expect(cursor()).toBe("Data history");
+      await send("2");
+      await send("}");
+      expect(cursor()).toBe("Later");
+      // gg, G.
+      await send("g");
+      await send("g");
+      expect(cursor()).toBe("Data history");
+      await send("G");
+      expect(cursor()).toBe("The end.");
+      await send("g");
+      await send("g");
+      // The page keys scroll the board's body around the detail, the
+      // cursor moving with the page: Ctrl+D half a page, Ctrl+F a page.
+      await send("d", { ctrlKey: true });
+      expect(top).toBe(100);
+      expect(cursor()).toBe("Keep the stores.");
+      await send("f", { ctrlKey: true });
+      expect(top).toBe(300);
+      expect(cursor()).toBe("Decisions");
+      await send("b", { ctrlKey: true });
+      expect(top).toBe(100);
+      expect(cursor()).toBe("Keep the stores.");
+      await send("u", { ctrlKey: true });
+      expect(top).toBe(0);
+      expect(cursor()).toBe("Data history");
+      // At the top, Ctrl+U still moves the cursor up, half a page.
+      await send("j");
+      await send("j");
+      expect(cursor()).toBe("Write a copy into git.");
+      await send("u", { ctrlKey: true });
+      expect(top).toBe(0);
+      expect(cursor()).toBe("Keep the stores.");
+      await send("k");
+      // zt, zz, zb place the cursor's part in that scroller.
+      await send("4");
+      await send("j");
+      expect(cursor()).toBe("D1 Approach.");
+      top = 0;
+      await send("z");
+      await send("t");
+      expect(top).toBe(400);
+      await send("z");
+      await send("z");
+      expect(top).toBe(350);
+      await send("z");
+      await send("b");
+      expect(top).toBe(300);
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = rect;
+      await act(async () => longRoot.unmount());
+      longHost.remove();
+    }
+  });
 }

@@ -638,6 +638,8 @@ export function useWorkItemKeys({
     return !!draft;
   };
   useThreadKeys(getList, undefined, {
+    // The detail does not scroll: the board's body around it does.
+    outerScroller: true,
     stops: messageStops,
     keyOf: messageStopKey,
     stopAt: (target) =>

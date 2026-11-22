@@ -85,13 +85,32 @@ export const BOARD_KEYS: readonly ShortcutRow[] = [
  * the view's, then its own.
  */
 export const WORK_KEYS: readonly ShortcutRow[] = [
-  ["j ↓", "next item (a count repeats: 3j)", "j"],
-  ["k ↑", "previous item", "k"],
+  [
+    "j ↓",
+    "next item (a count repeats: 3j); in an item's detail, the next part of its description or comments",
+    "j",
+  ],
+  ["k ↑", "previous item; in an item's detail, the previous part", "k"],
   ["gg Home", "first", "gg"],
   ["G End", "last", "G"],
-  ["zz", "show the selected item in the middle"],
-  ["zt", "show the selected item at the top"],
-  ["zb", "show the selected item at the bottom"],
+  ["zz", "show the selected item (in a detail, the part) in the middle"],
+  ["zt", "show the selected item (in a detail, the part) at the top"],
+  ["zb", "show the selected item (in a detail, the part) at the bottom"],
+  [
+    "Ctrl+D Ctrl+U",
+    "in an item's detail: half a page down / up, the cursor with it",
+    "Ctrl-d",
+  ],
+  [
+    "Ctrl+F Ctrl+B",
+    "in an item's detail: a page down / up, the cursor with it",
+    "Ctrl-f",
+  ],
+  [
+    "{ }",
+    "in an item's detail: the previous / next heading of its description (a design doc's)",
+    "}",
+  ],
   ["h", "on a wide pane (columns): the column on the left"],
   ["l Tab", "on a wide pane (columns): the column on the right", "l"],
   [
@@ -107,7 +126,11 @@ export const WORK_KEYS: readonly ShortcutRow[] = [
   ["t", "its tags"],
   ["o", "the owner's work: its session's pane, its subagent's task"],
   ["dd", "done"],
-  ["a", "add an item: a title, a description with images, its state and tags"],
+  [
+    "a :add :new-item",
+    "add an item: a title, a description with images, its state and tags (from the list or an item's detail; :add WORDS starts it with them)",
+    "a",
+  ],
   ["za", "fold or unfold the column"],
   [
     "zf",
