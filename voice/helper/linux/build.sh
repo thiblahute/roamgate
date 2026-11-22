@@ -23,10 +23,35 @@
 # it. Without gamemoded, it builds as usual.
 set -eu
 
+# The host-spawn that runs: /usr/bin's or /usr/local/bin's, else the first
+# non-empty executable one on PATH (an empty root-owned 0700 one may come
+# first there). Prints nothing and fails when none runs.
+host_spawn() {
+    for candidate in /usr/bin/host-spawn /usr/local/bin/host-spawn; do
+        if [ -f "$candidate" ] && [ -s "$candidate" ] && [ -x "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    (
+        IFS=:
+        for dir in $PATH; do
+            [ -n "$dir" ] || continue
+            candidate=$dir/host-spawn
+            if [ -f "$candidate" ] && [ -s "$candidate" ] && [ -x "$candidate" ]; then
+                echo "$candidate"
+                exit 0
+            fi
+        done
+        exit 1
+    )
+}
+
 # Whether GameMode runs: false when it cannot tell.
 game_running() {
     if [ -e /run/.toolboxenv ]; then
-        set -- host-spawn --no-pty gamemoded -s
+        spawn=$(host_spawn) || return 1
+        set -- "$spawn" --no-pty gamemoded -s
     else
         set -- gamemoded -s
     fi
