@@ -15,7 +15,48 @@
 # Cargo's downloads and build (roamgate-voice-build-cache) are kept between
 # builds; ROAMGATE_VOICE_BUILD_IMAGE and ROAMGATE_VOICE_BUILD_CACHE rename
 # them.
+#
+# While GameMode runs (a game; `gamemoded -s`, on the host from a toolbox),
+# the build yields the CPU to it: GAME_AWARE=nice (the default) builds at
+# the lowest priority (nice 19, idle I/O) with 2 jobs and 2 test threads,
+# GAME_AWARE=wait waits for the game to end first, GAME_AWARE=off ignores
+# it. Without gamemoded, it builds as usual.
 set -eu
+
+# Whether GameMode runs: false when it cannot tell.
+game_running() {
+    if [ -e /run/.toolboxenv ]; then
+        set -- host-spawn --no-pty gamemoded -s
+    else
+        set -- gamemoded -s
+    fi
+    "$@" 2>/dev/null | grep -q "gamemode is active"
+}
+
+# The command prefix and jobs of a build yielding the CPU to a game.
+yield=
+jobs=
+case ${GAME_AWARE:-nice} in
+off) ;;
+wait)
+    while game_running; do
+        echo "GameMode is active: waiting for the game to end (GAME_AWARE=wait)"
+        sleep 60
+    done
+    ;;
+nice)
+    if game_running; then
+        yield="nice -n 19"
+        if command -v ionice >/dev/null 2>&1; then yield="$yield ionice -c3"; fi
+        jobs=2
+        echo "GameMode is active: building at the lowest priority with $jobs jobs (GAME_AWARE=wait waits for the game to end)"
+    fi
+    ;;
+*)
+    echo "GAME_AWARE must be nice, wait or off" >&2
+    exit 1
+    ;;
+esac
 
 here=$(cd "$(dirname "$0")" && pwd)
 helper=$(dirname "$here")
@@ -31,14 +72,15 @@ cap=${CUDA_COMPUTE_CAP:-$(nvidia-smi --query-gpu=compute_cap --format=csv,nohead
 
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
-podman build -t "$image" "$here"
+$yield podman build -t "$image" "$here"
 podman volume exists "$cache" || podman volume create "$cache" >/dev/null
 
 # whisper-rs passes CMAKE_* variables on to whisper.cpp's CMake. The build
 # directory is not under the project: system-deps is told where its
 # manifest (the bundle, the plugins) is.
-podman run --rm --security-opt label=disable \
+$yield podman run --rm --security-opt label=disable \
     ${test:+--device nvidia.com/gpu=all} \
+    ${jobs:+-e CARGO_BUILD_JOBS=$jobs -e RUST_TEST_THREADS=$jobs} \
     -v "$helper:/src:ro" -v "$cache:/cache" -v "$out:/out" \
     -e CUDA_COMPUTE_CAP="$cap" -e CMAKE_CUDA_ARCHITECTURES="$cap" \
     -e SYSTEM_DEPS_BUILD_MANIFEST=/src/Cargo.toml -e TEST="$test" \

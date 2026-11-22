@@ -12,6 +12,7 @@ import { arch, cpus, totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import {
   GAMEMODE_REASON,
+  GAMING_HOLDER,
   type LowGpuModel,
   type LowGpuStatus,
 } from "../../../shared/voiceLowGpu";
@@ -54,6 +55,12 @@ import { currentChoices, locatePackages } from "./voice-setup";
  * the other set stops once nothing needs it (a call ending), the next
  * request starting it with the right one; `--now` restarts it at once,
  * its call made again after a short notice.
+ *
+ * On for a game (the "gaming" holder, GameMode), the helper also yields
+ * the CPU to it (yieldCpu): a low priority and CPU weight, idle I/O, and
+ * its ONNX models (Parakeet, Kokoro, the speaker and turn checks) sharing
+ * a few threads that do not spin, where each would otherwise take one per
+ * core: a game freezes when the voice takes the cores it runs on.
  */
 
 export type LowGpuFile = {
@@ -304,8 +311,33 @@ export function describeChoices(choices: VoiceChoices): LowGpuModel[] {
 }
 
 /**
- * `config` with the low-GPU set's models in place of its own, and
- * `low_gpu` saying why; its other settings as they are.
+ * The ONNX threads of a helper yielding the CPU to a game, unless
+ * voice.json's gaming_cpu_threads says otherwise.
+ */
+export const GAMING_CPU_THREADS = 4;
+
+/** Whether the profile is on for a game: the gaming holder or GameMode. */
+export function forGaming(reason: string): boolean {
+  return reason
+    .split(", ")
+    .some((name) => name === GAMING_HOLDER || name === GAMEMODE_REASON);
+}
+
+/**
+ * How the helper yields the CPU while the profile is on for `reason`:
+ * undefined when it is not for a game.
+ */
+export function yieldCpu(
+  config: Pick<VoiceConfig, "gaming_cpu_threads">,
+  reason: string,
+): VoiceConfig["yield_cpu"] {
+  if (!forGaming(reason)) return undefined;
+  return { threads: config.gaming_cpu_threads ?? GAMING_CPU_THREADS };
+}
+
+/**
+ * `config` with the low-GPU set's models in place of its own, `low_gpu`
+ * saying why and, for a game, `yield_cpu`; its other settings as they are.
  */
 export function lowGpuConfig(
   config: VoiceConfig,
@@ -321,6 +353,8 @@ export function lowGpuConfig(
     if (value === undefined) delete patched[key];
     else patched[key] = value;
   patched.low_gpu = reason;
+  const cpu = yieldCpu(config, reason);
+  if (cpu) patched.yield_cpu = cpu;
   return patched as VoiceConfig;
 }
 

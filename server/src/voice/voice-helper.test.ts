@@ -1,6 +1,12 @@
 import { describe, expect, jest, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { getPriority, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createVoiceRoutes, VOICE_REQUEST_HEADER } from "../http/voice";
 import { near, person } from "./testdata/prints";
@@ -28,6 +34,9 @@ import {
   type VoiceHelperProcess,
   WRAPPED_EXIT_MS,
   writeFrontMode,
+  YIELD_CPU_NICE,
+  YIELD_CPU_WEIGHT,
+  yieldCpuPriority,
   writeMaxPause,
   writeSpeechRate,
 } from "./voice-helper";
@@ -1058,6 +1067,109 @@ describe("helper launch", () => {
     ).toEqual(["/opt/bin/gpu-lease", "--name=voice", "--", ...own]);
   });
 
+  test("a helper yielding the CPU to a game: low priority, a few ONNX threads", () => {
+    const own = helperCommand(CONFIG);
+    const systemd = [
+      "systemd-run",
+      "--user",
+      "--unit=roamgate-voice",
+      "--pipe",
+      "--",
+    ];
+    const yielding = { ...CONFIG, yield_cpu: { threads: 4 } };
+    // systemd-run gives the unit its priority, CPU weight and idle I/O.
+    expect(helperCommand({ ...yielding, helper_wrapper: systemd })).toEqual([
+      "systemd-run",
+      "-p",
+      `Nice=${YIELD_CPU_NICE}`,
+      "-p",
+      `CPUWeight=${YIELD_CPU_WEIGHT}`,
+      "-p",
+      "IOSchedulingClass=idle",
+      "--user",
+      "--unit=roamgate-voice",
+      "--pipe",
+      "--",
+      ...own,
+      "--cpu-threads",
+      "4",
+    ]);
+    expect(
+      yieldCpuPriority({ ...yielding, helper_wrapper: systemd }),
+    ).toBeNull();
+    expect(
+      helperCommand({
+        ...yielding,
+        helper_wrapper: ["/usr/bin/systemd-run", "--user", "--"],
+      }).slice(1, 3),
+    ).toEqual(["-p", `Nice=${YIELD_CPU_NICE}`]);
+    // Run directly or by another wrapper: the spawned process is reniced.
+    expect(helperCommand(yielding)).toEqual([...own, "--cpu-threads", "4"]);
+    expect(yieldCpuPriority(yielding)).toBe(YIELD_CPU_NICE);
+    const lease = ["/opt/bin/gpu-lease", "--"];
+    expect(helperCommand({ ...yielding, helper_wrapper: lease })).toEqual([
+      ...lease,
+      ...own,
+      "--cpu-threads",
+      "4",
+    ]);
+    // 0 threads: no limit, the priority lowered all the same.
+    expect(
+      helperCommand({
+        ...CONFIG,
+        yield_cpu: { threads: 0 },
+        helper_wrapper: systemd,
+      }),
+    ).toEqual([
+      "systemd-run",
+      "-p",
+      `Nice=${YIELD_CPU_NICE}`,
+      "-p",
+      `CPUWeight=${YIELD_CPU_WEIGHT}`,
+      "-p",
+      "IOSchedulingClass=idle",
+      ...systemd.slice(1),
+      ...own,
+    ]);
+    // Not yielding: nothing changes.
+    expect(helperCommand({ ...CONFIG, helper_wrapper: systemd })).toEqual([
+      ...systemd,
+      ...own,
+    ]);
+    expect(yieldCpuPriority(CONFIG)).toBeNull();
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "a helper yielding the CPU without systemd-run is reniced",
+    async () => {
+      // The wrapper waits to be reniced, then says its niceness; one
+      // already nicer (a test run under nice) is left as it is.
+      const expected = Math.max(YIELD_CPU_NICE, getPriority());
+      const dir = mkdtempSync(join(tmpdir(), "voice-nice-"));
+      const said = join(dir, "nice");
+      const child = spawnVoiceHelper({
+        ...CONFIG,
+        helper: "/bin/cat",
+        helper_wrapper: [
+          "/bin/sh",
+          "-c",
+          `while [ "$(nice)" -lt ${expected} ]; do sleep 0.01; done; nice > "$0"; exec cat`,
+          said,
+        ],
+        yield_cpu: { threads: 2 },
+      });
+      try {
+        while (!existsSync(said) || !readFileSync(said, "utf8"))
+          await Bun.sleep(10);
+        expect(readFileSync(said, "utf8").trim()).toBe(String(expected));
+      } finally {
+        child.kill();
+        await child.exited;
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
   test("Kokoro's ONNX model comes beside tts_models, for Kokoro's sentences", () => {
     const models = [
       { model: "qwen3-tts", path: "q" },
@@ -1370,6 +1482,16 @@ describe("readVoiceConfig", () => {
     for (const helper_idle_exit_minutes of [-1, "10", null])
       expect(read({ ...base, helper_idle_exit_minutes })).toEqual({
         error: `${file}: helper_idle_exit_minutes must be a number of minutes, 0 for never`,
+      });
+  });
+
+  test("gaming_cpu_threads is a whole number of threads, 0 for no limit", () => {
+    const base = { ...readable };
+    for (const gaming_cpu_threads of [0, 2, 4])
+      expect("error" in read({ ...base, gaming_cpu_threads })).toBe(false);
+    for (const gaming_cpu_threads of [-1, 1.5, "4", null])
+      expect(read({ ...base, gaming_cpu_threads })).toEqual({
+        error: `${file}: gaming_cpu_threads must be a number of threads, 0 for no limit`,
       });
   });
 

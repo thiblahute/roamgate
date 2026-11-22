@@ -942,6 +942,23 @@ starts (the game needs the memory then) and without it when the game ends
 failing. A call starting while GameMode runs, or after it stopped, restarts
 an idle helper with the other set first.
 
+On for a game (held by `gaming`, or GameMode running), the helper also
+yields the CPU to it, as a game stutters or freezes when the voice takes
+the cores it runs on. Started by `systemd-run` (`helper_wrapper`), its unit
+gets `Nice=10`, `CPUWeight=20` (against the game's 100: with cgroups' CPU
+controller, niceness only ranks processes within one unit) and
+`IOSchedulingClass=idle`; run directly or by another wrapper, the process
+started is reniced to 10. Its ONNX models (Parakeet, Kokoro, the speaker
+and turn checks) share one pool of `"gaming_cpu_threads"` threads (4 by
+default, 0 for no limit; the helper's `--cpu-threads`) that do not spin
+between runs, where each would otherwise take one thread per core. Another
+holder (a render job) frees the GPU without lowering the helper's priority.
+
+The helper's Linux build (`voice/helper/linux/build.sh`) yields too while
+GameMode runs: `GAME_AWARE=nice`, the default, builds at nice 19 with idle
+I/O, 2 Cargo jobs and 2 test threads; `GAME_AWARE=wait` waits for the game
+to end; `GAME_AWARE=off` ignores it.
+
 With `GST_DEBUG_DUMP_DOT_DIR` set in Roamgate's environment, the helper
 writes its pipelines' graphs there (`roamgate-voice-speak.dot`,
 `roamgate-voice-listen.dot`) when they start

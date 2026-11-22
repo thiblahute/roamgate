@@ -12,6 +12,8 @@ import { join } from "node:path";
 import { NO_MODEL } from "../../../shared/voiceSetup";
 import { readVoiceConfig, type VoiceConfig } from "./voice-helper";
 import {
+  forGaming,
+  GAMING_CPU_THREADS,
   gameModeCommand,
   gpuBytesFor,
   holdLowGpu,
@@ -22,6 +24,7 @@ import {
   setLowGpuModels,
   SWITCH_NOTICES,
   VoiceLowGpu,
+  yieldCpu,
 } from "./voice-low-gpu";
 import { recommendedChoices } from "./voice-models";
 import { installVoiceModels } from "./voice-setup";
@@ -124,6 +127,27 @@ describe("GameMode", () => {
       "-s",
     ]);
     expect(gameModeCommand(false)).toEqual(["gamemoded", "-s"]);
+  });
+});
+
+describe("yielding the CPU to a game", () => {
+  test("only for the gaming holder or GameMode", () => {
+    expect(forGaming("gaming")).toBe(true);
+    expect(forGaming("GameMode")).toBe(true);
+    expect(forGaming("render, GameMode")).toBe(true);
+    expect(forGaming("render")).toBe(false);
+    expect(forGaming("manual, gaming-ish")).toBe(false);
+  });
+
+  test("a few ONNX threads, as many as voice.json says, 0 for no limit", () => {
+    expect(yieldCpu({}, "gaming")).toEqual({ threads: GAMING_CPU_THREADS });
+    expect(yieldCpu({ gaming_cpu_threads: 2 }, "GameMode")).toEqual({
+      threads: 2,
+    });
+    expect(yieldCpu({ gaming_cpu_threads: 0 }, "gaming")).toEqual({
+      threads: 0,
+    });
+    expect(yieldCpu({}, "render")).toBeUndefined();
   });
 });
 
@@ -256,6 +280,7 @@ describe("the low-GPU profile", () => {
     holdLowGpu(statePath, { on: true, holder: "gaming" });
     const light = low.config() as VoiceConfig;
     expect(light.low_gpu).toBe("gaming");
+    expect(light.yield_cpu).toEqual({ threads: GAMING_CPU_THREADS });
     expect(light.tts_models).toBeUndefined();
     expect(light.clone_model).toBeUndefined();
     expect(light.whisper_model).toBeUndefined();
@@ -270,6 +295,15 @@ describe("the low-GPU profile", () => {
     expect(light.helper_idle_exit_minutes).toBe(10);
     expect(light.helper).toBe(home.deps.helperPath);
     expect(readFileSync(home.deps.configPath, "utf8")).toBe(before);
+
+    // Another holder than a game: the GPU is freed, the CPU not yielded.
+    holdLowGpu(statePath, { on: false, holder: "gaming" });
+    holdLowGpu(statePath, { on: true, holder: "render" });
+    const render = low.config() as VoiceConfig;
+    expect(render.low_gpu).toBe("render");
+    expect(render.yield_cpu).toBeUndefined();
+    holdLowGpu(statePath, { on: false, holder: "render" });
+    holdLowGpu(statePath, { on: true, holder: "gaming" });
 
     const status = low.status();
     expect(status).toMatchObject({
@@ -372,6 +406,9 @@ describe("the low-GPU profile", () => {
       expect(low.reason()).toBe("GameMode");
       expect(helper.calls).toEqual(["reload-and-wait"]);
       expect((low.config() as VoiceConfig).low_gpu).toBe("GameMode");
+      expect((low.config() as VoiceConfig).yield_cpu).toEqual({
+        threads: GAMING_CPU_THREADS,
+      });
       // A helper with the right set is left alone.
       helper.running = "low-gpu";
       await low.beforeCall();

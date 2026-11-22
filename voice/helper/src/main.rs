@@ -109,6 +109,9 @@
 //! `roamgate-voice --clone <audio> --model <Qwen3-TTS Base dir> --text
 //! "<what it says>" --output voice.json` writes a voice from the command
 //! line.
+//!
+//! `--cpu-threads N` has the ONNX models share N threads (Roamgate's
+//! low-GPU profile asks for it while a game runs); 0 or none, no limit.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -514,6 +517,40 @@ fn arg(name: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// `--cpu-threads`'s value: None for no limit (absent, or 0).
+fn cpu_threads(value: Option<&str>) -> Result<Option<usize>, String> {
+    match value {
+        None => Ok(None),
+        Some(value) => match value.parse::<usize>() {
+            Ok(0) => Ok(None),
+            Ok(threads) => Ok(Some(threads)),
+            Err(_) => Err(format!("--cpu-threads {value}: not a number of threads")),
+        },
+    }
+}
+
+/// With `--cpu-threads N` (Roamgate's low-GPU profile while a game runs,
+/// voice-low-gpu.ts yieldCpu), the ONNX models (Parakeet, Kokoro,
+/// speechgate's speaker and turn checks, the voices' prints) share one pool
+/// of N threads that do not spin, in place of a pool each as large as the
+/// machine's cores, spinning between runs: those took the cores a game ran
+/// on, and froze it. Before any session is made.
+fn limit_onnx_threads(threads: usize) -> Result<(), String> {
+    let options = ort::environment::GlobalThreadPoolOptions::default()
+        .with_intra_threads(threads)
+        .and_then(|options| options.with_inter_threads(1))
+        .and_then(|options| options.with_spin_control(false))
+        .map_err(|e| e.to_string())?;
+    if ort::environment::init()
+        .with_global_thread_pool(options)
+        .commit()
+    {
+        Ok(())
+    } else {
+        Err("ONNX Runtime was set up already".into())
+    }
 }
 
 /// The fastest and slowest a sentence is made.
@@ -982,6 +1019,17 @@ fn main() {
         let swept = processtap::sweep();
         if swept > 0 {
             eprintln!("removed {swept} process tap device(s) left over");
+        }
+    }
+    match cpu_threads(arg("--cpu-threads").as_deref()) {
+        Ok(None) => {}
+        Ok(Some(threads)) => match limit_onnx_threads(threads) {
+            Ok(()) => eprintln!("the ONNX models share {threads} CPU threads"),
+            Err(err) => eprintln!("the ONNX models' threads are not limited: {err}"),
+        },
+        Err(err) => {
+            eprintln!("{err}");
+            std::process::exit(1);
         }
     }
     #[cfg(target_os = "macos")]
@@ -1495,6 +1543,15 @@ fn main() {
 mod tests {
     use super::*;
     use std::time::Instant;
+
+    #[test]
+    fn cpu_threads_is_a_number_of_threads_zero_for_no_limit() {
+        assert_eq!(cpu_threads(None), Ok(None));
+        assert_eq!(cpu_threads(Some("0")), Ok(None));
+        assert_eq!(cpu_threads(Some("4")), Ok(Some(4)));
+        assert!(cpu_threads(Some("four")).is_err());
+        assert!(cpu_threads(Some("-2")).is_err());
+    }
 
     /// call_youtube's request, as Roamgate sends it (voice-youtube.ts).
     #[test]

@@ -5,8 +5,8 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { getPriority, homedir, setPriority } from "node:os";
+import { basename, dirname, join } from "node:path";
 import {
   isSpeechRate,
   playbackRateFor,
@@ -57,6 +57,12 @@ export type VoiceConfig = {
    * it again. Unset or 0: it runs until the server stops.
    */
   helper_idle_exit_minutes?: number;
+  /**
+   * The CPU threads the helper's ONNX models share while the low-GPU
+   * profile is on for a game (voice-low-gpu.ts yieldCpu): 4 by default,
+   * 0 for no limit. The helper's priority is lowered all the same.
+   */
+  gaming_cpu_threads?: number;
   /** The GStreamer prefix holding the whisper and kokoro plugins. */
   gst_prefix?: string;
   /**
@@ -252,6 +258,13 @@ export type VoiceConfig = {
    * Voices (a Qwen3-TTS one) left for when the profile ends.
    */
   low_gpu?: string;
+  /**
+   * Not in voice.json either: set with low_gpu while a game runs
+   * (voice-low-gpu.ts yieldCpu), the helper then yielding the CPU to it:
+   * a low priority (yieldCpuWrapper, yieldCpuPriority) and its ONNX
+   * models sharing this many threads (`--cpu-threads`), 0 for no limit.
+   */
+  yield_cpu?: { threads: number };
 };
 
 /** A dotted IPv4 address, each part 0 to 255. */
@@ -478,6 +491,17 @@ export function readVoiceConfig(
   )
     return {
       error: `${path}: helper_idle_exit_minutes must be a number of minutes, 0 for never`,
+    };
+  if (
+    config.gaming_cpu_threads !== undefined &&
+    !(
+      typeof config.gaming_cpu_threads === "number" &&
+      Number.isInteger(config.gaming_cpu_threads) &&
+      config.gaming_cpu_threads >= 0
+    )
+  )
+    return {
+      error: `${path}: gaming_cpu_threads must be a number of threads, 0 for no limit`,
     };
   if (config.companion_mcp !== undefined) {
     const mcp = config.companion_mcp as Record<string, unknown> | null;
@@ -877,9 +901,58 @@ export function idleExitMs(
  * The helper's command line: `helper_wrapper`'s arguments, when set, then
  * the helper and what it is given.
  */
+/**
+ * The niceness of a helper yielding the CPU to a game: below the game's,
+ * above the batch jobs' 19 (a build waits for the voice).
+ */
+export const YIELD_CPU_NICE = 10;
+
+/**
+ * The CPU weight of a helper yielding the CPU, under systemd (100 by
+ * default): with cgroups' CPU controller, niceness only ranks the
+ * processes of one cgroup, the weight ranks the helper's unit against the
+ * game's.
+ */
+export const YIELD_CPU_WEIGHT = 20;
+
+/** Whether `wrapper` is systemd-run, which takes the unit's properties. */
+export function isSystemdRun(wrapper: string[] | undefined): boolean {
+  return basename(wrapper?.[0] ?? "") === "systemd-run";
+}
+
+/**
+ * `helper_wrapper` for a helper yielding the CPU (`yield_cpu`): systemd-run
+ * is given a low priority, CPU weight and idle I/O for the unit; any other
+ * wrapper is left as it is (yieldCpuPriority lowers its priority).
+ */
+export function yieldCpuWrapper(config: VoiceConfig): string[] {
+  const wrapper = config.helper_wrapper ?? [];
+  if (!config.yield_cpu || !isSystemdRun(wrapper)) return wrapper;
+  return [
+    wrapper[0] as string,
+    "-p",
+    `Nice=${YIELD_CPU_NICE}`,
+    "-p",
+    `CPUWeight=${YIELD_CPU_WEIGHT}`,
+    "-p",
+    "IOSchedulingClass=idle",
+    ...wrapper.slice(1),
+  ];
+}
+
+/**
+ * The niceness the spawned process is given, for a helper yielding the CPU
+ * that systemd-run does not start: null when there is none to give.
+ */
+export function yieldCpuPriority(config: VoiceConfig): number | null {
+  return config.yield_cpu && !isSystemdRun(config.helper_wrapper)
+    ? YIELD_CPU_NICE
+    : null;
+}
+
 export function helperCommand(config: VoiceConfig): string[] {
   return [
-    ...(config.helper_wrapper ?? []),
+    ...yieldCpuWrapper(config),
     config.helper,
     ...transcriberArgs(config),
     ...(config.tts_models
@@ -913,6 +986,9 @@ export function helperCommand(config: VoiceConfig): string[] {
     ...(config.text_turn_model && config.parakeet_model
       ? ["--turn-give-up-ms", String(LONGEST_PAUSE_MS)]
       : []),
+    ...(config.yield_cpu?.threads
+      ? ["--cpu-threads", String(config.yield_cpu.threads)]
+      : []),
   ];
 }
 
@@ -940,6 +1016,17 @@ export function spawnVoiceHelper(config: VoiceConfig): VoiceHelperProcess {
     stderr: "inherit",
     env,
   });
+  const nice = yieldCpuPriority(config);
+  if (nice !== null && child.pid)
+    try {
+      // Never higher than the server's own (an unprivileged process
+      // cannot raise it).
+      setPriority(child.pid, Math.max(nice, getPriority(child.pid)));
+    } catch (error) {
+      console.error(
+        `[voice] the helper's priority was not lowered: ${(error as Error).message}`,
+      );
+    }
   async function* frames() {
     const reader = new FrameReader();
     for await (const chunk of child.stdout) {
