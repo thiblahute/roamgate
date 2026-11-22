@@ -1637,4 +1637,109 @@ if (
       board.items = board.items.filter((each) => each.id !== ownerItem.id);
     }
   });
+  test("a column is resized by its handle, kept for the scope, reset by a double-click; zf or its button shows it alone, h l the next one, Esc every column", async () => {
+    localStorage.clear();
+    const view = await mount();
+    const lanes = () =>
+      [
+        ...view.panel.querySelectorAll<HTMLElement>(
+          ".mr-reviews-board > [data-work-column]",
+        ),
+      ].map(
+        (lane) =>
+          `${lane.dataset.workColumn}${lane.classList.contains("is-focused-column") ? "*" : ""}`,
+      );
+    const lane = (state: string) =>
+      view.panel.querySelector<HTMLElement>(`[data-work-column="${state}"]`)!;
+    /** The widths kept, of the one scope shown. */
+    const stored = () =>
+      Object.values(
+        JSON.parse(
+          localStorage.getItem("roamgate:mrReviewsWorkColumnWidths") ?? "{}",
+        ),
+      );
+    const selectedIn = (state: string) =>
+      !!lane(state).querySelector("[data-work-item][aria-current='true']");
+    const all = ["you", "doing", "verify", "open", "done"];
+    try {
+      expect(lanes()).toEqual(all);
+      // The handle on Open's right: dragged, Open keeps the width; kept
+      // on release.
+      const handle = lane("open").querySelector<HTMLElement>(
+        ".work-column-resizer",
+      )!;
+      expect(handle.getAttribute("role")).toBe("separator");
+      await act(async () => {
+        handle.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            pointerId: 1,
+            clientX: 300,
+          }),
+        );
+      });
+      expect(lane("open").classList.contains("has-width")).toBe(true);
+      expect(lane("open").style.getPropertyValue("--work-column-width")).toBe(
+        "300px",
+      );
+      await act(async () => {
+        handle.dispatchEvent(
+          new PointerEvent("pointerup", { bubbles: true, pointerId: 1 }),
+        );
+      });
+      expect(stored()).toEqual([{ open: 300 }]);
+      // The keys step it, within its bounds.
+      await act(async () => {
+        handle.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+        );
+      });
+      expect(stored()).toEqual([{ open: 316 }]);
+      await act(async () => {
+        handle.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Home", bubbles: true }),
+        );
+      });
+      expect(stored()).toEqual([{ open: 220 }]);
+      // A double-click gives it back its share.
+      await act(async () => {
+        handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      });
+      expect(lane("open").classList.contains("has-width")).toBe(false);
+      expect(stored()).toEqual([]);
+
+      // Its head's button: Open alone, full width, no handle, the
+      // selection in it.
+      await view.click(
+        lane("open").querySelector('button[aria-label="Focus on Open"]'),
+      );
+      expect(lanes()).toEqual(["open*"]);
+      expect(view.panel.querySelector(".work-column-resizer")).toBeNull();
+      expect(selectedIn("open")).toBe(true);
+      // h l focus the next column in its turn; a folded one shows unfolded.
+      await view.key("l");
+      expect(lanes()).toEqual(["done*"]);
+      expect(lane("done").classList.contains("is-folded")).toBe(false);
+      expect(selectedIn("done")).toBe(true);
+      await view.key("h");
+      await view.key("h");
+      expect(lanes()).toEqual(["verify*"]);
+      await view.key("h");
+      expect(lanes()).toEqual(["doing*"]);
+      expect(selectedIn("doing")).toBe(true);
+      // Esc: every column again.
+      await view.key("Escape");
+      expect(lanes()).toEqual(all);
+      // zf focuses the selected item's column; its button, back.
+      await view.key("z");
+      await view.key("f");
+      expect(lanes()).toEqual(["doing*"]);
+      await view.click(
+        lane("doing").querySelector('button[aria-label="Show every column"]'),
+      );
+      expect(lanes()).toEqual(all);
+    } finally {
+      await view.unmount();
+    }
+  });
 }

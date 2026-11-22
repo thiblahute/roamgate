@@ -105,6 +105,10 @@ export const WORK_KEYS: [string, string][] = [
   ["dd", "done"],
   ["a", "add an item: a title, a description with images, its state and tags"],
   ["za", "fold or unfold the column"],
+  [
+    "zf",
+    "on a wide pane: the column alone, full width (h l the next one, zf or Esc every column again)",
+  ],
   ["f", "every tag, to filter by several"],
   ["/", "search the items: words, tags, owner"],
   ["r", "read the board again"],

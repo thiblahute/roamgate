@@ -2245,6 +2245,13 @@ it in the search. Under the search, the project menu when there are
 several; the columns come right under. A phone's Back closes the item's
 detail, then the view.
 
+On a wide pane, the handle in the gap on a column's right resizes it (the
+arrows, Home and End too); the widths are kept for each project, and a
+double-click on a handle gives the column back its share. The button in a
+column's top right corner, or `zf`, shows that column alone at the
+board's width: `h`/`l` move to the next column, the button again, `zf` or
+Esc show every column.
+
 Each card is an item: its title (wrapping, the card as wide as its
 column), tags, owner (the session or subagent working on it), its links
 (a review thread, an effort, a request, a commit, a branch, an RFC's

@@ -61,6 +61,66 @@
   color: var(--warning-text, #d29922);
 }
 
+/* A column of the board: its focus button in its top right corner, its
+   resize handle in the gap on its right. */
+.mr-reviews-board > .mr-reviews-lane[data-work-column] {
+  position: relative;
+}
+
+/* A column given a width (its handle dragged) keeps it, whatever the
+   pane's width; the others share what is left. */
+.mr-reviews-board > .mr-reviews-lane.has-width {
+  flex: 0 0 var(--work-column-width);
+  max-width: none;
+}
+
+/* A focused column: alone, the whole board's width. */
+.mr-reviews-board > .mr-reviews-lane.is-focused-column {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+.work-column-focus.assistant-icon-button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+}
+
+.work-column-resizer {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: -10px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.work-column-resizer::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 3px;
+  width: 2px;
+  border-radius: 2px;
+  background: transparent;
+  content: "";
+  transition: background 120ms ease;
+}
+
+.work-column-resizer:hover::before,
+.work-column-resizer:focus-visible::before {
+  background: var(--accent);
+}
+
+.work-column-resizer:focus-visible {
+  outline: none;
+}
+
 /* A card: its title wraps; its chips and links follow. */
 .work-card.is-done > .mr-reviews-row {
   opacity: 0.75;

@@ -15,8 +15,10 @@ import {
   ListChecks,
   LoaderCircle,
   type LucideIcon,
+  Maximize2,
   MessageSquare,
   MessageSquareQuote,
+  Minimize2,
   Plus,
   RefreshCw,
   Rocket,
@@ -24,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
@@ -64,7 +67,11 @@ import { openAgentTask } from "../agentTasksOpen";
 import { nextColumn, nextRow } from "../boardNavigation";
 import { roamgateLocalStorage } from "../browserStorage";
 import { requestReviewShown, useReviewState } from "../review";
-import { EMPTY_KEY_STATE, feedKey } from "../reviewNavigation";
+import {
+  EMPTY_KEY_STATE,
+  feedKey,
+  REVIEW_KEY_SEQUENCES,
+} from "../reviewNavigation";
 import {
   shallowEqual,
   type State,
@@ -89,6 +96,7 @@ import {
   workWorkspaceFilter,
 } from "../workScope";
 import { BoardCard } from "./BoardCard";
+import { ResizeSeparator } from "./ResizeSeparator";
 import { ThreadEditor, type ThreadBox } from "./ThreadEditor";
 import { WorkAddForm } from "./WorkAddForm";
 import {
@@ -116,6 +124,15 @@ import "./WorkBoard.css";
 const NO_ITEMS: WorkItem[] = [];
 const NO_PROJECTS: WorkProject[] = [];
 const FOLDED_KEY = "mrReviewsWorkFolded";
+const COLUMN_WIDTHS_KEY = "mrReviewsWorkColumnWidths";
+/** A column dragged narrower or wider stays in these bounds. */
+export const WORK_COLUMN_MIN_WIDTH = 220;
+export const WORK_COLUMN_MAX_WIDTH = 1600;
+/** The board's keys: the review's, and zf to focus a column. */
+const WORK_KEY_SEQUENCES: ReadonlySet<string> = new Set([
+  ...REVIEW_KEY_SEQUENCES,
+  "zf",
+]);
 
 /** The focused workspace, its panes' directories and ids as lines. */
 type WorkWorkspaceSelection = Omit<WorkWorkspace, "cwds" | "paneIds"> & {
@@ -227,6 +244,52 @@ function keepFolded(folded: ReadonlySet<WorkState>) {
   } catch {
     // Kept for this page only.
   }
+}
+
+/** The columns' widths a project was given, by state; "*" for all projects. */
+type WorkColumnWidths = Record<string, Partial<Record<WorkState, number>>>;
+
+export function clampWorkColumnWidth(width: number): number {
+  return Math.round(
+    Math.min(WORK_COLUMN_MAX_WIDTH, Math.max(WORK_COLUMN_MIN_WIDTH, width)),
+  );
+}
+
+function storedColumnWidths(): WorkColumnWidths {
+  try {
+    const value = JSON.parse(
+      roamgateLocalStorage.getItem(COLUMN_WIDTHS_KEY) ?? "{}",
+    );
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? (value as WorkColumnWidths)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function keepColumnWidths(widths: WorkColumnWidths) {
+  try {
+    roamgateLocalStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(widths));
+  } catch {
+    // Kept for this page only.
+  }
+}
+
+/** The widths with one column's set, or dropped (null: back to the flex). */
+export function withWorkColumnWidth(
+  widths: WorkColumnWidths,
+  project: string,
+  state: WorkState,
+  width: number | null,
+): WorkColumnWidths {
+  const columns = { ...widths[project] };
+  if (width === null) delete columns[state];
+  else columns[state] = width;
+  const next = { ...widths };
+  if (Object.keys(columns).length) next[project] = columns;
+  else delete next[project];
+  return next;
 }
 
 /** The item's description (its text when it was added), when it has one. */
@@ -537,6 +600,11 @@ export function useWorkMode({
     setCompletionsOff(false);
   };
   const [folded, setFolded] = useState<Set<WorkState>>(storedFolded);
+  /** The columns' widths, by project: dragged, then kept on release. */
+  const [columnWidths, setColumnWidths] =
+    useState<WorkColumnWidths>(storedColumnWidths);
+  /** The one column shown, at full width (zf, its head's button). */
+  const [focusedColumn, setFocusedColumn] = useState<WorkState | null>(null);
   const [selected, setSelected] = useState<string | null>(initialItem ?? null);
   const [detail, setDetail] = useState<string | null>(initialItem ?? null);
   const [compose, setCompose] = useState<"comment" | "reply" | null>(null);
@@ -664,14 +732,49 @@ export function useWorkMode({
     [projectItems, query, workspaceTag],
   );
   const columns = useMemo(() => workColumns(items), [items]);
+  /** On a wide pane, a column focused: drawn alone, unfolded, full width. */
+  const focus = board ? focusedColumn : null;
+  const drawnColumns = useMemo(
+    () =>
+      focus ? columns.filter((column) => column.state === focus) : columns,
+    [columns, focus],
+  );
+  const isFoldedColumn = (state: WorkState) =>
+    folded.has(state) && state !== focus;
   /** The columns as drawn: folded ones hold nothing the keys walk. */
   const columnKeys = useMemo(
     () =>
-      columns.map((column) =>
-        folded.has(column.state) ? [] : column.items.map((item) => item.id),
+      drawnColumns.map((column) =>
+        folded.has(column.state) && column.state !== focus
+          ? []
+          : column.items.map((item) => item.id),
       ),
-    [columns, folded],
+    [drawnColumns, folded, focus],
   );
+  /** The scope's column widths: "*" when every project shows. */
+  const widthsKey = scope ?? "*";
+  const widths = columnWidths[widthsKey] ?? {};
+  const setColumnWidth = (
+    state: WorkState,
+    width: number | null,
+    keep: boolean,
+  ) =>
+    setColumnWidths((current) => {
+      const next = withWorkColumnWidth(current, widthsKey, state, width);
+      if (keep) keepColumnWidths(next);
+      return next;
+    });
+  /**
+   * Focuses a column (null: every column again), its first item selected
+   * when the selection is elsewhere.
+   */
+  const focusColumn = (state: WorkState | null) => {
+    setFocusedColumn(state);
+    if (!state) return;
+    const column = columns.find((each) => each.state === state);
+    if (!column?.items.some((item) => item.id === selected))
+      setSelected(column?.items[0]?.id ?? null);
+  };
   const orderedKeys = useMemo(() => columnKeys.flat(), [columnKeys]);
   const forYou = projectItems.filter((item) => item.state === "you").length;
   const forYouAll = boardItems.filter((item) => item.state === "you").length;
@@ -966,6 +1069,12 @@ export function useWorkMode({
   const onKey = (event: KeyboardEvent): boolean => {
     if (!enabled) return false;
     const target = event.target instanceof HTMLElement ? event.target : null;
+    // A column's handle steps with the arrows, Home and End.
+    if (
+      target?.classList.contains("work-column-resizer") &&
+      /^(Arrow(Left|Right)|Home|End)$/.test(event.key)
+    )
+      return false;
     const typing = !!target?.closest(
       "input, textarea, select, [contenteditable], .cm-editor",
     );
@@ -1014,6 +1123,7 @@ export function useWorkMode({
         setAdding(false);
         back();
       } else if (detail) closeDetail();
+      else if (focus) focusColumn(null);
       else if (query) setQuery("");
       else if (selected) setSelected(null);
       else return false;
@@ -1023,7 +1133,7 @@ export function useWorkMode({
     // The detail's list has the keys when it has the focus (the chat
     // threads' keys, and the detail's own through them).
     if (detailItem && target?.closest("[data-work-keys]")) return false;
-    const fed = feedKey(keyState.current, event.key);
+    const fed = feedKey(keyState.current, event.key, WORK_KEY_SEQUENCES);
     keyState.current = fed.state;
     if (fed.type === "wait") return true;
     const count = fed.count ?? 1;
@@ -1057,6 +1167,33 @@ export function useWorkMode({
     }
     const current = selectedItem;
     if (
+      focus &&
+      (key === "h" ||
+        key === "l" ||
+        key === "ArrowLeft" ||
+        key === "ArrowRight" ||
+        key === "Tab")
+    ) {
+      // Focused: the next column is focused in its turn.
+      const at = columns.findIndex((column) => column.state === focus);
+      const by =
+        key === "h" || key === "ArrowLeft" || (key === "Tab" && event.shiftKey)
+          ? -count
+          : count;
+      const next =
+        columns[Math.max(0, Math.min(columns.length - 1, at + by))]?.state;
+      if (next && next !== focus) focusColumn(next);
+    } else if (key === "zf") {
+      if (!board) return false;
+      focusColumn(
+        focus
+          ? null
+          : (current?.state ??
+              columns.find((column) => column.items.length)?.state ??
+              columns[0]?.state ??
+              null),
+      );
+    } else if (
       board &&
       (key === "h" ||
         key === "l" ||
@@ -1362,19 +1499,90 @@ export function useWorkMode({
           <div
             className={`${board ? "mr-reviews-board" : "mr-reviews-sections"}${drag ? " is-work-dragging" : ""}`}
           >
-            {columns.map(({ state, items: inColumn }) => {
+            {drawnColumns.map(({ state, items: inColumn }) => {
               // A list on a narrow pane leaves empty states out, but a card
               // being dragged can be dropped in any of them.
               if (!inColumn.length && !board && !drag) return null;
-              const isFolded = folded.has(state);
+              const isFolded = isFoldedColumn(state);
+              const width =
+                board && !focus && !isFolded ? widths[state] : undefined;
               return (
                 <div
                   key={state}
-                  className={`mr-reviews-lane is-${state}${isFolded ? " is-folded" : ""}${drag?.over === state ? " is-drop-target" : ""}${drag?.item.state === state ? " is-drop-source" : ""}`}
+                  className={`mr-reviews-lane is-${state}${isFolded ? " is-folded" : ""}${focus === state ? " is-focused-column" : ""}${width ? " has-width" : ""}${drag?.over === state ? " is-drop-target" : ""}${drag?.item.state === state ? " is-drop-source" : ""}`}
                   role="group"
                   aria-label={WORK_STATE_TITLE[state]}
                   data-work-column={state}
+                  {...(width
+                    ? {
+                        style: {
+                          "--work-column-width": `${width}px`,
+                        } as CSSProperties,
+                      }
+                    : {})}
                 >
+                  {board && !isFolded ? (
+                    <button
+                      type="button"
+                      className="assistant-icon-button work-column-focus"
+                      aria-pressed={focus === state}
+                      aria-label={
+                        focus === state
+                          ? "Show every column"
+                          : `Focus on ${WORK_STATE_TITLE[state]}`
+                      }
+                      title={
+                        focus === state
+                          ? "Show every column (zf, Esc)"
+                          : `${WORK_STATE_TITLE[state]} alone, full width (zf)`
+                      }
+                      onClick={() => {
+                        focusColumn(focus === state ? null : state);
+                        back();
+                      }}
+                    >
+                      {focus === state ? (
+                        <Minimize2 size={12} />
+                      ) : (
+                        <Maximize2 size={12} />
+                      )}
+                    </button>
+                  ) : null}
+                  {board && !focus && !isFolded ? (
+                    <ResizeSeparator
+                      className="work-column-resizer"
+                      label={`Resize ${WORK_STATE_TITLE[state]}`}
+                      title="Drag to resize; double-click to reset"
+                      value={width ?? 0}
+                      valueMin={WORK_COLUMN_MIN_WIDTH}
+                      valueMax={WORK_COLUMN_MAX_WIDTH}
+                      {...(width ? { valueNow: width } : {})}
+                      at={(clientX, separator) =>
+                        clampWorkColumnWidth(
+                          clientX -
+                            (separator.parentElement?.getBoundingClientRect()
+                              .left ?? 0),
+                        )
+                      }
+                      step={(key, current, separator) => {
+                        const from =
+                          current ||
+                          separator.parentElement?.getBoundingClientRect()
+                            .width ||
+                          WORK_COLUMN_MIN_WIDTH;
+                        return clampWorkColumnWidth(
+                          key === "Home"
+                            ? WORK_COLUMN_MIN_WIDTH
+                            : key === "End"
+                              ? WORK_COLUMN_MAX_WIDTH
+                              : from + (key === "ArrowLeft" ? -16 : 16),
+                        );
+                      }}
+                      onChange={(next) => setColumnWidth(state, next, false)}
+                      onCommit={(next) => setColumnWidth(state, next, true)}
+                      onReset={() => setColumnWidth(state, null, true)}
+                    />
+                  ) : null}
                   <button
                     type="button"
                     className="mr-reviews-lane-title"
@@ -1439,7 +1647,8 @@ export function useWorkMode({
             <p className="assistant-hint mr-reviews-keys">
               j/k move · h/l columns · Enter open · c comment · s state (or drag
               a card to a column) · t tags · o the agent's work · dd done · a
-              add · za fold · / search (#tag) · [ ] Reviews · ? all keys
+              add · za fold · zf focus a column · / search (#tag) · [ ] Reviews
+              · ? all keys
             </p>
           ) : null}
         </>
