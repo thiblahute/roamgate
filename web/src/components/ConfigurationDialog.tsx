@@ -64,6 +64,7 @@ import { AutoSyncRepositoriesDialog } from "./AutoSyncRepositoriesDialog";
 import { CloseButton } from "./CloseButton";
 import { TerminalTransportSettings } from "./TerminalTransportSettings";
 import { ConfigurationLoadingDialog } from "./ConfigurationLoadingDialog";
+import { HistorySettings } from "./HistorySettings";
 import { InstanceNameSettings } from "./InstanceNameSettings";
 import { SitesWeWorkOnSettings } from "./SitesWeWorkOnSettings";
 import { SpeechSettings } from "./SpeechSettings";
@@ -770,6 +771,7 @@ export function ConfigurationDialog({
                   <InstanceNameSettings />
                   <WorktreeCommandSettings />
                   <SitesWeWorkOnSettings />
+                  <HistorySettings />
                 </>
               ) : null}
             </section>

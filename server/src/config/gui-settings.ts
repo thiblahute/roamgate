@@ -18,6 +18,11 @@ import {
 } from "../../../shared/workspaceTree";
 import { normalizeTitleSuffix } from "../../../shared/instanceName";
 import {
+  type HistorySettings,
+  normalizeHistorySettings,
+} from "../../../shared/history";
+import { historyChanged } from "../history/hooks";
+import {
   type LimitResumeSettings,
   limitResumeSettingsOf,
   normalizeLimitResumeSettings,
@@ -302,6 +307,8 @@ export type GuiSettings = {
    * entry. Absent: found from the pages (shared/renderedPage.ts).
    */
   rendered_site_roots?: Record<string, string>;
+  /** Local history (server/src/history): where, and whether (absent: on, `<data>/history`). */
+  history?: HistorySettings;
 };
 
 /** Namespaces are addressed by RPC, so keep them to unmistakable identifiers. */
@@ -554,6 +561,9 @@ export function normalizeGuiSettings(raw: unknown): GuiSettings {
           ),
         }
       : {}),
+    ...(normalizeHistorySettings(obj.history)
+      ? { history: normalizeHistorySettings(obj.history) }
+      : {}),
   };
 }
 
@@ -639,6 +649,8 @@ async function persistGuiSettings(
     throw error;
   }
   cachedGuiSettings = normalized;
+  historyChanged("settings");
+  historyChanged("mr-reviews");
   return normalized;
 }
 

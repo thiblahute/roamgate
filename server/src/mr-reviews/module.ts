@@ -68,8 +68,8 @@ import {
   importChanges,
   importedMrReviews,
   parseReviewsExport,
-  stableJson,
-} from "./export";
+} from "../history/mr-reviews";
+import { stableJson } from "../history/format";
 import { FOUND_KEPT_DAYS, type MrStore, openMrStore } from "./store";
 
 /**

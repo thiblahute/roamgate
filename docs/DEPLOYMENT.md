@@ -524,8 +524,8 @@ each effort's ledger and merges histories. The commands read the service's
 `ROAMGATE_SETTINGS_PATH` like the server; a running server reads the
 settings again on its next use, so reload the panel. The Reviews settings
 have the same **Export** and **Import** (with the list of changes and an
-**Apply** confirmation). Writing exports somewhere automatically,
-committing or pushing them, is not done here.
+**Apply** confirmation). The same export is written and committed
+automatically by the [local history](#local-history).
 
 ### Permission prompts
 
@@ -1729,6 +1729,40 @@ caps with `capsfilter caps=...`, and end a source with dynamic pads (a
 `decodebin`) with `! audioconvert`. `call_background` is read from
 `voice.json` only: it builds a pipeline in the helper, so no page edits it.
 
+## Local history
+
+Roamgate keeps a git repository of what you and your agents authored: the
+Work board (each change its own commit, authored by whoever made it), reviews
+with their comments and screenshots, settings without secrets, connections,
+move hosts, session profiles, the Reviews' state, the companion's memories
+and the voice settings, as Markdown and key-sorted JSON files (contract:
+[History](ARCHITECTURE.md#history)). It is on by default, needs `git` on the
+server's machine, and commits 30 seconds after a change (at most 5 minutes
+after the first). Nothing is pushed anywhere: it does not survive the loss
+of the disk.
+
+- **Where**: `~/.config/roamgate/history` (`%APPDATA%\roamgate\history` on
+  Windows). Configuration, Instance, **History and backup** shows its status
+  (last commit, size, files per area, what was kept out or failed) and sets
+  another location (an absolute path; `~` works) or turns it off; this is
+  `history: {"location": "...", "enabled": false}` in `settings.json`. A new
+  location starts a new repository; move the old folder yourself to keep its
+  commits. `ROAMGATE_HISTORY_DIR` changes the default location.
+- **Test servers**: `ROAMGATE_HISTORY=off` in a server's environment makes
+  off the default (the setting can still turn it on).
+- **Secrets** never go in: secret-looking keys and values are removed from
+  every JSON file, and a file whose text still holds a token (a token pasted
+  in a comment, for example) is kept out of the commit and listed in the
+  status with its line until the token is removed where it was written.
+- **Gaming**: while GameMode runs, the full pass waits (up to 24 hours) and
+  git runs at the lowest priority.
+
+```sh
+roamgate history status [--json]   # where, last commit, size, files, problems
+roamgate history commit [--json]   # write every area and commit now
+git -C ~/.config/roamgate/history log -p -- work/items/<id>.md   # an item's history
+```
+
 ## Activity log
 
 The [activity log](./activity.md) is off by default. Turn it on in
@@ -2051,6 +2085,7 @@ and 2 on bad arguments; many accept `--json`.
 | `roamgate connections list\|test\|add\|remove\|set-default`       | Manage [connection profiles](#multiple-and-remote-herdr-connections). Edits are refused while the managed service runs unless `--restart` is given. Only the service config's address is checked, so stop other processes sharing the registry (such as a foreground run on another port) first. |
 | `roamgate setup voice [list\|remove-unused]`                      | Detect the hardware and download the [voice chat](#voice-setup-assistant) models it calls for, then point `voice.json` at them.                                                                                                                                                                  |
 | `roamgate voice profile low-gpu on\|off\|status\|models`          | Hold the [low-GPU voice profile](#low-gpu-voice-profile) on (`--by NAME`, `--now`) or let it go; `roamgate voice gaming` is the same held by `gaming`.                                                                                                                                           |
+| `roamgate history status\|commit`                                 | Show the [local history](#local-history)'s place, last commit, size and problems, or write and commit every area now.                                                                                                                                                                            |
 | `roamgate push test`                                              | Send a test [Web Push](#web-push-notifications) notification.                                                                                                                                                                                                                                    |
 | `roamgate activity today\|day\|range\|events\|workspaces\|status` | Read the [activity log](./activity.md#command-line) read-only, without the server.                                                                                                                                                                                                               |
 | `roamgate update [--check]` / `roamgate rollback`                 | Update to the latest release or restore `roamgate.previous` (Linux/macOS).                                                                                                                                                                                                                       |

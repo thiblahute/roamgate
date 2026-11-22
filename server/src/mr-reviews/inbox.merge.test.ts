@@ -13,7 +13,7 @@ import { meaningful, rowFacts } from "./inference";
 import { createOwnForge, type FakeRequest } from "./own-forge.fixture";
 import { openMrStore } from "./store";
 import { mergeFields } from "./board-tools";
-import { EXPORTED_KEYS } from "./export";
+import { EXPORTED_KEYS } from "../history/mr-reviews";
 import {
   mrReviewsSettings,
   normalizeStoredMrReviews,

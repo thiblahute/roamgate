@@ -2600,6 +2600,19 @@ tags or state.
 - **Configuration > Instance > Title suffix** names each server (for example
   `Roamgate · Home`); see [instance naming](docs/DEPLOYMENT.md#pwa-instance-names).
 
+## History and backup
+
+Everything you and your agents write in Roamgate is kept in a git
+repository on your machine, as readable files: each Work item as a Markdown
+file whose `git log` is its history (who changed what, when), review threads
+with their comments and screenshots, settings without secrets, connections,
+the Reviews' state, the companion's memories and the voice settings. It is
+on by default and commits a few seconds after a change; secrets never go
+in. Configuration, Instance, **History and backup** shows the last commit,
+the size and anything kept out, moves it, or commits now; `roamgate history
+status|commit` does the same from a terminal
+([deployment](docs/DEPLOYMENT.md#local-history)).
+
 ## Session archive
 
 `roamgate archive sync|search|cat|session|resume|health|rebuild-index` keeps

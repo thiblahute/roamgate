@@ -186,6 +186,7 @@ import {
   claudeStartMode,
   limitResumeSettings,
   readGuiSettings,
+  updateGuiSettings,
   worktreeRemoveCommandFor,
 } from "./config/gui-settings";
 import {
@@ -288,6 +289,12 @@ import {
   saveReviewImage,
 } from "./review/images";
 import { openReviewStorage, reviewDirectory } from "./review/storage";
+import { historyPaths, type ReviewSource } from "./history/area";
+import { historyChanged } from "./history/hooks";
+import { expandLocation, historyAreas, historyPlace } from "./history/place";
+import { withHistoryHooks } from "./history/reviews";
+import { HistoryRuntime } from "./history/runtime";
+import { createHistoryRoute } from "./http/history";
 import { isHostPath, ReviewGoneError } from "./workspace/review-patch";
 import { createForgeCache, parseForgeRefParam } from "./review/forge";
 import { mrCachePush } from "./mr-cache/push";
@@ -1445,6 +1452,39 @@ function mrReviewConnections(): MrConnection[] {
   );
 }
 
+/** The review store the history reads, once the review service opened it. */
+let reviewStorageForHistory: ReviewSource | null = null;
+
+/** Local history (server/src/history): a git repo of what was authored. */
+const historyRuntime = new HistoryRuntime({
+  areas: historyAreas(historyPaths(), () => {
+    if (!reviewStorageForHistory) getReviewService();
+    return reviewStorageForHistory;
+  }),
+  place: async () => historyPlace(await readGuiSettings(), dataRoot()),
+  reviews: () => reviewStorageForHistory,
+  gameMode: () => gameModeActive(),
+  log: logger.child("history"),
+});
+const handleHistory = createHistoryRoute({
+  status: () => historyRuntime.status(),
+  commit: () => historyRuntime.commitNow(),
+  configure: async ({ location, enabled }) => {
+    const expanded =
+      typeof location === "string" ? expandLocation(location) : location;
+    await updateGuiSettings((current) => {
+      const history = { ...current.history };
+      if (expanded === null) delete history.location;
+      else if (expanded !== undefined) history.location = expanded;
+      if (enabled !== undefined) history.enabled = enabled;
+      const next = { ...current };
+      if (Object.keys(history).length) next.history = history;
+      else delete next.history;
+      return next;
+    });
+  },
+});
+
 let workService: WorkService | null = null;
 /** The Work board (bridge.work.*), started on first use. */
 function getWorkService(): WorkService {
@@ -1919,8 +1959,13 @@ function getReviewService(): ReviewService {
     );
     return readCommitDiff(context, mr, commit, listed?.parent ?? null);
   };
+  const storage = withHistoryHooks(
+    openReviewStorage(reviewDirectory()),
+    historyChanged,
+  );
+  reviewStorageForHistory = storage;
   reviewService = createReviewService({
-    storage: openReviewStorage(reviewDirectory()),
+    storage,
     publish: (push) => {
       // Machine-wide like forwards: each browser keeps the reviews of the
       // connections it shows and can raise a review opened on another one.
@@ -4673,6 +4718,7 @@ async function handleConnectionHttpRequest(
 }
 
 function main() {
+  historyRuntime.start();
   const server = bindListenerBeforeConnectionStart({
     bindListener: () =>
       Bun.serve<{
@@ -4807,6 +4853,10 @@ function main() {
           }
           if (url.pathname === "/api/instance-settings") {
             return handleInstanceSettings(req);
+          }
+          if (url.pathname.startsWith("/api/history")) {
+            const history = await handleHistory(req, url.pathname);
+            if (history) return history;
           }
           if (url.pathname === "/api/health") {
             return Response.json({
@@ -5246,6 +5296,8 @@ function stopManagerOnce(): Promise<void> {
       ?.then((assistant) => assistant.dispose())
       .catch(() => undefined);
     await Promise.all([connectionManager.stopAll(), cpuProfile?.stop()]);
+    // The last changes go into the history before the stores close.
+    await historyRuntime.stop();
     reviewAgent?.stop();
     reviewService?.close();
   })();

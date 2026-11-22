@@ -18,6 +18,11 @@ import {
 import { parseAgentAddress } from "../../../shared/agentMessage";
 import { dataRoot, replaceDataFile } from "../config/data-paths";
 import { roamgateEnv } from "../config/environment";
+import {
+  historyChanged,
+  historyWorkChanged,
+  type WorkActor,
+} from "../history/hooks";
 
 /**
  * The Work board's store: one JSON file with the projects and the items,
@@ -566,13 +571,33 @@ export function openWorkStore(directory: string) {
         (a, b) => a.name.localeCompare(b.name),
       );
       save();
+      historyChanged("work");
     },
-    removeProject(id: string) {
+    removeProject(id: string, actor?: WorkActor) {
+      const removed = items.filter((i) => i.project === id);
       projects = projects.filter((p) => p.id !== id);
       items = items.filter((i) => i.project !== id);
       save();
+      historyChanged("work");
+      const at = new Date().toISOString();
+      for (const item of removed)
+        historyWorkChanged({
+          item: null,
+          id: item.id,
+          change: { removed: true, project: id },
+          actor: actor ?? { by: "user" },
+          at,
+        });
     },
-    saveItem(item: WorkItem, change?: Record<string, unknown>) {
+    /**
+     * Writes an item; `change` is what changed (a line of the history),
+     * `actor` who changed it (else the item's `by`).
+     */
+    saveItem(
+      item: WorkItem,
+      change?: Record<string, unknown>,
+      actor?: WorkActor,
+    ) {
       const at = items.findIndex((i) => i.id === item.id);
       if (at < 0) {
         if (items.length >= WORK_LIMITS.items)
@@ -582,6 +607,13 @@ export function openWorkStore(directory: string) {
       save();
       if (change && Object.keys(change).length)
         history({ at: item.updatedAt, item: item.id, by: item.by, change });
+      historyWorkChanged({
+        item,
+        id: item.id,
+        change: change ?? {},
+        actor: actor ?? { by: item.by },
+        at: item.updatedAt || new Date().toISOString(),
+      });
     },
     /**
      * The history's lines of an item, oldest first (the file read whole:
@@ -604,9 +636,16 @@ export function openWorkStore(directory: string) {
       }
       return out;
     },
-    removeItem(id: string) {
+    removeItem(id: string, actor?: WorkActor) {
       items = items.filter((i) => i.id !== id);
       save();
+      historyWorkChanged({
+        item: null,
+        id,
+        change: { removed: true },
+        actor: actor ?? { by: "user" },
+        at: new Date().toISOString(),
+      });
     },
     /** For tests and exports: the file as it is. */
     snapshot(): StoreFile {

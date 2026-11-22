@@ -1,18 +1,22 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { replaceDataFile } from "../config/data-paths";
-import { emptyLedger, type LedgerFile } from "./efforts";
+import { emptyLedger, type LedgerFile } from "../mr-reviews/efforts";
+import { type HistoryArea, count } from "./area";
+import { fileNameOf, jsonl, parseJsonl, stableJson } from "./format";
+import { withoutSecrets } from "./secrets";
 
 /**
- * Export and import of what the Reviews author (section 11, D21, D22):
- * the `mr_reviews` keys the user and their agents write (order, pins,
- * removals, overrides, views, requests not proposed yet, groups and
- * workspaces headed upstream, efforts, merge rules; since version 2 also
- * the hosts, followed projects and hints, D30) and each effort's authored
- * ledger with its history, as stable key-sorted JSON (version 3 adds the
- * workspaces headed upstream by themselves). Never secrets, never
- * derived data (forge state, inference, caches, derived.json, what the
- * user last saw), never the Undo journal. Run by hand or by a tool only.
+ * What the Reviews author (section 11, D21, D22): the `mr_reviews` keys the
+ * user and their agents write (order, pins, removals, overrides, views,
+ * requests not proposed yet, groups and workspaces headed upstream,
+ * efforts, merge rules; since version 2 also the hosts, followed projects
+ * and hints, D30) and each effort's authored ledger with its history, as
+ * stable key-sorted JSON (version 3 adds the workspaces headed upstream by
+ * themselves). Never secrets, never derived data (forge state, inference,
+ * caches, derived.json, what the user last saw), never the Undo journal.
+ * The same code is `roamgate reviews export|import` and the history's
+ * mr-reviews area (mrReviewsArea).
  */
 
 export const REVIEWS_EXPORT_FORMAT = "roamgate-reviews";
@@ -66,42 +70,6 @@ export type ReviewsExport = {
     { ledger: ExportedLedger; history: Record<string, unknown>[] }
   >;
 };
-
-const SECRET_KEY =
-  /token|secret|passw(or)?d|api[-_]?key|credential|private[-_]?key|cookie|authorization|bearer/i;
-const SECRET_VALUE =
-  /\b(glpat-[\w-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|xox[abprs]-[\w-]{10,}|sk-[A-Za-z0-9_-]{20,})|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
-
-/** A copy without anything that looks like a secret (by key or by value). */
-export function withoutSecrets(value: unknown): unknown {
-  if (typeof value === "string")
-    return SECRET_VALUE.test(value)
-      ? value.replace(new RegExp(SECRET_VALUE.source, "g"), "[removed]")
-      : value;
-  if (Array.isArray(value)) return value.map(withoutSecrets);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([key]) => !SECRET_KEY.test(key))
-        .map(([key, each]) => [key, withoutSecrets(each)]),
-    );
-  return value;
-}
-
-/** JSON with every object's keys sorted: the same state, the same text. */
-export function stableJson(value: unknown): string {
-  const sorted = (each: unknown): unknown => {
-    if (Array.isArray(each)) return each.map(sorted);
-    if (each && typeof each === "object")
-      return Object.fromEntries(
-        Object.keys(each as Record<string, unknown>)
-          .sort()
-          .map((key) => [key, sorted((each as Record<string, unknown>)[key])]),
-      );
-    return each;
-  };
-  return `${JSON.stringify(sorted(value), null, 2)}\n`;
-}
 
 function readJson(path: string): unknown {
   try {
@@ -371,4 +339,94 @@ export function importedMrReviews(
   next.order_version =
     (typeof stored?.order_version === "number" ? stored.order_version : 0) + 1;
   return next;
+}
+
+/**
+ * The history's mr-reviews area: the export above, split so each effort's
+ * ledger and history are their own files (a ledger change does not rewrite
+ * the others): `mr-reviews/export.json` holds the authored `mr_reviews`
+ * keys (no `exported_at`: the same state, the same file),
+ * `mr-reviews/efforts/<id>/ledger.json` and `history.jsonl` each effort's.
+ */
+export function mrReviewsArea(paths: {
+  settings: string;
+  data: string;
+}): HistoryArea {
+  const effortsRoot = join(paths.data, "mr-reviews", "efforts");
+  return {
+    name: "mr-reviews",
+    watch: () => [
+      paths.settings,
+      ...effortDirs(effortsRoot).flatMap((dir) => [
+        join(dir, "ledger.json"),
+        join(dir, "history.jsonl"),
+      ]),
+    ],
+    render() {
+      const settings = readJson(paths.settings) as Record<string, any> | null;
+      const exported = exportReviews({
+        stored: settings?.mr_reviews,
+        effortsRoot,
+      });
+      const files = new Map<string, string>();
+      const { efforts } = exported;
+      const head: Partial<ReviewsExport> = { ...exported, efforts: {} };
+      delete head.exported_at;
+      files.set("mr-reviews/export.json", stableJson(head));
+      for (const [id, effort] of Object.entries(efforts)) {
+        const base = `mr-reviews/efforts/${fileNameOf(id)}`;
+        files.set(`${base}/ledger.json`, stableJson(effort.ledger));
+        if (effort.history.length)
+          files.set(`${base}/history.jsonl`, jsonl(effort.history));
+      }
+      return { files, owns: ["mr-reviews/"] };
+    },
+    describe: (changed) => {
+      const efforts = new Set(
+        changed.flatMap(
+          (path) => /^mr-reviews\/efforts\/([^/]+)\//.exec(path)?.[1] ?? [],
+        ),
+      );
+      return [
+        changed.includes("mr-reviews/export.json")
+          ? "the Reviews' settings"
+          : "",
+        efforts.size ? count(efforts.size, "effort") : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
+    },
+  };
+}
+
+/** The history's files read back as an export (format 3), for an import. */
+export function mrReviewsFromHistory(
+  files: ReadonlyMap<string, string>,
+): ReviewsExport {
+  const head = JSON.parse(files.get("mr-reviews/export.json") ?? "{}");
+  const efforts: ReviewsExport["efforts"] = {};
+  for (const [path, text] of files) {
+    const match = /^mr-reviews\/efforts\/([^/]+)\/ledger\.json$/.exec(path);
+    if (!match) continue;
+    const id = match[1]!;
+    efforts[id] = {
+      ledger: JSON.parse(text),
+      history: parseJsonl(
+        files.get(`mr-reviews/efforts/${id}/history.jsonl`) ?? "",
+      ) as Record<string, unknown>[],
+    };
+  }
+  return parseReviewsExport(
+    JSON.stringify({ ...head, exported_at: "", efforts }),
+  );
+}
+
+function effortDirs(root: string): string[] {
+  try {
+    return readdirSync(root)
+      .filter((name) => !name.startsWith(".") && /^[\w-]+$/.test(name))
+      .map((name) => join(root, name));
+  } catch {
+    return [];
+  }
 }

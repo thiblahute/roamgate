@@ -8,8 +8,8 @@ import {
   importChanges,
   importedMrReviews,
   parseReviewsExport,
-  stableJson,
-} from "../mr-reviews/export";
+} from "../history/mr-reviews";
+import { stableJson } from "../history/format";
 import { normalizeStoredMrReviews } from "../mr-reviews/settings";
 import {
   type CliCommand,

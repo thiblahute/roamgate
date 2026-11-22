@@ -581,6 +581,134 @@ and `session` (checkout and agent path). Values are what the UI shows, with
   forge. `git.pull_request` takes `refresh: true`, `forge.status` `fresh: true`
   and `forge.session` `fresh: true` to bypass the cache.
 
+## History
+
+Local history keeps what was authored in Roamgate as plain files in a git
+repository the user owns, committed as it changes. Code:
+`server/src/history/`, CLI `server/src/cli/history.ts`, HTTP
+`server/src/http/history.ts`, Settings `web/src/components/HistorySettings.tsx`.
+Nothing leaves the machine: a remote and a backup target are separate
+layers on top.
+
+### Place
+
+`<data root>/history/` by default (`ROAMGATE_HISTORY_DIR` changes the
+default), its own `.git` inside, so a copy of the data folder carries it.
+`settings.json` `history: {location?, enabled?}` overrides: `location` is an
+absolute path (`~` expanded; a relative one is refused), `enabled: false`
+turns writing off. `ROAMGATE_HISTORY=off` makes off the default (test
+servers), which `enabled: true` overrides. A new location starts a new
+repository there and gets a full pass; the old one is left in place.
+
+### Stores to areas
+
+The stores stay the truth; the history is a lossless projection written
+beside them (`place.ts historyAreas`). Each area owns paths in the repo and
+renders them whole, or only the ids changed; a file under an owned path
+that the render does not give is removed. An area exists only when its
+writer exists (the allowlist): nothing else of the data folder is ever
+written, in particular never `auth-token`, `session-secret*`, `secrets/`,
+`web-push.json`, `assistant/auth.json` or `.tmp` files.
+
+| Area                                      | Source                                                                              | Files                                                                                                                                              |
+| ----------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| work                                      | `work/work.json`, `history.jsonl`, each item's description thread                   | `work/items/<id>.md`, `work/projects/<id>.json`, `work/history.jsonl`                                                                              |
+| reviews                                   | `reviews/reviews.sqlite`, `reviews/images/`                                         | `reviews/<yyyy>/<review>/review.json`, `<thread>.md`; `reviews/images/<sha256>.<ext>`                                                              |
+| settings                                  | `settings.json`                                                                     | `settings/<key>.json`, one per allowlisted top-level key (`HISTORY_SETTINGS_KEYS`; `mr_reviews` is the mr-reviews area's)                          |
+| connections, move-hosts, session-profiles | `connections.json`, `move-hosts.json`, `session-profiles.json`                      | the same names at the top                                                                                                                          |
+| mr-reviews                                | `settings.json` `mr_reviews`, `mr-reviews/efforts/<id>/`                            | `mr-reviews/export.json` (the Reviews export, format 3, without `exported_at` and efforts), `mr-reviews/efforts/<id>/ledger.json`, `history.jsonl` |
+| companion                                 | `companion-memory.json`, `companion-memories/*.md`, `taste.json` (`avoid`, `picks`) | `companion/memory.json`, `companion/memories/*.md`, `companion/taste.json`                                                                         |
+| voice                                     | `voice.json`, `voice-profiles/*.json`, the voice data dir's `low-gpu.json`          | `voice/voice.json`, `voice/profiles/*.json`, `voice/low-gpu.json`                                                                                  |
+
+Plus `FORMAT` (the layout's version, `1`; a newer one is refused) and a
+`README.md`, both written once.
+
+### Formats
+
+- Structured data: JSON, keys sorted, two-space indent, one trailing
+  newline, no export timestamps (`stableJson`); every JSON value through
+  `withoutSecrets` (secret-looking keys dropped, secret-looking values
+  replaced by `[removed]`).
+- Prose (Work items, review threads): Markdown. Each part starts with a
+  header line `<!-- roamgate:<tag> <one-line JSON> -->` holding everything
+  but the text, then the text; parts are separated by a blank line
+  (`renderDoc`, `parseDoc`, which reads every file it wrote back to the same
+  parts). A text holding a line that reads as a header is kept in its
+  header's `body` instead; `-->` inside a header is escaped. An item is one
+  `item` part (the item, then its description); a thread is a `thread` part
+  (the thread without comments, then `# <review title>`, not read back)
+  followed by one `comment` part per comment. A review session's agent
+  `working` note is left out.
+- Logs: JSONL, one value per line.
+- Screenshots referenced by a comment (`images/<review>/<name>`) are stored
+  once by their sha256; `review.json`'s `images` maps each reference to its
+  file, or to `{omitted: "larger than 5 MB", bytes}` for one over 5 MB,
+  which stays out of git. No LFS.
+- File names are the ids when plain (`[A-Za-z0-9_-][A-Za-z0-9._-]*`), else a
+  readable part and 12 hex of the id's sha256 (`fileNameOf`).
+
+### When it writes
+
+- The stores report their own successful writes (`hooks.ts`): the Work
+  store each item change with who made it (`saveItem(item, change,
+  actor)`, `removeItem`, `removeProject`), the review store (wrapped by
+  `withHistoryHooks`) each review and the Work item a thread is on,
+  settings each save. The areas kept in files also list their sources
+  (`watch`), polled every 30 s by size and modification time, so hand
+  edits are kept too.
+- `HistoryRuntime` keeps the changed areas as dirty sets (whole, or ids) and
+  runs a pass 30 s after the last change, at most 5 min after the first
+  (`Debounce`). A full pass (every area whole) runs a minute after the
+  server starts and at a new location. At shutdown the waiting changes get
+  one last pass (5 s at most).
+- A pass (`HistoryRepo.pass`), one at a time, also across processes (the
+  lock directory `.git/roamgate-pass.lock`, taken over after 10 min):
+  1. each Work change queued since the last pass becomes its own commit:
+     the item's file as the change left it (rendered when the change was
+     made), author the user (their login, `<login>@<host>`) or the agent
+     (`<name> (<session address>)`, `agent@<host>`), author date the
+     change's time, committer Roamgate; no commit when the file did not
+     change;
+  2. the dirty areas are rendered; only files whose bytes differ are
+     written (temporary file and rename, mode 0600), owned files no longer
+     rendered are removed;
+  3. `git add -A`, then the staged diff's added lines are scanned with the
+     secret value patterns (`scanDiff`): a file with a hit is unstaged and
+     stays out of the commit until the secret is gone from its store, and
+     the hit (file, line, kind, never the value) is in the status; the rest
+     is one commit, author and committer `Roamgate <roamgate@<host>>`,
+     subject per area (`work: 2 items; reviews: 3 threads in 2 reviews`),
+     the changed paths in the body;
+  4. `git gc --auto` after a commit.
+     Every commit ends with a `Roamgate-Host: <host>` trailer. Git runs through
+     `Bun.spawn` with the user's identity, hooks, signing and system config
+     ignored (`git.ts`), at nice 19 in the server; never on a request path.
+     The status of the last pass (time, duration, commits, blocked files,
+     area errors) is kept in `.git/roamgate-status.json`.
+- An area that fails to render is reported (status `errors`) and the
+  others are committed.
+- While GameMode runs, the full pass waits (the changes since go alone),
+  retried every 10 min, for up to 24 h, then runs anyway; `git gc` is
+  skipped. A pass asked for (Settings' **Commit now**, `roamgate history
+  commit`) does not wait.
+
+### Status and controls
+
+`GET /api/history` returns `HistoryStatus` (`shared/history.ts`): enabled,
+location and default, whether the repo exists, last commit, commit count,
+size on disk, tracked files per area, last pass, blocked files, errors,
+areas waiting, a pass running, why the full pass waits. `PUT /api/history`
+`{location?: string | null, enabled?: boolean}` and `POST
+/api/history/commit` need the `x-roamgate-settings: 1` header and JSON
+like the instance settings. `roamgate history status [--json]` reads the
+same from the repo without the server; `roamgate history commit [--json]`
+runs a full pass (Roamgate as the author of everything, Work included);
+both read the service's paths.
+
+`work/history.jsonl` stays in the store and in the repo until restoring
+from git is proven; the item's `git log -p` already carries who changed
+what and when.
+
 ## Session archive
 
 `roamgate archive` keeps the session files of Claude Code, Codex and Pi in
@@ -1533,14 +1661,16 @@ events; the inbox sets a timer for the soonest mergeable time that
 notifies the pages and runs the inference (no forge call). Board tool rows
 carry `merge` (`mergeable_at`, `via`, `failed`).
 
-Export and import (`mr-reviews/export.ts`, `cli/reviews.ts`):
+Export and import (`history/mr-reviews.ts`, `cli/reviews.ts`; the same
+code is the history's mr-reviews area, see [History](#history)):
 `{format: "roamgate-reviews", version: 3, exported_at, mr_reviews: {order,
 pinned, hidden, overrides, views, unsent, upstream_groups, upstream_skip,
 upstream_workspaces, efforts, merge, hosts, followed, hints} as stored,
 efforts: {<id>: {ledger (without journal), history}}}` (version 2 added
 the hosts, followed projects and hints, version 3 `upstream_workspaces`)
-in key-sorted JSON (`stableJson`), every key matching a secret pattern
-dropped and token-like values masked (`withoutSecrets`). `importChanges`
+in key-sorted JSON (`stableJson`, `history/format.ts`), every key matching
+a secret pattern dropped and token-like values masked (`withoutSecrets`,
+`history/secrets.ts`). `importChanges`
 diffs item by item (overrides and ledger entries by key, lists by id,
 key, name or ref, the order whole, histories by line count), flagging
 `newerLocal` by `at`. Applying replaces the exported keys (others kept,

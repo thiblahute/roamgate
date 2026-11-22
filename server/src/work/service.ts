@@ -55,6 +55,7 @@ import {
   workLinkKey,
 } from "./store";
 import { autoWorkTags } from "./tags";
+import type { WorkActor } from "../history/hooks";
 
 /**
  * The Work board's service: the items and projects of the store, their
@@ -226,6 +227,15 @@ function summaryOf(meta: WorkMeta, what: string): string {
 }
 
 /** The agent's bare name from its caller line ("Claude in roamgate"). */
+/** Who made a change, for the history's per-change commits. */
+function actorOf(meta: WorkMeta): WorkActor {
+  return {
+    by: meta.by,
+    ...(meta.by === "agent" && meta.address ? { address: meta.address } : {}),
+    ...(meta.by === "agent" && meta.caller ? { caller: meta.caller } : {}),
+  };
+}
+
 function agentNameOf(meta: WorkMeta): string {
   return (meta.caller ?? "Claude").split(" in ")[0] || "Claude";
 }
@@ -384,7 +394,7 @@ export function createWorkService(deps: WorkServiceDeps) {
     change: Record<string, unknown>,
     what: string,
   ): WorkItem {
-    store.saveItem(item, change);
+    store.saveItem(item, change, actorOf(meta));
     if (needsLinkRoots(item)) fillLinkRootsLater(item.id);
     if (item.state === "you" && before?.state !== "you")
       deps.notifications?.publish(item);
@@ -1255,7 +1265,7 @@ export function createWorkService(deps: WorkServiceDeps) {
 
   function remove(params: Record<string, unknown>, meta: WorkMeta): WorkItem {
     const item = itemOf(params.item);
-    store.removeItem(item.id);
+    store.removeItem(item.id, actorOf(meta));
     if (item.state === "you") deps.notifications?.clear(item);
     push({
       changed: ["items"],

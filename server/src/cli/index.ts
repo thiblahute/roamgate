@@ -24,6 +24,7 @@ import { configCommand } from "./config";
 import { createConnectionsCommand } from "./connections";
 import { createDoctorCommand } from "./doctor";
 import { createPushCommand } from "./push";
+import { createHistoryCommand } from "./history";
 import { createReviewsCommand } from "./reviews";
 import { serviceRuntime } from "./service-context";
 import { createSetupCommand } from "./setup";
@@ -109,6 +110,7 @@ export function cliCommands(): CliCommand[] {
     createPushCommand(),
     createActivityCommand(),
     createReviewsCommand(),
+    createHistoryCommand(),
     createArchiveCommand(),
     createUpdateCommand(),
     rollbackCommand,
