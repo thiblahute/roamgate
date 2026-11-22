@@ -32,6 +32,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -82,6 +83,14 @@ import { useSystemBack } from "../systemBack";
 import { formatUiDateTime } from "../uiLocale";
 import { openWorkChat, useWorkBoard, workAddParams, workCall } from "../work";
 import type { WorkAddDraft } from "../workOpen";
+import {
+  keepWorkViewPlace,
+  readWorkViewPlace,
+  type WorkViewPlace,
+  workScrollElements,
+  workScrollPart,
+  workScrollView,
+} from "../workViewMemory";
 import {
   projectForWorkspace,
   readWorkScopeMemory,
@@ -490,15 +499,8 @@ export function useWorkDrag(
   return { drag, start, cancel: end };
 }
 
-/**
- * How the view closes. keepFocus: what it opened has the focus now.
- * resume: the Work board to show again when it is next opened plainly
- * (Alt+W), as it stepped aside for a pane.
- */
-export type BoardCloseOptions = {
-  keepFocus?: boolean;
-  resume?: { item?: string };
-};
+/** How the view closes. keepFocus: what it opened has the focus now. */
+export type BoardCloseOptions = { keepFocus?: boolean };
 
 export type WorkModeOptions = {
   /** The view shows this mode: its state lives, its keys answer. */
@@ -575,6 +577,15 @@ export function useWorkMode({
   const tagsRef = useRef<HTMLInputElement>(null);
   const [memory, setMemory] = useState(() => readWorkScopeMemory());
   /**
+   * Where the board was left in this workspace: opened plainly, it shows
+   * again there; opened on an item, a session's items or a form, not.
+   */
+  const [restored] = useState(() =>
+    initialItem || initialOwner || initialAdd
+      ? null
+      : readWorkViewPlace(workspace ? workspaceScopeKey(workspace) : ""),
+  );
+  /**
    * The scope chosen on this board, for the workspace it was chosen in.
    * A session's items are looked for in every project.
    */
@@ -587,7 +598,7 @@ export function useWorkMode({
       : null,
   );
   const [query, setQueryState] = useState(() =>
-    initialOwner ? `owner:${initialOwner} ` : "",
+    initialOwner ? `owner:${initialOwner} ` : (restored?.query ?? ""),
   );
   // The search completes a tag as it is typed (#vo, tag:vo): Tab, the
   // arrows and Enter take one, Esc puts them away, as the reviews' do.
@@ -604,15 +615,23 @@ export function useWorkMode({
   const [columnWidths, setColumnWidths] =
     useState<WorkColumnWidths>(storedColumnWidths);
   /** The one column shown, at full width (zf, its head's button). */
-  const [focusedColumn, setFocusedColumn] = useState<WorkState | null>(null);
-  const [selected, setSelected] = useState<string | null>(initialItem ?? null);
-  const [detail, setDetail] = useState<string | null>(initialItem ?? null);
+  const [focusedColumn, setFocusedColumn] = useState<WorkState | null>(
+    restored?.focusedColumn ?? null,
+  );
+  const [selected, setSelected] = useState<string | null>(
+    initialItem ?? restored?.selected ?? null,
+  );
+  const [detail, setDetail] = useState<string | null>(
+    initialItem ?? restored?.detail ?? null,
+  );
   const [compose, setCompose] = useState<"comment" | "reply" | null>(null);
   /** The detail's list, where its keys are (the chat threads' keys). */
   const detailListRef = useRef<HTMLDivElement>(null);
-  const [adding, setAddingState] = useState(!!initialAdd);
+  const [adding, setAddingState] = useState(!!initialAdd || !!restored?.adding);
   /** The add form started from a chat: its words, owner and link. */
-  const [draft, setDraft] = useState<WorkAddDraft | null>(initialAdd ?? null);
+  const [draft, setDraft] = useState<WorkAddDraft | null>(
+    initialAdd ?? restored?.draft ?? null,
+  );
   const setAdding = (next: boolean) => {
     setAddingState(next);
     if (!next) setDraft(null);
@@ -622,7 +641,9 @@ export function useWorkMode({
    * while its owner sorts it (until the user leaves it), drawn from this
    * until the board's next read has it.
    */
-  const [watching, setWatching] = useState<WorkItem | null>(null);
+  const [watching, setWatching] = useState<WorkItem | null>(
+    restored?.watching ?? null,
+  );
   /** The watched item was on the board: gone from it later, it was split. */
   const watchSeen = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -814,6 +835,97 @@ export function useWorkMode({
       ?.querySelector(`[data-work-item="${CSS.escape(selected)}"]`)
       ?.scrollIntoView({ block: "nearest" });
   }, [enabled, selected, detail, panelRef]);
+  // Where the board is: kept for this workspace as it changes, shown
+  // again when the view is.
+  const scrollRef = useRef<Record<string, number>>(restored?.scroll ?? {});
+  /** The offsets to give back once the view's content is drawn. */
+  const scrollPending = useRef(!!restored);
+  const scrollView = workScrollView({ detail, adding });
+  const place: WorkViewPlace = {
+    query,
+    selected,
+    detail,
+    adding,
+    draft,
+    watching,
+    focusedColumn,
+    scroll: scrollRef.current,
+  };
+  const placeRef = useRef(place);
+  placeRef.current = place;
+  const placeKey = useRef(workspaceKey);
+  // Another workspace shown under the view: its own place.
+  if (placeKey.current !== workspaceKey) {
+    placeKey.current = workspaceKey;
+    const other = readWorkViewPlace(workspaceKey);
+    setQueryState(other?.query ?? "");
+    setSelected(other?.selected ?? null);
+    setDetail(other?.detail ?? null);
+    setAddingState(other?.adding ?? false);
+    setDraft(other?.draft ?? null);
+    setWatching(other?.watching ?? null);
+    setFocusedColumn(other?.focusedColumn ?? null);
+    scrollRef.current = other?.scroll ?? {};
+    scrollPending.current = true;
+  }
+  useEffect(() => {
+    keepWorkViewPlace(workspaceKey, placeRef.current);
+  }, [
+    workspaceKey,
+    query,
+    selected,
+    detail,
+    adding,
+    draft,
+    watching,
+    focusedColumn,
+  ]);
+  // A view shown again (the board after an item): its offsets back.
+  const shownView = useRef(scrollView);
+  if (shownView.current !== scrollView) {
+    shownView.current = scrollView;
+    scrollPending.current = true;
+  }
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!enabled || !panel || !data || !scrollPending.current) return;
+    scrollPending.current = false;
+    for (const element of workScrollElements(panel)) {
+      const part = workScrollPart(element);
+      const offset = part
+        ? scrollRef.current[`${scrollView}:${part.part}`]
+        : undefined;
+      if (!part || offset === undefined) continue;
+      if (part.axis === "top") element.scrollTop = offset;
+      else element.scrollLeft = offset;
+    }
+  });
+  // Each scroll is noted; kept a moment after it stops.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!enabled || !panel) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onScroll = (event: Event) => {
+      const element = event.target instanceof Element ? event.target : null;
+      const part = element ? workScrollPart(element) : null;
+      if (!element || !part) return;
+      scrollRef.current[`${workScrollView(placeRef.current)}:${part.part}`] =
+        part.axis === "top" ? element.scrollTop : element.scrollLeft;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        keepWorkViewPlace(placeKey.current, placeRef.current);
+      }, 150);
+    };
+    panel.addEventListener("scroll", onScroll, true);
+    return () => {
+      panel.removeEventListener("scroll", onScroll, true);
+      if (timer) {
+        clearTimeout(timer);
+        keepWorkViewPlace(placeKey.current, placeRef.current);
+      }
+    };
+  }, [enabled, panelRef]);
   // An item asked for (a notification's link): its column unfolded.
   useEffect(() => {
     if (!initialItem || !data) return;
@@ -864,13 +976,12 @@ export function useWorkMode({
 
   /**
    * A pane, a chat or a review was shown: on a phone, or filling the
-   * window, the view is over it and steps aside, the item shown kept for
-   * the next plain opening (Alt+W). Beside the page, it stays.
+   * window, the view is over it and steps aside, its place kept for when
+   * it shows again (Alt+W). Beside the page, it stays.
    */
   const stepAside = useCallback(() => {
-    if (!mobile && !maximized) return;
-    onClose({ keepFocus: true, resume: detail ? { item: detail } : {} });
-  }, [mobile, maximized, onClose, detail]);
+    if (mobile || maximized) onClose({ keepFocus: true });
+  }, [mobile, maximized, onClose]);
 
   /** Where the owner is: its pane shown, its task's sheet opened. */
   const openOwner = useCallback(

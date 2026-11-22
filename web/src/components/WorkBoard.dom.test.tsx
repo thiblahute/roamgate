@@ -407,6 +407,7 @@ if (
 
   test("the inbox's panel and columns hold the work items; [ ] and the head switch modes; keys walk, open the detail, add", async () => {
     localStorage.clear();
+    sessionStorage.clear();
     calls.length = 0;
     const view = await mount();
     try {
@@ -706,6 +707,7 @@ if (
 
   test("a card dragged to another column changes its state: a mouse at once, a finger after a hold (a swipe scrolls), Esc lets go", async () => {
     localStorage.clear();
+    sessionStorage.clear();
     calls.length = 0;
     const { WORK_DRAG_HOLD_MS, WORK_DRAG_MOVE_PX } = await import(
       "./WorkBoard"
@@ -858,6 +860,7 @@ if (
 
   test("the scope and the search: the workspace's project, #tag from a card's chip or completed as typed; a choice is remembered; an item opens its project and its detail", async () => {
     localStorage.clear();
+    sessionStorage.clear();
     // The board as given, without the item the first test added.
     board.items = board.items.filter((each) => each.id !== "3300000000000000");
     const first = await mount();
@@ -988,6 +991,7 @@ if (
 
   test("a worktree's board keeps its workspace's items (a chip widens it, remembered there); a parent shows its subprojects'; an item added there says where", async () => {
     localStorage.clear();
+    sessionStorage.clear();
     const saved = { ...board, items: board.items };
     board.projects = [
       ...board.projects.map((each) =>
@@ -1093,6 +1097,7 @@ if (
 
   test("a For you or Verify card says what the user has to do; an answer's tap is the user's comment; the detail says it first", async () => {
     localStorage.clear();
+    sessionStorage.clear();
     const saved = board.items;
     board.items = [
       item("1900000000000000", "gst2", "you", ["car"], {
@@ -1228,6 +1233,7 @@ if (
 
   test("an item added waits in its detail until sorted: drawn before the board has it, says so plainly after two minutes, Esc leaves, a split says where it went", async () => {
     localStorage.clear();
+    sessionStorage.clear();
     const saved = board.items;
     const { WORK_SORT_PATIENCE_MS } = await import("./WorkBoard");
     const view = await mount();
@@ -1339,6 +1345,7 @@ if (
 
   test("a card's links are one line of small chips, a kind and a count each; the detail lists them with labels one reads, each its action", async () => {
     localStorage.clear();
+    sessionStorage.clear();
     const mr =
       "https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs/-/merge_requests/2345";
     inboxMore = {
@@ -1472,6 +1479,7 @@ if (
 
   test("from a session's chat: the add form starts quoted, for that session, in its workspace's project; its count opens the board on its items", async () => {
     localStorage.clear();
+    sessionStorage.clear();
     calls.length = 0;
     const chat = {
       kind: "chat" as const,
@@ -1582,7 +1590,7 @@ if (
       await items.unmount();
     }
   });
-  test("opening the owner's session from a board filling the window steps aside, keeping the item for Alt+W; beside the page it stays", async () => {
+  test("opening the owner's session from a board filling the window steps aside; beside the page it stays", async () => {
     const { TASK_NOTIFICATION_ACTIVATE_EVENT } = await import(
       "../taskNotifications"
     );
@@ -1615,9 +1623,7 @@ if (
             paneId: "w9:p1",
           },
         ]);
-        expect(full.closes).toEqual([
-          { keepFocus: true, resume: { item: "2400000000000000" } },
-        ]);
+        expect(full.closes).toEqual([{ keepFocus: true }]);
       } finally {
         await full.unmount();
       }
@@ -1639,6 +1645,7 @@ if (
   });
   test("a column is resized by its handle, kept for the scope, reset by a double-click; zf or its button shows it alone, h l the next one, Esc every column", async () => {
     localStorage.clear();
+    sessionStorage.clear();
     const view = await mount();
     const lanes = () =>
       [
@@ -1740,6 +1747,94 @@ if (
       expect(lanes()).toEqual(all);
     } finally {
       await view.unmount();
+    }
+  });
+  test("hidden and shown again, the board is where it was left: the search, the selection, the focused column, an item's detail, the form, the offsets; each workspace its own", async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    const lanes = (view: Awaited<ReturnType<typeof mount>>) =>
+      [
+        ...view.panel.querySelectorAll<HTMLElement>(
+          ".mr-reviews-board > [data-work-column]",
+        ),
+      ].map((lane) => lane.dataset.workColumn);
+    const search = (view: Awaited<ReturnType<typeof mount>>) =>
+      view.panel.querySelector<HTMLInputElement>("input.mr-reviews-search");
+    const savedWorkspace = workspace;
+    try {
+      // The search, the selection and a focused column.
+      const first = await mount();
+      await first.type(search(first)!, "#caps");
+      await act(async () => first.panel.focus());
+      await first.key("j");
+      const chosen = first.selected();
+      expect(chosen).not.toBeNull();
+      await first.key("z");
+      await first.key("f");
+      const focusedLanes = lanes(first);
+      expect(focusedLanes).toHaveLength(1);
+      // A column's list scrolled down.
+      const list = first.panel.querySelector<HTMLElement>(
+        "[data-work-column] > .assistant-task-list",
+      )!;
+      await act(async () => {
+        list.scrollTop = 120;
+        list.dispatchEvent(new Event("scroll"));
+      });
+      await first.unmount();
+      const second = await mount();
+      expect(search(second)?.value).toBe("#caps");
+      expect(second.selected()).toBe(chosen);
+      expect(lanes(second)).toEqual(focusedLanes);
+      expect(
+        second.panel.querySelector<HTMLElement>(
+          "[data-work-column] > .assistant-task-list",
+        )!.scrollTop,
+      ).toBe(120);
+      // An item's detail.
+      await second.key("Escape");
+      await second.key("Enter");
+      const opened = second.panel.querySelector<HTMLElement>(
+        ".work-detail[data-work-detail]",
+      )?.dataset.workDetail;
+      expect(opened).toBe(chosen!);
+      await second.unmount();
+      const third = await mount();
+      expect(
+        third.panel.querySelector<HTMLElement>(".work-detail[data-work-detail]")
+          ?.dataset.workDetail,
+      ).toBe(chosen!);
+      await third.key("Escape");
+      // The new item form.
+      await third.key("a");
+      expect(third.panel.querySelector(".work-add")).not.toBeNull();
+      await third.unmount();
+      const fourth = await mount();
+      expect(fourth.panel.querySelector(".work-add")).not.toBeNull();
+      await fourth.unmount();
+      // Another workspace: its own place, none yet.
+      workspace = {
+        connectionId: "desktop",
+        workspaceId: "w2",
+        label: "elsewhere",
+        checkoutPath: "/home/me/elsewhere",
+        repoRoot: null,
+      };
+      const other = await mount();
+      expect(other.panel.querySelector(".work-add")).toBeNull();
+      expect(search(other)?.value).toBe("");
+      await other.unmount();
+      // Opened on an item, it shows that item, not the place.
+      workspace = savedWorkspace;
+      const asked = await mount({ initialWorkItem: "1100000000000000" });
+      expect(
+        asked.panel.querySelector<HTMLElement>(".work-detail[data-work-detail]")
+          ?.dataset.workDetail,
+      ).toBe("1100000000000000");
+      await asked.unmount();
+    } finally {
+      workspace = savedWorkspace;
+      sessionStorage.clear();
     }
   });
 }

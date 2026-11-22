@@ -2252,6 +2252,13 @@ column's top right corner, or `zf`, shows that column alone at the
 board's width: `h`/`l` move to the next column, the button again, `zf` or
 Esc show every column.
 
+Hidden (its close button, Esc, Alt+W, or stepping aside for a session it
+opened while it filled the window) and shown again, the board is where it
+was left in that workspace, through a reload of the page too: the search,
+the selected card, the focused column, the item's detail or the new item
+form, and where each list was scrolled. Opened on an item (a notification,
+a link), it shows that item.
+
 Each card is an item: its title (wrapping, the card as wide as its
 column), tags, owner (the session or subagent working on it), its links
 (a review thread, an effort, a request, a commit, a branch, an RFC's

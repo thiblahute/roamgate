@@ -2,7 +2,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { focusBeforeMrReviews } from "../mrReviewsOpen";
 import type { WorkOpen } from "../workOpen";
 import type { MrDeclarePrefill } from "./MrEffortView";
-import type { BoardCloseOptions } from "./WorkBoard";
 import {
   type BoardMode,
   MrReviewsPanel,
@@ -14,14 +13,8 @@ let host: HTMLElement | null = null;
 let previousFocus: Element | null = null;
 /** The mode the open view shows, as it tells it. */
 let shownMode: BoardMode | null = null;
-/**
- * The Work board as it stepped aside for a pane (its item), shown again
- * by the next plain opening (Alt+W); any other opening or closing drops it.
- */
-let resume: BoardCloseOptions["resume"] | null = null;
 
-function close(options: BoardCloseOptions = {}) {
-  resume = options.resume ?? null;
+function close(options: { keepFocus?: boolean } = {}) {
   root?.unmount();
   host?.remove();
   root = null;
@@ -100,7 +93,6 @@ export function showMrReviews(
   declare?: MrDeclarePrefill,
   board?: BoardOpen,
 ) {
-  resume = null;
   if (root) {
     render(select, open, view, declare, board);
     return;
@@ -119,15 +111,7 @@ export function showMrReviews(
  */
 export function toggleMrReviews(mode?: BoardMode) {
   if (!root) {
-    const back =
-      resume && (mode ?? storedBoardMode()) === "work" ? resume : null;
-    showMrReviews(
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      back ? { mode: "work", ...back } : { mode },
-    );
+    showMrReviews(undefined, undefined, undefined, undefined, { mode });
     return;
   }
   if (!mode || (shownMode ?? storedBoardMode()) === mode) close();

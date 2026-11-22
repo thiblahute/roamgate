@@ -1657,10 +1657,7 @@ export function MrReviewsPanel({
   initialWork,
   onMode,
 }: {
-  /**
-   * keepFocus: a review was shown; the focus is the review's now. resume:
-   * the Work board stepped aside for a pane, shown again on Alt+W.
-   */
+  /** keepFocus: a review was shown; the focus is the review's now. */
   onClose: (options?: BoardCloseOptions) => void;
   /** The mode to show (the last one otherwise); with modeAt, asked again. */
   mode?: BoardMode;
