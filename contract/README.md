@@ -19,6 +19,7 @@ protocol versions and limits; `CHANGES.md` logs every change.
 | Processes            | `exec.md`                                                    | every place a process starts and the programs named there                                                                                                                                     |
 | Wire protocols       | `wire/`                                                      | protocols with no other home (the test clock, the internal channel to the Rust core)                                                                                                          |
 | Owners               | `owners/families.json`                                       | the families that move to Rust one at a time: their methods, paths, files and shadowed reads                                                                                                  |
+| Performance          | `perf/baseline.json`                                         | the Bun server's measurements of the migration plan's section 5.9, per machine, and the gate each metric sets for the Rust server                                                             |
 | Types                | `schemas/shared/*.schema.json`, `schemas/server.schema.json` | JSON Schema 2020-12 of `shared/*.ts` and of the server-local types listed in `schemas/server-types.ts`, generated, then reconciled through `schemas/reconcile.json`                           |
 
 An entry whose `status` (or `x-status`) is `inventoried` is known by name
@@ -62,3 +63,26 @@ update in the same commit:
    scaffold prints, and add a section to the top of `CHANGES.md`:
    `## <version>`, a blank line, `inventory: <digest>`, then what changed and
    for which family.
+
+## Performance baselines
+
+`scripts/bench/run.ts` measures a server in a world of its own (scratch
+HOME, two Herdr servers, fixture repositories at the `v0.8.15` tag, copies
+of the user's review and work stores, fake ssh, glab, gh and headless
+Claude that count what they are asked): start time, RSS idle and with 3
+connections and 20 warm terminals, RPC latency per family, terminal
+throughput, echo latency and bytes on the wire, git status over ssh, inbox
+forge calls (on the test clock), archive ingest and search, and conversation
+streaming. It waits while GameMode reports a game and deletes the world
+after.
+
+```sh
+# The Bun baseline of this machine, stored with its gates:
+bun scripts/bench/run.ts --baseline contract/perf/baseline.json --machine desktop
+# Another server in the same world, then its gates against the baseline:
+BENCH_SERVER_CMD="path/to/roamgate" bun scripts/bench/run.ts --out run.json
+bun scripts/bench/run.ts compare contract/perf/baseline.json run.json --machine desktop
+```
+
+Compare only runs of the same machine, under the same conditions (each
+metric records the load average around it and whether a game ran).

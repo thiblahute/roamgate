@@ -1,0 +1,1392 @@
+{
+  "version": 1,
+  "gates": {
+    "startup": {
+      "gate": "not_slower",
+      "rule": "ready_ms.p50 and hello_ms.p50 not above Bun's"
+    },
+    "rss": {
+      "gate": "not_higher",
+      "rule": "idle and loaded tree_kb not above Bun's"
+    },
+    "rpc": {
+      "gate": "p99_within_10pct",
+      "rule": "per method, ms.p99 not more than 10% above Bun's"
+    },
+    "terminal": {
+      "gate": "throughput_not_lower_latency_not_higher",
+      "rule": "throughput.frames_per_s and ansi_bytes_per_s not lower; latency.ms.p50 and p99 not higher"
+    },
+    "terminal_wire": {
+      "gate": "within_5pct",
+      "rule": "wire.deflate.wire_bytes_down within 5% of Bun's"
+    },
+    "ssh": {
+      "gate": "same_sessions_not_slower",
+      "rule": "ssh_invocations identical per round; all_statuses_ms not slower"
+    },
+    "forge": {
+      "gate": "identical_counts",
+      "rule": "calls by kind identical for startup and each refresh"
+    },
+    "archive": {
+      "gate": "not_slower",
+      "rule": "ingest_ms, rebuild_text_ms and each search ms.p50 not above Bun's"
+    },
+    "conversation": {
+      "gate": "identical_sequence_not_later",
+      "rule": "each turn's event sequence identical; first_delta_ms.p50 and result_ms.p50 not later"
+    },
+    "voice": {
+      "gate": "not_later",
+      "rule": "not measured yet: needs a fake voice helper speaking its frame protocol (voice-helper.ts) and a voice socket client; final transcript to first audio and helper ping round trip"
+    }
+  },
+  "machines": {
+    "mac": {
+      "started": "2026-11-22T22:25:31.857Z",
+      "finished": "2026-11-22T22:36:35.325Z",
+      "quick": false,
+      "machine": {
+        "hostname": "Thibaults-MacBook-Pro.local",
+        "platform": "darwin",
+        "kernel": "25.6.0",
+        "cpu": "Apple M2 Max",
+        "logical_cpus": 12,
+        "memory_gb": 32,
+        "bun": "1.4.4",
+        "herdr": "herdr 0.9.0",
+        "server_command": "/Users/thiblahute/.claude/tmp/s7/bun-1.4.4/bun ./server/src/index.ts",
+        "source_commit": "a03085873b17d45e2de126e5638045894a9559e1",
+        "source_dirty": false,
+        "fixture": "v0.8.15",
+        "power": "Now drawing from 'AC Power'"
+      },
+      "conditions": {
+        "startup": {
+          "load_before": [
+            4.34,
+            5.52,
+            4.86
+          ],
+          "load_after": [
+            5.67,
+            5.75,
+            4.95
+          ],
+          "game_active_after": false
+        },
+        "rss": {
+          "load_before": [
+            5.67,
+            5.75,
+            4.95
+          ],
+          "load_after": [
+            8.7,
+            6.53,
+            5.28
+          ],
+          "game_active_after": false
+        },
+        "rpc": {
+          "load_before": [
+            8.7,
+            6.53,
+            5.28
+          ],
+          "load_after": [
+            10.15,
+            8.84,
+            6.79
+          ],
+          "game_active_after": false
+        },
+        "terminal": {
+          "load_before": [
+            10.15,
+            8.84,
+            6.79
+          ],
+          "load_after": [
+            9.21,
+            8.84,
+            6.9
+          ],
+          "game_active_after": false
+        },
+        "ssh": {
+          "load_before": [
+            9.21,
+            8.84,
+            6.9
+          ],
+          "load_after": [
+            5.06,
+            7.59,
+            6.68
+          ],
+          "game_active_after": false
+        },
+        "forge": {
+          "load_before": [
+            5.06,
+            7.59,
+            6.68
+          ],
+          "load_after": [
+            4.66,
+            7.42,
+            6.63
+          ],
+          "game_active_after": false
+        },
+        "archive": {
+          "load_before": [
+            4.66,
+            7.42,
+            6.63
+          ],
+          "load_after": [
+            8.36,
+            7.6,
+            6.77
+          ],
+          "game_active_after": false
+        },
+        "conversation": {
+          "load_before": [
+            8.36,
+            7.6,
+            6.77
+          ],
+          "load_after": [
+            8.08,
+            7.57,
+            6.77
+          ],
+          "game_active_after": false
+        }
+      },
+      "metrics": {
+        "startup": {
+          "runs": [
+            {
+              "ready_ms": 447.2364170000001,
+              "hello_ms": 467.17020800000046,
+              "connection_ready_ms": 809.0867500000004
+            },
+            {
+              "ready_ms": 543.2132080000001,
+              "hello_ms": 548.7627920000004,
+              "connection_ready_ms": 975.6812920000002
+            },
+            {
+              "ready_ms": 1154.7987080000003,
+              "hello_ms": 1161.1098340000008,
+              "connection_ready_ms": 1514.3313340000004
+            },
+            {
+              "ready_ms": 923.2771250000005,
+              "hello_ms": 934.6973330000001,
+              "connection_ready_ms": 1224.4079160000001
+            },
+            {
+              "ready_ms": 995.7988330000007,
+              "hello_ms": 1005.6938329999994,
+              "connection_ready_ms": 1310.8240000000005
+            },
+            {
+              "ready_ms": 877.3559170000008,
+              "hello_ms": 887.1501250000001,
+              "connection_ready_ms": 1235.3602499999997
+            },
+            {
+              "ready_ms": 728.9096669999999,
+              "hello_ms": 735.6327920000003,
+              "connection_ready_ms": 1202.5025000000005
+            }
+          ],
+          "ready_ms": {
+            "n": 6,
+            "min": 543.213,
+            "p50": 877.356,
+            "p90": 1154.799,
+            "p99": 1154.799,
+            "max": 1154.799,
+            "mean": 870.559
+          },
+          "hello_ms": {
+            "n": 6,
+            "min": 548.763,
+            "p50": 887.15,
+            "p90": 1161.11,
+            "p99": 1161.11,
+            "max": 1161.11,
+            "mean": 878.841
+          },
+          "connection_ready_ms": {
+            "n": 6,
+            "min": 975.681,
+            "p50": 1224.408,
+            "p90": 1514.331,
+            "p99": 1514.331,
+            "max": 1514.331,
+            "mean": 1243.851
+          }
+        },
+        "rss": {
+          "idle": {
+            "self_kb": 72736,
+            "tree_kb": 72736,
+            "samples_self_kb": [
+              72656,
+              72736,
+              72736,
+              72736,
+              72400
+            ]
+          },
+          "three_connections_20_terminals": {
+            "self_kb": 198464,
+            "tree_kb": 198464,
+            "samples_self_kb": [
+              198544,
+              198464,
+              199776,
+              188624,
+              190624
+            ],
+            "terminal_frames_per_s": 23.8
+          },
+          "terminals": 20,
+          "connections": 3
+        },
+        "rpc": {
+          "calls_per_method": 1000,
+          "warmup_per_method": 50,
+          "fixtures": {
+            "review": {
+              "threads": 138
+            },
+            "agent_transcript_sha256": "dab22bc1ec04db2a71f932f4192aa2c07f9dfe7fab6034cebd9f5818b20f4ca7"
+          },
+          "methods": {
+            "file.list": {
+              "ms": {
+                "n": 1000,
+                "min": 16.585,
+                "p50": 25.226,
+                "p90": 32.418,
+                "p99": 134.902,
+                "max": 149.937,
+                "mean": 28.147
+              },
+              "reply_chars": 2448
+            },
+            "git.diff_summary": {
+              "ms": {
+                "n": 200,
+                "min": 654.734,
+                "p50": 1158.731,
+                "p90": 1588.215,
+                "p99": 2238.736,
+                "max": 2550.97,
+                "mean": 1200.819
+              },
+              "reply_chars": 6851
+            },
+            "review.get": {
+              "ms": {
+                "n": 1000,
+                "min": 1.8,
+                "p50": 2.811,
+                "p90": 3.808,
+                "p99": 4.584,
+                "max": 5.474,
+                "mean": 2.819
+              },
+              "reply_chars": 325967
+            },
+            "agent_history.get": {
+              "ms": {
+                "n": 1000,
+                "min": 0.468,
+                "p50": 0.671,
+                "p90": 0.816,
+                "p99": 1.345,
+                "max": 110.277,
+                "mean": 1.015
+              },
+              "reply_chars": 9483
+            },
+            "bridge.work.board": {
+              "ms": {
+                "n": 1000,
+                "min": 0.076,
+                "p50": 0.091,
+                "p90": 0.154,
+                "p99": 0.177,
+                "max": 0.334,
+                "mean": 0.101
+              },
+              "reply_chars": 230
+            },
+            "bridge.mr_reviews.inbox": {
+              "ms": {
+                "n": 1000,
+                "min": 0.446,
+                "p50": 0.503,
+                "p90": 0.625,
+                "p99": 1.588,
+                "max": 2.396,
+                "mean": 0.558
+              },
+              "reply_chars": 48332
+            }
+          }
+        },
+        "terminal": {
+          "websocket_extensions": "permessage-deflate; client_no_context_takeover",
+          "throughput": {
+            "seconds": 10.001354374999995,
+            "frames_per_s": 51.99295820372331,
+            "message_chars_per_s": 216364.6961064712,
+            "ansi_bytes_per_s": 150097.9711060384,
+            "wire_bytes_down_per_s": 59054.50180591169,
+            "size": "160x48"
+          },
+          "latency": {
+            "ms": {
+              "n": 200,
+              "min": 1.77,
+              "p50": 2.656,
+              "p90": 3.497,
+              "p99": 6.195,
+              "max": 13.616,
+              "mean": 2.848
+            },
+            "lost": 0
+          },
+          "wire": {
+            "steps": 7,
+            "deflate": {
+              "extensions": "permessage-deflate; client_no_context_takeover",
+              "wire_bytes_down": 12414,
+              "wire_bytes_up": 1270,
+              "message_chars_down": 46274
+            },
+            "plain": {
+              "extensions": "",
+              "wire_bytes_down": 46346,
+              "wire_bytes_up": 1251,
+              "message_chars_down": 46274
+            }
+          }
+        },
+        "ssh": {
+          "workspaces": 8,
+          "connect": {
+            "ms_from_spawn": 1678.0067079999717,
+            "ms_after_hello": 1323.4075000000303,
+            "ssh_invocations": {
+              "master": 1,
+              "forward": 1,
+              "mux": 3,
+              "control": 1
+            }
+          },
+          "rounds": [
+            {
+              "all_statuses_ms": 3285.6587079999736,
+              "statuses_seen": 8,
+              "ssh_invocations": {
+                "mux": 1
+              }
+            },
+            {
+              "all_statuses_ms": 2611.465750000032,
+              "statuses_seen": 8,
+              "ssh_invocations": {
+                "mux": 1
+              }
+            },
+            {
+              "all_statuses_ms": 3151.4624580000527,
+              "statuses_seen": 8,
+              "ssh_invocations": {
+                "mux": 1
+              }
+            },
+            {
+              "all_statuses_ms": 2584.038499999966,
+              "statuses_seen": 8,
+              "ssh_invocations": {
+                "mux": 1
+              }
+            },
+            {
+              "all_statuses_ms": 2232.8817500000587,
+              "statuses_seen": 8,
+              "ssh_invocations": {
+                "mux": 1
+              }
+            }
+          ],
+          "all_statuses_ms": {
+            "n": 5,
+            "min": 2232.882,
+            "p50": 2611.466,
+            "p90": 3285.659,
+            "p99": 3285.659,
+            "max": 3285.659,
+            "mean": 2773.101
+          },
+          "real_ssh_localhost": "not run: the remote side would log in with the real HOME and reach the real Herdr"
+        },
+        "forge": {
+          "fixture": "scripts/bench/fakes/forge.ts: per forge 80 own requests (30 open) and 25 followed",
+          "clock": "test clock, pumped at real speed, jumped where named",
+          "startup": {
+            "total": 0,
+            "calls": {},
+            "bytes": 0
+          },
+          "first_refresh": {
+            "entries_in_reply": 60,
+            "entries_after": 60,
+            "total": 11,
+            "calls": {
+              "gh:auth": 1,
+              "glab:config": 3,
+              "gh:inbox": 1,
+              "gh:list": 1,
+              "glab:inbox": 1,
+              "gh:details": 1,
+              "glab:list": 1,
+              "glab:details": 2
+            },
+            "bytes": 88606
+          },
+          "jump_61s": {
+            "total": 0,
+            "calls": {},
+            "bytes": 0
+          },
+          "second_refresh": {
+            "entries_in_reply": 60,
+            "entries_after": 60,
+            "total": 7,
+            "calls": {
+              "gh:inbox": 1,
+              "glab:inbox": 1,
+              "gh:list": 1,
+              "glab:list": 1,
+              "gh:details": 1,
+              "glab:details": 2
+            },
+            "bytes": 88606
+          },
+          "jump_15min": {
+            "total": 0,
+            "calls": {},
+            "bytes": 0
+          }
+        },
+        "archive": {
+          "corpus": {
+            "sessions": 300,
+            "bytes": 984479519,
+            "sha256": "5e7990daa1abc5a1195450a599ca94a2595c6581cf9eeb4ab964d028e9c65d18",
+            "source": "oldest Claude sessions of the archive's raw/"
+          },
+          "ingest_ms": 61958.24095800007,
+          "ingest_report": {
+            "claude": {
+              "new": 300,
+              "grown": 0,
+              "same": 0,
+              "shrunk": 0,
+              "replaced": 0,
+              "error": 0,
+              "excluded": 0,
+              "docs": 104944,
+              "bytes": 984479519,
+              "unknown": {}
+            }
+          },
+          "rebuild_text_ms": 11050.332916000043,
+          "search": {
+            "herdr": {
+              "ms": {
+                "n": 5,
+                "min": 727.663,
+                "p50": 784.202,
+                "p90": 1151.763,
+                "p99": 1151.763,
+                "max": 1151.763,
+                "mean": 881.729
+              },
+              "result_lines": 168
+            },
+            "websocket reconnect": {
+              "ms": {
+                "n": 5,
+                "min": 669.381,
+                "p50": 871.025,
+                "p90": 944.317,
+                "p99": 944.317,
+                "max": 944.317,
+                "mean": 825.489
+              },
+              "result_lines": 17
+            },
+            "gstreamer pipeline": {
+              "ms": {
+                "n": 5,
+                "min": 890.444,
+                "p50": 935.562,
+                "p90": 1009.633,
+                "p99": 1009.633,
+                "max": 1009.633,
+                "mean": 942.642
+              },
+              "result_lines": 146
+            },
+            "\"merge request\"": {
+              "ms": {
+                "n": 5,
+                "min": 637.975,
+                "p50": 881.968,
+                "p90": 920.976,
+                "p99": 920.976,
+                "max": 920.976,
+                "mean": 813.292
+              },
+              "result_lines": 174
+            },
+            "test clock": {
+              "ms": {
+                "n": 5,
+                "min": 619.546,
+                "p50": 858.369,
+                "p90": 919.061,
+                "p99": 919.061,
+                "max": 919.061,
+                "mean": 797.463
+              },
+              "result_lines": 51
+            }
+          },
+          "search_index_ms": {
+            "n": 5,
+            "min": 434.081,
+            "p50": 444.446,
+            "p90": 642.317,
+            "p99": 642.317,
+            "max": 642.317,
+            "mean": 481.583
+          }
+        },
+        "conversation": {
+          "fake": "scripts/bench/fakes/claude-headless.ts: 400 deltas, 2 ms apart, per turn",
+          "takeover_ms": 2252.285125000053,
+          "takeover_turn": {
+            "first_delta_ms": 570.8701250000158,
+            "result_ms": 1552.2118749999208,
+            "delta_pushes": 58,
+            "delta_chars": 1890,
+            "stream_ms": 980.3300419999287,
+            "sequence": [
+              "queue",
+              "status",
+              "queue",
+              "status",
+              "block_start",
+              "delta",
+              "block_stop",
+              "result",
+              "status"
+            ]
+          },
+          "turns": [
+            {
+              "first_delta_ms": 23.06050000002142,
+              "result_ms": 1002.8557499999879,
+              "delta_pushes": 58,
+              "delta_chars": 1890,
+              "stream_ms": 979.7571669999743,
+              "sequence": [
+                "status",
+                "block_start",
+                "delta",
+                "block_stop",
+                "result",
+                "status"
+              ]
+            },
+            {
+              "first_delta_ms": 27.11116700002458,
+              "result_ms": 1012.7977919999976,
+              "delta_pushes": 57,
+              "delta_chars": 1890,
+              "stream_ms": 983.4134159999667,
+              "sequence": [
+                "status",
+                "block_start",
+                "delta",
+                "block_stop",
+                "result",
+                "status"
+              ]
+            },
+            {
+              "first_delta_ms": 20.54275000002235,
+              "result_ms": 990.9608330000192,
+              "delta_pushes": 58,
+              "delta_chars": 1890,
+              "stream_ms": 970.1283749999711,
+              "sequence": [
+                "status",
+                "block_start",
+                "delta",
+                "block_stop",
+                "result",
+                "status"
+              ]
+            },
+            {
+              "first_delta_ms": 18.868666999973357,
+              "result_ms": 996.8590829999885,
+              "delta_pushes": 58,
+              "delta_chars": 1890,
+              "stream_ms": 977.4824159999844,
+              "sequence": [
+                "status",
+                "block_start",
+                "delta",
+                "block_stop",
+                "result",
+                "status"
+              ]
+            },
+            {
+              "first_delta_ms": 18.540707999956794,
+              "result_ms": 996.6812500000233,
+              "delta_pushes": 58,
+              "delta_chars": 1890,
+              "stream_ms": 977.893250000081,
+              "sequence": [
+                "status",
+                "block_start",
+                "delta",
+                "block_stop",
+                "result",
+                "status"
+              ]
+            }
+          ],
+          "first_delta_ms": {
+            "n": 5,
+            "min": 18.541,
+            "p50": 20.543,
+            "p90": 27.111,
+            "p99": 27.111,
+            "max": 27.111,
+            "mean": 21.625
+          },
+          "result_ms": {
+            "n": 5,
+            "min": 990.961,
+            "p50": 996.859,
+            "p90": 1012.798,
+            "p99": 1012.798,
+            "max": 1012.798,
+            "mean": 1000.031
+          },
+          "delta_pushes": {
+            "n": 5,
+            "min": 57,
+            "p50": 58,
+            "p90": 58,
+            "p99": 58,
+            "max": 58,
+            "mean": 57.8
+          }
+        }
+      }
+    },
+    "desktop": {
+      "started": "2026-11-23T09:58:29.024Z",
+      "finished": "2026-11-23T10:11:22.450Z",
+      "quick": false,
+      "machine": {
+        "hostname": "toolbx",
+        "platform": "linux",
+        "kernel": "7.2.15-200.fc44.x86_64",
+        "cpu": "AMD Ryzen 9 3950X 16-Core Processor",
+        "logical_cpus": 32,
+        "memory_gb": 62.7,
+        "bun": "1.4.4",
+        "herdr": "herdr 0.9.5",
+        "server_command": "/var/home/thiblahute/.bun/bin/bun ./server/src/index.ts",
+        "source_commit": "5d7bf5ce5118cb8ef7a739baaa0c087dd0501efc",
+        "source_dirty": false,
+        "fixture": "v0.8.15"
+      },
+      "conditions": {
+        "startup": {
+          "load_before": [
+            15.72,
+            9.24,
+            7.39
+          ],
+          "load_after": [
+            15.27,
+            9.25,
+            7.41
+          ],
+          "game_active_after": false
+        },
+        "rss": {
+          "load_before": [
+            15.27,
+            9.25,
+            7.41
+          ],
+          "load_after": [
+            9.68,
+            8.61,
+            7.28
+          ],
+          "game_active_after": false
+        },
+        "rpc": {
+          "load_before": [
+            9.68,
+            8.61,
+            7.28
+          ],
+          "load_after": [
+            11.53,
+            8.46,
+            7.58
+          ],
+          "game_active_after": false
+        },
+        "terminal": {
+          "load_before": [
+            11.53,
+            8.46,
+            7.58
+          ],
+          "load_after": [
+            9.94,
+            8.47,
+            7.62
+          ],
+          "game_active_after": false
+        },
+        "ssh": {
+          "load_before": [
+            9.94,
+            8.47,
+            7.62
+          ],
+          "load_after": [
+            8.32,
+            9.2,
+            8.06
+          ],
+          "game_active_after": false
+        },
+        "forge": {
+          "load_before": [
+            8.32,
+            9.2,
+            8.06
+          ],
+          "load_after": [
+            9.64,
+            9.45,
+            8.15
+          ],
+          "game_active_after": false
+        },
+        "archive": {
+          "load_before": [
+            9.64,
+            9.45,
+            8.15
+          ],
+          "load_after": [
+            12.12,
+            10.66,
+            8.75
+          ],
+          "game_active_after": false
+        },
+        "conversation": {
+          "load_before": [
+            12.12,
+            10.66,
+            8.75
+          ],
+          "load_after": [
+            10.98,
+            10.48,
+            8.72
+          ],
+          "game_active_after": false
+        }
+      },
+      "metrics": {
+        "startup": {
+          "runs": [
+            {
+              "ready_ms": 717.6281210035086,
+              "hello_ms": 733.0624989941716,
+              "connection_ready_ms": 974.6295740008354
+            },
+            {
+              "ready_ms": 423.1598379984498,
+              "hello_ms": 429.8656330034137,
+              "connection_ready_ms": 558.1523570045829
+            },
+            {
+              "ready_ms": 389.7276469990611,
+              "hello_ms": 398.5359700024128,
+              "connection_ready_ms": 598.2061360031366
+            },
+            {
+              "ready_ms": 393.88905300199986,
+              "hello_ms": 400.7003149986267,
+              "connection_ready_ms": 594.0423350036144
+            },
+            {
+              "ready_ms": 360.7771919965744,
+              "hello_ms": 367.51162099838257,
+              "connection_ready_ms": 642.9318180009723
+            },
+            {
+              "ready_ms": 328.47586499899626,
+              "hello_ms": 334.17667200416327,
+              "connection_ready_ms": 1353.6486489996314
+            },
+            {
+              "ready_ms": 484.40449599921703,
+              "hello_ms": 490.3552230000496,
+              "connection_ready_ms": 683.3436690047383
+            }
+          ],
+          "ready_ms": {
+            "n": 6,
+            "min": 328.476,
+            "p50": 389.728,
+            "p90": 484.404,
+            "p99": 484.404,
+            "max": 484.404,
+            "mean": 396.739
+          },
+          "hello_ms": {
+            "n": 6,
+            "min": 334.177,
+            "p50": 398.536,
+            "p90": 490.355,
+            "p99": 490.355,
+            "max": 490.355,
+            "mean": 403.524
+          },
+          "connection_ready_ms": {
+            "n": 6,
+            "min": 558.152,
+            "p50": 598.206,
+            "p90": 1353.649,
+            "p99": 1353.649,
+            "max": 1353.649,
+            "mean": 738.387
+          }
+        },
+        "rss": {
+          "idle": {
+            "self_kb": 105364,
+            "tree_kb": 105364,
+            "samples_self_kb": [
+              105364,
+              105364,
+              105364,
+              105364,
+              107028
+            ]
+          },
+          "three_connections_20_terminals": {
+            "self_kb": 188304,
+            "tree_kb": 188304,
+            "samples_self_kb": [
+              170912,
+              179684,
+              188304,
+              196644,
+              205012
+            ],
+            "terminal_frames_per_s": 21.8
+          },
+          "terminals": 20,
+          "connections": 3
+        },
+        "rpc": {
+          "calls_per_method": 1000,
+          "warmup_per_method": 50,
+          "fixtures": {
+            "review": {
+              "threads": 138
+            },
+            "agent_transcript_sha256": "dab22bc1ec04db2a71f932f4192aa2c07f9dfe7fab6034cebd9f5818b20f4ca7"
+          },
+          "methods": {
+            "file.list": {
+              "ms": {
+                "n": 1000,
+                "min": 4.943,
+                "p50": 7.104,
+                "p90": 17.721,
+                "p99": 32.749,
+                "max": 97.173,
+                "mean": 9.794
+              },
+              "reply_chars": 2461
+            },
+            "git.diff_summary": {
+              "ms": {
+                "n": 200,
+                "min": 1036.369,
+                "p50": 1719.812,
+                "p90": 2655.815,
+                "p99": 3799.588,
+                "max": 6437.67,
+                "mean": 1877.793
+              },
+              "reply_chars": 6856
+            },
+            "review.get": {
+              "ms": {
+                "n": 1000,
+                "min": 1.023,
+                "p50": 1.762,
+                "p90": 2.554,
+                "p99": 3.475,
+                "max": 6.417,
+                "mean": 1.848
+              },
+              "reply_chars": 325967
+            },
+            "agent_history.get": {
+              "ms": {
+                "n": 1000,
+                "min": 0.779,
+                "p50": 1.555,
+                "p90": 1.992,
+                "p99": 3.994,
+                "max": 5.592,
+                "mean": 1.627
+              },
+              "reply_chars": 9497
+            },
+            "bridge.work.board": {
+              "ms": {
+                "n": 1000,
+                "min": 1.385,
+                "p50": 2.351,
+                "p90": 3.314,
+                "p99": 5.269,
+                "max": 10.055,
+                "mean": 2.497
+              },
+              "reply_chars": 136428
+            },
+            "bridge.mr_reviews.inbox": {
+              "ms": {
+                "n": 1000,
+                "min": 0.418,
+                "p50": 0.536,
+                "p90": 0.733,
+                "p99": 1.498,
+                "max": 2.251,
+                "mean": 0.587
+              },
+              "reply_chars": 48332
+            }
+          }
+        },
+        "terminal": {
+          "websocket_extensions": "permessage-deflate; client_no_context_takeover",
+          "throughput": {
+            "seconds": 10.000076760999859,
+            "frames_per_s": 56.09956937409632,
+            "message_chars_per_s": 233883.10468990338,
+            "ansi_bytes_per_s": 162273.95436890118,
+            "wire_bytes_down_per_s": 58401.351705385,
+            "size": "160x48"
+          },
+          "latency": {
+            "ms": {
+              "n": 200,
+              "min": 1.137,
+              "p50": 1.648,
+              "p90": 2.207,
+              "p99": 4.613,
+              "max": 5.599,
+              "mean": 1.788
+            },
+            "lost": 0
+          },
+          "wire": {
+            "steps": 7,
+            "deflate": {
+              "extensions": "permessage-deflate; client_no_context_takeover",
+              "wire_bytes_down": 13707,
+              "wire_bytes_up": 1252,
+              "message_chars_down": 73557
+            },
+            "plain": {
+              "extensions": "",
+              "wire_bytes_down": 104258,
+              "wire_bytes_up": 1255,
+              "message_chars_down": 104170
+            }
+          }
+        },
+        "ssh": {
+          "workspaces": 8,
+          "connect": {
+            "ms_from_spawn": 1265.1036460027099,
+            "ms_after_hello": 926.2619320005178,
+            "ssh_invocations": {
+              "master": 1,
+              "forward": 1,
+              "mux": 3,
+              "control": 1
+            }
+          },
+          "rounds": [
+            {
+              "all_statuses_ms": 2297.27811999619,
+              "statuses_seen": 8,
+              "ssh_invocations": {
+                "mux": 1
+              }
+            },
+            {
+              "all_statuses_ms": 968.612903997302,
+              "statuses_seen": 8,
+              "ssh_invocations": {
+                "mux": 1
+              }
+            },
+            {
+              "all_statuses_ms": 791.7350869998336,
+              "statuses_seen": 8,
+              "ssh_invocations": {
+                "mux": 1
+              }
+            },
+            {
+              "all_statuses_ms": 949.9634070023894,
+              "statuses_seen": 8,
+              "ssh_invocations": {
+                "mux": 1
+              }
+            },
+            {
+              "all_statuses_ms": 814.65994399786,
+              "statuses_seen": 8,
+              "ssh_invocations": {
+                "mux": 1
+              }
+            }
+          ],
+          "all_statuses_ms": {
+            "n": 5,
+            "min": 791.735,
+            "p50": 949.963,
+            "p90": 2297.278,
+            "p99": 2297.278,
+            "max": 2297.278,
+            "mean": 1164.45
+          },
+          "real_ssh_localhost": "not run: the remote side would log in with the real HOME and reach the real Herdr"
+        },
+        "forge": {
+          "fixture": "scripts/bench/fakes/forge.ts: per forge 80 own requests (30 open) and 25 followed",
+          "clock": "test clock, pumped at real speed, jumped where named",
+          "startup": {
+            "total": 0,
+            "calls": {},
+            "bytes": 0
+          },
+          "first_refresh": {
+            "entries_in_reply": 60,
+            "entries_after": 60,
+            "total": 11,
+            "calls": {
+              "gh:auth": 1,
+              "gh:inbox": 1,
+              "gh:list": 1,
+              "gh:details": 1,
+              "glab:config": 3,
+              "glab:inbox": 1,
+              "glab:list": 1,
+              "glab:details": 2
+            },
+            "bytes": 88606
+          },
+          "jump_61s": {
+            "total": 0,
+            "calls": {},
+            "bytes": 0
+          },
+          "second_refresh": {
+            "entries_in_reply": 60,
+            "entries_after": 60,
+            "total": 7,
+            "calls": {
+              "gh:inbox": 1,
+              "glab:inbox": 1,
+              "gh:list": 1,
+              "glab:list": 1,
+              "gh:details": 1,
+              "glab:details": 2
+            },
+            "bytes": 88606
+          },
+          "jump_15min": {
+            "total": 0,
+            "calls": {},
+            "bytes": 0
+          }
+        },
+        "archive": {
+          "corpus": {
+            "sessions": 300,
+            "bytes": 984479519,
+            "sha256": "5e7990daa1abc5a1195450a599ca94a2595c6581cf9eeb4ab964d028e9c65d18",
+            "source": "oldest Claude sessions of the archive's raw/"
+          },
+          "ingest_ms": 72151.57376400381,
+          "ingest_report": {
+            "claude": {
+              "new": 300,
+              "grown": 0,
+              "same": 0,
+              "shrunk": 0,
+              "replaced": 0,
+              "error": 0,
+              "excluded": 0,
+              "docs": 104944,
+              "bytes": 984479519,
+              "unknown": {}
+            }
+          },
+          "rebuild_text_ms": 7544.804319001734,
+          "search": {
+            "herdr": {
+              "ms": {
+                "n": 5,
+                "min": 801.768,
+                "p50": 834.76,
+                "p90": 1022.266,
+                "p99": 1022.266,
+                "max": 1022.266,
+                "mean": 870.652
+              },
+              "result_lines": 168
+            },
+            "websocket reconnect": {
+              "ms": {
+                "n": 5,
+                "min": 774.249,
+                "p50": 861.761,
+                "p90": 894.897,
+                "p99": 894.897,
+                "max": 894.897,
+                "mean": 842.855
+              },
+              "result_lines": 17
+            },
+            "gstreamer pipeline": {
+              "ms": {
+                "n": 5,
+                "min": 784.212,
+                "p50": 856.47,
+                "p90": 913.168,
+                "p99": 913.168,
+                "max": 913.168,
+                "mean": 859.9
+              },
+              "result_lines": 146
+            },
+            "\"merge request\"": {
+              "ms": {
+                "n": 5,
+                "min": 825.115,
+                "p50": 946.707,
+                "p90": 1003.504,
+                "p99": 1003.504,
+                "max": 1003.504,
+                "mean": 928.888
+              },
+              "result_lines": 174
+            },
+            "test clock": {
+              "ms": {
+                "n": 5,
+                "min": 835.23,
+                "p50": 843.62,
+                "p90": 889.522,
+                "p99": 889.522,
+                "max": 889.522,
+                "mean": 859.059
+              },
+              "result_lines": 51
+            }
+          },
+          "search_index_ms": {
+            "n": 5,
+            "min": 271.811,
+            "p50": 320.89,
+            "p90": 408.974,
+            "p99": 408.974,
+            "max": 408.974,
+            "mean": 329.684
+          }
+        },
+        "conversation": {
+          "fake": "scripts/bench/fakes/claude-headless.ts: 400 deltas, 2 ms apart, per turn",
+          "takeover_ms": 1721.8949690014124,
+          "takeover_turn": {
+            "first_delta_ms": 529.1448760032654,
+            "result_ms": 1345.5955929979682,
+            "delta_pushes": 50,
+            "delta_chars": 1890,
+            "stream_ms": 814.9320149943233,
+            "sequence": [
+              "queue",
+              "status",
+              "queue",
+              "status",
+              "block_start",
+              "delta",
+              "block_stop",
+              "result",
+              "status"
+            ]
+          },
+          "turns": [
+            {
+              "first_delta_ms": 18.77369000017643,
+              "result_ms": 838.4141480028629,
+              "delta_pushes": 50,
+              "delta_chars": 1890,
+              "stream_ms": 819.4281790032983,
+              "sequence": [
+                "status",
+                "block_start",
+                "delta",
+                "block_stop",
+                "result",
+                "status"
+              ]
+            },
+            {
+              "first_delta_ms": 19.246228002011776,
+              "result_ms": 832.3098540008068,
+              "delta_pushes": 50,
+              "delta_chars": 1890,
+              "stream_ms": 812.6122379973531,
+              "sequence": [
+                "status",
+                "block_start",
+                "delta",
+                "block_stop",
+                "result",
+                "status"
+              ]
+            },
+            {
+              "first_delta_ms": 22.25593999773264,
+              "result_ms": 831.7428079992533,
+              "delta_pushes": 50,
+              "delta_chars": 1890,
+              "stream_ms": 809.3419860005379,
+              "sequence": [
+                "status",
+                "block_start",
+                "delta",
+                "block_stop",
+                "result",
+                "status"
+              ]
+            },
+            {
+              "first_delta_ms": 19.44905900210142,
+              "result_ms": 831.9161640033126,
+              "delta_pushes": 50,
+              "delta_chars": 1890,
+              "stream_ms": 812.0620340034366,
+              "sequence": [
+                "status",
+                "block_start",
+                "delta",
+                "block_stop",
+                "result",
+                "status"
+              ]
+            },
+            {
+              "first_delta_ms": 18.740759000182152,
+              "result_ms": 829.8768839985132,
+              "delta_pushes": 50,
+              "delta_chars": 1890,
+              "stream_ms": 811.0149680003524,
+              "sequence": [
+                "status",
+                "block_start",
+                "delta",
+                "block_stop",
+                "result",
+                "status"
+              ]
+            }
+          ],
+          "first_delta_ms": {
+            "n": 5,
+            "min": 18.741,
+            "p50": 19.246,
+            "p90": 22.256,
+            "p99": 22.256,
+            "max": 22.256,
+            "mean": 19.693
+          },
+          "result_ms": {
+            "n": 5,
+            "min": 829.877,
+            "p50": 831.916,
+            "p90": 838.414,
+            "p99": 838.414,
+            "max": 838.414,
+            "mean": 832.852
+          },
+          "delta_pushes": {
+            "n": 5,
+            "min": 50,
+            "p50": 50,
+            "p90": 50,
+            "p99": 50,
+            "max": 50,
+            "mean": 50
+          }
+        }
+      }
+    }
+  }
+}

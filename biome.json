@@ -11,6 +11,7 @@
       "!server/src/public-files.gen.ts",
       "!contract/assets/**",
       "!contract/tools/catalog.json",
+      "!contract/perf/baseline.json",
       "!server/claude-mod/hooks/catalog.gen.ts"
     ]
   },
