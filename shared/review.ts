@@ -278,7 +278,12 @@ export const REVIEW_LIMITS = {
   commentsPerThread: 500,
   messageChars: 500,
   titleChars: 300,
-  sessions: 500,
+  /**
+   * Reviews kept at once. All are held in memory and read at start; 500
+   * filled up in five weeks of use, and 10,000 still loads in well under a
+   * second.
+   */
+  sessions: 10_000,
 } as const;
 
 /** A comment rewritten after it was first written. */

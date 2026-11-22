@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ReviewSnapshot } from "../../../shared/review";
+import { REVIEW_LIMITS, type ReviewSnapshot } from "../../../shared/review";
 import { handleReviewRpc } from "./rpc";
 import { createReviewService, type ReviewService } from "./service";
 import { openReviewStorage } from "./storage";
@@ -283,8 +283,8 @@ test("an import keeps only the review's own threads", () => {
 });
 
 test("a review past the limit is not imported", () => {
-  const { service } = setup();
-  for (let index = 0; index < 500; index++)
+  const { service } = setup(undefined, { sessionLimit: 3 });
+  for (let index = 0; index < 3; index++)
     service.open({
       connectionId: "local",
       root: `/repo/${index}`,
@@ -305,7 +305,41 @@ test("a review past the limit is not imported", () => {
         threads: [],
       },
     }),
-  ).toThrow("too many reviews");
+  ).toThrow("too many reviews (3, the limit is 3)");
+});
+
+test("a new review past the limit is refused, saying how to make room", () => {
+  const { service } = setup(undefined, { sessionLimit: 2 });
+  for (let index = 0; index < 2; index++)
+    service.open({
+      connectionId: "local",
+      root: `/repo/${index}`,
+      target: { kind: "worktree" },
+      raise: false,
+    });
+  expect(() =>
+    service.open({
+      connectionId: "local",
+      root: "/repo/2",
+      target: { kind: "worktree" },
+      raise: false,
+    }),
+  ).toThrow(
+    "too many reviews (2, the limit is 2); delete old ones in the reviews list to make room",
+  );
+  // An existing review still opens.
+  expect(
+    service.open({
+      connectionId: "local",
+      root: "/repo/0",
+      target: { kind: "worktree" },
+      raise: false,
+    }).session.root,
+  ).toBe("/repo/0");
+});
+
+test("the store keeps thousands of reviews", () => {
+  expect(REVIEW_LIMITS.sessions).toBeGreaterThanOrEqual(10_000);
 });
 
 test("a restored thread cannot overwrite another review's thread", async () => {

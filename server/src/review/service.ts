@@ -291,6 +291,8 @@ function parseAnchor(value: unknown): ReviewAnchor {
 }
 
 export function createReviewService(args: {
+  /** The most reviews kept at once (REVIEW_LIMITS.sessions); for tests. */
+  sessionLimit?: number;
   storage: ReviewStorage;
   publish: (push: ReviewPush) => void;
   loadDiff: (session: ReviewSession, commit?: string) => Promise<ReviewDiff>;
@@ -366,6 +368,16 @@ export function createReviewService(args: {
   const now = () => (args.now?.() ?? new Date()).toISOString();
   const clock = () => (args.now?.() ?? new Date()).getTime();
   const sessions = new Map<string, ReviewSession>();
+  const sessionLimit = args.sessionLimit ?? REVIEW_LIMITS.sessions;
+
+  /** Refuses a new review once the store holds the most it keeps. */
+  function checkRoom(): void {
+    if (sessions.size < sessionLimit) return;
+    throw new ReviewError(
+      `too many reviews (${sessions.size}, the limit is ${sessionLimit}); ` +
+        "delete old ones in the reviews list to make room",
+    );
+  }
   const threads = new Map<string, Map<string, ReviewThread>>();
   const waiters = new Map<string, Set<Waiter>>();
 
@@ -1099,8 +1111,7 @@ export function createReviewService(args: {
         sameTarget(s.target, target),
     );
     if (!found) {
-      if (sessions.size >= REVIEW_LIMITS.sessions)
-        throw new ReviewError("too many reviews; delete old ones first");
+      checkRoom();
       const at = now();
       found = {
         id: newId(),
@@ -2869,8 +2880,7 @@ export function createReviewService(args: {
         throw new ReviewError("invalid review id");
       return snapshot(existing);
     }
-    if (sessions.size >= REVIEW_LIMITS.sessions)
-      throw new ReviewError("too many reviews; delete old ones first");
+    checkRoom();
     // Only the review's own threads: a merge request's snapshot also shows
     // its GitLab threads and the pending drafts of local reviews, which
     // live elsewhere.
