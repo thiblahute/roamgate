@@ -580,7 +580,15 @@ changed (`file_edit`, shared/fileEdits.ts), also kept when redacted: Claude
 Code's patch from its result record (`toolUseResult.structuredPatch`, with
 line numbers and context, or a new file's content), else the change its
 arguments ask while it has no result, none once it failed; at most 160
-lines, its counts whole. A call streamed in conversation mode gets the same
+lines, its counts whole. A call that wrote in Roamgate's threads (the
+review_reply, review_add and review_edit tools, or `roamgate-review reply|add|edit`
+run from Bash or Codex's exec_command, read with the same shell parser as
+agent messages) carries `roamgate_write` (shared/toolSummary.ts): its
+action, its `description` argument, the review, thread and comment its
+result names, where it went (the words quoted, file:line) and the words
+written (4000 characters at most), kept when redacted and computed again
+from arguments and result, so past conversations get it too; nothing is
+stored. A refused call has none. A call streamed in conversation mode gets the same
 from its arguments until the transcript has it, and a permission prompt
 for such a call carries the change it asks to make.
 A comment on such a change (web/src/fileEditComments.ts) is a thread of the

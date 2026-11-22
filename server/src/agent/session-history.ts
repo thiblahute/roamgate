@@ -3,6 +3,8 @@ import type { InjectedKind } from "../../../shared/injectedMessage";
 import { outgoingAgentMessage } from "../../../shared/agentMessage";
 import {
   createToolSummaryNotes,
+  type RoamgateWrite,
+  roamgateWrite,
   type ToolSummaryContext,
   toolCallSummary,
 } from "../../../shared/toolSummary";
@@ -62,6 +64,11 @@ export type HistoryEntry = {
   // Kept when the payload is redacted, so a collapsed tool group can show
   // progress without fetching arguments.
   summary?: string;
+  // On a call that wrote in Roamgate (a reply in a thread, a new thread, an
+  // edit): what it wrote and where, from its arguments and its result. Kept
+  // when the payload is redacted, so the chat shows it as a row that links
+  // to the thread and the agent need not say it in the chat.
+  roamgate_write?: RoamgateWrite;
   // Set on redacted wire entries: UTF-8 byte length of the withheld text,
   // fetchable via agent_history.entry when the user expands the card.
   text_bytes?: number;
@@ -275,6 +282,12 @@ export function allHistoryEntries(
           editResults,
           call.tool_call_id,
         ),
+        ...roamgateWriteField(
+          call.function_name,
+          call.arguments,
+          resultTexts.get(call.tool_call_id),
+          editResults.get(call.tool_call_id)?.failed === true,
+        ),
       });
     }
     for (const result of step.observation?.results ?? []) {
@@ -451,6 +464,19 @@ function callSummaryField(
 ) {
   const summary = toolCallSummary(name, JSON.stringify(args ?? {}), context);
   return summary && summary !== "{}" ? { summary } : {};
+}
+
+function roamgateWriteField(
+  name: string,
+  args: unknown,
+  result: string | undefined,
+  failed: boolean,
+): Pick<HistoryEntry, "roamgate_write"> {
+  const write = roamgateWrite(name, args ?? {}, {
+    text: result ?? "",
+    is_error: failed,
+  });
+  return write ? { roamgate_write: write } : {};
 }
 
 function artifactField(

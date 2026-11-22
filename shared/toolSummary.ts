@@ -1,3 +1,5 @@
+import { shellWords } from "./agentMessage";
+
 /**
  * A one-line summary of what a tool call does, for the chat's collapsed tool
  * groups, in plain words: "Read components/Chat.tsx", "To the cutover agent:
@@ -220,12 +222,16 @@ function roamgateSummary(
   args: Record<string, unknown>,
   context: ToolSummaryContext,
 ): string | undefined {
+  // What the agent says the call does, as a Bash call's description.
+  const description = nonEmptyString(args.description);
+  if (description) return firstLine(description);
   const text = nonEmptyString(args.text);
   const message = nonEmptyString(args.message);
   switch (tool) {
     case "review_reply": {
       const thread = threadLabel(nonEmptyString(args.comment_id), context);
-      if (thread) return `Replied on "${thread}"`;
+      if (thread)
+        return `Replied on "${thread}"${text ? ` · ${start(text)}` : ""}`;
       return text ? `Replied: ${start(text)}` : "Replied on a thread";
     }
     case "review_add": {
@@ -236,8 +242,14 @@ function roamgateSummary(
       const place = file ? ` on ${shortPath(file)}${line}` : "";
       return `${verb}${place}${text ? `: ${start(text)}` : ""}`;
     }
-    case "review_edit":
-      return `Edited a comment${text ? `: ${start(text)}` : ""}`;
+    case "review_edit": {
+      const output = context.result
+        ? roamgateOutput(context.result)
+        : undefined;
+      const thread = output && threadOutputLabel(output);
+      const place = thread ? ` on "${thread}"` : "";
+      return `Edited a comment${place}${text ? `: ${start(text)}` : ""}`;
+    }
     case "review_resolve":
     case "review_reopen": {
       const verb = tool === "review_resolve" ? "Resolved" : "Reopened";
@@ -270,6 +282,282 @@ function roamgateSummary(
     default:
       return undefined;
   }
+}
+
+/**
+ * A Roamgate tool's output as JSON: the review client prints it, the mod
+ * gives it whole, the board's tools after a line saying who wrote what in
+ * it, and some clients wrap it (`{tool, result}`).
+ */
+export function roamgateOutput(
+  result: string,
+): Record<string, unknown> | undefined {
+  const text = result.trim();
+  let parsed = parseToolArguments(text);
+  if (parsed === undefined) {
+    const brace = text.indexOf("{");
+    if (brace > 0) parsed = parseToolArguments(text.slice(brace));
+  }
+  if (!isArgumentObject(parsed)) return undefined;
+  return isArgumentObject(parsed.result) ? parsed.result : parsed;
+}
+
+/** Options of the review client that take a value, by command. */
+const CLIENT_VALUES = new Set([
+  "--agent",
+  "--session",
+  "--comment",
+  "--file",
+  "--line",
+  "--end-line",
+  "--side",
+  "--quote",
+  "--message",
+  "--title",
+  "--description",
+  "--timeout",
+]);
+
+/**
+ * A here-document given inline as an argument (`"$(cat <<'EOF' ... EOF
+ * )"`): its text; else the word as it is.
+ */
+function inlineHeredoc(word: string): string {
+  const match =
+    /^\$\(cat <<-?\s*(['"]?)([\w-]+)\1\n([\s\S]*?)\n[ \t]*\2[ \t]*\n?\)$/.exec(
+      word,
+    );
+  return match ? match[3]! : word;
+}
+
+/**
+ * The review client's command in a shell command (`roamgate-review reply
+ * --comment ID -- TEXT`, `roamgate-review work work_update 'JSON'`), as
+ * the Roamgate tool it does and that tool's arguments; undefined for any
+ * other command.
+ */
+export function reviewClientCall(
+  command: string,
+): { tool: string; args: Record<string, unknown> } | undefined {
+  const start = command.search(/\S*roamgate-review\b/);
+  if (start < 0) return undefined;
+  const { words, heredoc } = shellWords(command.slice(start));
+  if (!/(^|\/)roamgate-review$/.test(words[0] ?? "")) return undefined;
+  const options = new Map<string, string>();
+  const positional: string[] = [];
+  let sub: string | undefined;
+  let rest = false;
+  for (let at = 1; at < words.length; at += 1) {
+    const word = words[at]!;
+    if (rest || !word.startsWith("--")) {
+      if (!sub) sub = word;
+      else positional.push(inlineHeredoc(word));
+      continue;
+    }
+    if (word === "--") {
+      rest = true;
+      continue;
+    }
+    const equals = word.indexOf("=");
+    if (equals > 0) {
+      options.set(word.slice(0, equals), inlineHeredoc(word.slice(equals + 1)));
+    } else if (CLIENT_VALUES.has(word)) {
+      options.set(word, inlineHeredoc(words[at + 1] ?? ""));
+      at += 1;
+    } else {
+      options.set(word, "1");
+    }
+  }
+  if (!sub) return undefined;
+  const joined = positional.join(" ");
+  const text = joined === "-" || joined === "" ? (heredoc ?? "") : joined;
+  const option = (name: string) => options.get(name) || undefined;
+  const line = (name: string) => {
+    const value = Number(option(name));
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  };
+  const args: Record<string, unknown> = {};
+  const set = (key: string, value: unknown) => {
+    if (value !== undefined && value !== "") args[key] = value;
+  };
+  set("description", option("--description"));
+  set("review", option("--session"));
+  switch (sub) {
+    case "reply":
+    case "edit":
+      set("comment_id", option("--comment"));
+      set("text", text);
+      return { tool: `review_${sub}`, args };
+    case "add":
+      set("text", text);
+      set("kind", options.has("--draft") ? "draft" : undefined);
+      set("file", option("--file"));
+      set("line", line("--line"));
+      set("end_line", line("--end-line"));
+      set("side", option("--side"));
+      set("quote", option("--quote"));
+      return { tool: "review_add", args };
+    case "working":
+      set("comment_id", option("--comment"));
+      set("message", option("--message"));
+      set("done", options.has("--done") ? true : undefined);
+      return { tool: "review_working", args };
+    case "resolve":
+    case "reopen":
+      set("comment_id", option("--comment"));
+      return {
+        tool:
+          sub === "reopen" || options.has("--unresolve")
+            ? "review_reopen"
+            : "review_resolve",
+        args,
+      };
+    case "update":
+      set("message", option("--message"));
+      return { tool: "review_update", args };
+    case "notify":
+      set("title", option("--title"));
+      set("text", text);
+      return { tool: "review_notify", args };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * A call to a Roamgate tool: an MCP tool of Roamgate's server or mod, or
+ * the review client run from a shell (Bash, Codex's exec_command), as the
+ * tool and its arguments.
+ */
+export function roamgateToolCall(
+  name: string,
+  args: Record<string, unknown>,
+): { tool: string; args: Record<string, unknown> } | undefined {
+  const mcp = mcpParts(name);
+  if (mcp)
+    return /(?:^|_)roamgate$/.test(mcp.server)
+      ? { tool: mcp.tool, args }
+      : undefined;
+  const command =
+    name === "Bash"
+      ? nonEmptyString(args.command)
+      : name === "exec_command"
+        ? nonEmptyString(args.cmd)
+        : undefined;
+  return command?.includes("roamgate-review")
+    ? reviewClientCall(command)
+    : undefined;
+}
+
+/** What a call wrote in Roamgate: a comment in a thread. */
+export type RoamgateWriteAction = "reply" | "comment" | "draft" | "edit";
+
+/**
+ * What a call wrote in Roamgate, read from its arguments and its result:
+ * the chat shows it as a tool row that says where it went and links there,
+ * so the agent need not repeat it in the chat.
+ */
+export type RoamgateWrite = {
+  action: RoamgateWriteAction;
+  /** The call's own description argument, when it gave one. */
+  description?: string;
+  /** The review the thread is in, its thread and the comment written. */
+  review?: string;
+  thread?: string;
+  comment?: string;
+  /** Where it went, in a few words: the words quoted, file:line. */
+  where?: string;
+  /** The words written, up to ROAMGATE_WRITE_TEXT_LIMIT characters. */
+  text?: string;
+  /** Longer than that: the call's arguments have it whole. */
+  clipped?: true;
+};
+
+/** Of the words a call wrote, how much its row keeps. */
+export const ROAMGATE_WRITE_TEXT_LIMIT = 4000;
+
+function writeText(text: string | undefined): Partial<RoamgateWrite> {
+  if (!text?.trim()) return {};
+  return text.length > ROAMGATE_WRITE_TEXT_LIMIT
+    ? { text: text.slice(0, ROAMGATE_WRITE_TEXT_LIMIT), clipped: true }
+    : { text };
+}
+
+/** The comments a review tool's output lists, in order. */
+function outputComments(output: Record<string, unknown> | undefined) {
+  return (Array.isArray(output?.comments) ? output.comments : []).filter(
+    isArgumentObject,
+  );
+}
+
+/** A review tool's write, from its arguments and its output. */
+function reviewWrite(
+  tool: string,
+  args: Record<string, unknown>,
+  output: Record<string, unknown> | undefined,
+): RoamgateWrite | undefined {
+  let action: RoamgateWriteAction;
+  let comment: string | undefined;
+  const comments = outputComments(output);
+  switch (tool) {
+    case "review_reply":
+      action = "reply";
+      comment = nonEmptyString(comments[comments.length - 1]?.id);
+      break;
+    case "review_add":
+      action = args.kind === "draft" ? "draft" : "comment";
+      comment = nonEmptyString(comments[0]?.id);
+      break;
+    case "review_edit": {
+      action = "edit";
+      const asked = nonEmptyString(args.comment_id)?.trim();
+      comment = asked
+        ? (comments
+            .map((each) => nonEmptyString(each.id))
+            .find((id) => id?.startsWith(asked)) ?? undefined)
+        : undefined;
+      break;
+    }
+    default:
+      return undefined;
+  }
+  const file = nonEmptyString(args.file);
+  const where =
+    (output && threadOutputLabel(output)) ||
+    (file
+      ? `${shortPath(file)}${typeof args.line === "number" ? `:${args.line}` : ""}`
+      : undefined);
+  const description = nonEmptyString(args.description);
+  const review = nonEmptyString(output?.session);
+  const thread = nonEmptyString(output?.id);
+  return {
+    action,
+    ...(description ? { description: firstLine(description) } : {}),
+    ...(review ? { review } : {}),
+    ...(thread ? { thread } : {}),
+    ...(comment ? { comment } : {}),
+    ...(where ? { where } : {}),
+    ...writeText(nonEmptyString(args.text)),
+  };
+}
+
+/**
+ * What a call wrote in Roamgate (a reply, a new thread, an edit), from its
+ * name, its arguments (an object or their JSON) and its result; undefined
+ * for any other call, and for one that failed.
+ */
+export function roamgateWrite(
+  name: string,
+  args: unknown,
+  result?: { text: string; is_error?: boolean },
+): RoamgateWrite | undefined {
+  if (result?.is_error) return undefined;
+  const input = typeof args === "string" ? parseToolArguments(args) : args;
+  if (!isArgumentObject(input)) return undefined;
+  const call = roamgateToolCall(name, input);
+  if (!call) return undefined;
+  const output = result?.text ? roamgateOutput(result.text) : undefined;
+  return reviewWrite(call.tool, call.args, output);
 }
 
 function todoSummary(args: Record<string, unknown>): string {
@@ -618,6 +906,18 @@ export function toolCallSummary(
   const parsed = parseToolArguments(text);
   if (!isArgumentObject(parsed)) return clip(firstLine(text), limit);
   const mcp = mcpParts(name);
+  // The review client run from a shell: its own description, else the
+  // shell call's, else what the tool does.
+  const client = mcp ? undefined : roamgateToolCall(name, parsed);
+  if (client) {
+    const described =
+      nonEmptyString(client.args.description) ??
+      nonEmptyString(parsed.description);
+    const line = described
+      ? firstLine(described)
+      : roamgateSummary(client.tool, client.args, context);
+    if (line) return clip(line, limit);
+  }
   const known = mcp
     ? /(?:^|_)roamgate$/.test(mcp.server)
       ? roamgateSummary(mcp.tool, parsed, context)

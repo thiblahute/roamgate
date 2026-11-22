@@ -483,6 +483,42 @@
   white-space: nowrap;
 }
 
+/* A call that wrote in Roamgate: its row, and a link to the thread. */
+.agent-history-chat-step:has(> .agent-history-chat-step-link) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.agent-history-chat-step:has(> .agent-history-chat-step-link)
+  > .agent-history-chat-step-detail {
+  grid-column: 1 / -1;
+}
+
+.agent-history-chat-step-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.agent-history-chat-step-link:hover,
+.agent-history-chat-step-link:focus-visible {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+/* A write's headline says it in words: no code font. */
+.agent-history-chat-step.is-write .agent-history-chat-step-headline {
+  font-family: inherit;
+  font-size: 11px;
+}
+
 .agent-history-chat-step-detail {
   min-width: 0;
   display: grid;

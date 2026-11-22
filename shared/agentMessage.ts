@@ -107,8 +107,12 @@ export function frameAgentMessage(
 export const AGENT_MESSAGE_NOTE =
   /^This came from another agent session \([^)\n]*\), through Roamgate:[^\n]*?To reply: roamgate-review message \S+ -- YOUR REPLY[ \t]*(?:\n|$)\s*/;
 
-/** Shell words, quotes and escapes resolved, up to an operator. */
-function shellWords(command: string): {
+/**
+ * Shell words, quotes and escapes resolved, up to an operator, and the
+ * here-document the command reads, if any. Also read by the tool rows
+ * (toolSummary.ts) for the review client's other commands.
+ */
+export function shellWords(command: string): {
   words: string[];
   heredoc: string | null;
 } {

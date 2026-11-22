@@ -4,6 +4,8 @@ import { outgoingAgentMessage } from "../../../shared/agentMessage";
 import {
   isArgumentObject,
   parseToolArguments,
+  type RoamgateWrite,
+  roamgateWrite,
   toolCallSummary,
 } from "../../../shared/toolSummary";
 
@@ -318,6 +320,22 @@ export function toolStepSummary(step: ToolStep): string {
     call.text,
     result ? { result } : {},
     Number.POSITIVE_INFINITY,
+  );
+}
+
+// What a step wrote in Roamgate (a reply in a thread, a new thread, an
+// edit): the server's reading, kept when the payload is withheld, else one
+// from the arguments and result at hand, as a live turn's calls have.
+export function toolStepWrite(step: ToolStep): RoamgateWrite | undefined {
+  const call = step.call;
+  if (!call) return undefined;
+  if (call.roamgate_write) return call.roamgate_write;
+  if (call.text.length === 0) return undefined;
+  const result = step.result;
+  return roamgateWrite(
+    step.name,
+    call.text,
+    result ? { text: result.text, is_error: result.is_error } : undefined,
   );
 }
 

@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import {
   createToolSummaryNotes,
+  reviewClientCall,
+  ROAMGATE_WRITE_TEXT_LIMIT,
+  roamgateWrite,
   toolCallSummary,
   toolDisplayName,
 } from "./toolSummary";
@@ -91,7 +94,7 @@ test("review_reply says the thread it answered, from its quote", () => {
       { comment_id: "3bad5213", text: "Done" },
       { result },
     ),
-  ).toBe('Replied on "Which holder runs the session?"');
+  ).toBe('Replied on "Which holder runs the session?" · Done');
   // Without the result: what Roamgate said of the thread, else the reply.
   const notes = createToolSummaryNotes();
   notes.noteMessage(
@@ -113,7 +116,7 @@ test("review_reply says the thread it answered, from its quote", () => {
       { comment_id: "3bad5213", text: "Yes" },
       notes.context(),
     ),
-  ).toBe('Replied on "the holder keeps it"');
+  ).toBe('Replied on "the holder keeps it" · Yes');
   expect(
     summary(
       "mcp__roamgate__review_resolve",
@@ -319,4 +322,182 @@ test("a Codex wait says the command it waits for, once a call started it", () =>
   expect(
     summary("write_stdin", { session_id: 96485, chars: "" }, notes.context()),
   ).toBe("Wait for output of npm test");
+});
+
+// The review client prints its JSON pretty; the mod gives it compact.
+const replyOutput = (pretty = false) =>
+  JSON.stringify(
+    {
+      id: "3bad5213aaaa0000",
+      session: "4aad5bedb15e09e5",
+      kind: "discussion",
+      path: "server/src/foo.ts",
+      line: 12,
+      comments: [
+        { id: "c0ffee01", author: "user", text: "Why?" },
+        { id: "c0ffee02", author: "Claude", text: "Because." },
+      ],
+    },
+    null,
+    pretty ? 2 : undefined,
+  );
+
+test("a Roamgate tool's description is its summary", () => {
+  expect(
+    summary("mcp__roamgate__review_reply", {
+      comment_id: "3bad5213",
+      text: "Done",
+      description: "Answer the header bar question\nmore",
+    }),
+  ).toBe("Answer the header bar question");
+  expect(
+    summary("mcp__roamgate__review_add", {
+      text: "Rename",
+      file: "server/src/foo.ts",
+      line: 12,
+      description: "Ask about the name",
+    }),
+  ).toBe("Ask about the name");
+});
+
+test("a reply says where it went and its first words", () => {
+  expect(
+    summary(
+      "mcp__roamgate__review_reply",
+      { comment_id: "3bad5213", text: "Because.\nThe rest" },
+      { result: replyOutput() },
+    ),
+  ).toBe('Replied on "src/foo.ts:12" · Because.');
+  expect(
+    summary(
+      "mcp__roamgate__review_edit",
+      { comment_id: "c0ffee02", text: "Because, fixed." },
+      { result: replyOutput() },
+    ),
+  ).toBe('Edited a comment on "src/foo.ts:12": Because, fixed.');
+});
+
+test("the review client's commands read as the tools they do", () => {
+  expect(
+    reviewClientCall(
+      "~/.cache/roamgate/bin/roamgate-review reply --comment 3bad5213 --description 'Answer it' -- \"It's done\"",
+    ),
+  ).toEqual({
+    tool: "review_reply",
+    args: {
+      description: "Answer it",
+      comment_id: "3bad5213",
+      text: "It's done",
+    },
+  });
+  expect(
+    reviewClientCall(
+      "cd /src && roamgate-review add --file web/a.ts --line 3 --draft - <<'EOF'\nRename this\nplease\nEOF",
+    ),
+  ).toEqual({
+    tool: "review_add",
+    args: {
+      text: "Rename this\nplease",
+      kind: "draft",
+      file: "web/a.ts",
+      line: 3,
+    },
+  });
+  expect(
+    reviewClientCall(
+      `roamgate-review edit --comment=c0ffee02 "$(cat <<'EOF'\nFirst\nSecond\nEOF\n)"`,
+    ),
+  ).toEqual({
+    tool: "review_edit",
+    args: { comment_id: "c0ffee02", text: "First\nSecond" },
+  });
+  expect(
+    reviewClientCall("roamgate-review resolve --comment 1 --unresolve"),
+  ).toEqual({ tool: "review_reopen", args: { comment_id: "1" } });
+  expect(reviewClientCall("git status")).toBeUndefined();
+  // A shell call's summary: the client's description, else the shell's.
+  expect(
+    summary("Bash", {
+      command:
+        "roamgate-review reply --comment 1 --description 'Say why' -- Because",
+      description: "Reply on the thread",
+    }),
+  ).toBe("Say why");
+  expect(
+    summary("Bash", {
+      command: "roamgate-review reply --comment 1 -- Because",
+      description: "Reply on the thread",
+    }),
+  ).toBe("Reply on the thread");
+  // Codex says none: what the tool did.
+  expect(
+    summary(
+      "exec_command",
+      { cmd: "roamgate-review reply --comment 3bad5213 -- Because" },
+      { result: replyOutput(true) },
+    ),
+  ).toBe('Replied on "src/foo.ts:12" · Because');
+});
+
+test("a write says what it wrote, where, and the ids to open it at", () => {
+  expect(
+    roamgateWrite(
+      "mcp__roamgate__review_reply",
+      { comment_id: "3bad5213", text: "Because.", description: "Say why" },
+      { text: replyOutput() },
+    ),
+  ).toEqual({
+    action: "reply",
+    description: "Say why",
+    review: "4aad5bedb15e09e5",
+    thread: "3bad5213aaaa0000",
+    comment: "c0ffee02",
+    where: "src/foo.ts:12",
+    text: "Because.",
+  });
+  // From the review client, its output printed pretty, arguments as JSON.
+  expect(
+    roamgateWrite(
+      "Bash",
+      JSON.stringify({
+        command: "roamgate-review edit --comment c0ffee02 -- Because, fixed.",
+      }),
+      { text: replyOutput(true) },
+    ),
+  ).toMatchObject({
+    action: "edit",
+    review: "4aad5bedb15e09e5",
+    thread: "3bad5213aaaa0000",
+    comment: "c0ffee02",
+    text: "Because, fixed.",
+  });
+  // A new thread, before its result: where it goes, no ids yet.
+  expect(
+    roamgateWrite("mcp__roamgate__review_add", {
+      kind: "draft",
+      file: "server/src/foo.ts",
+      line: 12,
+      text: "Rename",
+    }),
+  ).toEqual({ action: "draft", where: "src/foo.ts:12", text: "Rename" });
+  // A long text is kept in part.
+  const long = roamgateWrite("mcp__roamgate__review_reply", {
+    comment_id: "1",
+    text: "x".repeat(ROAMGATE_WRITE_TEXT_LIMIT + 10),
+  });
+  expect(long?.text).toHaveLength(ROAMGATE_WRITE_TEXT_LIMIT);
+  expect(long?.clipped).toBe(true);
+  // A failed call wrote nothing; reading tools write nothing.
+  expect(
+    roamgateWrite(
+      "mcp__roamgate__review_reply",
+      { comment_id: "1", text: "x" },
+      { text: "no such comment", is_error: true },
+    ),
+  ).toBeUndefined();
+  expect(roamgateWrite("mcp__roamgate__review_get", {})).toBeUndefined();
+  expect(roamgateWrite("mcp__other__review_reply", {})).toBeUndefined();
+  expect(
+    roamgateWrite("Bash", { command: "roamgate-review get" }),
+  ).toBeUndefined();
 });

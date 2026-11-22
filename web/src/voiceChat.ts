@@ -1,5 +1,6 @@
 import type { HistoryEntry } from "./components/agentHistory";
 import { parseVoiceMessage } from "../../shared/voiceMessage";
+import { roamgateWrite } from "../../shared/toolSummary";
 import { roamgateLocalStorage } from "./browserStorage";
 import {
   DEFAULT_SPEECH_RATE,
@@ -1000,14 +1001,10 @@ export function sentences(text: string): string[] {
 }
 
 /**
- * The agent's answer to the message sent: its messages after the last
- * user message, once it has some.
+ * Where the agent's answer to the message sent starts: the index of that
+ * message, the last the user sent, or -1 when the last is another.
  */
-export function replyEntriesAfter(
-  entries: readonly HistoryEntry[],
-  sentText: string,
-): HistoryEntry[] {
-  let start = -1;
+function turnStart(entries: readonly HistoryEntry[], sentText: string) {
   const sent = sentText.trim();
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]!;
@@ -1018,11 +1015,24 @@ export function replyEntriesAfter(
       // A subagent's report or a task ending is not what was said.
       !entry.injected
     ) {
-      if (entry.text.trim().includes(sent) || sent.includes(entry.text.trim()))
-        start = index;
-      break;
+      return entry.text.trim().includes(sent) ||
+        sent.includes(entry.text.trim())
+        ? index
+        : -1;
     }
   }
+  return -1;
+}
+
+/**
+ * The agent's answer to the message sent: its messages after the last
+ * user message, once it has some.
+ */
+export function replyEntriesAfter(
+  entries: readonly HistoryEntry[],
+  sentText: string,
+): HistoryEntry[] {
+  const start = turnStart(entries, sentText);
   if (start < 0) return [];
   return entries
     .slice(start + 1)
@@ -1034,6 +1044,36 @@ export function replyEntriesAfter(
     );
 }
 
+/**
+ * What the agent wrote in Roamgate's threads in answer to the message
+ * sent, in a few words ("Answered 2 threads."): the chat shows each as a
+ * row of its own, and the agent does not repeat them in the chat. Null
+ * when it wrote in none.
+ */
+export function threadWritesSaid(
+  entries: readonly HistoryEntry[],
+  sentText: string,
+): string | null {
+  const start = turnStart(entries, sentText);
+  if (start < 0) return null;
+  const count = entries
+    .slice(start + 1)
+    .filter(
+      (entry) =>
+        entry.kind === "tool_call" &&
+        (entry.roamgate_write ??
+          (entry.text && entry.tool_name
+            ? roamgateWrite(entry.tool_name, entry.text)
+            : undefined)),
+    ).length;
+  if (!count) return null;
+  return count === 1 ? "Answered a thread." : `Answered ${count} threads.`;
+}
+
+/**
+ * The answer read aloud: the agent's messages; a turn that only wrote in
+ * threads says how many ("Answered 2 threads."), its rows not read.
+ */
 export function replyAfter(
   entries: readonly HistoryEntry[],
   sentText: string,
@@ -1042,7 +1082,7 @@ export function replyAfter(
     .map((entry) => entry.text)
     .join("\n\n")
     .trim();
-  return reply || null;
+  return reply || threadWritesSaid(entries, sentText);
 }
 
 let speechRate = DEFAULT_SPEECH_RATE;

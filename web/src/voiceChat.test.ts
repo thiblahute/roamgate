@@ -143,6 +143,45 @@ describe("voice chat text", () => {
     ).toBe("Two files.\n\nBoth tests pass.");
   });
 
+  test("a turn that only answered in threads says how many", () => {
+    const reply = (id: string, extra: Partial<HistoryEntry> = {}) =>
+      entry("tool", "", "tool_call", {
+        id,
+        tool_name: "mcp__roamgate__review_reply",
+        roamgate_write: { action: "reply", text: "Done" },
+        ...extra,
+      });
+    const asked = entry("user", "[Voice] answer them");
+    expect(replyAfter([asked, reply("a")], "answer them")).toBe(
+      "Answered a thread.",
+    );
+    // Read from a live call's arguments too, the review client's included.
+    const live = entry("tool", "", "tool_call", {
+      id: "b",
+      tool_name: "Bash",
+      text: JSON.stringify({
+        command: "roamgate-review reply --comment 1 -- Done",
+      }),
+    });
+    expect(replyAfter([asked, reply("a"), live], "answer them")).toBe(
+      "Answered 2 threads.",
+    );
+    // What the agent said is read instead; its rows never are.
+    expect(
+      replyAfter(
+        [asked, reply("a"), entry("assistant", "Both fixed.")],
+        "answer them",
+      ),
+    ).toBe("Both fixed.");
+    // Other calls are no answer.
+    expect(
+      replyAfter(
+        [asked, entry("tool", "{}", "tool_call", { tool_name: "Read" })],
+        "answer them",
+      ),
+    ).toBeNull();
+  });
+
   test("a report or a task ending is not the message answered, nor read", () => {
     const notice = (label: string, text: string) =>
       entry("user", text, "message", {

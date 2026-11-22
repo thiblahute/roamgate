@@ -1436,7 +1436,77 @@ test("a call's summary names the agents and threads its session knows", () => {
     ["SendMessage", "To the cutover agent: Holder question answered"],
     [
       "mcp__roamgate__review_reply",
-      'Replied on "the holder keeps the session"',
+      'Replied on "the holder keeps the session" · Yes, it does.',
     ],
   ]);
+});
+
+test("a call that wrote in a thread keeps what and where, redacted too", () => {
+  const use = (id: string, name: string, input: Record<string, unknown>) => ({
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", id, name, input }],
+    },
+  });
+  const result = (id: string, content: unknown, is_error = false) => ({
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: id, content, is_error }],
+    },
+  });
+  const thread = JSON.stringify({
+    id: "3bad5213aaaa0000",
+    session: "4aad5bedb15e09e5",
+    path: null,
+    line: null,
+    on_chat_message: { quote: "the holder keeps the session" },
+    comments: [
+      { id: "c1", author: "user", text: "Is that so?" },
+      { id: "c2", author: "Claude", text: "Yes, it does." },
+    ],
+  });
+  const trajectory = projectAgentTrajectory("claude", file, [
+    use("t1", "mcp__roamgate__review_reply", {
+      comment_id: "3bad5213",
+      text: "Yes, it does.",
+      description: "Answer the holder question",
+    }),
+    result("t1", thread),
+    use("t2", "Bash", {
+      command: "roamgate-review reply --comment 3bad5213 -- Again",
+      description: "Reply again",
+    }),
+    result("t2", "Roamgate: no such comment", true),
+    use("t3", "Bash", { command: "ls" }),
+  ]);
+  const update = redactHistoryUpdate({
+    history_version: 2,
+    cursor: { epoch: "e", revision: 1 },
+    window_limit: HISTORY_WINDOW_LIMIT,
+    mode: "snapshot",
+    entries: historyEntriesFromTrajectory(file, trajectory),
+  });
+  const calls = (update.mode === "snapshot" ? update.entries : []).filter(
+    (entry) => entry.kind === "tool_call",
+  );
+  expect(calls.map((entry) => [entry.text, entry.roamgate_write])).toEqual([
+    [
+      "",
+      {
+        action: "reply",
+        description: "Answer the holder question",
+        review: "4aad5bedb15e09e5",
+        thread: "3bad5213aaaa0000",
+        comment: "c2",
+        where: "the holder keeps the session",
+        text: "Yes, it does.",
+      },
+    ],
+    // Refused: it wrote nothing.
+    ["", undefined],
+    ["", undefined],
+  ]);
+  expect(calls[0]?.summary).toBe("Answer the holder question");
 });

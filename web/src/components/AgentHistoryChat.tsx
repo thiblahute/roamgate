@@ -67,10 +67,15 @@ import {
   toolArgumentFields,
   collapsedToolProgress,
   toolStepSummary,
+  toolStepWrite,
   type HistoryChatItem,
   type ToolStep,
 } from "./agentHistoryView";
-import { toolDisplayName } from "../../../shared/toolSummary";
+import { canOpenRoamgateWrite, openRoamgateWrite } from "../roamgateWrites";
+import {
+  type RoamgateWrite,
+  toolDisplayName,
+} from "../../../shared/toolSummary";
 import { formatBytes } from "./agentSession";
 import { MarkdownPreview } from "./markdown";
 import { ForgeStreamingContext, useForgeSlotsContext } from "../forgeSlots";
@@ -1260,18 +1265,57 @@ function ToolStepDetail({
   );
 }
 
+/** What a call wrote in Roamgate, its row opened: the words, whole. */
+function WrittenDetail({
+  step,
+  write,
+  loader,
+  onOpen,
+}: {
+  step: ToolStep;
+  write: RoamgateWrite;
+  loader: ToolContentLoader;
+  onOpen: (entry: HistoryEntry) => void;
+}) {
+  // Cut, or nothing to show: the call's arguments and output, as any call.
+  if (!write.text || write.clipped)
+    return <ToolStepDetail step={step} loader={loader} onOpen={onOpen} />;
+  return (
+    <div className="agent-history-chat-step-detail">
+      <section>
+        <h4>{write.where ? `Written on ${write.where}` : "Written"}</h4>
+        <MarkdownPreview
+          text={write.text}
+          className="agent-history-chat-markdown agent-history-chat-step-written"
+          breaks
+        />
+      </section>
+    </div>
+  );
+}
+
+const WRITE_LINK_TITLES: Record<RoamgateWrite["action"], string> = {
+  reply: "Open the thread at this reply",
+  comment: "Open the thread",
+  draft: "Open the review comment",
+  edit: "Open the thread at this comment",
+};
+
 function ToolStepRow({
   step,
   expanded,
   loader,
   onToggle,
   onOpen,
+  write,
 }: {
   step: ToolStep;
   expanded: boolean;
   loader: ToolContentLoader;
   onToggle: () => void;
   onOpen: (entry: HistoryEntry) => void;
+  /** What the call wrote in Roamgate: the row links to it. */
+  write?: RoamgateWrite;
 }) {
   const { call, result } = step;
   // Dismissed from Roamgate, unanswered: said so, not as a failure.
@@ -1282,7 +1326,7 @@ function ToolStepRow({
   const sentAt = (call ?? result)?.sent_at;
   return (
     <li
-      className={`agent-history-chat-step is-${status} ${expanded ? "is-expanded" : ""}`}
+      className={`agent-history-chat-step is-${status} ${expanded ? "is-expanded" : ""}${write ? " is-write" : ""}`}
     >
       <button
         type="button"
@@ -1308,8 +1352,28 @@ function ToolStepRow({
         ) : null}
         <span className="agent-history-chat-step-headline">{headline}</span>
       </button>
+      {write && canOpenRoamgateWrite(write) ? (
+        <button
+          type="button"
+          className="agent-history-chat-step-link"
+          title={WRITE_LINK_TITLES[write.action]}
+          aria-label={WRITE_LINK_TITLES[write.action]}
+          onClick={() => openRoamgateWrite(write)}
+        >
+          <ExternalLink size={12} aria-hidden="true" />
+        </button>
+      ) : null}
       {expanded ? (
-        <ToolStepDetail step={step} loader={loader} onOpen={onOpen} />
+        write ? (
+          <WrittenDetail
+            step={step}
+            write={write}
+            loader={loader}
+            onOpen={onOpen}
+          />
+        ) : (
+          <ToolStepDetail step={step} loader={loader} onOpen={onOpen} />
+        )
       ) : null}
     </li>
   );
@@ -1497,6 +1561,18 @@ const ToolBlock = memo(function ToolBlock({
   const steps = useMemo(() => pairToolSteps(entries), [entries]);
   // The files these calls changed, shown as the terminal shows them.
   const edits = useMemo(() => stepFileEdits(steps), [steps]);
+  // What these calls wrote in Roamgate (replies in threads, new threads):
+  // shown as their rows, linking there, while the block is closed too.
+  const writes = useMemo(
+    () =>
+      new Map(
+        steps.flatMap((step) => {
+          const write = toolStepWrite(step);
+          return write ? [[step.id, write] as const] : [];
+        }),
+      ),
+    [steps],
+  );
   // Each payload version is queued and fetched directly at most once per
   // block, so a failed fetch does not loop on every polling refresh; the Load
   // buttons still retry. A payload rewritten under the same id is a new
@@ -1630,7 +1706,38 @@ const ToolBlock = memo(function ToolBlock({
           ))}
         </div>
       ) : null}
-      {!open ? <ToolProgress steps={steps} /> : null}
+      {!open && writes.size ? (
+        <ul
+          className="agent-history-chat-tools-list agent-history-chat-writes"
+          aria-label="Written in Roamgate"
+        >
+          {steps
+            .filter((step) => writes.has(step.id))
+            .map((step) => (
+              <ToolStepRow
+                key={step.id}
+                step={step}
+                expanded={expandedStep === step.id}
+                loader={loader}
+                onToggle={() => {
+                  onToggle();
+                  setExpandedStep((current) =>
+                    current === step.id ? null : step.id,
+                  );
+                }}
+                onOpen={onOpen}
+                write={writes.get(step.id)}
+              />
+            ))}
+        </ul>
+      ) : null}
+      {!open ? (
+        <ToolProgress
+          steps={
+            writes.size ? steps.filter((step) => !writes.has(step.id)) : steps
+          }
+        />
+      ) : null}
       {open ? (
         <ul id={listId} className="agent-history-chat-tools-list">
           {steps.map((step) => (
@@ -1646,6 +1753,7 @@ const ToolBlock = memo(function ToolBlock({
                 );
               }}
               onOpen={onOpen}
+              write={writes.get(step.id)}
             />
           ))}
         </ul>
