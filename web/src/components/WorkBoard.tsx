@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Copy,
   FileDiff,
+  FileText,
   GitBranch,
   GitCommitHorizontal,
   GitPullRequest,
@@ -43,6 +44,7 @@ import type { ReviewThread } from "../../../shared/review";
 import {
   describeWorkLink,
   filterWorkItems,
+  isAbsoluteWorkPath,
   isWorkWorkspaceTag,
   readableWorkLink,
   summarizeWorkLinks,
@@ -67,6 +69,7 @@ import {
 import { openAgentTask } from "../agentTasksOpen";
 import { nextColumn, nextRow } from "../boardNavigation";
 import { roamgateLocalStorage } from "../browserStorage";
+import { requestFileLinkOpen } from "../fileLinkOpen";
 import { requestReviewShown, useReviewState } from "../review";
 import {
   EMPTY_KEY_STATE,
@@ -76,12 +79,21 @@ import {
 import {
   shallowEqual,
   type State,
+  store,
   TASK_NOTIFICATION_ACTIVATE_EVENT,
   useStoreSelector,
 } from "../store";
 import { useSystemBack } from "../systemBack";
 import { formatUiDateTime } from "../uiLocale";
-import { openWorkChat, useWorkBoard, workAddParams, workCall } from "../work";
+import {
+  openWorkChat,
+  useWorkBoard,
+  type WorkFileTarget,
+  type WorkFileWorkspace,
+  workAddParams,
+  workCall,
+  workFileWorkspace,
+} from "../work";
 import type { WorkAddDraft } from "../workOpen";
 import {
   keepWorkViewPlace,
@@ -1071,6 +1083,23 @@ export function useWorkMode({
             );
           return;
         }
+        case "file":
+          if (!item) return;
+          setFailure(null);
+          void openWorkFileLink(item, link, {
+            activeConnectionId,
+            workspaces: store.get().workspaces,
+          })
+            .then((why) => {
+              if (why) setFailure(why);
+              else stepAside();
+            })
+            .catch((cause) =>
+              setFailure(
+                cause instanceof Error ? cause.message : String(cause),
+              ),
+            );
+          return;
         case "chat":
           void openWorkChat(link)
             .then((why) => {
@@ -2132,7 +2161,11 @@ function WorkCard({
                   title={group.title}
                 >
                   <Icon size={10} aria-hidden="true" />
-                  {group.label}
+                  {group.kind === "file" ? (
+                    <span className="work-link-chip-name">{group.label}</span>
+                  ) : (
+                    group.label
+                  )}
                 </span>
               );
             })}
@@ -2160,6 +2193,7 @@ const WORK_LINK_ICONS: Record<WorkLinkGroupKind, LucideIcon> = {
   branch: GitBranch,
   commit: GitCommitHorizontal,
   decision: ListChecks,
+  file: FileText,
   item: Link2,
   deploy: Rocket,
   chat: MessageSquareQuote,
@@ -2186,6 +2220,10 @@ function workLinkAction(link: WorkLink, canOpenEffort: boolean): string | null {
         : "Review the landed commit in Changes";
     case "decision":
       return null;
+    case "file":
+      return link.line
+        ? `Open the file at line ${link.line} in Files`
+        : "Open the file in Files";
     case "chat":
       return link.entry
         ? "Open the message in its session's chat"
@@ -2286,6 +2324,46 @@ export async function openWorkLinkReview(
       ? await openBranchReview(link.name, { path: target.root })
       : await openCommitReview(link.sha, { path: target.root });
   return sessionId ? { sessionId, connectionId: activeConnectionId } : null;
+}
+
+/**
+ * A file link of an item, shown in a workspace's Files preview (rendered
+ * when it renders, at its line when it names one), as a comment's file
+ * link opens: the server says its checkout and connection. Answers why it
+ * could not, or null.
+ */
+export async function openWorkFileLink(
+  item: string,
+  link: Extract<WorkLink, { kind: "file" }>,
+  place: {
+    activeConnectionId: string | null;
+    workspaces: readonly WorkFileWorkspace[];
+  },
+): Promise<string | null> {
+  const { target } = await workCall<{ target: WorkFileTarget }>("link_target", {
+    item,
+    link,
+  });
+  const connectionId = place.activeConnectionId;
+  if (!connectionId) return "Roamgate is not connected to Herdr";
+  if (target.connectionId && target.connectionId !== connectionId)
+    return `It is in ${target.root} on ${target.connectionId}: switch to that connection to open it`;
+  const absolute = isAbsoluteWorkPath(target.path)
+    ? target.path
+    : `${target.root.replace(/[\\/]+$/, "")}/${target.path}`;
+  const workspaceId = workFileWorkspace(place.workspaces, absolute);
+  if (!workspaceId) return "No workspace is open to show the file in";
+  const opened = requestFileLinkOpen({
+    connectionId,
+    workspaceId,
+    link: {
+      root: target.root,
+      path: target.path,
+      ...(link.line ? { line: link.line } : {}),
+    },
+    newTab: false,
+  });
+  return opened ? null : "This page cannot show files";
 }
 
 /** How long an added item waits to be sorted before the detail says so. */

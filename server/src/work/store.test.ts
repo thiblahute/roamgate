@@ -184,6 +184,59 @@ describe("work store", () => {
     expect(() => parseWorkLink({ kind: "what" })).toThrow(/link kind/);
   });
 
+  test("a file link: its path in its root, a line and a label; never out of its root", () => {
+    expect(
+      parseWorkLink({
+        kind: "file",
+        path: "./plans/agent-prompts.md",
+        root: "/home/me/meta/",
+        line: 12,
+        label: "  The prompts\nplan ",
+      }),
+    ).toEqual({
+      kind: "file",
+      path: "plans/agent-prompts.md",
+      root: "/home/me/meta",
+      line: 12,
+      label: "The prompts plan",
+    });
+    // An absolute path under the root given is made relative to it.
+    expect(
+      parseWorkLink({
+        kind: "file",
+        path: "/home/me/meta/plans/a.md",
+        root: "/home/me/meta",
+      }),
+    ).toEqual({ kind: "file", path: "plans/a.md", root: "/home/me/meta" });
+    expect(parseWorkLink({ kind: "file", path: "/srv/rfc.md" })).toEqual({
+      kind: "file",
+      path: "/srv/rfc.md",
+    });
+    expect(() =>
+      parseWorkLink({ kind: "file", path: "../secret", root: "/a" }),
+    ).toThrow(/stay in its root/);
+    expect(() =>
+      parseWorkLink({ kind: "file", path: "a.md", root: "relative" }),
+    ).toThrow(/absolute path/);
+    expect(() =>
+      parseWorkLink({ kind: "file", path: "a.md", line: 0 }),
+    ).toThrow(/line number/);
+    expect(() => parseWorkLink({ kind: "file" })).toThrow(/link.path/);
+    // One link per file and line.
+    expect(
+      mergeWorkLinks(
+        [{ kind: "file", path: "a.md", root: "/r" }],
+        [
+          { kind: "file", path: "a.md", root: "/r" },
+          { kind: "file", path: "a.md", root: "/r", line: 3 },
+        ],
+      ),
+    ).toEqual([
+      { kind: "file", path: "a.md", root: "/r" },
+      { kind: "file", path: "a.md", root: "/r", line: 3 },
+    ]);
+  });
+
   test("merges links by place: one commit per sha, one review thread each", () => {
     const merged = mergeWorkLinks(
       [{ kind: "commit", sha: "abcdef1" }],

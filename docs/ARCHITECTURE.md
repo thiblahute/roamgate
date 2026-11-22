@@ -1805,7 +1805,10 @@ silently: a different title is refused (`conflict`) unless `replace:
 true`. Links:
 `review {id, thread?}`, `effort {id, part?}`, `pr {url}`, `commit {sha,
 subject?, root?}`, `branch {name, root?}`, `decision {path, id}` (an RFC
-or plan file and its `Dn`), `item {id}` (waits for it), `deploy {sha,
+or plan file and its `Dn`), `file {path, root?, line?, label?}` (a plan,
+doc or RFC to read: its path in `root`, an absolute path under the given
+root made relative to it, `..` refused, or an absolute path alone),
+`item {id}` (waits for it), `deploy {sha,
 branch?}` (set by the done rule), `chat {session, chat?, entry?}` (the
 message of an agent's chat it came from: the session's address, its
 session id and the message's entry id). `history.jsonl` appends one line per
@@ -1823,7 +1826,17 @@ answers `{connectionId, root}` the same way for a commit, branch or
 landing link the page opens (its review in Changes: `SHA^..SHA`, or the
 branch against the default branch through `review.open`'s `head`), and
 refuses with "This commit is not in any of the project's repositories"
-(or the branch's) rather than git's error.
+(or the branch's) rather than git's error. A `file` link with a relative
+path and no `root` gets the first of the same checkouts whose working tree
+has the file (the service's `readFile`), the same quiet way; its
+`link_target` answers `{connectionId, root, path}`: the checkout that has
+it (else the project's first), or for an absolute path the connection of
+the project's root that holds it. The page opens it as a comment's file
+link opens (`requestFileLinkOpen`): in the Files preview of the focused
+workspace when its checkout holds the file, else of the workspace whose
+checkout holds it the most closely, else the focused one (Files read any
+absolute path), rendered, or at its line; on another connection than the
+page's it says so instead.
 
 Projects and workspaces (shared/work.ts, one implementation for the
 server and the page): `workProjectFamily` is a project and its

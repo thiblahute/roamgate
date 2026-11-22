@@ -2262,7 +2262,8 @@ a link), it shows that item.
 Each card is an item: its title (wrapping, the card as wide as its
 column), tags, owner (the session or subagent working on it), its links
 (a review thread, an effort, a request, a commit, a branch, an RFC's
-decision, another item it waits for) and when it moved. A For you or
+decision, a file such as the plan or doc it follows, shown by its name,
+another item it waits for) and when it moved. A For you or
 Verify card says what you have to do right under its title, as a
 highlighted line ("Choose: media to the car with the phone mic, or no
 music on car links", "Dictate once after 10 idle minutes; text should
@@ -2282,7 +2283,9 @@ width), a state menu (`s`), tags (`t`), its owner with **Open the agent's
 work** (`o`: the owner's pane, and its subagent's task in the Background
 tasks sheet), its project, links (a commit, a branch or a landing opens its review in
 Changes, in whichever of the project's repositories holds it, or says it
-is in none of them; the copy button beside takes its sha or name),
+is in none of them; the copy button beside takes its sha or name; a
+file, listed with its path, opens in Files, rendered for Markdown, HTML,
+SVG and images, at its line when it names one),
 **Done when** (how it becomes done by itself: its commit landing, or
 every decision ticked; in Verify or For you, only the user's word) and
 dates, **Done**

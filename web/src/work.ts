@@ -243,3 +243,49 @@ export async function openWorkChat(
   if (link.entry) revealChatEntry(link.entry);
   return null;
 }
+
+/** Where a file link opens, as the server says (link_target). */
+export type WorkFileTarget = {
+  connectionId: string | null;
+  root: string;
+  path: string;
+};
+
+/** The workspaces a file link may open in: their ids and checkouts. */
+export type WorkFileWorkspace = {
+  workspace_id: string;
+  focused?: boolean;
+  cwd?: string | null;
+  worktree?: { checkout_path?: string | null } | null;
+};
+
+function pathHolds(root: string, path: string): boolean {
+  const base = root.replace(/[\\/]+$/, "");
+  return !!base && (path === base || path.startsWith(`${base}/`));
+}
+
+/**
+ * The workspace whose Files show a file (its absolute path): the focused
+ * one when its checkout holds it, else the one whose checkout holds it the
+ * most closely, else the focused one (Files read any absolute path).
+ */
+export function workFileWorkspace(
+  workspaces: readonly WorkFileWorkspace[],
+  file: string,
+): string | null {
+  const rootOf = (workspace: WorkFileWorkspace) =>
+    workspace.worktree?.checkout_path ?? workspace.cwd ?? null;
+  const focused = workspaces.find((workspace) => workspace.focused);
+  const focusedRoot = focused ? rootOf(focused) : null;
+  if (focused && focusedRoot && pathHolds(focusedRoot, file))
+    return focused.workspace_id;
+  let best: { id: string; length: number } | null = null;
+  for (const workspace of workspaces) {
+    const root = rootOf(workspace);
+    if (root && pathHolds(root, file) && (!best || root.length > best.length))
+      best = { id: workspace.workspace_id, length: root.length };
+  }
+  return (
+    best?.id ?? focused?.workspace_id ?? workspaces[0]?.workspace_id ?? null
+  );
+}

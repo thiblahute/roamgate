@@ -8,6 +8,8 @@ import {
   summarizeWorkLinks,
   type WorkItem,
   type WorkLink,
+  workFileLinkName,
+  workFileLinkPath,
   workPrRef,
   workQueryWithTag,
   workAskOf,
@@ -122,6 +124,45 @@ test("a chat link: a message chip, and the message it came from", () => {
   expect(
     readableWorkLink({ kind: "chat", session: "desktop/w36:p2" }).label,
   ).toBe("The chat it came from");
+});
+
+test("a file link: a chip with the file's name, the detail its whole path", () => {
+  const link: WorkLink = {
+    kind: "file",
+    path: "plans/agent-prompts.md",
+    root: "/home/me/roamgate.worktrees/",
+  };
+  expect(workFileLinkPath(link)).toBe(
+    "/home/me/roamgate.worktrees/plans/agent-prompts.md",
+  );
+  expect(summarizeWorkLinks([link])).toEqual([
+    {
+      kind: "file",
+      label: "agent-prompts.md",
+      count: 1,
+      title: "/home/me/roamgate.worktrees/plans/agent-prompts.md",
+    },
+  ]);
+  expect(readableWorkLink({ ...link, line: 12 })).toEqual({
+    label: "agent-prompts.md",
+    detail: "File /home/me/roamgate.worktrees/plans/agent-prompts.md, line 12",
+  });
+  // A label names it better; an absolute path stands alone.
+  const named: WorkLink = {
+    kind: "file",
+    path: "/srv/docs/rfc.md",
+    label: "The RFC",
+  };
+  expect(workFileLinkName(named)).toBe("The RFC");
+  expect(workFileLinkPath(named)).toBe("/srv/docs/rfc.md");
+  expect(summarizeWorkLinks([link, named])[0]).toMatchObject({
+    kind: "file",
+    label: "2 files",
+  });
+  // Without a root, a relative path is only its path (the server fills it).
+  expect(workFileLinkPath({ kind: "file", path: "docs/a.md" })).toBe(
+    "docs/a.md",
+  );
 });
 
 test("the search's last #word completes to the tags, those it begins first", () => {

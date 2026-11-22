@@ -287,7 +287,11 @@ workspace's work), and the board opened from that workspace shows its
 items, one tap from the whole project; \`work_list
 {"workspace": "self"}\` lists yours. Each item is a thread for the session or subagent that owns it, and
 links to what it is about (a review thread, an effort part, a request, a
-commit, a decision of an RFC or plan):
+commit, a decision of an RFC or plan, a file). Link the plan, doc or RFC
+you write for an item, or point the user to, as a \`file\` link (\`{"kind":
+"file", "path": "plans/x.md", "root": "/abs/checkout", "line": 12}\`; a
+relative path without root is looked for in the project's checkouts): its
+card shows the file and one tap opens it in Files, rendered:
 
     roamgate-review work work_list '{"open": true}'
     roamgate-review work work_add '{"title": "Fold a reviewed chunk again", "state": "doing", "tags": ["reviews"], "owner": {"session": "desktop/w35:p1"}, "links": [{"kind": "review", "id": "d22a2f86", "thread": "b057f8a2"}]}'

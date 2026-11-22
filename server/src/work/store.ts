@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  isAbsoluteWorkPath,
   isWorkState,
   normalizeWorkAnswers,
   normalizeWorkTags,
@@ -173,6 +174,8 @@ export function parseWorkLink(value: unknown): WorkLink {
       const id = text(value.id, "link.id", 40);
       return { kind: "decision", path, id };
     }
+    case "file":
+      return parseWorkFileLink(value);
     case "item": {
       const id = text(value.id, "link.id", 64);
       if (!WORK_ID.test(id)) throw new WorkError("link.id must be an item id");
@@ -200,6 +203,50 @@ export function parseWorkLink(value: unknown): WorkLink {
   }
 }
 
+/**
+ * A file link: its path relative to its root (an absolute path under the
+ * root given is made relative to it), or absolute; never out of its root.
+ */
+function parseWorkFileLink(
+  value: Record<string, unknown>,
+): Extract<WorkLink, { kind: "file" }> {
+  let path = text(value.path, "link.path", 4096).replace(/^(\.\/)+/, "");
+  const root = optionalText(value.root, "link.root", 4096)?.replace(
+    /(.)[\\/]+$/,
+    "$1",
+  );
+  if (root && !isAbsoluteWorkPath(root))
+    throw new WorkError("link.root must be an absolute path");
+  if (root && isAbsoluteWorkPath(path)) {
+    const base = root.replace(/[\\/]+$/, "");
+    if (path.startsWith(`${base}/`)) path = path.slice(base.length + 1);
+  }
+  if (!path) throw new WorkError("link.path is empty");
+  if (!isAbsoluteWorkPath(path) && path.split(/[\\/]/).includes(".."))
+    throw new WorkError(
+      "link.path must stay in its root: give its absolute path instead",
+    );
+  let line: number | undefined;
+  if (value.line !== undefined && value.line !== null) {
+    if (
+      typeof value.line !== "number" ||
+      !Number.isInteger(value.line) ||
+      value.line < 1 ||
+      value.line > 10_000_000
+    )
+      throw new WorkError("link.line must be a line number (1 or more)");
+    line = value.line;
+  }
+  const label = optionalText(value.label, "link.label", 200);
+  return {
+    kind: "file",
+    path,
+    ...(root ? { root } : {}),
+    ...(line ? { line } : {}),
+    ...(label ? { label: oneLine(label, 200) } : {}),
+  };
+}
+
 export function parseWorkLinks(value: unknown): WorkLink[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) throw new WorkError("links must be a list");
@@ -223,6 +270,8 @@ export function workLinkKey(link: WorkLink): string {
       return `branch:${link.root ?? ""}:${link.name}`;
     case "decision":
       return `decision:${link.path}:${link.id}`;
+    case "file":
+      return `file:${link.root ?? ""}:${link.path}:${link.line ?? ""}`;
     case "item":
       return `item:${link.id}`;
     case "deploy":

@@ -148,7 +148,16 @@ if (
           kind: string;
           root?: string;
           sha?: string;
+          path?: string;
         };
+        if (link.kind === "file")
+          return {
+            target: {
+              connectionId: link.path === "far.md" ? "mac" : "desktop",
+              root: link.root ?? "/src/gst2",
+              path: link.path,
+            },
+          };
         if (link.sha === "62d3530630000000")
           throw new Error(
             "This commit is not in any of the project's repositories",
@@ -186,26 +195,43 @@ if (
     },
   }));
   const storeModule = await import("../store");
+  /** The page's workspaces: the focused one, and more a test adds. */
+  let moreWorkspaces: {
+    workspace_id: string;
+    label: string;
+    worktree: { checkout_path: string; repo_root: string };
+  }[] = [];
+  const pageWorkspaces = () => [
+    ...(workspace
+      ? [
+          {
+            workspace_id: workspace.workspaceId,
+            label: workspace.label,
+            focused: true,
+            worktree: workspace.checkoutPath
+              ? {
+                  checkout_path: workspace.checkoutPath,
+                  repo_root: workspace.repoRoot ?? workspace.checkoutPath,
+                }
+              : undefined,
+          },
+        ]
+      : []),
+    ...moreWorkspaces,
+  ];
+  const realStore = storeModule.store;
   mock.module("../store", () => ({
     ...storeModule,
+    store: new Proxy(realStore, {
+      get: (target, key) =>
+        key === "get"
+          ? () => ({ ...target.get(), workspaces: pageWorkspaces() })
+          : Reflect.get(target, key),
+    }),
     useStoreSelector: (selector: (state: unknown) => unknown) =>
       selector({
         activeConnectionId: workspace?.connectionId ?? "desktop",
-        workspaces: workspace
-          ? [
-              {
-                workspace_id: workspace.workspaceId,
-                label: workspace.label,
-                focused: true,
-                worktree: workspace.checkoutPath
-                  ? {
-                      checkout_path: workspace.checkoutPath,
-                      repo_root: workspace.repoRoot ?? workspace.checkoutPath,
-                    }
-                  : undefined,
-              },
-            ]
-          : [],
+        workspaces: pageWorkspaces(),
         panes: (workspace?.panes ?? []).map((pane) => ({
           ...pane,
           workspace_id: workspace?.workspaceId,
@@ -1535,6 +1561,123 @@ if (
       inboxMore = {};
       board.items = board.items.filter(
         (each) => each.id !== "1800000000000000",
+      );
+      await view.unmount();
+    }
+  });
+
+  test("a file link: a chip with the file's name; its row opens the file in Files, in the workspace that holds it, rendered or at its line", async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    const { onFileLinkOpen } = await import("../fileLinkOpen");
+    const asked: unknown[] = [];
+    const stop = onFileLinkOpen((request) => asked.push(request));
+    // Shown from the gst2 coordinator's workspace (focused).
+    const savedWorkspace = workspace;
+    workspace = {
+      connectionId: "desktop",
+      workspaceId: "w1",
+      label: "gst2-caps",
+      checkoutPath: "/home/me/gstreamer/2.0/gst2-caps",
+      repoRoot: null,
+      panes: [{ pane_id: "w32:p1" }],
+    };
+    moreWorkspaces = [
+      {
+        workspace_id: "w7",
+        label: "meta",
+        worktree: {
+          checkout_path: "/home/me/meta",
+          repo_root: "/home/me/meta",
+        },
+      },
+    ];
+    const links = [
+      {
+        kind: "file",
+        path: "plans/agent-prompts.md",
+        root: "/home/me/meta",
+      },
+      { kind: "file", path: "docs/a.md", line: 12 },
+      { kind: "file", path: "far.md", root: "/elsewhere" },
+    ];
+    board.items = [
+      ...board.items,
+      item("1900000000000000", "gst2", "doing", [], { links: [links[0]!] }),
+      item("1910000000000000", "gst2", "doing", [], { links }),
+    ];
+    const view = await mount();
+    try {
+      const card = view.panel.querySelector(
+        "[data-work-item='1900000000000000']",
+      )!;
+      const chip = card.querySelector(".work-link-chip.is-file")!;
+      expect(chip.textContent).toBe("agent-prompts.md");
+      expect(chip.querySelector("svg")).not.toBeNull();
+      expect(chip.getAttribute("title")).toBe(
+        "/home/me/meta/plans/agent-prompts.md",
+      );
+      const several = view.panel.querySelector(
+        "[data-work-item='1910000000000000']",
+      )!;
+      expect(
+        several.querySelector(".work-link-chip.is-file")?.textContent,
+      ).toBe("3 files");
+
+      await view.click(several);
+      const rows = () => [
+        ...view.panel.querySelectorAll<HTMLElement>(
+          ".work-detail .work-link-row",
+        ),
+      ];
+      expect(
+        rows().map((row) => row.querySelector(".work-link-label")?.textContent),
+      ).toEqual(["agent-prompts.md", "a.md", "far.md"]);
+      expect(rows()[0]!.querySelector("small")?.textContent).toBe(
+        "File /home/me/meta/plans/agent-prompts.md",
+      );
+      expect(rows()[1]!.querySelector("small")?.textContent).toBe(
+        "File docs/a.md, line 12",
+      );
+      const settle = () =>
+        act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        });
+      // In the workspace whose checkout holds it, rendered (no line).
+      await view.click(rows()[0]!.querySelector("button.work-link-open"));
+      await settle();
+      expect(asked).toEqual([
+        {
+          connectionId: "desktop",
+          workspaceId: "w7",
+          link: { root: "/home/me/meta", path: "plans/agent-prompts.md" },
+          newTab: false,
+        },
+      ]);
+      // At its line, in the root the server found; no workspace holds it:
+      // the focused one (Files read any path).
+      await view.click(rows()[1]!.querySelector("button.work-link-open"));
+      await settle();
+      expect(asked[1]).toEqual({
+        connectionId: "desktop",
+        workspaceId: "w1",
+        link: { root: "/src/gst2", path: "docs/a.md", line: 12 },
+        newTab: false,
+      });
+      // On another connection: said, nothing opened.
+      await view.click(rows()[2]!.querySelector("button.work-link-open"));
+      await settle();
+      expect(asked.length).toBe(2);
+      expect(view.text(".assistant-error span")).toBe(
+        "It is in /elsewhere on mac: switch to that connection to open it",
+      );
+    } finally {
+      stop();
+      workspace = savedWorkspace;
+      moreWorkspaces = [];
+      board.items = board.items.filter(
+        (each) =>
+          each.id !== "1900000000000000" && each.id !== "1910000000000000",
       );
       await view.unmount();
     }

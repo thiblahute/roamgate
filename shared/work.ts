@@ -78,6 +78,19 @@ export type WorkLink =
   | { kind: "branch"; name: string; root?: string }
   /** A decision of an RFC or plan file: the file and its id (D13). */
   | { kind: "decision"; path: string; id: string }
+  /**
+   * A file to read: a plan, a doc, an RFC. Its path in its checkout
+   * (`root`, filled from the project's roots when the path is relative),
+   * or absolute; at a line when given; `label` names it better than its
+   * file name. Opened in Files, rendered when it renders.
+   */
+  | {
+      kind: "file";
+      path: string;
+      root?: string;
+      line?: number;
+      label?: string;
+    }
   /** Another item this one waits for. */
   | { kind: "item"; id: string }
   /** Set when the done rule found the commit: where it landed. */
@@ -96,6 +109,7 @@ export const WORK_LINK_KINDS = [
   "commit",
   "branch",
   "decision",
+  "file",
   "item",
   "deploy",
   "chat",
@@ -415,7 +429,10 @@ export function workLinkRoots(
     out.push(connectionId ? { connectionId, path } : { path });
   };
   const own =
-    (link.kind === "commit" || link.kind === "branch") && link.root
+    (link.kind === "commit" ||
+      link.kind === "branch" ||
+      link.kind === "file") &&
+    link.root
       ? link.root
       : null;
   if (own) {
@@ -639,6 +656,33 @@ export function filterWorkItems(
   });
 }
 
+/** A file link's path: absolute when its root is known or it is absolute. */
+export function workFileLinkPath(
+  link: Extract<WorkLink, { kind: "file" }>,
+): string {
+  if (!link.root || isAbsoluteWorkPath(link.path)) return link.path;
+  return `${link.root.replace(/[\\/]+$/, "")}/${link.path.replace(/^\.\//, "")}`;
+}
+
+/** A file link's name on a card: its label, else its file's name. */
+export function workFileLinkName(
+  link: Extract<WorkLink, { kind: "file" }>,
+): string {
+  return (
+    link.label ??
+    link.path
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() ??
+    link.path
+  );
+}
+
+/** An absolute path, POSIX or Windows (`C:\`, `C:/`). */
+export function isAbsoluteWorkPath(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
+}
+
 /** The tags the items of a project use, most used first. */
 export function workTagsOf(items: readonly WorkItem[]): string[] {
   const counts = new Map<string, number>();
@@ -664,6 +708,8 @@ export function describeWorkLink(link: WorkLink): string {
       return `branch ${link.name}`;
     case "decision":
       return `${link.path.split("/").pop() ?? link.path} ${link.id}`;
+    case "file":
+      return `file ${workFileLinkPath(link)}${link.line ? `:${link.line}` : ""}`;
     case "item":
       return `after ${link.id.slice(0, 8)}`;
     case "deploy":
@@ -692,6 +738,7 @@ export const WORK_LINK_GROUPS = [
   "review",
   "branch",
   "commit",
+  "file",
   "decision",
   "item",
   "deploy",
@@ -717,6 +764,7 @@ const WORK_LINK_WORDS: Record<WorkLinkGroupKind, [string, string]> = {
   branch: ["branch", "branches"],
   commit: ["commit", "commits"],
   decision: ["decision", "decisions"],
+  file: ["file", "files"],
   item: ["after an item", "items before"],
   deploy: ["landed", "landings"],
   chat: ["message", "messages"],
@@ -743,6 +791,8 @@ function workLinkHint(link: WorkLink): string {
       return link.name;
     case "decision":
       return `${link.id} in ${link.path.split("/").pop() ?? link.path}`;
+    case "file":
+      return `${workFileLinkPath(link)}${link.line ? `:${link.line}` : ""}`;
     case "item":
       return "another item";
     case "deploy":
@@ -779,7 +829,9 @@ export function summarizeWorkLinks(
         ? `${count} ${several}`
         : kind === "pr" && ref
           ? `PR ${ref}`
-          : one;
+          : first.kind === "file"
+            ? workFileLinkName(first)
+            : one;
     return [{ kind, label, count, title: found.map(workLinkHint).join("\n") }];
   });
 }
@@ -857,6 +909,11 @@ export function readableWorkLink(
       return {
         label: `Decision ${link.id}`,
         detail: `In ${base(link.path)}`,
+      };
+    case "file":
+      return {
+        label: link.label ?? base(link.path),
+        detail: `File ${workFileLinkPath(link)}${link.line ? `, line ${link.line}` : ""}`,
       };
     case "item":
       return {

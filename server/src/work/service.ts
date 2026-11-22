@@ -17,6 +17,7 @@ import {
   type WorkBoard,
   workStateAsks,
   type WorkItem,
+  isAbsoluteWorkPath,
   type WorkLink,
   type WorkLinkRoot,
   type WorkOwner,
@@ -1591,16 +1592,77 @@ export function createWorkService(deps: WorkServiceDeps) {
   }
 
   /**
+   * The checkout that holds a file link's relative path: its root, then
+   * the project's (workLinkRoots), the first that has the file; null when
+   * none does.
+   */
+  async function fileRepository(
+    link: Extract<WorkLink, { kind: "file" }>,
+    project: WorkProject | undefined,
+  ): Promise<WorkLinkRoot | null> {
+    const read = deps.readFile;
+    if (!read || isAbsoluteWorkPath(link.path)) return null;
+    for (const place of workLinkRoots(link, project))
+      if ((await read(place.path, link.path, place.connectionId)) !== null)
+        return place;
+    return null;
+  }
+
+  /**
+   * Where a file link opens: its checkout (its root, the project's root
+   * that has the file, else the project's first) on that root's
+   * connection, and its path there; an absolute path on the connection of
+   * the project's root that holds it.
+   */
+  async function fileTarget(
+    link: Extract<WorkLink, { kind: "file" }>,
+    project: WorkProject | undefined,
+  ): Promise<{ connectionId: string | null; root: string; path: string }> {
+    const fallback = deps.defaultConnection?.() ?? null;
+    if (isAbsoluteWorkPath(link.path)) {
+      // The project's root that holds it the most closely says where.
+      const holder = (project?.roots ?? [])
+        .filter((each) => pathHolds(each.path, link.path))
+        .sort((a, b) => b.path.length - a.path.length)[0];
+      return {
+        connectionId: holder?.connectionId ?? fallback,
+        root:
+          link.root ??
+          holder?.path ??
+          (link.path.replace(/[\\/][^\\/]*$/, "") || "/"),
+        path: link.path,
+      };
+    }
+    const place =
+      (link.root ? null : await fileRepository(link, project)) ??
+      workLinkRoots(link, project)[0];
+    if (!place)
+      throw new WorkError(
+        `The file ${oneLine(link.path, 80)} has no checkout: the project has no roots`,
+        "not_found",
+      );
+    return {
+      connectionId: place.connectionId ?? fallback,
+      root: place.path,
+      path: link.path,
+    };
+  }
+
+  /**
    * `bridge.work.link_target`: where a commit, branch or landing link of
    * an item is to be opened (its checkout, on its connection), or a
-   * plain error saying it is in none of the project's repositories.
+   * plain error saying it is in none of the project's repositories; for a
+   * file link, its checkout and its path there (fileTarget).
    */
   async function linkTarget(params: Record<string, unknown>): Promise<{
     connectionId: string | null;
     root: string;
+    path?: string;
   }> {
     const item = itemOf(params.item);
     const link = parseWorkLink(params.link);
+    if (link.kind === "file")
+      return fileTarget(link, store.project(item.project));
     if (link.kind === "deploy" && link.sha === "decision")
       throw new WorkError("decisions ticked name no commit");
     if (
@@ -1628,19 +1690,26 @@ export function createWorkService(deps: WorkServiceDeps) {
     };
   }
 
-  /** A commit or branch link without its checkout: the server finds it. */
-  function needsLinkRoots(item: WorkItem): boolean {
+  /**
+   * A commit or branch link without its checkout, or a file link with a
+   * relative path and none: the server finds it.
+   */
+  function rootless(link: WorkLink): boolean {
+    if (link.kind === "file")
+      return !!deps.readFile && !link.root && !isAbsoluteWorkPath(link.path);
     return (
       !!deps.git &&
-      item.links.some(
-        (link) =>
-          (link.kind === "commit" || link.kind === "branch") && !link.root,
-      )
+      (link.kind === "commit" || link.kind === "branch") &&
+      !link.root
     );
   }
 
+  function needsLinkRoots(item: WorkItem): boolean {
+    return item.links.some(rootless);
+  }
+
   /** Links looked for and found nowhere, not looked for again. */
-  const rootless = new Set<string>();
+  const notFound = new Set<string>();
   let fills: Promise<unknown> = Promise.resolve();
 
   function fillLinkRootsLater(id: string) {
@@ -1658,16 +1727,18 @@ export function createWorkService(deps: WorkServiceDeps) {
     const project = store.project(item.project);
     const found = new Map<string, WorkLink>();
     for (const link of item.links) {
-      if ((link.kind !== "commit" && link.kind !== "branch") || link.root)
-        continue;
+      if (!rootless(link)) continue;
       const key = `${item.project}\n${workLinkKey(link)}`;
-      if (rootless.has(key)) continue;
-      const where = await linkRepository(link, project);
+      if (notFound.has(key)) continue;
+      const where =
+        link.kind === "file"
+          ? await fileRepository(link, project)
+          : await linkRepository(link, project);
       if (!where) {
-        rootless.add(key);
+        notFound.add(key);
         continue;
       }
-      found.set(workLinkKey(link), { ...link, root: where.path });
+      found.set(workLinkKey(link), { ...link, root: where.path } as WorkLink);
     }
     if (!found.size) return false;
     // The item as it is now: written meanwhile, only the roots added.
@@ -1676,15 +1747,18 @@ export function createWorkService(deps: WorkServiceDeps) {
     const links = mergeWorkLinks(
       [],
       current.links.map((link) =>
-        (link.kind === "commit" || link.kind === "branch") && !link.root
-          ? (found.get(workLinkKey(link)) ?? link)
-          : link,
+        rootless(link) ? (found.get(workLinkKey(link)) ?? link) : link,
       ),
     );
     if (JSON.stringify(links) === JSON.stringify(current.links)) return false;
     store.saveItem({ ...current, links });
     push({ changed: ["item"], item: id, by: "agent" });
     return true;
+  }
+
+  function pathHolds(root: string, path: string): boolean {
+    const base = root.replace(/[\\/]+$/, "");
+    return !!base && (path === base || path.startsWith(`${base}/`));
   }
 
   /** Every item's links without a checkout, looked for (at start). */

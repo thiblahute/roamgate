@@ -332,6 +332,17 @@
   opacity: 0.8;
 }
 
+/* A file's chip names the file: long names end in an ellipsis. */
+.work-link-chip.is-file {
+  min-width: 0;
+  max-width: 16em;
+}
+
+.work-link-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* The detail's links: a row each, its label read first, what it is
    below; the row is its action. */
 .work-link-list {

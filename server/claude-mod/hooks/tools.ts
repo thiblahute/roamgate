@@ -501,6 +501,7 @@ function workTools(): RoamgateTool[] {
             "commit",
             "branch",
             "decision",
+            "file",
             "item",
             "chat",
           ],
@@ -514,6 +515,8 @@ function workTools(): RoamgateTool[] {
         root: { type: "string" },
         name: { type: "string" },
         path: { type: "string" },
+        line: { type: "integer", minimum: 1 },
+        label: { type: "string" },
         session: { type: "string" },
         chat: { type: "string" },
         entry: { type: "string" },
@@ -522,7 +525,7 @@ function workTools(): RoamgateTool[] {
       additionalProperties: false,
     },
     description:
-      "review {id, thread?}, effort {id, part?}, pr {url}, commit {sha, subject?, root?} (the done rule watches it), branch {name, root?}, decision {path, id} (an RFC or plan's Dn), item {id} (waits for it), chat {session, chat?, entry?} (the message of an agent's chat it came from).",
+      "review {id, thread?}, effort {id, part?}, pr {url}, commit {sha, subject?, root?} (the done rule watches it), branch {name, root?}, decision {path, id} (an RFC or plan's Dn), file {path, root?, line?, label?} (a plan, doc or RFC to read, opened rendered in Files: link the one you wrote or point the user to; a relative path is in root, else the project's checkout that has it), item {id} (waits for it), chat {session, chat?, entry?} (the message of an agent's chat it came from).",
   };
   const ITEM = {
     type: "string",
@@ -574,7 +577,7 @@ function workTools(): RoamgateTool[] {
   return [
     tool(
       "work_list",
-      "The user's Work board: work items by project (roamgate by default) with id, title, state (you: waits on the user, doing, verify, open, done), tags, owner (a session address and its subagent task), links (review threads, efforts, requests, commits, branches, decisions, other items), done_when (how it becomes done by itself), ask and answers (what the user has to do on a you or verify item) and times. Filter by state, open (live items only), tags (all of them), owner, query words, workspace (the items added from a workspace, tagged ws:NAME: its name, its tag, or self for yours); a project lists its subprojects' items too. item: one item with its comments. Use it before changing the board, and to answer \"what is on the list\".",
+      "The user's Work board: work items by project (roamgate by default) with id, title, state (you: waits on the user, doing, verify, open, done), tags, owner (a session address and its subagent task), links (review threads, efforts, requests, commits, branches, decisions, files, other items), done_when (how it becomes done by itself), ask and answers (what the user has to do on a you or verify item) and times. Filter by state, open (live items only), tags (all of them), owner, query words, workspace (the items added from a workspace, tagged ws:NAME: its name, its tag, or self for yours); a project lists its subprojects' items too. item: one item with its comments. Use it before changing the board, and to answer \"what is on the list\".",
       {
         project: { type: "string" },
         state: STATE,
@@ -592,7 +595,7 @@ function workTools(): RoamgateTool[] {
     ),
     tool(
       "work_add",
-      "Add a work item to the user's Work board: a title, its project (roamgate by default), a state (open by default; you when it waits on the user, doing when you take it), tags, an owner {session, task?} (session: yours from agent_sessions, refused when no connection knows it; task: the agent id of a subagent you spawned, taken as given), links (the review thread it came from, the commit its fix landed in, an RFC's decision: an item whose links are all decisions is done once every one is ticked), text: its description, a first comment. Importing existing work: source says where it came from (a review thread id, \"imported from STATUS.md line 12\"; the same source again changes that item instead of adding one: the answer says updated: true with what changed, the text is left aside, and a different title is refused unless replace: true), created_at and done_at keep its dates (ISO 8601), adopt_thread makes an existing review thread the item's own (comments and ids kept). It gets your workspace's tag (ws:NAME, the workspace's name) when your workspace belongs to the project's tree and is not its coordinator's, so the board opened there shows it; workspace: false leaves it out when the item is not about your workspace's work. Answers the item, its review, thread (its description's) and adopted_thread. The user sees it on the board; a For you item notifies them once. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences (\"Choose: media to the car with the phone mic, or no music on car links\", \"Dictate once after 10 idle minutes; text should appear\"), and for a decision answers, a few short one-tap choices (each tap is the user's comment on the item, reaching its owner); without an ask the move is refused. Leaving those states clears them unless given.",
+      "Add a work item to the user's Work board: a title, its project (roamgate by default), a state (open by default; you when it waits on the user, doing when you take it), tags, an owner {session, task?} (session: yours from agent_sessions, refused when no connection knows it; task: the agent id of a subagent you spawned, taken as given), links (the review thread it came from, the commit its fix landed in, an RFC's decision: an item whose links are all decisions is done once every one is ticked; the plan, doc or RFC it follows, as a file link, so the user opens it in one tap), text: its description, a first comment. Importing existing work: source says where it came from (a review thread id, \"imported from STATUS.md line 12\"; the same source again changes that item instead of adding one: the answer says updated: true with what changed, the text is left aside, and a different title is refused unless replace: true), created_at and done_at keep its dates (ISO 8601), adopt_thread makes an existing review thread the item's own (comments and ids kept). It gets your workspace's tag (ws:NAME, the workspace's name) when your workspace belongs to the project's tree and is not its coordinator's, so the board opened there shows it; workspace: false leaves it out when the item is not about your workspace's work. Answers the item, its review, thread (its description's) and adopted_thread. The user sees it on the board; a For you item notifies them once. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences (\"Choose: media to the car with the phone mic, or no music on car links\", \"Dictate once after 10 idle minutes; text should appear\"), and for a decision answers, a few short one-tap choices (each tap is the user's comment on the item, reaching its owner); without an ask the move is refused. Leaving those states clears them unless given.",
       {
         title: { type: "string" },
         project: { type: "string" },

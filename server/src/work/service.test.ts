@@ -778,6 +778,76 @@ describe("work service", () => {
     });
   });
 
+  test("a file link gets the project's checkout that has it, and opens there on its connection", async () => {
+    const files: Record<string, string[]> = {
+      "/g/2.0/gstreamer": [],
+      "/g/meta": ["plans/agent-prompts.md"],
+    };
+    const reads: string[] = [];
+    const { service } = setup({
+      readFile: async (root, path, connectionId) => {
+        reads.push(`${connectionId}:${root}/${path}`);
+        return files[root]?.includes(path) ? "# Plan" : null;
+      },
+    });
+    service.projectSet(
+      {
+        name: "gst2",
+        roots: [
+          { connectionId: "desktop", path: "/g/2.0/gstreamer" },
+          { connectionId: "mac", path: "/g/meta" },
+        ],
+        done: { kind: "deployed" },
+      },
+      { by: "user" },
+    );
+    const item = await service.add(
+      {
+        project: "gst2",
+        title: "Prompts",
+        links: [
+          { kind: "file", path: "plans/agent-prompts.md", line: 4 },
+          { kind: "file", path: "plans/gone.md" },
+          { kind: "file", path: "/g/2.0/gstreamer/README.md" },
+        ],
+      },
+      { by: "agent" },
+    );
+    await service.linkRootsFilled();
+    const links = service.store.item(item.id)!.links;
+    expect(links).toEqual([
+      {
+        kind: "file",
+        path: "plans/agent-prompts.md",
+        line: 4,
+        root: "/g/meta",
+      },
+      // In none of them: left as it was.
+      { kind: "file", path: "plans/gone.md" },
+      // Absolute: nothing to fill.
+      { kind: "file", path: "/g/2.0/gstreamer/README.md" },
+    ]);
+    expect(reads).toContain("mac:/g/meta/plans/agent-prompts.md");
+    expect(await service.linkTarget({ item: item.id, link: links[0] })).toEqual(
+      { connectionId: "mac", root: "/g/meta", path: "plans/agent-prompts.md" },
+    );
+    // Not found: the project's first checkout, where Files says it is missing.
+    expect(await service.linkTarget({ item: item.id, link: links[1] })).toEqual(
+      {
+        connectionId: "desktop",
+        root: "/g/2.0/gstreamer",
+        path: "plans/gone.md",
+      },
+    );
+    expect(await service.linkTarget({ item: item.id, link: links[2] })).toEqual(
+      {
+        connectionId: "desktop",
+        root: "/g/2.0/gstreamer",
+        path: "/g/2.0/gstreamer/README.md",
+      },
+    );
+  });
+
   test("existing items' commit links without a root get one when the service starts (the deployed rule: this Roamgate's checkout)", async () => {
     const directory = dir();
     const before = createWorkService({
