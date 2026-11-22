@@ -8,6 +8,7 @@ import {
 } from "@codemirror/view";
 import { getCM, Vim, vim } from "@replit/codemirror-vim";
 import { type RefObject, useEffect, useRef } from "react";
+import { keepAboveKeyboard } from "./keepAboveKeyboard";
 import { defineExCommands, vimExEditors } from "./vimEx";
 
 /** What the overlay can do to an open editor. */
@@ -275,13 +276,14 @@ export function ReviewCommentEditor({
       };
     view.focus();
     if (vimMode && cm) Vim.handleKey(cm, "A", "mapping");
-    // A phone's keyboard opening shrinks the screen: keep the editor in view.
-    const keepInView = () => {
-      if (view.hasFocus) view.dom.scrollIntoView({ block: "nearest" });
-    };
-    window.visualViewport?.addEventListener("resize", keepInView);
+    // A phone's keyboard opening shrinks the screen: keep the box the editor
+    // is drawn in (its parent: the editor with its bar and buttons) in view.
+    const stopKeeping = keepAboveKeyboard(
+      () => host.parentElement,
+      () => view.hasFocus,
+    );
     return () => {
-      window.visualViewport?.removeEventListener("resize", keepInView);
+      stopKeeping();
       host.removeEventListener("keydown", onCaptureKey, true);
       if (handleRef) handleRef.current = null;
       viewRef.current = null;
