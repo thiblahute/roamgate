@@ -160,6 +160,15 @@ if (
           },
         };
       }
+      if (method === "owner_target")
+        return {
+          target: {
+            connectionId: "desktop",
+            runtimeGeneration: 1,
+            workspaceId: "w9",
+            paneId: "w9:p1",
+          },
+        };
       if (method !== "add") return {};
       if (addFails) {
         const why = addFails;
@@ -312,12 +321,14 @@ if (
     document.body.append(container);
     const root = createRoot(container);
     let closed = 0;
+    const closes: unknown[] = [];
     await act(async () =>
       root.render(
         <MrReviewsPanel
           mode={props.mode ?? "work"}
-          onClose={() => {
+          onClose={(options) => {
             closed++;
+            closes.push(options);
           }}
           {...(props.initialWorkItem
             ? { initialWorkItem: props.initialWorkItem }
@@ -385,6 +396,7 @@ if (
       cards,
       selected,
       closed: () => closed,
+      closes,
       pushBoard,
       async unmount() {
         await act(async () => root.unmount());
@@ -1568,6 +1580,61 @@ if (
           each.id !== "2300000000000000" && each.id !== "1900000000000000",
       );
       await items.unmount();
+    }
+  });
+  test("opening the owner's session from a board filling the window steps aside, keeping the item for Alt+W; beside the page it stays", async () => {
+    const { TASK_NOTIFICATION_ACTIVATE_EVENT } = await import(
+      "../taskNotifications"
+    );
+    const { roamgateLocalStorage } = await import("../browserStorage");
+    const activated: unknown[] = [];
+    const onActivate = (event: Event) =>
+      activated.push((event as CustomEvent).detail);
+    window.addEventListener(TASK_NOTIFICATION_ACTIVATE_EVENT, onActivate);
+    const ownerItem = item("2400000000000000", "roamgate", "doing", [], {
+      owner: { session: "desktop/w9:p1" },
+    });
+    board.items = [...board.items, ownerItem];
+    const openSession = (view: Awaited<ReturnType<typeof mount>>) =>
+      [
+        ...view.panel.querySelectorAll<HTMLButtonElement>(
+          ".work-detail button",
+        ),
+      ].find((button) => button.textContent === "Open the session") ?? null;
+    try {
+      // Filling the window: the pane would stay under it.
+      roamgateLocalStorage.setItem("mrReviewsMaximized", "1");
+      const full = await mount({ initialWorkItem: "2400000000000000" });
+      try {
+        await full.click(openSession(full));
+        expect(activated).toEqual([
+          {
+            connectionId: "desktop",
+            runtimeGeneration: 1,
+            workspaceId: "w9",
+            paneId: "w9:p1",
+          },
+        ]);
+        expect(full.closes).toEqual([
+          { keepFocus: true, resume: { item: "2400000000000000" } },
+        ]);
+      } finally {
+        await full.unmount();
+      }
+      // A floating view beside the page: the pane shows, the view stays.
+      roamgateLocalStorage.setItem("mrReviewsMaximized", "0");
+      const floating = await mount({ initialWorkItem: "2400000000000000" });
+      try {
+        await floating.click(openSession(floating));
+        expect(activated).toHaveLength(2);
+        expect(floating.closed()).toBe(0);
+      } finally {
+        await floating.unmount();
+      }
+    } finally {
+      window.removeEventListener(TASK_NOTIFICATION_ACTIVATE_EVENT, onActivate);
+      roamgateLocalStorage.removeItem("mrReviewsMaximized");
+      board.items = board.items.filter((each) => each.id !== ownerItem.id);
     }
   });
 }

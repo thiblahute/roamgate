@@ -115,7 +115,7 @@ import { MrReviewsSettingsView } from "./MrReviewsSettings";
 import { BoardCard } from "./BoardCard";
 import { ShortcutHelp } from "./ShortcutHelp";
 import type { WorkOpen } from "../workOpen";
-import { useWorkMode } from "./WorkBoard";
+import { type BoardCloseOptions, useWorkMode } from "./WorkBoard";
 import "./AssistantPanel.css";
 import "./AssistantTasks.css";
 import "./AgentTasksSheet.css";
@@ -1657,8 +1657,11 @@ export function MrReviewsPanel({
   initialWork,
   onMode,
 }: {
-  /** keepFocus: a review was shown; the focus is the review's now. */
-  onClose: (options?: { keepFocus?: boolean }) => void;
+  /**
+   * keepFocus: a review was shown; the focus is the review's now. resume:
+   * the Work board stepped aside for a pane, shown again on Alt+W.
+   */
+  onClose: (options?: BoardCloseOptions) => void;
   /** The mode to show (the last one otherwise); with modeAt, asked again. */
   mode?: BoardMode;
   /** A new value: the mode asked is taken, whatever is shown. */
@@ -1937,6 +1940,7 @@ export function MrReviewsPanel({
     enabled: mode === "work",
     mobile,
     board,
+    maximized,
     panelRef,
     onClose,
     ...(initialWorkItem ? { initialItem: initialWorkItem } : {}),

@@ -427,14 +427,26 @@ export function useWorkDrag(
   return { drag, start, cancel: end };
 }
 
+/**
+ * How the view closes. keepFocus: what it opened has the focus now.
+ * resume: the Work board to show again when it is next opened plainly
+ * (Alt+W), as it stepped aside for a pane.
+ */
+export type BoardCloseOptions = {
+  keepFocus?: boolean;
+  resume?: { item?: string };
+};
+
 export type WorkModeOptions = {
   /** The view shows this mode: its state lives, its keys answer. */
   enabled: boolean;
   mobile: boolean;
   /** A wide pane: the columns side by side (the view's rule). */
   board: boolean;
+  /** The view fills the window, over the panes. */
+  maximized: boolean;
   panelRef: RefObject<HTMLElement | null>;
-  onClose: (options?: { keepFocus?: boolean }) => void;
+  onClose: (options?: BoardCloseOptions) => void;
   /** An item to open on (a notification's link). */
   initialItem?: string;
   /** The upstreaming efforts the view knows: their names. */
@@ -479,6 +491,7 @@ export function useWorkMode({
   enabled,
   mobile,
   board,
+  maximized,
   panelRef,
   onClose,
   initialItem,
@@ -746,6 +759,16 @@ export function useWorkMode({
     cancel: dragCancel,
   } = useWorkDrag(enabled && !detail && !adding, onDrop);
 
+  /**
+   * A pane, a chat or a review was shown: on a phone, or filling the
+   * window, the view is over it and steps aside, the item shown kept for
+   * the next plain opening (Alt+W). Beside the page, it stays.
+   */
+  const stepAside = useCallback(() => {
+    if (!mobile && !maximized) return;
+    onClose({ keepFocus: true, resume: detail ? { item: detail } : {} });
+  }, [mobile, maximized, onClose, detail]);
+
   /** Where the owner is: its pane shown, its task's sheet opened. */
   const openOwner = useCallback(
     async (item: WorkItem) => {
@@ -778,13 +801,12 @@ export function useWorkMode({
           }),
         );
         if (target.task) openAgentTask(target.paneId, target.task);
-        // The pane is behind the panel on a phone: the panel steps aside.
-        if (mobile) onClose({ keepFocus: true });
+        stepAside();
       } catch (cause) {
         setFailure(cause instanceof Error ? cause.message : String(cause));
       }
     },
-    [mobile, onClose],
+    [stepAside],
   );
 
   /** A link's action, from the item's detail. */
@@ -795,7 +817,7 @@ export function useWorkMode({
           const snapshot = reviews.sessions.get(link.id);
           if (snapshot) {
             requestReviewShown(snapshot.session.connectionId, link.id);
-            if (mobile) onClose({ keepFocus: true });
+            stepAside();
           } else
             setFailure(
               `review ${link.id.slice(0, 8)} is not loaded on this page`,
@@ -825,7 +847,7 @@ export function useWorkMode({
               if (typeof opened === "string") setFailure(opened);
               else if (opened) {
                 requestReviewShown(opened.connectionId, opened.sessionId);
-                if (mobile) onClose({ keepFocus: true });
+                stepAside();
               }
             })
             .catch((cause) =>
@@ -839,7 +861,7 @@ export function useWorkMode({
           void openWorkChat(link)
             .then((why) => {
               if (why) setFailure(why);
-              else if (mobile) onClose({ keepFocus: true });
+              else stepAside();
             })
             .catch((cause) =>
               setFailure(
@@ -851,7 +873,7 @@ export function useWorkMode({
           return;
       }
     },
-    [reviews.sessions, mobile, onClose, onOpenEffort, activeConnectionId],
+    [reviews.sessions, stepAside, onOpenEffort, activeConnectionId],
   );
   /** What names the detail's links: efforts, requests, reviews, items. */
   const linkNames = useMemo<WorkLinkNames>(

@@ -19,6 +19,10 @@ if (
   const React = await import("react");
   const { act } = React;
   const renders: { mode?: string; modeAt?: number; item?: string }[] = [];
+  /** The shown view's close, as the panel calls it. */
+  let closeShown:
+    | ((options?: { keepFocus?: boolean; resume?: { item?: string } }) => void)
+    | null = null;
   mock.module("./MrReviewsPanel", () => ({
     storedBoardMode: () => "mr",
     MrReviewsPanel: (props: {
@@ -26,7 +30,9 @@ if (
       modeAt?: number;
       initialWorkItem?: string;
       onMode?: (mode: "mr" | "work") => void;
+      onClose: NonNullable<typeof closeShown>;
     }) => {
+      closeShown = props.onClose;
       const [mode, setMode] = React.useState(props.mode ?? "mr");
       React.useEffect(() => {
         if (props.mode) setMode(props.mode);
@@ -93,5 +99,42 @@ if (
     await settle();
     expect(panel()).toBeNull();
     expect(renders.some((render) => render.mode === "work")).toBe(true);
+  });
+  test("the Work board stepped aside for a pane opens again on its item, once, with Alt+W", async () => {
+    await act(async () =>
+      showMrReviews(undefined, undefined, undefined, undefined, {
+        mode: "work",
+        item: "1234567890abcdef",
+      }),
+    );
+    await settle();
+    // Its owner's pane was shown: the view closed, keeping the item.
+    await act(async () =>
+      closeShown?.({ keepFocus: true, resume: { item: "1234567890abcdef" } }),
+    );
+    await settle();
+    expect(panel()).toBeNull();
+    await act(async () => toggleMrReviews("work"));
+    await settle();
+    expect(panel()?.dataset.mode).toBe("work");
+    expect(panel()?.dataset.item).toBe("1234567890abcdef");
+    // Closed plainly, it opens on the board again, not the item.
+    await act(async () => toggleMrReviews("work"));
+    await settle();
+    expect(panel()).toBeNull();
+    await act(async () => toggleMrReviews("work"));
+    await settle();
+    expect(panel()?.dataset.item).toBe("");
+    // The other mode's shortcut does not take a step aside's item.
+    await act(async () =>
+      closeShown?.({ resume: { item: "1234567890abcdef" } }),
+    );
+    await settle();
+    await act(async () => toggleMrReviews("mr"));
+    await settle();
+    expect(panel()?.dataset.mode).toBe("mr");
+    expect(panel()?.dataset.item).toBe("");
+    await act(async () => closeMrReviews());
+    await settle();
   });
 }
