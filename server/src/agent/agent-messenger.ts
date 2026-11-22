@@ -414,10 +414,13 @@ export function createAgentMessenger(args: {
       workspace: sender.workspace,
       agent: sender.agent,
     };
-    const framed = frameAgentMessage(from, body);
     const runtime = args.runtime(target.connectionId);
     if (!runtime)
       throw new AgentMessageError("its connection is not ready", 503);
+    // Its reply named as it makes one: the mod's tool, else the client.
+    const framed = frameAgentMessage(from, body, {
+      tool: runtime.claudeMod?.hasTools?.(target.paneId) === true,
+    });
     let delivery: "conversation" | "mod" | "terminal" | "waiting";
     if (
       receiver.mode === "conversation" &&

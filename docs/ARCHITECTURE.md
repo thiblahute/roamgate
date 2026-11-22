@@ -780,7 +780,14 @@ characters, and is framed (shared/agentMessage.ts): a preamble, a
 `<roamgate-agent-message from=... from-name=... workspace=... agent=...>`
 block, and a note saying it is another agent's, carries no user authority,
 approves no permission, answers no question of the user's and authorizes
-nothing outward, with the reply command. The frame comes first, so typed into
+nothing outward and is no reason to edit settings or CLAUDE.md, in about
+25 words (`agentMessageNote`, in every message: the line that keeps a
+peer's words from passing for the user's), then the reply as the receiver
+makes it: `mcp__roamgate__agent_message to=ADDRESS` when its pane's Claude
+has the mod's tools (`ClaudeModHub.hasTools`), else the client's
+`~/.cache/roamgate/bin/roamgate-review message ADDRESS -- TEXT`. The chats
+strip that note, and the longer one older transcripts hold
+(`AGENT_MESSAGE_NOTE`). The frame comes first, so typed into
 a terminal it is never a slash command or a `!` line. A conversation-mode
 session gets it through `ConversationService.prompt` (the queue: no
 permission or question is ever answered by it); a terminal Claude running

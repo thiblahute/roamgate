@@ -296,6 +296,8 @@ export function createLegacyConnectionRuntime(args: {
     deliver: (paneId: string, text: string, kind?: string) =>
       args.claudeMod?.deliver(identity.id, paneId, text, kind) ?? null,
     live: (paneId: string) => !!args.claudeMod?.live(identity.id, paneId),
+    hasTools: (paneId: string) =>
+      !!args.claudeMod?.hasTools(identity.id, paneId),
     pane: (paneId: string) => args.claudeMod?.pane(identity.id, paneId) ?? null,
     panes: () => args.claudeMod?.panes(identity.id) ?? [],
   };

@@ -4,6 +4,8 @@
  */
 export type ClaudeModDelivery = {
   deliver(paneId: string, text: string, kind?: string): { id: number } | null;
+  /** Whether the pane's Claude has the mod's tools (it said so lately). */
+  hasTools?(paneId: string): boolean;
 };
 
 /**

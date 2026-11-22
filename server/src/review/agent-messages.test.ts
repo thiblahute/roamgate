@@ -205,7 +205,7 @@ test("a message goes across connections, and the reply comes back", async () => 
     { kind: "session", label: "From Merge checks", body: "Yes, all green." },
   ]);
   expect(queued[0]!.text).toContain(
-    "To reply: roamgate-review message desktop/w5:p1 -- YOUR REPLY",
+    "Reply once if it asks: ~/.cache/roamgate/bin/roamgate-review message desktop/w5:p1 -- TEXT.",
   );
 });
 
