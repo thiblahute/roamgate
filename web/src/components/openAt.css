@@ -1,0 +1,25 @@
+/* A comment (or thread) opened from a link (reviewOpenAt.ts): highlighted
+   for a moment, fading out. */
+[data-open-at] {
+  border-radius: 4px;
+  animation: open-at-flash 2s ease-out;
+}
+
+@keyframes open-at-flash {
+  0%,
+  40% {
+    background-color: var(--accent-active);
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-open-at] {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+}

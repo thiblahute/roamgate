@@ -63,6 +63,7 @@ import {
   walkable,
 } from "./MrEffortBoard";
 import "./MrEffortView.css";
+import { useOpenAtTarget } from "../reviewOpenAt";
 
 /**
  * Upstreaming efforts in Reviews: a card per effort at the top of Mine
@@ -647,6 +648,14 @@ export function MrEffortView({
     }
     setGoingTo(thread.id);
   };
+  // A link to one of the effort's comments (reviewOpenAt.ts): gone to as
+  // n / N go, the comment highlighted.
+  useOpenAtTarget({
+    find: (id) => threads.threads.find((each) => each.id === id),
+    threads: threads.threads,
+    root: () => rootRef.current,
+    go: (thread) => goToThread(thread.id),
+  });
 
   /** n / N: the next or previous thread; gn / gN only the open ones. */
   const stepThread = (step: 1 | -1, openOnly: boolean) => {
