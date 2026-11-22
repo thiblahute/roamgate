@@ -47,6 +47,7 @@ import {
 } from "./gitlab";
 import { ReviewGoneError } from "../workspace/review-patch";
 import { createAgentPrompts } from "./prompts";
+import { ReviewSessions } from "./sessions";
 import type { ReviewStorage } from "./storage";
 import { type TurnCauses, turnCauses } from "../voice/turn-causes";
 
@@ -609,7 +610,7 @@ export function createReviewService(args: {
   const now = () => (args.now?.() ?? new Date()).toISOString();
   const clock = () => (args.now?.() ?? new Date()).getTime();
   const prompts = createAgentPrompts({ publish: args.publish });
-  const sessions = new Map<string, ReviewSession>();
+  const sessions = new ReviewSessions();
   const sessionLimit = args.sessionLimit ?? REVIEW_LIMITS.sessions;
 
   /** Refuses a new review once the store holds the most it keeps. */
@@ -673,12 +674,9 @@ export function createReviewService(args: {
   /** The local reviews of the same checkout as a merge request's review. */
   function localReviewsOf(target: ReviewSession): ReviewSession[] {
     if (!isGitlabTarget(target.target)) return [];
-    return [...sessions.values()].filter(
-      (other) =>
-        other.connectionId === target.connectionId &&
-        other.root === target.root &&
-        !isGitlabTarget(other.target),
-    );
+    return sessions
+      .ofCheckout(target)
+      .filter((other) => !isGitlabTarget(other.target));
   }
 
   /**
@@ -724,13 +722,13 @@ export function createReviewService(args: {
   function linkedOf(target: ReviewSession): ReviewSession[] {
     const code = codeReview(target);
     if (!code && !renderedFile(target)) return [];
-    return [...sessions.values()].filter(
-      (other) =>
-        other.id !== target.id &&
-        other.connectionId === target.connectionId &&
-        other.root === target.root &&
-        (code ? !!renderedFile(other) : codeReview(other)),
-    );
+    return sessions
+      .ofCheckout(target)
+      .filter(
+        (other) =>
+          other.id !== target.id &&
+          (code ? !!renderedFile(other) : codeReview(other)),
+      );
   }
 
   /**
