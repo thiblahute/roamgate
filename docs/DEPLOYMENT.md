@@ -851,21 +851,22 @@ card and its driver's `nvidia-smi`) and with Metal on Apple silicon; an AMD
 or Intel GPU is listed but not used, as there is no ROCm or Vulkan build.
 With about 6 GB or more for the GPU, the **heavy** tier is proposed: Parakeet,
 Whisper large-v3-turbo reading again, Qwen3-TTS (1.7B from 8 GB, 0.6B
-below) with Kokoro-82M beside it, WeSpeaker, Smart Turn and Qwen3 0.6B
-(about 7 GB on disk). Otherwise the **light** tier runs everything on the
-CPU: Parakeet, Kokoro's ONNX model (int8 under 8 GB of memory), WeSpeaker,
-Smart Turn, and Qwen3 0.6B from 12 GB of memory (about 1.7 GB). Each part
-can be chosen on its own, or left out when optional:
+below) with Kokoro-82M and Pocket TTS beside it, WeSpeaker, Smart Turn and
+Qwen3 0.6B (about 7.3 GB on disk). Otherwise the **light** tier runs
+everything on the CPU: Parakeet, Pocket TTS (Kokoro's int8 ONNX model under
+8 GB of memory), WeSpeaker, Smart Turn, and Qwen3 0.6B from 12 GB of memory
+(about 1.8 GB). Each part can be chosen on its own, or left out when
+optional:
 
-| Part (flag)                        | Options                                                                                                  | voice.json                                                            |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Speech recognition (`--speech`)    | `parakeet`, `whisper-large-v3-turbo`, `whisper-small`, `whisper-base`                                    | `parakeet_model` or `whisper_model`                                   |
-| Second reading (`--reread`)        | `whisper-large-v3-turbo`, `whisper-small`, `none` (with Parakeet only)                                   | `whisper_model`                                                       |
-| Reading voice (`--tts`)            | `qwen3-tts-1.7b`, `qwen3-tts-0.6b`, `kokoro-82m` (any-tts, GPU), `kokoro-onnx`, `kokoro-onnx-int8` (CPU) | `tts_models` and `clone_model`, or `kokoro_model` and `kokoro_voices` |
-| Stock voices (`--stock-voices`)    | `customvoice` (the reading voice's size), `none`                                                         | `stock_model`                                                         |
-| Who speaks (`--speaker`)           | `wespeaker`, `none`                                                                                      | `speaker_model`                                                       |
-| End of turn, voice (`--turn`)      | `smart-turn`, `none`                                                                                     | `turn_model`                                                          |
-| End of turn, words (`--text-turn`) | `qwen3-0.6b`, `none` (with Parakeet only)                                                                | `text_turn_model`                                                     |
+| Part (flag)                        | Options                                                                                                                | voice.json                                                            |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Speech recognition (`--speech`)    | `parakeet`, `whisper-large-v3-turbo`, `whisper-small`, `whisper-base`                                                  | `parakeet_model` or `whisper_model`                                   |
+| Second reading (`--reread`)        | `whisper-large-v3-turbo`, `whisper-small`, `none` (with Parakeet only)                                                 | `whisper_model`                                                       |
+| Reading voice (`--tts`)            | `qwen3-tts-1.7b`, `qwen3-tts-0.6b`, `kokoro-82m` (any-tts, GPU), `pocket-tts`, `kokoro-onnx`, `kokoro-onnx-int8` (CPU) | `tts_models` and `clone_model`, or `kokoro_model` and `kokoro_voices` |
+| Stock voices (`--stock-voices`)    | `customvoice` (the reading voice's size), `none`                                                                       | `stock_model`                                                         |
+| Who speaks (`--speaker`)           | `wespeaker`, `none`                                                                                                    | `speaker_model`                                                       |
+| End of turn, voice (`--turn`)      | `smart-turn`, `none`                                                                                                   | `turn_model`                                                          |
+| End of turn, words (`--text-turn`) | `qwen3-0.6b`, `none` (with Parakeet only)                                                                              | `text_turn_model`                                                     |
 
 ```sh
 roamgate setup voice                 # asks each part, Enter keeps the proposal
@@ -899,18 +900,21 @@ While a game or another job needs the GPU, the **low-GPU profile** has the
 voice helper start with a lighter set of models, without changing
 `voice.json`: the setup assistant's light tier among the models already
 installed (nothing is downloaded). On the desktop's models that is
-Parakeet without Whisper reading again, Kokoro's ONNX model reading on the
-CPU in place of Qwen3-TTS, WeSpeaker, Smart Turn and Qwen3 0.6B, all on
-the CPU: the helper takes no GPU memory (measured: 0 MiB on an RTX 3060 Ti
-with a game running, against about 5 GB for the full set), and Kokoro reads
-about four times faster than real time on a 16-core CPU. A part whose light
-model is not installed takes the lightest one that is (the CPU's first),
-and an optional part none. Voices chosen in Voices (a Qwen3-TTS one, a
-stock voice, Surprise) wait for the profile to end; each sentence is read
-by Kokoro in its language's voice (`ff_siwis` for French, `af_heart` for
-English), and one in a language Kokoro has no voice for (German, Russian,
-Korean...) is replaced by a short notice saying so, never read with another
-language's accent. The companion is told the voice is the light one, and
+Parakeet without Whisper reading again, Pocket TTS reading on the CPU in
+place of Qwen3-TTS (Kokoro's ONNX model when Pocket TTS is not installed),
+WeSpeaker, Smart Turn and Qwen3 0.6B, all on the CPU: the helper takes no
+GPU memory (measured: 0 MiB on an RTX 3060 Ti with a game running, against
+about 5 GB for the full set). A part whose light model is not installed
+takes the lightest one that is (the CPU's first), and an optional part
+none; Pocket TTS is taken once voice.json reads with it (its `tts_models`
+entries, which the setup assistant writes with it), as an older helper
+cannot read it. Voices chosen in Voices (a Qwen3-TTS one, a stock voice,
+Surprise) wait for the profile to end; each sentence is read in its
+language's voice: Pocket TTS's French and English models (voices `estelle`
+and `alba`), Kokoro's ONNX model, when installed, for the languages Pocket
+TTS lacks (`ef_dora` for Spanish...), and one in a language none has a
+voice for (German, Russian, Korean...) is replaced by a short notice
+saying so, never read with another language's accent. The companion is told the voice is the light one, and
 the call bar shows **Light voice**.
 
 It is on while someone holds it, or while GameMode runs when a call
@@ -951,7 +955,9 @@ controller, niceness only ranks processes within one unit) and
 started is reniced to 10. Its ONNX models (Parakeet, Kokoro, the speaker
 and turn checks) share one pool of `"gaming_cpu_threads"` threads (4 by
 default, 0 for no limit; the helper's `--cpu-threads`) that do not spin
-between runs, where each would otherwise take one thread per core. Another
+between runs, where each would otherwise take one thread per core, and
+Pocket TTS computes on as many threads, which park between steps rather
+than spin. Another
 holder (a render job) frees the GPU without lowering the helper's priority.
 
 The helper's Linux build (`voice/helper/linux/build.sh`) yields too while
@@ -1134,6 +1140,28 @@ again with Kokoro) is read by Kokoro's ONNX model on the CPU rather than
 any-tts's Kokoro: its phonemes come from espeak-ng, as Kokoro was trained
 with, where any-tts's own rules mangle French. any-tts's Kokoro still reads
 it when the ONNX model fails to load.
+
+[Pocket TTS](https://github.com/kyutai-labs/pocket-tts) entries are read by
+the helper itself (Kyutai's Rust code, `pocketsynthesizer`), on the CPU,
+streaming its first audio in about 0.2 s: one entry per language, its
+`path` the language's directory of `kyutai/pocket-tts-without-voice-cloning`
+(`model.safetensors`, `tokenizer.json`, `embeddings/`), its `languages`,
+and a `voice` of its `embeddings/` (or a voice state's `.safetensors`
+path). A sentence goes to Pocket TTS when the first entry reading its
+language is one of its own; after Qwen3-TTS, they are the light voice its
+failures fall back on (below):
+
+```json
+{
+  "model": "pocket-tts",
+  "path": "/path/to/pocket-tts-fr/languages/french",
+  "languages": "fr",
+  "voice": "estelle"
+}
+```
+
+Voice cloning with Pocket TTS needs the gated `kyutai/pocket-tts` weights
+(their terms accepted on Hugging Face), which are not used.
 
 The stock speakers are listed and chosen from the Speech section of
 Configuration next to the cloned voices and Kokoro, when a Qwen3-TTS
@@ -1554,13 +1582,14 @@ answered is not made again. The helper is restarted when its speech
 stalls (a sentence waits 15 s at most, 45 s for the first with a voice or
 into a call, which may load its model): if it still answers a ping within
 2 s, its speaker is stuck, and the sentences that waited are said with
-Kokoro, which reads for five minutes; if it does not, its output is what
-was lost, and they are said again as they were. A sentence its speaker
-fails to make (Qwen3-TTS out of GPU memory), or that comes out of it
-silent in a call, is said again at once by Kokoro, in the sentence's
-language with Kokoro's voice for it (`ff_siwis` for French) unless the
-Kokoro entry names one; Kokoro reads the next sentences for 30 s, then
-the speaker is tried again.
+the light voice, which reads for five minutes; if it does not, its output
+is what was lost, and they are said again as they were. A sentence its
+speaker fails to make (Qwen3-TTS out of GPU memory), or that comes out of
+it silent in a call, is said again at once by the light voice: Pocket TTS
+for its languages, Kokoro for the others, in the sentence's language with
+Kokoro's voice for it (`ff_siwis` for French) unless the Kokoro entry names
+one; the light voice reads the next sentences for 30 s, then the speaker
+is tried again.
 
 On macOS, `osxprocesstapsrc` (in the helper) plays what one application
 plays, through a Core Audio process tap (macOS 14.2 or later):

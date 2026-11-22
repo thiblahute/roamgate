@@ -29,6 +29,7 @@ import {
   holdLowGpu,
   type LowGpuDeps,
   lowGpuChoices,
+  lowGpuRoots,
   parseGameMode,
   readLowGpu,
   setLowGpuModels,
@@ -196,12 +197,10 @@ describe("yielding the CPU to a game", () => {
 });
 
 describe("the low-GPU set", () => {
-  test("is the light tier among what is here: Parakeet, Kokoro on the CPU", () => {
+  test("is the light tier among what is here: Parakeet, Pocket TTS on the CPU", () => {
     const choices = lowGpuChoices(ALL, {}, 64 * GIB);
-    expect(choices).toEqual({
-      ...recommendedChoices(NVIDIA_DESKTOP).light,
-      tts: "kokoro-onnx",
-    });
+    expect(choices).toEqual(recommendedChoices(NVIDIA_DESKTOP).light);
+    expect(choices.tts).toBe("pocket-tts");
     expect(choices.reread).toBe(NO_MODEL);
     expect(choices.text_turn).toBe("qwen3-0.6b");
     expect(gpuBytesFor(choices)).toBe(0);
@@ -212,10 +211,17 @@ describe("the low-GPU set", () => {
   });
 
   test("takes the lightest one here when the light tier's is not", () => {
-    const noOnnx = without("kokoro-onnx");
-    // The other Kokoro on the CPU, then Kokoro on the GPU.
+    // Pocket TTS needs both its languages; then Kokoro on the CPU, the
+    // other Kokoro on the CPU, then Kokoro on the GPU.
+    const noPocket = without("pocket-tts-en");
+    expect(lowGpuChoices(noPocket, {}, 64 * GIB).tts).toBe("kokoro-onnx");
+    const noOnnx = without("pocket-tts-fr", "kokoro-onnx");
     expect(lowGpuChoices(noOnnx, {}, 64 * GIB).tts).toBe("kokoro-onnx-int8");
-    const noCpuKokoro = without("kokoro-onnx", "kokoro-onnx-int8");
+    const noCpuKokoro = without(
+      "pocket-tts-fr",
+      "kokoro-onnx",
+      "kokoro-onnx-int8",
+    );
     expect(lowGpuChoices(noCpuKokoro, {}, 64 * GIB).tts).toBe("kokoro-82m");
     const noTextTurn = without("qwen3-0.6b-onnx");
     expect(lowGpuChoices(noTextTurn, {}, 64 * GIB).text_turn).toBe(NO_MODEL);
@@ -227,10 +233,25 @@ describe("the low-GPU set", () => {
     expect(lowGpuChoices(ALL, {}, 64 * GIB, { tts: "kokoro-82m" }).tts).toBe(
       "kokoro-82m",
     );
+    expect(lowGpuChoices(ALL, {}, 64 * GIB, { tts: "kokoro-onnx" }).tts).toBe(
+      "kokoro-onnx",
+    );
     const noAnyTts = without("kokoro-82m");
     expect(
       lowGpuChoices(noAnyTts, {}, 64 * GIB, { tts: "kokoro-82m" }).tts,
-    ).toBe("kokoro-onnx");
+    ).toBe("pocket-tts");
+  });
+
+  test("takes Pocket TTS once voice.json reads with it, or by hand", () => {
+    const qwen = { model: "qwen3-tts", path: "/q" };
+    const pocket = { model: "pocket-tts", path: "/p/fr", languages: "fr" };
+    // Its files alone: an older helper would hand it to any-tts.
+    const before = lowGpuRoots(ALL, { tts_models: [qwen] });
+    expect(before["pocket-tts-fr"]).toBeUndefined();
+    expect(before["kokoro-onnx"]).toBe(ALL["kokoro-onnx"]);
+    expect(lowGpuChoices(before, {}, 64 * GIB).tts).toBe("kokoro-onnx");
+    expect(lowGpuRoots(ALL, { tts_models: [qwen, pocket] })).toEqual(ALL);
+    expect(lowGpuRoots(ALL, {}, { tts: "pocket-tts" })).toEqual(ALL);
   });
 
   test("keeps voice.json's own model when nothing lighter is here", () => {
@@ -316,21 +337,44 @@ describe("the low-GPU profile", () => {
     const helper = fakeHelper();
     const low = profile(helper);
     const full = low.config() as VoiceConfig;
-    // Qwen3-TTS reads, Kokoro-82M beside it, on the GPU.
+    // Qwen3-TTS reads, Kokoro-82M beside it, on the GPU, and Pocket TTS
+    // last, when Qwen3-TTS fails.
     expect(full.clone_model).toContain("Qwen3-TTS-1.7B-Base");
-    expect(full.tts_models?.length).toBeGreaterThan(0);
+    expect(full.tts_models?.map((model) => model.model)).toEqual([
+      "kokoro",
+      "pocket-tts",
+      "pocket-tts",
+    ]);
     expect(full.low_gpu).toBeUndefined();
 
     holdLowGpu(statePath, { on: true, holder: "gaming" });
     const light = low.config() as VoiceConfig;
     expect(light.low_gpu).toBe("gaming");
     expect(light.yield_cpu).toEqual({ threads: GAMING_CPU_THREADS });
-    expect(light.tts_models).toBeUndefined();
+    // Pocket TTS reads French and English, on the CPU (no Kokoro ONNX
+    // model here for the other languages).
+    expect(light.tts_models).toEqual([
+      {
+        model: "pocket-tts",
+        path: join(home.deps.modelsDir, "pocket-tts-fr", "languages", "french"),
+        languages: "fr",
+        voice: "estelle",
+      },
+      {
+        model: "pocket-tts",
+        path: join(
+          home.deps.modelsDir,
+          "pocket-tts-en",
+          "languages",
+          "english",
+        ),
+        languages: "en",
+        voice: "alba",
+      },
+    ]);
     expect(light.clone_model).toBeUndefined();
     expect(light.whisper_model).toBeUndefined();
-    expect(light.kokoro_model).toBe(
-      join(home.deps.modelsDir, "kokoro-v1.0.onnx"),
-    );
+    expect(light.kokoro_model).toBeUndefined();
     expect(light.parakeet_model).toBe(full.parakeet_model);
     expect(light.speaker_model).toBe(full.speaker_model);
     expect(light.text_turn_model).toBe(full.text_turn_model);
@@ -359,7 +403,32 @@ describe("the low-GPU profile", () => {
     });
     expect(
       status.models.find((model) => model.component === "tts"),
-    ).toMatchObject({ name: "Kokoro v1.0 (ONNX)", runsOn: "cpu" });
+    ).toMatchObject({ name: "Pocket TTS", runsOn: "cpu" });
+  });
+
+  test("Kokoro's ONNX model, when here, reads beside Pocket TTS", async () => {
+    await desktop();
+    await installVoiceModels(
+      { ...recommendedChoices(NVIDIA_DESKTOP).light, tts: "kokoro-onnx" },
+      home.deps,
+    );
+    await installVoiceModels(
+      recommendedChoices(NVIDIA_DESKTOP).heavy,
+      home.deps,
+    );
+    holdLowGpu(statePath, { on: true, holder: "gaming" });
+    const light = profile(fakeHelper()).config() as VoiceConfig;
+    const onnx = join(home.deps.modelsDir, "kokoro-v1.0.onnx");
+    expect(light.kokoro_model).toBe(onnx);
+    expect(light.kokoro_voices).toBe(
+      join(home.deps.modelsDir, "voices-v1.0.bin"),
+    );
+    expect(light.tts_models?.map((model) => model.model)).toEqual([
+      "pocket-tts",
+      "pocket-tts",
+      "kokoro",
+    ]);
+    expect(light.tts_models?.[2]).toEqual({ model: "kokoro", path: onnx });
   });
 
   test("a free helper with the other set stops at once", async () => {

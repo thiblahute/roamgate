@@ -32,11 +32,14 @@ import {
   OPTIONS,
   optionOf,
   PACKAGES,
+  POCKET_MODEL,
+  POCKET_VOICES,
   type PackageRoots,
   packageBytes,
   packageById,
   packagePath,
   packagesFor,
+  pocketModelDir,
   recommendedChoices,
   tierFor,
 } from "./voice-models";
@@ -194,8 +197,28 @@ export function currentChoices(
     ].filter((path) => typeof path === "string");
     const kokoro = models.find((model) => model.model === "kokoro");
     const kokoroOk = !kokoro || same(kokoro.path, at("kokoro-82m"));
+    // Pocket TTS's entries, each its language's model in the catalog.
+    const pocket = models.filter((model) => model.model === POCKET_MODEL);
+    const pocketOk = pocket.every((model) =>
+      POCKET_VOICES.some((voice) => {
+        const root = roots[voice.package];
+        return (
+          model.languages === voice.language &&
+          root !== undefined &&
+          same(model.path, pocketModelDir(root, voice))
+        );
+      }),
+    );
+    // The light set: Pocket TTS, Kokoro's ONNX model beside it.
+    const light =
+      pocket.length > 0 &&
+      !qwen.length &&
+      (!kokoro || same(kokoro.path, config.kokoro_model));
     const others = models.some(
-      (model) => model.model !== "qwen3-tts" && model.model !== "kokoro",
+      (model) =>
+        model.model !== "qwen3-tts" &&
+        model.model !== "kokoro" &&
+        model.model !== POCKET_MODEL,
     );
     const base = ["qwen3-tts-1.7b", "qwen3-tts-0.6b"].find((id) =>
       qwen.some((path) =>
@@ -203,15 +226,19 @@ export function currentChoices(
       ),
     );
     choices.tts =
-      others || !kokoroOk
+      others || !pocketOk
         ? CUSTOM_MODEL
-        : base
-          ? base
-          : qwen.length
+        : light
+          ? "pocket-tts"
+          : !kokoroOk
             ? CUSTOM_MODEL
-            : kokoro
-              ? "kokoro-82m"
-              : CUSTOM_MODEL;
+            : base
+              ? base
+              : qwen.length
+                ? CUSTOM_MODEL
+                : kokoro
+                  ? "kokoro-82m"
+                  : CUSTOM_MODEL;
     choices.stock_voices = config.stock_model
       ? matching("stock_voices", config.stock_model)
       : NO_MODEL;

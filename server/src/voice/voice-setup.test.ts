@@ -48,6 +48,24 @@ const writeConfig = (config: Record<string, unknown>) => {
 
 const light = recommendedChoices(CPU_LAPTOP).light;
 const heavy = recommendedChoices(NVIDIA_DESKTOP).heavy;
+/** The light tier as it was, Kokoro's ONNX model reading. */
+const kokoroLight = { ...light, tts: "kokoro-onnx" };
+
+/** Pocket TTS's entries, in the models directory `models`. */
+const pocketEntries = (models: string) => [
+  {
+    model: "pocket-tts",
+    path: join(models, "pocket-tts-fr", "languages", "french"),
+    languages: "fr",
+    voice: "estelle",
+  },
+  {
+    model: "pocket-tts",
+    path: join(models, "pocket-tts-en", "languages", "english"),
+    languages: "en",
+    voice: "alba",
+  },
+];
 
 describe("voiceSetupState", () => {
   test("a fresh machine: nothing installed, the hardware's tier proposed", () => {
@@ -70,7 +88,7 @@ describe("voiceSetupState", () => {
     expect(state.current).toEqual({
       speech: "parakeet",
       reread: NO_MODEL,
-      tts: "kokoro-onnx",
+      tts: "pocket-tts",
       stock_voices: NO_MODEL,
       speaker: "wespeaker",
       turn: "smart-turn",
@@ -78,6 +96,29 @@ describe("voiceSetupState", () => {
     });
     writeConfig({ ...readConfig(), speaker_model: "/elsewhere/mine.onnx" });
     expect(voiceSetupState(home.deps).current.speaker).toBe("custom");
+  });
+
+  test("Pocket TTS is the light voice, Kokoro's ONNX model beside it, and the full set's fallback", async () => {
+    await installVoiceModels(kokoroLight, home.deps);
+    await installVoiceModels(light, home.deps);
+    const models = home.deps.modelsDir;
+    expect(readConfig().tts_models).toEqual([
+      ...pocketEntries(models),
+      { model: "kokoro", path: join(models, "kokoro-v1.0.onnx") },
+    ]);
+    expect(voiceSetupState(home.deps).current.tts).toBe("pocket-tts");
+    await installVoiceModels(heavy, home.deps);
+    expect(readConfig().tts_models).toEqual([
+      { model: "kokoro", path: join(models, "Kokoro-82M") },
+      ...pocketEntries(models),
+    ]);
+    expect(voiceSetupState(home.deps).current.tts).toBe("qwen3-tts-1.7b");
+    // A Pocket TTS model elsewhere is voice.json's own.
+    writeConfig({
+      ...readConfig(),
+      tts_models: [{ ...pocketEntries(models)[0]!, path: "/elsewhere/fr" }],
+    });
+    expect(voiceSetupState(home.deps).current.tts).toBe("custom");
   });
 });
 
@@ -102,8 +143,7 @@ describe("installVoiceModels", () => {
       speech_rate: 1.3,
       front_model: "opus",
       parakeet_model: join(models, "parakeet-tdt-0.6b-v3"),
-      kokoro_model: join(models, "kokoro-v1.0.onnx"),
-      kokoro_voices: join(models, "voices-v1.0.bin"),
+      tts_models: pocketEntries(models),
       speaker_model: join(models, "wespeaker_en_voxceleb_resnet34.onnx"),
       turn_model: join(models, "smart-turn-v3.2-cpu.onnx"),
       text_turn_model: join(models, "qwen3-0.6b"),
@@ -131,12 +171,13 @@ describe("installVoiceModels", () => {
   });
 
   test("switching tier: the light models become unused, then removed", async () => {
-    await installVoiceModels(light, home.deps);
+    await installVoiceModels(kokoroLight, home.deps);
     await installVoiceModels(heavy, home.deps);
     const state = voiceSetupState(home.deps);
     expect(state.current.tts).toBe("qwen3-tts-1.7b");
     expect(readConfig().tts_models).toEqual([
       { model: "kokoro", path: join(home.deps.modelsDir, "Kokoro-82M") },
+      ...pocketEntries(home.deps.modelsDir),
     ]);
     // Kokoro's ONNX keys stay beside tts_models: still referenced, kept.
     expect(state.unused.map((model) => model.id)).toEqual([]);
@@ -227,7 +268,7 @@ describe("VoiceSetupRunner", () => {
     expect(runner.job?.state).toBe("done");
     expect(runner.job?.reload).toBe("now");
     expect(reloads).toBe(1);
-    expect(runner.state().current.tts).toBe("kokoro-onnx");
+    expect(runner.state().current.tts).toBe("pocket-tts");
   });
 
   test("an unknown model fails at once", () => {

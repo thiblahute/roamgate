@@ -55,6 +55,8 @@ export const PACKAGES: ModelPackage[] = [
   pkg("kokoro-onnx-int8", "Kokoro v1.0 ONNX (int8)", ""),
   pkg("kokoro-onnx-voices", "Kokoro v1.0 voices", ""),
   pkg("kokoro-82m", "Kokoro-82M", "Kokoro-82M"),
+  pkg("pocket-tts-fr", "Pocket TTS (French)", "pocket-tts-fr"),
+  pkg("pocket-tts-en", "Pocket TTS (English)", "pocket-tts-en"),
   pkg("qwen3-tts-1.7b-base", "Qwen3-TTS 1.7B Base", "Qwen3-TTS-1.7B-Base"),
   pkg("qwen3-tts-0.6b-base", "Qwen3-TTS 0.6B Base", "Qwen3-TTS-0.6B-Base"),
   pkg(
@@ -141,7 +143,7 @@ export const COMPONENTS: ComponentSpec[] = [
     id: "tts",
     title: "Reading voice",
     description:
-      "Reads the replies aloud. Qwen3-TTS reads with voices recorded in Voices below, Kokoro with its own.",
+      "Reads the replies aloud. Qwen3-TTS reads with voices recorded in Voices below, Pocket TTS and Kokoro with their own.",
     optional: false,
   },
   {
@@ -242,8 +244,13 @@ export const OPTIONS: ModelOption[] = [
     component: "tts",
     name: "Qwen3-TTS 1.7B",
     description:
-      "Natural voices, and your own voice once recorded; Kokoro-82M reads the languages it lacks.",
-    packages: ["qwen3-tts-1.7b-base", "kokoro-82m"],
+      "Natural voices, and your own voice once recorded; Kokoro-82M reads the languages it lacks, Pocket TTS when it fails.",
+    packages: [
+      "qwen3-tts-1.7b-base",
+      "kokoro-82m",
+      "pocket-tts-fr",
+      "pocket-tts-en",
+    ],
     speed: "first audio in about 0.3 s, faster than real time on an 8 GB GPU",
     runsOn: "gpu",
     gpuBytes: 6 * GIB,
@@ -253,8 +260,13 @@ export const OPTIONS: ModelOption[] = [
     component: "tts",
     name: "Qwen3-TTS 0.6B",
     description:
-      "The smaller Qwen3-TTS: recorded voices on a GPU with less memory; Kokoro-82M beside it.",
-    packages: ["qwen3-tts-0.6b-base", "kokoro-82m"],
+      "The smaller Qwen3-TTS: recorded voices on a GPU with less memory; Kokoro-82M and Pocket TTS beside it.",
+    packages: [
+      "qwen3-tts-0.6b-base",
+      "kokoro-82m",
+      "pocket-tts-fr",
+      "pocket-tts-en",
+    ],
     speed: "first audio in about 0.3 s, faster than real time on a 4 GB GPU",
     runsOn: "gpu",
     gpuBytes: 3.5 * GIB,
@@ -268,6 +280,17 @@ export const OPTIONS: ModelOption[] = [
     speed: "much faster than real time on a GPU",
     runsOn: "gpu",
     gpuBytes: 1 * GIB,
+  },
+  {
+    id: "pocket-tts",
+    component: "tts",
+    name: "Pocket TTS",
+    description:
+      "Kyutai's light voices on the CPU, French and English; Kokoro, when it is here, reads the other languages.",
+    packages: ["pocket-tts-fr", "pocket-tts-en"],
+    speed:
+      "first audio in about 0.2 s, about four times faster than real time on four cores",
+    runsOn: "cpu",
   },
   {
     id: "kokoro-onnx",
@@ -416,7 +439,8 @@ export function tierFor(hardware: VoiceHardware): VoiceTier {
 /**
  * Each tier's choices on this hardware: heavy as the desktop runs (Parakeet,
  * Whisper reading again, Qwen3-TTS on the GPU, every turn and speaker
- * model), light all on the CPU (Kokoro's ONNX model, int8 short of memory).
+ * model), light all on the CPU (Pocket TTS, Kokoro's int8 ONNX model short
+ * of memory).
  */
 export function recommendedChoices(
   hardware: VoiceHardware,
@@ -436,7 +460,7 @@ export function recommendedChoices(
     light: {
       speech: "parakeet",
       reread: NO_MODEL,
-      tts: ram < 8 * GIB ? "kokoro-onnx-int8" : "kokoro-onnx",
+      tts: ram < 8 * GIB ? "kokoro-onnx-int8" : "pocket-tts",
       stock_voices: NO_MODEL,
       speaker: "wespeaker",
       turn: "smart-turn",
@@ -494,6 +518,38 @@ export function packagePath(
 type TtsModel = NonNullable<VoiceConfig["tts_models"]>[number];
 
 /**
+ * Pocket TTS's languages in the catalog: the package, the language's model
+ * directory in it, and the voice it reads with unless voice.json names
+ * another (as recommended, pending the user's word: estelle for French,
+ * Kyutai's default English voice alba for English).
+ */
+export const POCKET_VOICES = [
+  {
+    language: "fr",
+    package: "pocket-tts-fr",
+    dir: "languages/french",
+    voice: "estelle",
+  },
+  {
+    language: "en",
+    package: "pocket-tts-en",
+    dir: "languages/english",
+    voice: "alba",
+  },
+] as const;
+
+/** The model of Pocket TTS's entries in `tts_models`. */
+export const POCKET_MODEL = "pocket-tts";
+
+/** The directory of a Pocket TTS language's model, its package at `root`. */
+export function pocketModelDir(
+  root: string,
+  voice: (typeof POCKET_VOICES)[number],
+): string {
+  return join(root, voice.dir);
+}
+
+/**
  * voice.json's setup keys for the choices: the packages at `roots`, the
  * entries the user made kept where they still apply (a Qwen3-TTS entry
  * reading a recorded voice, a Kokoro entry's own fields). A part chosen
@@ -523,7 +579,38 @@ export function configPatch(
   }
 
   const tts = optionOf("tts", chosen.tts);
-  if (tts?.id === "kokoro-onnx" || tts?.id === "kokoro-onnx-int8") {
+  const previous = config.tts_models ?? [];
+  // Pocket TTS's entries for its packages among `ids`, a language each,
+  // with the fields voice.json gave them (a voice chosen) kept.
+  const pocketEntries = (ids: string[]): TtsModel[] =>
+    POCKET_VOICES.filter((voice) => ids.includes(voice.package)).map(
+      (voice) => ({
+        voice: voice.voice,
+        ...(previous.find(
+          (model) =>
+            model.model === POCKET_MODEL && model.languages === voice.language,
+        ) ?? {}),
+        model: POCKET_MODEL,
+        path: pocketModelDir(packagePathOf(voice.package), voice),
+        languages: voice.language,
+      }),
+    );
+  if (tts?.id === "pocket-tts") {
+    // Kokoro's ONNX model, when it is here, reads the languages Pocket TTS
+    // lacks (its entry, read by the helper's ONNX speaker).
+    const onnx = ["kokoro-onnx", "kokoro-onnx-int8"].find(
+      (id) => roots[id] !== undefined,
+    );
+    const kokoro: TtsModel[] = [];
+    if (onnx && roots["kokoro-onnx-voices"] !== undefined) {
+      patch.kokoro_model = packagePathOf(onnx);
+      patch.kokoro_voices = packagePathOf("kokoro-onnx-voices");
+      kokoro.push({ model: "kokoro", path: packagePathOf(onnx) });
+    }
+    patch.tts_models = [...pocketEntries(tts.packages), ...kokoro];
+    patch.clone_model = undefined;
+    patch.stock_model = undefined;
+  } else if (tts?.id === "kokoro-onnx" || tts?.id === "kokoro-onnx-int8") {
     patch.kokoro_model = packagePathOf(tts.packages[0]!);
     patch.kokoro_voices = packagePathOf("kokoro-onnx-voices");
     patch.tts_models = undefined;
@@ -538,7 +625,6 @@ export function configPatch(
       : chosen.stock_voices === CUSTOM_MODEL
         ? config.stock_model
         : undefined;
-    const previous = config.tts_models ?? [];
     // Qwen3-TTS entries reading a recorded voice (Base) or a stock one
     // (CustomVoice) stay while their model is the one chosen.
     const qwen = previous.filter(
@@ -553,8 +639,9 @@ export function configPatch(
       path: packagePathOf("kokoro-82m"),
     };
     // kokoro_model and kokoro_voices, unused beside tts_models, stay: a
-    // switch back to Kokoro's ONNX model finds them.
-    patch.tts_models = [...qwen, kokoro];
+    // switch back to Kokoro's ONNX model finds them. Pocket TTS's entries
+    // come last: the light voice, read when Qwen3-TTS fails.
+    patch.tts_models = [...qwen, kokoro, ...pocketEntries(tts.packages)];
     patch.clone_model = basePath;
     if (
       chosen.stock_voices !== undefined &&

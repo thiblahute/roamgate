@@ -3,6 +3,8 @@ import {
   cannotReadNotice,
   KOKORO_VOICES,
   kokoroCannotRead,
+  lightCannotRead,
+  lightLanguages,
   unvoicedLanguage,
 } from "./voice-kokoro-language";
 
@@ -61,5 +63,40 @@ describe("Kokoro's languages", () => {
     expect(cannotReadNotice("xx")).toBe(
       "This reply is in a language this voice cannot read.",
     );
+  });
+});
+
+describe("the light voice's languages", () => {
+  const pocket = [
+    { model: "pocket-tts", languages: "fr" },
+    { model: "pocket-tts", languages: "en" },
+  ];
+  test("Pocket TTS reads its own, Kokoro its voices', Kokoro alone its voices'", () => {
+    expect([...lightLanguages(pocket)].sort()).toEqual(["en", "fr"]);
+    expect(lightLanguages([...pocket, { model: "kokoro" }]).has("es")).toBe(
+      true,
+    );
+    expect([...lightLanguages(undefined)].sort()).toEqual(
+      Object.keys(KOKORO_VOICES).sort(),
+    );
+  });
+
+  test("a language none of its voices reads is caught, never another's accent", () => {
+    expect(lightCannotRead("Bonjour.", "fr-FR", pocket)).toBeNull();
+    expect(lightCannotRead("Hola.", "es", pocket)).toBe("es");
+    expect(
+      lightCannotRead("Hola.", "es", [...pocket, { model: "kokoro" }]),
+    ).toBeNull();
+    expect(
+      lightCannotRead(
+        "Ich habe den Build gestartet und er ist jetzt fertig.",
+        undefined,
+        pocket,
+      ),
+    ).toBe("de");
+    // Unclear text goes to the helper, which reads it in its language.
+    expect(
+      lightCannotRead("J'ai relancé le pipeline GitLab CI.", undefined, pocket),
+    ).toBeNull();
   });
 });

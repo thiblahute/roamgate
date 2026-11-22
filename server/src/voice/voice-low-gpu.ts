@@ -33,6 +33,7 @@ import {
   OPTIONS,
   optionOf,
   PACKAGES,
+  POCKET_MODEL,
   type PackageRoots,
   recommendedChoices,
   voiceDataDir,
@@ -48,8 +49,8 @@ const log = serverLogger.child("voice");
  * another job), the voice helper starts with a lighter set of models, the
  * setup assistant's light tier (voice-models.ts recommendedChoices) among
  * the models already here: Parakeet only (no Whisper reading again),
- * Kokoro reading on the CPU (no Qwen3-TTS), the speaker and turn models,
- * which run on the CPU. voice.json is never written: the set is put over
+ * Pocket TTS reading on the CPU, else Kokoro (no Qwen3-TTS), the speaker
+ * and turn models, which run on the CPU. voice.json is never written: the set is put over
  * it (configPatch) on the configuration the helper starts with.
  *
  * It is on while a holder holds it (`roamgate voice profile low-gpu on
@@ -64,7 +65,8 @@ const log = serverLogger.child("voice");
  * the CPU to it (yieldCpu): a low priority and CPU weight, idle I/O, and
  * its ONNX models (Parakeet, Kokoro, the speaker and turn checks) sharing
  * a few threads that do not spin, where each would otherwise take one per
- * core: a game freezes when the voice takes the cores it runs on.
+ * core, and Pocket TTS computing on as few, its workers parking between
+ * steps: a game freezes when the voice takes the cores it runs on.
  */
 
 export type LowGpuFile = {
@@ -310,6 +312,29 @@ export function lowGpuChoices(
   return normalizeChoices(choices);
 }
 
+/**
+ * The packages at `roots` the low-GPU set may take: Pocket TTS's only once
+ * voice.json reads with it (its entries in `tts_models`, which the setup
+ * assistant writes) or the set names it by hand. Its files alone are no
+ * sign the helper reads it: an older helper hands its entries to any-tts,
+ * which fails, and the call would go silent.
+ */
+export function lowGpuRoots(
+  roots: PackageRoots,
+  config: Pick<VoiceConfig, "tts_models">,
+  overrides: VoiceChoices = {},
+): PackageRoots {
+  if (
+    overrides.tts === "pocket-tts" ||
+    config.tts_models?.some((model) => model.model === POCKET_MODEL)
+  )
+    return roots;
+  const pocket = new Set(optionOf("tts", "pocket-tts")?.packages ?? []);
+  return Object.fromEntries(
+    Object.entries(roots).filter(([id]) => !pocket.has(id)),
+  );
+}
+
 /** The GPU memory the choices take, as the catalog estimates it. */
 export function gpuBytesFor(choices: VoiceChoices): number {
   const counted = new Set<string>();
@@ -467,10 +492,10 @@ export class VoiceLowGpu {
       mtime(this.deps.modelsDir),
     ]);
     if (this.cache?.key === key) return this.cache;
-    const roots = locatePackages(
+    const roots = lowGpuRoots(
+      locatePackages(config, this.deps.modelsDir, this.deps.packages),
       config,
-      this.deps.modelsDir,
-      this.deps.packages,
+      file.models,
     );
     const choices = lowGpuChoices(
       roots,

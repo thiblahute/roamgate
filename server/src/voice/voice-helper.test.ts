@@ -577,6 +577,52 @@ describe("voice helper", () => {
     }
   });
 
+  test("with Pocket TTS, a failed sentence is said by Pocket TTS, Kokoro reading what it lacks", async () => {
+    const pocketFr = { model: "pocket-tts", path: "/p/fr", languages: "fr" };
+    const pocketEn = { model: "pocket-tts", path: "/p/en", languages: "en" };
+    const fake = fakeHelper((request) =>
+      request.op !== "speak"
+        ? []
+        : request.tts_models
+          ? [{ id: request.id, audio: "", language: "fr" }]
+          : [{ id: request.id, error: OOM }],
+    );
+    const helper = new VoiceHelper(
+      () => ({
+        ...QWEN_AND_KOKORO,
+        tts_models: [...QWEN_AND_KOKORO.tts_models!, pocketFr, pocketEn],
+      }),
+      fake.spawn,
+    );
+    const log = quietErrors();
+    try {
+      await helper.speak("Oui.", "fr");
+      await helper.speak("Sí.", "es");
+      // Nothing light reads German: no fallback, the error stands.
+      await expect(helper.speak("Ja.", "de")).rejects.toThrow("out of memory");
+      const sent = requests(fake.spawned[0]!.frames);
+      // Pocket TTS first: Kokoro, with the language's voice, reads only
+      // what it lacks; at the voices' own pace, the tempo doing the rate.
+      const light = (voice: string) =>
+        JSON.stringify([
+          pocketFr,
+          pocketEn,
+          { model: "kokoro", path: "/k", voice },
+        ]);
+      expect(sent.map((request) => request.tts_models ?? "own")).toEqual([
+        "own",
+        light("ff_siwis"),
+        light("ef_dora"),
+        "own",
+      ]);
+      expect(log.errors.join("\n")).toContain(
+        "Pocket TTS says it again now, and the next ones for 30 s",
+      );
+    } finally {
+      log.restore();
+    }
+  });
+
   test("in a call, a sentence failed or silent is said again by Kokoro into the call", async () => {
     // An older helper answers a failed sentence as said, with no audio; a
     // newer one with its error.
@@ -1731,6 +1777,39 @@ describe("voice helper: Kokoro's languages and the low-GPU set", () => {
     );
     await helper.speak("Guten Tag.", "de");
     expect(speaks(fake.spawned[0]!.frames)[0]?.text).toBe("Guten Tag.");
+  });
+
+  test("Pocket TTS reads its languages, Kokoro the others, a notice the rest", async () => {
+    const pocket = [
+      { model: "pocket-tts", path: "/p/fr", languages: "fr" },
+      { model: "pocket-tts", path: "/p/en", languages: "en" },
+    ];
+    for (const [models, spanish] of [
+      [[...pocket, { model: "kokoro", path: "/k" }], "¿Qué tal?"],
+      [pocket, "This reply is in a language this voice cannot read."],
+    ] as const) {
+      const fake = fakeHelper(SAID);
+      const helper = new VoiceHelper(
+        () => ({ ...CONFIG, tts_models: [...models] }),
+        fake.spawn,
+      );
+      const log = quiet();
+      try {
+        await helper.speak("Bonjour.", "fr");
+        await helper.speak("¿Qué tal?", "es");
+        await helper.speak("Guten Tag.", "de");
+      } finally {
+        log.restore();
+      }
+      expect(
+        speaks(fake.spawned[0]!.frames).map((request) => request.text),
+      ).toEqual([
+        "Bonjour.",
+        spanish,
+        "This reply is in German, which this voice cannot read.",
+      ]);
+      expect(log.errors.join("\n")).toContain("no Pocket TTS voice reads de");
+    }
   });
 
   test("a low-GPU helper reads with its own voice, a chosen one left aside", async () => {

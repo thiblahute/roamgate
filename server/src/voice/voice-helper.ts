@@ -23,7 +23,7 @@ import {
 import {
   cannotReadNotice,
   KOKORO_VOICES,
-  kokoroCannotRead,
+  lightCannotRead,
 } from "./voice-kokoro-language";
 import type { CompanionMcpConfig } from "./voice-tools";
 
@@ -1193,8 +1193,8 @@ export class VoiceHelper {
   /** The speak requests waiting, in order: the helper reads one at a time. */
   private speakQueue: string[] = [];
   /**
-   * Until when (Date.now()) Kokoro reads: after a stuck speaker was
-   * restarted, or a sentence its speaker failed.
+   * Until when (Date.now()) the light voice (Pocket TTS, Kokoro) reads:
+   * after a stuck speaker was restarted, or a sentence its speaker failed.
    */
   private kokoroUntil = 0;
   /** Restarts of the helper by this side so far, and why the last one. */
@@ -1208,8 +1208,12 @@ export class VoiceHelper {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   /** The running helper's low_gpu (voice-low-gpu.ts): null for its full set. */
   private lowGpu: string | null = null;
-  /** Whether only Kokoro reads in the running helper (no other model). */
-  private kokoroOnly = false;
+  /**
+   * The running helper's models when only the light voice reads in it
+   * (Pocket TTS, Kokoro: no other model; undefined for Kokoro alone), null
+   * otherwise.
+   */
+  private lightOnly: { models: VoiceConfig["tts_models"] } | null = null;
   /**
    * Awaited as a call starts, before the helper is asked for it: the
    * low-GPU profile (voice-low-gpu.ts) checks GameMode there, and has a
@@ -1275,7 +1279,10 @@ export class VoiceHelper {
     this.nativeRate = nativeSpeechRate(config);
     this.idleMs = idleExitMs(config);
     this.lowGpu = config.low_gpu ?? null;
-    this.kokoroOnly = !config.tts_models || onlyKokoro(config.tts_models);
+    this.lightOnly =
+      !config.tts_models || onlyLight(config.tts_models)
+        ? { models: config.tts_models }
+        : null;
     this.touch(helper);
     void (async () => {
       for await (const frame of helper.frames) {
@@ -1765,21 +1772,27 @@ export class VoiceHelper {
   ): Promise<Record<string, unknown> & { nativeRate: number }> {
     // Started first: its rate is the one this speech is made at.
     const helper = this.start();
-    // A speaker got stuck or failed lately: Kokoro reads meanwhile, for a
-    // reader's voice too (the GPU's speaker is what fails).
-    const kokoro = this.kokoroModels(language);
-    if (kokoro && !onlyKokoro(models) && Date.now() < this.kokoroUntil)
-      models = kokoro;
+    // A speaker got stuck or failed lately: the light voice (Pocket TTS,
+    // else Kokoro) reads meanwhile, for a reader's voice too (the GPU's
+    // speaker is what fails).
+    const light = this.lightModels(language);
+    if (light && !onlyLight(models) && Date.now() < this.kokoroUntil)
+      models = light;
     // A low-GPU helper reads with its own voice only: a voice chosen in
     // Voices would load its model (Qwen3-TTS) on the GPU.
     if (models && this.lowGpu !== null) models = undefined;
-    // Kokoro reads a language with that language's voice: one it has none
-    // for would be read with another's accent, so a notice says so.
-    if (!retried && (models ? onlyKokoro(models) : this.kokoroOnly)) {
-      const missing = kokoroCannotRead(text, language);
+    // The light voice reads a language with that language's voice: one it
+    // has none for would be read with another's accent, so a notice says so.
+    const lightReads = models
+      ? onlyLight(models)
+        ? { models }
+        : null
+      : this.lightOnly;
+    if (!retried && lightReads) {
+      const missing = lightCannotRead(text, language, lightReads.models);
       if (missing) {
         console.error(
-          `[voice] no Kokoro voice reads ${missing}: a notice is read in place of a sentence (${text.length} chars)`,
+          `[voice] no ${lightName(lightReads.models)} voice reads ${missing}: a notice is read in place of a sentence (${text.length} chars)`,
         );
         text = cannotReadNotice(missing);
         language = "en";
@@ -1812,21 +1825,22 @@ export class VoiceHelper {
     };
     const restarts = this.restarts;
     const hushes = call === undefined ? 0 : this.calls.get(call)?.hushes;
-    // Its speaker failed: Kokoro says it, and the next ones for a short
-    // while, the speaker tried again after it (GPU memory comes back).
+    // Its speaker failed: the light voice says it, and the next ones for
+    // a short while, the speaker tried again after it (GPU memory comes
+    // back).
     const byKokoro = (why: string) => {
-      if (retried || this.restarts !== restarts || !kokoro) return null;
-      if (onlyKokoro(models)) return null;
+      if (retried || this.restarts !== restarts || !light) return null;
+      if (onlyLight(models)) return null;
       const where = call === undefined ? "" : ` in call ${call}`;
       console.error(
-        `[voice] a sentence ${why}${where}: Kokoro says it again now, and the next ones for ${KOKORO_AFTER_FAILURE_MS / 1000} s`,
+        `[voice] a sentence ${why}${where}: ${lightName(light)} says it again now, and the next ones for ${KOKORO_AFTER_FAILURE_MS / 1000} s`,
       );
       this.kokoroUntil = Math.max(
         this.kokoroUntil,
         Date.now() + KOKORO_AFTER_FAILURE_MS,
       );
       dequeue();
-      return this.speakRequest(text, language, kokoro, rate, call, true);
+      return this.speakRequest(text, language, light, rate, call, true);
     };
     let reply: Record<string, unknown>;
     let silent = false;
@@ -1880,13 +1894,13 @@ export class VoiceHelper {
       // order, into the call's mix once it is made again. With Kokoro when
       // its speaker got stuck; as it was when its output was unreadable.
       const stuck = this.restartedFor === "stuck";
-      if (!retried && this.restarts !== restarts && (!stuck || kokoro)) {
+      if (!retried && this.restarts !== restarts && (!stuck || light)) {
         dequeue();
         await this.callsBack;
         return this.speakRequest(
           text,
           language,
-          stuck ? kokoro : models,
+          stuck ? light : models,
           rate,
           call,
           true,
@@ -2093,23 +2107,28 @@ export class VoiceHelper {
   }
 
   /**
-   * voice.json's Kokoro entries of `tts_models`, if any, each with the
-   * voice of `language` when it names none.
+   * voice.json's light voice in `tts_models`, if anything else reads
+   * there: its Pocket TTS entries, then Kokoro's, each with the voice
+   * of `language` when it names none; undefined when none of them reads
+   * `language` (nothing to fall back on).
    */
-  private kokoroModels(language?: string): VoiceConfig["tts_models"] {
+  private lightModels(language?: string): VoiceConfig["tts_models"] {
     const config = this.config();
     if ("error" in config) return undefined;
-    const kokoro = config.tts_models?.filter(
-      (entry) => entry.model === "kokoro",
-    );
-    if (!kokoro?.length || kokoro.length === config.tts_models?.length)
-      return undefined;
-    // No Kokoro voice for the language: nothing to fall back on.
-    if (language && kokoroCannotRead("", language)) return undefined;
+    const models = config.tts_models ?? [];
+    // Pocket TTS first: Kokoro reads only the languages it lacks.
+    const light = [
+      ...models.filter((entry) => entry.model === "pocket-tts"),
+      ...models.filter((entry) => entry.model === "kokoro"),
+    ];
+    if (!light.length || light.length === models.length) return undefined;
+    if (language && lightCannotRead("", language, light)) return undefined;
     const voice = language ? KOKORO_VOICES[language] : undefined;
-    if (!voice) return kokoro;
-    return kokoro.map((entry) =>
-      entry.voice === undefined && entry.speaker === undefined
+    if (!voice) return light;
+    return light.map((entry) =>
+      entry.model === "kokoro" &&
+      entry.voice === undefined &&
+      entry.speaker === undefined
         ? { ...entry, voice }
         : entry,
     );
@@ -2250,7 +2269,19 @@ export function speakerFailed(message: string): boolean {
   return !/^(no call|nothing to say|The voice helper stopped)/.test(message);
 }
 
-/** Whether `models` are Kokoro's only (none: the configured ones). */
-function onlyKokoro(models: VoiceConfig["tts_models"]): boolean {
-  return models?.every((entry) => entry.model === "kokoro") === true;
+/** Whether a `tts_models` entry is the light voice's: Pocket TTS, Kokoro. */
+function isLight(entry: { model: string }): boolean {
+  return entry.model === "kokoro" || entry.model === "pocket-tts";
+}
+
+/** Whether `models` are the light voice's only (none: the configured ones). */
+function onlyLight(models: VoiceConfig["tts_models"]): boolean {
+  return models?.every(isLight) === true;
+}
+
+/** The light voice of `models`, by name: Pocket TTS when it is among them. */
+function lightName(models: VoiceConfig["tts_models"]): string {
+  return models?.some((entry) => entry.model === "pocket-tts")
+    ? "Pocket TTS"
+    : "Kokoro";
 }

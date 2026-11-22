@@ -35,8 +35,10 @@
 //! Speaking: `{"id": 2, "op": "speak", "text": "...", "language": "fr"}`, one
 //! sentence to Ogg Opus speech, in the language given or the one its words
 //! look like: `{"id": 2, "audio": "<base64>", "language": "fr"}`. Kokoro
-//! reads it, or with `--tts-models` the first of those any-tts models that
-//! speaks its language.
+//! reads it, or with `--tts-models` the first of those models that speaks
+//! its language: any-tts's, or Pocket TTS's (`"model": "pocket-tts"`, with
+//! its `path`, `languages` and `voice`: see `pocket`), which the helper
+//! reads itself, on the CPU.
 //!
 //! A speak request may carry a `rate` (0.5 to 2, 1 by default): the speech
 //! is made that much faster, keeping its pitch (soundtouch's `pitch`), and
@@ -110,8 +112,9 @@
 //! "<what it says>" --output voice.json` writes a voice from the command
 //! line.
 //!
-//! `--cpu-threads N` has the ONNX models share N threads (Roamgate's
-//! low-GPU profile asks for it while a game runs); 0 or none, no limit.
+//! `--cpu-threads N` has the ONNX models share N threads, and Pocket TTS
+//! compute on N (Roamgate's low-GPU profile asks for it while a game runs);
+//! 0 or none, no limit (Pocket TTS: 4).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -132,6 +135,7 @@ mod language;
 mod listen;
 mod loudness;
 mod mpris;
+mod pocket;
 #[cfg(target_os = "macos")]
 mod processtap;
 mod reference;
@@ -420,45 +424,170 @@ fn tts_models(json: &str) -> Result<gst::Array, String> {
     Ok(gst::Array::new(models))
 }
 
-/// Kokoro's ONNX speaker beside any-tts's (`--kokoro-model` with
-/// `--tts-models`), loaded in its own thread until a sentence needs it.
-enum OnnxKokoro {
-    Loading(std::thread::JoinHandle<Result<Speaker, String>>),
+/// A speaker beside the one `--tts-models` makes, loaded in its own thread
+/// until a sentence needs it: Kokoro's ONNX speaker (`--kokoro-model` with
+/// `--tts-models`), or Pocket TTS beside any-tts's models.
+enum Background {
+    Loading(
+        &'static str,
+        std::thread::JoinHandle<Result<Speaker, String>>,
+    ),
     Loaded(Result<Speaker, String>),
 }
 
-impl OnnxKokoro {
-    /// Starts loading it, when `config` has both.
-    fn new(config: &Config) -> Option<Self> {
+impl Background {
+    /// Starts loading `what` with `load`.
+    fn spawn(
+        what: &'static str,
+        load: impl FnOnce() -> Result<Speaker, String> + Send + 'static,
+    ) -> Self {
+        Self::Loading(
+            what,
+            std::thread::spawn(move || {
+                let speaker = load();
+                if let Err(err) = &speaker {
+                    eprintln!("[voice] {what} failed to load: {err}");
+                }
+                speaker
+            }),
+        )
+    }
+
+    /// Kokoro's ONNX speaker, when `config` has both it and `tts_models`.
+    fn onnx_kokoro(config: &Config) -> Option<Self> {
         config.tts_models.as_ref()?;
         let model = config.kokoro_model.clone()?;
         let voices = config.kokoro_voices.clone();
-        Some(Self::Loading(std::thread::spawn(move || {
-            let speaker = Speaker::kokoro(&model, voices.as_deref());
-            if let Err(err) = &speaker {
-                eprintln!("[voice] Kokoro's ONNX model failed to load: {err}");
-            }
-            speaker
-        })))
+        Some(Self::spawn("Kokoro's ONNX model", move || {
+            Speaker::kokoro(&model, voices.as_deref())
+        }))
+    }
+
+    /// Pocket TTS, when `config`'s `tts_models` has Pocket TTS entries the
+    /// speaker does not read itself (own_models).
+    fn pocket(config: &Config) -> Option<Self> {
+        let models = config.tts_models.as_deref()?;
+        let (pocket, _) = split_pocket(models)?;
+        let pocket = pocket?;
+        if own_models(models, config.kokoro_model.is_some()).1 == SpeakerKind::Pocket {
+            return None;
+        }
+        Some(Self::spawn("Pocket TTS", move || Speaker::pocket(&pocket)))
     }
 
     /// The speaker, once loaded; None when it failed to.
     fn speaker(&mut self) -> Option<&Speaker> {
-        if let Self::Loading(_) = self {
-            let Self::Loading(thread) = std::mem::replace(self, Self::Loaded(Err(String::new())))
+        if let Self::Loading(..) = self {
+            let Self::Loading(what, thread) =
+                std::mem::replace(self, Self::Loaded(Err(String::new())))
             else {
                 unreachable!()
             };
             *self = Self::Loaded(
                 thread
                     .join()
-                    .unwrap_or_else(|_| Err("Kokoro's ONNX model failed to load".into())),
+                    .unwrap_or_else(|_| Err(format!("{what} failed to load"))),
             );
         }
         match self {
             Self::Loaded(speaker) => speaker.as_ref().ok(),
-            Self::Loading(_) => unreachable!(),
+            Self::Loading(..) => unreachable!(),
         }
+    }
+}
+
+/// The `model` of Pocket TTS's entries in `--tts-models`: read by the
+/// helper's own pocketsynthesizer, never by any-tts.
+const POCKET: &str = "pocket-tts";
+
+/// A `--tts-models` JSON's Pocket TTS entries and the others, each as a
+/// JSON of its own (None when there are none); None when it does not parse.
+fn split_pocket(json: &str) -> Option<(Option<String>, Option<String>)> {
+    let models: Vec<serde_json::Map<String, Value>> = serde_json::from_str(json).ok()?;
+    let (pocket, rest): (Vec<_>, Vec<_>) = models.into_iter().partition(is_pocket);
+    let json = |entries: Vec<serde_json::Map<String, Value>>| {
+        (!entries.is_empty()).then(|| Value::from(entries).to_string())
+    };
+    Some((json(pocket), json(rest)))
+}
+
+fn is_pocket(entry: &serde_json::Map<String, Value>) -> bool {
+    entry.get("model").and_then(Value::as_str) == Some(POCKET)
+}
+
+/// The models the speaker of a `--tts-models` JSON reads with itself, and
+/// what reads them: Pocket TTS's entries when there are only those, and
+/// Kokoro's that its ONNX speaker reads in their place (`onnx`: there is
+/// one); else the others, with any-tts.
+fn own_models(models: &str, onnx: bool) -> (String, SpeakerKind) {
+    match split_pocket(models) {
+        Some((Some(pocket), None)) => (pocket, SpeakerKind::Pocket),
+        Some((Some(pocket), Some(rest))) if onnx && kokoro_only(&rest).is_some() => {
+            (pocket, SpeakerKind::Pocket)
+        }
+        Some((_, Some(rest))) => (rest, SpeakerKind::AnyTts),
+        _ => (models.to_string(), SpeakerKind::AnyTts),
+    }
+}
+
+/// The languages Kokoro has a voice for (kokorosynthesizer's, any-tts's).
+const KOKORO_LANGUAGES: &[&str] = &["en", "es", "fr", "hi", "it", "ja", "pt", "zh"];
+
+/// Whether a `--tts-models` entry reads `language`: those its `languages`
+/// list, else Kokoro's for Kokoro, none for Pocket TTS (it lists them),
+/// any for the others (Qwen3-TTS reads most and picks).
+fn entry_speaks(entry: &serde_json::Map<String, Value>, language: &str) -> bool {
+    let language = pocket::primary(language);
+    if let Some(languages) = entry.get("languages").and_then(Value::as_str) {
+        return languages
+            .split(',')
+            .any(|listed| pocket::primary(listed.trim()) == language);
+    }
+    match entry.get("model").and_then(Value::as_str) {
+        Some("kokoro") => KOKORO_LANGUAGES.contains(&language.as_str()),
+        Some(POCKET) => false,
+        _ => true,
+    }
+}
+
+/// Who reads a sentence.
+#[derive(Debug, PartialEq)]
+enum Route {
+    /// Pocket TTS, with these entries.
+    Pocket(String),
+    /// Kokoro's ONNX speaker with what is asked of it, when it is loaded;
+    /// else the speaker with these models (any-tts's Kokoro).
+    Kokoro(KokoroWanted, String),
+    /// The speaker (any-tts, or Kokoro alone), with these models when
+    /// given.
+    Speaker(Option<String>),
+}
+
+/// Who reads a sentence in `language` with the models `wanted` (a
+/// `--tts-models` JSON; None, the speaker's own): Pocket TTS when the first
+/// entry that reads the language is one of its own (in order of preference,
+/// as anyttssynthesizer picks), or when nothing else is left; Kokoro's ONNX
+/// speaker for Kokoro's entries alone (kokoro_only); the speaker otherwise,
+/// with the entries that are not Pocket TTS's.
+fn route(wanted: Option<&str>, language: &str) -> Route {
+    let Some(json) = wanted else {
+        return Route::Speaker(None);
+    };
+    let by_rest = |rest: String| match kokoro_only(&rest) {
+        Some(kokoro) => Route::Kokoro(kokoro, rest),
+        None => Route::Speaker(Some(rest)),
+    };
+    let Some((Some(pocket), rest)) = split_pocket(json) else {
+        return by_rest(json.to_string());
+    };
+    let models: Vec<serde_json::Map<String, Value>> =
+        serde_json::from_str(json).unwrap_or_default();
+    let first = models.iter().find(|entry| entry_speaks(entry, language));
+    match (first, rest) {
+        (Some(entry), _) if is_pocket(entry) => Route::Pocket(pocket),
+        // A language none reads: Pocket TTS says it has no voice for it.
+        (_, None) => Route::Pocket(pocket),
+        (_, Some(rest)) => by_rest(rest),
     }
 }
 
@@ -581,6 +710,27 @@ const SPEAK_PIPELINE: &str = "appsrc name=src format=time caps=text/x-raw,format
              audio/x-raw,format=F32LE,layout=interleaved,rate=48000,channels=2 ! \
              appsink name=raw sync=false async=false";
 
+/// What reads in a speaker's pipeline.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum SpeakerKind {
+    /// anyttssynthesizer: Qwen3-TTS, Kokoro-82M...
+    AnyTts,
+    /// kokorosynthesizer: Kokoro's ONNX model, on the CPU.
+    Kokoro,
+    /// pocketsynthesizer: Pocket TTS, on the CPU.
+    Pocket,
+}
+
+impl SpeakerKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::AnyTts => "any-tts",
+            Self::Kokoro => "kokoro",
+            Self::Pocket => "Pocket TTS",
+        }
+    }
+}
+
 struct Speaker {
     pipeline: gst::Pipeline,
     src: gst_app::AppSrc,
@@ -589,11 +739,12 @@ struct Speaker {
     raw: gst_app::AppSink,
     /// Which branch gets the speech: the Ogg file, or the call's raw blocks.
     to_call: Arc<std::sync::atomic::AtomicBool>,
-    /// anyttssynthesizer, whose models can change; None for Kokoro's.
-    anytts: Option<gst::Element>,
-    /// kokorosynthesizer, whose voice and speed can change; None for
-    /// any-tts's.
-    kokoro: Option<gst::Element>,
+    /// anyttssynthesizer or pocketsynthesizer, whose models can change, or
+    /// kokorosynthesizer, whose voice and speed can change.
+    synthesizer: gst::Element,
+    kind: SpeakerKind,
+    /// The `--tts-models` JSON its models are now, for one that has them.
+    models: Mutex<Option<String>>,
     /// soundtouch's `pitch`, whose `tempo` is the next sentence's rate;
     /// None when this GStreamer has no soundtouch (speech is then made
     /// at 1).
@@ -629,22 +780,41 @@ fn drain_bus_errors(pipeline: &gst::Pipeline) -> Vec<String> {
 }
 
 impl Speaker {
+    /// The speaker of `config`: any-tts with its `--tts-models` but Pocket
+    /// TTS's, Pocket TTS when it reads them (own_models), else Kokoro's
+    /// ONNX model.
     fn new(config: &Config) -> Result<Self, String> {
-        let (synthesizer, name) = match (&config.tts_models, &config.kokoro_model) {
-            (Some(models), _) => {
-                let models = tts_models(models)?;
-                let synthesizer = gst::ElementFactory::make("anyttssynthesizer")
-                    .property("models", models)
-                    .build()
-                    .map_err(|e| e.to_string())?;
-                (synthesizer, "any-tts")
-            }
-            (None, Some(model)) => {
-                return Self::kokoro(model, config.kokoro_voices.as_deref());
-            }
-            (None, None) => return Err("--tts-models or --kokoro-model is required".into()),
-        };
-        Self::with_synthesizer(synthesizer, name)
+        match (&config.tts_models, &config.kokoro_model) {
+            (Some(models), _) => match own_models(models, config.kokoro_model.is_some()) {
+                (own, SpeakerKind::Pocket) => Self::pocket(&own),
+                (own, _) => Self::anytts(&own),
+            },
+            (None, Some(model)) => Self::kokoro(model, config.kokoro_voices.as_deref()),
+            (None, None) => Err("--tts-models or --kokoro-model is required".into()),
+        }
+    }
+
+    /// any-tts's models (anyttssynthesizer), from a `--tts-models` JSON.
+    fn anytts(models: &str) -> Result<Self, String> {
+        let synthesizer = gst::ElementFactory::make("anyttssynthesizer")
+            .property("models", tts_models(models)?)
+            .build()
+            .map_err(|e| e.to_string())?;
+        let speaker = Self::with_synthesizer(synthesizer, SpeakerKind::AnyTts)?;
+        *speaker.models.lock().unwrap() = Some(models.to_string());
+        Ok(speaker)
+    }
+
+    /// Pocket TTS (pocketsynthesizer), from the `--tts-models` JSON of its
+    /// entries: it runs on the CPU.
+    fn pocket(models: &str) -> Result<Self, String> {
+        let synthesizer = gst::ElementFactory::make("pocketsynthesizer")
+            .property("models", tts_models(models)?)
+            .build()
+            .map_err(|e| e.to_string())?;
+        let speaker = Self::with_synthesizer(synthesizer, SpeakerKind::Pocket)?;
+        *speaker.models.lock().unwrap() = Some(models.to_string());
+        Ok(speaker)
     }
 
     /// Kokoro's ONNX speaker (kokorosynthesizer): its phonemes are
@@ -655,16 +825,17 @@ impl Speaker {
             .property("voices-path", voices.unwrap_or(""))
             .build()
             .map_err(|e| e.to_string())?;
-        Self::with_synthesizer(synthesizer, "kokoro")
+        Self::with_synthesizer(synthesizer, SpeakerKind::Kokoro)
     }
 
     /// Kokoro's ONNX speaker reads the next sentences with `wanted`'s voice
     /// (when it is one of the sentence's language, its own voice otherwise)
     /// and speed.
     fn set_kokoro(&self, wanted: &KokoroWanted) {
-        let Some(synthesizer) = &self.kokoro else {
+        if self.kind != SpeakerKind::Kokoro {
             return;
-        };
+        }
+        let synthesizer = &self.synthesizer;
         synthesizer.set_property("voice", wanted.voice.as_deref());
         let speed = wanted
             .speed
@@ -673,8 +844,9 @@ impl Speaker {
         synthesizer.set_property("speed", speed.clamp(MIN_RATE, MAX_RATE) as f32);
     }
 
-    /// The speaker's pipeline around `synthesizer` (`name` says which).
-    fn with_synthesizer(synthesizer: gst::Element, name: &str) -> Result<Self, String> {
+    /// The speaker's pipeline around `synthesizer` (`kind` says which).
+    fn with_synthesizer(synthesizer: gst::Element, kind: SpeakerKind) -> Result<Self, String> {
+        let name = kind.name();
         // 64 kb/s: at 32 the voice came out audibly coarser (half the
         // waveform SNR), for a few more kilobytes a sentence.
         // In a call, the speech goes to the call's mix as raw audio
@@ -765,8 +937,9 @@ impl Speaker {
             sink,
             raw,
             to_call,
-            kokoro: (name == "kokoro").then(|| synthesizer.clone()),
-            anytts: (name == "any-tts").then_some(synthesizer),
+            synthesizer,
+            kind,
+            models: Mutex::new(None),
             tempo,
         })
     }
@@ -776,19 +949,49 @@ impl Speaker {
     /// loads only what changed: a voice is read and warmed up, its model
     /// stays.
     fn set_models(&self, models: &str) -> Result<(), String> {
-        let Some(synthesizer) = &self.anytts else {
-            return Err("Voices need tts_models: Kokoro alone has one voice".into());
-        };
-        let models = tts_models(models)?;
+        match self.kind {
+            SpeakerKind::Kokoro => {
+                return Err("Voices need tts_models: Kokoro alone has one voice".into());
+            }
+            SpeakerKind::Pocket
+                if !split_pocket(models).is_some_and(|(_, rest)| rest.is_none()) =>
+            {
+                return Err("Pocket TTS reads only its own models".into());
+            }
+            SpeakerKind::AnyTts
+                if split_pocket(models).is_some_and(|(pocket, _)| pocket.is_some()) =>
+            {
+                return Err("any-tts does not read Pocket TTS's models".into());
+            }
+            _ => {}
+        }
+        let array = tts_models(models)?;
         self.pipeline
             .set_state(gst::State::Ready)
             .map_err(|e| e.to_string())?;
-        synthesizer.set_property("models", models);
+        self.synthesizer.set_property("models", array);
         if let Err(err) = self.pipeline.set_state(gst::State::Playing) {
             let detail = bus_error(&self.pipeline).unwrap_or_else(|| err.to_string());
+            *self.models.lock().unwrap() = None;
             return Err(format!("the voices failed to load: {detail}"));
         }
+        *self.models.lock().unwrap() = Some(models.to_string());
         Ok(())
+    }
+
+    /// Reads with `models` from now on, unless it does already; answers
+    /// whether they changed (`loading` is told before they load).
+    fn ensure_models(&self, models: &str, loading: &dyn Fn()) -> Result<bool, String> {
+        if self.models.lock().unwrap().as_deref() == Some(models) {
+            return Ok(false);
+        }
+        loading();
+        self.set_models(models).map(|()| true)
+    }
+
+    /// The `--tts-models` JSON it reads with now, if it has models.
+    fn current_models(&self) -> Option<String> {
+        self.models.lock().unwrap().clone()
     }
 
     /// Speaks `text` in `language`, `rate` times faster than the voice's
@@ -1010,6 +1213,7 @@ fn main() {
         .and_then(|_| gstrsaudiofx::plugin_register_static())
         .and_then(|_| gstrswebrtc::plugin_register_static())
         .and_then(|_| gstreqwest::plugin_register_static())
+        .and_then(|_| pocket::synthesizer::register())
     {
         eprintln!("The speech plugins failed to register: {err}");
         std::process::exit(1);
@@ -1022,11 +1226,15 @@ fn main() {
         }
     }
     match cpu_threads(arg("--cpu-threads").as_deref()) {
-        Ok(None) => {}
-        Ok(Some(threads)) => match limit_onnx_threads(threads) {
-            Ok(()) => eprintln!("the ONNX models share {threads} CPU threads"),
-            Err(err) => eprintln!("the ONNX models' threads are not limited: {err}"),
-        },
+        Ok(None) => pocket::set_threads(None),
+        Ok(Some(threads)) => {
+            match limit_onnx_threads(threads) {
+                Ok(()) => eprintln!("the ONNX models share {threads} CPU threads"),
+                Err(err) => eprintln!("the ONNX models' threads are not limited: {err}"),
+            }
+            // Pocket TTS's own pool, as small, its workers parking.
+            pocket::set_threads(Some(threads));
+        }
         Err(err) => {
             eprintln!("{err}");
             std::process::exit(1);
@@ -1276,31 +1484,40 @@ fn main() {
                 &output,
                 json!({"event": "speak_progress", "stage": "ready"}),
             );
-            // What every sentence is read with, and what the speaker has now.
+            // What every sentence is read with.
             let mut models = config.tts_models.clone();
-            let mut current = models.clone();
             // Kokoro's ONNX model next to any-tts's: the sentences only
             // Kokoro reads (its fallback when another model failed, or
             // Kokoro alone) go to it (kokoro_only). Loaded meanwhile, on
             // the CPU.
-            let mut onnx = OnnxKokoro::new(&config);
+            let mut onnx = Background::onnx_kokoro(&config);
+            // Pocket TTS next to any-tts's models: what it reads first (the
+            // light voice, when Qwen3-TTS failed) goes to it. Loaded
+            // meanwhile, on the CPU.
+            let mut pocket = Background::pocket(&config);
             for request in speak_rx {
                 if request.op == "set_tts_models" {
                     let result = match &request.tts_models {
                         None => Err("tts_models is required".to_string()),
                         Some(wanted) => {
+                            let made = Config {
+                                tts_models: Some(wanted.clone()),
+                                ..config.as_ref().clone()
+                            };
+                            // Its own models; the others are set when a
+                            // sentence needs them.
+                            let (own, kind) = own_models(wanted, config.kokoro_model.is_some());
                             let result = match &speaker {
-                                Ok(speaker) => speaker.set_models(wanted),
-                                // Made again with them, since it failed.
-                                Err(_) => Speaker::new(&Config {
-                                    tts_models: Some(wanted.clone()),
-                                    ..config.as_ref().clone()
-                                })
-                                .map(|made| speaker = Ok(made)),
+                                Ok(current) if current.kind == kind => current.set_models(&own),
+                                // Made again with them, since it failed or
+                                // reads with another kind of model.
+                                _ => Speaker::new(&made).map(|new| speaker = Ok(new)),
                             };
                             if result.is_ok() {
                                 models = Some(wanted.clone());
-                                current = models.clone();
+                                if pocket.is_none() {
+                                    pocket = Background::pocket(&made);
+                                }
                             }
                             result
                         }
@@ -1328,28 +1545,62 @@ fn main() {
                 progress("started");
                 // This sentence's own models, or back to everyone's.
                 let wanted = request.tts_models.or_else(|| models.clone());
-                // Not loaded, any-tts's Kokoro reads it.
-                let by_onnx = onnx
-                    .as_mut()
-                    .and_then(|onnx| Some((wanted.as_deref().and_then(kokoro_only)?, onnx)))
-                    .and_then(|(kokoro, onnx)| {
-                        onnx.speaker()
-                            .inspect(|speaker| speaker.set_kokoro(&kokoro))
-                    });
-                let switched = match &speaker {
-                    _ if by_onnx.is_some() => Ok(false),
-                    Ok(speaker) if wanted != current => match &wanted {
-                        Some(wanted) => {
-                            progress("loading");
-                            speaker.set_models(wanted).map(|()| true)
+                let loading = || progress("loading");
+                // Who reads it, with which models, and the voice's name
+                // for its level (each voice has its own).
+                let chosen: Result<(&Speaker, String), String> =
+                    match route(wanted.as_deref(), &language) {
+                        Route::Pocket(entries) => {
+                            let reader = match &speaker {
+                                Ok(own) if own.kind == SpeakerKind::Pocket => Some(own),
+                                // Asked for by a sentence first (Roamgate's
+                                // light voice after another failed): loaded
+                                // now.
+                                _ => pocket
+                                    .get_or_insert_with(|| {
+                                        let entries = entries.clone();
+                                        Background::spawn("Pocket TTS", move || {
+                                            Speaker::pocket(&entries)
+                                        })
+                                    })
+                                    .speaker(),
+                            };
+                            match reader {
+                                Some(reader) => reader
+                                    .ensure_models(&entries, &loading)
+                                    .map(|_| (reader, format!("{entries}|{language}"))),
+                                None => Err("Pocket TTS is not loaded".to_string()),
+                            }
                         }
-                        None => Ok(false),
-                    },
-                    _ => Ok(false),
-                };
-                if let Ok(true) = switched {
-                    current = wanted;
-                }
+                        Route::Kokoro(kokoro, rest) => {
+                            // Not loaded, any-tts's Kokoro reads it.
+                            match onnx.as_mut().and_then(Background::speaker) {
+                                Some(reader) => {
+                                    reader.set_kokoro(&kokoro);
+                                    Ok((reader, format!("kokoro-onnx|{language}")))
+                                }
+                                None => {
+                                    speaker.as_ref().map_err(String::clone).and_then(|reader| {
+                                        reader
+                                            .ensure_models(&rest, &loading)
+                                            .map(|_| (reader, format!("{rest}|{language}")))
+                                    })
+                                }
+                            }
+                        }
+                        Route::Speaker(rest) => {
+                            speaker.as_ref().map_err(String::clone).and_then(|reader| {
+                                match &rest {
+                                    Some(rest) => reader.ensure_models(rest, &loading),
+                                    None => Ok(false),
+                                }
+                                .map(|_| {
+                                    let current = reader.current_models().unwrap_or_default();
+                                    (reader, format!("{current}|{language}"))
+                                })
+                            })
+                        }
+                    };
                 // For a call: into its mix, not to a file.
                 let call = request
                     .call
@@ -1359,28 +1610,20 @@ fn main() {
                     reply(&output, json!({"id": request.id, "error": error}));
                     continue;
                 }
-                // Each voice has its own level, and any-tts reads each
-                // language with the first of its models that speaks it.
-                let voice = match &by_onnx {
-                    Some(_) => format!("kokoro-onnx|{language}"),
-                    None => format!("{}|{language}", current.as_deref().unwrap_or("")),
+                let mut sentence = match &chosen {
+                    Ok((_, voice)) => call.as_ref().map(|call| call.sentence_of(voice)),
+                    Err(_) => None,
                 };
-                let mut sentence = call.as_ref().map(|call| call.sentence_of(&voice));
-                let speaker = match by_onnx {
-                    Some(onnx) => Ok(onnx),
-                    None => speaker.as_ref(),
-                };
-                let result = match (&speaker, switched) {
-                    (_, Err(err)) => Err(err),
-                    (Ok(speaker), _) if language::has_words(&text) => speaker.speak(
+                let result = match chosen {
+                    Ok((reader, _)) if language::has_words(&text) => reader.speak(
                         &text,
                         &language,
                         request.rate.unwrap_or(1.0),
                         sentence.as_mut(),
                         &|| progress("audio"),
                     ),
-                    (Ok(_), _) => Err("nothing to say".to_string()),
-                    (Err(err), _) => Err(err.to_string()),
+                    Ok(_) => Err("nothing to say".to_string()),
+                    Err(err) => Err(err),
                 };
                 let answer = match (result, sentence) {
                     (Ok((_, rate)), Some(sentence)) => {
@@ -1621,6 +1864,122 @@ mod tests {
         }
     }
 
+    const POCKET_FR: &str =
+        r#"{"model": "pocket-tts", "path": "/m/fr", "languages": "fr", "voice": "estelle"}"#;
+    const POCKET_EN: &str = r#"{"model": "pocket-tts", "path": "/m/en", "languages": "en"}"#;
+    const QWEN: &str = r#"{"model": "qwen3-tts", "path": "/m/q", "voice_embedding": "/v.json"}"#;
+    const KOKORO: &str = r#"{"model": "kokoro", "path": "/m/k"}"#;
+
+    fn models(entries: &[&str]) -> String {
+        let entries: Vec<Value> = entries
+            .iter()
+            .map(|entry| serde_json::from_str(entry).unwrap())
+            .collect();
+        Value::from(entries).to_string()
+    }
+
+    /// The light set: Pocket TTS reads French and English with each
+    /// language's own model, Kokoro the languages it lacks, and a language
+    /// none reads goes to Pocket TTS, which says so (never a voice of
+    /// another language, with its accent).
+    #[test]
+    fn pocket_reads_its_languages_and_kokoro_the_others() {
+        let pocket = models(&[POCKET_FR, POCKET_EN]);
+        let light = models(&[POCKET_FR, POCKET_EN, KOKORO]);
+        for language in ["fr", "fr-FR", "en"] {
+            assert_eq!(
+                route(Some(&light), language),
+                Route::Pocket(pocket.clone()),
+                "{language}"
+            );
+        }
+        assert_eq!(
+            route(Some(&light), "es"),
+            Route::Kokoro(
+                KokoroWanted {
+                    voice: None,
+                    speed: None
+                },
+                models(&[KOKORO])
+            )
+        );
+        // Pocket TTS alone: Spanish too goes to it, which refuses it.
+        assert_eq!(route(Some(&pocket), "es"), Route::Pocket(pocket.clone()));
+        assert_eq!(route(Some(&pocket), "en"), Route::Pocket(pocket.clone()));
+        assert_eq!(
+            split_pocket(&light),
+            Some((Some(pocket.clone()), Some(models(&[KOKORO]))))
+        );
+        assert_eq!(split_pocket(&pocket), Some((Some(pocket), None)));
+        assert_eq!(split_pocket("pocket"), None);
+    }
+
+    /// The full set: Qwen3-TTS reads what it is first for, Pocket TTS's
+    /// entries after it are the light voice the server falls back on, never
+    /// given to any-tts.
+    #[test]
+    fn pocket_after_qwen_is_only_the_fallback() {
+        let full = models(&[QWEN, KOKORO, POCKET_FR, POCKET_EN]);
+        for language in ["fr", "en", "es"] {
+            assert_eq!(
+                route(Some(&full), language),
+                Route::Speaker(Some(models(&[QWEN, KOKORO]))),
+                "{language}"
+            );
+        }
+        // A model listing its languages comes first for those only.
+        let qwen_en = r#"{"model": "qwen3-tts", "path": "/m/q", "languages": "en"}"#;
+        let listed = models(&[qwen_en, POCKET_FR]);
+        assert_eq!(
+            route(Some(&listed), "fr"),
+            Route::Pocket(models(&[POCKET_FR]))
+        );
+        assert_eq!(
+            route(Some(&listed), "en"),
+            Route::Speaker(Some(models(&[qwen_en])))
+        );
+        // Without Pocket TTS, as before.
+        assert_eq!(route(None, "fr"), Route::Speaker(None));
+        let qwen = models(&[QWEN]);
+        assert_eq!(route(Some(&qwen), "fr"), Route::Speaker(Some(qwen)));
+        assert!(matches!(
+            route(Some(&models(&[KOKORO])), "fr"),
+            Route::Kokoro(..)
+        ));
+        let kokoro: serde_json::Map<String, Value> = serde_json::from_str(KOKORO).unwrap();
+        assert!(entry_speaks(&kokoro, "pt-BR"));
+        assert!(!entry_speaks(&kokoro, "de"));
+    }
+
+    /// Which speaker a helper starts with: Pocket TTS for the light set
+    /// (its entries, Kokoro's read by the ONNX speaker beside it), any-tts
+    /// with the others for the full set, Pocket TTS loaded beside it.
+    #[test]
+    fn the_light_set_starts_pocket_and_the_full_set_any_tts() {
+        let pocket = models(&[POCKET_FR, POCKET_EN]);
+        let light = models(&[POCKET_FR, POCKET_EN, KOKORO]);
+        assert_eq!(
+            own_models(&pocket, false),
+            (pocket.clone(), SpeakerKind::Pocket)
+        );
+        assert_eq!(
+            own_models(&light, true),
+            (pocket.clone(), SpeakerKind::Pocket)
+        );
+        // Without Kokoro's ONNX model, any-tts's Kokoro reads Kokoro's.
+        assert_eq!(
+            own_models(&light, false),
+            (models(&[KOKORO]), SpeakerKind::AnyTts)
+        );
+        let full = models(&[QWEN, KOKORO, POCKET_FR, POCKET_EN]);
+        assert_eq!(
+            own_models(&full, true),
+            (models(&[QWEN, KOKORO]), SpeakerKind::AnyTts)
+        );
+        let qwen = models(&[QWEN]);
+        assert_eq!(own_models(&qwen, true), (qwen, SpeakerKind::AnyTts));
+    }
+
     /// Without a call, a YouTube request says so.
     #[test]
     fn call_youtube_without_its_call_is_an_error() {
@@ -1727,7 +2086,7 @@ mod tests {
         // identity fails on the text it gets (it makes no audio): appsrc
         // posts an error and sends EOS, as when the synthesizer fails.
         let failing = gst::ElementFactory::make("identity").build().unwrap();
-        let speaker = Speaker::with_synthesizer(failing, "failing").unwrap();
+        let speaker = Speaker::with_synthesizer(failing, SpeakerKind::AnyTts).unwrap();
         for _ in 0..2 {
             let result = speaker.speak("Bonjour.", "fr", 1.0, None, &|| {});
             let error = result.expect_err("a failed sentence said");

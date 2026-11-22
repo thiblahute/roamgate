@@ -14,6 +14,22 @@ import {
 } from "./voice-models";
 import { CPU_LAPTOP, GIB, NVIDIA_DESKTOP } from "./voice-setup-testing";
 
+/** Pocket TTS's entries, its packages at `roots`. */
+const POCKET = [
+  {
+    model: "pocket-tts",
+    path: "/models/pocket-tts-fr/languages/french",
+    languages: "fr",
+    voice: "estelle",
+  },
+  {
+    model: "pocket-tts",
+    path: "/models/pocket-tts-en/languages/english",
+    languages: "en",
+    voice: "alba",
+  },
+];
+
 const roots = Object.fromEntries(
   PACKAGES.map((entry) => [
     entry.id,
@@ -85,7 +101,7 @@ describe("tiers", () => {
     expect(light).toMatchObject({
       speech: "parakeet",
       reread: NO_MODEL,
-      tts: "kokoro-onnx",
+      tts: "pocket-tts",
       text_turn: "qwen3-0.6b",
     });
     const small = recommendedChoices({
@@ -161,7 +177,7 @@ describe("configPatch", () => {
     expect(patch).toEqual({
       parakeet_model: "/models/parakeet-tdt-0.6b-v3",
       whisper_model: "/models/ggml-large-v3-turbo-q5_0.bin",
-      tts_models: [{ model: "kokoro", path: "/models/Kokoro-82M" }],
+      tts_models: [{ model: "kokoro", path: "/models/Kokoro-82M" }, ...POCKET],
       clone_model: "/models/Qwen3-TTS-1.7B-Base",
       stock_model: undefined,
       speaker_model: "/models/wespeaker_en_voxceleb_resnet34.onnx",
@@ -170,12 +186,49 @@ describe("configPatch", () => {
     });
   });
 
-  test("light: Kokoro's ONNX model in place of any-tts", () => {
-    const patch = configPatch(recommendedChoices(CPU_LAPTOP).light, roots, {
+  test("light: Pocket TTS in place of any-tts, Kokoro's ONNX model beside it", () => {
+    const old = {
       tts_models: [{ model: "kokoro", path: "/old" }],
       clone_model: "/old/base",
       whisper_model: "/old/whisper.bin",
+    };
+    const patch = configPatch(recommendedChoices(CPU_LAPTOP).light, roots, old);
+    expect(patch).toMatchObject({
+      parakeet_model: "/models/parakeet-tdt-0.6b-v3",
+      kokoro_model: "/models/kokoro-v1.0.onnx",
+      kokoro_voices: "/models/voices-v1.0.bin",
+      tts_models: [
+        ...POCKET,
+        { model: "kokoro", path: "/models/kokoro-v1.0.onnx" },
+      ],
     });
+    for (const key of ["clone_model", "stock_model", "whisper_model"]) {
+      expect(key in patch).toBe(true);
+      expect(patch[key]).toBeUndefined();
+    }
+    // Without Kokoro's ONNX model, Pocket TTS alone, voice.json's Kokoro
+    // keys left as they are.
+    const noOnnx = Object.fromEntries(
+      Object.entries(roots).filter(([id]) => !id.startsWith("kokoro-onnx")),
+    );
+    const alone = configPatch(recommendedChoices(CPU_LAPTOP).light, noOnnx, {
+      ...old,
+      kokoro_model: "/elsewhere/kokoro.onnx",
+    });
+    expect(alone.tts_models).toEqual(POCKET);
+    expect("kokoro_model" in alone).toBe(false);
+  });
+
+  test("light, as before: Kokoro's ONNX model in place of any-tts", () => {
+    const patch = configPatch(
+      { ...recommendedChoices(CPU_LAPTOP).light, tts: "kokoro-onnx" },
+      roots,
+      {
+        tts_models: [{ model: "kokoro", path: "/old" }],
+        clone_model: "/old/base",
+        whisper_model: "/old/whisper.bin",
+      },
+    );
     expect(patch).toMatchObject({
       parakeet_model: "/models/parakeet-tdt-0.6b-v3",
       kokoro_model: "/models/kokoro-v1.0.onnx",
@@ -206,12 +259,20 @@ describe("configPatch", () => {
           },
           { model: "qwen3-tts", path: "/elsewhere/Qwen3-TTS-0.6B-Base" },
           { model: "kokoro", path: "/old/Kokoro-82M", voice: "ff_siwis" },
+          {
+            model: "pocket-tts",
+            path: "/old/pocket/fr",
+            languages: "fr",
+            voice: "lola",
+          },
         ],
       },
     );
     expect(patch.tts_models).toEqual([
       { model: "qwen3-tts", path: base, voice_embedding: "/voices/me.json" },
       { model: "kokoro", path: "/models/Kokoro-82M", voice: "ff_siwis" },
+      { ...POCKET[0], voice: "lola" },
+      POCKET[1],
     ]);
     expect(patch.stock_model).toBe("/models/Qwen3-TTS-1.7B-CustomVoice");
   });

@@ -698,4 +698,51 @@ export const MODEL_FILES: Record<string, ModelFile[]> = {
       "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
     ),
   ],
+  // Pocket TTS's base models without voice cloning, a language each, with
+  // the voice it reads with by default (voice-models.ts POCKET_VOICES): the
+  // weights, tokenizers and voices of one revision, matching each other.
+  "pocket-tts-fr": ((file) => [
+    file(
+      "languages/french/model.safetensors",
+      219029196,
+      "56366cfed6c25bfcd3bf4c61e66e06efaf52e78a5d06e1dcade1c588495bc699",
+    ),
+    file(
+      "languages/french/tokenizer.json",
+      246403,
+      "6211acffe9cb95172f71f0051f18e26ea305b2b32ea00b331ee976551c70887f",
+    ),
+    file(
+      "languages/french/embeddings/estelle.safetensors",
+      7571256,
+      "d9efd55657f74ba9483caec23f9fd1d155e121b058feef86af3760d54ea8aa15",
+    ),
+  ])(
+    huggingFace(
+      "kyutai/pocket-tts-without-voice-cloning",
+      "a7056f505a4a8ca72d8b5fb1440071d6f1a35739",
+    ),
+  ),
+  "pocket-tts-en": ((file) => [
+    file(
+      "languages/english/model.safetensors",
+      219029196,
+      "4c56cbd171c63e8a26ea61f5d48b8a0cd8f3c51f4652c0ab9a19bfcced8c931d",
+    ),
+    file(
+      "languages/english/tokenizer.json",
+      245020,
+      "f498428e1eafee50492f7be13dc9bfafcfc12e508cd0eb1b01c92ecd5d8c6687",
+    ),
+    file(
+      "languages/english/embeddings/alba.safetensors",
+      6244152,
+      "5850f417028fb2bf6de31e5e395e56ee7a21ac0e52ef31aebd4a6a2847d72e9c",
+    ),
+  ])(
+    huggingFace(
+      "kyutai/pocket-tts-without-voice-cloning",
+      "a7056f505a4a8ca72d8b5fb1440071d6f1a35739",
+    ),
+  ),
 };

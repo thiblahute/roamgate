@@ -1,11 +1,12 @@
 /**
- * Which language Kokoro reads a sentence in, and when it cannot. Kokoro's
- * voices speak one language each: the helper tags each sentence with its
- * language (the one asked, else Lingua's guess among the languages Kokoro
- * has a voice for, voice/helper/src/language.rs) and kokorosynthesizer or
- * anyttssynthesizer take that language's voice (ff_siwis for French,
- * af_heart for English...). A sentence in a language Kokoro has no voice
- * for would be guessed as one it has and read with its accent: here it is
+ * Which language the light voice (Kokoro, Pocket TTS) reads a sentence in,
+ * and when it cannot. Their voices speak one language each: the helper tags
+ * each sentence with its language (the one asked, else Lingua's guess among
+ * the languages Kokoro has a voice for, voice/helper/src/language.rs) and
+ * kokorosynthesizer, anyttssynthesizer or pocketsynthesizer take that
+ * language's voice (ff_siwis or Pocket TTS's estelle for French, af_heart
+ * or alba for English...). A sentence in a language none has a voice for
+ * would be guessed as one they have and read with its accent: here it is
  * caught first, and a short notice is read in its place.
  */
 
@@ -140,6 +141,48 @@ export function kokoroCannotRead(
     return KOKORO_VOICES[code] ? null : code;
   }
   return unvoicedLanguage(text);
+}
+
+/** A `tts_models` entry, as far as the light voice's languages go. */
+type LightEntry = { model: string; languages?: string | number };
+
+/**
+ * The languages the light voice reads: each Pocket TTS entry's own (its
+ * `languages`, a model per language), Kokoro's voices' for Kokoro (alone
+ * without `tts_models`, or an entry of its own).
+ */
+export function lightLanguages(
+  models: readonly LightEntry[] | undefined,
+): Set<string> {
+  if (!models) return new Set(Object.keys(KOKORO_VOICES));
+  const languages = new Set<string>();
+  for (const entry of models) {
+    if (typeof entry.languages === "string")
+      for (const code of entry.languages.split(","))
+        languages.add(code.trim().split(/[-_]/)[0]!.toLowerCase());
+    else if (entry.model === "kokoro")
+      for (const code of Object.keys(KOKORO_VOICES)) languages.add(code);
+  }
+  return languages;
+}
+
+/**
+ * The language the light voice (`models`: Pocket TTS's and Kokoro's
+ * entries, or Kokoro alone) cannot read `text` in, if any: `language` when
+ * it was given and none of its voices reads it, else the one the text is
+ * clearly in (unvoicedLanguage) when none does. Each voice reads its own
+ * language only: one of another language would read it with its accent.
+ */
+export function lightCannotRead(
+  text: string,
+  language: string | undefined,
+  models: readonly LightEntry[] | undefined,
+): string | null {
+  const readable = lightLanguages(models);
+  const code = language
+    ? language.split(/[-_]/)[0]!.toLowerCase()
+    : unvoicedLanguage(text);
+  return code && !readable.has(code) ? code : null;
 }
 
 /** What is read in place of a sentence Kokoro cannot read, in English. */
