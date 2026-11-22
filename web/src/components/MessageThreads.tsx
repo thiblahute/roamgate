@@ -360,26 +360,60 @@ export function useSelectedWords<T>(
   return [selection, () => setSelection(null)];
 }
 
-/** Comment, offered on the words selected: a button where they end. */
+/**
+ * Comment, offered on the words selected: a button where they end, and
+ * the view's other choices (`more`, Add to Work in a chat) beside it.
+ */
 export function SelectionOffer({
   at,
   className,
   onClick,
   children = "Comment",
+  more,
 }: {
   at: { x: number; y: number };
   className?: string;
   onClick: () => void;
   children?: ReactNode;
+  more?: readonly { label: string; onClick: () => void }[];
 }) {
+  // Keeps the selection while a button is pressed.
+  const keep = {
+    onPointerDown: (event: { preventDefault: () => void }) =>
+      event.preventDefault(),
+    onMouseDown: (event: { preventDefault: () => void }) =>
+      event.preventDefault(),
+  };
+  const classes = `chat-thread-select${className ? ` ${className}` : ""}`;
+  if (more?.length)
+    return createPortal(
+      <div
+        className={`chat-thread-select-group${className ? ` ${className}` : ""}`}
+        style={{ left: at.x, top: at.y }}
+      >
+        <button type="button" className={classes} {...keep} onClick={onClick}>
+          {children}
+        </button>
+        {more.map((each) => (
+          <button
+            key={each.label}
+            type="button"
+            className={classes}
+            {...keep}
+            onClick={each.onClick}
+          >
+            {each.label}
+          </button>
+        ))}
+      </div>,
+      document.body,
+    );
   return createPortal(
     <button
       type="button"
-      className={`chat-thread-select${className ? ` ${className}` : ""}`}
+      className={classes}
       style={{ left: at.x, top: at.y }}
-      // Keeps the selection while the button is pressed.
-      onPointerDown={(event) => event.preventDefault()}
-      onMouseDown={(event) => event.preventDefault()}
+      {...keep}
       onClick={onClick}
     >
       {children}

@@ -150,6 +150,18 @@
   cursor: pointer;
 }
 
+/* Comment and the view's other choices on the words selected, in a row. */
+.chat-thread-select-group {
+  position: fixed;
+  z-index: 200;
+  display: flex;
+  gap: 4px;
+}
+
+.chat-thread-select-group > .chat-thread-select {
+  position: static;
+}
+
 .chat-thread-error {
   display: flex;
   gap: 8px;

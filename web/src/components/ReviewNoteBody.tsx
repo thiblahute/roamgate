@@ -97,11 +97,12 @@ export type MessageParts = {
   /** + beside a part: comment on it, quoting it. */
   onComment?: (quote: string) => void;
   /**
-   * + beside a part offers more than a comment: called with the part's
-   * words and the +, the provider shows its choices there (Comment among
-   * them) instead of commenting at once.
+   * Right-click on a part (a long-press on a touch screen, the menu key or
+   * Shift+F10 on its +): the provider shows its choices there. Called with
+   * the words selected in the message if any, else the part's. Links and
+   * images keep the browser's own menu.
    */
-  onMenu?: (quote: string, at: HTMLElement) => void;
+  onPartMenu?: (quote: string, at: PartMenuAt) => void;
   /** A click on a part puts j / k on it. */
   onSelect?: (index: number) => void;
   /**
@@ -110,6 +111,126 @@ export type MessageParts = {
    */
   single?: boolean;
 };
+
+/** Where a part's menu opens: the pointer (or the part, for the keys). */
+export type PartMenuAt = { x: number; y: number; part: HTMLElement };
+
+/** How long a finger rests on a part before its menu opens. */
+export const PART_PRESS_MS = 450;
+/** How far a finger may move and still be pressing, not scrolling. */
+const PART_PRESS_SLOP = 10;
+
+/** The words selected inside `root`, if any. */
+function wordsSelectedIn(root: HTMLElement): string {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !selection.rangeCount) return "";
+  const range = selection.getRangeAt(0);
+  if (!root.contains(range.commonAncestorContainer)) return "";
+  return selection.toString().trim();
+}
+
+/**
+ * A part's menu (MessageParts.onPartMenu) on a message's root: on a right
+ * click, a long-press of a finger, or the keys' contextmenu on a part's +.
+ * The parts of a comment drawn inside (its own root) are not this
+ * message's; links and images keep the browser's menu.
+ */
+function usePartMenu(
+  rootRef: { current: HTMLDivElement | null },
+  quotes: readonly string[],
+  onPartMenu: MessageParts["onPartMenu"],
+) {
+  const latest = useRef({ quotes, onPartMenu });
+  latest.current = { quotes, onPartMenu };
+  const enabled = !!onPartMenu;
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!enabled || !root) return;
+    const open = (quote: string, at: PartMenuAt) =>
+      latest.current.onPartMenu?.(quote, at);
+    /** The part under `target`, if it is this message's. */
+    const partOf = (target: EventTarget | null) => {
+      if (!(target instanceof Element)) return null;
+      if (target.closest(".rc-text") !== root) return null;
+      if (target.closest("a[href], img, video")) return null;
+      const part = target.closest<HTMLElement>("[data-part]");
+      if (!part || !root.contains(part)) return null;
+      const index = Number(part.dataset.part);
+      return { part, quote: latest.current.quotes[index] ?? "" };
+    };
+    let press: {
+      x: number;
+      y: number;
+      quote: string;
+      timer: ReturnType<typeof setTimeout>;
+    } | null = null;
+    /** When a long-press opened the menu: the contextmenu after it is ours. */
+    let pressed = 0;
+    const cancel = () => {
+      if (press) clearTimeout(press.timer);
+      press = null;
+    };
+    const onContextMenu = (event: MouseEvent) => {
+      if (Date.now() - pressed < 1500) {
+        event.preventDefault();
+        return;
+      }
+      const found = partOf(event.target);
+      if (!found) return;
+      event.preventDefault();
+      const quote = press ? press.quote : wordsSelectedIn(root) || found.quote;
+      cancel();
+      // From the keys, the event has no pointer: under the part's start.
+      const rect = found.part.getBoundingClientRect();
+      const keys = event.clientX === 0 && event.clientY === 0;
+      open(quote, {
+        x: keys ? rect.left : event.clientX,
+        y: keys ? rect.bottom : event.clientY,
+        part: found.part,
+      });
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      cancel();
+      if (event.pointerType !== "touch" || !event.isPrimary) return;
+      const found = partOf(event.target);
+      if (!found) return;
+      // Words already selected stay what the menu is about.
+      const quote = wordsSelectedIn(root) || found.quote;
+      const { clientX: x, clientY: y } = event;
+      press = {
+        x,
+        y,
+        quote,
+        timer: setTimeout(() => {
+          press = null;
+          pressed = Date.now();
+          open(quote, { x, y, part: found.part });
+        }, PART_PRESS_MS),
+      };
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      if (
+        press &&
+        Math.hypot(event.clientX - press.x, event.clientY - press.y) >
+          PART_PRESS_SLOP
+      )
+        cancel();
+    };
+    root.addEventListener("contextmenu", onContextMenu);
+    root.addEventListener("pointerdown", onPointerDown);
+    root.addEventListener("pointermove", onPointerMove);
+    root.addEventListener("pointerup", cancel);
+    root.addEventListener("pointercancel", cancel);
+    return () => {
+      cancel();
+      root.removeEventListener("contextmenu", onContextMenu);
+      root.removeEventListener("pointerdown", onPointerDown);
+      root.removeEventListener("pointermove", onPointerMove);
+      root.removeEventListener("pointerup", cancel);
+      root.removeEventListener("pointercancel", cancel);
+    };
+  }, [enabled, rootRef]);
+}
 
 /**
  * + in the margin of a part of a message: comment on that part. The + is
@@ -122,21 +243,17 @@ export function PartButton({
   quote: string;
   parts: MessageParts | undefined;
 }) {
-  if (!parts?.onComment && !parts?.onMenu) return null;
-  const { onComment, onMenu } = parts;
+  if (!parts?.onComment) return null;
+  const onComment = parts.onComment;
   return (
     <button
       type="button"
       className="rc-part-add"
-      title={onMenu ? "Comment on this part, or more" : "Comment on this part"}
-      aria-label={
-        onMenu ? "Comment on this part, or more" : "Comment on this part"
-      }
-      {...(onMenu ? { "aria-haspopup": "menu" as const } : {})}
+      title="Comment on this part"
+      aria-label="Comment on this part"
       onClick={(event) => {
         event.stopPropagation();
-        if (onMenu) onMenu(quote, event.currentTarget);
-        else onComment?.(quote);
+        onComment(quote);
       }}
     />
   );
@@ -379,6 +496,7 @@ export function NoteBody({
     return byPart;
   }, [parts?.notes, layout]);
   const notesAt = (index: number) => notesByPart.get(index) ?? [];
+  usePartMenu(rootRef, quotes, parts?.onPartMenu);
   const partClass = (index: number) =>
     `rc-part${
       parts?.focused === index && (quotes.length > 1 || parts.single)

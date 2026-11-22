@@ -1,4 +1,4 @@
-import { afterAll, afterEach, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, expect, jest, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { Window } from "happy-dom";
 import type { Root } from "react-dom/client";
@@ -43,6 +43,7 @@ async function registerTests() {
     "Node",
     "Event",
     "MouseEvent",
+    "PointerEvent",
     "DOMParser",
     "NodeFilter",
   ] as const) {
@@ -70,9 +71,9 @@ async function registerTests() {
   });
   afterAll(async () => browser.happyDOM.close());
 
-  test("a part's + comments at once, or hands its words and itself to a menu", async () => {
+  test("a part's + comments at once, with a menu or not", async () => {
     const onComment = mock<(quote: string) => void>(() => {});
-    const onMenu = mock<(quote: string, at: HTMLElement) => void>(() => {});
+    const onPartMenu = mock(() => {});
     const container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -80,29 +81,122 @@ async function registerTests() {
       root!.render(
         h(NoteBody, {
           text: "First part.\n\nSecond part.",
-          parts: { notes: [], focused: null, onComment },
+          parts: { notes: [], focused: null, onComment, onPartMenu },
         }),
       ),
     );
-    const plus = () =>
+    const plus =
       container.querySelectorAll<HTMLButtonElement>(".rc-part-add")[1]!;
-    expect(plus().getAttribute("aria-haspopup")).toBeNull();
-    await act(async () => plus().click());
+    expect(plus.getAttribute("aria-haspopup")).toBeNull();
+    expect(plus.title).toBe("Comment on this part");
+    await act(async () => plus.click());
     expect(onComment).toHaveBeenCalledWith("Second part.");
+    expect(onPartMenu).not.toHaveBeenCalled();
+  });
+
+  test("a right-click on a part hands its words, or the selected ones, to its menu", async () => {
+    const onPartMenu = mock<
+      (quote: string, at: { x: number; y: number; part: HTMLElement }) => void
+    >(() => {});
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
     await act(async () =>
       root!.render(
         h(NoteBody, {
-          text: "First part.\n\nSecond part.",
-          parts: { notes: [], focused: null, onComment, onMenu },
+          text: "First part.\n\nSecond [link](https://example.com) part.",
+          parts: { notes: [], focused: null, onComment: () => {}, onPartMenu },
         }),
       ),
     );
-    expect(plus().getAttribute("aria-haspopup")).toBe("menu");
-    await act(async () => plus().click());
-    expect(onComment).toHaveBeenCalledTimes(1);
-    expect(onMenu).toHaveBeenCalledTimes(1);
-    expect(onMenu.mock.calls[0]![0]).toBe("Second part.");
-    expect(onMenu.mock.calls[0]![1]).toBe(plus());
+    const part = (index: number) =>
+      container.querySelector<HTMLElement>(`[data-part="${index}"]`)!;
+    const rightClick = (target: Element) => {
+      const event = new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 40,
+        clientY: 50,
+      });
+      target.dispatchEvent(event);
+      return event;
+    };
+    const text = part(0).querySelector("p") ?? part(0);
+    const first = rightClick(text);
+    expect(first.defaultPrevented).toBe(true);
+    expect(onPartMenu).toHaveBeenCalledTimes(1);
+    expect(onPartMenu.mock.calls[0]![0]).toBe("First part.");
+    expect(onPartMenu.mock.calls[0]![1]).toEqual({
+      x: 40,
+      y: 50,
+      part: part(0),
+    });
+    // A link keeps the browser's menu.
+    const link = rightClick(part(1).querySelector("a")!);
+    expect(link.defaultPrevented).toBe(false);
+    expect(onPartMenu).toHaveBeenCalledTimes(1);
+    // Words selected in the message: those, wherever the click is.
+    const words = part(1).querySelector("p")!.firstChild!;
+    const range = document.createRange();
+    range.setStart(words, 0);
+    range.setEnd(words, 6);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    rightClick(text);
+    expect(onPartMenu.mock.calls[1]![0]).toBe("Second");
+    window.getSelection()!.removeAllRanges();
+  });
+
+  test("a finger resting on a part opens its menu, moving it does not", async () => {
+    jest.useFakeTimers();
+    try {
+      const onPartMenu = mock<(quote: string) => void>(() => {});
+      const container = document.createElement("div");
+      document.body.append(container);
+      root = createRoot(container);
+      await act(async () =>
+        root!.render(
+          h(NoteBody, {
+            text: "First part.\n\nSecond part.",
+            parts: { notes: [], focused: null, onPartMenu },
+          }),
+        ),
+      );
+      const second = container.querySelector<HTMLElement>('[data-part="1"]')!;
+      const finger = (type: string, x: number, y: number) =>
+        second.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            pointerType: "touch",
+            isPrimary: true,
+            clientX: x,
+            clientY: y,
+          }),
+        );
+      await act(async () => {
+        finger("pointerdown", 10, 10);
+        finger("pointermove", 40, 10);
+        jest.advanceTimersByTime(1000);
+      });
+      expect(onPartMenu).not.toHaveBeenCalled();
+      await act(async () => {
+        finger("pointerdown", 10, 10);
+        jest.advanceTimersByTime(1000);
+      });
+      expect(onPartMenu).toHaveBeenCalledTimes(1);
+      expect(onPartMenu.mock.calls[0]![0]).toBe("Second part.");
+      // The browser's own long-press menu after it is not shown.
+      const native = new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+      });
+      second.dispatchEvent(native);
+      expect(native.defaultPrevented).toBe(true);
+      expect(onPartMenu).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test("a numbered list drawn in parts keeps its numbers", async () => {
