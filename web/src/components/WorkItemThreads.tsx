@@ -7,7 +7,11 @@ import {
   type ReviewThread,
   WORK_NO_OWNER,
 } from "../../../shared/review";
-import { rememberReviewSnapshot, reviewCall, useReviewState } from "../review";
+import {
+  rememberReviewSnapshot,
+  reviewCall,
+  useReviewSnapshots,
+} from "../review";
 import {
   newClientId,
   type PendingWrite,
@@ -113,7 +117,7 @@ export type WorkItemThreadsApi = WorkItemView & {
 };
 
 export function useWorkItemThreads(item: string): WorkItemThreadsApi {
-  const reviews = useReviewState();
+  const snapshots = useReviewSnapshots({ work: item });
   const [sessionId, setSessionId] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -130,12 +134,12 @@ export function useWorkItemThreads(item: string): WorkItemThreadsApi {
   }, [item]);
   const snapshot = useMemo(
     () =>
-      (sessionId ? reviews.sessions.get(sessionId) : undefined) ??
-      [...reviews.sessions.values()].find(
+      (sessionId ? snapshots.get(sessionId) : undefined) ??
+      [...snapshots.values()].find(
         ({ session }) =>
           session.target?.kind === "work" && session.target.item === item,
       ),
-    [reviews.sessions, sessionId, item],
+    [snapshots, sessionId, item],
   );
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;

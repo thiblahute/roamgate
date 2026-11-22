@@ -70,7 +70,11 @@ import { openAgentTask } from "../agentTasksOpen";
 import { nextColumn, nextRow } from "../boardNavigation";
 import { roamgateLocalStorage } from "../browserStorage";
 import { requestFileLinkOpen } from "../fileLinkOpen";
-import { requestReviewShown, useReviewState } from "../review";
+import {
+  requestReviewShown,
+  useReviewSnapshots,
+  useReviewState,
+} from "../review";
 import {
   EMPTY_KEY_STATE,
   feedKey,
@@ -1040,7 +1044,7 @@ export function useWorkMode({
     (link: WorkLink, item?: string) => {
       switch (link.kind) {
         case "review": {
-          const snapshot = reviews.sessions.get(link.id);
+          const snapshot = reviews.summaries.get(link.id);
           if (snapshot) {
             requestReviewShown(snapshot.session.connectionId, link.id);
             stepAside();
@@ -1116,7 +1120,22 @@ export function useWorkMode({
           return;
       }
     },
-    [reviews.sessions, stepAside, onOpenEffort, activeConnectionId],
+    [reviews.summaries, stepAside, onOpenEffort, activeConnectionId],
+  );
+  // The detail's reviews, read whole: a link to a thread is named by its
+  // first words.
+  const detailLinks = (
+    boardItems.find((item) => item.id === detail) ??
+    (watching?.id === detail ? watching : null)
+  )?.links;
+  const detailReviews = useReviewSnapshots(
+    detailLinks
+      ? {
+          ids: detailLinks.flatMap((link) =>
+            link.kind === "review" && link.thread ? [link.id] : [],
+          ),
+        }
+      : null,
   );
   /** What names the detail's links: efforts, requests, reviews, items. */
   const linkNames = useMemo<WorkLinkNames>(
@@ -1124,11 +1143,11 @@ export function useWorkMode({
       effort: (id) => efforts?.find((each) => each.id === id)?.name,
       pr: (url) => requests?.find((each) => each.url === url)?.title,
       review: (id, thread) => {
-        const snapshot = reviews.sessions.get(id);
+        const snapshot = reviews.summaries.get(id);
         if (!snapshot) return undefined;
         const body = thread
-          ? snapshot.threads.find((each) => each.id === thread)?.comments[0]
-              ?.body
+          ? detailReviews.get(id)?.threads.find((each) => each.id === thread)
+              ?.comments[0]?.body
           : undefined;
         const words = body?.replace(/\s+/g, " ").trim();
         return {
@@ -1142,7 +1161,7 @@ export function useWorkMode({
       },
       item: (id) => boardItems.find((each) => each.id === id)?.title,
     }),
-    [efforts, requests, reviews.sessions, boardItems],
+    [efforts, requests, reviews.summaries, detailReviews, boardItems],
   );
 
   const selectedItem = items.find((item) => item.id === selected) ?? null;

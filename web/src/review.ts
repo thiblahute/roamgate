@@ -204,6 +204,8 @@ export type ReviewWant = {
   /** A chat's review (its agent session). */
   chat?: string | null;
   effort?: string | null;
+  /** A Work board item's review. */
+  work?: string | null;
 };
 
 /** Whether a review is one a want names. */
@@ -232,6 +234,8 @@ export function reviewWanted(
     return true;
   if (want.chat && target.kind === "chat" && target.chat === want.chat)
     return true;
+  if (want.work && target.kind === "work" && target.item === want.work)
+    return true;
   return (
     !!want.effort && target.kind === "effort" && target.effort === want.effort
   );
@@ -256,6 +260,7 @@ function wantKey(want: ReviewWant): string | null {
     ...(want.workspaceId ? { workspaceId: want.workspaceId } : {}),
     ...(want.chat ? { chat: want.chat } : {}),
     ...(want.effort ? { effort: want.effort } : {}),
+    ...(want.work ? { work: want.work } : {}),
   };
   return Object.keys(value).some((key) => key !== "connectionId")
     ? JSON.stringify(value)
