@@ -193,6 +193,44 @@ function bodyLimit(anchor: ReviewAnchor, first: boolean): number {
     : REVIEW_LIMITS.bodyChars;
 }
 
+/**
+ * Words as they read once a comment's Markdown is drawn: its marks
+ * (emphasis, code ticks, headings, list and quote markers, task boxes,
+ * table bars) and links' targets left out.
+ */
+export function readWords(markdown: string): string {
+  return markdown
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(?:#{1,6}|>+)\s+/gm, "")
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/gm, "")
+    .replace(/\*\*|__|[*`]/g, "")
+    .replace(/\|/g, " ");
+}
+
+/** Text compared loosely, as the comments' views find quotes again. */
+function looseWords(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * The words a thread on a part of a comment quotes, as they read: the
+ * agent's quote with its Markdown marks left out, refused unless the
+ * comment has them (its first line, as the views look a quote up).
+ */
+export function messageQuote(body: string, quote: string): string {
+  const words = readWords(quote)
+    .replace(/[ \t]+/g, " ")
+    .trim();
+  const first = looseWords(words.split("\n")[0] ?? "");
+  if (!first)
+    throw new ReviewError("quote the words of the part the thread is on");
+  if (!looseWords(readWords(body)).includes(first))
+    throw new ReviewError(
+      "the quote is not in that comment: quote its words as they read (a heading's, a paragraph's, one table cell's)",
+    );
+  return words;
+}
+
 /** An effort's id, as the reviews inbox makes them. */
 const EFFORT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
@@ -2614,6 +2652,31 @@ export function createReviewService(args: {
     return thread;
   }
 
+  /**
+   * Where a thread on a part of a comment goes (an agent's question on a
+   * part of a work item's description, as the user's + there makes one):
+   * the anchor of the comment's thread (a work item's, a file's lines)
+   * with the comment and the words it quotes, so it is drawn under that
+   * part. The words must be in the comment.
+   */
+  function messagePartAnchor(params: Record<string, unknown>): ReviewAnchor {
+    const target = session(params.sessionId);
+    const { thread, comment } = locate(target.id, params.commentId);
+    if (thread.kind === "merge-request")
+      throw new ReviewError("a merge request's comment has no parts here");
+    const quote = messageQuote(comment.body, text(params.quote, "quote", 4000));
+    // The comment's own place, but what made it a description or a
+    // comment on a part itself.
+    const anchor: ReviewAnchor = { ...thread.anchor };
+    delete anchor.message;
+    delete anchor.feedback;
+    if (anchor.work) anchor.work = { item: anchor.work.item };
+    return {
+      ...anchor,
+      message: { thread: thread.id, comment: comment.id, quote },
+    };
+  }
+
   /** The pushes in flight, by merge request review. */
   const pushes = new Map<string, Promise<ReviewSnapshot>>();
 
@@ -4835,6 +4898,7 @@ export function createReviewService(args: {
     adoptThread,
     moveThread,
     setThreadAnchor,
+    messagePartAnchor,
     requestAgentReview,
     agentSummary,
     /**

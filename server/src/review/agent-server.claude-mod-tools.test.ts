@@ -219,6 +219,20 @@ test("every tool runs the client's command on the review socket", async () => {
   expect(
     ((await call("review_add", { text: "A note" })) as { kind: string }).kind,
   ).toBe("discussion");
+  // On a part of a comment: drawn under the words it quotes.
+  const onPart = (await call("review_add", {
+    on_comment: asked.comments[0]!.id,
+    quote: "Why?",
+    text: "Because",
+  })) as { id: string };
+  expect(
+    service.get({ sessionId: review }).threads.find((t) => t.id === onPart.id)
+      ?.anchor.message,
+  ).toEqual({
+    thread: asked.id,
+    comment: asked.comments[0]!.id,
+    quote: "Why?",
+  });
 
   await call("review_edit", { comment_id: answer.id, text: "Edited $HOME" });
   expect(
@@ -241,7 +255,7 @@ test("every tool runs the client's command on the review socket", async () => {
   const got = (await call("review_get", { review })) as {
     threads: unknown[];
   };
-  expect(got.threads).toHaveLength(3);
+  expect(got.threads).toHaveLength(4);
 });
 
 test("threads waiting for the session's answer, across its reviews", async () => {
@@ -426,6 +440,13 @@ test("what the model gets wrong is said back before any request", () => {
   expect(() =>
     toolRequest(roamgateTool("review_add")!, { text: "x", line: 0 }, IDENTITY),
   ).toThrow("line number");
+  expect(() =>
+    toolRequest(
+      roamgateTool("review_add")!,
+      { text: "x", on_comment: "abc" },
+      IDENTITY,
+    ),
+  ).toThrow("on_comment needs quote");
   expect(() =>
     toolRequest(
       roamgateTool("review_open")!,

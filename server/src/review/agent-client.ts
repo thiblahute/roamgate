@@ -151,7 +151,14 @@ def parser():
     a.add_argument("--end-line", type=int)
     a.add_argument("--side", choices=["old", "new"])
     a.add_argument("--draft", action="store_true", help="a review comment, not a discussion")
-    a.add_argument("--quote", help="in a rendered file: the words meant, as they read")
+    a.add_argument(
+        "--quote",
+        help="in a rendered file, or with --on-comment: the words meant, as they read",
+    )
+    a.add_argument(
+        "--on-comment",
+        help="a comment's id (a work item's description_comment): the thread goes on its part --quote reads",
+    )
     a.add_argument("text", nargs="*", help="text, or - for standard input")
 
     for name, helptext in (

@@ -1185,7 +1185,7 @@ describe("work service", () => {
     expect(reviews.sessions.get(sessionId)!.threads.length).toBe(2);
   });
 
-  test("the design doc is the item's description: set whole, revised in place, its decisions ticked, its versions kept", async () => {
+  test("the design doc is the item's description: set whole, revised in place, its questions asked on its parts, its versions kept", async () => {
     const kit = reviewServiceForTest({});
     const service = createWorkService({
       store: openWorkStore(dir()),
@@ -1214,9 +1214,9 @@ describe("work service", () => {
         },
       },
     });
-    // A doc longer than a comment may be, with two decisions.
+    // A doc longer than a comment may be, its questions not in it.
     const filler = "Some long words of the design. ".repeat(1000);
-    const doc = `# Data history\n\n${filler}\n\n## Decisions\n\n- [ ] **D1** Approach.\n  Recommendation: B.\n- [ ] **D2** Scope.\n`;
+    const doc = `# Data history\n\n${filler}\n\n## Approach\n\nA copy in **git** of every store.\n\n## Scope\n\nEvery area.\n`;
     expect(doc.length).toBeGreaterThan(20_000);
     const meta = {
       by: "agent" as const,
@@ -1224,7 +1224,7 @@ describe("work service", () => {
       address: "desktop/w35:p1",
     };
     const set = await service.update({ item: item.id, text: doc }, meta);
-    expect(set.decisions).toBe(2);
+    expect(set.questions).toBeUndefined();
     let threads = service.threads({ item: item.id })!.threads;
     // The user's words stay theirs, an ordinary thread now; the doc is the
     // agent's description.
@@ -1235,27 +1235,67 @@ describe("work service", () => {
     expect(threads.find((t) => t.id === users.id)!.anchor.work).toEqual({
       item: item.id,
     });
-    // The user answers D1 on its line; the agent ticks it with their words.
-    const ticked = await service.update(
-      { item: item.id, tick: [{ decision: "D1", answer: "as recommended" }] },
-      meta,
+    // The agent asks each open question on the part it is about (review_add
+    // on_comment): the description's anchor, the words as they read.
+    const comment = description.comments[0]!.id;
+    const anchor = kit.service.messagePartAnchor({
+      sessionId,
+      commentId: comment,
+      quote: "A copy in **git** of every store.",
+    });
+    expect(anchor).toEqual({
+      work: { item: item.id },
+      message: {
+        thread: description.id,
+        comment,
+        quote: "A copy in git of every store.",
+      },
+    });
+    expect(() =>
+      kit.service.messagePartAnchor({
+        sessionId,
+        commentId: comment,
+        quote: "Words it does not have",
+      }),
+    ).toThrow(/the quote is not in that comment/);
+    const asked = await kit.service.addThread({
+      sessionId,
+      author: "Claude",
+      text: "Copy every store, or the board only? Recommendation: every store.",
+      anchor,
+    });
+    await kit.service.addThread({
+      sessionId,
+      author: "Claude",
+      text: "Every area, or Work and reviews first?",
+      anchor: kit.service.messagePartAnchor({
+        sessionId,
+        commentId: comment,
+        quote: "Every area.",
+      }),
+    });
+    // Its card counts them, as the review's changes reach the board.
+    service.questionsSeen(item.id, service.threads({ item: item.id })!.threads);
+    expect(service.store.item(item.id)!.questions).toBe(2);
+    // The user answers the first; the agent writes the decision into the
+    // text and resolves the thread.
+    const decided = doc.replace(
+      "A copy in **git** of every store.",
+      'A copy in **git** of every store (decided 2026-11-22: "every store").',
     );
-    expect(ticked.decisions).toBe(1);
+    const ticked = await service.update({ item: item.id, text: decided }, meta);
+    kit.service.resolve({ sessionId, commentId: asked.id, resolved: true });
+    service.questionsSeen(item.id, service.threads({ item: item.id })!.threads);
+    expect(service.store.item(item.id)!.questions).toBe(1);
     threads = service.threads({ item: item.id })!.threads;
     const same = workDescriptionThread(threads, ticked)!;
     // Its own description: rewritten in place, its id kept.
     expect(same.id).toBe(description.id);
     expect(same.comments[0]!.body).toContain(
-      '- [x] **D1** (2026-11-22, user: "as recommended") Approach.',
+      '(decided 2026-11-22: "every store")',
     );
-    await expect(
-      service.update(
-        { item: item.id, tick: [{ decision: "D1", answer: "again" }] },
-        meta,
-      ),
-    ).rejects.toThrow(/no open decision D1/);
     // Every version is in the history, newest first.
-    const versions = service.descriptionVersions(ticked);
+    const versions = service.descriptionVersions(service.store.item(item.id)!);
     expect(versions.map((each) => each.text)).toEqual([
       doc.trim(),
       "Keep everything in git",
@@ -1270,8 +1310,8 @@ describe("work service", () => {
         )
       ).split("\n")[1]!,
     );
-    expect(listed.item.open_decisions).toBe(1);
-    expect(listed.description).toContain("**D2** Scope.");
+    expect(listed.item.open_questions).toBe(1);
+    expect(listed.description).toContain("Every area.");
     expect(listed.description_versions).toHaveLength(2);
     // The same text again changes nothing.
     const again = await service.change(

@@ -89,7 +89,7 @@ if (
         needsTriage: true,
       }),
       item("1400000000000000", "gst2", "open", ["t2", "t3"], {
-        decisions: 3,
+        questions: 3,
       }),
       item("1500000000000000", "gst2", "open", ["t4", "t5"]),
       item("1600000000000000", "gst2", "open", ["t6", "t7"]),
@@ -651,12 +651,12 @@ if (
           ?.querySelector(".work-triage")?.textContent ?? null;
       expect(sorting("1300000000000000")).toBe("being sorted");
       expect(sorting("1400000000000000")).toBeNull();
-      // One whose description leaves decisions open says how many.
+      // One with questions open on its description says how many.
       const decisions = (id: string) =>
         view.panel
           .querySelector(`[data-work-item="${id}"]`)
           ?.querySelector(".work-decisions")?.textContent ?? null;
-      expect(decisions("1400000000000000")).toBe("3 decisions open");
+      expect(decisions("1400000000000000")).toBe("3 questions open");
       expect(decisions("1300000000000000")).toBeNull();
 
       // a opens the form in the view: one text box, the user's own

@@ -338,23 +338,29 @@ states clears them unless given:
     roamgate-review work work_update '{"item": "0123abcd", "state": "you", "ask": "Choose: media to the car with the phone mic, or no music on car links", "answers": ["Media with the phone mic", "No music on car links"]}'
 
 A design to agree on lives in the item itself: its design doc is the
-item's description, not a separate plan review nor a thread per question.
-Write it whole with \`work_update\` \`text\` (Markdown, up to 200,000
-characters: headings, tables, lists), with one line per decision the user
-has to take, \`- [ ] **D3** The question. Recommendation: ...\`, and
-revise it there as the work goes (your own description is rewritten; one
-the user wrote stays as a thread, and yours becomes the description; every
-earlier version stays in the item's history, \`work_list {"item": ...,
-"versions": true}\`). The user reads it in the item and comments on its
-parts there, a decision's line included: those comments reach you as the
-item's threads, quoting the words they are on. Once they answer a
-decision, tick it with their words, and answer their thread:
+item's description, not a separate plan review. Write it whole with
+\`work_update\` \`text\` (Markdown, up to 200,000 characters: headings,
+tables, lists) and revise it there as the work goes (your own description
+is rewritten; one the user wrote stays as a thread, and yours becomes the
+description; every earlier version stays in the item's history,
+\`work_list {"item": ..., "versions": true}\`). The doc keeps no list of
+decisions: each open question is a comment on the part of the description
+it is about (a heading, a paragraph, a table row's first cell), as the
+user's own comments on parts are. Short: the question, the options in one
+line, your recommendation. \`work_list {"item": ...}\` gives the
+description's comment id (\`description_comment\`); quote the part's words
+as they read (no Markdown marks):
 
-    roamgate-review work work_update '{"item": "0123abcd", "tick": [{"decision": "D3", "answer": "as recommended"}]}'
+    roamgate-review add --on-comment 1a2b3c4d --quote "Retention" "Keep raw samples 30 days or 90? Recommendation: 30, rollups beyond."
 
-which makes the line \`- [x] **D3** (2026-11-22, user: "as recommended")
-...\`; the card says how many decisions are still open. A \`plans/\` file
-may mirror the doc, linked as a \`file\` link, but the item is the source.
+(\`review_add\` with \`on_comment\` and \`quote\` in Claude Code). The
+card says how many of your questions are still open. When the user
+answers, revise the doc's text where it applies to state what was decided,
+with the day and their words ("Raw samples are kept 30 days (decided
+2026-11-22: "30 is enough")"), answer their thread and resolve it. The
+user also comments on other parts: those comments reach you as the item's
+threads, quoting the words they are on. A \`plans/\` file may mirror the
+doc, linked as a \`file\` link, but the item is the source.
 
 The user's comments on
 an item reach its owner as review comments: answer them with

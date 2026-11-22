@@ -554,7 +554,7 @@ export function createReviewAgentServer(args: {
   ): Promise<ReviewSession> {
     // A comment names its review: an agent answering across a workspace's
     // repositories need not say which one.
-    const comment = form.get("comment");
+    const comment = form.get("comment") || form.get("on_comment");
     const owner =
       !form.get("session") && comment
         ? args.service.sessionOfComment({
@@ -1102,13 +1102,36 @@ export function createReviewAgentServer(args: {
       }
       case "add": {
         const line = intParam(form.get("line"), "line");
+        const kind =
+          form.get("draft") === "1" || form.get("kind") === "draft"
+            ? "draft"
+            : "discussion";
+        // On a part of a comment (a work item's description): drawn under
+        // the words it quotes, as the user's own comments on parts are.
+        const onComment = form.get("on_comment");
+        if (onComment) {
+          if (form.get("file") || line !== undefined)
+            throw new ReviewError(
+              "a thread is on a comment's part or on a file, not both",
+            );
+          return threadOutput(
+            await args.service.addThread({
+              sessionId,
+              kind,
+              author: agent,
+              text,
+              anchor: args.service.messagePartAnchor({
+                sessionId,
+                commentId: onComment,
+                quote: form.get("quote") ?? "",
+              }),
+            }),
+          );
+        }
         return threadOutput(
           await args.service.addThread({
             sessionId,
-            kind:
-              form.get("draft") === "1" || form.get("kind") === "draft"
-                ? "draft"
-                : "discussion",
+            kind,
             author: agent,
             text,
             anchor: {

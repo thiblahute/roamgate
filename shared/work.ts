@@ -8,6 +8,7 @@
  */
 
 import { parseAgentAddress } from "./agentMessage";
+import { REVIEW_USER } from "./review";
 
 export const WORK_STATES = ["you", "doing", "verify", "open", "done"] as const;
 export type WorkState = (typeof WORK_STATES)[number];
@@ -154,10 +155,10 @@ export type WorkItem = {
   /** For a decision: a few short answers, one tap each (a comment). */
   answers?: string[];
   /**
-   * The decisions its description leaves open (`- [ ] **Dn**` lines), as
-   * last written through the board; none when it has none.
+   * The questions its owner asks on parts of its description, still open
+   * (workOpenQuestions); none when it has none.
    */
-  decisions?: number;
+  questions?: number;
 };
 
 export type WorkPushKind = "items" | "projects" | "item";
@@ -1024,57 +1025,31 @@ export function workDescriptionThread<
 }
 
 /**
- * A decision line of a design doc: `- [ ] **Dn ...` while open, `- [x]`
- * once decided. Its id, whether it is open, and its line (0-based).
+ * The questions an item's owner asks on its description, still open: the
+ * unresolved threads an agent started on parts of the description's text
+ * (the words they quote). The user's own comments there are not counted.
  */
-const DECISION_LINE = /^\s*[-*+]\s+\[([ xX])\]\s+\*\*(D\d+)(?![0-9])/;
-
-export type WorkDecision = { id: string; open: boolean; line: number };
-
-/** The decisions of a description (a design doc), in order. */
-export function workDecisions(text: string): WorkDecision[] {
-  const out: WorkDecision[] = [];
-  text.split("\n").forEach((line, at) => {
-    const match = DECISION_LINE.exec(line);
-    if (match) out.push({ id: match[2]!, open: match[1] === " ", line: at });
-  });
-  return out;
-}
-
-/** How many decisions a description leaves open. */
-export function workOpenDecisions(text: string): number {
-  return workDecisions(text).filter((each) => each.open).length;
-}
-
-/**
- * A decision ticked in a description: its box checked and, after its
- * bold words, the day and the user's words, `- [x] **D3 Title.** (2026-11-22,
- * user: "as recommended") ...`. Null when no open decision has that id.
- */
-export function tickWorkDecision(
-  text: string,
-  id: string,
-  answer: string,
-  day: string,
-): string | null {
-  const lines = text.split("\n");
-  const key = id.trim().toUpperCase();
-  const at = lines.findIndex((line) => {
-    const match = DECISION_LINE.exec(line);
-    return !!match && match[1] === " " && match[2] === key;
-  });
-  if (at < 0) return null;
-  const line = lines[at]!;
-  const words = answer.replace(/\s+/g, " ").trim();
-  const note = ` (${day}, user: "${words}")`;
-  const open = line.indexOf("**");
-  const close = line.indexOf("**", open + 2);
-  const checked = line.replace(/\[ \]/, "[x]");
-  lines[at] =
-    close > open
-      ? `${checked.slice(0, close + 2)}${note}${checked.slice(close + 2)}`
-      : `${checked}${note}`;
-  return lines.join("\n");
+export function workOpenQuestions<
+  T extends {
+    anchor: {
+      work?: { description?: true; quote?: string; from?: unknown };
+      message?: { comment: string; quote?: string };
+    };
+    createdAt: string;
+    resolved?: boolean;
+    comments: readonly { id: string; author: string }[];
+  },
+>(threads: readonly T[], item: Pick<WorkItem, "createdAt">): number {
+  const description = workDescriptionThread(threads, item)?.comments[0];
+  if (!description) return 0;
+  return threads.filter(
+    (thread) =>
+      !thread.resolved &&
+      thread.anchor.message?.comment === description.id &&
+      !!thread.anchor.message.quote &&
+      !!thread.comments[0] &&
+      thread.comments[0].author !== REVIEW_USER,
+  ).length;
 }
 
 /**

@@ -25,11 +25,11 @@ import { WorkError } from "./store";
 
 /**
  * How a design is worked on an item, said in work_update's and the
- * skill's words: the doc is the item's description, its questions its
- * decision lines, answered by comments on them.
+ * skill's words: the doc is the item's description, its open questions
+ * threads on the parts they are about, the answers written into the text.
  */
 export const WORK_DOC_NOTE =
-  "an item's design doc is its description, not a separate file or plan review: write it there (Markdown, headings, tables, `- [ ] **Dn** question, recommendation` lines for each decision the user has to take) and revise it there; the user comments on its parts in the item, comments that reach you as the item's threads; tick a decision once they answer it (tick, with their words), never post the decisions as threads of their own; a plans/ file may mirror it, linked as a file link, but the item is the source";
+  "an item's design doc is its description, not a separate file or plan review: write it there (Markdown, headings, tables) and revise it there, with no list of decisions in it; ask each open question as a thread on the part of the description it is about (review_add with on_comment, the description_comment work_list {item} gives, and quote, that part's words as they read): short, the question, the options in a line, your recommendation; once the user answers, revise the text where it applies to state what was decided (the day and their words) and resolve the thread; the user comments on its parts in the item too, comments that reach you as the item's threads; a plans/ file may mirror it, linked as a file link, but the item is the source";
 
 /** Said in each tool's description: the client does the same without them. */
 export const WORK_CLI_NOTE =
@@ -141,28 +141,6 @@ const descriptionParam = Type.String({
   description:
     "The item's description, whole (Markdown): its design doc when it has one, revised here as the work goes. The user reads it in the item and comments on its parts there. Your own description is rewritten; one by the user (or another agent) stays as a thread and yours becomes the description. Every earlier version stays in the item's history (work_list {item, versions: true}).",
 });
-const tickParam = Type.Array(
-  Type.Object(
-    {
-      decision: Type.String({
-        maxLength: 10,
-        description: "The decision's id: D1, D2...",
-      }),
-      answer: Type.String({
-        minLength: 1,
-        maxLength: 300,
-        description: "The user's words, as they answered it.",
-      }),
-    },
-    { additionalProperties: false },
-  ),
-  {
-    maxItems: 50,
-    description:
-      'Decisions of the description the user answered: each `- [ ] **Dn**` line is checked, with the day and their words (`- [x] **D3** (2026-11-22, user: "as recommended")`).',
-  },
-);
-
 export const workToolSchemas = {
   work_list: Type.Object(
     {
@@ -266,7 +244,6 @@ export const workToolSchemas = {
         }),
       ),
       text: Type.Optional(descriptionParam),
-      tick: Type.Optional(tickParam),
     },
     { additionalProperties: false },
   ),
@@ -375,7 +352,7 @@ export type WorkToolName = keyof typeof workToolSchemas;
 export const WORK_DESCRIPTIONS: Record<WorkToolName, string> = {
   work_list: `The Work board: work items by project (roamgate by default) with id, title, state (you: waits on the user, doing, verify, open, done), tags, owner (a session address and its subagent task), source, links (review threads, efforts, requests, commits, branches, decisions, files, other items), done_when (how it becomes done by itself), ask and answers (what the user has to do on a you or verify item) and times; filter by state, open, tags (all), owner, words, workspace (the items added from a workspace: its name, its ws:NAME tag, or self for yours). A project lists its subprojects' items too (each item says its project). item: one item with its description (and its earlier versions with versions: true) and comments (a thread on one of the comments is listed under that comment as its threads, with on.quote the words it quotes; answer it with review_reply on its own thread id). Use it before changing the board, and to answer "what is on the list". ${WORK_CLI_NOTE}`,
   work_add: `Add a work item: a title, its project, a state (open by default; you when it waits on the user, doing when you take it), tags, an owner {session, task?} (session: yours from agent_sessions, refused when no connection knows it; task: the agent id of a subagent you spawned, taken as given; without an owner, the project's coordinator session owns it and is told of it), links (a review thread it came from, the commit its fix landed in, an RFC's decision: an item whose links are all decisions is done once every one is ticked; the plan, doc or RFC it follows, as a file link, so the user opens it in one tap). text: its description, the first comment of its thread. Importing: source names where it came from (the same source again changes that item instead of adding one: the answer says updated: true and what changed, the text is left aside, and a different title is refused unless replace: true), created_at / done_at keep its dates, adopt_thread makes an existing review thread the item's own (comments and ids kept). An item you add gets your workspace's tag (ws:NAME, the workspace's name) when your workspace belongs to the project's tree and is not its coordinator's: the board opened from that workspace shows its items; workspace: false leaves it out when the item is not about your workspace's work. Answers the item, its review, thread (its description's) and adopted_thread. The user sees it on the Work board; a For you item notifies them once. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences ("Choose: media to the car with the phone mic, or no music on car links", "Dictate once after 10 idle minutes; text should appear"), and for a decision answers, a few short one-tap choices (each tap is the user's comment on the item, reaching its owner; the user can also reply in their own words, so no "Something else" answer); without an ask the move is refused. Leaving those states clears them unless given. ${WORK_CLI_NOTE}`,
-  work_update: `Change a work item: title, state, project, tags (tags replaces, add_tags and remove_tags edit), owner (null clears; a session no connection knows is refused), links (links replaces, add_links and remove_links edit), source, created_at / done_at, adopt_thread (an existing review thread becomes the item's), needs_triage (false once an item the user added as free text is sorted: a clear title, tags, a state, split into items when it held several tasks), text (its description, whole: ${WORK_DOC_NOTE}), tick (decisions of the description the user answered, checked with the day and their words). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences ("Choose: media to the car with the phone mic, or no music on car links", "Dictate once after 10 idle minutes; text should appear"), and for a decision answers, a few short one-tap choices (each tap is the user's comment on the item, reaching its owner; the user can also reply in their own words, so no "Something else" answer); without an ask the move is refused. Leaving those states clears them unless given. The user sees it on the board. ${WORK_CLI_NOTE}`,
+  work_update: `Change a work item: title, state, project, tags (tags replaces, add_tags and remove_tags edit), owner (null clears; a session no connection knows is refused), links (links replaces, add_links and remove_links edit), source, created_at / done_at, adopt_thread (an existing review thread becomes the item's), needs_triage (false once an item the user added as free text is sorted: a clear title, tags, a state, split into items when it held several tasks), text (its description, whole: ${WORK_DOC_NOTE}). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences ("Choose: media to the car with the phone mic, or no music on car links", "Dictate once after 10 idle minutes; text should appear"), and for a decision answers, a few short one-tap choices (each tap is the user's comment on the item, reaching its owner; the user can also reply in their own words, so no "Something else" answer); without an ask the move is refused. Leaving those states clears them unless given. The user sees it on the board. ${WORK_CLI_NOTE}`,
   work_done: `Mark a work item done, saying what landed when known (landed.commit with its subject, landed.pr, landed.branch): the link is kept with the item. An item with a commit link in doing or open becomes done by itself once the commit reaches where its project says (dogfood's deployed build, or the project's branch); one in verify or you waits on the user: it stays there, its landing only recorded (a deploy link, the card's landed), until it is marked done. ${WORK_CLI_NOTE}`,
   work_reopen: `Reopen a done work item (open by default, or the state given; to you or verify with ask, and answers for a decision). ${WORK_CLI_NOTE}`,
   work_adopt: `An existing review thread (its id, or a comment's) becomes a work item's own thread: moved into the item's review with its comments and ids, its old anchor dropped, the review it came from linked. Idempotent: a thread the item has already changes nothing. ${WORK_CLI_NOTE}`,
@@ -444,7 +421,7 @@ export function itemLine(
     ...(item.needsTriage ? { needs_triage: true } : {}),
     ...(item.ask ? { ask: item.ask } : {}),
     ...(item.answers?.length ? { answers: item.answers } : {}),
-    ...(item.decisions ? { open_decisions: item.decisions } : {}),
+    ...(item.questions ? { open_questions: item.questions } : {}),
   };
 }
 

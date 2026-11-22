@@ -616,7 +616,7 @@ if (
     ).toBeNull();
   });
 
-  test("a design doc as the description reads as a document: wrapped lines joined, headings, each decision a part with its comments under it", async () => {
+  test("a design doc as the description reads as a document: wrapped lines joined, headings, each part with the comments and questions on it under it", async () => {
     const doc = thread(
       "d000000000000009",
       { work: { item, description: true } },
@@ -650,11 +650,31 @@ if (
       },
       [comment("c000000000000091", "you", "Only Work and reviews")],
     );
+    // The agent's question on a paragraph (review_add on_comment, quote):
+    // the same anchor, drawn under the words it quotes.
+    const asked = thread(
+      "b000000000000010",
+      {
+        work: { item },
+        message: {
+          thread: doc.id,
+          comment: "c000000000000090",
+          quote: "Keep the stores and write a copy of what changes into git.",
+        },
+      },
+      [
+        comment(
+          "c000000000000092",
+          "Claude",
+          "Copy every store, or the board only?",
+        ),
+      ],
+    );
     function DocDetail() {
       const view = useWorkItemView();
       const api = {
         ...data,
-        threads: [doc, onD2],
+        threads: [doc, onD2, asked],
         ...view,
       } as Api;
       return (
@@ -679,6 +699,11 @@ if (
       p.textContent?.includes("Keep the stores"),
     )!;
     expect(paragraph.querySelector("br")).toBeNull();
+    const stores = paragraph.closest<HTMLElement>(".rc-part")!;
+    expect(stores.classList.contains("has-notes")).toBe(true);
+    expect(stores.nextElementSibling?.textContent).toContain(
+      "Copy every store, or the board only?",
+    );
     // Each decision is a part of its own, a + beside it; the comment on D2
     // is drawn under its line.
     const parts = [...box.querySelectorAll<HTMLElement>(".rc-part")];

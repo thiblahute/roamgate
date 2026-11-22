@@ -1907,6 +1907,17 @@ function getReviewService(): ReviewService {
       for (const ws of clients) safeSend(ws, payload, "review", coalesceKey);
       if (push.type === "prompts")
         notifyPrompts(push.connectionId, push.prompts);
+      // A work item's review: the questions its owner asks on its
+      // description, counted on its card.
+      if (
+        push.type === "session" &&
+        push.snapshot.session.target.kind === "work" &&
+        workService
+      )
+        workService.questionsSeen(
+          push.snapshot.session.target.item,
+          push.snapshot.threads,
+        );
     },
     loadCommits: async (session) => {
       const runtime = runtimeOf(session.connectionId);

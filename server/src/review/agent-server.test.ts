@@ -244,6 +244,39 @@ test("the agent loop: open, discuss, watch, reply, resolve", async () => {
     location: "src/a.c:4",
     comments: [{ author: "Claude", text: "Leaks on the error path\n" }],
   });
+  // A thread on a part of a comment (a work item's description): the
+  // comment's anchor, with it and the words quoted, its review found by it.
+  const onPart = await run(s, [
+    "add",
+    "--on-comment",
+    draft.json.comments[0].id,
+    "--quote",
+    "the **error** path",
+    "Which",
+    "one?",
+  ]);
+  expect(onPart.stderr).toBe("");
+  const part = s.service
+    .get({ sessionId })
+    .threads.find((thread) => thread.id === onPart.json.id)!;
+  expect(part.anchor).toMatchObject({
+    path: "src/a.c",
+    line: 4,
+    message: {
+      thread: draft.json.id,
+      comment: draft.json.comments[0].id,
+      quote: "the error path",
+    },
+  });
+  const missing = await run(s, [
+    "add",
+    "--on-comment",
+    draft.json.comments[0].id,
+    "--quote",
+    "not there",
+    "x",
+  ]);
+  expect(missing.stderr).toContain("the quote is not in that comment");
 
   // Nothing waits on the agent yet, so watch blocks until the user asks.
   const watching = run(s, ["watch", "--timeout", "5"]);
@@ -292,7 +325,7 @@ test("the agent loop: open, discuss, watch, reply, resolve", async () => {
   });
   const listed = await run(s, ["list"]);
   expect(listed.json).toHaveLength(1);
-  expect(listed.json[0].threads).toBe(2);
+  expect(listed.json[0].threads).toBe(3);
   // --all: every review of the connection, whatever the checkout.
   const all = await run(s, ["list", "--all"]);
   expect(all.json.map((each: { id: string }) => each.id)).toEqual(

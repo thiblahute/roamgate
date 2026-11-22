@@ -1,10 +1,8 @@
 import { expect, test } from "bun:test";
 import {
   filterWorkItems,
-  tickWorkDecision,
-  workDecisions,
   workDescriptionIsDocument,
-  workOpenDecisions,
+  workOpenQuestions,
   normalizeWorkAnswers,
   parseWorkQuery,
   provisionalWorkTitle,
@@ -517,34 +515,50 @@ test("done when: doing and open items go done when their commit lands; verify an
   );
 });
 
-test("a description's decisions: open and ticked lines, counted and ticked with the user's words", () => {
-  const doc = [
-    "# Plan",
-    "",
-    "- [ ] **D1** Approach. Recommendation: B.",
-    "  - [ ] not a decision",
-    '- [x] **D2** (2026-11-20, user: "yes") Scope.',
-    "* [ ] **D10 Big folders** in restic.",
-    "- [ ] **Dx** no id",
-  ].join("\n");
-  expect(workDecisions(doc)).toEqual([
-    { id: "D1", open: true, line: 2 },
-    { id: "D2", open: false, line: 4 },
-    { id: "D10", open: true, line: 5 },
-  ]);
-  expect(workOpenDecisions(doc)).toBe(2);
-  const one = tickWorkDecision(doc, "d1", "as  recommended\n", "2026-11-22")!;
-  expect(one.split("\n")[2]).toBe(
-    '- [x] **D1** (2026-11-22, user: "as recommended") Approach. Recommendation: B.',
-  );
-  // After the bold words of a title in bold; D1 does not tick D10.
-  const ten = tickWorkDecision(one, "D10", "yes", "2026-11-22")!;
-  expect(ten.split("\n")[5]).toBe(
-    '* [x] **D10 Big folders** (2026-11-22, user: "yes") in restic.',
-  );
-  expect(workOpenDecisions(ten)).toBe(0);
-  expect(tickWorkDecision(ten, "D1", "again", "2026-11-22")).toBeNull();
-  expect(tickWorkDecision(doc, "D3", "no such", "2026-11-22")).toBeNull();
+test("an item's open questions: the agent's unresolved threads on parts of its description", () => {
+  const item = { createdAt: "2026-11-22T10:00:00.000Z" };
+  const at = "2026-11-22T10:00:00.000Z";
+  const on = (quote?: string) => ({
+    work: { item: "1" },
+    message: { thread: "d", comment: "c1", ...(quote ? { quote } : {}) },
+  });
+  const thread = (
+    id: string,
+    anchor: object,
+    author: string,
+    resolved = false,
+  ) => ({
+    id,
+    anchor,
+    createdAt: at,
+    resolved,
+    comments: [{ id: `${id}c`, author }],
+  });
+  const description = {
+    ...thread("d", { work: { item: "1", description: true } }, "Claude"),
+    comments: [{ id: "c1", author: "Claude" }],
+  };
+  expect(workOpenQuestions([], item)).toBe(0);
+  expect(
+    workOpenQuestions(
+      [
+        description,
+        thread("q1", on("Retention"), "Claude"),
+        thread("q2", on("Scope"), "Claude"),
+        // Answered and resolved, the user's own, on the whole message,
+        // on another comment: not counted.
+        thread("q3", on("Approach"), "Claude", true),
+        thread("u1", on("Retention"), "you"),
+        thread("w1", on(), "Claude"),
+        thread(
+          "o1",
+          { message: { thread: "x", comment: "c9", quote: "Retention" } },
+          "Claude",
+        ),
+      ],
+      item,
+    ),
+  ).toBe(2);
 });
 
 test("a description with a heading reads as a document", () => {

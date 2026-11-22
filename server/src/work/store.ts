@@ -417,10 +417,10 @@ function normalItem(raw: unknown): WorkItem | null {
     ...(raw.needsTriage === true ? { needsTriage: true as const } : {}),
     ...(ask ? { ask } : {}),
     ...(answers.length ? { answers } : {}),
-    ...(typeof raw.decisions === "number" &&
-    Number.isInteger(raw.decisions) &&
-    raw.decisions > 0
-      ? { decisions: raw.decisions }
+    ...(typeof raw.questions === "number" &&
+    Number.isInteger(raw.questions) &&
+    raw.questions > 0
+      ? { questions: raw.questions }
       : {}),
   };
 }

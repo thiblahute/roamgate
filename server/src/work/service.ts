@@ -17,9 +17,8 @@ import {
   WORK_OPEN_STATES,
   type WorkBoard,
   workStateAsks,
-  tickWorkDecision,
   workDescriptionThread,
-  workOpenDecisions,
+  workOpenQuestions,
   type WorkItem,
   isAbsoluteWorkPath,
   type WorkLink,
@@ -1027,18 +1026,12 @@ export function createWorkService(deps: WorkServiceDeps) {
       change.needs_triage = false;
     }
     settleWorkAsk(before, next, params, meta, change);
-    if (params.text !== undefined || params.tick !== undefined) {
+    if (params.text !== undefined) {
       const written = await writeDescription(before, params, meta);
       if (written) {
-        change.description = {
-          chars: written.text.length,
-          ...(written.ticked.length ? { ticked: written.ticked } : {}),
-        };
+        change.description = { chars: written.text.length };
         // The text it replaced: every version stays in the history.
         change.previous_description = written.previous;
-        const open = workOpenDecisions(written.text);
-        if (open) next.decisions = open;
-        else delete next.decisions;
       }
     }
     const linksChanged =
@@ -1067,8 +1060,7 @@ export function createWorkService(deps: WorkServiceDeps) {
 
   /**
    * The item's description set (`text`, Markdown: a whole design doc
-   * fits) and its decisions ticked (`tick`: `- [ ] **Dn**` lines checked
-   * with the day and the user's words). The description is the first
+   * fits). The description is the first
    * comment of the item's thread marked so: rewritten in place when it is
    * the caller's own, else a new description thread is made and the old
    * one stays as an ordinary thread (the user's words are never rewritten
@@ -1080,11 +1072,7 @@ export function createWorkService(deps: WorkServiceDeps) {
     item: WorkItem,
     params: Record<string, unknown>,
     meta: WorkMeta,
-  ): Promise<{
-    text: string;
-    previous: string | null;
-    ticked: string[];
-  } | null> {
+  ): Promise<{ text: string; previous: string | null } | null> {
     if (!deps.reviews)
       throw new WorkError("reviews are unavailable", "unavailable");
     const snapshot = threads({ item: item.id, open: true });
@@ -1100,29 +1088,6 @@ export function createWorkService(deps: WorkServiceDeps) {
         throw new WorkError(
           `text is too long (${WORK_DESCRIPTION_CHARS} characters at most)`,
         );
-    }
-    const ticked: string[] = [];
-    if (params.tick !== undefined) {
-      if (!Array.isArray(params.tick))
-        throw new WorkError("tick is a list of {decision, answer}");
-      const day = now().slice(0, 10);
-      for (const raw of params.tick) {
-        if (!isRecord(raw)) throw new WorkError("tick: {decision, answer}");
-        const id = typeof raw.decision === "string" ? raw.decision.trim() : "";
-        const answer =
-          typeof raw.answer === "string" ? oneLine(raw.answer, 300) : "";
-        if (!/^D\d+$/i.test(id))
-          throw new WorkError("tick.decision is a decision's id: D1, D2...");
-        if (!answer) throw new WorkError("tick.answer: the user's words");
-        const next = tickWorkDecision(text, id, answer, day);
-        if (next === null)
-          throw new WorkError(
-            `the description has no open decision ${oneLine(id, 10)} (a line \`- [ ] **${oneLine(id, 10).toUpperCase()}**\`)`,
-            "not_found",
-          );
-        text = next;
-        ticked.push(id.toUpperCase());
-      }
     }
     if (!text) throw new WorkError("text is required");
     // Read now: the review service rewrites the comment in place.
@@ -1165,7 +1130,7 @@ export function createWorkService(deps: WorkServiceDeps) {
         anchor: { work: { item: item.id, description: true } },
       });
     }
-    return { text, previous, ticked };
+    return { text, previous };
   }
 
   /**
@@ -1184,6 +1149,23 @@ export function createWorkService(deps: WorkServiceDeps) {
         text: line.change.previous_description as string,
       }))
       .reverse();
+  }
+
+  /**
+   * An item's review changed (`threads`, all of them): how many questions
+   * its owner asks on parts of its description are still open, kept on the
+   * item for its card, and the board told when that number moved.
+   */
+  function questionsSeen(itemId: string, threads: readonly ReviewThread[]) {
+    const item = store.item(itemId);
+    if (!item) return;
+    const open = workOpenQuestions(threads, item);
+    if ((item.questions ?? 0) === open) return;
+    const next: WorkItem = { ...item };
+    if (open) next.questions = open;
+    else delete next.questions;
+    store.saveItem(next);
+    push({ changed: ["item"], item: item.id, by: "user" });
   }
 
   /** The item is done: what landed, when known, is linked. */
@@ -2073,6 +2055,7 @@ export function createWorkService(deps: WorkServiceDeps) {
     threads,
     comment,
     descriptionVersions,
+    questionsSeen,
     /** An agent rewrites one of its comments on an item. */
     commentEdit: (params: Record<string, unknown>, meta: WorkMeta) =>
       commentEdit(params, meta, "edit"),

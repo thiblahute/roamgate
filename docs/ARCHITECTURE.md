@@ -2028,9 +2028,7 @@ someone comments. `add`, `reopen` and `promote` are async for it.
 Design docs: an item's design doc is its description. `work_update` takes
 `text` (the description, whole, up to `REVIEW_LIMITS.descriptionChars`,
 200,000 characters, the review service's limit for the first comment of a
-thread marked `work.description`; other comments keep `bodyChars`) and
-`tick` (`[{decision, answer}]`: each open `- [ ] **Dn**` line checked
-with the day and the user's words, `tickWorkDecision` in shared/work.ts).
+thread marked `work.description`; other comments keep `bodyChars`).
 `writeDescription` rewrites the description in place when it is the
 caller's own comment, and otherwise unmarks the old description thread
 (`setThreadAnchor`, review service: same review, anchor replaced) and adds
@@ -2040,8 +2038,18 @@ their name. Threads on parts of the description quote its words
 render (`quotedPart`), so they survive edits. The history line of the
 change holds the text it replaced (`previous_description`), and
 `work_list {item, versions: true}` answers those versions, newest first
-(`WorkStore.historyOf`). The item keeps `decisions`, the count of open
-decision lines (`workOpenDecisions`), for the card's chip. The detail
+(`WorkStore.historyOf`). The owner's open questions are threads on parts
+of the description: `review_add` / `add` with `on_comment` (the
+description's comment id, `description_comment` in `work_list {item}`)
+and `quote` take the anchor `messagePartAnchor` (review service) makes,
+the comment's thread's anchor without its `work.description` mark plus
+`message: {thread, comment, quote}`, the quote stripped of Markdown marks
+(`readWords`) and refused unless the comment reads it (`messageQuote`),
+as the user's + makes one. The item keeps `questions`, the count of the
+agents' unresolved threads on parts of its description
+(`workOpenQuestions`, shared/work.ts), for the card's chip: the review
+service's `session` push of a work review calls `questionsSeen`, which
+saves and pushes the item when that count moves. The detail
 renders a description with a Markdown heading (`workDescriptionIsDocument`)
 without `breaks`: its single line breaks are the source's wrapping.
 

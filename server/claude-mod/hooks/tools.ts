@@ -11,7 +11,7 @@
  * same): the doc is the item's description.
  */
 const WORK_DOC_RULE =
-  "an item's design doc is its description, not a separate file or plan review: write it there (Markdown, headings, tables, a `- [ ] **Dn** question, recommendation` line for each decision the user has to take) and revise it there; the user comments on its parts in the item, comments that reach you as the item's threads; tick a decision once they answer it (tick, with their words), never post the decisions as threads of their own; a plans/ file may mirror it, linked as a file link, but the item is the source";
+  "an item's design doc is its description, not a separate file or plan review: write it there (Markdown, headings, tables) and revise it there, with no list of decisions in it; ask each open question as a thread on the part of the description it is about (review_add with on_comment, the description_comment work_list {item} gives, and quote, that part's words as they read): short, the question, the options in a line, your recommendation; once the user answers, revise the text where it applies to state what was decided (the day and their words) and resolve the thread; the user comments on its parts in the item too, comments that reach you as the item's threads; a plans/ file may mirror it, linked as a file link, but the item is the source";
 
 export type ToolInput = Record<string, unknown>;
 /** A request's own fields; the mod adds the pane, workspace and cwd. */
@@ -169,7 +169,7 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
     name: "review_add",
     command: "add",
     description:
-      'Start a thread in a Roamgate review. kind "discussion" (default): your note or question to the user, private. kind "draft": a review comment for the merge request, written in the user\'s voice, only where something needs to change; it stays in Roamgate as their pending comment until they send it. Anchor it with file and line (end_line for a range, side "old" for removed lines); without file it is on the whole review. In a review of a rendered file, file and line are its source lines, and quote the words you mean as they read rendered.',
+      "Start a thread in a Roamgate review. kind \"discussion\" (default): your note or question to the user, private. kind \"draft\": a review comment for the merge request, written in the user's voice, only where something needs to change; it stays in Roamgate as their pending comment until they send it. Anchor it with file and line (end_line for a range, side \"old\" for removed lines); without file it is on the whole review. In a review of a rendered file, file and line are its source lines, and quote the words you mean as they read rendered. On a part of a comment instead (a question on a part of a work item's description: work_list {item} gives its description_comment): on_comment, the comment's id, and quote, the words of that part as they read (a heading's, a paragraph's, one table cell's; no Markdown marks); the thread shows under that part, as the user's comments on parts do.",
     inputSchema: schema(
       {
         text: TEXT,
@@ -178,7 +178,13 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
         line: { type: "integer", minimum: 1 },
         quote: {
           type: "string",
-          description: "A rendered file's words the thread is about.",
+          description:
+            "A rendered file's words the thread is about; with on_comment, the words of the comment's part, as they read.",
+        },
+        on_comment: {
+          type: "string",
+          description:
+            "A comment's id (a work item's description_comment): the thread is on its part that quote reads, not on a file.",
         },
         end_line: { type: "integer", minimum: 1 },
         side: {
@@ -197,6 +203,14 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
       const side = optionalString(input, "side");
       if (side !== undefined && side !== "new" && side !== "old")
         throw new ToolInputError('side is "new" or "old"');
+      const onComment = optionalString(input, "on_comment");
+      if (
+        onComment !== undefined &&
+        optionalString(input, "quote") === undefined
+      )
+        throw new ToolInputError(
+          "on_comment needs quote: the words of the part the thread is on",
+        );
       return {
         ...reviewOf(input),
         ...fields({
@@ -207,6 +221,7 @@ export const ROAMGATE_TOOLS: readonly RoamgateTool[] = [
           end_line: optionalLine(input, "end_line"),
           side,
           quote: optionalString(input, "quote"),
+          on_comment: onComment,
         }),
       };
     },
@@ -638,7 +653,7 @@ function workTools(): RoamgateTool[] {
     ),
     tool(
       "work_update",
-      `Change a work item: title, state, project, tags (tags replaces; add_tags and remove_tags edit), owner (yours, a subagent's, or null to clear; a session no connection knows is refused), links (links replaces; add_links and remove_links edit), source, created_at and done_at (an imported item's dates), adopt_thread (an existing review thread becomes the item's own), needs_triage (false once an item the user added as free text is sorted), text (its description, whole: ${WORK_DOC_RULE}), tick (decisions of the description the user answered: each \`- [ ] **Dn**\` line checked with the day and their words). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences ("Choose: media to the car with the phone mic, or no music on car links", "Dictate once after 10 idle minutes; text should appear"), and for a decision answers, a few short one-tap choices (each tap is the user's comment on the item, reaching its owner; the user can also reply in their own words, so no "Something else" answer); without an ask the move is refused. Leaving those states clears them unless given. Comments on the item reach its owner; answer them with review_reply.`,
+      `Change a work item: title, state, project, tags (tags replaces; add_tags and remove_tags edit), owner (yours, a subagent's, or null to clear; a session no connection knows is refused), links (links replaces; add_links and remove_links edit), source, created_at and done_at (an imported item's dates), adopt_thread (an existing review thread becomes the item's own), needs_triage (false once an item the user added as free text is sorted), text (its description, whole: ${WORK_DOC_RULE}). Move it to doing when you start, verify when it is built and waits to be confirmed in real use, you when it needs the user. An item you put in you (For you) or verify must say what the user has to do: ask, one or two sentences ("Choose: media to the car with the phone mic, or no music on car links", "Dictate once after 10 idle minutes; text should appear"), and for a decision answers, a few short one-tap choices (each tap is the user's comment on the item, reaching its owner; the user can also reply in their own words, so no "Something else" answer); without an ask the move is refused. Leaving those states clears them unless given. Comments on the item reach its owner; answer them with review_reply.`,
       {
         item: ITEM,
         title: { type: "string" },
@@ -666,23 +681,6 @@ function workTools(): RoamgateTool[] {
           type: "string",
           description:
             "The item's description, whole (Markdown, up to 200,000 characters): its design doc, revised here as the work goes. Your own description is rewritten; the user's stays as a thread and yours becomes the description. Earlier versions stay in its history.",
-        },
-        tick: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              decision: { type: "string", description: "D1, D2..." },
-              answer: {
-                type: "string",
-                description: "The user's words, as they answered it.",
-              },
-            },
-            required: ["decision", "answer"],
-            additionalProperties: false,
-          },
-          description:
-            'Decisions the user answered: `- [ ] **D3**` becomes `- [x] **D3** (2026-11-22, user: "their words")` in the description.',
         },
       },
       ["item"],
