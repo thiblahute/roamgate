@@ -79,10 +79,25 @@ describe("roamgate setup voice", () => {
         cli.context,
       ),
     ).toBe(EXIT_OK);
+    const models = home.deps.modelsDir;
     expect(config()).toMatchObject({
-      parakeet_model: join(home.deps.modelsDir, "parakeet-tdt-0.6b-v3"),
-      kokoro_model: join(home.deps.modelsDir, "kokoro-v1.0.onnx"),
+      parakeet_model: join(models, "parakeet-tdt-0.6b-v3"),
+      tts_models: [
+        {
+          model: "pocket-tts",
+          path: join(models, "pocket-tts-fr", "languages", "french"),
+          languages: "fr",
+          voice: "estelle",
+        },
+        {
+          model: "pocket-tts",
+          path: join(models, "pocket-tts-en", "languages", "english"),
+          languages: "en",
+          voice: "alba",
+        },
+      ],
     });
+    expect("kokoro_model" in config()).toBe(false);
     expect("text_turn_model" in config()).toBe(false);
     expect(cli.output.join("\n")).toContain("Wrote");
   });
