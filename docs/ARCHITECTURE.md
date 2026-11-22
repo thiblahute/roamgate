@@ -289,10 +289,15 @@ shows in that view only. `review.state` is polled while shown: a change
 offers a reload (R, gr, `:e`) beside the commit bar.
 
 Where a review shows (`changesReviewOpen.ts`
-`changesReviewChoice`, used by the review toggle, the reviews list, the
-inbox, an agent's `review_open` and `/rg-review`): every diff review
+`changesReviewChoice`, used by the review toggle, the board's Local
+reviews, the inbox, an agent's `review_open` and `/rg-review`): every diff review
 (worktree, range, step, merge request) shows in Changes; only chats and
-rendered files keep their homes. A review shown in Changes is pinned to its
+rendered files keep their homes. The board's Local reviews read their
+branches with `review.activity` naming the reviews of one checkout
+(`session_ids`), one call per checkout: the server reads each checkout on
+its own, a few at once, and says a checkout that does not answer within
+five seconds `unreadable` instead of waiting on it; a review of a
+connection that is not ready is not asked about. A review shown in Changes is pinned to its
 workspace in the browser (`reviewChangesPins`); an agent's review of a
 workspace that is not focused waits there and shows on arrival. Commits'
 Review this commit asks Changes for the Branch scope on that commit

@@ -28,6 +28,7 @@ if (
     onClose: (options?: { keepFocus?: boolean }) => void;
     onKeyFirst?: (event: KeyboardEvent) => boolean;
     initialWorkItem?: string;
+    initialLocal?: boolean;
   };
   let panel: PanelProps | null = null;
   let mounts = 0;
@@ -44,6 +45,7 @@ if (
           tabIndex={-1}
           data-mode={props.mode}
           data-item={props.initialWorkItem ?? ""}
+          data-local={props.initialLocal ? "" : undefined}
           data-count={count}
         >
           <button type="button" onClick={() => setCount((n) => n + 1)}>
@@ -65,7 +67,8 @@ if (
   const { WorkspaceInspectorHost } = await import("./WorkspaceInspectorHost");
   const { inspectorProps } = await import("./WorkspaceInspectorHost.testkit");
   const { openWork } = await import("../workOpen");
-  const { pendingBoardOpen } = await import("../mrReviewsOpen");
+  const { BOARD_INSPECTOR_EVENT, openLocalReviews, pendingBoardOpen } =
+    await import("../mrReviewsOpen");
   type Props = Parameters<typeof WorkspaceInspectorHost>[0];
   type View = Props["state"]["view"];
 
@@ -220,6 +223,27 @@ if (
           await new Promise((resolve) => setTimeout(resolve, 10));
         });
       expect(inspector.board()?.dataset.item).toBe("");
+    } finally {
+      await inspector.unmount();
+    }
+  });
+
+  test("the Local reviews' way (Option+Shift+R, Changes' :reviews) asks for the Reviews tab, the board opened on them once", async () => {
+    const asked: unknown[] = [];
+    const listen = (event: Event) => asked.push((event as CustomEvent).detail);
+    window.addEventListener(BOARD_INSPECTOR_EVENT, listen);
+    try {
+      await act(async () => openLocalReviews());
+    } finally {
+      window.removeEventListener(BOARD_INSPECTOR_EVENT, listen);
+    }
+    expect(asked).toEqual([{ view: "reviews", toggle: false }]);
+    expect(pendingBoardOpen()?.local).toBe(true);
+    const inspector = await mountInspector({ view: "reviews" });
+    try {
+      expect(inspector.board()?.dataset.local).toBe("");
+      await act(async () => {});
+      expect(pendingBoardOpen()).toBeNull();
     } finally {
       await inspector.unmount();
     }

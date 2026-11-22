@@ -78,6 +78,20 @@ export function projectForWorkspace(
 }
 
 /**
+ * Whether the workspace is its project's coordinator's: its boards show
+ * the whole project, every workspace's.
+ */
+export function isCoordinatorWorkspace(
+  workspace: WorkWorkspace | null,
+  projects: readonly WorkProject[],
+): boolean {
+  return (
+    !!workspace &&
+    workPlaceScope(placeOf(workspace), projects)?.coordinator === true
+  );
+}
+
+/**
  * The workspace filter the board opens with: the workspace's tag, when
  * the workspace belongs to the project shown (or one of its subprojects)
  * and is not its project's coordinator's (whose board is the whole

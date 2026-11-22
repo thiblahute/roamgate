@@ -1584,7 +1584,7 @@ function DiffContentViewInner({
    * toggle closes it; the review is kept.
    */
   onCloseReview?: (how: "command" | "escape") => void;
-  /** `:reviews`: the reviews in progress. */
+  /** `:reviews`: the reviews in progress, the board's Local reviews. */
   onShowReviews?: () => void;
   /** Review only is on: Esc leaves it first (the inspector's). */
   reviewOnly?: boolean;

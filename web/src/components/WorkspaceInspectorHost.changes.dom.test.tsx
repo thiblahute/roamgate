@@ -1371,8 +1371,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
   /**
    * The jobs of the retired review host (ReviewHost), now the inspector's
    * around the review in Changes: what the review is given from
-   * the workspace's panes, where its files open, its close, reviews list
-   * and Go to agent's pane, the review shown as Changes' scope.
+   * the workspace's panes, where its files open, its close, the board's
+   * Local reviews and Go to agent's pane, the review shown as Changes' scope.
    */
   describe("the review's host in Changes", () => {
     type Snapshot = import("../../../shared/review").ReviewSnapshot;
@@ -1558,7 +1558,7 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
       }
     });
 
-    test("close, the reviews list and Go to agent's pane go straight to the host", async () => {
+    test("close, the board's Local reviews and Go to agent's pane go straight to the host", async () => {
       const calls: { name: string; args: unknown[] }[] = [];
       const record =
         (name: string) =>

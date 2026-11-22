@@ -1,10 +1,6 @@
 import { expect, test } from "bun:test";
 import { Window } from "happy-dom";
-import {
-  focusShownOverlay,
-  overlayFocusStep,
-  overlayHideFocusTarget,
-} from "./overlayFocus";
+import { focusShownOverlay, overlayFocusStep } from "./overlayFocus";
 
 function page() {
   const window = new Window();
@@ -141,28 +137,4 @@ test("a step is done only once something in the frame takes typing", () => {
   expect(
     overlayFocusStep(p.frame, true, view, p.byId("chat"), main, body),
   ).toBe("abandon");
-});
-
-test("hiding the overlay gives the keyboard back to the review it was over", () => {
-  const window = new Window();
-  const document = window.document as unknown as Document;
-  document.body.innerHTML = `
-    <div class="review-overlay" tabindex="-1" id="review">
-      <textarea id="note"></textarea>
-    </div>
-    <div class="xterm"><textarea id="main"></textarea></div>`;
-  const review = document.getElementById("review")!;
-  const note = document.getElementById("note")!;
-  const main = document.getElementById("main")!;
-  // Back where it was in the review.
-  expect(overlayHideFocusTarget(review, note, main)).toBe(note);
-  // Shown from the review's own keys: the review itself.
-  expect(overlayHideFocusTarget(review, null, main)).toBe(review);
-  // What it was on is gone: the review.
-  note.remove();
-  expect(overlayHideFocusTarget(review, note, main)).toBe(review);
-  // A focus outside the review (it was opened over the overlay later).
-  expect(overlayHideFocusTarget(review, main, main)).toBe(review);
-  // No review: the displayed tab's pane.
-  expect(overlayHideFocusTarget(null, note, main)).toBe(main);
 });

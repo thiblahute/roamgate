@@ -526,7 +526,7 @@ export interface ReviewSurface {
   hostCalls(name?: string): HostCall[];
   /** How many times the review asked to close. */
   closes(): number;
-  /** How many times the review asked for the reviews list. */
+  /** How many times the review asked for the board's Local reviews. */
   listsShown(): number;
   /** The reviews the review asked to show instead of itself. */
   reviewsShown(): unknown[];

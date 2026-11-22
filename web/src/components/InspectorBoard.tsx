@@ -79,6 +79,7 @@ export function InspectorBoard({
       {...(shown?.view ? { initialView: shown.view } : {})}
       {...(shown?.declare ? { initialDeclare: shown.declare } : {})}
       {...(shown?.item ? { initialWorkItem: shown.item } : {})}
+      {...(shown?.local ? { initialLocal: true } : {})}
       {...(shown?.owner || shown?.add
         ? {
             initialWork: {

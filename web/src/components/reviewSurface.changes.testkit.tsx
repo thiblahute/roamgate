@@ -748,7 +748,7 @@ export async function mountChangesReview(
             ...(asReview
               ? { reviewScope: { kind: "review" as const, sessionId } }
               : {}),
-            // Another review and the reviews list are always offered, as
+            // Another review and the Local reviews are always offered, as
             // the page around the review offers them.
             forgeHost: {
               onShowReview: record("showReview"),

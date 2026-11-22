@@ -2,7 +2,7 @@ import { expect, jest, test } from "bun:test";
 
 /**
  * The review at the app level, in the workspace's Changes: Option+R, the
- * reviews list, Changes kept while the review is away, Cmd+K and Go to
+ * board's Local reviews, Changes kept while the review is away, Cmd+K and Go to
  * agent's pane putting it aside, the code preload. App is mounted with a
  * stub inspector (App.review.testkit.tsx); what a review draws is the
  * behavior tests'.
@@ -94,30 +94,25 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
-  test("Option+Shift+R opens the reviews list over the review in Changes, which is still there once it closes", async () => {
+  test("Option+Shift+R and Changes' :reviews open the board's Local reviews, the review staying in Changes", async () => {
     const app = await mountAppWithReviews({
       reviews: [reviewOf("r1", "w1")],
     });
     try {
-      // With no review shown, it opens the list.
-      await app.toggleList();
-      expect(app.listShown()).toBe(true);
-      await app.toggleList();
-      expect(app.listShown()).toBe(false);
+      // With no review shown, it opens the board's Local reviews.
+      await app.toggleLocalReviews();
+      expect(app.localReviewOpens()).toEqual(["toggle"]);
       app.setNextOpened("r1");
       await app.toggleReview();
       await app.settle(50);
-      await app.toggleList();
-      expect(app.listShown()).toBe(true);
-      // The review stays in Changes, under the list.
-      expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
-      await app.closeList();
-      expect(app.listShown()).toBe(false);
+      await app.toggleLocalReviews();
+      expect(app.localReviewOpens()).toEqual(["toggle", "toggle"]);
+      // The review keeps its place in Changes.
       expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
       expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
-      // Changes' own way to the list (:reviews) does the same.
+      // Changes' own way to them (:reviews) opens them too.
       await app.run(() => app.inspectorProps().onShowReviews?.());
-      expect(app.listShown()).toBe(true);
+      expect(app.localReviewOpens()).toEqual(["toggle", "toggle", "open"]);
       expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
       expect(app.shown()).toEqual({ mounted: [], shownId: null });
     } finally {
@@ -150,7 +145,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
-  test("Cmd+K docks the review's expanded Changes and closes the reviews list; Option+R expands it again, a workspace change leaves it docked", async () => {
+  test("Cmd+K docks the review's expanded Changes; Option+R expands it again, a workspace change leaves it docked", async () => {
     const { COMMAND_MENU_OPENING } = await import(
       "./components/CommandCombobox"
     );
@@ -178,12 +173,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
         expanded: true,
       });
       expect(app.inspectorGoTo()).toMatchObject({ scope: "working" });
-      // It also closes the reviews list.
-      await app.toggleList();
-      expect(app.listShown()).toBe(true);
       window.dispatchEvent(new Event(COMMAND_MENU_OPENING));
       await app.settle();
-      expect(app.listShown()).toBe(false);
       expect(app.inspector()).toMatchObject({
         open: true,
         view: "changes",
@@ -709,7 +700,7 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     }
   });
 
-  test("on reviewin=changes, the review picked in the reviews list shows in Changes, a merge request's too, never the classic pane", async () => {
+  test("on reviewin=changes, the review picked on the board's Local reviews shows in Changes, a merge request's too, never the classic pane", async () => {
     const mr = reviewOf("m1", "w1");
     mr.session.root = "/repo/r1";
     mr.session.target = {
@@ -722,11 +713,8 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
     try {
       localStorage.setItem("reviewPrefs", "{}");
       localStorage.setItem("vimKeys", "true");
-      await app.toggleList();
-      expect(app.listShown()).toBe(true);
-      await app.pickFromList("m1");
-      await app.settle(50);
-      expect(app.listShown()).toBe(false);
+      // The board asks for it to be shown, as an agent does.
+      await app.agentOpens("m1");
       expect(app.shown()).toEqual({ mounted: [], shownId: null });
       expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
       expect(app.inspectorGoTo()).toMatchObject({ review: "m1" });
@@ -771,17 +759,12 @@ if (process.env.ROAMGATE_APP_REVIEW_TEST !== "1") {
         app.setNextOpened("r1");
         await app.toggleReview();
         await app.settle(50);
-        for (const review of reviews.slice(1)) {
-          await app.toggleList();
-          await app.pickFromList(review.session.id);
-          await app.settle(50);
-        }
+        for (const review of reviews.slice(1))
+          await app.agentOpens(review.session.id);
         expect(app.inspector()).toMatchObject({ open: true, view: "changes" });
         expect(app.inspectorGoTo()).toMatchObject({ root: "/repo/r8" });
         // The one picked again is shown again.
-        await app.toggleList();
-        await app.pickFromList("r4");
-        await app.settle(50);
+        await app.agentOpens("r4");
         expect(app.inspectorGoTo()).toMatchObject({ root: "/repo/r4" });
         expect(app.shown()).toEqual({ mounted: [], shownId: null });
       } finally {

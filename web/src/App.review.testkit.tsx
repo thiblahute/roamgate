@@ -72,7 +72,7 @@ type InspectorProps = {
   onFocusAgentPane?: (paneId: string) => void;
   /** Changes' own close of the review (`:q`, Esc). */
   onCloseReview?: (how: "command" | "escape") => void;
-  /** Changes' way to the reviews list (`:reviews`). */
+  /** Changes' way to the board's Local reviews (`:reviews`). */
   onShowReviews?: () => void;
   /** Changes' gf: a changed file in Files, at a line. */
   onOpenDiffFile: (
@@ -101,18 +101,17 @@ export type AppWithReviews = {
   shown(): ShownReviews;
   /** The last props App gave the inspector (its callbacks). */
   inspectorProps(): InspectorProps;
-  /** Whether the reviews list shows. */
-  listShown(): boolean;
-  /** Close the reviews list with its own close. */
-  closeList(): Promise<void>;
-  /** Open a review from the reviews list (its Enter on a row). */
-  pickFromList(id: string): Promise<void>;
+  /**
+   * The board's Local reviews asked for since the mount: "toggle"
+   * (Option+Shift+R), "open" (Changes' `:reviews`).
+   */
+  localReviewOpens(): string[];
   /** A key on the focused element (else the page), in App's notation. */
   key(init: KeyboardEventInit): Promise<void>;
   /** Option+R (`review.toggle`): Ctrl+Alt+R off a Mac. */
   toggleReview(): Promise<void>;
-  /** Option+Shift+R (`reviews.list`). */
-  toggleList(): Promise<void>;
+  /** Option+Shift+R (`reviews.list`): the board's Local reviews. */
+  toggleLocalReviews(): Promise<void>;
   /** Bring another workspace forward, as the sidebar does. */
   focusWorkspace(id: string): Promise<void>;
   /** The review `openWorkspaceReview` finds or makes next (Option+R). */
@@ -190,6 +189,8 @@ type Page = {
     openRequest: { sessionId: string; connectionId: string } | null;
   };
   commitReviews: string[];
+  /** The board's Local reviews asked for, as localReviewOpens says. */
+  localReviewOpens: string[];
   nextOpened: string | null;
   openCalls: number;
   /** What `review.repos` finds in the workspace (one repository: none). */
@@ -353,32 +354,18 @@ async function mockApp(before?: () => Promise<void> | void) {
     },
   }));
 
-  mock.module("./components/ReviewList", () => ({
-    ReviewList: ({
-      onClose,
-      onOpen,
-      sessions,
-    }: {
-      onClose: () => void;
-      onOpen: (sessionId: string) => void;
-      sessions: ReviewSnapshot[];
-    }) => (
-      <div className="review-list-overlay" data-review-list="">
-        <button type="button" onClick={onClose}>
-          Close the list
-        </button>
-        {sessions.map((snapshot) => (
-          <button
-            key={snapshot.session.id}
-            type="button"
-            data-review-pick={snapshot.session.id}
-            onClick={() => onOpen(snapshot.session.id)}
-          >
-            {snapshot.session.title}
-          </button>
-        ))}
-      </div>
-    ),
+  // The board's Local reviews, opened by Option+Shift+R and `:reviews`:
+  // the opens are counted; a review picked there is an open request
+  // (agentOpens), as the board makes it.
+  const mrReviewsOpen = await import("./mrReviewsOpen");
+  mock.module("./mrReviewsOpen", () => ({
+    ...mrReviewsOpen,
+    toggleLocalReviews: () => {
+      now().localReviewOpens.push("toggle");
+    },
+    openLocalReviews: () => {
+      now().localReviewOpens.push("open");
+    },
   }));
 
   const client = {
@@ -455,7 +442,7 @@ async function mockApp(before?: () => Promise<void> | void) {
     import("./reviewOpen"),
     import("./changesReviewOpen"),
     import("./mrReviewFlow"),
-    import("./components/ReviewList"),
+    import("./mrReviewsOpen"),
     import("./components/WorkspaceInspectorHost"),
   ]);
 }
@@ -492,6 +479,7 @@ export async function mountAppWithReviews(options: {
     sessions,
     reviewState: { sessions, openRequest: null },
     commitReviews: [],
+    localReviewOpens: [],
     nextOpened: null,
     repos: [],
     changed: { working: ["a.ts"], "branch-main": ["a.ts"] },
@@ -566,27 +554,11 @@ export async function mountAppWithReviews(options: {
       if (!current.inspectorProps) throw new Error("no inspector shown");
       return current.inspectorProps;
     },
-    listShown: () => container.querySelector("[data-review-list]") !== null,
-    async pickFromList(id) {
-      const button = container.querySelector<HTMLButtonElement>(
-        `[data-review-pick="${id}"]`,
-      );
-      if (!button) throw new Error(`no ${id} in the reviews list`);
-      await React.act(async () => button.click());
-      await settle();
-    },
-    async closeList() {
-      const button = container.querySelector<HTMLButtonElement>(
-        "[data-review-list] button",
-      );
-      if (!button) throw new Error("no reviews list");
-      await React.act(async () => button.click());
-      await settle();
-    },
+    localReviewOpens: () => [...now().localReviewOpens],
     key,
     toggleReview: () =>
       key({ key: "r", code: "KeyR", ctrlKey: true, altKey: true }),
-    toggleList: () =>
+    toggleLocalReviews: () =>
       key({
         key: "R",
         code: "KeyR",

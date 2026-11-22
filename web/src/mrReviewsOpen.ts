@@ -43,6 +43,8 @@ export type BoardInspectorRequest = {
  */
 export type BoardOpenRequest = {
   seq: number;
+  /** Reviews on its Local reviews (the workspace's), the first selected. */
+  local?: boolean;
   select?: string;
   open?: string;
   view?: "chat" | "declare";
@@ -121,6 +123,20 @@ export function openBoard(board: { mode: BoardMode } & WorkOpen) {
  */
 export function toggleBoard(mode: BoardMode) {
   requestBoard(mode, true);
+}
+
+/**
+ * The local reviews' shortcut (Option+Shift+R): the Reviews tab on its
+ * Local reviews, the workspace's, the first one selected; shown on it,
+ * the inspector closes.
+ */
+export function toggleLocalReviews() {
+  requestBoard("mr", true, { local: true });
+}
+
+/** The Reviews tab on its Local reviews (Changes' `:reviews`). */
+export function openLocalReviews() {
+  requestBoard("mr", false, { local: true });
 }
 
 /** Opens the Reviews tab, or closes the inspector when it shows it. */

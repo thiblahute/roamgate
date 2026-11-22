@@ -93,7 +93,6 @@ function useMainAreaRect(enabled: boolean): OverlayRect | null {
 export function OverlayTabFrame({
   open,
   sheet,
-  aboveReview = false,
   title,
   shortcut,
   onHide,
@@ -105,8 +104,6 @@ export function OverlayTabFrame({
   open: boolean;
   /** Phone layout: fill the terminal area, no move or resize. */
   sheet: boolean;
-  /** Shown over an open review: it floats above the review. */
-  aboveReview?: boolean;
   title: string;
   /** The toggle's key, as the shortcut list shows it. */
   shortcut: string;
@@ -218,7 +215,7 @@ export function OverlayTabFrame({
     <section
       className={`overlay-tab ${sheet ? "is-sheet" : "is-floating"}${
         fills ? " is-maximized" : ""
-      }${aboveReview ? " is-above-review" : ""}`}
+      }`}
       data-open={open ? "" : undefined}
       data-dragging={dragging ? "" : undefined}
       aria-hidden={open ? undefined : true}

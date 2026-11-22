@@ -513,7 +513,7 @@ if (process.env.ROAMGATE_REVIEW_BEHAVIOR_DOM_TEST !== "1") {
         await review.unmount();
       });
 
-      test(":reviews shows the reviews list", async () => {
+      test(":reviews opens the board's Local reviews", async () => {
         const review = await mount({ files: [added("a.ts", 4)] });
         await review.command(":reviews");
         expect(review.listsShown()).toBe(1);

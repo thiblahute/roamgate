@@ -72,7 +72,11 @@ const TABLE: [string, string, keyof ReviewActions, ...string[]][] = [
   ],
   ["commits", "pick a commit by its subject (gc)", "single"],
   ["all", "all changes again", "single"],
-  ["reviews", "the reviews in progress", "reviews"],
+  [
+    "reviews",
+    "the reviews in progress (the Reviews tab's Local reviews)",
+    "reviews",
+  ],
   ["e", "reload the diff (gr)", "reload", "edit", "reload"],
 ];
 

@@ -59,9 +59,11 @@ import {
   type BoardInspectorRequest,
   handleMrReviewsShortcut,
   onMrFileOpen,
+  openLocalReviews,
   openMrReviews,
   takeBoardOpen,
   takeMrFileOpen,
+  toggleLocalReviews,
 } from "./mrReviewsOpen";
 import { handleWorkShortcut, openWork, watchWorkHash } from "./workOpen";
 import { useWorkForYouCount } from "./work";
@@ -124,11 +126,7 @@ import { OverlayTabFrame } from "./components/OverlayTab";
 import { requestOverlayFullscreenToggle } from "./overlayGeometry";
 import { SHORTCUT_NUMBERS } from "./shortcutBindings";
 import { activeTerminalInput, blurActiveInput } from "./activeTerminalInput";
-import {
-  focusShownOverlay,
-  overlayHideFocusTarget,
-  overlayPaneInput,
-} from "./overlayFocus";
+import { focusShownOverlay, overlayPaneInput } from "./overlayFocus";
 import { reviewKeyRoute } from "./reviewKeys";
 import { appKeyInMessageBox } from "./messageBoxKeys";
 import {
@@ -420,12 +418,6 @@ function preloadReviewCode() {
     .catch(() => {});
 }
 
-const ReviewList = lazyWithReload("review-list", () =>
-  import("./components/ReviewList").then((module) => ({
-    default: module.ReviewList,
-  })),
-);
-
 const ShortcutCheatSheet = lazyWithReload("shortcut-cheatsheet", () =>
   import("./components/ShortcutLookupDialog").then((module) => ({
     default: module.ShortcutCheatSheet,
@@ -444,7 +436,7 @@ type ReviewToggleGoTo = Pick<
   "path" | "line" | "root" | "commit"
 > & {
   scope?: "working" | "branch-main";
-  /** This review, shown as the toggle shows one (the reviews list's). */
+  /** This review, shown as the toggle shows one (a review picked). */
   sessionId?: string;
   /**
    * Close the review (`:q`, Esc in Changes): back to what the inspector
@@ -981,12 +973,6 @@ function isEditableElement(target: EventTarget | null) {
  * workspaces) must not fire. An agent chat's message box stands for the
  * agent's terminal, which takes them, so it does too.
  */
-/** The review (or the list of reviews) on screen, if any. */
-/** The reviews list, when shown: the overlay tab floats above it. */
-function shownReviewOverlay(root: Document): HTMLElement | null {
-  return root.querySelector<HTMLElement>(".review-list-overlay");
-}
-
 function blocksNavigationShortcuts(
   target: EventTarget | null,
   event?: KeyboardEvent,
@@ -1645,7 +1631,6 @@ function TerminalPaneLayout({
  */
 function OverlayTabHost({
   sheet,
-  aboveReview = false,
   mobileInputTarget,
   onHide,
   onActivateTerminalSurface,
@@ -1657,8 +1642,6 @@ function OverlayTabHost({
   onOpenWorkspaceFile,
 }: {
   sheet: boolean;
-  /** Shown from an open review: it floats above the review. */
-  aboveReview?: boolean;
   mobileInputTarget: HTMLElement | null;
   onHide: () => void;
   onActivateTerminalSurface: () => void;
@@ -1692,7 +1675,6 @@ function OverlayTabHost({
     <OverlayTabFrame
       open={s.open}
       sheet={sheet}
-      aboveReview={aboveReview}
       title={s.tab ? tabName(s.tab) : OVERLAY_TAB_DEFAULT_LABEL}
       shortcut={shortcut === "Unassigned" ? "" : shortcut}
       onHide={onHide}
@@ -1952,7 +1934,6 @@ export default function App() {
   useEffect(() => {
     writeReviewMemory(CHANGES_PINS_KEY, changesPins);
   }, [changesPins]);
-  const [reviewListOpen, setReviewListOpen] = useState(false);
   const focusedWorkspaceId =
     s.workspaces.find((w) => w.focused)?.workspace_id ?? "";
   const reviewPinKey = makeReviewPinKey(
@@ -2612,24 +2593,13 @@ export default function App() {
       });
     }
   }, [mobile, updateInspectorState]);
-  // Shown from an open review, the overlay floats above it, and hiding it
-  // gives the keyboard back to the review. A review opened later goes on top.
-  const [overlayAboveReview, setOverlayAboveReview] = useState(false);
-  const focusBeforeOverlay = useRef<HTMLElement | null>(null);
   // The overlay shortcut: show the Space's overlay tab, or hide it and give
-  // the keyboard back to the displayed tab's pane, or to the review it was
-  // shown over.
+  // the keyboard back to the displayed tab's pane.
   const hideOverlayTab = useCallback(() => {
     void store.hideOverlay();
-    const before = focusBeforeOverlay.current;
-    focusBeforeOverlay.current = null;
     if (!mobile)
       requestAnimationFrame(() => {
-        overlayHideFocusTarget(
-          shownReviewOverlay(document),
-          before,
-          activeTerminalInput(document),
-        )?.focus({ preventScroll: true });
+        activeTerminalInput(document)?.focus({ preventScroll: true });
       });
   }, [mobile]);
   const toggleOverlayTab = useCallback(() => {
@@ -2642,13 +2612,6 @@ export default function App() {
       setMobileTabSheetOpen(false);
       setMobileView("session");
     }
-    const review = mobile ? null : shownReviewOverlay(document);
-    const active = document.activeElement;
-    focusBeforeOverlay.current =
-      review && active instanceof HTMLElement && review.contains(active)
-        ? active
-        : null;
-    setOverlayAboveReview(!!review);
     void store.showOverlay();
   }, [hideOverlayTab, mobile]);
   // The phone's Back puts the overlay sheet away.
@@ -2990,10 +2953,7 @@ export default function App() {
   // Cmd+K from the review: the menu goes to other workspaces, so the review
   // steps aside (it is kept; Option+R brings it back).
   useEffect(() => {
-    const leave = () => {
-      stepReviewAsideRef.current();
-      setReviewListOpen(false);
-    };
+    const leave = () => stepReviewAsideRef.current();
     window.addEventListener(COMMAND_MENU_OPENING, leave);
     return () => window.removeEventListener(COMMAND_MENU_OPENING, leave);
   }, []);
@@ -3106,55 +3066,6 @@ export default function App() {
   const toggleReview = useCallback(() => {
     toggleReviewInChangesRef.current();
   }, []);
-  // Closing the reviews list by any means hands the keys back to the
-  // terminal; the removed list held the focus.
-  const reviewShown = reviewListOpen;
-  const reviewWasShown = useRef(false);
-  // The chat box focused before the review: it gets the focus back, as it
-  // was, whatever pane layout it sits in.
-  const chatBeforeReview = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    const onFocusIn = (event: FocusEvent) => {
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        !target.closest(".review-list-overlay")
-      )
-        chatBeforeReview.current = target.closest(".agent-history-composer")
-          ? target
-          : null;
-    };
-    document.addEventListener("focusin", onFocusIn, true);
-    return () => document.removeEventListener("focusin", onFocusIn, true);
-  }, []);
-  // On a phone only an agent chat's message box gets it back: a terminal
-  // taking the focus would bring the keyboard up over it.
-  useEffect(() => {
-    // A review opened over a shown overlay goes on top of it.
-    if (!reviewWasShown.current && reviewShown) setOverlayAboveReview(false);
-    if (reviewWasShown.current && !reviewShown)
-      requestAnimationFrame(() => {
-        const chat = chatBeforeReview.current;
-        if (chat?.isConnected && chat.getClientRects().length > 0) {
-          chat.focus({ preventScroll: true });
-          return;
-        }
-        const active = document.activeElement;
-        if (active && active !== document.body) return;
-        const input = activeTerminalInput(document);
-        const target = !mobile
-          ? input
-          : input?.closest(".agent-history-composer")
-            ? input
-            : Array.from(
-                document.querySelectorAll<HTMLElement>(
-                  ".agent-history-composer :is(textarea, [contenteditable='true'])",
-                ),
-              ).find((box) => box.getClientRects().length > 0);
-        target?.focus({ preventScroll: true });
-      });
-    reviewWasShown.current = reviewShown;
-  }, [reviewShown, mobile]);
   const toggleReviewRef = useRef(toggleReview);
   toggleReviewRef.current = toggleReview;
   const toggleAnnotations = useCallback(() => {
@@ -4021,7 +3932,7 @@ export default function App() {
         goBack(current, toggled);
         return;
       }
-      // A review picked (the reviews list's, the inbox's): shown as the
+      // A review picked (the board's): shown as the
       // toggle shows the pinned one.
       const picked = goTo?.sessionId;
       if (picked) goTo = undefined;
@@ -5340,14 +5251,6 @@ export default function App() {
         ) === "review"
       )
         return;
-      if ((e.target as HTMLElement | null)?.closest?.(".review-list-overlay")) {
-        const route = reviewKeyRoute(
-          (id) => shortcutMatches(e, id),
-          store.get().overlayOpen,
-        );
-        if (route === "review") return;
-        if (route === "leave") setReviewListOpen(false);
-      }
       if (
         document.querySelector(
           ".modal-backdrop, .agent-tasks-backdrop, .command-popover, .context-menu",
@@ -5731,8 +5634,9 @@ export default function App() {
         if (blocksNavigationShortcuts(e.target, e)) return;
         e.preventDefault();
         e.stopPropagation();
-        // The list steps over the review; the review keeps its place.
-        if (!e.repeat) setReviewListOpen((open) => !open);
+        // The Reviews tab's Local reviews; the review keeps its place in
+        // Changes.
+        if (!e.repeat) toggleLocalReviews();
         return;
       }
       if (shortcutMatches(e, "review.toggle")) {
@@ -7007,26 +6911,6 @@ export default function App() {
           <div
             className={`workspace-surfaces ${annotationsDocked ? "has-annotations" : ""} ${assistantDocked ? "has-assistant" : ""}`}
           >
-            {reviewListOpen && s.activeConnectionId ? (
-              <Suspense fallback={null}>
-                <ReviewList
-                  connectionId={s.activeConnectionId}
-                  sessions={[...reviewState.summaries.values()].filter(
-                    (snapshot) =>
-                      snapshot.session.connectionId === s.activeConnectionId &&
-                      snapshot.session.target.kind !== "chat" &&
-                      snapshot.session.target.kind !== "rendered" &&
-                      snapshot.session.target.kind !== "effort",
-                  )}
-                  onOpen={(sessionId) => {
-                    setReviewListOpen(false);
-                    // In Changes: its workspace's, else this one's.
-                    void showReviewInChanges(sessionId);
-                  }}
-                  onClose={() => setReviewListOpen(false)}
-                />
-              </Suspense>
-            ) : null}
             <div
               ref={inspectorStageRef}
               className={`workspace-stage ${
@@ -7200,7 +7084,7 @@ export default function App() {
                           toggleReviewInChangesRef.current({ close: true });
                         else if (how === "command") closeInspector();
                       }}
-                      onShowReviews={() => setReviewListOpen(true)}
+                      onShowReviews={openLocalReviews}
                       onBack={clearInspectorDetail}
                       workForYou={workForYou}
                       onStepAside={stepInspectorAside}
@@ -7363,7 +7247,6 @@ export default function App() {
       {mobile ? null : (
         <OverlayTabHost
           sheet={false}
-          aboveReview={overlayAboveReview}
           mobileInputTarget={mobileInputTarget}
           onHide={hideOverlayTab}
           onActivateTerminalSurface={activateTerminalSurface}

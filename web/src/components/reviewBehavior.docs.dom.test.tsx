@@ -128,7 +128,7 @@ if (
     expect(review).toContain(
       "`Option+V` (`Alt+V` on Windows/Linux, or `v`) marks the whole file",
     );
-    // The Keyboard Shortcuts table: the review's, the reviews list's and
+    // The Keyboard Shortcuts table: the review's, the Local reviews' and
     // the reviews inbox's rows are the bindings.
     const table = section("Keyboard Shortcuts");
     const row = (action: string) =>
@@ -146,7 +146,7 @@ if (
       `\`${shown(mac["review.toggle"])}\``,
       `\`${formatShortcut(linux["review.toggle"][0]!, "linux")}\``,
     ]);
-    expect(row("Reviews in progress")).toEqual([
+    expect(row("Local reviews (the Reviews tab)")).toEqual([
       `\`${shown(mac["reviews.list"])}\``,
       `\`${formatShortcut(linux["reviews.list"][0]!, "linux")}\``,
     ]);

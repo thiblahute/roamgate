@@ -217,7 +217,7 @@ Open **Files**, **Changes**, **Commits**, **Agent History**, **Work** or
   leave (a selection, a search, Review only first) close the review as the
   review toggle does, back to what the inspector showed; with Changes opened
   by hand, `:q` closes the inspector and Esc does nothing. `:w` saves the
-  comment being written, `:reviews` lists the reviews in progress, `:review`
+  comment being written, `:reviews` lists the reviews in progress (the Reviews tab's Local reviews), `:review`
   alone opens the agent review's focus bar (Start asks, with or without a
   focus), `:conversations` lists the comments even when there are none yet.
   `?` and `:help` show the review's shortcut list, then Changes' own
@@ -351,7 +351,7 @@ Open **Files**, **Changes**, **Commits**, **Agent History**, **Work** or
   became shows all the changes, said so), and the view shown is kept per
   review. When the code changes, the bar offers to reload (R, gr, `:e`).
   Every way a review opens lands in Changes: the review toggle, the tab
-  bar's and the phone's Review, the reviews list (Option+Shift+R), the
+  bar's and the phone's Review, the Reviews tab's Local reviews (Option+Shift+R), the
   Reviews inbox, an agent's `review_open` and `/rg-review` (in a workspace
   you are not in, it waits in that workspace's Changes and shows when you
   get there), Files' Review, and Commits' **Review this commit**
@@ -1373,8 +1373,9 @@ for your Send, on the next load.
 Option+R (Ctrl+Alt+R elsewhere), **Review** in the tab bar, or on a phone **Review** in the ⋮ More options sheet, opens a review of
 the focused workspace's branch against its default branch, in the workspace
 inspector's Changes view. That base is the one the Branch scope shows under Automatic
-(below), and the review's title names it. Option+Shift+R lists the reviews in progress, the ones with new
-commits or discussions waiting on you first. Closing a review (Option+R
+(below), and the review's title names it. Option+Shift+R lists the reviews in progress, in the
+inspector's Reviews tab as its [Local reviews](#local-reviews), the ones with
+new commits or discussions waiting on you first. Closing a review (Option+R
 again, `:q`, Esc) only hides it, back to what the inspector showed: Option+R
 brings it back as you left it (view, place, drafts), and a workspace's other
 repositories keep theirs too. On a phone, Back closes it too. When the
@@ -2213,6 +2214,29 @@ Its settings (gear) hold the hosts, the followed projects, when the review
 worktree follows the selected request, how long a closed request's review
 is kept, and hints for the suggestions.
 
+### Local reviews
+
+**Local reviews**, the first lane of the inspector's Reviews tab (atop the
+list on a narrow inspector or a phone), lists Roamgate's own reviews of the workspace's
+checkouts: branches, ranges, uncommitted work and merge requests reviewed
+here, not a chat's or a rendered file's threads. Option+Shift+R
+(Ctrl+Alt+Shift+R elsewhere) and Changes' `:reviews` open the Reviews tab
+on them, the first one selected (the shortcut again closes it). They are
+the workspace's (**Only** _workspace_ says so; removing it shows every workspace's),
+and every workspace's from a project coordinator's workspace, as the Work
+board does. The ones with news come first: new commits on the branch since
+you last looked, discussions waiting for you; then the latest worked on. A
+row says its comments, its agent at work, GitLab, and what its branch is
+now: chips that fill in as each checkout answers (each is read on its own,
+so a slow one holds back no other): **checkout removed**, **base gone** or
+**head gone**, **branch not read in time** for a checkout that did not
+answer within five seconds, and **on** _machine_**, offline** for a review
+of a connection Roamgate does not reach now, never waited for. `j`/`k` and
+`h`/`l` walk them with the requests, `Enter` shows one in its workspace's
+Changes, `w` goes to its workspace, `dd` (or `x`, `Delete`) discards it and
+`u` (or Undo) brings it back with its threads; `/` narrows them by title,
+repository and range.
+
 ## Work board
 
 **Menu > Work**, the command menu, `Option+W` (`Alt+W`) or, on a phone,
@@ -2664,7 +2688,7 @@ and is skipped, with a note, on a browser that does not match.
 | File Explorer                                                         | `Cmd+Shift+E`           | `Ctrl+Alt+E`                            |
 | Diff Viewer                                                           | `Ctrl+Shift+G`          | `Ctrl+Alt+G`                            |
 | Review of this branch (open / close)                                  | `Option+R`              | `Ctrl+Alt+R`                            |
-| Reviews in progress                                                   | `Option+Shift+R`        | `Ctrl+Alt+Shift+R`                      |
+| Local reviews (the Reviews tab)                                       | `Option+Shift+R`        | `Ctrl+Alt+Shift+R`                      |
 | Agent history                                                         | `Cmd+Shift+H`           | `Ctrl+Alt+H`                            |
 | Search raw preview / diff                                             | `Cmd+F`                 | `Ctrl+F`                                |
 | Send composer / add review comment / pre-fill agent (focused surface) | `Cmd+Enter`             | `Ctrl+Enter`                            |

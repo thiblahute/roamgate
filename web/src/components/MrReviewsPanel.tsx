@@ -97,8 +97,25 @@ import {
   storedFoldedLanes,
 } from "../mrReviewsLanes";
 import { type BoardMode, requestMrFileOpen } from "../mrReviewsOpen";
+import type { ReviewSnapshot } from "../../../shared/review";
+import {
+  getReviewSnapshot,
+  rememberReviewSnapshot,
+  requestReviewShown,
+  reviewCall,
+  useReviewState,
+} from "../review";
+import { useReviewActivity } from "../reviewActivity";
+import { describeReviewTarget, rankReviews } from "../reviewModel";
+import {
+  localReviewKey,
+  localReviewOfKey,
+  localReviewsOf,
+  movedReviews,
+} from "../localReviews";
+import { LocalReviewsLane } from "./LocalReviewsLane";
 import { MrOverrideForm, MrOverrideSummary, refOfKey } from "./MrOverrideForm";
-import { store } from "../store";
+import { store, useStoreSelector } from "../store";
 import { formatUiDateTime } from "../uiLocale";
 import { MrReviewsChat } from "./MrReviewsChat";
 import {
@@ -111,7 +128,11 @@ import { MrReviewsSettingsView } from "./MrReviewsSettings";
 import { BoardCard } from "./BoardCard";
 import { ShortcutHelp } from "./ShortcutHelp";
 import type { WorkOpen } from "../workOpen";
-import { type BoardCloseOptions, useWorkMode } from "./WorkBoard";
+import {
+  type BoardCloseOptions,
+  useWorkMode,
+  useWorkWorkspace,
+} from "./WorkBoard";
 import "./AssistantPanel.css";
 import "./AssistantTasks.css";
 import "./AgentTasksSheet.css";
@@ -1573,7 +1594,10 @@ export function MrReviewsPanel({
   onKeyFirst,
   initialWorkItem,
   initialWork,
+  initialLocal,
 }: {
+  /** The Reviews mode on its Local reviews: the first one selected. */
+  initialLocal?: boolean;
   /** keepFocus: a review was shown; the focus is the review's now. */
   onClose: (options?: BoardCloseOptions) => void;
   /**
@@ -1846,6 +1870,89 @@ export function MrReviewsPanel({
       openEffort(id);
     },
   });
+  /**
+   * Local reviews: Roamgate's own reviews of the workspace's checkouts
+   * (every workspace's from a coordinator's, or widened), ranked with
+   * their news first; their branches read checkout by checkout, each chip
+   * shown as its checkout answers.
+   */
+  const reviewState = useReviewState();
+  const reviewWorkspace = useWorkWorkspace();
+  const [localWide, setLocalWide] = useState(false);
+  const localScope =
+    work.coordinator || localWide || !reviewWorkspace
+      ? null
+      : {
+          connectionId: reviewWorkspace.connectionId,
+          workspaceId: reviewWorkspace.workspaceId,
+        };
+  const localScopeKey = localScope
+    ? `${localScope.connectionId}\n${localScope.workspaceId}`
+    : "";
+  const localOn = mode === "mr" && view === "list";
+  const localKnown = useMemo(
+    () => (localOn ? localReviewsOf(reviewState.summaries.values(), null) : []),
+    [localOn, reviewState.summaries],
+  );
+  const localReviews = useMemo(
+    () => (localScope ? localReviewsOf(localKnown, localScope) : localKnown),
+    // The scope is its key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [localKnown, localScopeKey],
+  );
+  const localBranches = useReviewActivity(
+    useMemo(
+      () =>
+        localReviews.map(({ session }) => ({
+          id: session.id,
+          connectionId: session.connectionId,
+          root: session.root,
+        })),
+      [localReviews],
+    ),
+  );
+  const localItems = useMemo(() => {
+    const words = query
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((word) => word && !word.includes(":"));
+    return rankReviews(localReviews, movedReviews(localBranches)).filter(
+      ({ snapshot: { session } }) => {
+        if (!words.length) return true;
+        const text =
+          `${session.title} ${session.root} ${describeReviewTarget(session.target)}`.toLowerCase();
+        return words.every((word) => text.includes(word));
+      },
+    );
+  }, [localReviews, localBranches, query]);
+  const localKeys = localItems.map((item) =>
+    localReviewKey(item.snapshot.session.id),
+  );
+  /** Drawn when the page knows a local review, or when asked for. */
+  const localShown = localOn && (localKnown.length > 0 || !!initialLocal);
+  const workspaceLabels = useStoreSelector((state) =>
+    state.workspaces
+      .map((each) => `${each.workspace_id}\t${each.label}`)
+      .join("\n"),
+  );
+  const localWorkspaceLabels = useMemo(
+    () =>
+      new Map(
+        (workspaceLabels ? workspaceLabels.split("\n") : []).map(
+          (line) => line.split("\t") as [string, string],
+        ),
+      ),
+    [workspaceLabels],
+  );
+  // Opened on Local reviews: the first one selected, once listed.
+  const localPicked = useRef(false);
+  const firstLocal = localKeys[0];
+  useEffect(() => {
+    if (!initialLocal || localPicked.current || !firstLocal) return;
+    localPicked.current = true;
+    setSelected(firstLocal);
+  }, [initialLocal, firstLocal]);
+
   /** The sections drawn: an empty Suggested takes no column on the board. */
   const drawnSections = board
     ? visibleSections.filter(
@@ -1860,7 +1967,15 @@ export function MrReviewsPanel({
           : [shown[section]],
       )
     : [];
-  const columnKeys = columns.map((rows) => rows.map((entry) => entry.key));
+  const columnKeys = [
+    ...(board && localShown ? [localKeys] : []),
+    ...columns.map((rows) => rows.map((entry) => entry.key)),
+  ];
+  /** Every row's key as drawn, in order: what j / k, gg and G walk. */
+  const walkKeys = [
+    ...(localShown ? localKeys : []),
+    ...ordered.map((entry) => entry.key),
+  ];
   /** h / l, Tab: the column on the left or right, at the same height. */
   const moveColumn = (step: number) => {
     const next = nextColumn(columnKeys, selected, step);
@@ -2116,12 +2231,7 @@ export function MrReviewsPanel({
 
   const move = (step: number) => {
     // On the board, j / k stay in the column.
-    const next = nextRow(
-      board ? columnKeys : null,
-      ordered.map((entry) => entry.key),
-      selected,
-      step,
-    );
+    const next = nextRow(board ? columnKeys : null, walkKeys, selected, step);
     if (next) setSelected(next);
   };
 
@@ -2603,6 +2713,84 @@ export function MrReviewsPanel({
     undoTimer.current = setTimeout(() => setUndo(null), 6_000);
   };
 
+  /** A local review, by id, as the lane lists it. */
+  const localReview = (sessionId: string) =>
+    localItems.find((item) => item.snapshot.session.id === sessionId)?.snapshot
+      .session;
+  /** Its connection is not reached: said, and nothing done. */
+  const localOffline = (sessionId: string): boolean => {
+    const branch = localBranches.get(sessionId);
+    if (branch?.state !== "offline") return false;
+    say(`That review is on ${branch.connection}, which is offline`);
+    return true;
+  };
+  /**
+   * A local review shown in its workspace's Changes (Enter): the board
+   * goes to its workspace first, as a request's review does.
+   */
+  const openLocal = (sessionId: string) => {
+    const session = localReview(sessionId);
+    if (!session || localOffline(sessionId)) return;
+    const { connectionId, workspaceId } = session;
+    const current = store.get();
+    const focused = current.workspaces.find((each) => each.focused);
+    const there =
+      !workspaceId ||
+      (connectionId === current.activeConnectionId &&
+        focused?.workspace_id === workspaceId);
+    void (
+      there
+        ? Promise.resolve()
+        : store
+            .jumpToConnectionWorkspace(connectionId, workspaceId)
+            .catch(() => {})
+    ).then(() => requestReviewShown(connectionId, sessionId));
+    onClose({ keepFocus: true });
+  };
+  /** Its workspace (w), the board stepping aside. */
+  const goLocalWorkspace = (sessionId: string) => {
+    const session = localReview(sessionId);
+    if (!session?.workspaceId || localOffline(sessionId)) return;
+    void store
+      .jumpToConnectionWorkspace(session.connectionId, session.workspaceId)
+      .catch(() => {});
+    onClose({ keepFocus: true });
+  };
+  /**
+   * Discards a local review (dd): its whole snapshot kept first, which u
+   * (or Undo) brings back with its threads.
+   */
+  const discardLocal = async (sessionId: string) => {
+    const session = localReview(sessionId);
+    if (!session || localOffline(sessionId)) return;
+    const { connectionId } = session;
+    const key = localReviewKey(sessionId);
+    const at = walkKeys.indexOf(key);
+    if (selected === key)
+      setSelected(walkKeys[at + 1] ?? walkKeys[at - 1] ?? null);
+    panelRef.current?.focus({ preventScroll: true });
+    try {
+      const snapshot =
+        getReviewSnapshot(sessionId) ??
+        (await reviewCall<ReviewSnapshot>(connectionId, "review.get", {
+          session_id: sessionId,
+        }));
+      await reviewCall(connectionId, "review.remove", {
+        session_id: sessionId,
+      });
+      sayUndo(`Discarded ${session.title || "the review"}`, async () => {
+        rememberReviewSnapshot(
+          await reviewCall<ReviewSnapshot>(connectionId, "review.import", {
+            snapshot,
+          }),
+        );
+        setSelected(key);
+      });
+    } catch (cause) {
+      say(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
   /** The selected request in the middle of the list, or at its top or bottom. */
   const placeSelected = (where: "center" | "start" | "end") => {
     if (!selected) return;
@@ -3063,6 +3251,9 @@ export function MrReviewsPanel({
         // A request's URL searched for: Enter adds it.
         panelRef.current?.focus({ preventScroll: true });
         void add(pastedQuery);
+      } else if (key === "Enter" && localReviewOfKey(selected)) {
+        panelRef.current?.focus({ preventScroll: true });
+        openLocal(localReviewOfKey(selected)!);
       } else if (key === "Enter") {
         const found =
           pastedEntry ??
@@ -3124,6 +3315,7 @@ export function MrReviewsPanel({
     if (fed.type === "wait") return true;
     const count = fed.count ?? 1;
     const current = ordered.find((entry) => entry.key === selected);
+    const localCurrent = localReviewOfKey(selected);
     if (
       board &&
       (fed.key === "h" ||
@@ -3144,11 +3336,11 @@ export function MrReviewsPanel({
     } else if (fed.key === "k" || fed.key === "ArrowUp") {
       move(-count);
     } else if (fed.key === "gg" || fed.key === "Home") {
-      const at = Math.min(ordered.length, fed.count ?? 1) - 1;
-      if (at >= 0) setSelected(ordered[at]!.key);
+      const at = Math.min(walkKeys.length, fed.count ?? 1) - 1;
+      if (at >= 0) setSelected(walkKeys[at]!);
     } else if (fed.key === "G" || fed.key === "End") {
-      const at = Math.min(ordered.length, fed.count ?? ordered.length) - 1;
-      if (at >= 0) setSelected(ordered[at]!.key);
+      const at = Math.min(walkKeys.length, fed.count ?? walkKeys.length) - 1;
+      if (at >= 0) setSelected(walkKeys[at]!);
     } else if (fed.key === "zz" || fed.key === "zt" || fed.key === "zb") {
       placeSelected(
         fed.key === "zz" ? "center" : fed.key === "zt" ? "start" : "end",
@@ -3162,6 +3354,15 @@ export function MrReviewsPanel({
       searchRef.current?.select();
     } else if (fed.key === "?") {
       setHelpOpen((open) => !open);
+    } else if (localCurrent && event.key === "Enter") {
+      openLocal(localCurrent);
+    } else if (
+      localCurrent &&
+      (fed.key === "dd" || event.key === "Delete" || event.key === "x")
+    ) {
+      void discardLocal(localCurrent);
+    } else if (localCurrent && event.key === "w") {
+      goLocalWorkspace(localCurrent);
     } else if (event.key === "Enter" && current) {
       enter(current);
     } else if (event.key === "i" && current) {
@@ -3316,6 +3517,28 @@ export function MrReviewsPanel({
     : inbox?.refreshedAt
       ? `Updated ${relative(inbox.refreshedAt)}`
       : "Not read yet";
+
+  /** Local reviews: the first column of the board, atop the list. */
+  const localLane = localShown ? (
+    <LocalReviewsLane
+      items={localItems}
+      branches={localBranches}
+      selected={selected}
+      scope={{
+        label: localScope ? (reviewWorkspace?.label ?? null) : null,
+        fixed: work.coordinator || !reviewWorkspace,
+        canNarrow: localWide,
+      }}
+      workspaceLabels={localWorkspaceLabels}
+      onScope={(wide) => {
+        setLocalWide(wide);
+        if (localReviewOfKey(selected)) setSelected(null);
+      }}
+      onSelect={setSelected}
+      onOpen={openLocal}
+      onDiscard={(id) => void discardLocal(id)}
+    />
+  ) : null;
 
   /** The efforts' cards: atop Mine, or across the board's top. */
   const effortCards = efforts.length ? (
@@ -3911,9 +4134,14 @@ export function MrReviewsPanel({
               }
             />
           ) : !inbox ? (
-            <div className="assistant-panel-empty">
-              <LoaderCircle className="assistant-spinner" size={24} />
-            </div>
+            <>
+              {localLane ? (
+                <div className="mr-reviews-sections">{localLane}</div>
+              ) : null}
+              <div className="assistant-panel-empty">
+                <LoaderCircle className="assistant-spinner" size={24} />
+              </div>
+            </>
           ) : (
             <>
               {problems.length ? (
@@ -4064,6 +4292,7 @@ export function MrReviewsPanel({
                 ref={boardRef}
                 className={board ? "mr-reviews-board" : "mr-reviews-sections"}
               >
+                {localLane}
                 {drawnSections.map((section) => (
                   <section
                     key={section}

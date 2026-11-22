@@ -24,11 +24,6 @@
   box-shadow: var(--shadow-modal);
 }
 
-/* Shown from the reviews list: above it (5500), below dialogs (6000). */
-.overlay-tab.is-floating.is-above-review {
-  z-index: 5550;
-}
-
 .overlay-tab.is-sheet {
   position: absolute;
   z-index: 40;

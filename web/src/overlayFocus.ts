@@ -107,16 +107,3 @@ export function overlayPaneInput(root: Document): HTMLElement | null {
     ? input.querySelector<HTMLElement>(".xterm-helper-textarea")
     : input;
 }
-
-/**
- * Where the keyboard goes when the overlay hides: the review it was shown
- * over, back where it was in it, or else the displayed tab's pane.
- */
-export function overlayHideFocusTarget(
-  review: HTMLElement | null,
-  before: HTMLElement | null,
-  terminalInput: HTMLElement | null,
-): HTMLElement | null {
-  if (!review) return terminalInput;
-  return before?.isConnected && review.contains(before) ? before : review;
-}

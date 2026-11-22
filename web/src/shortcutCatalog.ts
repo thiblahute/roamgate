@@ -12,7 +12,11 @@ const descriptions: [ShortcutId, string, string][] = [
   ["inspector.expand", "Expand or restore the Inspector on desktop", "Global"],
   ["annotations.toggle", "Toggle the workspace's threads", "Global"],
   ["review.toggle", "Open or close the review of this branch", "Global"],
-  ["reviews.list", "List the reviews in progress", "Global"],
+  [
+    "reviews.list",
+    "Local reviews: the workspace's reviews in progress, in the Reviews tab",
+    "Global",
+  ],
   ["assistant.toggle", "Toggle Ranger", "Global"],
   ["companion.call", "Call the voice companion", "Global"],
   ["companion.ask", "Ask the companion in writing, without a call", "Global"],

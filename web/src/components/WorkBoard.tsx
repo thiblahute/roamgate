@@ -119,6 +119,7 @@ import {
   workspaceScopeKey,
   workTagCounts,
   workWorkspaceFilter,
+  isCoordinatorWorkspace,
 } from "../workScope";
 import { BoardCard } from "./BoardCard";
 import { ResizeSeparator } from "./ResizeSeparator";
@@ -566,6 +567,11 @@ export type WorkMode = {
   onKey: (event: KeyboardEvent) => boolean;
   /** The selected card is scrolled into view. */
   selected: string | null;
+  /**
+   * The workspace shown is its project's coordinator's: the boards show
+   * every workspace's (the Reviews mode's Local reviews too).
+   */
+  coordinator: boolean;
 };
 
 export function useWorkMode({
@@ -1830,6 +1836,7 @@ export function useWorkMode({
     inner,
     onKey,
     selected,
+    coordinator: isCoordinatorWorkspace(workspace, projects),
   };
 }
 

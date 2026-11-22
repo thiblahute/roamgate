@@ -362,7 +362,7 @@ export function WorkspaceInspectorHost({
    * as the review toggle closes it; absent, `:q` closes the inspector.
    */
   onCloseReview?: (how: "command" | "escape") => void;
-  /** `:reviews` in Changes: the reviews in progress. */
+  /** `:reviews` in Changes: the board's Local reviews. */
   onShowReviews?: () => void;
   onBack: () => void;
   /** The Work items waiting on the user, in every project: the Work tab's badge. */

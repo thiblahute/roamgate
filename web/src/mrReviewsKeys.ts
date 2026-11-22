@@ -189,6 +189,11 @@ export const MR_REVIEWS_KEYS: readonly ShortcutRow[] = [
   ["+", "more like this (a suggestion)"],
   ["r :refresh", "refresh", "r"],
   ["a", "ask the reviews agent"],
+  [
+    "Enter w dd u (local)",
+    "on a Local review (Option+Shift+R, :reviews): Enter shows it in its workspace's Changes, w goes to its workspace, dd (x, Delete) discards it, u brings it back",
+    false,
+  ],
   ...BOARD_KEYS,
   [
     "P L R F W",
