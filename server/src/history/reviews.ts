@@ -8,7 +8,7 @@ import type {
 } from "../../../shared/review";
 import { type HistoryArea, type ReviewSource, count } from "./area";
 import { fileNameOf, parseDoc, renderDoc, stableJson } from "./format";
-import { withoutSecrets } from "./secrets";
+import { withoutSecrets } from "../utils/secrets";
 
 /**
  * Reviews in the history: `reviews/<yyyy>/<review>/review.json` (the

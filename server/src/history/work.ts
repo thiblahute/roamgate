@@ -17,7 +17,7 @@ import {
 } from "./format";
 import type { WorkChange } from "./hooks";
 import type { WorkCommit } from "./repo";
-import { withoutSecrets } from "./secrets";
+import { withoutSecrets } from "../utils/secrets";
 
 /**
  * The Work board in the history: `work/items/<id>.md` (the item as a

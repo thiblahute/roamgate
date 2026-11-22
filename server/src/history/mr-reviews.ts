@@ -4,7 +4,7 @@ import { replaceDataFile } from "../config/data-paths";
 import { emptyLedger, type LedgerFile } from "../mr-reviews/efforts";
 import { type HistoryArea, count } from "./area";
 import { fileNameOf, jsonl, parseJsonl, stableJson } from "./format";
-import { withoutSecrets } from "./secrets";
+import { withoutSecrets } from "../utils/secrets";
 
 /**
  * What the Reviews author (section 11, D21, D22): the `mr_reviews` keys the

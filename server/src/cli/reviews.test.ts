@@ -7,7 +7,7 @@ import {
   parseReviewsExport,
 } from "../history/mr-reviews";
 import { stableJson } from "../history/format";
-import { withoutSecrets } from "../history/secrets";
+import { withoutSecrets } from "../utils/secrets";
 import { createReviewsCommand } from "./reviews";
 import { createTestCli, type TestCli } from "./test-context";
 

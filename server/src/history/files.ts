@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type HistoryArea, type HistoryPaths, count } from "./area";
 import { fileNameOf, stableJson } from "./format";
-import { withoutSecrets } from "./secrets";
+import { withoutSecrets } from "../utils/secrets";
 
 /**
  * The areas kept as the stores' own small files: settings (one file per

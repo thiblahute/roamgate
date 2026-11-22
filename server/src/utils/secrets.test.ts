@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { scanDiff, withoutSecrets } from "./secrets";
+import {
+  redactSecrets,
+  scanDiff,
+  SECRET_MARK,
+  withoutSecrets,
+} from "./secrets";
 
 test("withoutSecrets drops secret keys and replaces secret values", () => {
   expect(
@@ -51,4 +56,46 @@ test("a removed secret or a clean diff is no hit", () => {
   expect(
     scanDiff("+++ b/a\n@@ -1 +1 @@\n-ghp_abcdefghijklmnopqrstuvwx1234\n+clean"),
   ).toEqual([]);
+});
+
+test("redactSecrets replaces tokens, keys, credentials and secret pairs", () => {
+  const cases: Array<[string, string]> = [
+    ["token glpat-abcdefghij1234567890 here", `token ${SECRET_MARK} here`],
+    [`gh ghp_${"a".repeat(36)}`, `gh ${SECRET_MARK}`],
+    [`key sk-ant-${"x".repeat(40)}`, `key ${SECRET_MARK}`],
+    ["aws AKIAABCDEFGHIJKLMNOP", `aws ${SECRET_MARK}`],
+    [
+      "https://user:hunter2pass@example.com/repo",
+      `https://user:${SECRET_MARK}@example.com/repo`,
+    ],
+    [
+      "Authorization: Bearer abc.def.ghi123",
+      `Authorization: Bearer ${SECRET_MARK}`,
+    ],
+    ['password="correct-horse"', `password=${SECRET_MARK}`],
+    ["export API_KEY=Zx81kdP2qq9", `export API_KEY=${SECRET_MARK}`],
+    [
+      "-----BEGIN OPENSSH PRIVATE KEY----- \u23ce b3BlbnNzaC1rZXk \u23ce -----END OPENSSH PRIVATE KEY-----",
+      SECRET_MARK,
+    ],
+  ];
+  for (const [input, expected] of cases) {
+    const out = redactSecrets(input);
+    expect(out.text).toBe(expected);
+    expect(out.count).toBeGreaterThan(0);
+  }
+});
+
+test("redactSecrets leaves ordinary text and code alone", () => {
+  for (const text of [
+    "the secret is to keep going",
+    "const password = getPassword();",
+    "token = os.environ['TOKEN']",
+    "sk-learn is a library",
+    "https://example.com/path?x=1",
+  ]) {
+    const out = redactSecrets(text);
+    expect(out.text).toBe(text);
+    expect(out.count).toBe(0);
+  }
 });

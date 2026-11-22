@@ -17,7 +17,7 @@ import type {
 } from "../../../shared/history";
 import type { HistoryArea } from "./area";
 import { type GitRunner, gitOk, gitRunner } from "./git";
-import { scanDiff } from "./secrets";
+import { scanDiff } from "../utils/secrets";
 
 /**
  * The history repo: a git repository of plain files (`<data>/history/` by
