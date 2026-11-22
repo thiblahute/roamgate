@@ -68,11 +68,11 @@ export type OpenReviewAtDeps = {
 
 /** The review store's (read when used: the views here need none of it). */
 async function storeDeps(): Promise<OpenReviewAtDeps> {
-  const { getReviewSnapshot, loadReviews, requestReviewShown } = await import(
+  const { getReviewSummary, loadReviews, requestReviewShown } = await import(
     "./review"
   );
   return {
-    summary: getReviewSnapshot,
+    summary: getReviewSummary,
     load: loadReviews,
     show: requestReviewShown,
   };
