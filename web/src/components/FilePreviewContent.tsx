@@ -180,6 +180,10 @@ import {
   runInspectorCommand,
 } from "../inspectorCommands";
 import { useInspectorCommands } from "../useInspectorCommands";
+import {
+  InspectorHeaderControls,
+  useInInspectorHeader,
+} from "./inspectorHeaderSlot";
 import "./FilePreviewContent.css";
 
 export type ActiveFilePreviewSelection = {
@@ -592,6 +596,8 @@ export function FilePreviewContent({
   const [urlText, setUrlText] = useState("http://localhost:");
   const [threadsOpen, setThreadsOpen] = useState(false);
   const [zen, toggleZen] = useZenMode();
+  /** In the inspector: its controls in the inspector's header row. */
+  const headInSlot = useInInspectorHeader();
   /** Review only's bar: the page's banner shows at its start. */
   const [zenBanner, setZenBanner] = useState<HTMLElement | null>(null);
   useZenEscape(zen, toggleZen);
@@ -2409,6 +2415,259 @@ export function FilePreviewContent({
     back?.focus({ preventScroll: true });
   };
 
+  const titleRow = (
+    <div className="file-preview-title-row">
+      {backAction ? (
+        <button
+          type="button"
+          className="file-preview-back"
+          title={backAction.label}
+          aria-label={backAction.label}
+          onClick={backAction.onClick}
+        >
+          <ChevronLeft size={14} aria-hidden="true" />
+        </button>
+      ) : null}
+      {fileShown && entry ? historyButtons : null}
+      <div className="file-preview-title" title={entry?.path ?? entry?.name}>
+        {entry?.name ?? "Preview"}
+      </div>
+      <div className="file-preview-head-actions">
+        {!showingChanges && showDirectoryWorkspaceAction ? (
+          <button
+            type="button"
+            className="file-preview-refresh"
+            title="New workspace with this directory as CWD"
+            aria-label="New workspace with this directory as CWD"
+            onClick={() => setWorkspaceDialogOpen(true)}
+          >
+            <FolderPlus size={13} aria-hidden="true" />
+          </button>
+        ) : null}
+        {onToggleTree ? (
+          <FileTreeButton
+            hidden={treeHidden}
+            onToggle={onToggleTree}
+            what="file tree"
+            // :files is the file view's (the inspector's, there).
+            {...(showingChanges && !inspectorRun ? {} : { keys: ":files" })}
+            className="file-preview-refresh"
+          />
+        ) : null}
+        {!showingChanges && entry && onRefresh ? (
+          <button
+            type="button"
+            className="file-preview-refresh"
+            title="Refresh preview (R, :refresh)"
+            aria-label="Refresh preview"
+            disabled={loadingProp}
+            onClick={reload}
+          >
+            <RefreshCw
+              size={13}
+              className={loadingProp ? "is-spinning" : undefined}
+              aria-hidden="true"
+            />
+          </button>
+        ) : null}
+        {!showingChanges && onOpenFile ? (
+          <button
+            type="button"
+            className="file-preview-copy"
+            title="Open a site's page here, to browse and comment on"
+            aria-expanded={urlOpen}
+            onClick={() => setUrlOpen((open) => !open)}
+          >
+            URL
+          </button>
+        ) : null}
+        {!showingChanges && onCreateAnnotation ? (
+          <ZenButton
+            zen={zen}
+            onToggle={toggleZen}
+            className="file-preview-refresh"
+            label="Review only"
+            title="Review only: hide all the chrome, just the file (o, :only; o or Esc brings it back)"
+            size={13}
+          />
+        ) : null}
+        {scriptsControl}
+        {canPoint ? (
+          <button
+            type="button"
+            className={`file-preview-copy${pointMode ? " is-on" : ""}`}
+            aria-pressed={pointMode}
+            title="Point at a graphic: click for a point, drag for a box (or hold Alt)"
+            onClick={() => setPointMode((on) => !on)}
+          >
+            Point
+          </button>
+        ) : null}
+        {canComment ? (
+          <>
+            <ThreadsChip
+              threads={fileThreads.threads}
+              undelivered={
+                undelivered
+                  ? {
+                      count: undelivered.ids.size,
+                      reason: undelivered.reason,
+                    }
+                  : undefined
+              }
+              open={threadsOpen}
+              onToggle={() => setThreadsOpen((open) => !open)}
+              className="file-preview-threads-chip"
+              commandHints={sourceShown}
+            />
+            {unresolvedNav}
+          </>
+        ) : null}
+        {!showingChanges && hasPreviewText && !preview?.truncated ? (
+          <button
+            type="button"
+            className="file-preview-copy"
+            title="Copy entire file content"
+            onClick={() => void copyPreviewText()}
+          >
+            Copy
+          </button>
+        ) : null}
+        {!showingChanges && hasRichPreview ? (
+          <button
+            type="button"
+            className="file-preview-mode-toggle"
+            role="switch"
+            aria-label="Source mode"
+            aria-checked={previewMode === "raw"}
+            onClick={() =>
+              setPreviewMode((mode) =>
+                mode === "rendered" ? "raw" : "rendered",
+              )
+            }
+          >
+            <span className="file-preview-mode-label">
+              {hasMermaidPreview ? "Diagram" : "Preview"}
+            </span>
+            <span
+              className={
+                "settings-switch" + (previewMode === "raw" ? " is-on" : "")
+              }
+              aria-hidden="true"
+            >
+              <span />
+            </span>
+            <span className="file-preview-mode-label">Source</span>
+          </button>
+        ) : null}
+        {!showingChanges && !siteUrl && absolutePath && onShowInReview ? (
+          <button
+            type="button"
+            className="file-preview-copy"
+            title="Show in code review: this file in the review of its checkout, at the cursor's line"
+            onClick={() => onShowInReview(absolutePath, cursorLine())}
+          >
+            Review
+          </button>
+        ) : null}
+        {!showingChanges && reviewPath ? (
+          <button
+            type="button"
+            className={`file-preview-copy file-preview-reviewed ${reviewTick?.reviewed ? "is-reviewed" : ""}`}
+            aria-pressed={reviewTick?.reviewed ?? false}
+            title={
+              reviewTick?.reviewed
+                ? "Reviewed in the checkout's review: unmark it (:reviewed)"
+                : "Mark this file reviewed in the checkout's review (:reviewed)"
+            }
+            onClick={toggleReviewed}
+          >
+            {reviewTick?.reviewed ? "\u2713 Reviewed" : "Reviewed"}
+          </button>
+        ) : null}
+        {changesAvailable ? (
+          <button
+            type="button"
+            className="file-preview-changes-toggle"
+            aria-pressed={showingChanges}
+            title={showingChanges ? "Show file preview" : "Show changes"}
+            onClick={() => setDetailTab(showingChanges ? "file" : "changes")}
+          >
+            Changes
+          </button>
+        ) : null}
+        {downloadable ? (
+          <button
+            type="button"
+            className="file-preview-refresh"
+            title={downloadLabel}
+            aria-label="Download file"
+            onClick={downloadFile}
+          >
+            <Download size={13} aria-hidden="true" />
+          </button>
+        ) : null}
+        {entry && onClosePreview ? (
+          <button
+            type="button"
+            className="file-preview-refresh"
+            title="Close preview"
+            aria-label="Close file preview"
+            onClick={onClosePreview}
+          >
+            <X size={13} aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+  const headNotices = (
+    <>
+      {changedOnDisk && !showingChanges ? (
+        <div className="file-preview-changed" role="status">
+          <span>Changed on disk: R or :refresh to reload</span>
+          <button
+            type="button"
+            className="file-preview-copy"
+            title="Read the file again, where you are in it (R, :refresh)"
+            disabled={loadingProp}
+            onClick={reload}
+          >
+            Reload
+          </button>
+        </div>
+      ) : null}
+      {urlOpen ? (
+        <form
+          className="file-preview-url"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const url = parseSiteUrl(urlText);
+            if (!url || !onOpenFile) return;
+            setUrlOpen(false);
+            openFromView?.(url);
+          }}
+        >
+          <input
+            // biome-ignore lint/a11y/noAutofocus: asked for just now
+            autoFocus
+            type="url"
+            value={urlText}
+            onChange={(event) => setUrlText(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setUrlOpen(false);
+            }}
+            placeholder="http://localhost:8080/docs/"
+            aria-label="The page to open"
+          />
+          <button type="submit" className="file-preview-copy">
+            Open
+          </button>
+        </form>
+      ) : null}
+    </>
+  );
+
   return (
     <section
       ref={previewSectionRef}
@@ -2500,257 +2759,25 @@ export function FilePreviewContent({
         }
       }}
     >
-      <div className="file-preview-head">
-        <div className="file-preview-title-row">
-          {backAction ? (
-            <button
-              type="button"
-              className="file-preview-back"
-              title={backAction.label}
-              aria-label={backAction.label}
-              onClick={backAction.onClick}
-            >
-              <ChevronLeft size={14} aria-hidden="true" />
-            </button>
-          ) : null}
-          {fileShown && entry ? historyButtons : null}
-          <div className="file-preview-title" title={entry?.name}>
-            {entry?.name ?? "Preview"}
+      {/* In the inspector, the file's controls are in the inspector's header
+          row (its path in the name's tooltip); the notices stay here. */}
+      <InspectorHeaderControls
+        className="file-preview-head-slot is-detail"
+        label="File controls"
+        inline={zen}
+        fallback={() => (
+          <div className="file-preview-head">
+            {titleRow}
+            {entry ? <span>{entry.path}</span> : null}
+            {headNotices}
           </div>
-          <div className="file-preview-head-actions">
-            {!showingChanges && showDirectoryWorkspaceAction ? (
-              <button
-                type="button"
-                className="file-preview-refresh"
-                title="New workspace with this directory as CWD"
-                aria-label="New workspace with this directory as CWD"
-                onClick={() => setWorkspaceDialogOpen(true)}
-              >
-                <FolderPlus size={13} aria-hidden="true" />
-              </button>
-            ) : null}
-            {onToggleTree ? (
-              <FileTreeButton
-                hidden={treeHidden}
-                onToggle={onToggleTree}
-                what="file tree"
-                // :files is the file view's (the inspector's, there).
-                {...(showingChanges && !inspectorRun ? {} : { keys: ":files" })}
-                className="file-preview-refresh"
-              />
-            ) : null}
-            {!showingChanges && entry && onRefresh ? (
-              <button
-                type="button"
-                className="file-preview-refresh"
-                title="Refresh preview (R, :refresh)"
-                aria-label="Refresh preview"
-                disabled={loadingProp}
-                onClick={reload}
-              >
-                <RefreshCw
-                  size={13}
-                  className={loadingProp ? "is-spinning" : undefined}
-                  aria-hidden="true"
-                />
-              </button>
-            ) : null}
-            {!showingChanges && onOpenFile ? (
-              <button
-                type="button"
-                className="file-preview-copy"
-                title="Open a site's page here, to browse and comment on"
-                aria-expanded={urlOpen}
-                onClick={() => setUrlOpen((open) => !open)}
-              >
-                URL
-              </button>
-            ) : null}
-            {!showingChanges && onCreateAnnotation ? (
-              <ZenButton
-                zen={zen}
-                onToggle={toggleZen}
-                className="file-preview-refresh"
-                label="Review only"
-                title="Review only: hide all the chrome, just the file (o, :only; o or Esc brings it back)"
-                size={13}
-              />
-            ) : null}
-            {scriptsControl}
-            {canPoint ? (
-              <button
-                type="button"
-                className={`file-preview-copy${pointMode ? " is-on" : ""}`}
-                aria-pressed={pointMode}
-                title="Point at a graphic: click for a point, drag for a box (or hold Alt)"
-                onClick={() => setPointMode((on) => !on)}
-              >
-                Point
-              </button>
-            ) : null}
-            {canComment ? (
-              <>
-                <ThreadsChip
-                  threads={fileThreads.threads}
-                  undelivered={
-                    undelivered
-                      ? {
-                          count: undelivered.ids.size,
-                          reason: undelivered.reason,
-                        }
-                      : undefined
-                  }
-                  open={threadsOpen}
-                  onToggle={() => setThreadsOpen((open) => !open)}
-                  className="file-preview-threads-chip"
-                  commandHints={sourceShown}
-                />
-                {unresolvedNav}
-              </>
-            ) : null}
-            {!showingChanges && hasPreviewText && !preview?.truncated ? (
-              <button
-                type="button"
-                className="file-preview-copy"
-                title="Copy entire file content"
-                onClick={() => void copyPreviewText()}
-              >
-                Copy
-              </button>
-            ) : null}
-            {!showingChanges && hasRichPreview ? (
-              <button
-                type="button"
-                className="file-preview-mode-toggle"
-                role="switch"
-                aria-label="Source mode"
-                aria-checked={previewMode === "raw"}
-                onClick={() =>
-                  setPreviewMode((mode) =>
-                    mode === "rendered" ? "raw" : "rendered",
-                  )
-                }
-              >
-                <span className="file-preview-mode-label">
-                  {hasMermaidPreview ? "Diagram" : "Preview"}
-                </span>
-                <span
-                  className={
-                    "settings-switch" + (previewMode === "raw" ? " is-on" : "")
-                  }
-                  aria-hidden="true"
-                >
-                  <span />
-                </span>
-                <span className="file-preview-mode-label">Source</span>
-              </button>
-            ) : null}
-            {!showingChanges && !siteUrl && absolutePath && onShowInReview ? (
-              <button
-                type="button"
-                className="file-preview-copy"
-                title="Show in code review: this file in the review of its checkout, at the cursor's line"
-                onClick={() => onShowInReview(absolutePath, cursorLine())}
-              >
-                Review
-              </button>
-            ) : null}
-            {!showingChanges && reviewPath ? (
-              <button
-                type="button"
-                className={`file-preview-copy file-preview-reviewed ${reviewTick?.reviewed ? "is-reviewed" : ""}`}
-                aria-pressed={reviewTick?.reviewed ?? false}
-                title={
-                  reviewTick?.reviewed
-                    ? "Reviewed in the checkout's review: unmark it (:reviewed)"
-                    : "Mark this file reviewed in the checkout's review (:reviewed)"
-                }
-                onClick={toggleReviewed}
-              >
-                {reviewTick?.reviewed ? "\u2713 Reviewed" : "Reviewed"}
-              </button>
-            ) : null}
-            {changesAvailable ? (
-              <button
-                type="button"
-                className="file-preview-changes-toggle"
-                aria-pressed={showingChanges}
-                title={showingChanges ? "Show file preview" : "Show changes"}
-                onClick={() =>
-                  setDetailTab(showingChanges ? "file" : "changes")
-                }
-              >
-                Changes
-              </button>
-            ) : null}
-            {downloadable ? (
-              <button
-                type="button"
-                className="file-preview-refresh"
-                title={downloadLabel}
-                aria-label="Download file"
-                onClick={downloadFile}
-              >
-                <Download size={13} aria-hidden="true" />
-              </button>
-            ) : null}
-            {entry && onClosePreview ? (
-              <button
-                type="button"
-                className="file-preview-refresh"
-                title="Close preview"
-                aria-label="Close file preview"
-                onClick={onClosePreview}
-              >
-                <X size={13} aria-hidden="true" />
-              </button>
-            ) : null}
-          </div>
-        </div>
-        {entry ? <span>{entry.path}</span> : null}
-        {changedOnDisk && !showingChanges ? (
-          <div className="file-preview-changed" role="status">
-            <span>Changed on disk: R or :refresh to reload</span>
-            <button
-              type="button"
-              className="file-preview-copy"
-              title="Read the file again, where you are in it (R, :refresh)"
-              disabled={loadingProp}
-              onClick={reload}
-            >
-              Reload
-            </button>
-          </div>
-        ) : null}
-        {urlOpen ? (
-          <form
-            className="file-preview-url"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const url = parseSiteUrl(urlText);
-              if (!url || !onOpenFile) return;
-              setUrlOpen(false);
-              openFromView?.(url);
-            }}
-          >
-            <input
-              // biome-ignore lint/a11y/noAutofocus: asked for just now
-              autoFocus
-              type="url"
-              value={urlText}
-              onChange={(event) => setUrlText(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") setUrlOpen(false);
-              }}
-              placeholder="http://localhost:8080/docs/"
-              aria-label="The page to open"
-            />
-            <button type="submit" className="file-preview-copy">
-              Open
-            </button>
-          </form>
-        ) : null}
-      </div>
+        )}
+      >
+        {titleRow}
+      </InspectorHeaderControls>
+      {headInSlot && !zen && (changedOnDisk || urlOpen) ? (
+        <div className="file-preview-head is-notices">{headNotices}</div>
+      ) : null}
 
       {showingChanges ? (
         <div

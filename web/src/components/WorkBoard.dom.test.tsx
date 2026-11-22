@@ -116,6 +116,8 @@ if (
     panes: [{ pane_id: "w32:p1" }],
   };
   const calls: [string, Record<string, unknown>][] = [];
+  /** The board read again (r, its button). */
+  let reloads = 0;
   /** The board's readers: a push (an agent's change) draws them again. */
   const boardReaders = new Set<() => void>();
   const pushBoard = async () => {
@@ -139,7 +141,13 @@ if (
           boardReaders.delete(reader);
         };
       }, []);
-      return { board, error: null, reload: async () => {} };
+      return {
+        board,
+        error: null,
+        reload: async () => {
+          reloads++;
+        },
+      };
     },
     workCall: async (method: string, params: Record<string, unknown>) => {
       calls.push([method, params]);
@@ -336,6 +344,8 @@ if (
   }) as typeof bridge.call;
   bridge.onMrReviews = (() => () => {}) as typeof bridge.onMrReviews;
   const { MrReviewsPanel } = await import("./MrReviewsPanel");
+  const { InspectorHeaderSlotContext } = await import("./inspectorHeaderSlot");
+  const { InspectorViewContext } = await import("../useInspectorCommands");
   const { createRoot } = await import("react-dom/client");
 
   async function mount(
@@ -344,27 +354,45 @@ if (
       mode?: "work" | "mr";
       initialWork?: import("../workOpen").WorkOpen;
       expanded?: boolean;
+      /** In the inspector: its header row's slot takes the controls. */
+      inHeader?: boolean;
     } = {},
   ) {
+    const header = document.createElement("header");
+    if (props.inHeader) document.body.append(header);
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
     let closed = 0;
     const closes: unknown[] = [];
+    const inSlot = (panel: React.ReactNode) =>
+      props.inHeader ? (
+        <InspectorViewContext.Provider value="work">
+          <InspectorHeaderSlotContext.Provider
+            value={{ target: header, view: "work" }}
+          >
+            {panel}
+          </InspectorHeaderSlotContext.Provider>
+        </InspectorViewContext.Provider>
+      ) : (
+        panel
+      );
     await act(async () =>
       root.render(
-        <MrReviewsPanel
-          mode={props.mode ?? "work"}
-          expanded={props.expanded ?? false}
-          onClose={(options) => {
-            closed++;
-            closes.push(options);
-          }}
-          {...(props.initialWorkItem
-            ? { initialWorkItem: props.initialWorkItem }
-            : {})}
-          {...(props.initialWork ? { initialWork: props.initialWork } : {})}
-        />,
+        inSlot(
+          <MrReviewsPanel
+            mode={props.mode ?? "work"}
+            expanded={props.expanded ?? false}
+            onClose={(options) => {
+              closed++;
+              closes.push(options);
+            }}
+            {...(props.initialWorkItem
+              ? { initialWorkItem: props.initialWorkItem }
+              : {})}
+            {...(props.initialWork ? { initialWork: props.initialWork } : {})}
+          />,
+        ),
       ),
     );
     await act(async () => {
@@ -419,6 +447,7 @@ if (
         ?.dataset.workItem ?? null;
     return {
       panel,
+      header,
       text,
       click,
       key,
@@ -431,6 +460,7 @@ if (
       async unmount() {
         await act(async () => root.unmount());
         container.remove();
+        header.remove();
       },
     };
   }
@@ -2028,6 +2058,56 @@ if (
       await asked.unmount();
     } finally {
       workspace = savedWorkspace;
+      sessionStorage.clear();
+    }
+  });
+
+  test("in the inspector, its controls are in the inspector's header row: no row of its own; + and Read again work there, and the board's keys from them", async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    calls.length = 0;
+    const view = await mount({ inHeader: true });
+    try {
+      expect(view.panel.querySelector(".assistant-panel-head")).toBeNull();
+      const head = view.header.querySelector<HTMLElement>(
+        ".inspector-view-head",
+      )!;
+      expect(head.dataset.viewHead).toBe("work");
+      expect(head.getAttribute("aria-label")).toBe("Work controls");
+      const scope = head.querySelector(".work-scope-name")?.textContent;
+      const status = head.querySelector(".work-status")?.textContent;
+      expect(scope).toBeTruthy();
+      expect(status).toMatch(/open/);
+      expect(
+        head.querySelector('button[aria-label="Keys (?)"]'),
+      ).not.toBeNull();
+      // Read again, from the header.
+      const reread = head.querySelector<HTMLElement>(
+        'button[aria-label="Read again (r)"]',
+      )!;
+      const before = reloads;
+      reread.focus();
+      await view.click(reread);
+      expect(reloads).toBe(before + 1);
+      // The focus on that button, out of the panel: its keys still go to
+      // the board (a adds).
+      expect(document.activeElement).toBe(reread);
+      await view.key("a");
+      expect(view.panel.querySelector(".work-add")).not.toBeNull();
+      expect(
+        head
+          .querySelector('button[aria-label="Add an item (a)"]')
+          ?.getAttribute("aria-pressed"),
+      ).toBe("true");
+      // Out of the inspector, the same panel has its own head row.
+      await view.unmount();
+      const alone = await mount();
+      expect(
+        alone.panel.querySelector(".assistant-panel-head .work-status")
+          ?.textContent,
+      ).toMatch(/open/);
+      await alone.unmount();
+    } finally {
       sessionStorage.clear();
     }
   });

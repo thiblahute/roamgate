@@ -248,6 +248,10 @@ import { LimitPauseNotice } from "./LimitPauseChip";
 import { chatPlaceKey } from "../chatPlace";
 import { ConfirmDialog } from "./ModalDialogs";
 import { ZenDock } from "./ZenIsland";
+import {
+  InspectorHeaderControls,
+  useInInspectorHeader,
+} from "./inspectorHeaderSlot";
 import "./AgentHistoryDrawer.css";
 
 function formatRelativeTime(timestamp: string) {
@@ -342,6 +346,9 @@ export function AgentHistoryDrawer({
 }) {
   const { mobile } = useLayoutPreferences();
   const [headerExpanded, setHeaderExpanded] = useState(false);
+  /** The inspector's History: its head in the inspector's header row. */
+  const inInspector = useInInspectorHeader();
+  const headInSlot = inInspector && embedded && !paneChat;
   const [searchOpen, setSearchOpen] = useState(false);
   const headerId = useId();
   const searchId = useId();
@@ -3865,7 +3872,15 @@ export function AgentHistoryDrawer({
           onKeyDownCapture={onComposerKeyCapture}
         >
           {mobile && !paneChat ? (
-            <div className="agent-history-mobile-head">
+            // In the inspector, in its header row (its Close is there).
+            <InspectorHeaderControls
+              className="agent-history-mobile-head"
+              label="Session controls"
+              inline={!headInSlot}
+              fallback={(controls) => (
+                <div className="agent-history-mobile-head">{controls}</div>
+              )}
+            >
               <button
                 type="button"
                 className="agent-history-session-toggle"
@@ -3905,21 +3920,34 @@ export function AgentHistoryDrawer({
               >
                 <Search size={16} />
               </button>
-              <button
-                type="button"
-                className="agent-history-icon"
-                aria-label="Close session"
-                title="Close"
-                onClick={() => onOpenChange(false)}
-              >
-                <X size={16} />
-              </button>
-            </div>
+              {headInSlot ? null : (
+                <button
+                  type="button"
+                  className="agent-history-icon"
+                  aria-label="Close session"
+                  title="Close"
+                  onClick={() => onOpenChange(false)}
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </InspectorHeaderControls>
           ) : null}
-          <div
+          {/* In the inspector on a wide screen, in its header row; on a
+              phone, the Session row above opens it here. */}
+          <InspectorHeaderControls
             className="agent-history-drawer-head"
-            id={headerId}
-            hidden={mobile && !paneChat && !headerExpanded}
+            label="Session"
+            inline={!headInSlot || mobile}
+            fallback={(head) => (
+              <div
+                className="agent-history-drawer-head"
+                id={headerId}
+                hidden={mobile && !paneChat && !headerExpanded}
+              >
+                {head}
+              </div>
+            )}
           >
             {paneChat ? (
               <>
@@ -4084,11 +4112,11 @@ export function AgentHistoryDrawer({
               ) : null}
               {/* A pane's chat: its header ends with the pane's own buttons,
                 which take Zen's way out (TerminalView). */}
-              {paneChat ? null : (
+              {paneChat || headInSlot ? null : (
                 <ZenDock buttonClassName="agent-history-icon" />
               )}
             </div>
-          </div>
+          </InspectorHeaderControls>
 
           {unavailable && !paneChat ? (
             <div className="agent-history-unavailable" role="status">

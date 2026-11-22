@@ -700,14 +700,15 @@
 }
 
 /* The review in Changes (its Vim cursor on): slim chrome, the diff first. */
-.diff-content-view[data-review-cursor]:not(.is-mobile) .diff-content-head {
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
+  .diff-content-head {
   min-height: 0;
   flex-wrap: nowrap;
   gap: 6px;
   padding: 2px 8px;
 }
 
-.diff-content-view[data-review-cursor]:not(.is-mobile)
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
   .diff-content-head
   :is(button, input, select) {
   min-height: 22px;
@@ -718,7 +719,7 @@
 
 /* On a touch screen, Review only's way back and way out stay touch targets. */
 @media (pointer: coarse) {
-  .diff-content-view[data-review-cursor]:not(.is-mobile)
+  :is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
     .diff-content-head
     .diff-review-only-exit {
     height: auto;
@@ -728,7 +729,7 @@
   }
 }
 
-.diff-content-view[data-review-cursor]:not(.is-mobile)
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
   .diff-content-title
   strong {
   font-size: 12px;
@@ -754,21 +755,25 @@
 }
 
 /* What is shown stays readable: the find box gives way first. */
-.diff-content-view[data-review-cursor]:not(.is-mobile) .diff-content-title {
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
+  .diff-content-title {
   flex: 1 1 14em;
   min-width: 10em;
 }
 
-.diff-content-view[data-review-cursor]:not(.is-mobile) .diff-content-actions {
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
+  .diff-content-actions {
   flex: 0 1 auto;
   flex-wrap: nowrap;
 }
 
-.diff-content-view[data-review-cursor]:not(.is-mobile) .diff-search-controls {
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
+  .diff-search-controls {
   flex: 0 1 10em;
 }
 
-.diff-content-view[data-review-cursor]:not(.is-mobile) .diff-search {
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
+  .diff-search {
   flex-basis: 7em;
   min-width: 4em;
   height: 22px;
@@ -845,7 +850,7 @@
 }
 
 /* Desktop's v says it: the word only where touch needs it. */
-.diff-content-view[data-review-cursor]:not(.is-mobile)
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
   .diff-file-reviewed-word {
   display: none;
 }
@@ -856,7 +861,7 @@
     padding: 0 10px;
   }
 
-  .diff-content-view[data-review-cursor]:not(.is-mobile)
+  :is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
     .diff-file-reviewed-word {
     display: inline;
   }
@@ -958,7 +963,8 @@
    goes to tooltips, never to a second row. What still does not fit is
    reached by scrolling the row sideways (a swipe, Shift+wheel), without a
    scrollbar. */
-.diff-content-view:not(.is-mobile) .diff-content-head.is-review {
+:is(.diff-content-view, .diff-head-slot):not(.is-mobile)
+  .diff-content-head.is-review {
   flex-wrap: nowrap;
   overflow-x: auto;
   overflow-y: hidden;
@@ -967,7 +973,7 @@
   -webkit-overflow-scrolling: touch;
 }
 
-.diff-content-view:not(.is-mobile)
+:is(.diff-content-view, .diff-head-slot):not(.is-mobile)
   .diff-content-head.is-review::-webkit-scrollbar {
   display: none;
 }
@@ -1011,7 +1017,7 @@
   flex-shrink: 0;
 }
 
-.diff-content-view[data-review-cursor]:not(.is-mobile)
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
   .diff-content-head.is-review
   .diff-content-title {
   flex: 0 1 auto;
@@ -1070,7 +1076,7 @@
 }
 
 /* Find: an icon until it is used. */
-.diff-content-view[data-review-cursor]:not(.is-mobile)
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
   .diff-content-head.is-review
   .diff-search-controls {
   flex: 0 0 auto;
@@ -1134,7 +1140,7 @@
 
 /* Narrower still: the scope's name gives way before any control. */
 @container review-head (max-width: 640px) {
-  .diff-content-view[data-review-cursor]:not(.is-mobile)
+  :is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
     .diff-content-head.is-review
     .diff-content-title {
     min-width: 3em;

@@ -28,6 +28,11 @@ export const INSPECTOR_KEYS: readonly ShortcutRow[] = [
   [":", "command line, in every view; Tab / Shift+Tab complete"],
   ["?", "this list (:help WORD opens it filtered)", false],
   ["← → Home End", "on the tabs: previous / next view, the first / last"],
+  [
+    "Tab",
+    "from the tabs, the shown view's controls, in the same header row",
+    false,
+  ],
 ];
 
 /**

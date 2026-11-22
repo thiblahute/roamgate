@@ -199,6 +199,18 @@ checkout path, per connection. Workspaces on the same checkout may share caches.
 Actions remember their originating checkout and never fall back to a sibling.
 Terminals stay mounted while the Inspector changes.
 
+The inspector has one header row (`WorkspaceInspectorHost.tsx`): its views
+put their controls in its slot (`inspectorHeaderSlot.tsx`). The host gives
+`InspectorHeaderSlotContext` (the slot's element, the shown view); a view's
+part wraps its controls in `InspectorHeaderControls`, which portals them
+into the slot while its view (`InspectorViewContext`) is shown, renders
+nothing while another is, and gives them the part's own row (`fallback`)
+outside the inspector or when `inline` (Review only and the Files zen,
+which cover the window; an embedded or a commit's diff). The controls stay
+in the part's React tree, so its key handlers still see their events; a
+part reading keys on the window takes its controls' element too
+(`headRef`).
+
 Changes, Commits and a file's changes in Files draw diffs through one surface,
 `DiffSurface` (Pierre's `@pierre/diffs`, virtualized, highlighted in workers).
 It only draws: each view keeps its own state and gives the surface the patch,

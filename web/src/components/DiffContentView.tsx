@@ -219,6 +219,7 @@ import { useInspectorCommands } from "../useInspectorCommands";
 import { oneCommitTitle } from "../changesViews";
 import { useChangesViews, type ViewsSource } from "../useChangesViews";
 import { ChangesCommitBar } from "./ChangesCommitBar";
+import { InspectorHeaderControls } from "./inspectorHeaderSlot";
 import type { InspectorCommand } from "../inspectorCommands";
 import { CommandLine } from "./CommandLine";
 import {
@@ -6641,22 +6642,43 @@ function DiffContentViewInner({
           : undefined
       }
     >
-      <div className={`diff-content-head${reviewEditor ? " is-review" : ""}`}>
-        {phoneRow ? null : headBack}
-        {phoneRow ? null : headStart}
-        {headTitle}
-        {phoneRow ? (
-          // A phone's review head: the review on its own line above, every
-          // control on one row under it (Back first), scrolled, never wrapped.
-          <div className="diff-review-row">
-            {headBack}
-            {headStart}
-            {headControls}
+      {/* In the inspector, the head is in the inspector's header row (one
+          row, scrolled sideways on a phone); in Review only, which covers
+          the screen, embedded or as a commit's diff, it stays its own. */}
+      <InspectorHeaderControls
+        className={`diff-head-slot${mobile ? " is-mobile" : ""}`}
+        label="Changes controls"
+        inline={embedded || reviewOnly || !reviewCursor}
+        data={{ "data-review-cursor": cursor.active ? "" : undefined }}
+        fallback={() => (
+          <div
+            className={`diff-content-head${reviewEditor ? " is-review" : ""}`}
+          >
+            {phoneRow ? null : headBack}
+            {phoneRow ? null : headStart}
+            {headTitle}
+            {phoneRow ? (
+              // A phone's review head: the review on its own line above,
+              // every control on one row under it (Back first), scrolled,
+              // never wrapped.
+              <div className="diff-review-row">
+                {headBack}
+                {headStart}
+                {headControls}
+              </div>
+            ) : (
+              headControls
+            )}
           </div>
-        ) : (
-          headControls
         )}
-      </div>
+      >
+        <div className={`diff-content-head${reviewEditor ? " is-review" : ""}`}>
+          {headBack}
+          {headStart}
+          {headTitle}
+          {headControls}
+        </div>
+      </InspectorHeaderControls>
       {reviewEditor ? null : viewBar}
 
       {error && !visibleEntries.length ? (

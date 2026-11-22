@@ -58,14 +58,14 @@
 }
 
 /* In the toolbar the line comes first: the actions give way to it. */
-.diff-content-view[data-review-cursor]:not(.is-mobile)
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
   .diff-content-title:has(> .changes-scope-bar) {
   flex: 0 1 auto;
   min-width: min(30em, 55%);
   margin-right: auto;
 }
 
-.diff-content-view[data-review-cursor]:not(.is-mobile)
+:is(.diff-content-view, .diff-head-slot)[data-review-cursor]:not(.is-mobile)
   .diff-content-head:has(.changes-scope-bar)
   .diff-content-actions {
   min-width: 0;

@@ -166,14 +166,35 @@ Herdr 0.9.1+ resolves URLs that wrap across lines. See
 Open **Files**, **Changes**, **Commits**, **Agent History**, **Work** or
 **Reviews** from the Inspector button, shortcuts, or workspace/agent menus.
 
-- The header is one row: the checkout, then the six view tabs, each with its
-  icon and a tooltip naming it and its shortcut (a narrow inspector names
-  only the tab shown; the tabs scroll sideways when even that does not fit,
-  on a phone too), then Expand, **More** (dock right or bottom, expand,
-  the commands) and Close; expanded in the app's Zen, Zen's way out joins
-  them. The view's own controls are its own row under it (Changes' review
-  head, Files' preview bar); Changes' row, narrow, drops its words and the
-  agent's last line (shown again while the agent works).
+- The header is the inspector's only row of chrome: the checkout, the six
+  view tabs (each an icon with a tooltip naming it and its shortcut; below
+  a wide inspector only the shown tab is named), the shown view's own
+  controls, then Expand, **More** (dock right or bottom, expand, the
+  commands; its tooltip names the checkout once the row has no room for
+  it) and Close; expanded in the app's Zen, Zen's way out joins them. No
+  view has a toolbar row of its own under it; its controls are in the
+  header beside the tabs:
+  - **Work**: the board's project and counts, **+** (add, `a`), Read again
+    (`r`) and Keys (`?`);
+  - **Reviews**: Inbox / Chat, the inbox's status, Refresh (`r`), Keys
+    (`?`) and Settings (on a phone, **+** too);
+  - **Changes**: the review's whole head, from the changed files and
+    Review only buttons, the scope or review picker and the commit bar to
+    the agent's chip, **Overall comment**, the reviewed count, the
+    comments and unresolved chips and the side by side / unified / wrap
+    menu; narrow, it drops its words and the agent's last line (shown
+    again while the agent works), and scrolls sideways when still too
+    wide;
+  - **Files**: the file shown, its Back and Forward, name (its path in the
+    tooltip) and actions; its tabs and its tree's search stay in the view;
+  - **Commits**: the checkout's pull or merge request, as a chip;
+  - **History**: the session's name, its chips and actions.
+    A view keeps controls inside its content (Work's Back, a column's head),
+    never a full-width bar. Review only and the Files preview's zen, which
+    cover the window, keep their one row of their own. A narrow dock and a
+    phone keep the one row: the tabs as icons, the view's controls next to
+    them scrolling sideways, More and Close at the end. From the tabs, Tab
+    goes on to the view's controls; every key stays as it was.
 - Dock right or bottom, resize, or expand. Narrow layouts use drill-down views.
 - Single-click opens a temporary preview tab; double-click keeps it. Open files
   are restored per connection and checkout. A file outside the checkout, and

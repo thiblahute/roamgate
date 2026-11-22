@@ -137,6 +137,10 @@ import {
 } from "../reviewPins";
 import type { ReviewActivity } from "../../../shared/review";
 import { ReviewMenu } from "./ReviewMenu";
+import {
+  InspectorHeaderControls,
+  InspectorHeaderSlotContext,
+} from "./inspectorHeaderSlot";
 import { useLayoutPreferences } from "../layoutPreferences";
 import "./WorkspaceInspectorHost.css";
 
@@ -1459,6 +1463,15 @@ export function WorkspaceInspectorHost({
     return () => observer.disconnect();
   }, []);
 
+  /** The header row's slot: the shown view's own controls go there. */
+  const [headerSlotTarget, setHeaderSlotTarget] = useState<HTMLElement | null>(
+    null,
+  );
+  const headerSlot = useMemo(
+    () => ({ target: headerSlotTarget, view: state.view }),
+    [headerSlotTarget, state.view],
+  );
+
   const body = (
     <aside
       ref={hostRef}
@@ -1474,6 +1487,8 @@ export function WorkspaceInspectorHost({
       onKeyDown={commandFrame.onKeyDown}
     >
       <InspectorCommandsContext.Provider value={commandFrame.registry}>
+        {/* One row: the checkout, the view tabs, the shown view's own
+            controls (its slot), the inspector's Expand, More and Close. */}
         <header className="workspace-inspector-head">
           {/* One line: the repository when the checkout is not named after
               it, the checkout; its path in the tooltip. */}
@@ -1548,6 +1563,11 @@ export function WorkspaceInspectorHost({
               );
             })}
           </div>
+          <div
+            ref={setHeaderSlotTarget}
+            className="workspace-inspector-view-controls"
+            data-view={state.view}
+          />
           <div className="workspace-inspector-actions">
             <button
               type="button"
@@ -1570,7 +1590,9 @@ export function WorkspaceInspectorHost({
             </button>
             <ReviewMenu
               className="workspace-inspector-more"
-              title="More: dock, keys and commands"
+              title={`More: dock, keys and commands (${
+                repoName !== checkout ? `${repoName} ` : ""
+              }${checkout})`}
               label={<Ellipsis size={15} aria-label="More" />}
               items={[
                 {
@@ -1602,19 +1624,13 @@ export function WorkspaceInspectorHost({
             >
               <X size={16} />
             </button>
-            {/* Expanded, it is the screen's top in Zen: the way out joins it. */}
-            {state.expanded ? <ZenDock iconSize={15} /> : null}
+            {/* Expanded, it is the screen's top in Zen: the way out joins it
+                (History's head had it docked too: its controls are here). */}
+            {state.expanded || state.view === "history" ? (
+              <ZenDock iconSize={15} />
+            ) : null}
           </div>
         </header>
-
-        {visible &&
-        state.open &&
-        workspace &&
-        // Changes has it as a chip in its head's row, and only for the
-        // checkout's own review.
-        state.view === "commits"
-          ? requestCard(workspace)
-          : null}
 
         {!workspace ? (
           <div className="workspace-inspector-unavailable">
@@ -1839,7 +1855,6 @@ export function WorkspaceInspectorHost({
                     workspaceId={workspace.workspace_id}
                     resourceKey={resourceKey}
                     {...(changesRoot ? { repoRoot: changesRoot } : {})}
-                    {...(compact ? { header: changesScopeBar() } : {})}
                     groupByStatus
                     review
                     viewFiles={viewTree}
@@ -1954,7 +1969,9 @@ export function WorkspaceInspectorHost({
                                   ...(input.kind === "last-step" &&
                                   diffSelection.step &&
                                   !input.target
-                                    ? { target: stepTarget(diffSelection.step) }
+                                    ? {
+                                        target: stepTarget(diffSelection.step),
+                                      }
                                     : {}),
                                   // Drawn only on its repository's diff.
                                   ...(changesRoot ? { root: changesRoot } : {}),
@@ -2074,6 +2091,19 @@ export function WorkspaceInspectorHost({
               <div
                 className={`workspace-inspector-resource inspector-commits-resource ${state.view === "commits" ? "" : "is-hidden"}`}
               >
+                {visible && state.open ? (
+                  // The checkout's request, a chip in the header's row
+                  // (Changes has it in its scope, for its own review only).
+                  <InspectorHeaderControls
+                    className="inspector-commits-head"
+                    label="Commits"
+                    fallback={(card) => card}
+                  >
+                    <span className="changes-request-chip">
+                      {requestCard(workspace)}
+                    </span>
+                  </InspectorHeaderControls>
+                ) : null}
                 {state.view === "commits" ||
                 commitsVisitedKey === contentResourceKey ? (
                   <Suspense
@@ -2154,7 +2184,9 @@ export function WorkspaceInspectorHost({
   // Around the views, not in them: their comments' links to files.
   return (
     <FileLinksContext.Provider value={fileLinks}>
-      {body}
+      <InspectorHeaderSlotContext.Provider value={headerSlot}>
+        {body}
+      </InspectorHeaderSlotContext.Provider>
     </FileLinksContext.Provider>
   );
 }

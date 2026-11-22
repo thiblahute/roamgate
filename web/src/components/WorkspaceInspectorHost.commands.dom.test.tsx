@@ -535,6 +535,7 @@ if (
           ":",
           "?",
           "← → Home End",
+          "Tab",
           ":refresh",
           ":reload :refresh",
           ":view :v",

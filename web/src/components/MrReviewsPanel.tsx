@@ -136,6 +136,7 @@ import {
 import "./AssistantPanel.css";
 import "./AssistantTasks.css";
 import "./AgentTasksSheet.css";
+import { InspectorHeaderControls } from "./inspectorHeaderSlot";
 import "./MrReviewsPanel.css";
 
 /**
@@ -1669,6 +1670,12 @@ export function MrReviewsPanel({
   );
   const [detail, setDetail] = useState<string | null>(null);
   const panelRef = useRef<HTMLElement>(null);
+  /** Its controls: in the inspector's header row, out of the panel. */
+  const headRef = useRef<HTMLElement | null>(null);
+  /** In the panel or its controls: the panel's keys. */
+  const inPanel = (node: Node | null) =>
+    !!node &&
+    (!!panelRef.current?.contains(node) || !!headRef.current?.contains(node));
   const openedAt = useRef(Date.now());
   const entries = useMemo(() => inbox?.entries ?? [], [inbox]);
   /** The order just changed here, until the bridge has it. */
@@ -2021,7 +2028,7 @@ export function MrReviewsPanel({
     const take = () => {
       const panel = panelRef.current;
       const active = document.activeElement as HTMLElement | null;
-      if (!panel || panel.contains(active)) return;
+      if (!panel || inPanel(active)) return;
       // Not from a box the user went to type in since.
       if (active?.closest?.("input, textarea, select, [contenteditable]"))
         if (Date.now() - openedAt.current > 300) return;
@@ -3465,7 +3472,7 @@ export function MrReviewsPanel({
         return;
       }
       const active = document.activeElement;
-      if (active && active !== document.body && !panel.contains(active)) return;
+      if (active && active !== document.body && !inPanel(active)) return;
       if (++tries < 30) setTimeout(take, 100);
     };
     take();
@@ -3491,7 +3498,7 @@ export function MrReviewsPanel({
     const listener = (event: KeyboardEvent) => {
       const panel = panelRef.current;
       const target = event.target as Node | null;
-      if (!panel || !target || !panel.contains(target)) return;
+      if (!panel || !target || !inPanel(target)) return;
       // The inspector's own keys (gt, gT) come first: they leave the tab.
       if (!helpOpenRef.current && onKeyFirstRef.current?.(event)) {
         keyState.current = EMPTY_KEY_STATE;
@@ -3617,7 +3624,17 @@ export function MrReviewsPanel({
           );
       }}
     >
-      <header className="assistant-panel-head">
+      {/* In the inspector, its controls are in the inspector's header row. */}
+      <InspectorHeaderControls
+        className="assistant-panel-head mr-reviews-head"
+        label={`${MODE_TITLE[mode]} controls`}
+        headRef={headRef}
+        fallback={(controls) => (
+          <header ref={headRef} className="assistant-panel-head">
+            {controls}
+          </header>
+        )}
+      >
         <div>
           <div className="assistant-panel-meta">
             {mode === "work" ? (
@@ -3709,7 +3726,7 @@ export function MrReviewsPanel({
             <Settings size={16} />
           </button>
         ) : null}
-      </header>
+      </InspectorHeaderControls>
       {error ? (
         <div className="assistant-error" role="alert">
           <span>{error}</span>
