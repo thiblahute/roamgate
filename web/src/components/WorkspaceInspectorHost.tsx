@@ -118,6 +118,8 @@ import {
   useChangesSeries,
   useWorkspaceRepoDirs,
 } from "./ChangesScopeBar";
+import type { CompareRefs } from "../compareRefs";
+import { openCompareReview } from "../reviewOpen";
 import { useReviewFileMarks } from "../useReviewFileMarks";
 import {
   lastChangesRepo,
@@ -867,6 +869,25 @@ export function WorkspaceInspectorHost({
       onReview={(sessionId) =>
         setPendingGoTo({ review: sessionId, at: Date.now() })
       }
+      {...(workspace
+        ? {
+            loadRefs: () =>
+              connectionClient.call("git.refs", {
+                workspace_id: workspace.workspace_id,
+                ...(shownRoot && shownRoot !== ownRoot
+                  ? { root: shownRoot }
+                  : {}),
+              }) as Promise<CompareRefs>,
+            onCompare: (head: string, base: string | undefined) =>
+              void openCompareReview(head, base, {
+                workspaceId: workspace.workspace_id,
+                ...(shownRoot ? { path: shownRoot } : {}),
+              }).then((sessionId) => {
+                if (sessionId)
+                  setPendingGoTo({ review: sessionId, at: Date.now() });
+              }),
+          }
+        : {})}
       onScope={(mode) => {
         setShownReview(null);
         diffViewerRef.current?.showScope(mode);

@@ -1,4 +1,5 @@
 import { roamgateLocalStorage } from "../browserStorage";
+import { refLabel } from "../compareRefs";
 import {
   useCallback,
   useEffect,
@@ -391,9 +392,8 @@ export function comparisonResourceKey(
     : resourceKey;
 }
 
-export function comparisonBranchLabel(ref: string) {
-  return ref.replace(/^refs\/(heads|remotes)\//, "");
-}
+/** A branch compared against, as it is named: `main`, `origin/main`. */
+export const comparisonBranchLabel = refLabel;
 
 function diffScopeStorageKey(connectionId: string, resourceKey?: string) {
   return connectionStorageKey(

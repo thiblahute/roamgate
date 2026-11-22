@@ -17,6 +17,10 @@ describe("Changes' scope line", () => {
     expect(changesScopeChoice("branch-main", "iga-185", "origin/main")).toBe(
       "branch iga-185 vs origin/main",
     );
+    // A base picked is named as a branch, not a ref.
+    expect(
+      changesScopeChoice("branch-main", "dogfood", "refs/heads/android-rust"),
+    ).toBe("branch dogfood vs android-rust");
     expect(changesScopeChoice("branch-main", undefined, undefined)).toBe(
       "this branch vs its base",
     );

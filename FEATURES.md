@@ -394,6 +394,20 @@ Open **Files**, **Changes**, **Commits**, **Agent History**, **Work** or
   checkout (a series repository, a request's review worktree, one from
   elsewhere) the tree offers no git actions and `:stage`, `gs` and
   `:discard` say why they do not act there.
+- The scope line's picker (what Changes compares) opens on a search: the
+  scopes first (the reviews shown lately, Working tree, the branch against
+  its automatic base, Last step), then every branch, remote branch and
+  recent tag to compare against, named without `refs/heads/`. With nothing
+  typed they come Automatic's base first, then the branch's upstream, its
+  stack's neighbours (the branches just below and above it), the other
+  branches by their last commit, remote ones, tags, and `backup/` copies
+  last. Typing matches names in parts as the workspace search does (`ar ru`
+  finds `android-rust`, `up/work` finds `up/work-view`), the matched
+  letters marked. **Head:** picks the other side, the checked-out branch
+  until another is chosen (Esc goes back to the bases): the checked-out
+  branch against a branch is its Branch scope, another head or a tag opens
+  a review of the two. Up / Down (then `j` / `k`, `/` back to the search)
+  move, Enter or a tap picks, Esc closes.
 - In a merge or pull request's review, its
   GitLab or GitHub discussions are drawn on their lines (one written on an
   older head is found again in today's file, folded, "outdated (was line

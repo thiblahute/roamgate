@@ -1,6 +1,14 @@
-import { ChevronDown } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { Check, ChevronDown, GitBranch } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { workspaceRepoDirs } from "../changesRepo";
+import {
+  type CompareRefs,
+  compareRefsFromNames,
+  type RankedRef,
+  rankCompareRefs,
+  refLabel,
+} from "../compareRefs";
+import { matchSearch, searchTokens } from "../fuzzyMatch";
 import type { InspectorCommand } from "../inspectorCommands";
 import { useReviewState } from "../review";
 import type { ReviewHead, ReviewSummarySession } from "../../../shared/review";
@@ -13,7 +21,15 @@ import {
   worktreeOnly,
 } from "../reviewRepos";
 import { store, useStoreSelector } from "../store";
+import { useSystemBack } from "../systemBack";
+import {
+  type ActionDefinition,
+  type ActionGroupDefinition,
+  ActionList,
+  useActionListBrowsing,
+} from "./ActionList";
 import { ThemedSelect } from "./ThemedSelect";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import "./ChangesScopeBar.css";
 
 /*
@@ -251,7 +267,7 @@ export function changesScopeChoice(
   base: string | undefined,
 ): string {
   if (mode === "branch-main")
-    return `${branch ? `branch ${branch}` : "this branch"} vs ${base || "its base"}`;
+    return `${branch ? `branch ${branch}` : "this branch"} vs ${base ? refLabel(base) : "its base"}`;
   if (mode === "last-step")
     return "Last step: what the agent's last step changed";
   return "Working tree: uncommitted changes";
@@ -369,6 +385,8 @@ export function ChangesScopeBar({
   onReview,
   elsewhere = false,
   request,
+  loadRefs,
+  onCompare,
 }: {
   repos: readonly WorkspaceRepo[];
   /** The repository shown. */
@@ -412,6 +430,16 @@ export function ChangesScopeBar({
   reviews?: readonly ChangesRecentReview[];
   /** One of `reviews` picked. */
   onReview?: (sessionId: string) => void;
+  /**
+   * The refs the picker searches (the server's `git.refs`), read as it
+   * opens; the summary's branch names until they come.
+   */
+  loadRefs?: () => Promise<CompareRefs>;
+  /**
+   * Another branch's comparison picked: `head` against `base` (short
+   * names), or against its automatic base without one. Shown as a review.
+   */
+  onCompare?: (head: string, base: string | undefined) => void;
 }) {
   const name = repoName || root?.split("/").pop() || "Repository";
   const branchValue = (each: string) => `branch:${each}`;
@@ -489,27 +517,20 @@ export function ChangesScopeBar({
       <span className="changes-scope-sep" aria-hidden="true">
         ·
       </span>
-      <ThemedSelect
-        className="changes-scope-mode"
-        aria-label="What Changes compares"
-        title="What Changes compares (:working, :branch, :last)"
+      <ChangesScopePicker
         value={scopeValue}
-        {...(review?.short
-          ? {
-              // Both names: the line shows the full one, a phone's the short.
-              icon: (
-                <>
-                  <span className="themed-select-value changes-scope-value">
-                    <span className="changes-scope-full">{review.label}</span>
-                    <span className="changes-scope-short">{review.short}</span>
-                  </span>
-                  <ChevronDown size={13} aria-hidden="true" />
-                </>
-              ),
-            }
-          : {})}
         options={scopeOptions}
-        onChange={(value) => {
+        label={
+          scopeOptions.find((option) => option.value === scopeValue)?.label ??
+          scopeValue
+        }
+        {...(review?.short
+          ? { short: { full: review.label, short: review.short } }
+          : {})}
+        branch={branch}
+        baseBranches={baseBranches}
+        {...(loadRefs ? { loadRefs } : {})}
+        onOption={(value) => {
           if (value === "review") return;
           if (value.startsWith("review:")) {
             onReview?.(value.slice("review:".length));
@@ -520,10 +541,295 @@ export function ChangesScopeBar({
             onScope("branch-main");
           } else onScope(value as GitDiffSummaryMode);
         }}
-        onSelectedClose={onDone}
+        {...(onCompare ? { onCompare } : {})}
+        onDone={onDone}
       />
       <span className="changes-scope-facts">{facts}</span>
       {request}
     </div>
+  );
+}
+
+/** A ref's line under its name: why it is offered, its kind, its age. */
+function rankedRefDetail(ref: RankedRef, now: number): string {
+  return [
+    ref.reason,
+    ref.kind === "branch" ? "" : ref.kind,
+    ref.date ? shownAgo(ref.date * 1000, now) : "",
+  ]
+    .filter(Boolean)
+    .join(" \u00b7 ");
+}
+
+/**
+ * What Changes compares, picked by search: the scopes (the reviews shown
+ * lately, the working tree, the branch against its automatic base, Last
+ * step), then every branch, remote branch and recent tag to compare
+ * against, ranked (rankCompareRefs) and searched as the workspace search
+ * is. The head, the checked-out branch until another is picked, is its
+ * first choice after the scopes: picking it lists the refs to review, Esc
+ * back. Up / Down, then j / k, move; Enter or a tap picks; Esc closes.
+ */
+export function ChangesScopePicker({
+  value,
+  options,
+  label,
+  short,
+  branch,
+  baseBranches,
+  loadRefs,
+  onOption,
+  onCompare,
+  onDone,
+}: {
+  value: string;
+  options: readonly { value: string; label: string; detail?: string }[];
+  /** The trigger's name: the scope or review shown. */
+  label: string;
+  /** Both names of a review: the line shows the full one, a phone's the short. */
+  short?: { full: string; short: string };
+  branch: string | undefined;
+  baseBranches: readonly string[];
+  loadRefs?: () => Promise<CompareRefs>;
+  /** One of `options` picked (`branch:REF` for a base of the branch). */
+  onOption: (value: string) => void;
+  onCompare?: (head: string, base: string | undefined) => void;
+  /** A choice made: the keys back to the diff. */
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [side, setSide] = useState<"base" | "head">("base");
+  /** The head picked, a full ref; null: the checked-out branch. */
+  const [head, setHead] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<CompareRefs | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const picked = useRef(false);
+  const browse = useActionListBrowsing(inputRef);
+  useSystemBack(open, () => setOpen(false), "popup");
+  const loadRefsRef = useRef(loadRefs);
+  loadRefsRef.current = loadRefs;
+  useEffect(() => {
+    const load = loadRefsRef.current;
+    if (!open || !load) return;
+    let cancelled = false;
+    load().then(
+      (refs) => {
+        if (!cancelled) setLoaded(refs);
+      },
+      // The summary's branch names stay offered.
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+  const refs = loaded ?? compareRefsFromNames(baseBranches, branch);
+  const current = refs.current ?? (branch ? `refs/heads/${branch}` : undefined);
+  const headRef = head ?? current;
+  const headLabel = headRef ? refLabel(headRef) : "HEAD";
+  const otherHead = head !== null && head !== current;
+  const now = Date.now();
+  const tokens = searchTokens(search);
+  const searched = (title: string, detail: string | undefined) => {
+    if (!tokens.length) return {};
+    const match = matchSearch(tokens, [title, detail]);
+    return match ? { titleHighlights: match.highlights[0] ?? [] } : null;
+  };
+  const close = () => {
+    picked.current = true;
+    setOpen(false);
+  };
+  const changeSearch = (next: string) => {
+    setSearch(next);
+    browse.searched();
+  };
+  const pickSide = (next: "base" | "head") => {
+    setSide(next);
+    changeSearch("");
+    inputRef.current?.focus({ preventScroll: true });
+  };
+  const refAction = (
+    ref: RankedRef,
+    run: () => void,
+    checked = false,
+  ): ActionDefinition => ({
+    key: `ref:${ref.name}`,
+    icon: checked ? (
+      <Check size={14} aria-hidden="true" />
+    ) : (
+      <GitBranch size={14} aria-hidden="true" />
+    ),
+    title: ref.label,
+    ...(ref.highlights ? { titleHighlights: ref.highlights } : {}),
+    detail: rankedRefDetail(ref, now) || undefined,
+    run,
+  });
+  const groups: ActionGroupDefinition[] = [];
+  if (side === "head") {
+    groups.push({
+      heading: "Head: the branch to review",
+      actions: rankCompareRefs(refs, search, { withCurrent: true }).map((ref) =>
+        refAction(
+          ref,
+          () => {
+            setHead(ref.name === current ? null : ref.name);
+            pickSide("base");
+          },
+          ref.name === headRef,
+        ),
+      ),
+    });
+  } else {
+    const scopes: ActionDefinition[] = (
+      otherHead
+        ? [
+            {
+              value: "compare:",
+              label: `branch ${headLabel} vs its base`,
+              detail: "against its base, found automatically",
+            },
+          ]
+        : // Bases of the branch are the refs below, searched.
+          options.filter(
+            (option) =>
+              !option.value.startsWith("branch:") || option.value === "branch:",
+          )
+    ).flatMap((option) => {
+      const match = searched(option.label, option.detail);
+      if (!match) return [];
+      return [
+        {
+          key: option.value,
+          icon:
+            option.value === value && !otherHead ? (
+              <Check size={14} aria-hidden="true" />
+            ) : null,
+          title: option.label,
+          ...match,
+          ...(option.detail ? { detail: option.detail } : {}),
+          run: () => {
+            close();
+            if (option.value === "compare:") onCompare?.(headLabel, undefined);
+            else onOption(option.value);
+          },
+        },
+      ];
+    });
+    if (onCompare) {
+      const title = `Head: ${headLabel}`;
+      const detail = "pick another branch to compare";
+      const match = searched(title, detail);
+      if (match)
+        scopes.push({
+          key: "head",
+          title,
+          ...match,
+          detail,
+          run: () => pickSide("head"),
+        });
+    }
+    if (scopes.length) groups.push({ heading: "", actions: scopes });
+    groups.push({
+      heading: `Compare ${headLabel} against`,
+      actions: rankCompareRefs(refs, search, {
+        exclude: headRef,
+        // Another head: the checked-out branch is a base like any.
+        withCurrent: otherHead,
+      }).map((ref) =>
+        refAction(
+          ref,
+          () => {
+            close();
+            // The checked-out branch against a branch: its Branch scope.
+            if (!otherHead && ref.kind !== "tag")
+              onOption(`branch:${ref.name}`);
+            else onCompare?.(headLabel, ref.label);
+          },
+          !otherHead && value === `branch:${ref.name}`,
+        ),
+      ),
+    });
+  }
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          picked.current = false;
+          setSearch("");
+          setSide("base");
+          setHead(null);
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="themed-select-trigger changes-scope-mode"
+          aria-label="What Changes compares"
+          title="What Changes compares (:working, :branch, :last); search a branch to compare against"
+        >
+          <span className="themed-select-value changes-scope-value">
+            {short ? (
+              <>
+                <span className="changes-scope-full">{short.full}</span>
+                <span className="changes-scope-short">{short.short}</span>
+              </>
+            ) : (
+              label
+            )}
+          </span>
+          <ChevronDown size={13} aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="themed-select-content changes-scope-picker"
+        align="start"
+        collisionPadding={8}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          inputRef.current?.focus({ preventScroll: true });
+        }}
+        onCloseAutoFocus={(event) => {
+          if (picked.current) {
+            event.preventDefault();
+            onDone();
+          }
+          picked.current = false;
+        }}
+        onEscapeKeyDown={(event) => {
+          event.stopPropagation();
+          // Picking the head: Esc goes back to the bases.
+          if (side === "head") {
+            event.preventDefault();
+            pickSide("base");
+          }
+        }}
+      >
+        <ActionList
+          className="changes-scope-picker-list"
+          label="What Changes compares"
+          groups={groups}
+          search={search}
+          onSearch={changeSearch}
+          onRun={(action) => action.run?.()}
+          placeholder={
+            side === "head"
+              ? "Head: search the branch to review"
+              : `Compare ${headLabel} against: search a branch or tag`
+          }
+          emptyText={
+            loaded || !loadRefs ? "Nothing matches." : "Reading the branches..."
+          }
+          // Ranked already: shown in this order.
+          rank={() => 1}
+          topResults={false}
+          inputRef={inputRef}
+          onKeyDown={browse.onKeyDown}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }

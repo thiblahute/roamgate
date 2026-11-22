@@ -1,12 +1,10 @@
-import {
-  type KeyboardEvent as ReactKeyboardEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { pressShortcut, shortcutPresses } from "../shortcutPress";
-import { type ActionDefinition, ActionList } from "./ActionList";
+import {
+  type ActionDefinition,
+  ActionList,
+  useActionListBrowsing,
+} from "./ActionList";
 import { CloseButton } from "./CloseButton";
 import "./ShortcutHelp.css";
 
@@ -108,7 +106,6 @@ export function ShortcutHelp({
 }) {
   const [search, setSearch] = useState(initialFilter);
   /** Moved through the list: j / k move too, any other key searches. */
-  const [browsing, setBrowsing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const previousRef = useRef<Element | null>(null);
@@ -195,49 +192,7 @@ export function ShortcutHelp({
     // biome-ignore lint/correctness/useExhaustiveDependencies: on open and close only
   }, []);
 
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.nativeEvent.isComposing) return;
-    const plain = !event.ctrlKey && !event.metaKey && !event.altKey;
-    if (
-      event.key === "ArrowDown" ||
-      event.key === "ArrowUp" ||
-      (event.ctrlKey && /^[jknp]$/.test(event.key))
-    ) {
-      setBrowsing(true);
-      return;
-    }
-    if (event.key === "Tab" && plain) {
-      // Tab moves into the list: j / k then move.
-      event.preventDefault();
-      setBrowsing(true);
-      event.currentTarget.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: event.shiftKey ? "ArrowUp" : "ArrowDown",
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-      return;
-    }
-    if (!browsing || !plain) return;
-    if (event.key === "j" || event.key === "k") {
-      event.preventDefault();
-      (event.target as HTMLElement).dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: event.key === "j" ? "ArrowDown" : "ArrowUp",
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    } else if (event.key === "/") {
-      // Back to the search.
-      event.preventDefault();
-      setBrowsing(false);
-      inputRef.current?.select();
-    } else if (event.key.length === 1 || event.key === "Backspace") {
-      setBrowsing(false);
-    }
-  };
+  const browse = useActionListBrowsing(inputRef);
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click beside the panel closes it
@@ -282,7 +237,7 @@ export function ShortcutHelp({
           search={search}
           onSearch={(next) => {
             setSearch(next);
-            setBrowsing(false);
+            browse.searched();
           }}
           onRun={(action) => action.run?.()}
           placeholder={placeholder}
@@ -299,7 +254,7 @@ export function ShortcutHelp({
               : 0
           }
           inputRef={inputRef}
-          onKeyDown={onKeyDown}
+          onKeyDown={browse.onKeyDown}
         />
         <p className="shortcut-help-foot">
           <kbd>Enter</kbd> or a tap runs it · <kbd>↑</kbd> <kbd>↓</kbd> move

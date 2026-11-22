@@ -788,6 +788,8 @@ if (process.env.ROAMGATE_INSPECTOR_FRAME_DOM_TEST !== "1") {
           "Working tree: uncommitted changes",
           expect.stringContaining("vs its base") as unknown as string,
           "Last step: what the agent's last step changed",
+          // Another head to compare, then the branches to compare against.
+          "Head: main",
         ]);
         expect(options()[1]?.detail).toBe("opened here now");
         // Picked: that review is the scope, and the one remembered.

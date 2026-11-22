@@ -2,9 +2,11 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type Ref,
+  type RefObject,
   useEffect,
   useState,
 } from "react";
+import { SearchHighlight } from "./SearchHighlight";
 import { SHORTCUT_NUMBERS, type ShortcutNumber } from "../shortcutBindings";
 import {
   getShortcutSnapshot,
@@ -34,6 +36,8 @@ export type ActionDefinition = {
   key: string;
   icon?: ReactNode;
   title: string;
+  /** The title's characters the search matched, marked. */
+  titleHighlights?: readonly number[];
   detail?: string;
   /** Its shortcut as one label (Cmd+K). */
   shortcut?: string;
@@ -223,6 +227,62 @@ export function displayedActionGroups(
 }
 
 /**
+ * An action list's keys past its own: Up / Down (Ctrl-n / Ctrl-p, Ctrl-j /
+ * Ctrl-k) or Tab move into the list, then j / k move too and `/` goes back
+ * to the search; typing searches again. `onKeyDown` goes to the list
+ * (ActionList's), `searched` to each change of the search.
+ */
+export function useActionListBrowsing(
+  inputRef: RefObject<HTMLInputElement | null>,
+) {
+  const [browsing, setBrowsing] = useState(false);
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    const plain = !event.ctrlKey && !event.metaKey && !event.altKey;
+    if (
+      event.key === "ArrowDown" ||
+      event.key === "ArrowUp" ||
+      (event.ctrlKey && /^[jknp]$/.test(event.key))
+    ) {
+      setBrowsing(true);
+      return;
+    }
+    if (event.key === "Tab" && plain) {
+      // Tab moves into the list: j / k then move.
+      event.preventDefault();
+      setBrowsing(true);
+      event.currentTarget.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: event.shiftKey ? "ArrowUp" : "ArrowDown",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      return;
+    }
+    if (!browsing || !plain) return;
+    if (event.key === "j" || event.key === "k") {
+      event.preventDefault();
+      (event.target as HTMLElement).dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: event.key === "j" ? "ArrowDown" : "ArrowUp",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    } else if (event.key === "/") {
+      // Back to the search.
+      event.preventDefault();
+      setBrowsing(false);
+      inputRef.current?.select();
+    } else if (event.key.length === 1 || event.key === "Backspace") {
+      setBrowsing(false);
+    }
+  };
+  return { onKeyDown, searched: () => setBrowsing(false) };
+}
+
+/**
  * The search and the actions it finds; the one picked runs (`onRun`). It
  * lives while it is shown: the selection starts on the first action.
  */
@@ -352,7 +412,16 @@ function ActionItem({
   onSelect: () => void;
 }) {
   useShortcutPreferences();
-  const { icon, title, detail, shortcut, keys, keywords, danger } = action;
+  const {
+    icon,
+    title,
+    titleHighlights,
+    detail,
+    shortcut,
+    keys,
+    keywords,
+    danger,
+  } = action;
   const disabledReason = action.disabledReason;
   const id =
     numberShortcutIndex === undefined
@@ -383,7 +452,9 @@ function ActionItem({
     >
       <span className="command-item-icon">{icon}</span>
       <span className="command-item-text">
-        <span className="command-item-title">{title}</span>
+        <span className="command-item-title">
+          <SearchHighlight text={title} positions={titleHighlights} />
+        </span>
         {disabledReason || detail ? (
           <span className="command-item-detail">
             {disabledReason ?? detail}

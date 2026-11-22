@@ -63,6 +63,7 @@ import {
 import { sharedPullRequestStatus } from "./pull-request";
 import { collectIgnoredNames } from "./git-ignore";
 import { GIT_DIFF_TIMEOUT_MS, PREVIEW_TIMEOUT_MS } from "./file-constants";
+import { readCompareRefs } from "./diff-base";
 import { inlinePreviewMimeForPath } from "./preview";
 import { canRevealFiles, revealLocalPath } from "./file-manager";
 import {
@@ -746,6 +747,18 @@ export function createFileHandlers({
       : summary;
   }
 
+  /** The refs Changes' scope picker searches (readCompareRefs). */
+  async function readGitRefs(params: Record<string, unknown>) {
+    const { root } = await workspaceAndGitRoot(params, "git.refs");
+    return readCompareRefs({
+      root,
+      host: sshHost(),
+      shQuote,
+      runProcessWithCodeTimeout,
+      timeoutMs: GIT_DIFF_TIMEOUT_MS,
+    });
+  }
+
   async function readWorkspacePullRequest(params: Record<string, unknown>) {
     let { root } = await workspaceAndGitRoot(params, "git.pull_request");
     if (params.worktree_path !== undefined) {
@@ -910,6 +923,7 @@ export function createFileHandlers({
     moveWorkspaceFile: (params: Record<string, unknown>) =>
       mutateFile(params, true),
     readGitDiffSummary,
+    readGitRefs,
     readWorkspacePullRequest,
     readGitDiffFile,
     readGitDiffFiles,

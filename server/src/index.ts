@@ -3581,6 +3581,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     createWorkspaceDirectory,
     moveWorkspaceFile,
     readGitDiffSummary,
+    readGitRefs,
     readWorkspacePullRequest,
     readGitDiffFile,
     readGitDiffFiles,
@@ -4065,6 +4066,15 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, "git-diff-summary");
     } catch (e) {
       sendError("git-diff-summary-error", e);
+    }
+    return;
+  }
+  if (method === "git.refs") {
+    try {
+      const result = await readGitRefs(params ?? {});
+      sendReply({ id, result }, "git-refs");
+    } catch (e) {
+      sendError("git-refs-error", e);
     }
     return;
   }

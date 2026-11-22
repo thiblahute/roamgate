@@ -199,3 +199,30 @@
     display: none;
   }
 }
+
+/* The scope picker: its search over the scopes and the refs to compare,
+   wide enough for a branch's name and its line. */
+.changes-scope-picker {
+  width: min(30em, calc(100vw / var(--ui-scale, 1) - 16px));
+}
+
+.changes-scope-picker .command-list {
+  max-height: min(
+    420px,
+    calc(
+      var(--radix-popover-content-available-height) /
+      var(--ui-scale, 1) -
+      54px
+    )
+  );
+}
+
+.changes-scope-picker .command-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where(html[data-layout="mobile"]) .changes-scope-picker {
+  width: calc(100vw / var(--ui-scale, 1) - 16px);
+}

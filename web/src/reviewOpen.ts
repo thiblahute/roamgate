@@ -228,6 +228,23 @@ export function openBranchReview(
   );
 }
 
+/**
+ * Changes' scope picker comparing two refs: `head` against `base`, or
+ * against its automatic base without one; a review of it already there is
+ * shown again. Returns the review, or null after saying why there is none.
+ */
+export function openCompareReview(
+  head: string,
+  base: string | undefined,
+  options: { workspaceId?: string | undefined; path?: string } = {},
+): Promise<string | null> {
+  return openRangeReview(
+    base ? { target: { kind: "range", base, head } } : { head },
+    "Cannot compare these branches",
+    options,
+  );
+}
+
 async function openRangeReview(
   what: { target: Record<string, unknown> } | { head: string },
   failure: string,

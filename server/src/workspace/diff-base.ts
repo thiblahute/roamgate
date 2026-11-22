@@ -1,6 +1,7 @@
 import { sshReadCommandArgv } from "../bridge/ssh-command";
 import type { RunProcessWithCodeTimeout } from "./file-types";
 import { gitShellCommandArgv } from "./git-shell";
+import type { CompareRef, CompareRefs } from "../../../shared/compareRefs";
 import { isMetadataRef } from "../../../shared/review";
 
 export { isMetadataRef };
@@ -260,4 +261,147 @@ export function selectDiffBase(
     return { base: resolve(requested)!, branches };
   }
   return { base: automatic ? resolve(automatic) : undefined, branches };
+}
+
+/** Tags offered: the newest ones, a long history holds thousands. */
+export const COMPARE_TAGS_LISTED = 200;
+/** Stack neighbours taken on each side of HEAD. */
+const COMPARE_NEAR_LISTED = 8;
+/** How far back HEAD's history is searched for the branches below it. */
+const COMPARE_NEAR_HISTORY = 1000;
+
+/** One script: the refs with their dates, the config, HEAD and its kin. */
+export function compareRefsScript(
+  shQuote: (value: string) => string,
+  root: string,
+) {
+  const git = `git -C ${shQuote(root)}`;
+  return `
+set -eu
+${git} for-each-ref --format='%(refname)%09%(symref)%09%(objectname)%09%(creatordate:unix)%09%(upstream)' refs/heads/ refs/remotes/
+${git} for-each-ref --sort=-creatordate --count=${COMPARE_TAGS_LISTED} --format='%(refname)%09%09%(objectname)%09%(creatordate:unix)%09' refs/tags/
+printf '\\n--diff-base-config--\\n'
+${git} config --get init.defaultBranch || test "$?" = 1
+printf '\\n--compare-head--\\n'
+${git} symbolic-ref -q HEAD || true
+printf '\\n--compare-near--\\n'
+if ${git} rev-parse -q --verify HEAD >/dev/null; then
+  ${git} log --first-parent -n ${COMPARE_NEAR_HISTORY} --format=%H HEAD
+  printf '\\n--compare-above--\\n'
+  ${git} for-each-ref --contains HEAD --sort=creatordate --count=${COMPARE_NEAR_LISTED + 1} --format='%(refname)' refs/heads/
+fi
+`;
+}
+
+/** Splits compareRefsScript's output: the refs as parseRefsOutput reads them. */
+export function parseCompareRefsOutput(stdout: string): {
+  listed: { refs: Ref[]; configuredDefault: string };
+  current?: string;
+  upstream?: string;
+  near: string[];
+  refs: CompareRef[];
+} {
+  const [refsPart = "", rest = ""] = stdout.split("\n--diff-base-config--\n");
+  const [config = "", afterConfig = ""] = rest.split("\n--compare-head--\n");
+  const [head = "", nearPart = ""] = afterConfig.split("\n--compare-near--\n");
+  const lines = refsPart
+    .split("\n")
+    .filter((line) => line.startsWith("refs/"))
+    .map((line) => line.split("\t"));
+  const current = head.trim().split("\n").pop()?.trim() || undefined;
+  const refs: CompareRef[] = [];
+  const branchRefs: Ref[] = [];
+  let upstream: string | undefined;
+  for (const [name = "", symbolic, sha, date, upstreamOf] of lines) {
+    if (!name.startsWith("refs/tags/"))
+      branchRefs.push({
+        name,
+        symbolic: symbolic || undefined,
+        sha: sha || undefined,
+      });
+    if (current && name === current && upstreamOf) upstream = upstreamOf;
+    // A remote's HEAD names another ref; metadata refs hold no code.
+    if (symbolic) continue;
+    if (!name.startsWith("refs/tags/") && isMetadataRef(name)) continue;
+    const seconds = Number(date);
+    refs.push({ name, ...(seconds > 0 ? { date: seconds } : {}) });
+  }
+  // Below HEAD: the branches on its first-parent history, the nearest
+  // first; above it: those holding it, the oldest (nearest) first.
+  const [historyPart = "", abovePart = ""] = nearPart.split(
+    "\n--compare-above--\n",
+  );
+  const distance = new Map(
+    historyPart
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((sha, index) => [sha, index] as const),
+  );
+  const below = branchRefs
+    .filter(
+      (ref) =>
+        ref.name.startsWith("refs/heads/") &&
+        !ref.symbolic &&
+        ref.name !== current &&
+        ref.sha !== undefined &&
+        distance.has(ref.sha),
+    )
+    .sort((a, b) => distance.get(a.sha!)! - distance.get(b.sha!)!)
+    .slice(0, COMPARE_NEAR_LISTED)
+    .map((ref) => ref.name);
+  const above = abovePart
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("refs/heads/") && line !== current)
+    .slice(0, COMPARE_NEAR_LISTED);
+  const near = [...new Set([...below, ...above])];
+  return {
+    listed: { refs: branchRefs, configuredDefault: config.trim() },
+    ...(current ? { current } : {}),
+    ...(upstream ? { upstream } : {}),
+    near,
+    refs,
+  };
+}
+
+/**
+ * The refs Changes' scope picker searches, read with what this repository
+ * already has (never a fetch): every local and remote-tracking branch and
+ * the newest tags with their dates, the checked-out branch, its upstream,
+ * its stack neighbours and Automatic's base.
+ */
+export async function readCompareRefs(args: {
+  root: string;
+  host?: string;
+  shQuote: (value: string) => string;
+  runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
+  timeoutMs?: number;
+}): Promise<CompareRefs> {
+  const timeout = args.timeoutMs ?? 10_000;
+  const script = compareRefsScript(args.shQuote, args.root);
+  const result = await args.runProcessWithCodeTimeout(
+    args.host
+      ? sshReadCommandArgv(args.host, script, [], "git.refs")
+      : gitShellCommandArgv(script, undefined, { login: false }),
+    timeout,
+  );
+  if (result.code !== 0)
+    throw new Error(
+      (result.stderr || result.stdout || "Unable to read branches")
+        .trim()
+        .slice(0, 1000),
+    );
+  const parsed = parseCompareRefsOutput(result.stdout);
+  const { base } = await resolveDefaultBase({
+    ...args,
+    listed: parsed.listed,
+  }).catch(() => ({ base: undefined }));
+  return {
+    ...(parsed.current ? { current: parsed.current } : {}),
+    ...(parsed.upstream ? { upstream: parsed.upstream } : {}),
+    ...(base ? { base } : {}),
+    near: parsed.near,
+    refs: parsed.refs,
+  };
 }
