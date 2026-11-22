@@ -183,27 +183,4 @@ if (process.env.ROAMGATE_CHAT_THREADS_TOUCH_DOM_TEST !== "1") {
     await act(async () => root.unmount());
     host.remove();
   });
-
-  test("on a phone, the keyboard opening brings the comment box and its buttons into view", async () => {
-    coarse = true;
-    const { act, host, root } = await chat();
-    const box = host.querySelector<HTMLElement>(".chat-thread-editor")!;
-    const scrolled: unknown[] = [];
-    box.scrollIntoView = (options) => scrolled.push(options);
-    host.querySelector<HTMLElement>(".cm-content")!.focus();
-    await act(settle);
-    scrolled.length = 0;
-    visualViewport.dispatchEvent(new browser.Event("resize"));
-    await act(settle);
-    expect(scrolled).toEqual([{ block: "nearest" }]);
-
-    // With a mouse, a window resized scrolls nothing.
-    coarse = false;
-    scrolled.length = 0;
-    visualViewport.dispatchEvent(new browser.Event("resize"));
-    await act(settle);
-    expect(scrolled).toEqual([]);
-    await act(async () => root.unmount());
-    host.remove();
-  });
 }

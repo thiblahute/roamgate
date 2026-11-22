@@ -1447,34 +1447,6 @@ export function ChatThreadsProvider({
     return message?.dataset.entryId ? { entry: message.dataset.entryId } : null;
   });
 
-  // A phone's keyboard opening under a comment being written, or a box
-  // opened while it is up: the whole box, its buttons too, back into what
-  // the keyboard leaves of the chat (the browser only keeps the caret).
-  useEffect(() => {
-    let frame = 0;
-    const reveal = () => {
-      if (!window.matchMedia?.("(pointer: coarse)").matches) return;
-      cancelAnimationFrame(frame);
-      // After the app has measured the keyboard and laid out again.
-      frame = requestAnimationFrame(() => {
-        const active = document.activeElement;
-        const box =
-          active instanceof Element
-            ? active.closest<HTMLElement>(".chat-thread-editor")
-            : null;
-        if (box && scopeRef.current?.contains(box))
-          box.scrollIntoView({ block: "nearest" });
-      });
-    };
-    window.visualViewport?.addEventListener("resize", reveal);
-    document.addEventListener("focusin", reveal);
-    return () => {
-      if (frame) cancelAnimationFrame(frame);
-      window.visualViewport?.removeEventListener("resize", reveal);
-      document.removeEventListener("focusin", reveal);
-    };
-  }, []);
-
   // Rebuilt when what partsFor reads changes, not on every render.
   const value = useMemo<ChatThreads>(
     () => ({ partsFor }),
