@@ -464,6 +464,20 @@ button.work-link-open:focus-visible {
   min-width: 0;
 }
 
+/* An item's threads and its description are the Work board's own
+   conversation, in the theme's blue rather than the amber that marks a
+   chat's or a file's threads. Darker in the light theme, so the author's
+   name keeps its contrast on the grey panel. */
+.work-threads.chat-review,
+.work-description .chat-review {
+  --chat-comment: var(--blue);
+}
+
+:root[data-theme="light"]
+  :is(.work-threads.chat-review, .work-description .chat-review) {
+  --chat-comment: color-mix(in srgb, var(--blue) 60%, var(--text));
+}
+
 .work-threads-bar {
   display: flex;
   flex-wrap: wrap;
