@@ -625,8 +625,9 @@ A host is this machine (read in place) or an ssh destination. The registry is
 seeded from Roamgate's `connections.json` (the local profile names this
 machine, ssh profiles become pullable hosts) and extended or overridden by
 `archive.hosts`, so it works without the server. The home of an archive pulls
-every reachable ssh host on its timer: `rsync -rt --inplace` over its own ssh
-connection (`BatchMode`, `ConnectTimeout`, `ControlMaster=no`), then indexes
+every reachable ssh host on its timer: `rsync -rt -z --inplace` (compressed:
+both ends negotiate zstd, about a third of the JSONL bytes on the wire) over
+its own ssh connection (`BatchMode`, `ConnectTimeout`, `ControlMaster=no`), then indexes
 the mirror. An unreachable host is recorded (`last_attempt`, `last_error`)
 and skipped, never a failed run. A machine that sleeps pushes instead:
 `archive sync --push` (or `archive.push`) rsyncs its files into the home's

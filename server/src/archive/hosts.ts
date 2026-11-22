@@ -198,6 +198,25 @@ function rsyncShell(): string {
   return `ssh ${SSH_OPTIONS.join(" ")}`;
 }
 
+/**
+ * The rsync options of every archive transfer: incremental in place, and
+ * compressed (`-z`: both ends negotiate zstd with rsync 3.2+), which cuts the
+ * JSONL transcripts on the wire to about a third.
+ */
+export function rsyncBase(): string[] {
+  return [
+    "rsync",
+    "-rt",
+    "-z",
+    "--inplace",
+    "--partial",
+    "--mkpath",
+    "--timeout=120",
+    "-e",
+    rsyncShell(),
+  ];
+}
+
 /** Single-quote a word for a POSIX shell. */
 export function shQuote(word: string): string {
   return `'${word.replace(/'/g, `'\\''`)}'`;
@@ -244,16 +263,7 @@ export async function pullAgent(
   const root = remoteRoot(adapter, host, home);
   if (!root) return false;
   const mirror = mirrorDir(archiveDir, host.id, adapter.id);
-  const base = [
-    "rsync",
-    "-rt",
-    "--inplace",
-    "--partial",
-    "--mkpath",
-    "--timeout=120",
-    "-e",
-    rsyncShell(),
-  ];
+  const base = rsyncBase();
   const tree = await exec([
     ...base,
     ...adapter.rsyncFilters,
@@ -293,16 +303,7 @@ export async function pushAgent(
 ): Promise<void> {
   const remote = push.archive_dir ?? "~/.config/roamgate/archive";
   const mirror = `${remote}/mirror/${hostId}/${adapter.id}`;
-  const base = [
-    "rsync",
-    "-rt",
-    "--inplace",
-    "--partial",
-    "--mkpath",
-    "--timeout=120",
-    "-e",
-    rsyncShell(),
-  ];
+  const base = rsyncBase();
   if (existsSync(root)) {
     const tree = await exec([
       ...base,
