@@ -6617,6 +6617,47 @@ test("queued follow-ups wait for the answer and are admitted in order", async ()
   expect(prompts[1]).toContain("Authorized workspace scope");
 });
 
+test("the scope and receipts go once per context, said unchanged after, whole again on a fresh one", async () => {
+  const prompts: string[] = [];
+  let fresh = false;
+  const f = setup({
+    run: async (input) => {
+      prompts.push(input.text);
+      input.message(`Answer ${prompts.length}`);
+      // A context the driver could not keep starts empty.
+      return fresh ? [] : [{ persisted: prompts.length }];
+    },
+  });
+  await f.service.handle("configure", { config: configured });
+  const ask = async (text: string) => {
+    await f.service.handle("send", { text, request_id: text });
+    await until(() => !f.service.peek().running);
+  };
+  await ask("First");
+  expect(prompts[0]).toContain(
+    "Authorized workspace scope for this turn (only these IDs may be read or used as action targets):\n[",
+  );
+  expect(prompts[0]).toContain(
+    "Recorded operation outcomes (server receipts, not proof of task completion):\n",
+  );
+  await ask("Second");
+  expect(prompts[1]).toContain(
+    "Authorized workspace scope for this turn: unchanged since your previous turn",
+  );
+  expect(prompts[1]).toContain(
+    "Recorded operation outcomes: none new since your previous turn.",
+  );
+  expect(prompts[1]).toContain("User message:\nSecond");
+  expect(prompts[1]!.length).toBeLessThan(prompts[0]!.length);
+  // The context comes back empty: the next turn gets them whole.
+  fresh = true;
+  await ask("Third");
+  await ask("Fourth");
+  expect(prompts[3]).toContain(
+    "Authorized workspace scope for this turn (only these IDs may be read or used as action targets):\n[",
+  );
+});
+
 test("a steer joins the running turn and its reply follows it", async () => {
   const gate = Promise.withResolvers<void>();
   const steers: { text: string; requestId: string }[] = [];

@@ -352,7 +352,11 @@ state; sends are never replayed.
   file rather than process arguments. MCP tool calls run serially. Interrupted
   Claude Code turns are stopped without replay and their CLI context is cleared,
   because a session pointer cannot prove whether an MCP operation completed.
-  The user reviews action receipts before sending a new question.
+  The user reviews action receipts before sending a new question. A turn's
+  prompt carries the turn's authorized scope and the last 8 receipts in it
+  only when they differ from what the same context was last given (`given`,
+  kept with the entries the run answered with); otherwise it says they are
+  unchanged. A new chat, a cleared or trimmed context gets them whole.
   A chat that changes driver starts
   afresh, and input sent during a Claude Code turn waits as a follow-up.
 - **Tools** are defined in `server/src/assistant/tools.ts` and run through
