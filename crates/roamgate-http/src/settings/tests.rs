@@ -404,3 +404,24 @@ async fn invalid_or_oversized_instance_settings_never_reach_the_file() {
     }
     assert!(!path.exists());
 }
+
+#[tokio::test]
+async fn settings_rpc_errors_carry_their_runtime_connection_identity() {
+    let home = tempfile::tempdir().unwrap();
+    let settings = service(&home.path().join("settings.json"));
+    let error = settings
+        .rpc("settings.unknown", &json!({}), Some("remote-dev"), "")
+        .await
+        .unwrap_err();
+    let reply = crate::rpc_reply::ReplyEnvelope::new(Some("remote-dev"), Some(6))
+        .error(Some(&Value::from("settings-id")), &error);
+    assert_eq!(
+        serde_json::from_str::<Value>(&reply.payload).unwrap(),
+        json!({
+            "connection_id": "remote-dev",
+            "connection_generation": 6,
+            "id": "settings-id",
+            "error": { "message": "unknown settings method: settings.unknown" },
+        })
+    );
+}

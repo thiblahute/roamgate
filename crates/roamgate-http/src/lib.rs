@@ -14,16 +14,22 @@
 //! | [`frame_to_ansi`] | a Herdr cell grid re-encoded as ANSI for xterm.js | bridge/frame-to-ansi |
 //! | [`terminal_upload`] | dropped files and pasted images staged privately, copied over SSH | http/terminal-upload, http/image-upload |
 //! | [`list_delta`] | topology lists answered as changes | bridge/list-delta |
+//! | [`rpc_reply`] | an RPC's reply in its connection's envelope | connections/protocol `serializeConnectionEnvelope` |
+//! | [`forward_rpc`] | the `forward.*` RPCs over the SSH forwards registry | bridge/forward-rpc |
+//! | [`history`] | `/api/history`: local history's status, settings and passes | http/history |
 //! | [`settings`] | the settings RPCs and `/api/instance-settings`, on the one settings.json writer (S13) | bridge/settings-rpc, http/instance-settings |
 
 pub mod auth;
 pub mod body;
+pub mod forward_rpc;
 pub mod frame_to_ansi;
 pub mod front;
+pub mod history;
 pub mod list_delta;
 pub mod login_page;
 pub mod public_origin;
 pub mod response;
+pub mod rpc_reply;
 pub mod settings;
 pub mod static_files;
 pub mod static_paths;

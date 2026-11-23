@@ -829,3 +829,82 @@ fn cookies_parse_as_the_ts_parser_reads_them() {
     assert_eq!(parse_cookie(Some("other=1"), AUTH_COOKIE), None);
     assert_eq!(parse_cookie(None, AUTH_COOKIE), None);
 }
+
+/// One start of an instance (http/auth-process.test.ts `withAuthServer`):
+/// its signing secret loaded as startup loads it, keyed by its settings
+/// file and fingerprinted by its credentials, under a shared home.
+fn instance_start(home: &std::path::Path, settings: &str, password: &str, pin: &str) -> Auth {
+    use roamgate_base::paths::{DataContext, Platform};
+    use roamgate_base::session_secret::{load_or_create_session_secret, session_secret_path};
+    let context = DataContext::new(home, Platform::current(), Some(home.to_owned()));
+    let settings = home.join(settings).to_string_lossy().into_owned();
+    let path = session_secret_path(Some(&settings), &context.data_root());
+    let secret = load_or_create_session_secret(&context, &[password, pin], &path).unwrap();
+    let mut config = AuthConfig::new(password, &secret);
+    config.pin = Some(pin.into());
+    auth_with(config, &ManualClock::at(NOW))
+}
+
+#[tokio::test]
+async fn instances_sharing_a_home_preserve_independent_sessions_across_restarts_and_credential_rotations()
+ {
+    const FIRST: (&str, &str, &str) = ("first-settings.json", "first-instance-password", "012345");
+    const SECOND: (&str, &str, &str) =
+        ("second-settings.json", "second-instance-password", "654321");
+    const ROTATED: &str = "changed-instance-password";
+    let root = tempfile::tempdir().unwrap();
+    let start = |(settings, password, pin): (&str, &str, &str)| {
+        instance_start(root.path(), settings, password, pin)
+    };
+    async fn login(auth: &Auth, password: &str) -> String {
+        let response = password_login(auth, password, "127.0.0.1", "").await;
+        assert_eq!(response.status(), 200);
+        get(&response, "set-cookie")
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned()
+    }
+    let status = |auth: &Auth, cookie: &str| {
+        if auth.is_authed(&cookie_request(cookie).headers) {
+            200
+        } else {
+            401
+        }
+    };
+
+    let first = start(FIRST);
+    let first_cookie = login(&first, FIRST.1).await;
+    let second = start(SECOND);
+    let second_cookie = login(&second, SECOND.1).await;
+    assert_eq!(status(&first, &first_cookie), 200);
+    assert_eq!(status(&second, &second_cookie), 200);
+    assert_eq!(status(&first, &second_cookie), 401);
+    assert_eq!(status(&second, &first_cookie), 401);
+
+    // Both restart: their sessions survive.
+    let first = start(FIRST);
+    assert_eq!(status(&first, &first_cookie), 200);
+    let second = start(SECOND);
+    assert_eq!(status(&second, &second_cookie), 200);
+    assert_eq!(status(&first, &first_cookie), 200);
+
+    // The first's password changes: its sessions end, the second's do not.
+    let first = start((FIRST.0, ROTATED, FIRST.2));
+    assert_eq!(status(&first, &first_cookie), 401);
+    let rotated_cookie = login(&first, ROTATED).await;
+    let second = start(SECOND);
+    assert_eq!(status(&second, &second_cookie), 200);
+    assert_eq!(status(&first, &rotated_cookie), 200);
+
+    // Back to the old password: neither earlier session comes back.
+    let first = start(FIRST);
+    assert_eq!(status(&first, &first_cookie), 401);
+    assert_eq!(status(&first, &rotated_cookie), 401);
+    let restored_cookie = login(&first, FIRST.1).await;
+    assert_eq!(status(&first, &restored_cookie), 200);
+    let second = start(SECOND);
+    assert_eq!(status(&second, &second_cookie), 200);
+    assert_eq!(status(&first, &restored_cookie), 200);
+}
