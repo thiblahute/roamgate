@@ -59,3 +59,4 @@ roamgate-workspace	server/src/config/workspace-tree	S17
 # the claude-mod hub and the conversation drivers come with their subtasks.
 roamgate-claude	server/src/agent/claude-mod	S19
 roamgate-claude	server/src/conversation/drivers/claude-	S21
+roamgate-conversation	server/src/conversation/	S21

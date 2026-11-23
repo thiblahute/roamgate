@@ -7197,6 +7197,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "roamgate-conversation"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "roamgate-exec"
 version = "0.0.0"
 dependencies = [
