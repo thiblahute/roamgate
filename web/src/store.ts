@@ -2520,6 +2520,20 @@ async function refreshConnectionCatalog(): Promise<boolean> {
   }
 }
 
+/**
+ * The server moved a connection to a newer runtime than this page holds (a
+ * reconnect, or the connections handed between Bun and the Rust core): the
+ * catalog is read again at once, hidden or not, so the page's calls follow
+ * the new generation instead of being refused until the next status poll.
+ */
+let movedRuntimeCatalog: Promise<boolean> | null = null;
+function followMovedRuntime() {
+  if (movedRuntimeCatalog) return;
+  movedRuntimeCatalog = refreshConnectionCatalog().finally(() => {
+    movedRuntimeCatalog = null;
+  });
+}
+
 function rearmTerminalAttachmentsAfterCatalog(catalogReady: boolean): boolean {
   if (
     !terminalReattachPending ||
@@ -3520,6 +3534,7 @@ export const store = {
     });
     bridge.onStatus(handleBridgeStatus);
     bridge.onEvent(handleHerdrEvent);
+    bridge.onRuntimeMoved(followMovedRuntime);
     bridge.onAssistantNotification(notifyRangerTask);
     bridge.onPopup(handlePopupPush);
     // Turning the all-connections view on reads every other connection now
@@ -5686,6 +5701,8 @@ export const __storeTesting = {
   handlePreferenceStorageChange,
   updatePollingActive: () => updateTimer !== null,
   refreshBridgeStatus,
+  followMovedRuntime,
+  movedRuntimeCatalog: () => movedRuntimeCatalog,
   markTerminalReattachPending() {
     terminalReattachPending = true;
     catalogReadyForConnection = false;

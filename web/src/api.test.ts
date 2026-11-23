@@ -1208,6 +1208,98 @@ describe("bridge connection lifecycle", () => {
     ).rejects.toThrow("global RPC cannot use a connection client");
   });
 
+  test("tells the page when the server moved a connection past its runtime generation", async () => {
+    class ManualWebSocket extends HangingWebSocket {
+      static instance: ManualWebSocket;
+      sent: string[] = [];
+
+      constructor() {
+        super();
+        ManualWebSocket.instance = this;
+        queueMicrotask(() => {
+          this.readyState = ManualWebSocket.OPEN;
+          this.onopen?.();
+        });
+      }
+
+      send(raw = "") {
+        this.sent.push(raw);
+      }
+    }
+    installBrowserGlobals(ManualWebSocket as unknown as typeof WebSocket);
+    const bridge = createTestBridge();
+    const moved: string[] = [];
+    const events: unknown[] = [];
+    bridge.onRuntimeMoved((connectionId) => moved.push(connectionId));
+    bridge.onEvent((event) => events.push(event));
+    bridge.connect();
+    await Bun.sleep(1);
+    sendHello(ManualWebSocket.instance, "desktop", {
+      connection_runtime_generation: true,
+    });
+    bridge.setConnectionRuntimeGenerations([{ id: "desktop", generation: 2 }]);
+    const push = (connectionId: string, generation: number) =>
+      ManualWebSocket.instance.onmessage?.({
+        data: JSON.stringify({
+          connection_id: connectionId,
+          connection_generation: generation,
+          event: "session.resync_required",
+          data: {},
+        }),
+      } as MessageEvent);
+
+    // The connections went to the Rust core: its runtime's first push is
+    // not this page's, but says the page is behind.
+    push("desktop", 3);
+    expect(events).toEqual([]);
+    expect(moved).toEqual(["desktop"]);
+    // Its own runtime's and an older one's say nothing; nor does a
+    // connection the page has not read yet.
+    push("desktop", 2);
+    push("desktop", 1);
+    push("elsewhere", 5);
+    expect(events).toHaveLength(1);
+    expect(moved).toEqual(["desktop"]);
+
+    // A call of the old runtime refused: the page is behind too.
+    bridge.setActiveConnection("desktop");
+    const stale = bridge.callConnection("desktop", "agent_artifacts.get", {});
+    const request = JSON.parse(
+      ManualWebSocket.instance.sent[ManualWebSocket.instance.sent.length - 1],
+    );
+    expect(request.connection_generation).toBe(2);
+    ManualWebSocket.instance.onmessage?.({
+      data: JSON.stringify({
+        id: request.id,
+        connection_id: "desktop",
+        connection_generation: 2,
+        error: { message: "connection generation changed: desktop" },
+      }),
+    } as MessageEvent);
+    await expect(stale).rejects.toThrow(
+      "connection generation changed: desktop",
+    );
+    expect(moved).toEqual(["desktop", "desktop"]);
+
+    // Once the page holds the new runtime, a late refusal of the old one
+    // asks nothing more.
+    const late = bridge.callConnection("desktop", "agent_artifacts.get", {});
+    const lateRequest = JSON.parse(
+      ManualWebSocket.instance.sent[ManualWebSocket.instance.sent.length - 1],
+    );
+    bridge.setConnectionRuntimeGenerations([{ id: "desktop", generation: 3 }]);
+    ManualWebSocket.instance.onmessage?.({
+      data: JSON.stringify({
+        id: lateRequest.id,
+        connection_id: "desktop",
+        connection_generation: 2,
+        error: { message: "connection generation changed: desktop" },
+      }),
+    } as MessageEvent);
+    await expect(late).rejects.toThrow("connection generation changed");
+    expect(moved).toEqual(["desktop", "desktop"]);
+  });
+
   test("invalidates pending work across a same-ID client generation change", async () => {
     class ManualWebSocket extends HangingWebSocket {
       static instance: ManualWebSocket;

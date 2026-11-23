@@ -619,6 +619,7 @@ export class Bridge {
   private statusHandlers = new Set<(s: ConnectionStatus) => void>();
   private controlHandlers = new Set<(c: BridgeControlMsg) => void>();
   private helloHandlers = new Set<(hello: BridgeHello) => void>();
+  private runtimeMovedHandlers = new Set<(connectionId: string) => void>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -688,10 +689,30 @@ export class Bridge {
     if (this._hello?.capabilities?.connection_runtime_generation !== true) {
       return true;
     }
-    return (
-      typeof connectionId === "string" &&
-      this.runtimeGenerations.get(connectionId) === connectionGeneration
-    );
+    if (typeof connectionId !== "string") return false;
+    const held = this.runtimeGenerations.get(connectionId);
+    if (held === connectionGeneration) return true;
+    // A push of a runtime newer than the one this page holds (the server
+    // reconnected it, or handed its connections between Bun and the Rust
+    // core): dropped, but the page reads the catalog again to follow it.
+    if (
+      held !== undefined &&
+      typeof connectionGeneration === "number" &&
+      connectionGeneration > held
+    )
+      this.runtimeMoved(connectionId);
+    return false;
+  }
+
+  /** A connection's runtime moved on past the generation this page holds. */
+  private runtimeMoved(connectionId: string): void {
+    for (const handler of this.runtimeMovedHandlers) {
+      try {
+        handler(connectionId);
+      } catch {
+        // One listener's failure never blocks the others.
+      }
+    }
   }
 
   /**
@@ -1411,6 +1432,16 @@ export class Bridge {
       ) {
         pending.reject(new Error("invalid error response"));
       } else if (hasError) {
+        // The server has another runtime for that connection than the one
+        // this call held (a push of it may have been missed): read the
+        // catalog again, as a newer generation's push does.
+        if (
+          pending.connectionId !== null &&
+          msg.error.message.startsWith("connection generation changed:") &&
+          this.runtimeGenerations.get(pending.connectionId) ===
+            pending.serverRuntimeGeneration
+        )
+          this.runtimeMoved(pending.connectionId);
         pending.reject(
           new RpcError(
             msg.error.message,
@@ -1813,6 +1844,15 @@ export class Bridge {
     this.helloHandlers.add(cb);
     if (this._hello) cb(this._hello);
     return () => this.helloHandlers.delete(cb);
+  }
+
+  /**
+   * The server runs a newer runtime of a connection than the one this page
+   * holds: told by a push of it, or a call refused for the old one.
+   */
+  onRuntimeMoved(cb: (connectionId: string) => void): () => void {
+    this.runtimeMovedHandlers.add(cb);
+    return () => this.runtimeMovedHandlers.delete(cb);
   }
 
   onEvent(cb: (event: HerdrEventMsg) => void): () => void {

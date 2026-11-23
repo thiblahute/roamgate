@@ -55,6 +55,12 @@ reconnect lifecycle. Disconnecting stops the runtime and SSH tunnel, never Herdr
   identity; mismatched or stale identities fail without fallback.
 - When a runtime is replaced, old leases are retired first. Effects already
   sent may finish, but their results are discarded.
+- A browser still holding an older runtime (a page in the background when a
+  connection reconnected, or when the connections moved between Bun and the
+  Rust core) drops the new runtime's pushes, but a push of a newer generation
+  or a call refused with `connection generation changed` makes it read the
+  catalog again at once, so it follows the new runtime without waiting for
+  its status poll.
 - Authentication, health, updates, and profile management are bridge-global and
   work regardless of runtime state. One failed runtime never blocks others.
 - Browser caches, storage, and pending actions are scoped per connection.

@@ -780,6 +780,36 @@ describe("connection-partitioned store state", () => {
     }
   });
 
+  test("reads the catalog once when the server moved a connection's runtime", async () => {
+    const previousState = store.get();
+    const originalCall = bridge.call;
+    const snapshot = partitionState();
+    const moved = snapshot.connections.map((connection) =>
+      connection.id === "alpha" ? { ...connection, generation: 2 } : connection,
+    );
+    const calls: string[] = [];
+    bridge.call = (async (method: string) => {
+      calls.push(method);
+      return { connections: moved, default_connection_id: "alpha" };
+    }) as typeof bridge.call;
+    try {
+      __storeTesting.replaceState(snapshot);
+      // Every stale push and refused call says it: one read follows.
+      __storeTesting.followMovedRuntime();
+      __storeTesting.followMovedRuntime();
+      await __storeTesting.movedRuntimeCatalog();
+
+      expect(calls).toEqual(["connections.list"]);
+      expect(
+        store.get().connections.find((each) => each.id === "alpha")?.generation,
+      ).toBe(2);
+      expect(__storeTesting.movedRuntimeCatalog()).toBeNull();
+    } finally {
+      bridge.call = originalCall;
+      __storeTesting.replaceState(previousState);
+    }
+  });
+
   test("preserves profile DTO fields across transition bridge-status catalogs", () => {
     const previous = [
       {
