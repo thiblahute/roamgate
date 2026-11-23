@@ -56,6 +56,7 @@ server/src/activity/subjects.test.ts	a group of the Workspaces tree wins over th
 server/src/activity/subjects.test.ts	settings.json gives both sources	rust-unit:roamgate-activity:subjects::tests::settings_json_gives_both_sources	recorder, reader and timeline internals
 server/src/activity/timeline-rpc.test.ts	not recording: says so	scenario:parity/scenarios/activity/not-recording.yaml	
 server/src/activity/timeline-rpc.test.ts	today by default, from the day start setting	scenario:parity/scenarios/activity/record-and-read.yaml	
+server/src/activity/timeline-rpc.test.ts	connections in exclude.connections are left out, as by the CLI	scenario:parity/scenarios/activity/excluded-connection.yaml	
 server/src/activity/timeline.test.ts	days follow the day start, in local time	rust-unit:roamgate-activity:timeline::tests::days_follow_the_day_start_in_local_time	recorder, reader and timeline internals
 server/src/activity/timeline.test.ts	focus spans carry their source and reason; open ones end now	rust-unit:roamgate-activity:timeline::tests::focus_spans_carry_their_source_and_reason_open_ones_end_now	recorder, reader and timeline internals
 server/src/activity/timeline.test.ts	spans are clipped to the range and split across days	rust-unit:roamgate-activity:timeline::tests::spans_are_clipped_to_the_range_and_split_across_days	recorder, reader and timeline internals
@@ -348,6 +349,8 @@ server/src/archive/archive.test.ts	archives, indexes, grows, handles partial lin
 server/src/archive/archive.test.ts	appended frames are one valid zstd stream with a checksum	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	a crash after compressing is repaired on the next run	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	index rules, hide and exclude	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	the none level archives a session but keeps it out of search	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	rebuild-db restores the bookkeeping; the text repo carries on	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	history prompts are searched	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	codex and pi sessions are archived, indexed and round-trip	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	restores only what is missing, maps the project and appends a note	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
@@ -369,8 +372,11 @@ server/src/archive/hosts.test.ts	a push compresses every rsync transfer	rust-uni
 server/src/archive/open.test.ts	a text repo line opens its record, with context, from raw/	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/open.test.ts	a raw/ hit opens by record line; hidden and bad keys open nothing	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/open.test.ts	search parameters are checked	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/archive/store.test.ts	an old index.sqlite is read as is, then migrated by a writer and deleted	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/archive/store.test.ts	a fresh archive gets a database of the current version	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/text-render.test.ts	one line per message, tool calls cut, tool output left out	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/text-render.test.ts	resumes from a saved state: titles and timestamps carry over	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/archive/text-render.test.ts	the day is fixed at the first line: undated when no time came first	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/text-render.test.ts	prompt history lines carry the project as a token	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/text-render.test.ts	secrets are redacted and counted	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/text-render.test.ts	host/agent/project/day/session.md, dated by the first message	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
@@ -462,6 +468,7 @@ server/src/assistant/archive-tools.test.ts	search, session and a bounded read	ru
 server/src/assistant/archive-tools.test.ts	hidden projects are never shown	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/archive-tools.test.ts	invalid parameters are refused	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/archive-tools.test.ts	search finds what was said since the last pass, and regexes	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
+server/src/assistant/archive-tools.test.ts	without a text repo there is no archive to search yet	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/claude-driver.test.ts	lists Claude models, with Claude Code's effort levels	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
 server/src/assistant/claude-driver.test.ts	runs a turn in a new session with only Ranger's tools	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
 server/src/assistant/claude-driver.test.ts	resumes the session the last turn left, at the chosen effort	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
@@ -1243,6 +1250,7 @@ server/src/bridge/websocket-send.test.ts	compresses only terminal frames at or a
 server/src/bridge/websocket-send.test.ts	keeps the connection open when Bun queues a message under backpressure	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	closes a slow connection when a queued send crosses the hard limit	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	cleans up when Bun drops a message because of a connection issue	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	a reply made after the browser left is skipped quietly	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	uses Bun's buffered amount API to close a client past the hard limit	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	logs and cleans up when sending throws	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	holds a frame back instead of queueing it once the socket is behind	rust-unit:roamgate-http	transport and RPC plumbing
@@ -1469,6 +1477,10 @@ server/src/config/plugin-command.test.ts	honors exported and quoted entries and 
 server/src/config/plugin-command.test.ts	rejects configurations the service could not start with	rust-unit:roamgate-cli	plugin commands
 server/src/config/plugin-command.test.ts	plugin dispatch rejects extra arguments and leaves other CLI commands alone	rust-unit:roamgate-cli	plugin commands
 server/src/config/plugin-command.test.ts	native ${verb} preserves configuration for a ${definitionType} service with exit ${exitCode}	rust-unit:roamgate-cli	plugin commands
+server/src/config/revoked-sessions.test.ts	sits next to the signing secret	rust-unit:roamgate-base:revoked_sessions::tests::sits_next_to_the_signing_secret	data paths, environment precedence, settings store, locks
+server/src/config/revoked-sessions.test.ts	an ended cookie is forgotten once it would have expired anyway	rust-unit:roamgate-base:revoked_sessions::tests::an_ended_cookie_is_forgotten_once_it_would_have_expired_anyway	data paths, environment precedence, settings store, locks
+server/src/config/revoked-sessions.test.ts	keeps the latest to expire past its bound	rust-unit:roamgate-base:revoked_sessions::tests::keeps_the_latest_to_expire_past_its_bound	data paths, environment precedence, settings store, locks
+server/src/config/revoked-sessions.test.ts	an unreadable file is ignored	rust-unit:roamgate-base:revoked_sessions::tests::an_unreadable_file_is_ignored	data paths, environment precedence, settings store, locks
 server/src/config/server-config.test.ts	compiled authentication reads runtime NODE_ENV instead of the build value	rust-unit:roamgate-cli:server_config::tests::compiled_authentication_reads_runtime_node_env_instead_of_the_build_value	server flags and their precedence
 server/src/config/server-config.test.ts	production requires authentication and persists a token on every listen address	rust-unit:roamgate-cli:server_config::tests::production_requires_authentication_and_persists_a_token_on_every_listen_address	server flags and their precedence
 server/src/config/server-config.test.ts	NODE_ENV=%s HOST=%s requires authentication: %s	rust-unit:roamgate-cli:server_config::tests::node_env_and_host_decide_whether_authentication_is_required	server flags and their precedence
@@ -2408,6 +2420,7 @@ server/src/http/auth.test.ts	slow login bodies cannot bypass a replaced IP recor
 server/src/http/auth.test.ts	a slow %s finishing after cooldown starts a fresh failure count	rust-unit:roamgate-http	HTTP front internals
 server/src/http/auth.test.ts	%s reauthentication preserves the current cookie and its expiry	rust-unit:roamgate-http	HTTP front internals
 server/src/http/auth.test.ts	expires the cookie with matching attributes (TLS %s)	rust-unit:roamgate-http	HTTP front internals
+server/src/http/auth.test.ts	ends the cookie on the server too, across a restart	scenario:parity/scenarios/auth/logout.yaml	
 server/src/http/auth.test.ts	rejects GET and cross-site logout, but allows retry without a cookie	rust-unit:roamgate-http	HTTP front internals
 server/src/http/auth.test.ts	exchanges a URL token for a signed cookie and strips it	rust-unit:roamgate-http	HTTP front internals
 server/src/http/auth.test.ts	removes an invalid token without creating a session	rust-unit:roamgate-http	HTTP front internals
@@ -3575,6 +3588,7 @@ server/src/voice/voice-helper.test.ts	only a speaker's own failure has Kokoro sa
 server/src/voice/voice-helper.test.ts	clones a voice from a recording	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-helper.test.ts	without a configuration, voice is unavailable	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-helper.test.ts	is 1.2 by default, and what voice.json says	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/voice-helper.test.ts	a voice.json kept before the setup answers with the settings it holds	scenario:parity/scenarios/voice/unconfigured.yaml	
 server/src/voice/voice-helper.test.ts	voice.json refuses a rate out of range	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-helper.test.ts	Parakeet is given Whisper's model too, to read again what it writes in English	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-helper.test.ts	voice.json's drop_other_voices is true or false	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
@@ -3795,6 +3809,10 @@ server/src/voice/voice-taste.test.ts	the prompt's block: playlists first, picks 
 server/src/voice/voice-taste.test.ts	a pick turned down soon after is avoided; later, nothing to turn down	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-taste.test.ts	lasting dislikes come from the music-avoid memories	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-taste.test.ts	an unreadable file starts empty	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/voice-test-env.test.ts	nothing without the variables	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/voice-test-env.test.ts	the standalone binary refuses them	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/voice-test-env.test.ts	model downloads go to the mirror, the catalog otherwise unchanged	scenario:parity/scenarios/voice/setup-mirror.yaml	
+server/src/voice/voice-test-env.test.ts	the hardware comes from the file, read on each request	scenario:parity/scenarios/voice/setup-mirror.yaml	
 server/src/voice/voice-tools.test.ts	a name, a whole server, or a prefix	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	case does not count	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	a tool's own name says when it writes	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
@@ -4670,6 +4688,10 @@ scripts/contract/tools-catalog.test.ts	tool names are unique within a table	inte
 scripts/contract/write.test.ts	a file that already says the same keeps its hand formatting	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/write.test.ts	a changed value is written, and reads back as itself	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/write.test.ts	JSON compares by value and Markdown tables by their cells	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/write.test.ts	an addition goes into a YAML file as it is: anchors, flow mappings and quotes kept	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/write.test.ts	a YAML change other than an addition is refused, not rewritten	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/write.test.ts	appended Markdown rows are padded like the table's	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/write.test.ts	JSON is written as the formatter writes it	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/deploy-templates.test.ts	renamed systemd template runs Roamgate and uses the Roamgate environment file	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/deploy-templates.test.ts	launchd template executes the installed Roamgate binary with Roamgate identities and state paths	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/install-plugin.test.ts	plugin manifest runs system installers and the native executable	scenario:parity/scenarios/install/plugin-manifest.yaml	
@@ -4744,25 +4766,3 @@ scripts/workspaces.test.ts	development bridge and Vite proxies stay off the prod
 scripts/workspaces.test.ts	CI keeps the complete non-browser validation gate	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/workspaces.test.ts	CI and release jobs install once from the workspace root	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/workspaces.test.ts	all workflows use the pinned Bun runtime and matching types	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
-server/src/activity/timeline-rpc.test.ts	connections in exclude.connections are left out, as by the CLI	scenario:parity/scenarios/activity/excluded-connection.yaml	
-server/src/archive/archive.test.ts	the none level archives a session but keeps it out of search	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	rebuild-db restores the bookkeeping; the text repo carries on	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/store.test.ts	an old index.sqlite is read as is, then migrated by a writer and deleted	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/store.test.ts	a fresh archive gets a database of the current version	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-render.test.ts	the day is fixed at the first line: undated when no time came first	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/assistant/archive-tools.test.ts	without a text repo there is no archive to search yet	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/bridge/websocket-send.test.ts	a reply made after the browser left is skipped quietly	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/config/revoked-sessions.test.ts	sits next to the signing secret	rust-unit:roamgate-base:revoked_sessions::tests::sits_next_to_the_signing_secret	data paths, environment precedence, settings store, locks
-server/src/config/revoked-sessions.test.ts	an ended cookie is forgotten once it would have expired anyway	rust-unit:roamgate-base:revoked_sessions::tests::an_ended_cookie_is_forgotten_once_it_would_have_expired_anyway	data paths, environment precedence, settings store, locks
-server/src/config/revoked-sessions.test.ts	keeps the latest to expire past its bound	rust-unit:roamgate-base:revoked_sessions::tests::keeps_the_latest_to_expire_past_its_bound	data paths, environment precedence, settings store, locks
-server/src/config/revoked-sessions.test.ts	an unreadable file is ignored	rust-unit:roamgate-base:revoked_sessions::tests::an_unreadable_file_is_ignored	data paths, environment precedence, settings store, locks
-server/src/http/auth.test.ts	ends the cookie on the server too, across a restart	scenario:parity/scenarios/auth/logout.yaml	
-server/src/voice/voice-helper.test.ts	a voice.json kept before the setup answers with the settings it holds	scenario:parity/scenarios/voice/unconfigured.yaml	
-server/src/voice/voice-test-env.test.ts	nothing without the variables	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-test-env.test.ts	the standalone binary refuses them	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-test-env.test.ts	model downloads go to the mirror, the catalog otherwise unchanged	scenario:parity/scenarios/voice/setup-mirror.yaml	
-server/src/voice/voice-test-env.test.ts	the hardware comes from the file, read on each request	scenario:parity/scenarios/voice/setup-mirror.yaml	
-scripts/contract/write.test.ts	an addition goes into a YAML file as it is: anchors, flow mappings and quotes kept	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
-scripts/contract/write.test.ts	a YAML change other than an addition is refused, not rewritten	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
-scripts/contract/write.test.ts	appended Markdown rows are padded like the table's	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
-scripts/contract/write.test.ts	JSON is written as the formatter writes it	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
