@@ -2,12 +2,14 @@
 //! `mr-reviews/clones.ts`): a POSIX shell script on its host, the folders
 //! of its workspaces and panes, and Herdr calls. In the core, these go to
 //! Bun through reverse calls (`host.run`, `herdr.call`) until the host
-//! layer is Rust's (S16).
+//! layer is Rust's (S16). A profile's launch token and conversation mode's
+//! hold on a pane are Bun's too: `launch` and the `conversation_*` members
+//! default to "not here", as a connection without them in Bun.
 
 use std::future::Future;
 use std::pin::Pin;
 
-use serde_json::Value;
+use serde_json::{Map, Value, json};
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -17,6 +19,39 @@ pub struct ShellResult {
     pub code: i32,
     pub stdout: String,
     pub stderr: String,
+}
+
+/// What a profile's agent starts with (`LaunchSpec` of profiles.ts).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LaunchSpec {
+    pub argv: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub unset: Vec<String>,
+    pub agent: String,
+    /// Set ROAMGATE_CLAUDE_START=terminal (the agent stays in the terminal).
+    pub terminal: bool,
+}
+
+impl LaunchSpec {
+    /// The spec as Bun builds it, keys in its order.
+    pub fn to_json(&self) -> Value {
+        let env: Map<String, Value> = self
+            .env
+            .iter()
+            .map(|(name, value)| (name.clone(), Value::String(value.clone())))
+            .collect();
+        json!({
+            "argv": self.argv, "env": env, "unset": self.unset,
+            "agent": self.agent, "terminal": self.terminal,
+        })
+    }
+}
+
+/// What conversation mode's own switch gave.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SwitchResult {
+    Ok,
+    Refused { busy: bool, reason: String },
 }
 
 pub trait MrConnection: Send + Sync {
@@ -32,6 +67,51 @@ pub trait MrConnection: Send + Sync {
     fn herdr<'a>(&'a self, method: &'a str, params: Value) -> BoxFuture<'a, Result<Value, String>> {
         let _ = (method, params);
         Box::pin(async { Err("no Herdr here".to_owned()) })
+    }
+    /// Whether [`MrConnection::launch`] is there (`conn.launch` set).
+    fn can_launch(&self) -> bool {
+        false
+    }
+    /// What to type into a pane to start a profile's agent (a one-use
+    /// token roamgate-hold trades for the program and environment).
+    fn launch<'a>(
+        &'a self,
+        pane_id: &'a str,
+        spec: LaunchSpec,
+    ) -> BoxFuture<'a, Result<String, String>> {
+        let _ = (pane_id, spec);
+        Box::pin(async { Err("no profile launch here".to_owned()) })
+    }
+    /// The session conversation mode holds the pane on, if it runs on the
+    /// connection and holds it.
+    fn conversation_owned<'a>(&'a self, pane_id: &'a str) -> BoxFuture<'a, Option<String>> {
+        let _ = pane_id;
+        Box::pin(async { None })
+    }
+    /// Conversation mode's own switch: the idle process stops, the other
+    /// session starts. Only asked of a pane it holds.
+    fn conversation_switch<'a>(
+        &'a self,
+        pane_id: &'a str,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, SwitchResult> {
+        let _ = (pane_id, session_id);
+        Box::pin(async {
+            SwitchResult::Refused {
+                busy: false,
+                reason: "no conversation mode here".to_owned(),
+            }
+        })
+    }
+    /// A prompt for the session conversation mode holds in the pane;
+    /// false: it holds none (or has no prompt).
+    fn conversation_prompt<'a>(
+        &'a self,
+        pane_id: &'a str,
+        text: &'a str,
+    ) -> BoxFuture<'a, Result<bool, String>> {
+        let _ = (pane_id, text);
+        Box::pin(async { Ok(false) })
     }
 }
 
