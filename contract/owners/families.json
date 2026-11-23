@@ -1,0 +1,199 @@
+{
+  "description": "The families that move from Bun to Rust one at a time (Rust migration plan, section 8). A family names the browser RPC methods it answers (`rpc`: an exact name, or a prefix ending in a dot), the HTTP paths it serves (`http`: an exact path, or a prefix ending in a slash), the files it alone writes (`files`: keys of contract/storage/index.json; one writer per file), and its cheap idempotent reads that may be shadowed (`shadow`). `phase` is the plan's phase that flips it. The owner of each family is in <data>/runtime/owners.json; see contract/wire/core-channel.md.",
+  "version": 1,
+  "families": {
+    "limit_resume": {
+      "phase": 2,
+      "rpc": ["limit_resume."],
+      "http": [],
+      "files": ["data:limit-resume.json"],
+      "shadow": ["limit_resume.list"]
+    },
+    "time_report": {
+      "phase": 2,
+      "rpc": ["bridge.time_report"],
+      "http": [],
+      "files": [],
+      "shadow": []
+    },
+    "herdr_setup": {
+      "phase": 2,
+      "rpc": [],
+      "http": ["/api/herdr/setup", "/api/herdr/status", "/api/herdr-info"],
+      "files": [],
+      "shadow": []
+    },
+    "update": {
+      "phase": 2,
+      "rpc": [],
+      "http": ["/api/update/check", "/api/update/install"],
+      "files": [],
+      "shadow": []
+    },
+    "archive": {
+      "phase": 3,
+      "rpc": ["bridge.archive."],
+      "http": [],
+      "files": [],
+      "shadow": []
+    },
+    "activity": {
+      "phase": 3,
+      "rpc": ["bridge.activity.", "activity."],
+      "http": [],
+      "files": ["file:activity.sqlite"],
+      "shadow": ["bridge.activity.timeline"]
+    },
+    "settings": {
+      "phase": 3,
+      "note": "settings.json moves to Rust in phase 3; Bun then reads and writes it through the channel",
+      "rpc": ["settings.", "bridge.ui_settings."],
+      "http": ["/api/instance-settings"],
+      "files": ["data:settings.json"],
+      "shadow": ["bridge.ui_settings.get"]
+    },
+    "mr_cache": {
+      "phase": 3,
+      "rpc": ["forge."],
+      "http": [],
+      "files": ["data:mr-cache/state.json"],
+      "shadow": []
+    },
+    "notifications": {
+      "phase": 3,
+      "note": "the feed socket stays terminated in Bun until phase 7",
+      "rpc": ["bridge.notifications."],
+      "http": ["/api/notifications/push"],
+      "files": ["data:notifications.json", "data:web-push.json"],
+      "shadow": []
+    },
+    "work": {
+      "phase": 4,
+      "rpc": ["bridge.work."],
+      "http": [],
+      "files": ["data:work"],
+      "shadow": ["bridge.work.board", "bridge.work.list"]
+    },
+    "host": {
+      "phase": 5,
+      "note": "one switch for SSH masters, slots and connections.json together",
+      "rpc": ["connections.", "agent_profile."],
+      "http": [],
+      "files": [
+        "data:connections.json",
+        "data:profiles",
+        "data:session-profiles.json"
+      ],
+      "shadow": []
+    },
+    "workspace": {
+      "phase": 6,
+      "rpc": ["file.", "git.", "worktree.", "bridge.workspace_tree."],
+      "http": [
+        "/api/file/delete",
+        "/api/file/download",
+        "/api/file/upload",
+        "/api/history",
+        "/api/history/commit"
+      ],
+      "files": [],
+      "shadow": [
+        "file.list",
+        "file.stat",
+        "file.read",
+        "git.diff_summary",
+        "git.diff_files",
+        "git.commits",
+        "git.refs",
+        "bridge.workspace_tree.get"
+      ]
+    },
+    "front": {
+      "phase": 7,
+      "note": "the listener, auth and /ws: Rust becomes the front in phase 7, not through this table",
+      "rpc": [],
+      "http": [
+        "/api/login",
+        "/api/login/pin",
+        "/api/logout",
+        "/api/upload-image",
+        "/api/terminal-upload"
+      ],
+      "files": [
+        "data:auth-token",
+        "data:session-secret.json",
+        "data:session-secret-*.json",
+        "data:rendered-storage.json"
+      ],
+      "shadow": []
+    },
+    "review": {
+      "phase": 8,
+      "rpc": ["review.", "claude_mod."],
+      "http": ["/api/review/image"],
+      "files": ["data:reviews", "data:claude-mod-inbox.json"],
+      "shadow": ["review.list", "review.get"]
+    },
+    "mr_reviews": {
+      "phase": 8,
+      "rpc": ["bridge.mr_reviews."],
+      "http": [],
+      "files": [
+        "data:mr-reviews/state.json",
+        "data:mr-reviews/agent.json",
+        "data:mr-reviews/efforts"
+      ],
+      "shadow": ["bridge.mr_reviews.inbox"]
+    },
+    "agent_sessions": {
+      "phase": 9,
+      "rpc": [
+        "agent_history.",
+        "agent_artifacts.",
+        "agent_commands.",
+        "agent_tasks.",
+        "agent_task.",
+        "agent_seen.",
+        "agent_session."
+      ],
+      "http": ["/api/agent-session/atif", "/api/agent-session/download"],
+      "files": ["data:agent-seen.json"],
+      "shadow": ["agent_history.get"]
+    },
+    "conversation": {
+      "phase": 9,
+      "rpc": ["agent_chat."],
+      "http": [],
+      "files": ["data:conversation-leases.json"],
+      "shadow": []
+    },
+    "voice": {
+      "phase": 10,
+      "rpc": [],
+      "http": ["/api/voice", "/api/voice/"],
+      "files": [
+        "data:voice.json",
+        "data:voice",
+        "data:voices",
+        "data:voice-gst-registry.bin"
+      ],
+      "shadow": []
+    },
+    "assistant": {
+      "phase": 11,
+      "rpc": ["bridge.assistant."],
+      "http": [],
+      "files": ["data:assistant"],
+      "shadow": []
+    },
+    "test.echo": {
+      "test": true,
+      "phase": 1,
+      "note": "the channel's own cross-language test: only with ROAMGATE_CORE_TEST=1 on a server from source and a debug core",
+      "rpc": ["test.echo."],
+      "http": ["/api/test-echo/"],
+      "files": [],
+      "shadow": ["test.echo.read"]
+    }
+  }
+}

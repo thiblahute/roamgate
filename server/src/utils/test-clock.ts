@@ -15,6 +15,19 @@ import { rmSync } from "node:fs";
 import type { Socket } from "bun";
 import { isStandaloneBinary } from "../config/standalone";
 
+/**
+ * The real clock and timers, as they were when this module loaded (before
+ * any test clock is installed): for what must keep real time under the
+ * test clock, like the liveness of the internal channel to the Rust core.
+ */
+export const realTimers = {
+  setTimeout: globalThis.setTimeout.bind(globalThis),
+  clearTimeout: globalThis.clearTimeout.bind(globalThis),
+  setInterval: globalThis.setInterval.bind(globalThis),
+  clearInterval: globalThis.clearInterval.bind(globalThis),
+  now: Date.now.bind(Date),
+};
+
 export const TEST_CLOCK_ENV = "ROAMGATE_TEST_CLOCK";
 /** Optional start time in epoch milliseconds; the real time when unset. */
 export const TEST_CLOCK_EPOCH_ENV = "ROAMGATE_TEST_CLOCK_EPOCH";

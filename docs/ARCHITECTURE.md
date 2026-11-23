@@ -3535,6 +3535,20 @@ At startup, orphaned command masters are stopped only in private, user-owned
 runtime directories whose recorded Roamgate owner process is gone. A failed
 exit request retains the directory and socket for a later cleanup attempt.
 
+## Rust core
+
+With `ROAMGATE_CORE_BIN` naming a build of the Rust `roamgate` binary, the
+Bun server runs it beside itself as a portless core process and talks to it
+over an internal channel: a Unix socket in `<data>/runtime` (a named pipe on
+Windows). The channel, the owners table `<data>/runtime/owners.json` that
+gives families of methods and routes to one side or the other, the rule of
+one writer per file, and the sampled shadow reads that compare both sides'
+answers are specified in `contract/wire/core-channel.md`, with the families
+in `contract/owners/families.json`. Bun keeps the port, auth and every
+WebSocket; a family goes to the core only while the core runs and says it
+has it, so a missing or crashed core leaves Bun serving everything. Without
+the variable nothing of this runs.
+
 ## Distribution model
 
 Production builds embed the frontend and Bun into one executable. Release

@@ -4,8 +4,12 @@ import { defaultSessionIndexDir } from "./agent/session-index-store";
 import { launchRegistry, sessionProfiles } from "./profiles/profiles";
 import { PROFILE_RPC_METHODS, returnAfterReset } from "./profiles/rpc";
 import { createUiSettingsRpcHandler } from "./bridge/settings-rpc";
-import { runInSshLane, type SshLane } from "./bridge/ssh-sessions";
-import { sshReadCommandArgv } from "./bridge/ssh-command";
+import {
+  currentSshLane,
+  runInSshLane,
+  type SshLane,
+} from "./bridge/ssh-sessions";
+import { sshCommandArgv, sshReadCommandArgv } from "./bridge/ssh-command";
 import { watchLoopStalls } from "./utils/loop-stall";
 import { loadOrCreateSessionSecret } from "./config/session-secret";
 import { removeLeftoverDataTemporaries } from "./config/data-paths";
@@ -258,6 +262,15 @@ import {
   serverLogger,
 } from "./utils/logger";
 import { runProcessWithCodeTimeout, shQuote } from "./utils/process-utils";
+import { isStandaloneBinary } from "./config/standalone";
+import {
+  type CallContext,
+  type CoreFront,
+  type PushMessage,
+  sessionIdOf,
+  socketIdOf,
+  startCoreFront,
+} from "./core-channel";
 import { rpcLogLevel } from "./utils/rpc-logging";
 import { handleReviewRpc, isReviewMethod } from "./review/rpc";
 import { createMrReviews, type MrReviews } from "./mr-reviews/module";
@@ -853,6 +866,87 @@ async function claudeModIntegration(
 }
 const clientIds = new WeakMap<ServerWebSocket<unknown>, number>();
 const clientSessions = new WeakMap<ServerWebSocket<unknown>, string | null>();
+
+// The Rust core (core-channel/): null unless ROAMGATE_CORE_BIN names one.
+let coreFront: CoreFront | null = null;
+
+/** A push of the core's, to the browsers it names. */
+function deliverCorePush(push: PushMessage): void {
+  const line = push.connection_id
+    ? serializeConnectionEnvelope(
+        push.connection_id,
+        push.message,
+        push.connection_generation,
+      )
+    : JSON.stringify(push.message);
+  for (const client of clients) {
+    if (push.socket_id !== undefined && socketIdOf(client) !== push.socket_id)
+      continue;
+    if (
+      push.session_id !== undefined &&
+      sessionIdOf(clientSessions.get(client)) !== push.session_id
+    )
+      continue;
+    safeSend(client, line, "core-push", push.key);
+  }
+}
+
+/** The connection a reverse call names, or the default one. */
+function coreRuntime(args: { connection_id?: unknown }) {
+  const id =
+    typeof args.connection_id === "string"
+      ? args.connection_id
+      : connectionManager.defaultId();
+  const lease = connectionManager.readyRuntimeLease(id);
+  if (!lease) throw new Error(`connection not ready: ${id}`);
+  return lease.runtime;
+}
+
+/** What the core may call in Bun (contract/wire/core-channel.md). */
+const coreReverseTargets = {
+  "herdr.call": async (args: unknown) => {
+    const { method, params } = (args ?? {}) as {
+      method?: unknown;
+      params?: unknown;
+    };
+    if (typeof method !== "string")
+      throw new Error("herdr.call needs a method");
+    return coreRuntime(args as { connection_id?: unknown }).herdr.call(
+      method,
+      (params ?? {}) as Record<string, unknown>,
+    );
+  },
+  "host.run": async (args: unknown) => {
+    const { argv, cwd, timeout_ms } = (args ?? {}) as {
+      argv?: unknown;
+      cwd?: unknown;
+      timeout_ms?: unknown;
+    };
+    if (
+      !Array.isArray(argv) ||
+      !argv.length ||
+      !argv.every((part) => typeof part === "string")
+    )
+      throw new Error("host.run needs argv, a list of strings");
+    if (cwd !== undefined && typeof cwd !== "string")
+      throw new Error("host.run's cwd is not a string");
+    const timeoutMs = typeof timeout_ms === "number" ? timeout_ms : 60_000;
+    const host = coreRuntime(args as { connection_id?: unknown }).sshHost();
+    if (!host)
+      return runProcessWithCodeTimeout(
+        argv as string[],
+        timeoutMs,
+        cwd ? { cwd } : {},
+      );
+    const command = `${cwd ? `cd ${shQuote(cwd)} && ` : ""}${(argv as string[]).map(shQuote).join(" ")}`;
+    return runProcessWithCodeTimeout(
+      sshCommandArgv(host, command, [], "core-host-run"),
+      timeoutMs,
+    );
+  },
+  "review.addThread": async (args: unknown) =>
+    getReviewService().addThread((args ?? {}) as Record<string, unknown>),
+};
 interface WebSocketCleanupSnapshot {
   client: string;
   viewedTerminals: string[];
@@ -3306,10 +3400,24 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
           markError: (message) => markRpcError(ws, id, message),
         })
       : null;
+  const coreContext = (): CallContext => ({
+    ...(route.scope === "connection"
+      ? {
+          connection_id: route.connectionId,
+          connection_generation: route.generation,
+        }
+      : {}),
+    socket_id: socketIdOf(ws),
+    lane: currentSshLane(),
+    ...(clientSessions.get(ws)
+      ? { session_id: sessionIdOf(clientSessions.get(ws)) }
+      : {}),
+  });
   const sendReply = (
     message: Record<string, unknown>,
     context: string,
   ): boolean => {
+    void coreFront?.observeReply(method, params, coreContext(), message);
     if (replyPublisher) return replyPublisher.send(message, context);
     const payload = encode(message);
     if (id) rpcReplyChars.set(rpcOutcomeKey(ws, id), payload.length);
@@ -3326,6 +3434,25 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
         : undefined;
     sendReply({ id, error: code ? { message, code } : { message } }, context);
   };
+  // A family given to the Rust core: it answers.
+  if (coreFront?.routesRpc(method)) {
+    try {
+      const result = await coreFront.callRpc(method, params, coreContext());
+      sendReply({ id, result }, "core");
+    } catch (error) {
+      const message = (error as Error).message;
+      const code = (error as { code?: unknown }).code;
+      markRpcError(ws, id, message);
+      sendReply(
+        {
+          id,
+          error: typeof code === "string" ? { message, code } : { message },
+        },
+        "core-error",
+      );
+    }
+    return;
+  }
   if (
     method === "bridge.ui_settings.get" ||
     method === "bridge.ui_settings.update"
@@ -4865,6 +4992,22 @@ function main() {
             return new Response("unauthorized", { status: 401 });
           }
 
+          // A family given to the Rust core: it serves the path (never a
+          // WebSocket: Bun terminates them all).
+          if (
+            coreFront &&
+            !req.headers.get("upgrade") &&
+            coreFront.routesHttp(url.pathname)
+          ) {
+            server.timeout(req, DOWNLOAD_TIMEOUT_MS / 1000);
+            return coreFront.forwardHttp(req, {
+              ...(sessionToken(req)
+                ? { session_id: sessionIdOf(sessionToken(req)) }
+                : {}),
+              client_ip: clientIp,
+            });
+          }
+
           if (url.pathname === "/ws") {
             // Never from another site, nor from a sandboxed page (its
             // origin is "null"): the bridge is Roamgate's own pages'.
@@ -5276,6 +5419,14 @@ function main() {
     websocket: "/ws",
     log_level: config.logLevel,
   });
+  // The Rust core, when ROAMGATE_CORE_BIN names one; nothing otherwise.
+  coreFront = startCoreFront({
+    env: process.env,
+    dataDir: dataRoot(),
+    fromSource: !isStandaloneBinary(process),
+    deliverPush: deliverCorePush,
+    reverseTargets: coreReverseTargets,
+  });
   if (config.authRequired) {
     if (config.generatedAuthTokenPath) {
       logger.info("authentication required", {
@@ -5341,6 +5492,8 @@ function stopManagerOnce(): Promise<void> {
   stopNetworkWatch();
   connectionProfiles.stopSupervision();
   managerStopTask ??= (async () => {
+    // The core first: what it owns stops writing before Bun's own goes.
+    await coreFront?.stop();
     // End the attention spans before the connections go: a shutdown is not
     // a disconnect.
     await activity.stop();
@@ -5375,6 +5528,7 @@ function scheduleManagedShutdown(): void {
 }
 
 process.on("exit", () => {
+  coreFront?.stopNow();
   claudeModHub.flush();
   voiceHelper.stop();
   activity.stopNow();
