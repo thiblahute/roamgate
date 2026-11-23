@@ -7213,11 +7213,13 @@ name = "roamgate-conversation"
 version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
+ "futures-util",
  "hex",
  "indexmap",
  "regex",
  "roamgate-agents",
  "roamgate-base",
+ "roamgate-claude",
  "rustix",
  "serde",
  "serde_json",
