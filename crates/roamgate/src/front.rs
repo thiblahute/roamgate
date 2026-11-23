@@ -294,6 +294,7 @@ pub async fn run(args: &[String]) -> u8 {
     });
     let sockets = Sockets::default();
     let (link, core) = watch::channel(None);
+    let (stop_core, core_stop) = watch::channel(false);
     let mut core_up = core.clone();
     let sidecar = tokio::spawn(run_sidecar(
         SidecarConfig {
@@ -306,6 +307,7 @@ pub async fn run(args: &[String]) -> u8 {
         },
         sockets.clone(),
         link,
+        core_stop,
     ));
     let front = Arc::new(Front::new(
         auth,
@@ -359,7 +361,8 @@ pub async fn run(args: &[String]) -> u8 {
                 .await
         }
     };
-    sidecar.abort();
+    let _ = stop_core.send(true);
+    let _ = sidecar.await;
     if let Some(task) = clock_server {
         task.abort();
     }

@@ -21,6 +21,9 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 const FIRST_DELAY: Duration = Duration::from_secs(1);
 const MAX_DELAY: Duration = Duration::from_secs(5 * 60);
 const STEADY: Duration = Duration::from_secs(10 * 60);
+/// How long a stopping core gets to finish its own shutdown (flushing its
+/// stores) once the front said `bye`.
+const STOP_GRACE: Duration = Duration::from_secs(15);
 
 /// How the Bun core is started.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,6 +100,7 @@ async fn run_once(
     config: &SidecarConfig,
     sockets: &Sockets,
     link: &watch::Sender<Option<Peer>>,
+    stop: &mut watch::Receiver<bool>,
 ) -> Result<(), String> {
     let mut listener = Listener::bind(&config.channel)
         .map_err(|error| format!("cannot listen on {}: {error}", config.channel))?;
@@ -139,40 +143,53 @@ async fn run_once(
     let peer = Peer::start(stream, handler, PeerOptions::front(config.clock.clone()));
     let _ = link.send(Some(peer.clone()));
     tracing::info!(target: "bridge.front", "the Bun core is connected");
+    let mut stopping = false;
     tokio::select! {
         () = peer.closed() => {}
         status = child.wait() => {
             tracing::warn!(target: "bridge.front", "the Bun core exited: {status:?}");
         }
+        _ = stop.wait_for(|stop| *stop) => stopping = true,
     }
     let _ = link.send(None);
     drop_sockets(sockets);
+    // The core stops by itself when its channel closes.
     peer.bye();
-    if tokio::time::timeout(Duration::from_secs(3), child.wait())
-        .await
-        .is_err()
-    {
+    let grace = if stopping {
+        STOP_GRACE
+    } else {
+        Duration::from_secs(3)
+    };
+    if tokio::time::timeout(grace, child.wait()).await.is_err() {
         let _ = child.kill().await;
     }
     Ok(())
 }
 
-/// Runs the core until the task is aborted, restarting it when it ends.
+/// Runs the core, restarting it when it ends, until `stop` turns true:
+/// then the core is told `bye` and given its grace to stop.
 pub async fn run_sidecar(
     config: SidecarConfig,
     sockets: Sockets,
     link: watch::Sender<Option<Peer>>,
+    mut stop: watch::Receiver<bool>,
 ) {
     let mut delay = FIRST_DELAY;
     loop {
         let started = Instant::now();
-        if let Err(error) = run_once(&config, &sockets, &link).await {
+        if let Err(error) = run_once(&config, &sockets, &link, &mut stop).await {
             tracing::warn!(target: "bridge.front", "{error}");
+        }
+        if *stop.borrow() {
+            return;
         }
         if started.elapsed() >= STEADY {
             delay = FIRST_DELAY;
         }
-        tokio::time::sleep(delay).await;
+        tokio::select! {
+            () = tokio::time::sleep(delay) => {}
+            _ = stop.wait_for(|stop| *stop) => return,
+        }
         delay = (delay * 2).min(MAX_DELAY);
     }
 }

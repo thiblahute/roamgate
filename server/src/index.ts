@@ -33,7 +33,13 @@ import {
   RECOMMENDED_PASSWORD_LENGTH,
 } from "./config/auth-token";
 import type { ServerWebSocket, WebSocketHandler } from "bun";
-import { recordCli, recordServe, recordSpawns } from "./contract-record/hooks";
+import {
+  recordCli,
+  recordFetch,
+  recordServe,
+  recordSpawns,
+  recordWebSocket,
+} from "./contract-record/hooks";
 import { contractRecorder } from "./contract-record/recorder";
 import { createAssistantContext } from "./assistant/context";
 import {
@@ -6782,8 +6788,12 @@ function serveFront(channel: { path: string; token: string }): void {
     token: channel.token,
     version: APP_VERSION,
     scheme: config.tls ? "https" : "http",
-    fetch: (req, server) => handleFetch(req, server),
-    websocket: bridgeWebSocket,
+    // Record mode: what the front forwards, recorded as when this server
+    // holds the port (the front's own routes are not recorded here).
+    fetch: recordFetch(recorder, "http", (req, server) =>
+      handleFetch(req, server),
+    ),
+    websocket: recordWebSocket(recorder, socketChannel, bridgeWebSocket),
     onClose: (error) => {
       log.info("the front's channel closed: stopping", {
         error: error?.message,
