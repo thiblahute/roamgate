@@ -28,6 +28,14 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 dbg_macro = "deny"
 
+[profile.dev]
+# Line tables only: full debug info made each agent's target/ 15 to 30 GB
+# and filled the desktop's disk; backtraces keep file and line.
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
+
 [profile.release]
 strip = true
 
