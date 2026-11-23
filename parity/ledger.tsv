@@ -2551,82 +2551,82 @@ server/src/http/public-origin.test.ts	tailscale serve's forwarded scheme and hos
 server/src/http/public-origin.test.ts	forwarded headers from another peer are ignored	rust-unit:roamgate-http:public_origin::tests::forwarded_headers_from_another_peer_are_ignored	HTTP front internals
 server/src/http/public-origin.test.ts	a *.ts.net name on the default port is https	rust-unit:roamgate-http:public_origin::tests::a_ts_net_name_on_the_default_port_is_https	HTTP front internals
 server/src/http/public-origin.test.ts	malformed forwarded values fall back to the request	rust-unit:roamgate-http:public_origin::tests::malformed_forwarded_values_fall_back_to_the_request	HTTP front internals
-server/src/http/rendered-pages.test.ts	are 128-bit hex, reused for the same pages, and expire	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	are bounded, oldest out first	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	refuse relative roots and non-http sites	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	unknown or malformed tokens are 404	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	stay inside their source	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	never allow the same origin, and frame only in Roamgate	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	static runs only Roamgate's script and reaches nothing	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a listed site runs its scripts and forms	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	HTML gets the helper under a nonce, the page's scripts blocked	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	other files keep their type and the sandbox	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	says which file was not found, and why	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	in the frame, a page saying so: it tells the preview and links back	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	refuses escapes, writes, and sends directories to their index	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a page without <head> still gets the helper first	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a link neither drags nor swallows a selection, Point mode keeps its crosshair	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a click on a card follows its empty link after a delay, mousemove shows a pointer	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a plain click follows the card after the delay	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a double click does not	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a click with text selected, or on a button, does not	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a selection made during the delay stops it	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	Point mode and modifier clicks do not	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a 600 KB page is served whole, past the text preview's 512 KiB	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a 17 MB page is served whole	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a page over its limit is refused with the reason	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a model over the SSH cache's limit is served, read each time	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a file the SSH read refuses as too large says so	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	never forwards credentials, never returns cookies	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	stays on the site	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	follows redirects within the site only	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	static sites only read	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	an HTML file is served from its checkout, or its listed folder	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	refuses escapes and non-HTML files	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a URL is served from its directory, or its listed site	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	writes a page's root-absolute URLs under its token	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	and a style sheet's	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	site pages map onto their base	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a dev server canonical's URLs go under the token	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	og:url counts, with other attribute orders	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a published canonical's URLs go under the token, other origins stay	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a canonical that is not http(s) leaves the page alone	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a page without a canonical is unchanged	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	static: only the helper runs, the SVG is left as it is	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	other paths under its token are not found	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a file runs its scripts, served from its folder alone	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a listed folder still serves the folder	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a URL runs its scripts in its own directory	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	off by default	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a page outside any checkout is served with its relative resources	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	escapes are refused before anything is read	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a token is its connection's: the same path elsewhere is another page	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a remote file is kept a few seconds, small ones only	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a page is kept from the frame's home, never doubled under another token's root	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a file's home is its directory under the served one, a URL's under the site	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	is found above the listed folder from a root-absolute link, then kept	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a root-absolute style sheet above the folder is served, a page redirects	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	clicking through the site stays under a token, never Roamgate's root	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a frame's request off its token gets a page saying so, never the login page	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a root-absolute link found in the folder itself stays there	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	an explicit root wins, and nothing is looked for	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	never escapes: no step up, nothing at or above home, not twice above	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a finder's answer that is not above the folder is refused	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	candidates stop below home and the filesystem's root	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	the host's script tries the same directories	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	is written into the pages of the listed site, with its own items only	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	is not given to a static page, a page with scripts on once, or without storage	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a value cannot close the script	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a url site is keyed by its listed entry	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	writes go to the token's site only, from its connection	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	is bounded: too many keys, too many characters	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	survives a restart	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a synchronous script finds the seeded items	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	setItem, removeItem and clear post to the parent	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	values are strings, and properties act as items	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a write over the quota is refused	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	sessionStorage lives in the page and posts nothing	rust-unit:roamgate-http	HTTP front internals
-server/src/http/rendered-pages.test.ts	a page without storage keeps what the browser gives	rust-unit:roamgate-http	HTTP front internals
+server/src/http/rendered-pages.test.ts	are 128-bit hex, reused for the same pages, and expire	rust-unit:roamgate-http:rendered_pages::tests::are_128_bit_hex_reused_for_the_same_pages_and_expire	HTTP front internals
+server/src/http/rendered-pages.test.ts	are bounded, oldest out first	rust-unit:roamgate-http:rendered_pages::tests::are_bounded_oldest_out_first	HTTP front internals
+server/src/http/rendered-pages.test.ts	refuse relative roots and non-http sites	rust-unit:roamgate-http:rendered_pages::tests::refuse_relative_roots_and_non_http_sites	HTTP front internals
+server/src/http/rendered-pages.test.ts	unknown or malformed tokens are 404	rust-unit:roamgate-http:rendered_pages::tests::unknown_or_malformed_tokens_are_404	HTTP front internals
+server/src/http/rendered-pages.test.ts	stay inside their source	rust-unit:roamgate-http:rendered_pages::tests::stay_inside_their_source	HTTP front internals
+server/src/http/rendered-pages.test.ts	never allow the same origin, and frame only in Roamgate	rust-unit:roamgate-http:rendered_pages::tests::never_allow_the_same_origin_and_frame_only_in_roamgate	HTTP front internals
+server/src/http/rendered-pages.test.ts	static runs only Roamgate's script and reaches nothing	rust-unit:roamgate-http:rendered_pages::tests::static_runs_only_roamgates_script_and_reaches_nothing	HTTP front internals
+server/src/http/rendered-pages.test.ts	a listed site runs its scripts and forms	rust-unit:roamgate-http:rendered_pages::tests::a_listed_site_runs_its_scripts_and_forms	HTTP front internals
+server/src/http/rendered-pages.test.ts	HTML gets the helper under a nonce, the page's scripts blocked	rust-unit:roamgate-http:rendered_pages::tests::html_gets_the_helper_under_a_nonce_the_pages_scripts_blocked	HTTP front internals
+server/src/http/rendered-pages.test.ts	other files keep their type and the sandbox	rust-unit:roamgate-http:rendered_pages::tests::other_files_keep_their_type_and_the_sandbox	HTTP front internals
+server/src/http/rendered-pages.test.ts	says which file was not found, and why	rust-unit:roamgate-http:rendered_pages::tests::says_which_file_was_not_found_and_why	HTTP front internals
+server/src/http/rendered-pages.test.ts	in the frame, a page saying so: it tells the preview and links back	rust-unit:roamgate-http:rendered_pages::tests::in_the_frame_a_page_saying_so_tells_the_preview_and_links_back	HTTP front internals
+server/src/http/rendered-pages.test.ts	refuses escapes, writes, and sends directories to their index	rust-unit:roamgate-http:rendered_pages::tests::refuses_escapes_writes_and_sends_directories_to_their_index	HTTP front internals
+server/src/http/rendered-pages.test.ts	a page without <head> still gets the helper first	rust-unit:roamgate-http:rendered_pages::tests::a_page_without_head_still_gets_the_helper_first	HTTP front internals
+server/src/http/rendered-pages.test.ts	a link neither drags nor swallows a selection, Point mode keeps its crosshair	rust-unit:roamgate-http:rendered_pages::tests::a_link_neither_drags_nor_swallows_a_selection_point_mode_keeps_its_crosshair	HTTP front internals
+server/src/http/rendered-pages.test.ts	a click on a card follows its empty link after a delay, mousemove shows a pointer	rust-unit:roamgate-http:rendered_pages::tests::a_click_on_a_card_follows_its_empty_link_after_a_delay_mousemove_shows_a_pointer	HTTP front internals
+server/src/http/rendered-pages.test.ts	a plain click follows the card after the delay	rust-unit:roamgate-http:rendered_helper_dom::a_plain_click_follows_the_card_after_the_delay	HTTP front internals
+server/src/http/rendered-pages.test.ts	a double click does not	rust-unit:roamgate-http:rendered_helper_dom::a_double_click_does_not	HTTP front internals
+server/src/http/rendered-pages.test.ts	a click with text selected, or on a button, does not	rust-unit:roamgate-http:rendered_helper_dom::a_click_with_text_selected_or_on_a_button_does_not	HTTP front internals
+server/src/http/rendered-pages.test.ts	a selection made during the delay stops it	rust-unit:roamgate-http:rendered_helper_dom::a_selection_made_during_the_delay_stops_it	HTTP front internals
+server/src/http/rendered-pages.test.ts	Point mode and modifier clicks do not	rust-unit:roamgate-http:rendered_helper_dom::point_mode_and_modifier_clicks_do_not	HTTP front internals
+server/src/http/rendered-pages.test.ts	a 600 KB page is served whole, past the text preview's 512 KiB	rust-unit:roamgate-http:rendered_pages::tests::a_600_kb_page_is_served_whole_past_the_text_previews_512_kib	HTTP front internals
+server/src/http/rendered-pages.test.ts	a 17 MB page is served whole	rust-unit:roamgate-http:rendered_pages::tests::a_17_mb_page_is_served_whole	HTTP front internals
+server/src/http/rendered-pages.test.ts	a page over its limit is refused with the reason	rust-unit:roamgate-http:rendered_pages::tests::a_page_over_its_limit_is_refused_with_the_reason	HTTP front internals
+server/src/http/rendered-pages.test.ts	a model over the SSH cache's limit is served, read each time	rust-unit:roamgate-http:rendered_pages::tests::a_model_over_the_ssh_caches_limit_is_served_read_each_time	HTTP front internals
+server/src/http/rendered-pages.test.ts	a file the SSH read refuses as too large says so	rust-unit:roamgate-http:rendered_pages::tests::a_file_the_ssh_read_refuses_as_too_large_says_so	HTTP front internals
+server/src/http/rendered-pages.test.ts	never forwards credentials, never returns cookies	rust-unit:roamgate-http:rendered_pages::tests::never_forwards_credentials_never_returns_cookies	HTTP front internals
+server/src/http/rendered-pages.test.ts	stays on the site	rust-unit:roamgate-http:rendered_pages::tests::stays_on_the_site	HTTP front internals
+server/src/http/rendered-pages.test.ts	follows redirects within the site only	rust-unit:roamgate-http:rendered_pages::tests::follows_redirects_within_the_site_only	HTTP front internals
+server/src/http/rendered-pages.test.ts	static sites only read	rust-unit:roamgate-http:rendered_pages::tests::static_sites_only_read	HTTP front internals
+server/src/http/rendered-pages.test.ts	an HTML file is served from its checkout, or its listed folder	rust-unit:roamgate-http:rendered_pages::tests::an_html_file_is_served_from_its_checkout_or_its_listed_folder	HTTP front internals
+server/src/http/rendered-pages.test.ts	refuses escapes and non-HTML files	rust-unit:roamgate-http:rendered_pages::tests::refuses_escapes_and_non_html_files	HTTP front internals
+server/src/http/rendered-pages.test.ts	a URL is served from its directory, or its listed site	rust-unit:roamgate-http:rendered_pages::tests::a_url_is_served_from_its_directory_or_its_listed_site	HTTP front internals
+server/src/http/rendered-pages.test.ts	writes a page's root-absolute URLs under its token	rust-unit:roamgate-http:rendered_pages::tests::writes_a_pages_root_absolute_urls_under_its_token	HTTP front internals
+server/src/http/rendered-pages.test.ts	and a style sheet's	rust-unit:roamgate-http:rendered_pages::tests::and_a_style_sheets	HTTP front internals
+server/src/http/rendered-pages.test.ts	site pages map onto their base	rust-unit:roamgate-http:rendered_pages::tests::site_pages_map_onto_their_base	HTTP front internals
+server/src/http/rendered-pages.test.ts	a dev server canonical's URLs go under the token	rust-unit:roamgate-http:rendered_pages::tests::a_dev_server_canonicals_urls_go_under_the_token	HTTP front internals
+server/src/http/rendered-pages.test.ts	og:url counts, with other attribute orders	rust-unit:roamgate-http:rendered_pages::tests::og_url_counts_with_other_attribute_orders	HTTP front internals
+server/src/http/rendered-pages.test.ts	a published canonical's URLs go under the token, other origins stay	rust-unit:roamgate-http:rendered_pages::tests::a_published_canonicals_urls_go_under_the_token_other_origins_stay	HTTP front internals
+server/src/http/rendered-pages.test.ts	a canonical that is not http(s) leaves the page alone	rust-unit:roamgate-http:rendered_pages::tests::a_canonical_that_is_not_http_leaves_the_page_alone	HTTP front internals
+server/src/http/rendered-pages.test.ts	a page without a canonical is unchanged	rust-unit:roamgate-http:rendered_pages::tests::a_page_without_a_canonical_is_unchanged	HTTP front internals
+server/src/http/rendered-pages.test.ts	static: only the helper runs, the SVG is left as it is	rust-unit:roamgate-http:rendered_pages::tests::static_only_the_helper_runs_the_svg_is_left_as_it_is	HTTP front internals
+server/src/http/rendered-pages.test.ts	other paths under its token are not found	rust-unit:roamgate-http:rendered_pages::tests::other_paths_under_its_token_are_not_found	HTTP front internals
+server/src/http/rendered-pages.test.ts	a file runs its scripts, served from its folder alone	rust-unit:roamgate-http:rendered_pages::tests::a_file_runs_its_scripts_served_from_its_folder_alone	HTTP front internals
+server/src/http/rendered-pages.test.ts	a listed folder still serves the folder	rust-unit:roamgate-http:rendered_pages::tests::a_listed_folder_still_serves_the_folder	HTTP front internals
+server/src/http/rendered-pages.test.ts	a URL runs its scripts in its own directory	rust-unit:roamgate-http:rendered_pages::tests::a_url_runs_its_scripts_in_its_own_directory	HTTP front internals
+server/src/http/rendered-pages.test.ts	off by default	rust-unit:roamgate-http:rendered_pages::tests::off_by_default	HTTP front internals
+server/src/http/rendered-pages.test.ts	a page outside any checkout is served with its relative resources	rust-unit:roamgate-http:rendered_pages::tests::a_page_outside_any_checkout_is_served_with_its_relative_resources	HTTP front internals
+server/src/http/rendered-pages.test.ts	escapes are refused before anything is read	rust-unit:roamgate-http:rendered_pages::tests::escapes_are_refused_before_anything_is_read	HTTP front internals
+server/src/http/rendered-pages.test.ts	a token is its connection's: the same path elsewhere is another page	rust-unit:roamgate-http:rendered_pages::tests::a_token_is_its_connections_the_same_path_elsewhere_is_another_page	HTTP front internals
+server/src/http/rendered-pages.test.ts	a remote file is kept a few seconds, small ones only	rust-unit:roamgate-http:rendered_pages::tests::a_remote_file_is_kept_a_few_seconds_small_ones_only	HTTP front internals
+server/src/http/rendered-pages.test.ts	a page is kept from the frame's home, never doubled under another token's root	rust-unit:roamgate-http:rendered_pages::tests::a_page_is_kept_from_the_frames_home_never_doubled_under_another_tokens_root	HTTP front internals
+server/src/http/rendered-pages.test.ts	a file's home is its directory under the served one, a URL's under the site	rust-unit:roamgate-http:rendered_pages::tests::a_files_home_is_its_directory_under_the_served_one_a_urls_under_the_site	HTTP front internals
+server/src/http/rendered-pages.test.ts	is found above the listed folder from a root-absolute link, then kept	rust-unit:roamgate-http:rendered_pages::tests::is_found_above_the_listed_folder_from_a_root_absolute_link_then_kept	HTTP front internals
+server/src/http/rendered-pages.test.ts	a root-absolute style sheet above the folder is served, a page redirects	rust-unit:roamgate-http:rendered_pages::tests::a_root_absolute_style_sheet_above_the_folder_is_served_a_page_redirects	HTTP front internals
+server/src/http/rendered-pages.test.ts	clicking through the site stays under a token, never Roamgate's root	rust-unit:roamgate-http:rendered_pages::tests::clicking_through_the_site_stays_under_a_token_never_roamgates_root	HTTP front internals
+server/src/http/rendered-pages.test.ts	a frame's request off its token gets a page saying so, never the login page	rust-unit:roamgate-http:rendered_pages::tests::a_frames_request_off_its_token_gets_a_page_saying_so_never_the_login_page	HTTP front internals
+server/src/http/rendered-pages.test.ts	a root-absolute link found in the folder itself stays there	rust-unit:roamgate-http:rendered_pages::tests::a_root_absolute_link_found_in_the_folder_itself_stays_there	HTTP front internals
+server/src/http/rendered-pages.test.ts	an explicit root wins, and nothing is looked for	rust-unit:roamgate-http:rendered_pages::tests::an_explicit_root_wins_and_nothing_is_looked_for	HTTP front internals
+server/src/http/rendered-pages.test.ts	never escapes: no step up, nothing at or above home, not twice above	rust-unit:roamgate-http:rendered_pages::tests::never_escapes_no_step_up_nothing_at_or_above_home_not_twice_above	HTTP front internals
+server/src/http/rendered-pages.test.ts	a finder's answer that is not above the folder is refused	rust-unit:roamgate-http:rendered_pages::tests::a_finders_answer_that_is_not_above_the_folder_is_refused	HTTP front internals
+server/src/http/rendered-pages.test.ts	candidates stop below home and the filesystem's root	rust-unit:roamgate-http:rendered_pages::tests::candidates_stop_below_home_and_the_filesystems_root	HTTP front internals
+server/src/http/rendered-pages.test.ts	the host's script tries the same directories	rust-unit:roamgate-http:rendered_pages::tests::the_hosts_script_tries_the_same_directories	HTTP front internals
+server/src/http/rendered-pages.test.ts	is written into the pages of the listed site, with its own items only	rust-unit:roamgate-http:rendered_pages::tests::is_written_into_the_pages_of_the_listed_site_with_its_own_items_only	HTTP front internals
+server/src/http/rendered-pages.test.ts	is not given to a static page, a page with scripts on once, or without storage	rust-unit:roamgate-http:rendered_pages::tests::is_not_given_to_a_static_page_a_page_with_scripts_on_once_or_without_storage	HTTP front internals
+server/src/http/rendered-pages.test.ts	a value cannot close the script	rust-unit:roamgate-http:rendered_pages::tests::a_value_cannot_close_the_script	HTTP front internals
+server/src/http/rendered-pages.test.ts	a url site is keyed by its listed entry	rust-unit:roamgate-http:rendered_pages::tests::a_url_site_is_keyed_by_its_listed_entry	HTTP front internals
+server/src/http/rendered-pages.test.ts	writes go to the token's site only, from its connection	rust-unit:roamgate-http:rendered_pages::tests::writes_go_to_the_tokens_site_only_from_its_connection	HTTP front internals
+server/src/http/rendered-pages.test.ts	is bounded: too many keys, too many characters	rust-unit:roamgate-http:rendered_pages::tests::is_bounded_too_many_keys_too_many_characters	HTTP front internals
+server/src/http/rendered-pages.test.ts	survives a restart	rust-unit:roamgate-http:rendered_pages::tests::survives_a_restart	HTTP front internals
+server/src/http/rendered-pages.test.ts	a synchronous script finds the seeded items	rust-unit:roamgate-http:rendered_helper_dom::a_synchronous_script_finds_the_seeded_items	HTTP front internals
+server/src/http/rendered-pages.test.ts	setItem, removeItem and clear post to the parent	rust-unit:roamgate-http:rendered_helper_dom::set_item_remove_item_and_clear_post_to_the_parent	HTTP front internals
+server/src/http/rendered-pages.test.ts	values are strings, and properties act as items	rust-unit:roamgate-http:rendered_helper_dom::values_are_strings_and_properties_act_as_items	HTTP front internals
+server/src/http/rendered-pages.test.ts	a write over the quota is refused	rust-unit:roamgate-http:rendered_helper_dom::a_write_over_the_quota_is_refused	HTTP front internals
+server/src/http/rendered-pages.test.ts	sessionStorage lives in the page and posts nothing	rust-unit:roamgate-http:rendered_helper_dom::session_storage_lives_in_the_page_and_posts_nothing	HTTP front internals
+server/src/http/rendered-pages.test.ts	a page without storage keeps what the browser gives	rust-unit:roamgate-http:rendered_helper_dom::a_page_without_storage_keeps_what_the_browser_gives	HTTP front internals
 server/src/http/static-files.test.ts	the app links a credentialed standalone manifest with existing install icons	rust-unit:roamgate-http:static_files::tests::the_app_links_a_credentialed_standalone_manifest_with_existing_install_icons	HTTP front internals
 server/src/http/static-files.test.ts	source runs fall back to the built public directory	rust-unit:roamgate-http:static_files::tests::source_runs_fall_back_to_the_built_public_directory	HTTP front internals
 server/src/http/static-files.test.ts	instance names update both manifest labels without changing installation identity	rust-unit:roamgate-http:static_files::tests::instance_names_update_both_manifest_labels_without_changing_installation_identity	HTTP front internals
