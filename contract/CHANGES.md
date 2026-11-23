@@ -6,6 +6,22 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.3
+
+inventory: 7502f4677baf20ae3c3b0888708790b4aad9f3903f373ad9ce31068e3edb5176
+
+No inventory change; the schemas follow shared/ (all families):
+
+- schemas: `shared/agentSession.schema.json` (AgentCommand, AgentTask,
+  AgentTaskSummary, PublishedArtifact, SessionArtifact, WorkflowAgentView,
+  WorkflowView) and `shared/agentHistory.schema.json` (HistoryCursor,
+  HistoryEntry, HistoryUpdate), the session and History wire types the server
+  now takes from shared/.
+- schemas: `shared/mrEffortBoard.schema.json` is gone with its module, which
+  moved into the web app (MrEffortColumn was never on the wire).
+- the check fails on a schema file no module of shared/ or the server's
+  types makes any more, and `scaffold.ts --regenerate` deletes such files.
+
 ## 1.2
 
 inventory: 7502f4677baf20ae3c3b0888708790b4aad9f3903f373ad9ce31068e3edb5176

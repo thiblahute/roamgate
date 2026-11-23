@@ -8,7 +8,7 @@
  * `check.test.ts` regenerates and fails when the files differ, so a type
  * change reaches the contract in the same commit.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { createGenerator, type Config } from "ts-json-schema-generator";
 import ts from "typescript-api";
@@ -211,7 +211,17 @@ function applyReconciliations(
   return schemas;
 }
 
+/** The schema files in contract/schemas, relative to it, sorted. */
+export function schemaFilesOnDisk(): string[] {
+  return [
+    ...new Bun.Glob("**/*.schema.json").scanSync({ cwd: join(REPO, SCHEMAS) }),
+  ].sort();
+}
+
+/** Writes the generated schemas and deletes the ones no type makes any more. */
 export function writeSchemas(schemas = generateSchemas()): void {
+  for (const file of schemaFilesOnDisk())
+    if (!(file in schemas)) rmSync(join(REPO, SCHEMAS, file));
   for (const [file, schema] of Object.entries(schemas)) {
     writeContractFile(
       join(REPO, SCHEMAS, file),

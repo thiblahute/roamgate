@@ -1,0 +1,329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/agentHistory.schema.json",
+  "x-generated-from": "shared/agentHistory.ts",
+  "$defs": {
+    "HistoryCursor": {
+      "type": "object",
+      "properties": {
+        "epoch": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "epoch",
+        "revision"
+      ],
+      "additionalProperties": false,
+      "description": "What the chat shows of each stream of a `!` line from the transcript."
+    },
+    "HistoryEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "user",
+            "assistant",
+            "tool"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "message",
+            "tool_call",
+            "tool_result",
+            "error"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "sent_at": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        },
+        "source_call_id": {
+          "type": "string"
+        },
+        "is_error": {
+          "type": "boolean"
+        },
+        "queued": {
+          "type": "boolean"
+        },
+        "compact_summary": {
+          "type": "boolean"
+        },
+        "turn_end": {
+          "type": "boolean"
+        },
+        "artifact": {
+          "$ref": "agentSession.schema.json#/$defs/PublishedArtifact"
+        },
+        "created_request": {
+          "type": "string"
+        },
+        "agent_message": {
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "to",
+            "text"
+          ],
+          "additionalProperties": false
+        },
+        "agent_message_result": {
+          "type": "object",
+          "properties": {
+            "sent": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "sent",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "file_edit": {
+          "$ref": "fileEdits.schema.json#/$defs/FileEdit"
+        },
+        "dismissed": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "roamgate_write": {
+          "$ref": "toolSummary.schema.json#/$defs/RoamgateWrite"
+        },
+        "text_bytes": {
+          "type": "number"
+        },
+        "text_hash": {
+          "type": "string"
+        },
+        "message_id": {
+          "type": "string"
+        },
+        "block_index": {
+          "type": "number"
+        },
+        "uuid": {
+          "type": "string"
+        },
+        "images": {
+          "type": "number"
+        },
+        "injected": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "$ref": "injectedMessage.schema.json#/$defs/InjectedKind"
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "label"
+          ],
+          "additionalProperties": false
+        },
+        "rewound": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "sent_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "sent_at"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "command": {
+          "$ref": "slashCommand.schema.json#/$defs/SlashCommand"
+        },
+        "command_output": {
+          "type": "boolean",
+          "const": true
+        },
+        "shell": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "stdout": {
+              "type": "string"
+            },
+            "stderr": {
+              "type": "string"
+            },
+            "truncated": {
+              "type": "boolean"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "running",
+                "done",
+                "stopped",
+                "failed"
+              ]
+            },
+            "exit_code": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "started_at": {
+              "type": "string"
+            },
+            "finished_at": {
+              "type": "string"
+            },
+            "host": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "kind",
+        "text",
+        "sent_at"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryUpdate": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "const": "snapshot"
+            },
+            "entries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HistoryEntry"
+              }
+            },
+            "history_version": {
+              "type": "number",
+              "const": 2
+            },
+            "cursor": {
+              "$ref": "#/$defs/HistoryCursor"
+            },
+            "window_limit": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "cursor",
+            "entries",
+            "history_version",
+            "mode",
+            "window_limit"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "const": "delta"
+            },
+            "base_revision": {
+              "type": "number"
+            },
+            "upserts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/HistoryEntry"
+              }
+            },
+            "removed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "order": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "history_version": {
+              "type": "number",
+              "const": 2
+            },
+            "cursor": {
+              "$ref": "#/$defs/HistoryCursor"
+            },
+            "window_limit": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "base_revision",
+            "cursor",
+            "history_version",
+            "mode",
+            "removed",
+            "upserts",
+            "window_limit"
+          ]
+        }
+      ]
+    }
+  }
+}

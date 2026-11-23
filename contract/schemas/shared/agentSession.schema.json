@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://roamgate.dev/contract/schemas/shared/agentSession.schema.json",
+  "x-generated-from": "shared/agentSession.ts",
+  "$defs": {
+    "AgentCommand": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description"
+      ],
+      "additionalProperties": false,
+      "description": "A command the user can type in a Claude session: `/name`."
+    },
+    "AgentTask": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The tool call that started it."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "command",
+            "agent",
+            "teammate",
+            "workflow",
+            "monitor"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string",
+          "description": "The command, or the subagent's type."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "completed",
+            "failed",
+            "stopped",
+            "lost"
+          ],
+          "description": "Lost: no end notice, and nothing runs it any more: still running a day on (gone with its session), or a command whose output has gone silent with no process holding it open."
+        },
+        "name": {
+          "type": "string",
+          "description": "A teammate's name."
+        },
+        "runId": {
+          "type": "string",
+          "description": "A workflow's run: its journal and record beside the session."
+        },
+        "exitCode": {
+          "type": "number"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "resumedAt": {
+          "type": "string",
+          "description": "A subagent sent a message after it had finished: Claude Code resumes it under the same id, with no new start record, and notifies again when it stops. When that last happened."
+        },
+        "endedAt": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string",
+          "description": "Background task or agent id, as notifications name it."
+        },
+        "agentId": {
+          "type": "string",
+          "description": "A subagent's conversation: subagents/agent-<id>.jsonl beside the session."
+        },
+        "outputFile": {
+          "type": "string"
+        },
+        "rewound": {
+          "type": "boolean",
+          "description": "Started in a part of the conversation a rewind took back. Listed only while it still runs (a teammate also while idle): what it did is gone from the conversation, not the work it goes on doing."
+        },
+        "foreground": {
+          "type": "boolean",
+          "description": "A command run in the foreground that has not answered yet: what the turn waits on now. Never a background task."
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "status"
+      ],
+      "additionalProperties": false,
+      "description": "What a Claude session ran on the side: background commands, monitors and subagents, with how each ended. Read from the transcript: the tool call that started it, its result (task or agent id, output file), and the task notification Claude Code adds when it ends."
+    },
+    "AgentTaskSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The tool call that started it."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "command",
+            "agent",
+            "teammate",
+            "workflow",
+            "monitor"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "running",
+            "completed",
+            "failed",
+            "stopped",
+            "lost"
+          ],
+          "description": "Lost: no end notice, and nothing runs it any more: still running a day on (gone with its session), or a command whose output has gone silent with no process holding it open."
+        },
+        "name": {
+          "type": "string",
+          "description": "A teammate's name."
+        },
+        "startedAt": {
+          "type": "string"
+        },
+        "resumedAt": {
+          "type": "string",
+          "description": "A subagent sent a message after it had finished: Claude Code resumes it under the same id, with no new start record, and notifies again when it stops. When that last happened."
+        },
+        "endedAt": {
+          "type": "string"
+        },
+        "rewound": {
+          "type": "boolean",
+          "description": "Started in a part of the conversation a rewind took back. Listed only while it still runs (a teammate also while idle): what it did is gone from the conversation, not the work it goes on doing."
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "status"
+      ],
+      "additionalProperties": false,
+      "description": "What the Workspaces list shows of a task: no output, no long summaries."
+    },
+    "PublishedArtifact": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "url",
+        "title"
+      ],
+      "additionalProperties": false,
+      "description": "A page an agent published with Claude Code's Artifact tool."
+    },
+    "SessionArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "published_at": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "title",
+        "url"
+      ],
+      "description": "An artifact as the session left it: its last publish."
+    },
+    "WorkflowAgentView": {
+      "type": "object",
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "running",
+            "done",
+            "failed"
+          ]
+        },
+        "resultPreview": {
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "startedAt": {
+          "type": "number",
+          "description": "When it started, in ms since the epoch."
+        },
+        "lastActiveAt": {
+          "type": "number",
+          "description": "While it runs: when its conversation last changed."
+        }
+      },
+      "required": [
+        "agentId",
+        "label",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "WorkflowView": {
+      "type": "object",
+      "properties": {
+        "phases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "agents": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/WorkflowAgentView"
+                }
+              }
+            },
+            "required": [
+              "title",
+              "agents"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "result": {
+          "type": "string",
+          "description": "Once it has ended: its record's result, shortened."
+        }
+      },
+      "required": [
+        "phases"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

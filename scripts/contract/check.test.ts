@@ -19,7 +19,7 @@ import {
   inventory,
   sqlStatements,
 } from "./inventory";
-import { generateSchemas } from "./schemas";
+import { generateSchemas, schemaFilesOnDisk } from "./schemas";
 
 const HOW =
   "Update contract/ (bun scripts/contract/scaffold.ts adds entries for new names; remove the entries of names that are gone), log the change in contract/CHANGES.md and record the new digest in contract/contract.json. See contract/README.md.";
@@ -110,7 +110,10 @@ describe("generated parts of the contract", () => {
   });
 
   test("the JSON Schemas match the TypeScript types", () => {
-    for (const [file, schema] of Object.entries(generateSchemas()))
+    const generated = generateSchemas();
+    // A schema whose module is gone is stale: --regenerate deletes it.
+    expect(schemaFilesOnDisk()).toEqual(Object.keys(generated).sort());
+    for (const [file, schema] of Object.entries(generated))
       expect({ file, schema }).toEqual({
         file,
         schema: readJson(`schemas/${file}`),
