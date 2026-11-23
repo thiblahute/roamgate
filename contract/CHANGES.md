@@ -6,6 +6,30 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.15
+
+inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b
+
+Ranger served by the Rust core (Phase 11, S23; wire/core-channel.md, The
+assistant family), while the owners table gives the assistant family to
+Rust. The browser surface (`bridge.assistant.*`, the `assistant` and
+`assistant_notification` pushes) is unchanged; the inventory too.
+
+- wire: the front's own calls `internal.assistant.connections` (the
+  connection table after each change), `.resume`, `.deliver_chat_comments`
+  and `.release` (before the front takes Ranger back).
+- wire, reverse targets: `assistant.release` (Bun disposes its own service
+  before the core starts its), `assistant.connections`, `assistant.host`
+  (what Ranger's context reads of the runtimes Bun owns, by `op`, with the
+  dispatch gates and `gate_revoke`), `assistant.workspace_tree`,
+  `assistant.archive` and `assistant.chat_thread_reply`; a message Ranger
+  may show crosses as code `assistant_user` or `unsupported_platform`.
+- wire, pushes: the core's `{assistant}` (key `assistant`) and
+  `{assistant_notification}` go to the browsers through the front's
+  per-socket deltas and the notification feed, as Bun's own service's.
+- env: run from source, the front gives the core `ROAMGATE_PI_SIDECAR`
+  (Bun's `server/src/assistant/pi-sidecar-main.ts`) unless it is set.
+
 ## 1.14
 
 inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b
