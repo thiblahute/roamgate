@@ -317,7 +317,6 @@ import {
   serverLogger,
 } from "./utils/logger";
 import { runProcessWithCodeTimeout, shQuote } from "./utils/process-utils";
-import { runBinaryProcessWithTimeout } from "./workspace/process";
 import { isStandaloneBinary } from "./config/standalone";
 import { ChannelError } from "./core-channel/channel";
 import {
