@@ -64,7 +64,13 @@ A test server stays in its own world with two more variables:
 `ROAMGATE_HOST_SPAWN` names the host-spawn it runs from a toolbox (empty for
 none), so it never asks the real host's GameMode, and
 `ROAMGATE_SSH_RUNTIME_DIR` replaces `/tmp` for its SSH masters and forwards,
-so its orphan sweep never touches another server's.
+so its orphan sweep never touches another server's. Its voice setup
+assistant reads two more, honoured from source only, like the test clock:
+`ROAMGATE_TEST_VOICE_HARDWARE` names a JSON file with the hardware
+`GET /api/voice/setup` reports instead of the host's, and
+`ROAMGATE_TEST_VOICE_MODELS_URL` a base URL the model downloads go to
+instead of Hugging Face and GitHub (`https://host/path` becomes
+`<base>/host/path`).
 
 ### Manual browser checks
 

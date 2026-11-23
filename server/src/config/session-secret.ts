@@ -145,6 +145,20 @@ export function sessionSecretPath(
 }
 
 /**
+ * Where the cookies ended by a logout are kept (revoked-sessions.ts), next
+ * to the signing secret of the same instance.
+ */
+export function revokedSessionsPath(
+  settingsPath = roamgateEnv("SETTINGS_PATH"),
+  root = dataRoot(),
+): string {
+  const filename = settingsPath
+    ? `session-secret-${createHash("sha256").update(resolve(settingsPath)).digest("hex")}.revoked.json`
+    : "session-secret.revoked.json";
+  return resolve(join(root, filename));
+}
+
+/**
  * Discard the signing secret so the next startup signs with fresh material and
  * every existing browser session becomes invalid. Returns false when absent.
  */

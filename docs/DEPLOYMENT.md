@@ -2098,6 +2098,9 @@ both like passwords.
   the service and write a fresh 64-character lowercase hex secret (mode `0600`).
 - `roamgate auth revoke-sessions` signs out every browser without changing
   credentials.
+- Logging out ends that browser's cookie for good: a hash of it and its
+  expiry stay in `session-secret.revoked.json` (or
+  `session-secret-<sha256>.revoked.json`) until it would have expired anyway.
 - Changing the password or PIN also signs out every browser on the next start.
   Stop all listeners of the instance before changing credentials.
 - If startup was killed and a stale `session-secret*.json.lock` directory

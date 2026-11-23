@@ -518,7 +518,12 @@ export function createConversationService<Ws>(
       data: {
         ...event,
         pane_id: paneId,
-        session_id: leases.get(paneId)?.session_id ?? null,
+        // An event naming its session (`session`: the new one, before the
+        // lease moves to it; `lease`) keeps it.
+        session_id:
+          "session_id" in event
+            ? event.session_id
+            : (leases.get(paneId)?.session_id ?? null),
       },
     } as AgentChatEventEnvelope;
     for (const ws of watchers) options.send(ws, envelope);

@@ -907,6 +907,53 @@ describe("speech rate", () => {
     expect(new VoiceHelper(() => ({ error: "none" })).speechRate()).toBe(1.2);
   });
 
+  test("a voice.json kept before the setup answers with the settings it holds", async () => {
+    // POST /api/voice/settings with no voice.json writes one holding only
+    // the setting: not a usable configuration, yet the answer and GET
+    // /api/voice say what it holds, not the default.
+    const path = join(mkdtempSync(join(tmpdir(), "voice-rate-")), "voice.json");
+    const helper = new VoiceHelper(
+      () => readVoiceConfig(path),
+      undefined,
+      (rate) => writeSpeechRate(rate, path),
+      (ms) => writeMaxPause(ms, path),
+    );
+    const routes = createVoiceRoutes(helper);
+    const post = async (body: object) =>
+      (await routes(
+        new Request("http://roamgate/api/voice/settings", {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: { [VOICE_REQUEST_HEADER]: "1" },
+        }),
+        "/api/voice/settings",
+      ))!;
+    const saved = await post({ speech_rate: 1.5 });
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual({ speech_rate: 1.5 });
+    expect(await (await post({ max_pause_ms: 5000 })).json()).toEqual({
+      max_pause_ms: 5000,
+    });
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
+      speech_rate: 1.5,
+      max_pause_ms: 5000,
+    });
+    const status = await routes(
+      new Request("http://roamgate/api/voice"),
+      "/api/voice",
+    );
+    expect(await status!.json()).toMatchObject({
+      available: false,
+      speech_rate: 1.5,
+      max_pause_ms: 5000,
+    });
+    // Invalid values in the file are not reported.
+    writeFileSync(path, JSON.stringify({ speech_rate: 9, max_pause_ms: 1 }));
+    expect(readVoiceConfig(path)).not.toHaveProperty("stored");
+    expect(helper.speechRate()).toBe(1.2);
+    expect(helper.maxPauseMs()).toBe(8000);
+  });
+
   test("voice.json refuses a rate out of range", () => {
     expect(readVoiceConfig(configFile({ ...real, speech_rate: 1.3 }))).toEqual({
       ...real,

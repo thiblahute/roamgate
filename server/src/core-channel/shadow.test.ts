@@ -141,6 +141,22 @@ describe("shadow reads", () => {
       "no answer within 10 s, abandoned",
       "no answer within 10 s, abandoned",
     ]);
+    // A run that gives up on the abort itself (the channel cancels the
+    // call, rejecting it with "cancelled") still logs the deadline.
+    s.timers.advance(5000);
+    const cancelled = s.instance.offer({
+      ...request("c", 1, 1),
+      run: (signal) =>
+        new Promise((_, reject) =>
+          signal.addEventListener("abort", () =>
+            reject(new Error("cancelled")),
+          ),
+        ),
+    });
+    await Bun.sleep(1);
+    s.timers.advance(10_000);
+    expect(await cancelled).toBe("done");
+    expect(s.lines().at(-1)?.error).toBe("no answer within 10 s, abandoned");
     const big = "x".repeat(256 * 1024 + 1);
     expect(await s.instance.offer(request("f", big, big))).toBe("skipped");
     s.done();

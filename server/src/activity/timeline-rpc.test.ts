@@ -55,3 +55,55 @@ test("today by default, from the day start setting", async () => {
     "from must be a date",
   );
 });
+
+test("connections in exclude.connections are left out, as by the CLI", async () => {
+  const { directory, options } = setup({
+    enabled: true,
+    exclude: { connections: ["work"], subjects: [] },
+  });
+  const at = (hour: number) => new Date(2026, 10, 2, hour).getTime();
+  const store = openActivityStore(directory);
+  const session = store.startSession(at(1));
+  for (const [id, connectionId, start] of [
+    ["ws_a", "local", at(2)],
+    ["ws_b", "work", at(3)],
+  ] as const) {
+    store.upsertWorkspace({
+      id,
+      connectionId,
+      name: id,
+      path: `/src/${id}`,
+      herdrWorkspaceId: null,
+      repoRoot: null,
+      repoIsWorktree: null,
+      seenAt: at(1),
+    });
+    const client = { id: "c1", kind: "desktop" } as const;
+    const span = store.append({
+      ts: start,
+      kind: "workspace.focus",
+      connectionId,
+      session,
+      workspaceId: id,
+      client,
+      source: "browser",
+    });
+    store.append({
+      ts: start + 30 * 60_000,
+      kind: "workspace.blur",
+      connectionId,
+      session,
+      workspaceId: id,
+      reason: "switch",
+      client,
+      source: "browser",
+      span,
+    });
+  }
+  store.close();
+  const result = await readActivityTimeline(options, { from: "2026-11-02" });
+  if (!result.recording) throw new Error("not recording");
+  const focus = result.days.flatMap((day) => day.focus);
+  expect(focus.map((span) => span.connection_id)).toEqual(["local"]);
+  expect(result.workspaces.map((entry) => entry.id)).toEqual(["ws_a"]);
+});

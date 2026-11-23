@@ -3,6 +3,10 @@ import { runInNewContext } from "node:vm";
 import { createHmac } from "node:crypto";
 import { Window } from "happy-dom";
 import { createAuthHandlers, unauthenticatedLoginRedirect } from "./auth";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { openRevokedSessions } from "../config/revoked-sessions";
 import { browserUrlFor, withLoginToken } from "../config/server-config";
 
 const parserWindow = new Window({
@@ -764,6 +768,56 @@ describe("browser logout", () => {
       expect((await login()).status).toBe(200);
     },
   );
+
+  test("ends the cookie on the server too, across a restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "roamgate-logout-"));
+    try {
+      const path = join(directory, "session-secret.revoked.json");
+      const start = () =>
+        createAuthHandlers({
+          sessionSecret: "a".repeat(64),
+          password: "test-login-secret",
+          revoked: openRevokedSessions(path),
+        });
+      const handlers = start();
+      const login = async () =>
+        cookieHeader(
+          await handlers.handleLogin(
+            new Request("http://example.test/api/login", {
+              method: "POST",
+              body: JSON.stringify({ password: "test-login-secret" }),
+            }),
+            "127.0.0.1",
+          ),
+        );
+      const authed = (auth: typeof handlers, cookie: string) =>
+        auth.isAuthed(
+          new Request("http://example.test/", { headers: { cookie } }),
+        );
+      const first = await login();
+      const second = await login();
+      expect(authed(handlers, first)).toBe(true);
+      const logout = handlers.handleLogout(
+        new Request("http://example.test/api/logout", {
+          method: "POST",
+          headers: { cookie: first, "x-roamgate-logout": "1" },
+        }),
+      );
+      expect(logout.status).toBe(204);
+      // A copy of the ended cookie no longer logs in; the other browser's does.
+      expect(authed(handlers, first)).toBe(false);
+      expect(authed(handlers, second)).toBe(true);
+      const restarted = start();
+      expect(authed(restarted, first)).toBe(false);
+      expect(authed(restarted, second)).toBe(true);
+      // The cookie itself is never written down.
+      const kept = readFileSync(path, "utf8");
+      expect(kept).not.toContain(first.split("=")[1]!);
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 
   test("rejects GET and cross-site logout, but allows retry without a cookie", () => {
     const handlers = createAuthHandlers({

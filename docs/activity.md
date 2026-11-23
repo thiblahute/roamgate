@@ -198,7 +198,8 @@ system a bounded amount at a time.
 The bridge-global RPC `bridge.activity.timeline` (`{"from": "YYYY-MM-DD",
 "to": "YYYY-MM-DD"}`, both included, at most 92 days; either alone means that
 day, neither means today) returns `{"recording": false}` while the bridge does
-not record, else the days of the range. A day runs from `day_start` to
+not record, else the days of the range, without the connections in
+`exclude.connections` (as `roamgate activity`). A day runs from `day_start` to
 `day_start` the next day, in the bridge's local time. Times are ISO 8601 with
 the offset; durations are milliseconds. Each day has:
 

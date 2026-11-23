@@ -96,7 +96,13 @@ export class ShadowSampler {
           ),
         ]);
       } catch (error) {
-        this.record(request, { error: (error as Error).message });
+        // On the deadline the run's own abort listener (the channel's
+        // cancel) rejects first, with "cancelled": say it timed out.
+        this.record(request, {
+          error: controller.signal.aborted
+            ? `no answer within ${SHADOW_TIMEOUT_MS / 1000} s, abandoned`
+            : (error as Error).message,
+        });
         return "done";
       } finally {
         this.timers.clearTimeout(timer);

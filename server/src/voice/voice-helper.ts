@@ -362,9 +362,37 @@ export function voiceConfigPath(root = dataRoot()): string {
   return join(root, "voice.json");
 }
 
+/**
+ * The reading settings POST /api/voice/settings keeps in a voice.json that
+ * is not a usable configuration yet (no voice.json before the setup, or
+ * one missing its models): those of its values that are valid, which the
+ * setup keeps and GET /api/voice reports meanwhile.
+ */
+export type StoredVoiceSettings = {
+  speech_rate?: number;
+  max_pause_ms?: number;
+};
+
+/** readVoiceConfig's answer when voice.json is not a usable configuration. */
+export type VoiceConfigError = { error: string; stored?: StoredVoiceSettings };
+
+/** The valid reading settings of a voice.json `config`. */
+function storedVoiceSettings(
+  config: Record<string, unknown>,
+): StoredVoiceSettings | undefined {
+  const stored: StoredVoiceSettings = {};
+  if (isSpeechRate(config.speech_rate)) stored.speech_rate = config.speech_rate;
+  if (
+    typeof config.max_pause_ms === "number" &&
+    maxPauseMs(config.max_pause_ms) === config.max_pause_ms
+  )
+    stored.max_pause_ms = config.max_pause_ms;
+  return Object.keys(stored).length ? stored : undefined;
+}
+
 export function readVoiceConfig(
   path = voiceConfigPath(),
-): VoiceConfig | { error: string } {
+): VoiceConfig | VoiceConfigError {
   if (!existsSync(path)) return { error: `No voice configuration (${path})` };
   let parsed: unknown;
   try {
@@ -375,6 +403,16 @@ export function readVoiceConfig(
   if (!parsed || typeof parsed !== "object")
     return { error: `${path}: not an object` };
   const config = parsed as Record<string, unknown>;
+  const checked = checkVoiceConfig(config, path);
+  if (!("error" in checked)) return checked;
+  const stored = storedVoiceSettings(config);
+  return stored ? { ...checked, stored } : checked;
+}
+
+function checkVoiceConfig(
+  config: Record<string, unknown>,
+  path: string,
+): VoiceConfig | { error: string } {
   for (const key of REQUIRED) {
     if (typeof config[key] !== "string" || !config[key])
       return { error: `${path}: ${key} is required` };
@@ -1153,7 +1191,11 @@ export class VoiceHelper {
    */
   maxPauseMs(): number {
     const config = this.config();
-    return maxPauseMs("error" in config ? undefined : config.max_pause_ms);
+    return maxPauseMs(
+      "error" in config
+        ? (config as VoiceConfigError).stored?.max_pause_ms
+        : config.max_pause_ms,
+    );
   }
 
   setMaxPauseMs(ms: number) {
@@ -1163,7 +1205,11 @@ export class VoiceHelper {
   /** How fast replies are read (`speech_rate`). */
   speechRate(): number {
     const config = this.config();
-    return speechRateOr("error" in config ? undefined : config.speech_rate);
+    return speechRateOr(
+      "error" in config
+        ? (config as VoiceConfigError).stored?.speech_rate
+        : config.speech_rate,
+    );
   }
 
   /**

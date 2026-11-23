@@ -4,6 +4,10 @@ import {
   assertValidAuthPassword,
   assertValidAuthPin,
 } from "../config/auth-token";
+import {
+  openRevokedSessions,
+  type RevokedSessions,
+} from "../config/revoked-sessions";
 import { readJsonBody } from "./json-body";
 import { renderLoginPage } from "./login-page";
 
@@ -51,8 +55,11 @@ export function createAuthHandlers(args: {
   /** Host command that prints the generated token, shown on the login page. */
   tokenCommand?: string;
   secureCookies?: boolean;
+  /** Cookies ended by a logout (revoked-sessions.ts); memory only by default. */
+  revoked?: RevokedSessions;
 }) {
   const authRequired = args.authRequired ?? true;
+  const revoked = args.revoked ?? openRevokedSessions(null);
   if (authRequired) {
     assertValidAuthPassword(args.password);
     if (!/^[a-f0-9]{64}$/.test(args.sessionSecret)) {
@@ -207,23 +214,28 @@ export function createAuthHandlers(args: {
     );
   }
 
-  function isValidSignedToken(token: string): boolean {
+  /** The expiry (seconds) of a cookie this server signed, still valid. */
+  function signedTokenExpiry(token: string): number | null {
     const [payload, signature, ...extra] = token.split(".");
-    if (!payload || !signature || extra.length > 0) return false;
+    if (!payload || !signature || extra.length > 0) return null;
     const expected = sign(payload);
     const actualBuffer = Buffer.from(signature, "hex");
     const expectedBuffer = Buffer.from(expected, "hex");
-    if (actualBuffer.length !== expectedBuffer.length) return false;
-    if (!timingSafeEqual(actualBuffer, expectedBuffer)) return false;
+    if (actualBuffer.length !== expectedBuffer.length) return null;
+    if (!timingSafeEqual(actualBuffer, expectedBuffer)) return null;
     try {
       const decoded = JSON.parse(base64UrlDecode(payload)) as { exp?: unknown };
-      return (
-        typeof decoded.exp === "number" &&
+      return typeof decoded.exp === "number" &&
         decoded.exp > Math.floor(Date.now() / 1000)
-      );
+        ? decoded.exp
+        : null;
     } catch {
-      return false;
+      return null;
     }
+  }
+
+  function isValidSignedToken(token: string): boolean {
+    return signedTokenExpiry(token) !== null && !revoked.has(token);
   }
 
   function sessionToken(req: Request): string | null {
@@ -251,6 +263,10 @@ export function createAuthHandlers(args: {
     ) {
       return new Response("forbidden", { status: 403 });
     }
+    // The cookie is ended here too: a copy of it no longer logs in.
+    const token = authRequired ? sessionToken(req) : null;
+    const expiresAt = token ? signedTokenExpiry(token) : null;
+    if (token && expiresAt !== null) revoked.add(token, expiresAt);
     return new Response(null, {
       status: 204,
       headers: {

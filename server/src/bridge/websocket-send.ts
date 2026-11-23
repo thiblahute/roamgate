@@ -159,6 +159,8 @@ export function webSocketFlowStats(
 }
 
 interface WebSocketSendTarget {
+  /** Bun's: 2 closing, 3 closed (absent in some tests). */
+  readonly readyState?: number;
   close(code?: number, reason?: string): void;
   getBufferedAmount(): number;
   send(payload: string, compress?: boolean): number;
@@ -279,6 +281,14 @@ export function sendWebSocketMessage(
     warn = defaultWarn,
   }: WebSocketSendOptions,
 ): boolean {
+  // The browser left while this was being made (a slow connection test or
+  // connect answering after its page closed): nothing can reach it, and
+  // its close already cleaned up. Bun would drop it (send gives 0).
+  if (ws.readyState !== undefined && ws.readyState >= 2) {
+    cleanup();
+    websocketLogger.debug("send after close skipped", { context });
+    return false;
+  }
   const sendContext = { cleanup, context, warn };
   const flow = flowOf(ws);
   flow.asked.set(context, (flow.asked.get(context) ?? 0) + payload.length);

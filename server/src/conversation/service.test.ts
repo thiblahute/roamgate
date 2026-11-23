@@ -564,9 +564,10 @@ describe("conversation service", () => {
   });
 
   test("/clear moves the lease, the holder and Herdr's mapping", async () => {
-    const { service, fake, spawner, store, holderPolls } = setup();
+    const { service, fake, spawner, store, holderPolls, sent } = setup();
     await service.handover(PANE, "conversation");
     await settle();
+    service.subscribe({ name: "browser" }, PANE);
     await service.send(PANE, { text: "/clear" });
     spawner.spawned[0]!.fake.push({
       type: "conversation_reset",
@@ -584,6 +585,19 @@ describe("conversation service", () => {
     expect(fake.reports.at(-1)?.sessionId).toBe(
       "22222222-0000-0000-0000-000000000000",
     );
+    // The push names the new session, not the lease's old one.
+    expect(
+      sent
+        .filter(([, envelope]) => envelope.event === "agent_chat.session")
+        .map(([, envelope]) => envelope.data),
+    ).toEqual([
+      {
+        type: "session",
+        pane_id: PANE,
+        session_id: "22222222-0000-0000-0000-000000000000",
+        previous: fake.sessionId,
+      },
+    ]);
   });
 
   test("a restart mid-handover settles the leases safely", () => {

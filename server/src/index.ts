@@ -11,7 +11,11 @@ import {
 } from "./bridge/ssh-sessions";
 import { sshCommandArgv, sshReadCommandArgv } from "./bridge/ssh-command";
 import { watchLoopStalls } from "./utils/loop-stall";
-import { loadOrCreateSessionSecret } from "./config/session-secret";
+import { openRevokedSessions } from "./config/revoked-sessions";
+import {
+  loadOrCreateSessionSecret,
+  revokedSessionsPath,
+} from "./config/session-secret";
 import { removeLeftoverDataTemporaries } from "./config/data-paths";
 import {
   createAgentSeenStore,
@@ -253,6 +257,7 @@ import {
   writeFrontMode,
 } from "./voice/voice-helper";
 import { detectHardware, systemProbe } from "./voice/voice-hardware";
+import { voiceTestOverrides } from "./voice/voice-test-env";
 import { defaultHelperPath, defaultModelsDir } from "./voice/voice-models";
 import { VoiceSetupRunner } from "./voice/voice-setup";
 import { gameModeActive, lowGpuPath, VoiceLowGpu } from "./voice/voice-low-gpu";
@@ -590,9 +595,12 @@ voiceLowGpu.watch();
 const handleVoiceLowGpu = createVoiceLowGpuRoute(voiceLowGpu);
 // The Voice settings' setup assistant: models downloaded, voice.json
 // pointed at them, the helper restarted with them once it is free.
+// A test server's hardware and model mirror (voice-test-env.ts).
+const voiceTest = voiceTestOverrides();
 const voiceSetup = new VoiceSetupRunner(
   {
-    hardware: () => detectHardware(systemProbe()),
+    hardware: voiceTest.hardware ?? (() => detectHardware(systemProbe())),
+    ...(voiceTest.packages ? { packages: voiceTest.packages } : {}),
     modelsDir: defaultModelsDir(),
     configPath: voiceConfigPath(),
     helperPath: defaultHelperPath(),
@@ -797,6 +805,11 @@ const {
     config.generatedAuthTokenPath &&
     authTokenPrintCommand(config.generatedAuthTokenPath),
   secureCookies: Boolean(config.tls),
+  ...(config.authRequired
+    ? {
+        revoked: openRevokedSessions(revokedSessionsPath()),
+      }
+    : {}),
 });
 
 const redeemCallHandoff = createCallHandoffRedeem({

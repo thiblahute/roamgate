@@ -62,8 +62,9 @@ including password sessions.
 The bridge does not check `Origin` or `Host`; any authenticated request has full
 authority, so secure the access path itself.
 
-**Menu > Log out** removes this browser's cookie only. It does not revoke copied
-cookies or log out other browsers. If a credential or cookie leaks, change the
+**Menu > Log out** ends this browser's cookie, on the server too: a copy of
+that cookie no longer logs in, even after a restart. It does not log out other
+browsers. If a credential or cookie leaks, change the
 password (or run `roamgate auth rotate` for a generated token), or run
 `roamgate auth revoke-sessions` to sign out every browser. These commands only
 restart the managed service: also restart any other listener of the instance

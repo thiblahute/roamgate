@@ -259,6 +259,26 @@ describe("browser WebSocket sending", () => {
     expect(closeArgumentCounts).toEqual([0]);
   });
 
+  test("a reply made after the browser left is skipped quietly", () => {
+    // A connection error answered once its page had closed: Bun would
+    // drop it (send gives 0); it is not a send failure.
+    for (const readyState of [2, 3]) {
+      const { closes, sent, ws } = createWebSocket({ sendResult: 0 });
+      const outcome = sendWithObservability(
+        Object.assign(ws, { readyState }),
+        "connections-mutation-error",
+      );
+      expect(outcome).toEqual({ cleanupCount: 1, result: false, warnings: [] });
+      expect(sent).toEqual([]);
+      expect(closes).toEqual([]);
+    }
+    const open = createWebSocket();
+    expect(
+      sendWithObservability(Object.assign(open.ws, { readyState: 1 })).result,
+    ).toBe(true);
+    expect(open.sent).toEqual(["payload"]);
+  });
+
   test("uses Bun's buffered amount API to close a client past the hard limit", () => {
     const bufferedAmount = WS_BACKPRESSURE_HARD_LIMIT_BYTES + 1;
     const { closes, sent, ws } = createWebSocket({ bufferedAmount });

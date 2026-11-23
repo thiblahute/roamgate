@@ -7,8 +7,9 @@ export type TimelineReply = Timeline | { recording: false };
 
 /**
  * `bridge.activity.timeline {from?, to?}`: the timeline of whole local days
- * (dates, both included; today by default). `{recording: false}` while the
- * bridge does not record.
+ * (dates, both included; today by default), without the connections in
+ * `exclude.connections`. `{recording: false}` while the bridge does not
+ * record.
  */
 export async function readActivityTimeline(
   options: {
@@ -35,10 +36,12 @@ export async function readActivityTimeline(
   const reader = openActivityReader(options.directory(), now, { subjectOf });
   if (!reader) return { recording: false };
   try {
+    // Connections in exclude.connections are left out, as by
+    // `roamgate activity`.
     return reader.timeline(
       range,
       settings.day_start,
-      [],
+      settings.exclude.connections,
       settings.idle_seconds,
     );
   } finally {
