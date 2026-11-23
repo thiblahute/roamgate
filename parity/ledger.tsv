@@ -1081,10 +1081,10 @@ server/src/bridge/settings-rpc.test.ts	settings RPC errors carry their runtime c
 server/src/bridge/settings-rpc.test.ts	settings RPC lists and mutates only its connection namespace	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/settings-rpc.test.ts	settings RPC suppresses a delayed result after replacement	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/settings-rpc.test.ts	settings RPC cancels a queued mutation after replacement	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/settings-rpc.test.ts	hook settings expose selected config and errors without mislabeling native files as Paseo	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/settings-rpc.test.ts	hook settings expose selected config and errors without mislabeling native files as Paseo	rust-unit:roamgate-workspace:worktree::settings_rpc::tests::hook_settings_expose_selected_config_and_errors_without_mislabeling_native_files_as_paseo	worktrees and hooks: the worktree settings move with the workspace family
 server/src/bridge/settings-rpc.test.ts	server-wide interface preferences can be read, stored and cleared	scenario:parity/scenarios/settings/ui-settings.yaml	
-server/src/bridge/settings-rpc.test.ts	worktree commands are set globally and per repository, and cleared when empty	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/settings-rpc.test.ts	worktree settings of a workspace Herdr reports no repository for are its repository's	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/settings-rpc.test.ts	worktree commands are set globally and per repository, and cleared when empty	rust-unit:roamgate-workspace:worktree::settings_rpc::tests::worktree_commands_are_set_globally_and_per_repository_and_cleared_when_empty	worktrees and hooks: the worktree settings move with the workspace family
+server/src/bridge/settings-rpc.test.ts	worktree settings of a workspace Herdr reports no repository for are its repository's	rust-unit:roamgate-workspace:worktree::settings_rpc::tests::worktree_settings_of_a_workspace_herdr_reports_no_repository_for_are_its_repository_s	worktrees and hooks: the worktree settings move with the workspace family
 server/src/bridge/settings-rpc.test.ts	the claude start setting: validated, saved, and the change told	scenario:parity/scenarios/settings/connection-settings.yaml	
 server/src/bridge/settings-rpc.test.ts	agent profiles: listed with the built-in, secrets by path, validated on update	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/ssh-command.test.ts	accepts only bounded aliases and user@host destinations	vector:contract/vectors/ssh-command.json	S5 vectors, read by bun test and the Rust crate
@@ -4404,85 +4404,85 @@ server/src/worktree/command-template.test.ts	names the program and git subcomman
 server/src/worktree/command-template.test.ts	exits 127 only for a missing program or git subcommand, with a real sh	rust-unit:roamgate-workspace:worktree::command_template::tests::exits_127_only_for_a_missing_program_or_git_subcommand_with_a_real_sh	worktrees and hooks
 server/src/worktree/command-template.test.ts	an escaped placeholder is refused before its inserted quote can be escaped	rust-unit:roamgate-workspace:worktree::command_template::tests::an_escaped_placeholder_is_refused_before_its_inserted_quote_can_be_escaped	worktrees and hooks
 server/src/worktree/create.test.ts	a worktree base without origin is the checked out commit, in any language	scenario:parity/scenarios/workspace/worktrees.yaml	
-server/src/worktree/create.test.ts	fetches the advertised commit and refreshes its tracking ref ($name)	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	does not fall back to another base when $name	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	retains sync/create/parent/setup ordering and strips trusted hook confirmation data	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	GUI creation needs no expectations and parent storage failure does not skip setup	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	a workspace repointed during fetch cannot dispatch worktree creation	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	the root supplied to fetch and its reported root must match the preview	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	rejects invalid expected roots before preparing or mutating a worktree	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	stops the pipeline when the target retires at %s	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	rejects incomplete hook confirmation before mutations	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	defaults to Herdr's own checkout path	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	runs over SSH from the source root, then opens the path in Herdr	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	uses the global default locally, at Herdr's default path	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	a repository command overrides the global default	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	a failing command surfaces its output and opens nothing	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	a command not installed on the host falls back to Herdr's worktree, and says so	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	an exit 127 from inside an installed command is a failure, not a fallback	rust-unit:roamgate-workspace	worktrees and hooks
+server/src/worktree/create.test.ts	fetches the advertised commit and refreshes its tracking ref ($name)	rust-unit:roamgate-workspace:worktree::create::tests::fetches_the_advertised_commit_and_refreshes_its_tracking_ref_name	worktrees and hooks
+server/src/worktree/create.test.ts	does not fall back to another base when $name	rust-unit:roamgate-workspace:worktree::create::tests::does_not_fall_back_to_another_base_when_name	worktrees and hooks
+server/src/worktree/create.test.ts	retains sync/create/parent/setup ordering and strips trusted hook confirmation data	rust-unit:roamgate-workspace:worktree::create::tests::retains_sync_create_parent_setup_ordering_and_strips_trusted_hook_confirmation_data	worktrees and hooks
+server/src/worktree/create.test.ts	GUI creation needs no expectations and parent storage failure does not skip setup	rust-unit:roamgate-workspace:worktree::create::tests::gui_creation_needs_no_expectations_and_parent_storage_failure_does_not_skip_setup	worktrees and hooks
+server/src/worktree/create.test.ts	a workspace repointed during fetch cannot dispatch worktree creation	rust-unit:roamgate-workspace:worktree::create::tests::a_workspace_repointed_during_fetch_cannot_dispatch_worktree_creation	worktrees and hooks
+server/src/worktree/create.test.ts	the root supplied to fetch and its reported root must match the preview	rust-unit:roamgate-workspace:worktree::create::tests::the_root_supplied_to_fetch_and_its_reported_root_must_match_the_preview	worktrees and hooks
+server/src/worktree/create.test.ts	rejects invalid expected roots before preparing or mutating a worktree	rust-unit:roamgate-workspace:worktree::create::tests::rejects_invalid_expected_roots_before_preparing_or_mutating_a_worktree	worktrees and hooks
+server/src/worktree/create.test.ts	stops the pipeline when the target retires at %s	rust-unit:roamgate-workspace:worktree::create::tests::stops_the_pipeline_when_the_target_retires_at_s	worktrees and hooks
+server/src/worktree/create.test.ts	rejects incomplete hook confirmation before mutations	rust-unit:roamgate-workspace:worktree::create::tests::rejects_incomplete_hook_confirmation_before_mutations	worktrees and hooks
+server/src/worktree/create.test.ts	defaults to Herdr's own checkout path	rust-unit:roamgate-workspace:worktree::create::tests::defaults_to_herdr_s_own_checkout_path	worktrees and hooks
+server/src/worktree/create.test.ts	runs over SSH from the source root, then opens the path in Herdr	rust-unit:roamgate-workspace:worktree::create::tests::runs_over_ssh_from_the_source_root_then_opens_the_path_in_herdr	worktrees and hooks
+server/src/worktree/create.test.ts	uses the global default locally, at Herdr's default path	rust-unit:roamgate-workspace:worktree::create::tests::uses_the_global_default_locally_at_herdr_s_default_path	worktrees and hooks
+server/src/worktree/create.test.ts	a repository command overrides the global default	rust-unit:roamgate-workspace:worktree::create::tests::a_repository_command_overrides_the_global_default	worktrees and hooks
+server/src/worktree/create.test.ts	a failing command surfaces its output and opens nothing	rust-unit:roamgate-workspace:worktree::create::tests::a_failing_command_surfaces_its_output_and_opens_nothing	worktrees and hooks
+server/src/worktree/create.test.ts	a command not installed on the host falls back to Herdr's worktree, and says so	rust-unit:roamgate-workspace:worktree::create::tests::a_command_not_installed_on_the_host_falls_back_to_herdr_s_worktree_and_says_so	worktrees and hooks
+server/src/worktree/create.test.ts	an exit 127 from inside an installed command is a failure, not a fallback	rust-unit:roamgate-workspace:worktree::create::tests::an_exit_127_from_inside_an_installed_command_is_a_failure_not_a_fallback	worktrees and hooks
 server/src/worktree/create.test.ts	a checkout already open in Herdr does not rerun its setup hook	scenario:parity/scenarios/workspace/worktrees.yaml	
-server/src/worktree/create.test.ts	a command changed since Ranger's confirmation runs nothing	rust-unit:roamgate-workspace	worktrees and hooks
+server/src/worktree/create.test.ts	a command changed since Ranger's confirmation runs nothing	rust-unit:roamgate-workspace:worktree::create::tests::a_command_changed_since_ranger_s_confirmation_runs_nothing	worktrees and hooks
 server/src/worktree/create.test.ts	refuses a branch name with shell syntax before anything runs	scenario:parity/scenarios/workspace/worktrees.yaml	
-server/src/worktree/create.test.ts	a target retired while the command runs is not opened	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	a main checkout given by its path is a source: its repository's directory and command apply	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	Windows runtimes refuse worktree creation before any helper runs	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	a branch becomes one safe directory name under it	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	creation puts the worktree in the repository's directory unless a path is given	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	a workspace Herdr reports no repository for uses its repository's directory	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	a worktree command defaults under the repository's name, not the linked checkout's	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	settings saved under the checkout path still apply	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	a repository Herdr reports is not asked of git	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	a command changed while its install probe runs is not dispatched	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/create.test.ts	a fresh worktree path skips any existing directory and any worktree Git still lists	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/parents.test.ts	attaches the persisted source when a repo has several workspaces	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/parents.test.ts	does not attach another connection's identical parent record	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/parents.test.ts	does not commit stale parent additions or removals	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/parents.test.ts	ignores a stale or incompatible parent record	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/parents.test.ts	does not trust an unverified parent workspace	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	shares one in-flight operation for the same workspace	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	clears a failed operation so it can be retried	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	recognizes only the stale Herdr worktree error	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	finds only processes whose cwd is inside the checkout	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	lets Herdr shut down its workspace before cleaning residual processes	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	does not stop processes when a checkout is dirty	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	preserves residual files and reconciles Herdr with force	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	recovers a residual checkout when the original request was forced	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	reconciles an already missing checkout without preserving files	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	verifies the checkout again after a forced recovery retry	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	does not move residual files when process cleanup fails	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	does not recover when the checkout is still a valid worktree	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	never performs local cleanup for an unsafe checkout path	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	normalizes dot segments before checking cleanup path safety	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	uses a normalized checkout path for cleanup operations	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	preserves a residual directory left after Herdr reports success	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	reports incomplete cleanup without changing a successful remove into failure	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	warns when a successful removal cannot be verified	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	continues recovery if a residual directory disappears before preservation	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	does not mistake a directory inside another repository for a worktree	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	stops a stable process whose cwd is inside the checkout	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	substitutes the checkout, its repository and --force when forced	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	a hostile checkout path runs nothing, with a real sh	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	runs from the source repository, over SSH on a remote host	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	a command not installed on the host leaves the removal to Herdr, and says so	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	an exit 127 from inside an installed remove command is a failure	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	no sh on this machine leaves the removal to Herdr	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	the command's removal skips Herdr's, and a failure stops it	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	a command failing on a stale checkout gets the same recovery as Herdr	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/remove.test.ts	warnings after the command's removal name the command, not Herdr	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	loads paseo.json from checkout before source checkout	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	runs configured paseo hooks with expected environment	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	skips hooks when repo settings disable them	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	does not execute when $name	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	does not execute when enabled changes from $expected to $enabled	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	matching confirmed setup executes exactly once, with enabled rechecked before launch	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	a late enabled change or retired target cannot start the confirmed command	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	unverifiable checkout configuration fails closed without raw errors	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	runs the %s opened hook when the source workspace has no path metadata	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	selects one file in native/legacy target/source order for every combination	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	empty and partial configurations suppress fallback and ignore unknown fields	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	invalid JSON, types, and unreadable files fail with their path without fallback	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	reads a UTF-8 BOM in ${filename} and runs teardown	rust-unit:roamgate-workspace	worktrees and hooks
-server/src/worktree/worktree-hooks.test.ts	runs all lifecycle hooks from ${filename} with cwd, aliases, and source after removal	rust-unit:roamgate-workspace	worktrees and hooks
+server/src/worktree/create.test.ts	a target retired while the command runs is not opened	rust-unit:roamgate-workspace:worktree::create::tests::a_target_retired_while_the_command_runs_is_not_opened	worktrees and hooks
+server/src/worktree/create.test.ts	a main checkout given by its path is a source: its repository's directory and command apply	rust-unit:roamgate-workspace:worktree::create::tests::a_main_checkout_given_by_its_path_is_a_source_its_repository_s_directory_and_command_apply	worktrees and hooks
+server/src/worktree/create.test.ts	Windows runtimes refuse worktree creation before any helper runs	rust-unit:roamgate-workspace:worktree::create::tests::windows_runtimes_refuse_worktree_creation_before_any_helper_runs	worktrees and hooks
+server/src/worktree/create.test.ts	a branch becomes one safe directory name under it	rust-unit:roamgate-workspace:worktree::create::tests::a_branch_becomes_one_safe_directory_name_under_it	worktrees and hooks
+server/src/worktree/create.test.ts	creation puts the worktree in the repository's directory unless a path is given	rust-unit:roamgate-workspace:worktree::create::tests::creation_puts_the_worktree_in_the_repository_s_directory_unless_a_path_is_given	worktrees and hooks
+server/src/worktree/create.test.ts	a workspace Herdr reports no repository for uses its repository's directory	rust-unit:roamgate-workspace:worktree::create::tests::a_workspace_herdr_reports_no_repository_for_uses_its_repository_s_directory	worktrees and hooks
+server/src/worktree/create.test.ts	a worktree command defaults under the repository's name, not the linked checkout's	rust-unit:roamgate-workspace:worktree::create::tests::a_worktree_command_defaults_under_the_repository_s_name_not_the_linked_checkout_s	worktrees and hooks
+server/src/worktree/create.test.ts	settings saved under the checkout path still apply	rust-unit:roamgate-workspace:worktree::create::tests::settings_saved_under_the_checkout_path_still_apply	worktrees and hooks
+server/src/worktree/create.test.ts	a repository Herdr reports is not asked of git	rust-unit:roamgate-workspace:worktree::create::tests::a_repository_herdr_reports_is_not_asked_of_git	worktrees and hooks
+server/src/worktree/create.test.ts	a command changed while its install probe runs is not dispatched	rust-unit:roamgate-workspace:worktree::create::tests::a_command_changed_while_its_install_probe_runs_is_not_dispatched	worktrees and hooks
+server/src/worktree/create.test.ts	a fresh worktree path skips any existing directory and any worktree Git still lists	rust-unit:roamgate-workspace:worktree::create::tests::a_fresh_worktree_path_skips_any_existing_directory_and_any_worktree_git_still_lists	worktrees and hooks
+server/src/worktree/parents.test.ts	attaches the persisted source when a repo has several workspaces	rust-unit:roamgate-workspace:worktree::parents::tests::attaches_the_persisted_source_when_a_repo_has_several_workspaces	worktrees and hooks
+server/src/worktree/parents.test.ts	does not attach another connection's identical parent record	rust-unit:roamgate-workspace:worktree::parents::tests::does_not_attach_another_connection_s_identical_parent_record	worktrees and hooks
+server/src/worktree/parents.test.ts	does not commit stale parent additions or removals	rust-unit:roamgate-workspace:worktree::parents::tests::does_not_commit_stale_parent_additions_or_removals	worktrees and hooks
+server/src/worktree/parents.test.ts	ignores a stale or incompatible parent record	rust-unit:roamgate-workspace:worktree::parents::tests::ignores_a_stale_or_incompatible_parent_record	worktrees and hooks
+server/src/worktree/parents.test.ts	does not trust an unverified parent workspace	rust-unit:roamgate-workspace:worktree::parents::tests::does_not_trust_an_unverified_parent_workspace	worktrees and hooks
+server/src/worktree/remove.test.ts	shares one in-flight operation for the same workspace	rust-unit:roamgate-workspace:worktree::remove::tests::shares_one_in_flight_operation_for_the_same_workspace	worktrees and hooks
+server/src/worktree/remove.test.ts	clears a failed operation so it can be retried	rust-unit:roamgate-workspace:worktree::remove::tests::clears_a_failed_operation_so_it_can_be_retried	worktrees and hooks
+server/src/worktree/remove.test.ts	recognizes only the stale Herdr worktree error	rust-unit:roamgate-workspace:worktree::remove::tests::recognizes_only_the_stale_herdr_worktree_error	worktrees and hooks
+server/src/worktree/remove.test.ts	finds only processes whose cwd is inside the checkout	rust-unit:roamgate-workspace:worktree::remove::tests::finds_only_processes_whose_cwd_is_inside_the_checkout	worktrees and hooks
+server/src/worktree/remove.test.ts	lets Herdr shut down its workspace before cleaning residual processes	rust-unit:roamgate-workspace:worktree::remove::tests::lets_herdr_shut_down_its_workspace_before_cleaning_residual_processes	worktrees and hooks
+server/src/worktree/remove.test.ts	does not stop processes when a checkout is dirty	rust-unit:roamgate-workspace:worktree::remove::tests::does_not_stop_processes_when_a_checkout_is_dirty	worktrees and hooks
+server/src/worktree/remove.test.ts	preserves residual files and reconciles Herdr with force	rust-unit:roamgate-workspace:worktree::remove::tests::preserves_residual_files_and_reconciles_herdr_with_force	worktrees and hooks
+server/src/worktree/remove.test.ts	recovers a residual checkout when the original request was forced	rust-unit:roamgate-workspace:worktree::remove::tests::recovers_a_residual_checkout_when_the_original_request_was_forced	worktrees and hooks
+server/src/worktree/remove.test.ts	reconciles an already missing checkout without preserving files	rust-unit:roamgate-workspace:worktree::remove::tests::reconciles_an_already_missing_checkout_without_preserving_files	worktrees and hooks
+server/src/worktree/remove.test.ts	verifies the checkout again after a forced recovery retry	rust-unit:roamgate-workspace:worktree::remove::tests::verifies_the_checkout_again_after_a_forced_recovery_retry	worktrees and hooks
+server/src/worktree/remove.test.ts	does not move residual files when process cleanup fails	rust-unit:roamgate-workspace:worktree::remove::tests::does_not_move_residual_files_when_process_cleanup_fails	worktrees and hooks
+server/src/worktree/remove.test.ts	does not recover when the checkout is still a valid worktree	rust-unit:roamgate-workspace:worktree::remove::tests::does_not_recover_when_the_checkout_is_still_a_valid_worktree	worktrees and hooks
+server/src/worktree/remove.test.ts	never performs local cleanup for an unsafe checkout path	rust-unit:roamgate-workspace:worktree::remove::tests::never_performs_local_cleanup_for_an_unsafe_checkout_path	worktrees and hooks
+server/src/worktree/remove.test.ts	normalizes dot segments before checking cleanup path safety	rust-unit:roamgate-workspace:worktree::remove::tests::normalizes_dot_segments_before_checking_cleanup_path_safety	worktrees and hooks
+server/src/worktree/remove.test.ts	uses a normalized checkout path for cleanup operations	rust-unit:roamgate-workspace:worktree::remove::tests::uses_a_normalized_checkout_path_for_cleanup_operations	worktrees and hooks
+server/src/worktree/remove.test.ts	preserves a residual directory left after Herdr reports success	rust-unit:roamgate-workspace:worktree::remove::tests::preserves_a_residual_directory_left_after_herdr_reports_success	worktrees and hooks
+server/src/worktree/remove.test.ts	reports incomplete cleanup without changing a successful remove into failure	rust-unit:roamgate-workspace:worktree::remove::tests::reports_incomplete_cleanup_without_changing_a_successful_remove_into_failure	worktrees and hooks
+server/src/worktree/remove.test.ts	warns when a successful removal cannot be verified	rust-unit:roamgate-workspace:worktree::remove::tests::warns_when_a_successful_removal_cannot_be_verified	worktrees and hooks
+server/src/worktree/remove.test.ts	continues recovery if a residual directory disappears before preservation	rust-unit:roamgate-workspace:worktree::remove::tests::continues_recovery_if_a_residual_directory_disappears_before_preservation	worktrees and hooks
+server/src/worktree/remove.test.ts	does not mistake a directory inside another repository for a worktree	rust-unit:roamgate-workspace:worktree::remove::tests::does_not_mistake_a_directory_inside_another_repository_for_a_worktree	worktrees and hooks
+server/src/worktree/remove.test.ts	stops a stable process whose cwd is inside the checkout	rust-unit:roamgate-workspace:worktree::remove::tests::stops_a_stable_process_whose_cwd_is_inside_the_checkout	worktrees and hooks
+server/src/worktree/remove.test.ts	substitutes the checkout, its repository and --force when forced	rust-unit:roamgate-workspace:worktree::remove::tests::substitutes_the_checkout_its_repository_and_force_when_forced	worktrees and hooks
+server/src/worktree/remove.test.ts	a hostile checkout path runs nothing, with a real sh	rust-unit:roamgate-workspace:worktree::remove::tests::a_hostile_checkout_path_runs_nothing_with_a_real_sh	worktrees and hooks
+server/src/worktree/remove.test.ts	runs from the source repository, over SSH on a remote host	rust-unit:roamgate-workspace:worktree::remove::tests::runs_from_the_source_repository_over_ssh_on_a_remote_host	worktrees and hooks
+server/src/worktree/remove.test.ts	a command not installed on the host leaves the removal to Herdr, and says so	rust-unit:roamgate-workspace:worktree::remove::tests::a_command_not_installed_on_the_host_leaves_the_removal_to_herdr_and_says_so	worktrees and hooks
+server/src/worktree/remove.test.ts	an exit 127 from inside an installed remove command is a failure	rust-unit:roamgate-workspace:worktree::remove::tests::an_exit_127_from_inside_an_installed_remove_command_is_a_failure	worktrees and hooks
+server/src/worktree/remove.test.ts	no sh on this machine leaves the removal to Herdr	rust-unit:roamgate-workspace:worktree::remove::tests::no_sh_on_this_machine_leaves_the_removal_to_herdr	worktrees and hooks
+server/src/worktree/remove.test.ts	the command's removal skips Herdr's, and a failure stops it	rust-unit:roamgate-workspace:worktree::remove::tests::the_command_s_removal_skips_herdr_s_and_a_failure_stops_it	worktrees and hooks
+server/src/worktree/remove.test.ts	a command failing on a stale checkout gets the same recovery as Herdr	rust-unit:roamgate-workspace:worktree::remove::tests::a_command_failing_on_a_stale_checkout_gets_the_same_recovery_as_herdr	worktrees and hooks
+server/src/worktree/remove.test.ts	warnings after the command's removal name the command, not Herdr	rust-unit:roamgate-workspace:worktree::remove::tests::warnings_after_the_command_s_removal_name_the_command_not_herdr	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	loads paseo.json from checkout before source checkout	rust-unit:roamgate-workspace:worktree::hooks::tests::loads_paseo_json_from_checkout_before_source_checkout	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	runs configured paseo hooks with expected environment	rust-unit:roamgate-workspace:worktree::hooks::tests::runs_configured_paseo_hooks_with_expected_environment	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	skips hooks when repo settings disable them	rust-unit:roamgate-workspace:worktree::hooks::tests::skips_hooks_when_repo_settings_disable_them	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	does not execute when $name	rust-unit:roamgate-workspace:worktree::hooks::tests::does_not_execute_when_name	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	does not execute when enabled changes from $expected to $enabled	rust-unit:roamgate-workspace:worktree::hooks::tests::does_not_execute_when_enabled_changes_from_expected_to_enabled	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	matching confirmed setup executes exactly once, with enabled rechecked before launch	rust-unit:roamgate-workspace:worktree::hooks::tests::matching_confirmed_setup_executes_exactly_once_with_enabled_rechecked_before_launch	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	a late enabled change or retired target cannot start the confirmed command	rust-unit:roamgate-workspace:worktree::hooks::tests::a_late_enabled_change_or_retired_target_cannot_start_the_confirmed_command	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	unverifiable checkout configuration fails closed without raw errors	rust-unit:roamgate-workspace:worktree::hooks::tests::unverifiable_checkout_configuration_fails_closed_without_raw_errors	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	runs the %s opened hook when the source workspace has no path metadata	rust-unit:roamgate-workspace:worktree::hooks::tests::runs_the_s_opened_hook_when_the_source_workspace_has_no_path_metadata	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	selects one file in native/legacy target/source order for every combination	rust-unit:roamgate-workspace:worktree::hooks::tests::selects_one_file_in_native_legacy_target_source_order_for_every_combination	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	empty and partial configurations suppress fallback and ignore unknown fields	rust-unit:roamgate-workspace:worktree::hooks::tests::empty_and_partial_configurations_suppress_fallback_and_ignore_unknown_fields	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	invalid JSON, types, and unreadable files fail with their path without fallback	rust-unit:roamgate-workspace:worktree::hooks::tests::invalid_json_types_and_unreadable_files_fail_with_their_path_without_fallback	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	reads a UTF-8 BOM in ${filename} and runs teardown	rust-unit:roamgate-workspace:worktree::hooks::tests::reads_a_utf_8_bom_in_filename_and_runs_teardown	worktrees and hooks
+server/src/worktree/worktree-hooks.test.ts	runs all lifecycle hooks from ${filename} with cwd, aliases, and source after removal	rust-unit:roamgate-workspace:worktree::hooks::tests::runs_all_lifecycle_hooks_from_filename_with_cwd_aliases_and_source_after_removal	worktrees and hooks
 shared/agentMessage.test.ts	addresses are CONNECTION/PANE	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
 shared/agentMessage.test.ts	the sender's message is read back from its Bash call, however quoted	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
 shared/agentMessage.test.ts	a framed message reads as another session's in the chat, never the user's	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate

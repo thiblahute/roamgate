@@ -278,6 +278,16 @@ pub async fn missing_worktree_command(
     template: &str,
     cx: &GitContext,
 ) -> Result<Option<String>, String> {
+    missing_worktree_command_where(template, cx, || on_path("sh")).await
+}
+
+/// [`missing_worktree_command`], `has_sh` telling whether this machine has
+/// an `sh`.
+pub(crate) async fn missing_worktree_command_where(
+    template: &str,
+    cx: &GitContext,
+    has_sh: impl Fn() -> bool,
+) -> Result<Option<String>, String> {
     let Some(probe) = worktree_command_probe_script(template) else {
         return Ok(None);
     };
@@ -294,7 +304,7 @@ pub async fn missing_worktree_command(
     // The runner gives a missing program 127 where Bun's spawn threw
     // ENOENT: a missing `sh` here is looked for first (a Windows machine
     // without one).
-    if host.is_none() && !on_path("sh") {
+    if host.is_none() && !has_sh() {
         return Ok(Some(format!("sh is not available {place}.")));
     }
     let ran = cx
