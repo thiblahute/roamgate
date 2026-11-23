@@ -1,0 +1,28 @@
+[package]
+name = "roamgate-work"
+version = "0.0.0"
+description = "Roamgate's Work board (Rust migration plan, section 6.2): its store (work.json and history.jsonl), rules, done checks, tools and bridge RPCs, on the tool registry of roamgate-claude"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = "0.22"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+jiff = "0.2"
+rand = "0.9"
+regex = "1"
+roamgate-base = { path = "../roamgate-base" }
+roamgate-claude = { path = "../roamgate-claude" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
+tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }

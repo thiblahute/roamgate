@@ -28,6 +28,7 @@ roamgate-herdr = { path = "../roamgate-herdr" }
 roamgate-http = { path = "../roamgate-http" }
 roamgate-notify = { path = "../roamgate-notify" }
 roamgate-sidecar = { path = "../roamgate-sidecar" }
+roamgate-work = { path = "../roamgate-work" }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
 rust-embed = { version = "8", features = ["interpolate-folder-path", "mime-guess"] }

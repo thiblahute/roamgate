@@ -1,0 +1,18 @@
+[package]
+name = "roamgate-claude"
+version = "0.0.0"
+description = "Roamgate's headless Claude layer (Rust migration plan, section 6.2): for now the tool registry built from contract/tools/catalog.json (socket command help, parameter checks, MCP tool lists, the mod's catalog module, the SKILL's tool names); the Claude drivers, loopback MCP server and mod hub come with their subtasks"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }

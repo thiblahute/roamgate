@@ -17,6 +17,7 @@ pub mod notifications;
 pub mod settings;
 pub mod time_report;
 pub mod update;
+pub mod work;
 
 /// Every family this build implements.
 pub fn core_families() -> Families {
@@ -30,6 +31,7 @@ pub fn core_families() -> Families {
         notifications::family(),
         activity::family(),
         archive::family(),
+        work::family(),
         host::family(),
     ]
     .into_iter()

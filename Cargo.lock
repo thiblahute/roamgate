@@ -6794,6 +6794,7 @@ dependencies = [
  "roamgate-http",
  "roamgate-notify",
  "roamgate-sidecar",
+ "roamgate-work",
  "rust-embed",
  "serde",
  "serde_json",
@@ -6917,6 +6918,16 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "roamgate-claude"
+version = "0.0.0"
+dependencies = [
+ "regex",
+ "roamgate-protocol",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -7249,6 +7260,25 @@ dependencies = [
  "tokio-tungstenite",
  "unicode-normalization",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "roamgate-work"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "futures-util",
+ "jiff",
+ "rand 0.9.5",
+ "regex",
+ "roamgate-base",
+ "roamgate-claude",
+ "roamgate-protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "unicode-normalization",
 ]
 
 [[package]]
