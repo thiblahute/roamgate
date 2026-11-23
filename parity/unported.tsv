@@ -26,6 +26,10 @@ roamgate-cli	server/src/contract-record/	S18
 roamgate-cli	server/src/utils/cpu-profile	S18
 roamgate-connections	server/src/connections/	S16
 roamgate-connections	server/src/profiles/	S16
+roamgate-forge	server/src/review/forge	S19
+roamgate-forge	server/src/review/github	S19
+roamgate-forge	server/src/review/gitlab	S19
+roamgate-forge	server/src/workspace/pull-request	S17
 roamgate-herdr	server/src/bridge/	S16
 roamgate-agents	server/src/agent/session-projection-cache	S21
 roamgate-agents	server/src/agent/session-resolver	S21

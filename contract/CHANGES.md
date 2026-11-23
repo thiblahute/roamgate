@@ -23,6 +23,13 @@ wire/core-channel.md), each while the owners table gives it to Rust.
   `internal.settings.update` (error code `stale`), the reverse target
   `settings.changed`, and The settings family. vectors: `settings.json`,
   `normalizeGuiSettings` for every section.
+- mr_cache (S14): `owners/families.json` gives the family no RPC any more
+  (`forge.status`, `forge.session` and the PR card of `git.pull_request` stay
+  answered by Bun, whose forge reads go with the host layer); it keeps
+  `mr-cache/state.json`. Wire: the front's `internal.mr_cache.get` and
+  `internal.mr_cache.flush`, the reverse targets `mr_cache.load` (a reader's
+  forge read or pause, by token) and `mr_cache.release` (Bun writes and drops
+  its own cache before the core reads the file).
 
 ## 1.5
 

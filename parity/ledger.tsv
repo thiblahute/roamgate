@@ -2720,19 +2720,22 @@ server/src/limit-resume/scheduler.test.ts	a failed send is tried again, then giv
 server/src/limit-resume/scheduler.test.ts	Resume now before the reset does not use up the reset's resume	rust-unit:roamgate-connections:limit_resume::scheduler::tests::resume_now_before_the_reset_does_not_use_up_the_reset_s_resume	limit-resume scheduler
 server/src/limit-resume/scheduler.test.ts	every connection is looked at, remote ones included	rust-unit:roamgate-connections:limit_resume::scheduler::tests::every_connection_is_looked_at_remote_ones_included	limit-resume scheduler
 server/src/mr-cache/cache.test.ts	a known answer is served without a forge call	scenario:parity/scenarios/mr_reviews/forge-status.yaml	
-server/src/mr-cache/cache.test.ts	an old answer is served at once and read again once, in the background	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	the TTL follows the state: running short, open at rest longer, settled longest	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	every surface asking at once shares one read	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	a negative lookup is cached, then read again after a commit, and at once on another branch	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	a failed read keeps the answer and waits before the next one	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	a forge that asked to be left alone is not read before its pause	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	background reads stay within the budget per minute	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	a click on refresh reads at once, for that key only	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	a failed refresh does not take the known answer away	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	an invalidated key is read again	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	answers survive a restart, and a cap forgets the oldest	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	settings: seconds, bounded, defaults for what is invalid	rust-unit:roamgate-forge	the forge cache
-server/src/mr-cache/cache.test.ts	a chip, a card and a session are pushed; nothing else	rust-unit:roamgate-forge	the forge cache
+server/src/mr-cache/cache.test.ts	an old answer is served at once and read again once, in the background	rust-unit:roamgate-forge:mr_cache::tests::an_old_answer_is_served_at_once_and_read_again_once_in_the_background	the forge cache
+server/src/mr-cache/cache.test.ts	the TTL follows the state: running short, open at rest longer, settled longest	rust-unit:roamgate-forge:mr_cache::tests::the_ttl_follows_the_state_running_short_open_at_rest_longer_settled_longest	the forge cache
+server/src/mr-cache/cache.test.ts	every surface asking at once shares one read	rust-unit:roamgate-forge:mr_cache::tests::every_surface_asking_at_once_shares_one_read	the forge cache
+server/src/mr-cache/cache.test.ts	a negative lookup is cached, then read again after a commit, and at once on another branch	rust-unit:roamgate-forge:mr_cache::tests::a_negative_lookup_is_cached_then_read_again_after_a_commit_and_at_once_on_another_branch	the forge cache
+server/src/mr-cache/cache.test.ts	a failed read keeps the answer and waits before the next one	rust-unit:roamgate-forge:mr_cache::tests::a_failed_read_keeps_the_answer_and_waits_before_the_next_one	the forge cache
+server/src/mr-cache/cache.test.ts	a forge that asked to be left alone is not read before its pause	rust-unit:roamgate-forge:mr_cache::tests::a_forge_that_asked_to_be_left_alone_is_not_read_before_its_pause	the forge cache
+server/src/mr-cache/cache.test.ts	background reads stay within the budget per minute	rust-unit:roamgate-forge:mr_cache::tests::background_reads_stay_within_the_budget_per_minute	the forge cache
+server/src/mr-cache/cache.test.ts	a click on refresh reads at once, for that key only	rust-unit:roamgate-forge:mr_cache::tests::a_click_on_refresh_reads_at_once_for_that_key_only	the forge cache
+server/src/mr-cache/cache.test.ts	a failed refresh does not take the known answer away	rust-unit:roamgate-forge:mr_cache::tests::a_failed_refresh_does_not_take_the_known_answer_away	the forge cache
+server/src/mr-cache/cache.test.ts	an invalidated key is read again	rust-unit:roamgate-forge:mr_cache::tests::an_invalidated_key_is_read_again	the forge cache
+server/src/mr-cache/cache.test.ts	answers survive a restart, and a cap forgets the oldest	rust-unit:roamgate-forge:mr_cache::tests::answers_survive_a_restart_and_a_cap_forgets_the_oldest	the forge cache
+server/src/mr-cache/cache.test.ts	settings: seconds, bounded, defaults for what is invalid	rust-unit:roamgate-forge:mr_cache::tests::settings_seconds_bounded_defaults_for_what_is_invalid	the forge cache
+server/src/mr-cache/cache.test.ts	a chip, a card and a session are pushed; nothing else	rust-unit:roamgate-forge:mr_cache::tests::a_chip_a_card_and_a_session_are_pushed_nothing_else	the forge cache
+server/src/mr-cache/shared.test.ts	a read asks the core, which asks the reader back for the forge read and its pause	internal:core channel	the front's side of the core's MR cache (plan 8.2), deleted at cut-over
+server/src/mr-cache/shared.test.ts	a failed read reaches the caller; a core that does not answer leaves the read uncached	internal:core channel	the front's side of the core's MR cache (plan 8.2), deleted at cut-over
+server/src/mr-cache/shared.test.ts	Bun's own answers go when the core takes the family, and come from the file after the core wrote it	internal:core channel	the front's side of the core's MR cache (plan 8.2), deleted at cut-over
 server/src/mr-reviews/agent-search.test.ts	GitLab: one read-only query, the model's words quoted	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/agent-search.test.ts	GitHub: the followed repositories and filters as search qualifiers	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/agent-search.test.ts	dates: ISO dates and days back, nothing else	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
@@ -3998,14 +4001,14 @@ server/src/workspace/filesystem-browsing.test.ts	filesystem paths must be explic
 server/src/workspace/filesystem-browsing.test.ts	workspace listings stay confined; opt-in browsing can leave the checkout	rust-unit:roamgate-workspace	files, previews, uploads, last steps
 server/src/workspace/filesystem-browsing.test.ts	external references preview and download without widening upload or delete targets	rust-unit:roamgate-workspace	files, previews, uploads, last steps
 server/src/workspace/filesystem-browsing.test.ts	SSH directory listings support %s	rust-unit:roamgate-workspace	files, previews, uploads, last steps
-server/src/workspace/forge-calls.test.ts	keeps to its calls per minute, queueing the rest in order	rust-unit:roamgate-forge	forge calls of workspaces
-server/src/workspace/forge-calls.test.ts	a call that cannot start before its deadline gives up	rust-unit:roamgate-forge	forge calls of workspaces
-server/src/workspace/forge-calls.test.ts	a 429 pauses the host for Retry-After, then calls go on	rust-unit:roamgate-forge	forge calls of workspaces
-server/src/workspace/forge-calls.test.ts	RateLimit-Remaining 0 waits for the reset; a bare 429 a minute	rust-unit:roamgate-forge	forge calls of workspaces
-server/src/workspace/forge-calls.test.ts	a 429 seen only on stderr pauses the host too	rust-unit:roamgate-forge	forge calls of workspaces
+server/src/workspace/forge-calls.test.ts	keeps to its calls per minute, queueing the rest in order	rust-unit:roamgate-forge:gate::tests::keeps_to_its_calls_per_minute_queueing_the_rest_in_order	forge calls of workspaces
+server/src/workspace/forge-calls.test.ts	a call that cannot start before its deadline gives up	rust-unit:roamgate-forge:gate::tests::a_call_that_cannot_start_before_its_deadline_gives_up	forge calls of workspaces
+server/src/workspace/forge-calls.test.ts	a 429 pauses the host for Retry-After, then calls go on	rust-unit:roamgate-forge:gate::tests::a_429_pauses_the_host_for_retry_after_then_calls_go_on	forge calls of workspaces
+server/src/workspace/forge-calls.test.ts	RateLimit-Remaining 0 waits for the reset; a bare 429 a minute	rust-unit:roamgate-forge:gate::tests::ratelimit_remaining_0_waits_for_the_reset_a_bare_429_a_minute	forge calls of workspaces
+server/src/workspace/forge-calls.test.ts	a 429 seen only on stderr pauses the host too	rust-unit:roamgate-forge:gate::tests::a_429_seen_only_on_stderr_pauses_the_host_too	forge calls of workspaces
 server/src/workspace/forge-calls.test.ts	GETs come back with If-None-Match; a 304 answers with what was known	scenario:parity/scenarios/mr_reviews/forge-etag.yaml	
-server/src/workspace/forge-calls.test.ts	identical calls share one in flight and its answer for a while; failures are not kept	rust-unit:roamgate-forge	forge calls of workspaces
-server/src/workspace/forge-calls.test.ts	the response headers are cut off the body	rust-unit:roamgate-forge	forge calls of workspaces
+server/src/workspace/forge-calls.test.ts	identical calls share one in flight and its answer for a while; failures are not kept	rust-unit:roamgate-forge:gate::tests::identical_calls_share_one_in_flight_and_its_answer_for_a_while_failures_are_not_kept	forge calls of workspaces
+server/src/workspace/forge-calls.test.ts	the response headers are cut off the body	rust-unit:roamgate-forge:gate::tests::the_response_headers_are_cut_off_the_body	forge calls of workspaces
 server/src/workspace/git-actions.test.ts	matches actions to XY states	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-actions.test.ts	counts each working tree bucket	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-actions.test.ts	decodes base64 paths and numeric values	rust-unit:roamgate-git	git runner and parsers
