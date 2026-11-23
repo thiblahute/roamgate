@@ -4,7 +4,12 @@
 
 pub mod anchors;
 pub mod diff;
+pub mod error;
+pub mod images;
 pub mod js;
 pub mod list_since;
 pub mod model;
+pub mod parse;
+pub mod prompts;
+pub mod rendered_target;
 pub mod storage;

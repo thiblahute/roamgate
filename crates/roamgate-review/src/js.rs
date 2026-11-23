@@ -158,3 +158,12 @@ mod tests {
         assert_eq!(trim("\u{feff} a b \n"), "a b");
     }
 }
+
+/// `String(number)` for the numbers texts show.
+pub fn number_text(value: f64) -> String {
+    if value.fract() == 0.0 && value.abs() < 9.007_199_254_740_992e15 {
+        format!("{}", value as i64)
+    } else {
+        format!("{value}")
+    }
+}
