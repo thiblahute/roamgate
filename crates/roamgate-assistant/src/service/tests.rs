@@ -26,6 +26,7 @@ pub(super) use crate::test_support::{Deferred, JestClock, clock_at, clock_at_ms}
 use crate::tools::{BoxFuture, ToolResult};
 
 mod a1;
+mod a2;
 mod chats;
 
 // ------------------------------------------------------------ values
