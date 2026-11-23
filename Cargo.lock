@@ -7439,14 +7439,21 @@ dependencies = [
 name = "roamgate-review"
 version = "0.0.0"
 dependencies = [
+ "bytes",
  "fancy-regex 0.17.0",
  "futures-util",
+ "hex",
+ "http-body-util",
+ "hyper 1.12.0",
+ "hyper-util",
  "indexmap",
  "jiff",
  "rand 0.9.5",
  "regex",
  "roamgate-agents",
  "roamgate-base",
+ "roamgate-claude",
+ "roamgate-exec",
  "roamgate-protocol",
  "rusqlite",
  "serde",
@@ -7455,6 +7462,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
  "url",
 ]
 

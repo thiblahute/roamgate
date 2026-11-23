@@ -2,6 +2,7 @@
 //! server/src/review/*): reviews and their threads, kept in reviews.sqlite,
 //! and what is built on them for browsers and agents.
 
+pub mod agent_socket;
 pub mod anchors;
 pub mod diff;
 pub mod error;

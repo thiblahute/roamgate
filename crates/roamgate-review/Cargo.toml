@@ -10,23 +10,32 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+bytes = "1"
 fancy-regex = "0.17"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+hex = "0.4"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 indexmap = { version = "2", features = ["serde"] }
 jiff = "0.2"
 rand = "0.9"
 regex = "1"
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
+roamgate-claude = { path = "../roamgate-claude" }
+roamgate-exec = { path = "../roamgate-exec" }
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 thiserror = "2"
 url = "2"
-tokio = { version = "1", features = ["rt", "sync", "macros", "time", "fs", "io-util"] }
+tokio = { version = "1", features = ["rt", "sync", "macros", "time", "fs", "io-util", "net"] }
+tracing = "0.1"
 
 [dev-dependencies]
+hyper = { version = "1", features = ["http1", "client", "server"] }
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
 tempfile = "3"
 tokio = { version = "1", features = ["full", "test-util"] }
