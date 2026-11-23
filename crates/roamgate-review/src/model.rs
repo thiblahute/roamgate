@@ -945,3 +945,16 @@ mod tests {
         );
     }
 }
+
+/// A commit of a review (shared/review.ts ReviewCommit).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReviewCommit {
+    pub sha: String,
+    pub parent: Option<String>,
+    pub author: String,
+    pub date: String,
+    pub subject: String,
+    pub body: String,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub history: bool,
+}
