@@ -307,3 +307,38 @@ async fn the_default_local_watch_sees_appends_to_a_real_file() {
         .unwrap();
     close();
 }
+
+/// A file watch tells from its own thread: the push still comes, on the
+/// watcher's runtime (it panicked outside one in the core).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_change_seen_on_the_file_watchs_own_thread_is_pushed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session.jsonl");
+    std::fs::write(&path, "{}\n").unwrap();
+    let path_text = path.to_string_lossy().into_owned();
+    let resolve: ResolvePath = Arc::new(move |_params: Value| {
+        let path = path_text.clone();
+        Box::pin(async move { Ok(Some(path)) })
+    });
+    let sent: Sent = Arc::default();
+    let to = sent.clone();
+    let mut options = HistoryWatcherOptions::new(
+        resolve,
+        Arc::new(move |ws: &Ws, event: Value| to.lock().unwrap().push((*ws, event))),
+    );
+    options.debounce = Duration::from_millis(10);
+    let watcher = HistoryWatcher::new(options);
+    watcher
+        .subscribe("ws", &json!({ "pane_id": "p1" }))
+        .await
+        .unwrap();
+    std::fs::write(&path, "{}\n{}\n").unwrap();
+    for _ in 0..200 {
+        if !sent.lock().unwrap().is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(sent.lock().unwrap()[0].1["event"], "agent_history.changed");
+    watcher.dispose();
+}

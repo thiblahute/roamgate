@@ -713,6 +713,8 @@ pub async fn resolve_agent_session_info(
             "muse" => "Herdr did not report a working directory for this Muse Code pane.".to_owned(),
             "grok" if !cwd.is_empty() => format!("No local Grok Build session was found for {cwd}. Start Grok Build in this directory, then refresh Session Inspect."),
             "grok" => "Herdr did not report a working directory for this Grok Build pane.".to_owned(),
+            "agy" if !cwd.is_empty() => format!("No local Antigravity session was found for {cwd}. Start Antigravity in this directory, then refresh Session Inspect."),
+            "agy" => "Herdr did not report a working directory for this Antigravity pane.".to_owned(),
             "codex" => "Herdr has not received this pane's Codex session. Install the Codex integration on the agent's machine and run Codex with --no-daemon so session hooks use this pane's environment. Existing shared-server sessions must be resumed with --no-daemon.".to_owned(),
             _ => "Herdr has not received an agent session id for this pane. Install the Herdr integration for this agent and start a new agent session.".to_owned(),
         };

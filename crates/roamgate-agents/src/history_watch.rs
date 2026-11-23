@@ -141,6 +141,9 @@ impl<W> State<W> {
 struct Inner<W> {
     options: HistoryWatcherOptions<W>,
     state: Mutex<State<W>>,
+    /// The runtime its timers run on: a file watch's events come from the
+    /// watcher's own thread.
+    runtime: tokio::runtime::Handle,
 }
 
 /// One per connection.
@@ -153,6 +156,7 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> HistoryWatcher<W> {
         Self {
             inner: Arc::new(Inner {
                 options,
+                runtime: tokio::runtime::Handle::current(),
                 state: Mutex::new(State {
                     panes: Vec::new(),
                     next_id: 0,
@@ -273,7 +277,10 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> HistoryWatcher<W> {
         if let Some(id) = id {
             let inner = self.inner.clone();
             let pane_id = pane_id.to_owned();
-            tokio::spawn(async move { Inner::resolve(&inner, &pane_id, id).await });
+            inner
+                .runtime
+                .clone()
+                .spawn(async move { Inner::resolve(&inner, &pane_id, id).await });
         }
     }
 
@@ -311,6 +318,8 @@ impl<W> Drop for HistoryWatcher<W> {
 
 impl<W: Clone + PartialEq + Send + Sync + 'static> Inner<W> {
     fn changed(this: &Arc<Self>, pane_id: &str) {
+        // Called from a file watch's thread too: its clock is the runtime's.
+        let _runtime = this.runtime.enter();
         let mut state = this.state.lock().unwrap();
         let Some(pane) = state.pane(pane_id) else {
             return;
@@ -323,7 +332,7 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> Inner<W> {
         // The deadline is taken now, not when the task first runs.
         let due = tokio::time::Instant::now() + this.options.debounce;
         let pane_key = pane_id.to_owned();
-        pane.timer = Some(tokio::spawn(async move {
+        pane.timer = Some(this.runtime.spawn(async move {
             tokio::time::sleep_until(due).await;
             let Some(this) = weak.upgrade() else { return };
             let sends = {
@@ -394,7 +403,7 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> Inner<W> {
         }
         let weak = Arc::downgrade(this);
         let due = tokio::time::Instant::now() + this.options.restart;
-        state.restart = Some(tokio::spawn(async move {
+        state.restart = Some(this.runtime.spawn(async move {
             tokio::time::sleep_until(due).await;
             let Some(this) = weak.upgrade() else { return };
             Self::run_remote(&this, spawn);
@@ -429,6 +438,7 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> Inner<W> {
         });
         let on_exit: OnChange = Arc::new(move || {
             let Some(this) = exits.upgrade() else { return };
+            let _runtime = this.runtime.enter();
             let mut state = this.state.lock().unwrap();
             if state.remote.as_ref().map(|(r, _)| *r) != Some(id) {
                 return;
@@ -440,7 +450,7 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> Inner<W> {
             );
             let weak = Arc::downgrade(&this);
             let due = tokio::time::Instant::now() + HELPER_RETRY;
-            state.restart = Some(tokio::spawn(async move {
+            state.restart = Some(this.runtime.spawn(async move {
                 tokio::time::sleep_until(due).await;
                 if let Some(this) = weak.upgrade() {
                     Self::restart_remote(&this);
@@ -518,7 +528,7 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> Inner<W> {
         let weak = Arc::downgrade(this);
         let every = this.options.reresolve;
         let first = tokio::time::Instant::now() + every;
-        state.reresolve = Some(tokio::spawn(async move {
+        state.reresolve = Some(this.runtime.spawn(async move {
             let mut interval = tokio::time::interval_at(first, every);
             loop {
                 interval.tick().await;
@@ -533,7 +543,9 @@ impl<W: Clone + PartialEq + Send + Sync + 'static> Inner<W> {
                     .collect();
                 for (pane_id, id) in panes {
                     let this = this.clone();
-                    tokio::spawn(async move { Self::resolve(&this, &pane_id, id).await });
+                    this.runtime
+                        .clone()
+                        .spawn(async move { Self::resolve(&this, &pane_id, id).await });
                 }
             }
         }));
