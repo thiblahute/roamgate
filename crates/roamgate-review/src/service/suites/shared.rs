@@ -19,8 +19,10 @@ fn setup() -> Kit {
 
 fn open_at(service: &ReviewService, target: Value, root: &str) -> ReviewSession {
     service
-        .open(&json!({"connectionId": "local", "root": root, "target": target,
-            "agent": "claude", "paneId": "w1:p1", "raise": false}))
+        .open(
+            &json!({"connectionId": "local", "root": root, "target": target,
+            "agent": "claude", "paneId": "w1:p1", "raise": false}),
+        )
         .unwrap()
         .session
 }
@@ -63,13 +65,18 @@ fn told(pushes: &std::sync::Mutex<Vec<Value>>) -> Vec<String> {
 async fn a_thread_made_in_either_view_shows_in_the_other() {
     let Kit { service, .. } = setup();
     let rendered = open(&service, json!({"kind": "rendered", "path": "plan.md"}));
-    let code = open(&service, json!({"kind": "range", "base": "main", "head": "topic"}));
+    let code = open(
+        &service,
+        json!({"kind": "range", "base": "main", "head": "topic"}),
+    );
     let other = open(&service, json!({"kind": "rendered", "path": "other.md"}));
     let elsewhere = open_at(&service, json!({"kind": "worktree"}), "/elsewhere");
     let mut anchor = on_plan(3);
     anchor["render"] = json!({"quote": "the words"});
     let from_rendered = service
-        .add_thread(&json!({"sessionId": rendered.id, "anchor": anchor, "text": "From the rendered view"}))
+        .add_thread(
+            &json!({"sessionId": rendered.id, "anchor": anchor, "text": "From the rendered view"}),
+        )
         .await
         .unwrap();
     let from_code = service
@@ -113,15 +120,16 @@ async fn a_change_in_one_review_is_pushed_to_the_reviews_showing_its_threads() {
     let code = open(&service, json!({"kind": "worktree"}));
     pushes.lock().unwrap().clear();
     let thread = service
-        .add_thread(&json!({"sessionId": rendered.id, "anchor": on_plan(2), "text": "Pushed to both"}))
+        .add_thread(
+            &json!({"sessionId": rendered.id, "anchor": on_plan(2), "text": "Pushed to both"}),
+        )
         .await
         .unwrap();
     let last = pushes
         .lock()
         .unwrap()
         .iter()
-        .filter(|p| p["type"] == "session" && p["snapshot"]["session"]["id"] == json!(code.id))
-        .next_back()
+        .rfind(|p| p["type"] == "session" && p["snapshot"]["session"]["id"] == json!(code.id))
         .cloned()
         .unwrap();
     assert_eq!(
@@ -136,11 +144,13 @@ async fn a_change_in_one_review_is_pushed_to_the_reviews_showing_its_threads() {
 }
 
 #[tokio::test]
-async fn replies_resolve_and_reopen_from_the_other_view_go_to_the_threads_review_delivered_once()
-{
+async fn replies_resolve_and_reopen_from_the_other_view_go_to_the_threads_review_delivered_once() {
     let Kit { service, host, .. } = setup();
     let rendered = open(&service, json!({"kind": "rendered", "path": "plan.md"}));
-    let code = open(&service, json!({"kind": "range", "base": "main", "head": "topic"}));
+    let code = open(
+        &service,
+        json!({"kind": "range", "base": "main", "head": "topic"}),
+    );
     let thread = service
         .add_thread(&json!({"sessionId": rendered.id, "anchor": on_plan(4), "text": "First words"}))
         .await
@@ -217,7 +227,9 @@ async fn a_sub_thread_on_a_part_of_a_shared_threads_comment_lives_in_that_thread
     let rendered = open(&service, json!({"kind": "rendered", "path": "plan.md"}));
     let code = open(&service, json!({"kind": "worktree"}));
     let thread = service
-        .add_thread(&json!({"sessionId": code.id, "anchor": on_plan(7), "text": "Option a or option b?"}))
+        .add_thread(
+            &json!({"sessionId": code.id, "anchor": on_plan(7), "text": "Option a or option b?"}),
+        )
         .await
         .unwrap();
     let mut anchor = on_plan(7);
@@ -237,8 +249,14 @@ async fn a_checkouts_code_reviews_show_each_others_threads_whatever_they_compare
         service, pushes, ..
     } = setup();
     let worktree = open(&service, json!({"kind": "worktree"}));
-    let branch = open(&service, json!({"kind": "range", "base": "origin/main", "head": "HEAD"}));
-    let agents = open(&service, json!({"kind": "range", "base": "main", "head": "topic"}));
+    let branch = open(
+        &service,
+        json!({"kind": "range", "base": "origin/main", "head": "HEAD"}),
+    );
+    let agents = open(
+        &service,
+        json!({"kind": "range", "base": "main", "head": "topic"}),
+    );
     let compare = open(
         &service,
         json!({"kind": "range", "base": "topic-before", "head": "topic", "compare": true}),
@@ -272,7 +290,11 @@ async fn a_checkouts_code_reviews_show_each_others_threads_whatever_they_compare
     let sorted_shared = |id: &str| sorted(shared(&service, id));
     assert_eq!(
         sorted_shared(&agents.id),
-        sorted(vec![on_worktree.clone(), on_branch.clone(), general.clone()])
+        sorted(vec![
+            on_worktree.clone(),
+            on_branch.clone(),
+            general.clone()
+        ])
     );
     assert_eq!(
         sorted_shared(&worktree.id),
@@ -301,8 +323,10 @@ async fn a_checkouts_code_reviews_show_each_others_threads_whatever_they_compare
     assert!(!shared(&service, &agents.id).contains(&on_step));
     pushes.lock().unwrap().clear();
     service
-        .reply(&json!({"sessionId": agents.id, "commentId": on_branch, "author": "claude",
-            "text": "Answered from the agent's review"}))
+        .reply(
+            &json!({"sessionId": agents.id, "commentId": on_branch, "author": "claude",
+            "text": "Answered from the agent's review"}),
+        )
         .await
         .unwrap();
     let in_branch = service
@@ -325,15 +349,19 @@ async fn a_checkouts_code_reviews_show_each_others_threads_whatever_they_compare
 async fn a_merge_requests_review_of_the_checkout_lists_only_its_own_threads() {
     let Kit { service, .. } = setup();
     let worktree = open(&service, json!({"kind": "worktree"}));
-    let branch = open(&service, json!({"kind": "range", "base": "origin/main", "head": "HEAD"}));
+    let branch = open(
+        &service,
+        json!({"kind": "range", "base": "origin/main", "head": "HEAD"}),
+    );
     let mr = open(
         &service,
         json!({"kind": "mr", "url": "https://gitlab.example/group/project/-/merge_requests/4"}),
     );
-    let add = |id: &str, text: &str| {
-        json!({"sessionId": id, "anchor": {"path": "play.c", "line": 1, "side": "new", "text": "x"}, "text": text})
-    };
-    service.add_thread(&add(&worktree.id, "In Files")).await.unwrap();
+    let add = |id: &str, text: &str| json!({"sessionId": id, "anchor": {"path": "play.c", "line": 1, "side": "new", "text": "x"}, "text": text});
+    service
+        .add_thread(&add(&worktree.id, "In Files"))
+        .await
+        .unwrap();
     service
         .add_thread(&add(&branch.id, "On the branch"))
         .await
@@ -350,10 +378,12 @@ async fn a_merge_requests_review_of_the_checkout_lists_only_its_own_threads() {
 }
 
 #[tokio::test]
-async fn a_draft_the_agent_answered_in_is_talked_through_the_users_next_reply_reaches_the_agent()
-{
+async fn a_draft_the_agent_answered_in_is_talked_through_the_users_next_reply_reaches_the_agent() {
     let Kit { service, host, .. } = setup();
-    let branch = open(&service, json!({"kind": "range", "base": "origin/main", "head": "HEAD"}));
+    let branch = open(
+        &service,
+        json!({"kind": "range", "base": "origin/main", "head": "HEAD"}),
+    );
     let draft = service
         .add_thread(&json!({"sessionId": branch.id, "kind": "draft",
             "anchor": {"path": "play.c", "line": 1, "side": "new", "text": "x"},

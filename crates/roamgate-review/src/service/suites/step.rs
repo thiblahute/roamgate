@@ -59,7 +59,8 @@ fn with(mut target: Value, changes: Value) -> Value {
 async fn a_steps_review_is_one_per_step_the_same_two_snapshots_open_the_same_session() {
     let (Kit { service, .. }, _) = setup_in(None);
     let open = |target: Value, workspace: bool| {
-        let mut params = json!({"connectionId": "local", "root": "/repo", "target": target, "raise": false});
+        let mut params =
+            json!({"connectionId": "local", "root": "/repo", "target": target, "raise": false});
         if workspace {
             params["workspaceId"] = json!("w1");
         }
@@ -144,8 +145,10 @@ async fn a_steps_review_has_no_commits_its_diff_is_the_steps_the_steps_with_thre
     );
     assert!(service.kept_steps("/repo").is_empty());
     service
-        .add_thread(&json!({"sessionId": session.id, "anchor": {"path": "a.txt", "line": 1, "side": "new",
-            "text": "two"}, "text": "Why?", "author": "you"}))
+        .add_thread(
+            &json!({"sessionId": session.id, "anchor": {"path": "a.txt", "line": 1, "side": "new",
+            "text": "two"}, "text": "Why?", "author": "you"}),
+        )
         .await
         .unwrap();
     assert_eq!(service.kept_steps("/repo"), vec!["1763200000000-abcdef01"]);
@@ -160,13 +163,14 @@ async fn reading_a_scope_with_no_review_creates_touches_and_publishes_no_session
             "target": {"kind": "range", "base": "main", "head": "HEAD"}, "raise": false}))
         .unwrap()
         .session;
-    let updated = |service: &ReviewService| {
-        ids(&service.list(&json!({})), |s| s.session.updated_at.clone())
-    };
+    let updated =
+        |service: &ReviewService| ids(&service.list(&json!({})), |s| s.session.updated_at.clone());
     let listed = updated(&service);
     let read = |target: Value| json!({"connectionId": "local", "root": "/repo", "target": target});
     let commits = service
-        .preview_commits(&read(json!({"kind": "range", "base": "origin/main", "head": "HEAD"})))
+        .preview_commits(&read(
+            json!({"kind": "range", "base": "origin/main", "head": "HEAD"}),
+        ))
         .await
         .unwrap();
     assert_eq!(commits["commits"].as_array().unwrap().len(), 1);
@@ -231,9 +235,12 @@ async fn a_review_of_a_kind_from_a_newer_build_is_kept_and_listed_never_crashing
         )
         .unwrap();
     }
-    let (Kit {
-        service: reopened, ..
-    }, _) = setup_in(Some(kit.dir.clone()));
+    let (
+        Kit {
+            service: reopened, ..
+        },
+        _,
+    ) = setup_in(Some(kit.dir.clone()));
     let found = reopened
         .list(&json!({}))
         .into_iter()

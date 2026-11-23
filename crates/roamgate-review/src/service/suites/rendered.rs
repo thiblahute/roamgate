@@ -108,15 +108,19 @@ async fn the_agent_gets_the_source_lines_the_region_the_moment_and_the_snapshot(
         .await
         .unwrap();
     service
-        .add_thread(&json!({"sessionId": session.id, "anchor": {"path": "docs/design.md", "line": 3,
-            "side": "new", "render": {"quote": "the words I mean"}}, "text": "Say why."}))
+        .add_thread(
+            &json!({"sessionId": session.id, "anchor": {"path": "docs/design.md", "line": 3,
+            "side": "new", "render": {"quote": "the words I mean"}}, "text": "Say why."}),
+        )
         .await
         .unwrap();
     sleep(60).await;
     let prompt = host.texts().join("\n");
     assert!(prompt.contains("on docs/design.md:12-30 as rendered (diagram 1, region x 25% y 50% w 10% h 20% of it, element \"decoder\", at 1.5 s):"), "{prompt}");
     assert!(prompt.contains("(what I saw there: /r/images/0123456789abcdef/fedcba9876543210.png)"));
-    assert!(prompt.contains("on docs/design.md:3 as rendered, about this part:\n  > the words I mean"));
+    assert!(
+        prompt.contains("on docs/design.md:3 as rendered, about this part:\n  > the words I mean")
+    );
     assert!(prompt.contains("This arrow is backwards."));
 }
 
@@ -124,11 +128,15 @@ async fn the_agent_gets_the_source_lines_the_region_the_moment_and_the_snapshot(
 fn a_page_of_a_site_is_named_by_its_url() {
     let part = |value: serde_json::Value| serde_json::from_value(value).unwrap();
     assert_eq!(
-        rendered_place(&part(json!({"url": "/tutorials/basic.html", "selector": "main > h2:nth-of-type(3)"}))),
+        rendered_place(&part(
+            json!({"url": "/tutorials/basic.html", "selector": "main > h2:nth-of-type(3)"})
+        )),
         "page /tutorials/basic.html, at `main > h2:nth-of-type(3)`"
     );
     assert_eq!(
-        rendered_place(&part(json!({"region": {"x": 0.5, "y": 0.5, "w": 0, "h": 0}}))),
+        rendered_place(&part(
+            json!({"region": {"x": 0.5, "y": 0.5, "w": 0, "h": 0}})
+        )),
         "point x 50% y 50% of it"
     );
 }

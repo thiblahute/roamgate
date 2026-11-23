@@ -39,11 +39,19 @@ fn repository() -> Repository {
     let root = clones.join("repo");
     git(
         Path::new("/tmp"),
-        &["clone", "-q", upstream.to_str().unwrap(), root.to_str().unwrap()],
+        &[
+            "clone",
+            "-q",
+            upstream.to_str().unwrap(),
+            root.to_str().unwrap(),
+        ],
     );
     git(&root, &["branch", "other", "origin/other"]);
     git(&root, &["checkout", "-q", "-b", "topic"]);
-    git(&root, &["commit", "-q", "--allow-empty", "-m", "topic work"]);
+    git(
+        &root,
+        &["commit", "-q", "--allow-empty", "-m", "topic work"],
+    );
     Repository {
         _dirs: (up_dir, clone_dir),
         root,
@@ -55,10 +63,19 @@ fn repository() -> Repository {
 fn entire_repository() -> Repository {
     let repository = repository();
     let upstream = &repository.upstream;
-    git(upstream, &["checkout", "-q", "--orphan", "entire/checkpoints/v1"]);
     git(
         upstream,
-        &["commit", "-q", "--allow-empty", "-m", "Initialize metadata branch"],
+        &["checkout", "-q", "--orphan", "entire/checkpoints/v1"],
+    );
+    git(
+        upstream,
+        &[
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "Initialize metadata branch",
+        ],
     );
     git(upstream, &["checkout", "-q", "main"]);
     git(&repository.root, &["fetch", "-q"]);
@@ -131,8 +148,10 @@ impl Ways {
             }
         };
         service
-            .open(&json!({"connectionId": "local", "root": self.root, "target": target,
-                "automatic": automatic, "paneId": "w1:p2", "agent": "Claude", "workspaceId": "w1"}))
+            .open(
+                &json!({"connectionId": "local", "root": self.root, "target": target,
+                "automatic": automatic, "paneId": "w1:p2", "agent": "Claude", "workspaceId": "w1"}),
+            )
             .unwrap()
     }
 
@@ -190,7 +209,11 @@ impl Ways {
 
     fn bodies(&self, id: &str) -> Vec<String> {
         ids(
-            &self.service().get(&json!({"sessionId": id})).unwrap().threads,
+            &self
+                .service()
+                .get(&json!({"sessionId": id}))
+                .unwrap()
+                .threads,
             |t| t.comments[0].body.clone(),
         )
     }
@@ -258,7 +281,10 @@ async fn a_stale_local_main_changes_and_the_review_both_compare_with_origin_main
     );
     git(root, &["fetch", "-q"]);
     git(root, &["rebase", "-q", "origin/main"]);
-    assert_eq!(git(root, &["rev-list", "--count", "main..origin/main"]), "1");
+    assert_eq!(
+        git(root, &["rev-list", "--count", "main..origin/main"]),
+        "1"
+    );
     let ways = Ways::new(bun, root);
     assert_eq!(
         ways.branch_scope_base().await,
@@ -276,12 +302,18 @@ async fn a_local_main_ahead_of_origin_main_changes_and_the_review_both_compare_w
     let repository = repository();
     let root = &repository.root;
     git(root, &["checkout", "-q", "main"]);
-    git(root, &["commit", "-q", "--allow-empty", "-m", "not pushed yet"]);
+    git(
+        root,
+        &["commit", "-q", "--allow-empty", "-m", "not pushed yet"],
+    );
     git(root, &["checkout", "-q", "topic"]);
     git(root, &["rebase", "-q", "main"]);
     let ways = Ways::new(bun, root);
     assert_eq!(ways.branch_scope_base().await, json!("refs/heads/main"));
-    assert_eq!(ways.option_r().await.session.target.to_value(), range("main"));
+    assert_eq!(
+        ways.option_r().await.session.target.to_value(),
+        range("main")
+    );
     git(root, &["checkout", "-q", "main"]);
     assert_eq!(
         ways.branch_scope_base().await,
@@ -301,7 +333,10 @@ async fn local_main_and_origin_main_diverged_the_one_whose_merge_base_with_head_
     git(root, &["fetch", "-q"]);
     git(root, &["checkout", "-q", "main"]);
     git(root, &["commit", "-q", "--allow-empty", "-m", "local only"]);
-    git(root, &["checkout", "-q", "-b", "from-remote", "origin/main"]);
+    git(
+        root,
+        &["checkout", "-q", "-b", "from-remote", "origin/main"],
+    );
     git(root, &["commit", "-q", "--allow-empty", "-m", "work"]);
     let ways = Ways::new(bun, root);
     assert_eq!(
@@ -322,7 +357,10 @@ async fn when_automatics_base_moves_the_branchs_review_follows_it_with_its_comme
     let before = ways.branch_comment("Kept?", None).await;
     assert_eq!(before.session.target.to_value(), range("origin/main"));
     git(root, &["checkout", "-q", "main"]);
-    git(root, &["commit", "-q", "--allow-empty", "-m", "not pushed yet"]);
+    git(
+        root,
+        &["commit", "-q", "--allow-empty", "-m", "not pushed yet"],
+    );
     git(root, &["checkout", "-q", "topic"]);
     git(root, &["rebase", "-q", "main"]);
     let after = ways.option_r().await;
@@ -368,8 +406,10 @@ async fn a_branchs_review_once_based_on_a_metadata_ref_follows_automatic_to_the_
     let ways = Ways::new(bun, &repository.root);
     let before = ways
         .service()
-        .open(&json!({"connectionId": "local", "workspaceId": "w1", "root": ways.root,
-            "target": range("origin/entire/checkpoints/v1"), "automatic": true}))
+        .open(
+            &json!({"connectionId": "local", "workspaceId": "w1", "root": ways.root,
+            "target": range("origin/entire/checkpoints/v1"), "automatic": true}),
+        )
         .unwrap();
     ways.service()
         .add_thread(&json!({"sessionId": before.session.id,

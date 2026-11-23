@@ -131,9 +131,13 @@ fn by_body(service: &ReviewService, id: &str, body: &str) -> ReviewThread {
 
 #[tokio::test]
 async fn the_agents_update_a_thread_written_and_an_open_look_at_the_file_reads_only_now_and_then() {
-    let (Kit {
-        service, pushes, ..
-    }, file, id) = file_setup();
+    let (
+        Kit {
+            service, pushes, ..
+        },
+        file,
+        id,
+    ) = file_setup();
     written(&service, &id, 6, Some(7), HEADSET, "headset").await;
     assert!(until(|| file.reads() >= 1).await);
     let reads = file.reads();
@@ -146,20 +150,24 @@ async fn the_agents_update_a_thread_written_and_an_open_look_at_the_file_reads_o
         .agent_status(&json!({"sessionId": id, "state": "update", "message": "Moved it"}))
         .unwrap();
     assert!(
-        until(|| pushes.lock().unwrap().iter().any(|p| p["type"] == "session"
-            && p["snapshot"]["threads"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|t| t["anchor"]["line"] == json!(8))))
+        until(
+            || pushes.lock().unwrap().iter().any(|p| p["type"] == "session"
+                && p["snapshot"]["threads"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|t| t["anchor"]["line"] == json!(8)))
+        )
         .await
     );
     let headset = by_body(&service, &id, "headset").anchor;
     assert_eq!((headset.line, headset.end_line), (Some(8), Some(9)));
     let stale = service
-        .add_thread(&json!({"sessionId": id, "anchor": {"path": "todo.md", "line": 8, "side": "new",
+        .add_thread(
+            &json!({"sessionId": id, "anchor": {"path": "todo.md", "line": 8, "side": "new",
             "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
-            "render": {"quote": CALL}}, "text": "call"}))
+            "render": {"quote": CALL}}, "text": "call"}),
+        )
         .await
         .unwrap();
     assert!(until(|| by_body(&service, &id, "call").anchor.line == Some(3)).await);
@@ -175,21 +183,27 @@ async fn the_agents_update_a_thread_written_and_an_open_look_at_the_file_reads_o
 #[tokio::test]
 async fn the_checkouts_review_moves_its_files_preview_threads_with_their_files_its_diffs_untouched()
 {
-    let (Kit {
-        service, pushes, ..
-    }, file, id) = file_setup();
+    let (
+        Kit {
+            service, pushes, ..
+        },
+        file,
+        id,
+    ) = file_setup();
     let checkout = service
         .open(&json!({"connectionId": "local", "root": "/repo", "target": {"kind": "worktree"}, "raise": false}))
         .unwrap()
         .session;
     assert_ne!(checkout.id, id);
     let in_files = service
-        .add_thread(&json!({"sessionId": checkout.id, "anchor": {"path": "todo.md", "line": 6, "endLine": 7,
+        .add_thread(
+            &json!({"sessionId": checkout.id, "anchor": {"path": "todo.md", "line": 6, "endLine": 7,
             "side": "new", "text": "      2026-11-19, needs one real headset call to confirm.",
             "render": {"quote": HEADSET},
             "feedback": json!({"source": "file", "anchor": "quote", "path": "/repo/todo.md",
                 "quote": HEADSET, "line": 6, "endLine": 7}).to_string()},
-            "text": "headset in files"}))
+            "text": "headset in files"}),
+        )
         .await
         .unwrap();
     let on_diff = service
@@ -227,7 +241,9 @@ async fn the_checkouts_review_moves_its_files_preview_threads_with_their_files_i
             .lock()
             .unwrap()
             .iter()
-            .filter(|p| p["type"] == "session" && p["snapshot"]["session"]["id"] == json!(checkout.id))
+            .filter(
+                |p| p["type"] == "session" && p["snapshot"]["session"]["id"] == json!(checkout.id)
+            )
             .count(),
         1
     );
@@ -259,7 +275,10 @@ async fn a_thread_an_agent_wrote_with_no_line_text_is_given_its_lines_and_follow
     };
     assert!(until(|| of(&service).text.is_some()).await);
     file.set(AFTER);
-    service.reanchor_file(&json!({"sessionId": id})).await.unwrap();
+    service
+        .reanchor_file(&json!({"sessionId": id}))
+        .await
+        .unwrap();
     let anchor = of(&service);
     assert_eq!((anchor.line, anchor.end_line), (Some(8), Some(9)));
 }
@@ -299,6 +318,7 @@ fn changes_kit(bun: &Path, loads: Arc<Mutex<Vec<Option<Vec<String>>>>>) -> Kit {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 /// A diff note of Changes as workspaceFeedback.ts writes it: the
 /// worktree review of the checkout (the branch's for a `branch` note), a
 /// thread whose anchor is the entry's line and its note.
@@ -318,7 +338,9 @@ async fn write_note(
         json!({"kind": "worktree"})
     };
     let session = service
-        .open(&json!({"connectionId": "local", "workspaceId": "w1", "root": root, "target": target}))
+        .open(
+            &json!({"connectionId": "local", "workspaceId": "w1", "root": root, "target": target}),
+        )
         .unwrap()
         .session;
     let note = json!({"id": id, "source": "diff", "path": path, "kind": kind, "side": side,
@@ -388,15 +410,36 @@ async fn changes_entry_anchors_move_onto_the_combined_diff_by_their_lines_text()
         .await
         .unwrap();
     let at = |note: &str| placed(&service, &session, note);
-    assert_eq!(at("staged-new"), (json!(["new", 1, "S"]), json!(["combined", "new", 1])));
-    assert_eq!(at("staged-ctx"), (json!(["new", 4, "c"]), json!(["combined", "new", 4])));
-    assert_eq!(at("staged-old"), (json!(["old", 6, "f"]), json!(["combined", "old", 6])));
-    assert_eq!(at("unstaged-old"), (json!(["old", 6, "f"]), json!(["combined", "old", 6])));
-    assert_eq!(at("unstaged-new"), (json!(["new", 7, "F"]), json!(["combined", "new", 7])));
-    assert_eq!(at("untracked"), (json!(["new", 2, "two"]), json!(["combined", "new", 2])));
+    assert_eq!(
+        at("staged-new"),
+        (json!(["new", 1, "S"]), json!(["combined", "new", 1]))
+    );
+    assert_eq!(
+        at("staged-ctx"),
+        (json!(["new", 4, "c"]), json!(["combined", "new", 4]))
+    );
+    assert_eq!(
+        at("staged-old"),
+        (json!(["old", 6, "f"]), json!(["combined", "old", 6]))
+    );
+    assert_eq!(
+        at("unstaged-old"),
+        (json!(["old", 6, "f"]), json!(["combined", "old", 6]))
+    );
+    assert_eq!(
+        at("unstaged-new"),
+        (json!(["new", 7, "F"]), json!(["combined", "new", 7]))
+    );
+    assert_eq!(
+        at("untracked"),
+        (json!(["new", 2, "two"]), json!(["combined", "new", 2]))
+    );
     assert_eq!(
         at("gone"),
-        (json!(["old", 3, "no such line"]), json!(["unstaged", "old", 3]))
+        (
+            json!(["old", 3, "no such line"]),
+            json!(["unstaged", "old", 3])
+        )
     );
     let loads = loads.lock().unwrap().clone();
     assert!(!loads.is_empty());
@@ -419,18 +462,33 @@ async fn changes_entry_anchors_move_onto_the_combined_diff_by_their_lines_text()
     let note: Value = serde_json::from_str(moved.anchor.feedback.as_deref().unwrap()).unwrap();
     assert_eq!(
         (&note["id"], &note["source"], &note["path"], &note["quote"]),
-        (&json!("unstaged-old"), &json!("diff"), &json!("a.txt"), &json!("f"))
+        (
+            &json!("unstaged-old"),
+            &json!("diff"),
+            &json!("a.txt"),
+            &json!("f")
+        )
     );
 }
 
 #[tokio::test]
-async fn the_migration_runs_once_a_second_read_writes_nothing_a_migrated_thread_is_not_read_again() {
+async fn the_migration_runs_once_a_second_read_writes_nothing_a_migrated_thread_is_not_read_again()
+{
     let Some(bun) = bun() else { return };
     let dir = changes_checkout();
     let loads: Arc<Mutex<Vec<Option<Vec<String>>>>> = Arc::default();
     let Kit { service, .. } = changes_kit(&bun, loads.clone());
-    let (session, thread) =
-        write_note(&service, &root_of(&dir), "u", "unstaged", "old", 7, "f", "a.txt").await;
+    let (session, thread) = write_note(
+        &service,
+        &root_of(&dir),
+        "u",
+        "unstaged",
+        "old",
+        7,
+        "f",
+        "a.txt",
+    )
+    .await;
     let params = json!({"sessionId": session});
     let migrate = || service.migrate_entry_anchors(&params);
     let of = |service: &ReviewService| {
@@ -461,8 +519,17 @@ async fn the_migrated_anchors_are_kept_across_a_restart_of_the_server() {
     let Some(bun) = bun() else { return };
     let dir = changes_checkout();
     let kit = changes_kit(&bun, Arc::default());
-    let (session, thread) =
-        write_note(&kit.service, &root_of(&dir), "u", "unstaged", "old", 7, "f", "a.txt").await;
+    let (session, thread) = write_note(
+        &kit.service,
+        &root_of(&dir),
+        "u",
+        "unstaged",
+        "old",
+        7,
+        "f",
+        "a.txt",
+    )
+    .await;
     kit.service
         .migrate_entry_anchors(&json!({"sessionId": session}))
         .await
@@ -487,15 +554,28 @@ async fn a_branch_reviews_threads_and_a_range_review_are_left_alone() {
     let dir = changes_checkout();
     let loads: Arc<Mutex<Vec<Option<Vec<String>>>>> = Arc::default();
     let Kit { service, .. } = changes_kit(&bun, loads.clone());
-    let (session, thread) =
-        write_note(&service, &root_of(&dir), "b", "branch", "new", 7, "F", "a.txt").await;
+    let (session, thread) = write_note(
+        &service,
+        &root_of(&dir),
+        "b",
+        "branch",
+        "new",
+        7,
+        "F",
+        "a.txt",
+    )
+    .await;
     service
         .migrate_entry_anchors(&json!({"sessionId": session}))
         .await
         .unwrap();
     let snapshot = service.get(&json!({"sessionId": session})).unwrap();
     assert_eq!(snapshot.session.target.kind(), "range");
-    let found = snapshot.threads.into_iter().find(|t| t.id == thread).unwrap();
+    let found = snapshot
+        .threads
+        .into_iter()
+        .find(|t| t.id == thread)
+        .unwrap();
     let note: Value = serde_json::from_str(found.anchor.feedback.as_deref().unwrap()).unwrap();
     assert_eq!(note["kind"], json!("branch"));
     assert!(loads.lock().unwrap().iter().all(Option::is_none));
@@ -505,8 +585,10 @@ async fn unstaged_f(service: &ReviewService, session: &str) -> ReviewThread {
     let note = json!({"id": "u", "source": "diff", "path": "a.txt", "kind": "unstaged", "side": "old",
         "line": 7, "hunk": "@@", "quote": "f", "comment": "On f", "createdAt": 7});
     service
-        .add_thread(&json!({"sessionId": session, "anchor": {"path": "a.txt", "line": 7, "side": "old",
-            "text": "f", "feedback": note.to_string()}, "text": "On f"}))
+        .add_thread(
+            &json!({"sessionId": session, "anchor": {"path": "a.txt", "line": 7, "side": "old",
+            "text": "f", "feedback": note.to_string()}, "text": "On f"}),
+        )
         .await
         .unwrap()
 }
@@ -710,11 +792,43 @@ async fn threads_on_an_amended_commit_follow_it_onto_the_new_commit_and_their_li
     let Kit {
         service, pushes, ..
     } = kit(git_host(&bun), Options::default());
-    let branch = open_on(&service, &root, json!({"kind": "range", "base": "main", "head": "HEAD"}));
-    let before = open_on(&service, &root, json!({"kind": "range", "base": "main", "head": "topic"}));
-    let die = on_commit(&service, &before, &root, "play.c", "die (const char *what, GstError *err)", "Logging?").await;
-    let pad = on_commit(&service, &branch, &root, "element.rs", "    _private: [u8; 0],", "What does [u8; 0] mean?!").await;
-    let exit = on_commit(&service, &branch, &root, "play.c", "  return 0;", "Exit code?").await;
+    let branch = open_on(
+        &service,
+        &root,
+        json!({"kind": "range", "base": "main", "head": "HEAD"}),
+    );
+    let before = open_on(
+        &service,
+        &root,
+        json!({"kind": "range", "base": "main", "head": "topic"}),
+    );
+    let die = on_commit(
+        &service,
+        &before,
+        &root,
+        "play.c",
+        "die (const char *what, GstError *err)",
+        "Logging?",
+    )
+    .await;
+    let pad = on_commit(
+        &service,
+        &branch,
+        &root,
+        "element.rs",
+        "    _private: [u8; 0],",
+        "What does [u8; 0] mean?!",
+    )
+    .await;
+    let exit = on_commit(
+        &service,
+        &branch,
+        &root,
+        "play.c",
+        "  return 0;",
+        "Exit code?",
+    )
+    .await;
     let was = thread_of(&service, &branch, &pad.id).commit;
     let edited = root.clone();
     let amended = amend_and_replay(&root, move || {
@@ -739,7 +853,10 @@ async fn threads_on_an_amended_commit_follow_it_onto_the_new_commit_and_their_li
         .unwrap();
     let moved = thread_of(&service, &before, &die.id);
     assert_eq!(moved.commit.as_deref(), Some(amended.as_str()));
-    assert_eq!(moved.commit_parent, Some(git(&root, &["rev-parse", "topic~2"])));
+    assert_eq!(
+        moved.commit_parent,
+        Some(git(&root, &["rev-parse", "topic~2"]))
+    );
     assert_eq!(moved.line, Some(6));
     assert!(!moved.outdated);
     let note: Value = serde_json::from_str(moved.feedback.as_deref().unwrap()).unwrap();
@@ -774,8 +891,20 @@ async fn a_commit_squashed_away_its_thread_goes_to_its_line_in_the_whole_change(
     let Some(bun) = bun() else { return };
     let (_dir, root) = rewritten_repository();
     let Kit { service, .. } = kit(git_host(&bun), Options::default());
-    let branch = open_on(&service, &root, json!({"kind": "range", "base": "main", "head": "HEAD"}));
-    let die = on_commit(&service, &branch, &root, "play.c", "die (const char *what, GstError *err)", "Logging?").await;
+    let branch = open_on(
+        &service,
+        &root,
+        json!({"kind": "range", "base": "main", "head": "HEAD"}),
+    );
+    let die = on_commit(
+        &service,
+        &branch,
+        &root,
+        "play.c",
+        "die (const char *what, GstError *err)",
+        "Logging?",
+    )
+    .await;
     git(&root, &["reset", "-q", "--soft", "main"]);
     git(&root, &["commit", "-q", "-m", "gst-c: everything at once"]);
     service
@@ -796,13 +925,33 @@ async fn another_branchs_thread_is_not_moved_onto_this_one_by_its_subject() {
     let (_dir, root) = rewritten_repository();
     let Kit { service, .. } = kit(git_host(&bun), Options::default());
     git(&root, &["branch", "other", "topic"]);
-    let other = open_on(&service, &root, json!({"kind": "range", "base": "main", "head": "other"}));
-    let thread = on_commit(&service, &other, &root, "play.c", "die (const char *what, GstError *err)", "On other").await;
+    let other = open_on(
+        &service,
+        &root,
+        json!({"kind": "range", "base": "main", "head": "other"}),
+    );
+    let thread = on_commit(
+        &service,
+        &other,
+        &root,
+        "play.c",
+        "die (const char *what, GstError *err)",
+        "On other",
+    )
+    .await;
     let edited = root.clone();
     amend_and_replay(&root, move || {
-        std::fs::write(edited.join("play.c"), format!("/* changed */\n{}\n", lines(PLAY))).unwrap();
+        std::fs::write(
+            edited.join("play.c"),
+            format!("/* changed */\n{}\n", lines(PLAY)),
+        )
+        .unwrap();
     });
-    let branch = open_on(&service, &root, json!({"kind": "range", "base": "main", "head": "HEAD"}));
+    let branch = open_on(
+        &service,
+        &root,
+        json!({"kind": "range", "base": "main", "head": "HEAD"}),
+    );
     service
         .reanchor_rewritten(&json!({"sessionId": branch}))
         .await

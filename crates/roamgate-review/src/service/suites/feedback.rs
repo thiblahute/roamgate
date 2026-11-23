@@ -198,7 +198,10 @@ async fn thread_ids_are_16_hexadecimal_digits_the_same_for_the_same_note() {
     let Kit { service, .. } = setup();
     let id = thread_id("a");
     assert_eq!(id.len(), 16);
-    assert!(id.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+    assert!(
+        id.bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    );
     assert_ne!(id, thread_id("b"));
     let note = file_note("a", "Once");
     let (_, first) = write(&service, &note, None, 1, false).await.unwrap();
@@ -211,7 +214,11 @@ async fn thread_ids_are_16_hexadecimal_digits_the_same_for_the_same_note() {
 #[tokio::test]
 async fn a_note_read_back_compiles_word_for_word_as_it_did() {
     let Kit { service, clock, .. } = setup();
-    let notes = [file_note("f1", "On the file"), diff_note(), terminal_note(false)];
+    let notes = [
+        file_note("f1", "On the file"),
+        diff_note(),
+        terminal_note(false),
+    ];
     for (at, note) in notes.iter().enumerate() {
         clock.advance(1);
         write(&service, note, None, at as i64 + 100, false)
@@ -248,7 +255,10 @@ async fn a_comment_is_its_reviews_thread_and_goes_to_the_workspaces_agent() {
     assert!(held(&service).is_empty());
     assert_eq!(thread.kind, "discussion");
     let note: Value = serde_json::from_str(thread.anchor.feedback.as_deref().unwrap()).unwrap();
-    assert_eq!((&note["source"], &note["kind"]), (&json!("diff"), &json!("unstaged")));
+    assert_eq!(
+        (&note["source"], &note["kind"]),
+        (&json!("diff"), &json!("unstaged"))
+    );
     assert_eq!(opened.session.agent.pane_id.as_deref(), Some("w1:p1"));
     sleep(30).await;
     assert!(host.texts().join("\n").contains("Why int?"));
@@ -320,7 +330,7 @@ async fn a_terminal_comment_still_waits_in_review_feedback() {
 
 #[tokio::test]
 async fn comments_held_before_wait_for_send_with_a_terminals_and_the_hand_off_delivers_nothing_twice()
-{
+ {
     let Kit { service, host, .. } = setup();
     let id = worktree_with_agent(&service, false);
     service
@@ -362,9 +372,11 @@ async fn comments_held_before_wait_for_send_with_a_terminals_and_the_hand_off_de
 async fn a_terminal_comment_on_an_agents_pane_is_held_in_that_agents_chat_review() {
     let Kit { service, host, .. } = setup();
     let chat = service
-        .open(&json!({"connectionId": "local", "workspaceId": "w1", "root": "/repo",
+        .open(
+            &json!({"connectionId": "local", "workspaceId": "w1", "root": "/repo",
             "target": {"kind": "chat", "chat": "session-7"}, "title": "Chat with claude",
-            "agent": "claude", "paneId": "w1:p2"}))
+            "agent": "claude", "paneId": "w1:p2"}),
+        )
         .unwrap();
     let (opened, thread) = write(&service, &terminal_note(true), AGENT, 5, false)
         .await
@@ -378,7 +390,9 @@ async fn a_terminal_comment_on_an_agents_pane_is_held_in_that_agents_chat_review
     );
     sleep(30).await;
     assert!(host.texts().is_empty());
-    let Kit { service: second, .. } = setup();
+    let Kit {
+        service: second, ..
+    } = setup();
     let (first, _) = write(&second, &terminal_note(true), AGENT, 1, false)
         .await
         .unwrap();
@@ -388,9 +402,11 @@ async fn a_terminal_comment_on_an_agents_pane_is_held_in_that_agents_chat_review
     );
     assert_eq!(first.session.agent.pane_id.as_deref(), Some("w1:p2"));
     let reopened = second
-        .open(&json!({"connectionId": "local", "workspaceId": "w1", "root": "/repo",
+        .open(
+            &json!({"connectionId": "local", "workspaceId": "w1", "root": "/repo",
             "target": {"kind": "chat", "chat": "session-7"}, "title": "Chat with claude",
-            "agent": "claude", "paneId": "w1:p2"}))
+            "agent": "claude", "paneId": "w1:p2"}),
+        )
         .unwrap();
     assert_eq!(reopened.session.id, first.session.id);
     assert_eq!(snapshots(&second).len(), 1);
@@ -468,7 +484,7 @@ async fn migration_a_page_closed_mid_way_loses_nothing_and_writes_nothing_twice(
 
 #[tokio::test]
 async fn migration_each_note_becomes_a_held_thread_of_its_review_a_terminals_in_its_agents_chat_review()
-{
+ {
     let Kit { service, host, .. } = setup();
     let notes = [file_note("n1", "first"), diff_note(), terminal_note(true)];
     for (at, note) in notes.iter().enumerate() {
@@ -478,7 +494,10 @@ async fn migration_each_note_becomes_a_held_thread_of_its_review_a_terminals_in_
     }
     let waiting = held(&service);
     assert_eq!(
-        waiting.iter().map(|(_, id, _)| id.clone()).collect::<Vec<_>>(),
+        waiting
+            .iter()
+            .map(|(_, id, _)| id.clone())
+            .collect::<Vec<_>>(),
         ["n1", "d1", "t1"].map(thread_id).to_vec()
     );
     let kinds: Vec<String> = waiting

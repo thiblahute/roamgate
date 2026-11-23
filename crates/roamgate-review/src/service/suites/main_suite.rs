@@ -28,7 +28,9 @@ async fn activity_reads_each_checkout_on_its_own_a_slow_one_told_unreadable() {
             let seen = seen.clone();
             Box::pin(async move {
                 let root = entries[0].0.clone();
-                seen.lock().unwrap().push(format!("{root} {}", entries.len()));
+                seen.lock()
+                    .unwrap()
+                    .push(format!("{root} {}", entries.len()));
                 let count = entries.len();
                 if root == "/slow" {
                     std::future::pending::<()>().await;
@@ -110,14 +112,24 @@ async fn the_commit_the_overlay_showed_gone_brings_the_patch_ids_along() {
         if !follow.is_null() {
             params["follow"] = follow;
         }
-        assert!(service.commits(&params).await.unwrap().get("patchIds").is_none());
+        assert!(
+            service
+                .commits(&params)
+                .await
+                .unwrap()
+                .get("patchIds")
+                .is_none()
+        );
     }
     assert!(asked.lock().unwrap().is_empty());
     let result = service
         .commits(&json!({"sessionId": id, "follow": sha("9")}))
         .await
         .unwrap();
-    assert_eq!(*asked.lock().unwrap(), vec![vec![sha("9"), sha("a"), sha("b")]]);
+    assert_eq!(
+        *asked.lock().unwrap(),
+        vec![vec![sha("9"), sha("a"), sha("b")]]
+    );
     assert_eq!(result["patchIds"][sha("9")], json!("p9"));
     assert_eq!(result["commits"].as_array().unwrap().len(), 2);
     fail.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -162,10 +174,7 @@ async fn the_view_a_review_opens_on_loads_with_its_commits_from_one_listing() {
         json!({"sessionId": id, "recheck": true}),
         json!({"sessionId": id, "first": true}),
     );
-    let (list, first) = tokio::join!(
-        service.commits(&listed_params),
-        service.diff(&first_params),
-    );
+    let (list, first) = tokio::join!(service.commits(&listed_params), service.diff(&first_params),);
     let (list, first) = (list.unwrap(), first.unwrap());
     assert_eq!(*listings.lock().unwrap(), 1);
     assert_eq!(
@@ -241,15 +250,19 @@ fn gitlab_kit(gitlab: Arc<Gitlab>, delay: Option<u64>) -> Kit {
 #[tokio::test]
 async fn a_merge_requests_review_sends_your_discussions_to_the_agent_as_written() {
     let gitlab = Gitlab::new(|_| {
-        Ok(Some(json!({"url": "https://gitlab.example/gst/gstreamer/-/merge_requests/3",
-            "title": "Fix", "number": 3, "state": "opened", "branch": "fix"})))
+        Ok(Some(
+            json!({"url": "https://gitlab.example/gst/gstreamer/-/merge_requests/3",
+            "title": "Fix", "number": 3, "state": "opened", "branch": "fix"}),
+        ))
     });
     gitlab.state.lock().unwrap().api = true;
     gitlab.state.lock().unwrap().next_draft = 11;
     let Kit { service, host, .. } = gitlab_kit(gitlab, Some(10));
     let local = service
-        .open(&json!({"connectionId": "local", "root": "/repo", "workspaceId": "w1",
-            "target": {"kind": "range", "base": "main", "head": "HEAD"}}))
+        .open(
+            &json!({"connectionId": "local", "root": "/repo", "workspaceId": "w1",
+            "target": {"kind": "range", "base": "main", "head": "HEAD"}}),
+        )
         .unwrap()
         .session;
     let opened = service
@@ -261,8 +274,10 @@ async fn a_merge_requests_review_sends_your_discussions_to_the_agent_as_written(
     assert!(session.gitlab);
     assert_eq!(session.auto_send, Some(true));
     service
-        .add_thread(&json!({"sessionId": session.id, "anchor": {"path": "a.c", "line": 3, "side": "new"},
-            "text": "Is it similar to enough features?"}))
+        .add_thread(
+            &json!({"sessionId": session.id, "anchor": {"path": "a.c", "line": 3, "side": "new"},
+            "text": "Is it similar to enough features?"}),
+        )
         .await
         .unwrap();
     service
@@ -282,8 +297,10 @@ async fn a_merge_requests_review_sends_your_discussions_to_the_agent_as_written(
     assert!(texts[0].contains("Is it similar to enough features?"));
     assert!(!texts[0].contains("Leak"));
     service
-        .add_thread(&json!({"sessionId": session.id, "anchor": {"path": "a.c", "line": 4, "side": "new"},
-            "text": "And here?"}))
+        .add_thread(
+            &json!({"sessionId": session.id, "anchor": {"path": "a.c", "line": 4, "side": "new"},
+            "text": "And here?"}),
+        )
         .await
         .unwrap();
     sleep(100).await;
@@ -301,12 +318,12 @@ async fn a_merge_requests_review_drafts_are_draft_notes_agents_write_only_here()
             "title": "Fix", "number": 3, "state": "opened", "branch": "fix"})))
     })
     .with_api(11);
-    let Kit {
-        service, clock, ..
-    } = gitlab_kit(gitlab.clone(), None);
+    let Kit { service, clock, .. } = gitlab_kit(gitlab.clone(), None);
     let local = service
-        .open(&json!({"connectionId": "local", "root": "/repo", "workspaceId": "w1",
-            "target": {"kind": "range", "base": "main", "head": "HEAD"}, "agent": "Claude"}))
+        .open(
+            &json!({"connectionId": "local", "root": "/repo", "workspaceId": "w1",
+            "target": {"kind": "range", "base": "main", "head": "HEAD"}, "agent": "Claude"}),
+        )
         .unwrap()
         .session;
     let opened = service
@@ -340,7 +357,10 @@ async fn a_merge_requests_review_drafts_are_draft_notes_agents_write_only_here()
     assert_eq!(draft.id, "gldraft:11");
     assert_eq!(gitlab.posted().len(), 1);
     let snapshot = service.get(&json!({"sessionId": session.id})).unwrap();
-    assert_eq!(ids(&snapshot.threads, |t| t.id.clone()), vec!["gl:d1", "gldraft:11"]);
+    assert_eq!(
+        ids(&snapshot.threads, |t| t.id.clone()),
+        vec!["gl:d1", "gldraft:11"]
+    );
     assert!(!snapshot.merge_request.as_ref().unwrap().security);
     let reply = service
         .reply(&json!({"sessionId": session.id, "commentId": "gl:d1", "author": "Claude", "text": "I agree"}))
@@ -356,7 +376,9 @@ async fn a_merge_requests_review_drafts_are_draft_notes_agents_write_only_here()
         .unwrap();
     assert!(comment.gitlab.is_none());
     service
-        .agent_summary(&json!({"sessionId": session.id, "author": "Claude", "text": "Fine overall"}))
+        .agent_summary(
+            &json!({"sessionId": session.id, "author": "Claude", "text": "Fine overall"}),
+        )
         .await
         .unwrap();
     let summary_unsent = |service: &ReviewService| {
@@ -380,7 +402,10 @@ async fn a_merge_requests_review_drafts_are_draft_notes_agents_write_only_here()
     assert!(posted[1].contains("note=I agree"));
     assert!(!posted[2].contains("in_reply_to_discussion_id=d1"));
     assert!(posted[2].contains("note=Also here"));
-    let sent = service.get(&json!({"sessionId": session.id})).unwrap().threads;
+    let sent = service
+        .get(&json!({"sessionId": session.id}))
+        .unwrap()
+        .threads;
     assert!(sent.iter().all(|t| t.gitlab.is_some()));
     let last = sent
         .iter()
@@ -396,7 +421,10 @@ async fn a_merge_requests_review_drafts_are_draft_notes_agents_write_only_here()
         .edit(&json!({"sessionId": session.id, "commentId": "gldraft:11", "author": "Claude", "text": "Mine now"}))
         .await
         .unwrap_err();
-    assert!(error.message.contains("only your own draft notes"), "{error:?}");
+    assert!(
+        error.message.contains("only your own draft notes"),
+        "{error:?}"
+    );
     service
         .edit(&json!({"sessionId": session.id, "commentId": "gldraft:12", "text": "Agreed"}))
         .await
@@ -414,7 +442,10 @@ async fn a_merge_requests_review_drafts_are_draft_notes_agents_write_only_here()
         .open_gitlab(&json!({"sessionId": local.id}))
         .await
         .unwrap();
-    let secure = secure["snapshot"]["session"]["id"].as_str().unwrap().to_owned();
+    let secure = secure["snapshot"]["session"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     assert_ne!(secure, session.id);
     service
         .refresh_gitlab(&json!({"sessionId": secure}))
@@ -432,7 +463,10 @@ async fn a_merge_requests_review_drafts_are_draft_notes_agents_write_only_here()
         .assert_agent_allowed(&json!({"sessionId": secure, "author": "Claude"}))
         .await
         .unwrap_err();
-    assert!(error.message.contains("security merge request"), "{error:?}");
+    assert!(
+        error.message.contains("security merge request"),
+        "{error:?}"
+    );
 }
 
 #[tokio::test]
@@ -468,12 +502,16 @@ async fn agent_review_the_previous_pass_goes_the_prompt_reaches_the_pane() {
     assert_eq!(prompted.len(), 1);
     assert_eq!(prompted[0].pane, "w1:p2");
     assert!(prompted[0].text.contains("Focus on: locking"));
-    assert!(prompted[0]
-        .text
-        .contains(&format!("--session {}", &session.id[..8])));
+    assert!(
+        prompted[0]
+            .text
+            .contains(&format!("--session {}", &session.id[..8]))
+    );
     assert_eq!(
         service
-            .agent_summary(&json!({"sessionId": session.id, "author": "Claude", "text": "Looks right"}))
+            .agent_summary(
+                &json!({"sessionId": session.id, "author": "Claude", "text": "Looks right"})
+            )
             .await
             .unwrap(),
         json!({"kept": true})
@@ -484,7 +522,9 @@ async fn agent_review_the_previous_pass_goes_the_prompt_reaches_the_pane() {
         .unwrap();
     assert_eq!(
         service
-            .agent_summary(&json!({"sessionId": session.id, "author": "Claude", "text": "Override"}))
+            .agent_summary(
+                &json!({"sessionId": session.id, "author": "Claude", "text": "Override"})
+            )
             .await
             .unwrap(),
         json!({"kept": false})
@@ -500,7 +540,10 @@ async fn agent_review_the_previous_pass_goes_the_prompt_reaches_the_pane() {
     let id = session.id.clone();
     let waiting = tokio::spawn(async move {
         watcher
-            .watch(&json!({"sessionId": id, "agent": "Claude", "mode": "any", "timeoutMs": 1000}), None)
+            .watch(
+                &json!({"sessionId": id, "agent": "Claude", "mode": "any", "timeoutMs": 1000}),
+                None,
+            )
             .await
     });
     sleep(20).await;
@@ -534,7 +577,10 @@ async fn the_overall_comment_goes_to_the_agent_with_a_handoff_once() {
     let watched = id.clone();
     let waiting = tokio::spawn(async move {
         watcher
-            .watch(&json!({"sessionId": watched, "agent": "Claude", "mode": "any", "timeoutMs": 1000}), None)
+            .watch(
+                &json!({"sessionId": watched, "agent": "Claude", "mode": "any", "timeoutMs": 1000}),
+                None,
+            )
             .await
     });
     sleep(20).await;
@@ -561,9 +607,11 @@ async fn a_comment_on_a_commit_message_reaches_the_agent_as_such() {
     let Kit { service, host, .. } = kit(host, options);
     let session = open_range(&service);
     service
-        .add_thread(&json!({"sessionId": session.id, "anchor": {"path": ":commit-message", "line": 1,
+        .add_thread(
+            &json!({"sessionId": session.id, "anchor": {"path": ":commit-message", "line": 1,
             "side": "new", "text": "cuda: fix", "commit": sha("a"), "commitSubject": "cuda: fix"},
-            "text": "Say what it fixes"}))
+            "text": "Say what it fixes"}),
+        )
         .await
         .unwrap();
     sleep(60).await;
@@ -577,8 +625,10 @@ async fn a_comment_on_a_part_of_a_message_reaches_the_agent_with_its_quote() {
     let session = open_range(&service);
     let anchor = json!({"path": "plan.md", "line": 3, "side": "new"});
     let plan = service
-        .add_thread(&json!({"sessionId": session.id, "author": "Claude", "anchor": anchor,
-            "text": "Option A.\n\nOption B, which I lean to."}))
+        .add_thread(
+            &json!({"sessionId": session.id, "author": "Claude", "anchor": anchor,
+            "text": "Option A.\n\nOption B, which I lean to."}),
+        )
         .await
         .unwrap();
     let message = json!({"thread": plan.id, "comment": plan.comments[0].id, "quote": "Option B, which I lean to."});
@@ -618,7 +668,11 @@ async fn a_comment_on_a_part_of_a_message_reaches_the_agent_with_its_quote() {
         .add_thread(&json!({"sessionId": session.id, "anchor": bare, "text": "No comment"}))
         .await
         .unwrap_err();
-    assert!(error.message.contains("a message part needs its thread and comment"));
+    assert!(
+        error
+            .message
+            .contains("a message part needs its thread and comment")
+    );
 }
 
 fn chat_host() -> Host {
@@ -669,9 +723,11 @@ async fn a_chats_threads_no_diff_kept_out_of_the_reviews_sent_with_context() {
         vec![review.id.clone()]
     );
     let thread = service
-        .add_thread(&json!({"sessionId": chat.id, "anchor": {"chat": {"entry": "entry-7",
+        .add_thread(
+            &json!({"sessionId": chat.id, "anchor": {"chat": {"entry": "entry-7",
             "at": "2026-10-27T14:32:00", "excerpt": "I still can't reach the review",
-            "quote": "Could you reopen the review?"}}, "text": "Yes, done."}))
+            "quote": "Could you reopen the review?"}}, "text": "Yes, done."}),
+        )
         .await
         .unwrap();
     assert_eq!(thread.anchor.chat.as_ref().unwrap().entry, "entry-7");
@@ -685,8 +741,10 @@ async fn a_chats_threads_no_diff_kept_out_of_the_reviews_sent_with_context() {
     assert!(prompt.contains("not on code"));
     host.clear();
     service
-        .add_thread(&json!({"sessionId": chat.id, "anchor": {"message": {"thread": thread.id,
-            "comment": thread.comments[0].id, "quote": "Yes, done."}}, "text": "Which one?"}))
+        .add_thread(
+            &json!({"sessionId": chat.id, "anchor": {"message": {"thread": thread.id,
+            "comment": thread.comments[0].id, "quote": "Yes, done."}}, "text": "Which one?"}),
+        )
         .await
         .unwrap();
     sleep(60).await;
@@ -697,11 +755,17 @@ async fn a_chats_threads_no_diff_kept_out_of_the_reviews_sent_with_context() {
     )));
     assert!(!prompt.contains("the whole change"));
     let error = service
-        .add_thread(&json!({"sessionId": chat.id, "anchor": {"chat": {"entry": "entry-7", "quote": ""}},
-            "text": "No quote"}))
+        .add_thread(
+            &json!({"sessionId": chat.id, "anchor": {"chat": {"entry": "entry-7", "quote": ""}},
+            "text": "No quote"}),
+        )
         .await
         .unwrap_err();
-    assert!(error.message.contains("a chat part needs its message and quote"));
+    assert!(
+        error
+            .message
+            .contains("a chat part needs its message and quote")
+    );
 }
 
 #[tokio::test]
@@ -713,10 +777,12 @@ async fn a_comment_on_a_file_a_chats_tool_call_changed_says_the_file_and_lines()
         .unwrap()
         .session;
     let thread = service
-        .add_thread(&json!({"sessionId": chat.id, "anchor": {"path": "/repo/plans/desktop-move.md",
+        .add_thread(
+            &json!({"sessionId": chat.id, "anchor": {"path": "/repo/plans/desktop-move.md",
             "line": 12, "endLine": 13, "side": "new", "text": "## Moving the desktop",
             "chat": {"entry": "entry-9", "at": "2026-10-27T14:32:00", "call": "toolu_01",
-                "quote": "## Moving the desktop\nFirst, the disks."}}, "text": "Say which disks."}))
+                "quote": "## Moving the desktop\nFirst, the disks."}}, "text": "Say which disks."}),
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -735,14 +801,17 @@ async fn a_comment_on_a_file_a_chats_tool_call_changed_says_the_file_and_lines()
     sleep(60).await;
     let prompt = host.texts().join("\n");
     assert!(prompt.contains("on /repo/plans/desktop-move.md:12-13 (lines 12-13 as your change of 14:32 left the file), about these lines:\n  > ## Moving the desktop\n  > First, the disks."), "{prompt}");
-    assert!(prompt.contains(
-        "on the file /repo/plans/desktop-move.md, as your change left it:\n  Too long."
-    ));
+    assert!(
+        prompt.contains(
+            "on the file /repo/plans/desktop-move.md, as your change left it:\n  Too long."
+        )
+    );
     assert!(prompt.contains("from me on files you changed in this chat:"));
     assert!(!prompt.contains("on parts of your messages"));
     assert!(prompt.contains("as review comments on code are"));
     assert!(!prompt.contains("not on code"));
-    let anchor = serde_json::from_value(json!({"path": "/repo/a.ts", "line": 4, "side": "old"})).unwrap();
+    let anchor =
+        serde_json::from_value(json!({"path": "/repo/a.ts", "line": 4, "side": "old"})).unwrap();
     assert_eq!(
         file_change_place(&anchor, Some("2026-10-27T14:32:00")),
         "on /repo/a.ts:4 (line 4 as the file was before your change of 14:32, which removed it), about this line"
@@ -789,13 +858,15 @@ async fn a_ranger_chats_threads_go_to_ranger_answered_with_its_own_tool() {
         .unwrap();
     sleep(25).await;
     assert!(host.prompted().is_empty());
-    assert!(service
-        .get(&json!({"sessionId": chat.id}))
-        .unwrap()
-        .session
-        .delivery_error
-        .unwrap()
-        .contains("busy"));
+    assert!(
+        service
+            .get(&json!({"sessionId": chat.id}))
+            .unwrap()
+            .session
+            .delivery_error
+            .unwrap()
+            .contains("busy")
+    );
     busy.store(false, std::sync::atomic::Ordering::SeqCst);
     sleep(60).await;
     let prompted = host.prompted();
@@ -803,12 +874,19 @@ async fn a_ranger_chats_threads_go_to_ranger_answered_with_its_own_tool() {
     assert_eq!(prompted[0].pane, "ranger:chat-one");
     assert!(prompted[0].text.starts_with("[Roamgate chat comment]\n"));
     assert!(prompted[0].text.contains(&format!("[{}]", &thread.id[..8])));
-    assert!(prompted[0].text.ends_with(
-        "Answer in each thread, not in the chat: your `chat_thread_reply` tool."
-    ));
+    assert!(
+        prompted[0]
+            .text
+            .ends_with("Answer in each thread, not in the chat: your `chat_thread_reply` tool.")
+    );
     assert!(!prompted[0].text.contains("roamgate-review"));
     let answered = service
-        .reply_in_chat("ranger:chat-one", &thread.id[..8], "The one in server/src/index.ts.", "Ranger")
+        .reply_in_chat(
+            "ranger:chat-one",
+            &thread.id[..8],
+            "The one in server/src/index.ts.",
+            "Ranger",
+        )
         .unwrap();
     assert_eq!(
         ids(&answered.comments, |c| c.author.clone()),
@@ -850,8 +928,10 @@ async fn an_edit_to_an_answered_comment_reaches_the_agent_again() {
     assert!(texts[1].contains("Do you see me now?"));
     sleep(5).await;
     let rewritten = service
-        .edit(&json!({"sessionId": session.id, "commentId": answered.comments[1].id,
-            "author": "Claude", "text": "Yes, now too"}))
+        .edit(
+            &json!({"sessionId": session.id, "commentId": answered.comments[1].id,
+            "author": "Claude", "text": "Yes, now too"}),
+        )
         .await
         .unwrap();
     assert!(!thread_needs_answer(&rewritten, "Claude", false));
@@ -927,7 +1007,13 @@ async fn a_local_review_finds_its_branchs_merge_request_cached_until_the_head_mo
     clock.advance(6 * 60_000);
     find(&service, &session.id).await;
     assert_eq!(gitlab.finds(), 3);
-    assert!(!service.get(&json!({"sessionId": session.id})).unwrap().session.gitlab);
+    assert!(
+        !service
+            .get(&json!({"sessionId": session.id}))
+            .unwrap()
+            .session
+            .gitlab
+    );
 }
 
 #[tokio::test]
@@ -937,10 +1023,16 @@ async fn no_merge_request_another_branch_or_a_failure_none_quietly() {
     let gitlab = Gitlab::new(move |_| given.lock().unwrap().clone());
     let Kit { service, clock, .. } = find_setup(gitlab.clone());
     let session = open_range(&service);
-    assert_eq!(find(&service, &session.id).await["mergeRequest"], Value::Null);
+    assert_eq!(
+        find(&service, &session.id).await["mergeRequest"],
+        Value::Null
+    );
     *answer.lock().unwrap() = Err("glab: network down".into());
     gitlab.state.lock().unwrap().head = Some("b2".into());
-    assert_eq!(find(&service, &session.id).await["mergeRequest"], Value::Null);
+    assert_eq!(
+        find(&service, &session.id).await["mergeRequest"],
+        Value::Null
+    );
     clock.advance(61_000);
     *answer.lock().unwrap() = Ok(Some(fix_request()));
     assert_eq!(
@@ -1030,7 +1122,13 @@ async fn gitlab_is_the_merge_requests_review_the_local_review_stays_local() {
         .unwrap()
         .session;
     assert_eq!(agent.id, mr_id);
-    assert!(!service.get(&json!({"sessionId": session.id})).unwrap().session.gitlab);
+    assert!(
+        !service
+            .get(&json!({"sessionId": session.id}))
+            .unwrap()
+            .session
+            .gitlab
+    );
     assert_eq!(
         find(&service, &session.id).await["mergeRequest"]["number"],
         json!(10046)
@@ -1049,7 +1147,10 @@ async fn only_an_open_merge_request_is_found_for_the_chip_and_gitlab() {
     });
     let Kit { service, clock, .. } = find_setup(gitlab);
     let session = open_range(&service);
-    assert_eq!(find(&service, &session.id).await["mergeRequest"], Value::Null);
+    assert_eq!(
+        find(&service, &session.id).await["mergeRequest"],
+        Value::Null
+    );
     assert_eq!(
         service
             .open_gitlab(&json!({"sessionId": session.id}))
@@ -1083,7 +1184,10 @@ async fn a_failed_lookup_no_chip_gitlab_says_why_and_waits_to_retry() {
     });
     let Kit { service, clock, .. } = find_setup(gitlab.clone());
     let session = open_range(&service);
-    assert_eq!(find(&service, &session.id).await["mergeRequest"], Value::Null);
+    assert_eq!(
+        find(&service, &session.id).await["mergeRequest"],
+        Value::Null
+    );
     for wait in [0, 30_000] {
         clock.advance(wait);
         let error = service
@@ -1108,7 +1212,10 @@ async fn an_unreadable_checkout_is_not_asked_again_before_the_retry_delay() {
     let Kit { service, clock, .. } = find_setup(gitlab.clone());
     let session = open_range(&service);
     gitlab.state.lock().unwrap().unreadable = true;
-    assert_eq!(find(&service, &session.id).await["mergeRequest"], Value::Null);
+    assert_eq!(
+        find(&service, &session.id).await["mergeRequest"],
+        Value::Null
+    );
     clock.advance(30_000);
     let error = service
         .open_gitlab(&json!({"sessionId": session.id}))
@@ -1139,7 +1246,10 @@ async fn the_local_reviews_review_comments_wait_in_the_merge_requests_review() {
     let gitlab = Gitlab::new(|_| Ok(Some(fix_request()))).with_api(21);
     let kit = find_setup(gitlab.clone());
     let Kit {
-        service, clock, pushes, ..
+        service,
+        clock,
+        pushes,
+        ..
     } = &kit;
     let local = open_range(service);
     let discussion = service
@@ -1182,13 +1292,20 @@ async fn the_local_reviews_review_comments_wait_in_the_merge_requests_review() {
     );
     let local_ids = |service: &ReviewService| {
         ids(
-            &service.get(&json!({"sessionId": local.id})).unwrap().threads,
+            &service
+                .get(&json!({"sessionId": local.id}))
+                .unwrap()
+                .threads,
             |t| t.id.clone(),
         )
     };
     assert_eq!(
         local_ids(service),
-        vec![discussion.id.clone(), draft.id.clone(), on_message.id.clone()]
+        vec![
+            discussion.id.clone(),
+            draft.id.clone(),
+            on_message.id.clone()
+        ]
     );
     pushes.lock().unwrap().clear();
     service
@@ -1223,11 +1340,17 @@ async fn the_local_reviews_review_comments_wait_in_the_merge_requests_review() {
     let posted = gitlab.posted();
     assert_eq!(posted.len(), 2);
     assert!(posted[0].contains("note=Leak here"));
-    assert!(posted[1].contains("On the commit message of abcdef0123"), "{posted:?}");
+    assert!(
+        posted[1].contains("On the commit message of abcdef0123"),
+        "{posted:?}"
+    );
     assert_eq!(local_ids(service), vec![discussion.id.clone()]);
     assert_eq!(
         ids(
-            &service.get(&json!({"sessionId": other.id})).unwrap().threads,
+            &service
+                .get(&json!({"sessionId": other.id}))
+                .unwrap()
+                .threads,
             |t| t.anchor.path.clone().unwrap_or_default()
         ),
         vec!["b.c"]
@@ -1253,9 +1376,7 @@ async fn a_review_comment_waits_for_the_merge_request_of_the_branch_it_was_writt
     let gitlab = Gitlab::new(move |_| Ok(given.lock().unwrap().clone())).with_api(21);
     let Kit { service, clock, .. } = find_setup(gitlab.clone());
     let local = open_range(&service);
-    let draft = |path: &str, text: &str| {
-        json!({"sessionId": local.id, "kind": "draft", "anchor": {"path": path, "line": 1, "side": "new"}, "text": text})
-    };
+    let draft = |path: &str, text: &str| json!({"sessionId": local.id, "kind": "draft", "anchor": {"path": path, "line": 1, "side": "new"}, "text": text});
     let on_fix = service.add_thread(&draft("a.c", "On fix")).await.unwrap();
     sleep(10).await;
     let mr = open_mr(&service, &local.id).await;
@@ -1276,7 +1397,10 @@ async fn a_review_comment_waits_for_the_merge_request_of_the_branch_it_was_writt
     let on_other = service.add_thread(&draft("b.c", "On other")).await.unwrap();
     sleep(10).await;
     let shown = ids(
-        &service.get(&json!({"sessionId": mr.session.id})).unwrap().threads,
+        &service
+            .get(&json!({"sessionId": mr.session.id}))
+            .unwrap()
+            .threads,
         |t| t.id.clone(),
     );
     assert!(shown.contains(&on_fix.id));
@@ -1290,7 +1414,10 @@ async fn a_review_comment_waits_for_the_merge_request_of_the_branch_it_was_writt
     assert_eq!(posted.len(), 1);
     assert!(posted[0].contains("note=On fix"));
     let mut left = ids(
-        &service.get(&json!({"sessionId": local.id})).unwrap().threads,
+        &service
+            .get(&json!({"sessionId": local.id}))
+            .unwrap()
+            .threads,
         |t| t.id.clone(),
     );
     left.sort();
@@ -1311,8 +1438,10 @@ async fn a_pending_review_comment_is_reached_by_an_id_prefix_from_the_merge_requ
         .unwrap();
     let mr = open_mr(&service, &local.id).await;
     service
-        .edit(&json!({"sessionId": mr.session.id, "commentId": &draft.comments[0].id[..8],
-            "text": "Leak here", "author": "Claude"}))
+        .edit(
+            &json!({"sessionId": mr.session.id, "commentId": &draft.comments[0].id[..8],
+            "text": "Leak here", "author": "Claude"}),
+        )
         .await
         .unwrap();
     let local_now = service.get(&json!({"sessionId": local.id})).unwrap();
@@ -1320,7 +1449,13 @@ async fn a_pending_review_comment_is_reached_by_an_id_prefix_from_the_merge_requ
     service
         .resolve(&json!({"sessionId": mr.session.id, "commentId": &draft.id[..8]}))
         .unwrap();
-    assert!(service.get(&json!({"sessionId": local.id})).unwrap().threads[0].resolved);
+    assert!(
+        service
+            .get(&json!({"sessionId": local.id}))
+            .unwrap()
+            .threads[0]
+            .resolved
+    );
 }
 
 #[tokio::test]

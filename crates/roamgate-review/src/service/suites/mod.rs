@@ -26,14 +26,14 @@ use super::{ReviewHost, ReviewService, ReviewServiceOptions};
 use crate::model::{ReviewCommit, ReviewSession};
 use crate::storage::ReviewStorage;
 
-type Diff = Box<dyn Fn(&ReviewSession, Option<String>, Option<Vec<String>>) -> Load<Value> + Send + Sync>;
+type Diff =
+    Box<dyn Fn(&ReviewSession, Option<String>, Option<Vec<String>>) -> Load<Value> + Send + Sync>;
 type Summary = Box<dyn Fn(&ReviewSession, Option<String>) -> Load<Value> + Send + Sync>;
 type Files = Box<dyn Fn(&ReviewSession, String, String, Vec<Value>) -> Load<Value> + Send + Sync>;
 type Commits = Box<dyn Fn(&ReviewSession) -> Load<Vec<ReviewCommit>> + Send + Sync>;
 type PatchIds =
     Box<dyn Fn(&ReviewSession, Vec<String>) -> Load<IndexMap<String, String>> + Send + Sync>;
-type Heads =
-    Box<dyn Fn(&str, Vec<(String, String)>) -> Load<Vec<Option<String>>> + Send + Sync>;
+type Heads = Box<dyn Fn(&str, Vec<(String, String)>) -> Load<Vec<Option<String>>> + Send + Sync>;
 type FileAt = Box<dyn Fn(&ReviewSession, String, String) -> Load<String> + Send + Sync>;
 type Prompt = Box<dyn Fn(&str, &str, &str) -> Result<(), String> + Send + Sync>;
 type SessionPane = Box<dyn Fn(&str, &str) -> Option<String> + Send + Sync>;
@@ -62,7 +62,6 @@ pub(crate) struct Host {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Prompted {
-    pub connection: String,
     pub pane: String,
     pub text: String,
 }
@@ -143,7 +142,12 @@ impl ReviewHost for Host {
         self.heads.as_ref().map(|load| load(connection_id, entries))
     }
 
-    fn load_file(&self, session: &ReviewSession, rev: String, path: String) -> Option<Load<String>> {
+    fn load_file(
+        &self,
+        session: &ReviewSession,
+        rev: String,
+        path: String,
+    ) -> Option<Load<String>> {
         self.file.as_ref().map(|load| load(session, rev, path))
     }
 
@@ -158,7 +162,6 @@ impl ReviewHost for Host {
         };
         if outcome.is_ok() {
             self.prompts.lock().unwrap().push(Prompted {
-                connection: connection_id.into(),
                 pane: pane_id.into(),
                 text,
             });
@@ -253,7 +256,13 @@ pub(crate) fn kit_in(dir: Option<Arc<tempfile::TempDir>>, host: Host, options: O
     let host = Arc::new(host);
     let clock = options.clock.clone().unwrap_or_else(|| Moved::at(EPOCH));
     let pushes: Arc<Mutex<Vec<Value>>> = Arc::default();
-    let service = open_service(dir.path(), host.clone(), &options, clock.clone(), pushes.clone());
+    let service = open_service(
+        dir.path(),
+        host.clone(),
+        &options,
+        clock.clone(),
+        pushes.clone(),
+    );
     Kit {
         dir,
         service,
@@ -302,15 +311,6 @@ impl Kit {
             self.clock.clone(),
             Arc::default(),
         )
-    }
-
-    pub fn push_types(&self) -> Vec<String> {
-        self.pushes
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|p| p["type"].as_str().unwrap_or("").to_owned())
-            .collect()
     }
 }
 
@@ -380,7 +380,9 @@ pub(crate) struct Gitlab {
 }
 
 impl Gitlab {
-    pub fn new(find: impl Fn(&GitlabState) -> Result<Option<Value>, String> + Send + Sync + 'static) -> Arc<Self> {
+    pub fn new(
+        find: impl Fn(&GitlabState) -> Result<Option<Value>, String> + Send + Sync + 'static,
+    ) -> Arc<Self> {
         Arc::new(Self {
             state: Mutex::new(GitlabState {
                 branch: Some("fix".into()),
@@ -474,7 +476,8 @@ impl ReviewForge for Gitlab {
 
     fn read_merge_request(&self, _: &ReviewSession, url: &str) -> Ask<Value> {
         let answer = self.api().map(|()| {
-            let reference = crate::parse::parse_merge_request_url(url).expect("a merge request URL");
+            let reference =
+                crate::parse::parse_merge_request_url(url).expect("a merge request URL");
             json!({"host": reference.host, "project": reference.project, "iid": reference.iid,
                 "projectPath": reference.project, "url": url, "title": "Fix", "state": "opened",
                 "baseSha": "b", "startSha": "s", "headSha": "h"})
@@ -482,7 +485,11 @@ impl ReviewForge for Gitlab {
         Box::pin(async move { answer })
     }
 
-    fn read_threads(&self, session: &ReviewSession, _: &Value) -> Ask<Vec<crate::model::ReviewThread>> {
+    fn read_threads(
+        &self,
+        session: &ReviewSession,
+        _: &Value,
+    ) -> Ask<Vec<crate::model::ReviewThread>> {
         let answer = self.api().map(|()| {
             let at = epoch_at();
             self.state
@@ -678,10 +685,19 @@ pub(crate) fn load_with(bun: &Path, op: &str, args: Value) -> BoxFuture<Result<V
 /// them: a commit's patch, else the review's; its commits, heads and
 /// patch ids.
 pub(crate) fn git_host(bun: &Path) -> Host {
-    let (diff, commits, ids, heads) = (bun.to_owned(), bun.to_owned(), bun.to_owned(), bun.to_owned());
+    let (diff, commits, ids, heads) = (
+        bun.to_owned(),
+        bun.to_owned(),
+        bun.to_owned(),
+        bun.to_owned(),
+    );
     Host {
         diff: Some(Box::new(move |session, commit, paths| match commit {
-            Some(commit) => load_with(&diff, "commitPatch", json!({"root": session.root, "commit": commit})),
+            Some(commit) => load_with(
+                &diff,
+                "commitPatch",
+                json!({"root": session.root, "commit": commit}),
+            ),
             None => load_with(
                 &diff,
                 "patch",
@@ -701,13 +717,19 @@ pub(crate) fn git_host(bun: &Path) -> Host {
                 let Some(load) = load else {
                     return Ok(Vec::new());
                 };
-                serde_json::from_value(load.await?).map_err(|error| LoadError::Failed(error.to_string()))
+                serde_json::from_value(load.await?)
+                    .map_err(|error| LoadError::Failed(error.to_string()))
             })
         })),
         patch_ids: Some(Box::new(move |session, shas| {
-            let load = load_with(&ids, "patchIds", json!({"root": session.root, "shas": shas}));
+            let load = load_with(
+                &ids,
+                "patchIds",
+                json!({"root": session.root, "shas": shas}),
+            );
             Box::pin(async move {
-                serde_json::from_value(load.await?).map_err(|error| LoadError::Failed(error.to_string()))
+                serde_json::from_value(load.await?)
+                    .map_err(|error| LoadError::Failed(error.to_string()))
             })
         })),
         heads: Some(Box::new(move |_, entries| {
@@ -717,7 +739,8 @@ pub(crate) fn git_host(bun: &Path) -> Host {
                 .collect();
             let load = load_with(&heads, "heads", json!({"entries": entries}));
             Box::pin(async move {
-                serde_json::from_value(load.await?).map_err(|error| LoadError::Failed(error.to_string()))
+                serde_json::from_value(load.await?)
+                    .map_err(|error| LoadError::Failed(error.to_string()))
             })
         })),
         ..Host::default()

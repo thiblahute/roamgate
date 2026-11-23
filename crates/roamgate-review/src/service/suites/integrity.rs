@@ -84,7 +84,13 @@ async fn removing_a_review_keeps_its_images_for_the_lists_undo() {
 #[tokio::test]
 async fn an_import_is_rebuilt_field_by_field_ids_that_are_not_ours_are_refused() {
     let Kit { service, .. } = plain();
-    for id in [json!("../.."), json!(""), json!(42), Value::Null, json!("ABCDEF0123456789")] {
+    for id in [
+        json!("../.."),
+        json!(""),
+        json!(42),
+        Value::Null,
+        json!("ABCDEF0123456789"),
+    ] {
         let mut params = snapshot(json!({}));
         if !id.is_null() {
             params["snapshot"]["session"]["id"] = id;
@@ -102,8 +108,10 @@ async fn an_import_is_rebuilt_field_by_field_ids_that_are_not_ours_are_refused()
     );
     assert!(service.list(&json!({})).is_empty());
     let restored = service
-        .import_session(&snapshot(json!({"id": "0123456789abcdef", "seenHeadSha": {"not": "a sha"},
-            "holdComments": "yes", "reviewed": {"diff:a.txt": "f1"}})))
+        .import_session(&snapshot(
+            json!({"id": "0123456789abcdef", "seenHeadSha": {"not": "a sha"},
+            "holdComments": "yes", "reviewed": {"diff:a.txt": "f1"}}),
+        ))
         .unwrap();
     assert_eq!(restored.session.id, "0123456789abcdef");
     assert!(restored.session.seen_head_sha.is_none());
@@ -113,7 +121,9 @@ async fn an_import_is_rebuilt_field_by_field_ids_that_are_not_ours_are_refused()
         json!({"diff:a.txt": "f1"})
     );
     let windows = service
-        .import_session(&snapshot(json!({"id": "fedcba9876543210", "root": "C:/work/repo"})))
+        .import_session(&snapshot(
+            json!({"id": "fedcba9876543210", "root": "C:/work/repo"}),
+        ))
         .unwrap();
     assert_eq!(windows.session.root, "C:/work/repo");
 }
@@ -195,7 +205,11 @@ async fn a_review_past_the_limit_is_not_imported() {
     let error = service
         .import_session(&import_with("0123456789abcdef", vec![]))
         .unwrap_err();
-    assert!(error.message.contains("too many reviews (3, the limit is 3)"));
+    assert!(
+        error
+            .message
+            .contains("too many reviews (3, the limit is 3)")
+    );
 }
 
 #[tokio::test]
@@ -243,9 +257,7 @@ async fn a_work_items_review_is_found_without_listing_every_review() {
     let first = work_on("a", "0123abcd");
     let second = work_on("b", "0123abcd");
     work_on("a", "4567cdef");
-    let of_item = |session: &ReviewSession| {
-        matches!(&session.target, crate::model::ReviewTarget::Work { item } if item == "0123abcd")
-    };
+    let of_item = |session: &ReviewSession| matches!(&session.target, crate::model::ReviewTarget::Work { item } if item == "0123abcd");
     assert_eq!(service.newest(of_item).unwrap().session.id, second.id);
     clock.advance(1_000);
     service
@@ -307,7 +319,8 @@ async fn a_restored_thread_cannot_overwrite_another_reviews_thread() {
 async fn restoring_threads_past_the_limit_is_refused() {
     let Kit { service, .. } = plain();
     let session = open_plain(&service);
-    let params = json!({"sessionId": session.id, "thread": {"comments": [{"author": "you", "body": "x"}]}});
+    let params =
+        json!({"sessionId": session.id, "thread": {"comments": [{"author": "you", "body": "x"}]}});
     for _ in 0..2000 {
         service.restore_thread(&params).unwrap();
     }
@@ -333,7 +346,11 @@ fn deferred() -> (Host, Waiting) {
         diff: Some(Box::new(move |_, _, _| {
             let (send, receive) = oneshot::channel();
             loads.lock().unwrap().push(Some(send));
-            Box::pin(async move { receive.await.map_err(|_| LoadError::Failed("dropped".into())) })
+            Box::pin(async move {
+                receive
+                    .await
+                    .map_err(|_| LoadError::Failed("dropped".into()))
+            })
         })),
         ..Host::default()
     };
@@ -415,7 +432,10 @@ async fn a_refused_update_changes_nothing() {
     let service = &kit.service;
     let session = open_plain(service);
     for (params, refusal) in [
-        (json!({"summary": "Overall", "title": 42}), "title is required"),
+        (
+            json!({"summary": "Overall", "title": 42}),
+            "title is required",
+        ),
         (
             json!({"autoSend": false, "title": "Renamed", "holdComments": "yes"}),
             "invalid hold flag",
@@ -453,8 +473,10 @@ async fn a_refused_update_changes_nothing() {
 async fn the_browser_opens_a_review_of_a_windows_path_it_picked() {
     let Kit { service, .. } = plain();
     let opened = service
-        .open(&json!({"connectionId": "local", "workspaceId": "w1", "root": "C:/work/repo",
-            "target": {"kind": "worktree"}}))
+        .open(
+            &json!({"connectionId": "local", "workspaceId": "w1", "root": "C:/work/repo",
+            "target": {"kind": "worktree"}}),
+        )
         .unwrap();
     assert_eq!(opened.session.root, "C:/work/repo");
 }
@@ -473,18 +495,16 @@ async fn a_reviews_diff_asked_as_a_summary_reads_its_files_list_and_its_files_a_
             Box::pin(async move { Ok(json!({"files": [], "truncated": false, "headSha": head})) })
         })),
         summary: Some(Box::new(move |_, commit| {
-            let (calls, base, head) = (
-                summary.clone(),
-                summary_base.clone(),
-                summary_head.clone(),
-            );
+            let (calls, base, head) = (summary.clone(), summary_base.clone(), summary_head.clone());
             Box::pin(async move {
-                calls
-                    .lock()
-                    .unwrap()
-                    .push(format!("summary {}", commit.unwrap_or_else(|| "all".into())));
-                Ok(json!({"files": [{"path": "a.ts", "oldPath": "a.ts", "hunks": [], "status": "modified"}],
-                    "baseSha": base, "headSha": head, "truncated": false, "summary": true}))
+                calls.lock().unwrap().push(format!(
+                    "summary {}",
+                    commit.unwrap_or_else(|| "all".into())
+                ));
+                Ok(
+                    json!({"files": [{"path": "a.ts", "oldPath": "a.ts", "hunks": [], "status": "modified"}],
+                    "baseSha": base, "headSha": head, "truncated": false, "summary": true}),
+                )
             })
         })),
         files: Some(Box::new(move |_, base, head, list| {
