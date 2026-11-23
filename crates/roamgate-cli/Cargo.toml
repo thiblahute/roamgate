@@ -12,7 +12,9 @@ workspace = true
 [dependencies]
 hex = "0.4"
 rand = "0.9"
+jiff = "0.2"
 regex = "1"
+roamgate-activity = { path = "../roamgate-activity" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-herdr = { path = "../roamgate-herdr" }

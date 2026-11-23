@@ -30,7 +30,7 @@ use roamgate_sidecar::protocol::{Push, RpcError};
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
-use super::time_report::settings_file;
+use super::activity::settings_file;
 
 pub const FAMILY: &str = "mr_cache";
 

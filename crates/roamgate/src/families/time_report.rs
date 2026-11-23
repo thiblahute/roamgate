@@ -1,22 +1,28 @@
 //! The time_report family in the core (`bridge.time_report`, the Hours
 //! view): roamgate-activity's bridge, its provider run on the families'
-//! clock. Until the activity family moves (Phase 3) Bun owns the activity
-//! log and settings.json: the provider setting is read from the file at
-//! each call (never written), and the day input comes from Bun through
-//! the `activity.dayInput` reverse call (contract/wire/core-channel.md).
+//! clock. The provider setting is read from settings.json at each call
+//! (never written). The day input is built here from activity.sqlite while
+//! the core owns the activity family, and comes from Bun through the
+//! `activity.dayInput` reverse call while Bun does (contract/wire/
+//! core-channel.md).
 
 use std::sync::{Arc, OnceLock};
 
+use roamgate_activity::day_input::{ActivitySettings, build_day_input, system_zone_name};
 use roamgate_activity::provider::{BoxFuture, ProviderSettings};
+use roamgate_activity::reader::ActivityReader;
+use roamgate_activity::subjects::SubjectResolver;
 use roamgate_activity::time_report::{Failure, TimeReport, TimeReportError, TimeReportSource};
-use roamgate_base::env::{Env, ProcessEnv, roamgate_env};
+use roamgate_base::env::ProcessEnv;
 use roamgate_base::paths::DataContext;
 use roamgate_base::settings::Settings;
 use roamgate_exec::process::ProcessRunner;
 use roamgate_sidecar::family::{CoreFamily, FamilyContext};
 use roamgate_sidecar::peer::IncomingCall;
-use roamgate_sidecar::protocol::RpcError;
+use roamgate_sidecar::protocol::{RpcError, Side};
 use serde_json::{Value, json};
+
+use super::activity::settings_json;
 
 pub const FAMILY: &str = "time_report";
 pub const METHOD: &str = "bridge.time_report";
@@ -32,28 +38,45 @@ struct TimeReportFamily {
     bridge: OnceLock<Arc<TimeReport>>,
 }
 
-/// settings.json as the server's environment names it, without the
-/// legacy migration (Bun's, the file's owner until Phase 3).
-pub(crate) fn settings_file(env: &dyn Env) -> std::path::PathBuf {
-    match roamgate_env(env, "SETTINGS_PATH") {
-        Some(path) => path.into(),
-        None => DataContext::from_env(env).data_root().join("settings.json"),
-    }
-}
-
 /// The provider setting in settings.json now: read whole at each call, as
 /// Bun may have changed it.
 async fn provider_settings() -> Option<ProviderSettings> {
-    let path = settings_file(&ProcessEnv);
-    let raw = match tokio::fs::read(&path).await {
-        Ok(bytes) => serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|error| {
-            tracing::warn!(scope = "bridge.settings", path = %path.display(), %error, "ignoring invalid settings");
-            Value::Null
-        }),
-        Err(_) => Value::Null,
-    };
-    let settings = Settings::normalize(&raw);
+    let settings = Settings::normalize(&settings_json().await);
     ProviderSettings::from_setting(settings.get("time_report"))
+}
+
+/// The day from activity.sqlite (rpc.ts's `dayInput`): recording off or no
+/// log are answers, `not_configured`.
+async fn local_day_input(now: i64, date: String) -> Result<Value, Failure> {
+    let raw = settings_json().await;
+    let settings = ActivitySettings::from_settings(&raw);
+    if !settings.enabled {
+        return Err(TimeReportError::new(
+            "Activity recording is off (activity.enabled).",
+            "not_configured",
+        )
+        .into());
+    }
+    tokio::task::spawn_blocking(move || {
+        let context = DataContext::from_env(&ProcessEnv);
+        let reader = ActivityReader::open(
+            &context,
+            &context.data_root(),
+            Box::new(move || now),
+            Some(SubjectResolver::from_settings(&raw)),
+        )
+        .map_err(|error| Failure::Other(error.to_string()))?
+        .ok_or_else(|| {
+            Failure::from(TimeReportError::new(
+                "No activity log yet.",
+                "not_configured",
+            ))
+        })?;
+        build_day_input(&reader, &settings, &date, &system_zone_name())
+            .map_err(|error| Failure::Other(error.to_string()))
+    })
+    .await
+    .map_err(|error| Failure::Other(error.to_string()))?
 }
 
 /// The server, as the bridge sees it from the core.
@@ -69,6 +92,9 @@ impl TimeReportSource for Source {
     fn day_input(&self, date: String) -> BoxFuture<Result<Value, Failure>> {
         let cx = self.cx.clone();
         Box::pin(async move {
+            if cx.owners.owner("activity") == Side::Rust {
+                return local_day_input(cx.clock.now(), date).await;
+            }
             cx.reverse("activity.dayInput", json!({ "date": date }))
                 .await
                 .map_err(|error| match error.code.as_deref() {

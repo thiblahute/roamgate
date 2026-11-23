@@ -16,6 +16,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
+pub mod activity;
 pub mod auth_token;
 pub mod commands;
 pub mod herdr;
