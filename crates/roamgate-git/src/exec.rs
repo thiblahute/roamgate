@@ -329,6 +329,48 @@ pub(crate) mod testing {
         }
     }
 
+    type Transform = dyn Fn(&str) -> String + Send + Sync;
+
+    /// The real local runner with the script (the last word) rewritten
+    /// first, and an optional deadline of its own.
+    pub struct Instrumented {
+        transform: Box<Transform>,
+        timeout: Option<Duration>,
+    }
+
+    impl Instrumented {
+        pub fn context(
+            transform: impl Fn(&str) -> String + Send + Sync + 'static,
+            timeout: Option<Duration>,
+        ) -> GitContext {
+            GitContext::local(Arc::new(Self {
+                transform: Box::new(transform),
+                timeout,
+            }))
+        }
+    }
+
+    impl Runner for Instrumented {
+        fn run(&self, request: Request) -> RunFuture<'_> {
+            Box::pin(async move {
+                let Invocation::Local(argv) = &request.invocation else {
+                    return Err(RunError("not local".into()));
+                };
+                let mut words = argv.clone();
+                if let Some(last) = words.last_mut() {
+                    *last = (self.transform)(last);
+                }
+                LocalRunner::system()
+                    .run_local(
+                        &words,
+                        request.input.as_deref(),
+                        self.timeout.unwrap_or(request.timeout),
+                    )
+                    .await
+            })
+        }
+    }
+
     /// A runner that runs local words for real, and an SSH command's line
     /// locally with `sh -c` (a fake host that is this machine), keeping
     /// each request.
