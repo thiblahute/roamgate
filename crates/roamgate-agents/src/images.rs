@@ -19,7 +19,7 @@ fn valid_base64(data: &str) -> bool {
     len > 0
         && len <= MAX_IMAGE_CHARS
         && len % 4 != 1
-        && (!data.ends_with('=') || len % 4 == 0)
+        && (!data.ends_with('=') || len.is_multiple_of(4))
         && BASE64.is_match(data)
 }
 

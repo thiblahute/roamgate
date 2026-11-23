@@ -808,8 +808,11 @@ fn project_claude(file: &SessionFile, records: &[Obj]) -> Value {
             }
             out
         };
-        if role == "user" && !tool_parts {
-            if let Some((bash_parts, rest)) = split_bash_mode(&content_text) {
+        if role == "user"
+            && !tool_parts
+            && let Some((bash_parts, rest)) = split_bash_mode(&content_text)
+        {
+            {
                 shell_steps(
                     &mut steps,
                     &bash_parts,

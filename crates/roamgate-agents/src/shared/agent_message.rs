@@ -193,10 +193,11 @@ pub fn shell_words(command: &str) -> (Vec<String>, Option<String>) {
             }
             break;
         }
-        if c == '\n' && heredoc_tag.is_some() {
+        if c == '\n'
+            && let Some(tag) = heredoc_tag.take()
+        {
             push(&mut words, &mut word, &mut in_word);
             let rest = rest_of(i + 1);
-            let tag = heredoc_tag.unwrap();
             let end = Regex::new(&format!("(?m)^[ \\t]*{}[ \\t]*$", regex::escape(&tag))).unwrap();
             let heredoc = match end.find(&rest) {
                 Some(found) => {

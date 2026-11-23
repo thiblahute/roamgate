@@ -221,17 +221,16 @@ pub fn token_usage_for_record(record: &Obj, muse_provider: &str) -> (Option<Toke
             let known = ["meta", "openai", "echo", "anthropic"].contains(&muse_provider);
             let ambiguous = !known
                 && (cached > 0.0 || num(usage_in.get("cache_write_tokens")).unwrap_or(0.0) > 0.0);
-            u.prompt_tokens = Some(if ambiguous || u.input_tokens.is_none() {
-                None
-            } else {
-                Some(
-                    u.input_tokens.unwrap()
+            u.prompt_tokens = Some(match u.input_tokens {
+                Some(input) if !ambiguous => Some(
+                    input
                         + if muse_provider == "anthropic" {
                             cached
                         } else {
                             0.0
                         },
-                )
+                ),
+                _ => None,
             });
             u.total_tokens = Some(match (u.prompt_tokens, u.output_tokens) {
                 (Some(Some(p)), Some(o)) => Some(p + o),

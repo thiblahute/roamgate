@@ -159,19 +159,30 @@ mod tests {
         value.as_object().unwrap().clone()
     }
     fn prompt(uuid: &str, parent: Option<&str>, text: &str) -> Obj {
-        rec(json!({ "type": "user", "uuid": uuid, "parentUuid": parent, "message": { "role": "user", "content": text } }))
+        rec(
+            json!({ "type": "user", "uuid": uuid, "parentUuid": parent, "message": { "role": "user", "content": text } }),
+        )
     }
     fn reply(uuid: &str, parent: &str, text: &str) -> Obj {
-        rec(json!({ "type": "assistant", "uuid": uuid, "parentUuid": parent, "message": { "role": "assistant", "content": [{ "type": "text", "text": text }] } }))
+        rec(
+            json!({ "type": "assistant", "uuid": uuid, "parentUuid": parent, "message": { "role": "assistant", "content": [{ "type": "text", "text": text }] } }),
+        )
     }
     fn tool_use(uuid: &str, parent: &str, id: &str) -> Obj {
-        rec(json!({ "type": "assistant", "uuid": uuid, "parentUuid": parent, "message": { "role": "assistant", "content": [{ "type": "tool_use", "id": id, "name": "Bash", "input": {} }] } }))
+        rec(
+            json!({ "type": "assistant", "uuid": uuid, "parentUuid": parent, "message": { "role": "assistant", "content": [{ "type": "tool_use", "id": id, "name": "Bash", "input": {} }] } }),
+        )
     }
     fn tool_result(uuid: &str, parent: &str, id: &str) -> Obj {
-        rec(json!({ "type": "user", "uuid": uuid, "parentUuid": parent, "message": { "role": "user", "content": [{ "type": "tool_result", "tool_use_id": id, "content": "ok" }] } }))
+        rec(
+            json!({ "type": "user", "uuid": uuid, "parentUuid": parent, "message": { "role": "user", "content": [{ "type": "tool_result", "tool_use_id": id, "content": "ok" }] } }),
+        )
     }
     fn ids(records: &[Obj]) -> Vec<Option<String>> {
-        records.iter().map(|r| r.get("uuid").and_then(Value::as_str).map(str::to_owned)).collect()
+        records
+            .iter()
+            .map(|r| r.get("uuid").and_then(Value::as_str).map(str::to_owned))
+            .collect()
     }
     fn some(ids: &[Option<&str>]) -> Vec<Option<String>> {
         ids.iter().map(|i| i.map(str::to_owned)).collect()
@@ -192,7 +203,10 @@ mod tests {
             prompt("u4", Some("a1"), "gamma"),
             reply("a4", "u4", "gamma"),
         ];
-        assert_eq!(ids(&without_rewound_turns(records)), some(&[Some("u1"), Some("a1"), None, Some("u4"), Some("a4")]));
+        assert_eq!(
+            ids(&without_rewound_turns(records)),
+            some(&[Some("u1"), Some("a1"), None, Some("u4"), Some("a4")])
+        );
     }
 
     #[test]
@@ -214,7 +228,9 @@ mod tests {
         let records = vec![
             prompt("u1", None, "first"),
             reply("a1", "u1", "one"),
-            rec(json!({ "type": "system", "subtype": "compact_boundary", "uuid": "c1", "parentUuid": null, "logicalParentUuid": "a1" })),
+            rec(
+                json!({ "type": "system", "subtype": "compact_boundary", "uuid": "c1", "parentUuid": null, "logicalParentUuid": "a1" }),
+            ),
             prompt("u2", Some("c1"), "after"),
         ];
         assert_eq!(without_rewound_turns(records.clone()), records);
@@ -231,13 +247,21 @@ mod tests {
             reply("a2", "r2", "two"),
             prompt("u3", Some("a2"), "third"),
             reply("a3", "u3", "three"),
-            rec(json!({ "type": "last-prompt", "leafUuid": "a1", "explicit": true, "rewound": true, "cutUuid": "u2" })),
+            rec(
+                json!({ "type": "last-prompt", "leafUuid": "a1", "explicit": true, "rewound": true, "cutUuid": "u2" }),
+            ),
         ];
-        assert_eq!(ids(&without_rewound_turns(records.clone())), some(&[Some("u1"), Some("a1"), None]));
+        assert_eq!(
+            ids(&without_rewound_turns(records.clone())),
+            some(&[Some("u1"), Some("a1"), None])
+        );
         let mut more = records;
         more.push(prompt("u4", Some("a1"), "again"));
         more.push(reply("a4", "u4", "four"));
-        assert_eq!(ids(&without_rewound_turns(more)), some(&[Some("u1"), Some("a1"), None, Some("u4"), Some("a4")]));
+        assert_eq!(
+            ids(&without_rewound_turns(more)),
+            some(&[Some("u1"), Some("a1"), None, Some("u4"), Some("a4")])
+        );
     }
 
     #[test]

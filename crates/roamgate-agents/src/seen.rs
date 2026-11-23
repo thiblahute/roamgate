@@ -737,18 +737,17 @@ mod tests {
     fn the_boot_id_is_read_once_a_minute_or_again_when_invalidated() {
         let mut cache = HerdrBootCache::default();
         let mut reads = 0;
-        let mut get =
-            |cache: &mut HerdrBootCache,
-             now: f64,
-             read: &mut dyn FnMut() -> Result<Option<String>, String>| {
-                match cache.cached("local", now) {
-                    Some(boot) => boot,
-                    None => {
-                        let value = read();
-                        cache.store("local", now, value)
-                    }
+        let get = |cache: &mut HerdrBootCache,
+                   now: f64,
+                   read: &mut dyn FnMut() -> Result<Option<String>, String>| {
+            match cache.cached("local", now) {
+                Some(boot) => boot,
+                None => {
+                    let value = read();
+                    cache.store("local", now, value)
                 }
-            };
+            }
+        };
         let mut read = || {
             reads += 1;
             Ok(Some(format!("boot-{reads}")))
@@ -840,11 +839,11 @@ mod tests {
         ] {
             assert_eq!(mark_params(&params).unwrap_err(), "invalid agent_seen.mark");
         }
-        let mut mark = |store: &mut AgentSeenStore,
-                        boots: &mut HerdrBootCache,
-                        boot: &str,
-                        reads: &mut i32,
-                        params: Value| {
+        let mark = |store: &mut AgentSeenStore,
+                    boots: &mut HerdrBootCache,
+                    boot: &str,
+                    reads: &mut i32,
+                    params: Value| {
             let (pane, terminal, seq) = mark_params(&params).unwrap();
             if mark_needs_fresh_boot(store, "local", &pane, &terminal, seq) {
                 boots.invalidate("local");
@@ -937,7 +936,7 @@ mod tests {
     fn a_turn_roamgate_started_does_not_make_the_agent_done() {
         let f = fixture();
         let mut store = AgentSeenStore::open(f.path.clone(), f.data.clone(), Box::new(|| 1000.0));
-        let mut done = |store: &mut AgentSeenStore, status: &str, seq: i64, pane: &str| {
+        let done = |store: &mut AgentSeenStore, status: &str, seq: i64, pane: &str| {
             first(&store.annotate(
                 "local",
                 &json!({ "agents": [agent(status, seq, pane)] }),
