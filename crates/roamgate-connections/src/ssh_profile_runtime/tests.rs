@@ -113,6 +113,16 @@ fn leaves_the_command_master_off_when_the_operator_disables_it() {
 
 #[cfg(unix)]
 #[test]
+fn puts_the_herdr_relay_in_front_unless_the_operator_disables_it() {
+    let (config, _cleanup) = configure(&profile(), &deps(HashMap::new()));
+    assert!(config.herdr_relay);
+    let environment = HashMap::from([("ROAMGATE_DISABLE_HERDR_RELAY".to_owned(), "1".to_owned())]);
+    let (disabled, _cleanup) = configure(&profile(), &deps(environment));
+    assert!(!disabled.herdr_relay);
+}
+
+#[cfg(unix)]
+#[test]
 fn maps_empty_profile_socket_paths_to_remote_home_inference() {
     let inferred = SshConnectionProfile {
         remote_control_socket_path: String::new(),

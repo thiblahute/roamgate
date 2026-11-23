@@ -469,7 +469,7 @@ pub fn without_mux_noise(stderr: &str) -> String {
 
 /// Single quotes as POSIX shells read them, with backslashes outside the
 /// quotes, since fish reads `\\` and `\'` inside single quotes as escapes.
-fn any_shell_quote(value: &str) -> String {
+pub(crate) fn any_shell_quote(value: &str) -> String {
     let mut out = String::from("'");
     for c in value.chars() {
         match c {

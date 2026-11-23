@@ -19,6 +19,7 @@ server/src/bridge/endpoint-	rust-unit:roamgate-herdr	Herdr endpoint generation 1
 server/src/bridge/herdr-client	rust-unit:roamgate-herdr	Herdr control client
 server/src/bridge/thin-client	rust-unit:roamgate-herdr	Herdr legacy client socket
 server/src/bridge/ssh-	rust-unit:roamgate-exec	SSH argv, slots, masters, tunnels and forwards
+server/src/bridge/herdr-relay	rust-unit:roamgate-exec	the Herdr relay an SSH tunnel runs in front of the control socket
 server/src/cli/	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/config/	rust-unit:roamgate-base	data paths, environment precedence, settings store, locks
 server/src/config/service-manager	rust-unit:roamgate-cli	service manager

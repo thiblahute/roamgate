@@ -169,6 +169,61 @@
           ]
         }
       ]
+    },
+    {
+      "name": "runs a remote command instead of -N when one is given",
+      "group": ["secure SSH command construction"],
+      "calls": [
+        {
+          "fn": "ssh-command.sshTunnelArgv",
+          "args": [
+            "dev-box",
+            [
+              {
+                "local": "/tmp/a/control.sock",
+                "remote": "/remote/relay.sock"
+              }
+            ],
+            "exec python3 -c 'pass'"
+          ],
+          "result": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "PermitLocalCommand=no",
+            "-o",
+            "RequestTTY=no",
+            "-o",
+            "ControlMaster=no",
+            "-o",
+            "ControlPath=none",
+            "-o",
+            "ControlPersist=no",
+            "-o",
+            "ConnectTimeout=8",
+            "-o",
+            "ConnectionAttempts=1",
+            "-o",
+            "ServerAliveInterval=10",
+            "-o",
+            "ServerAliveCountMax=3",
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-o",
+            "StreamLocalBindUnlink=yes",
+            "-o",
+            "StreamLocalBindMask=0177",
+            "-L",
+            "/tmp/a/control.sock:/remote/relay.sock",
+            "--",
+            "dev-box",
+            "exec python3 -c 'pass'"
+          ]
+        }
+      ]
     }
   ]
 }

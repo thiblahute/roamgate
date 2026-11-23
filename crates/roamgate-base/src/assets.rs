@@ -42,6 +42,8 @@ pub const CODEX_SESSION_FIND_PY: &str =
 /// contract/assets/python/exclusive-rename.py
 pub const EXCLUSIVE_RENAME_PY: &str =
     include_str!("../../../contract/assets/python/exclusive-rename.py");
+/// contract/assets/python/herdr-relay.py
+pub const HERDR_RELAY_PY: &str = include_str!("../../../contract/assets/python/herdr-relay.py");
 /// contract/assets/python/roamgate-hold.py
 pub const ROAMGATE_HOLD_PY: &str = include_str!("../../../contract/assets/python/roamgate-hold.py");
 /// contract/assets/python/roamgate-review.py
@@ -142,6 +144,7 @@ pub const ASSET_TEXTS: &[(&str, &str)] = &[
     ),
     ("python/codex-session-find.py", CODEX_SESSION_FIND_PY),
     ("python/exclusive-rename.py", EXCLUSIVE_RENAME_PY),
+    ("python/herdr-relay.py", HERDR_RELAY_PY),
     ("python/roamgate-hold.py", ROAMGATE_HOLD_PY),
     ("python/roamgate-review.py", ROAMGATE_REVIEW_PY),
     ("sh/batch-block.sh", BATCH_BLOCK_SH),

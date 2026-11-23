@@ -1,6 +1,7 @@
 //! The Herdr tunnel of an SSH connection (bridge/ssh-tunnel.ts): one ssh
 //! process with stream-local forwards of Herdr's control and client
-//! sockets, the remote HOME probe that finds them, readiness, failure
+//! sockets, the remote HOME probe that finds them, the Herdr relay it runs
+//! in front of the control socket (ssh::herdr_relay), readiness, failure
 //! classification, and the runtime's command master started beside it.
 //!
 //! A Windows host's tunnel (PowerShell stdio bridges) is ssh::windows's;
@@ -18,6 +19,7 @@ use roamgate_base::clock::BoxFuture;
 use tokio::sync::watch;
 
 use super::command::{SshAnnotation, SshCommand, StreamForward, ssh_tunnel_argv};
+use super::herdr_relay::{HerdrRelay, herdr_relay, random_relay_token};
 use super::master::{MasterDeps, SshMaster, SshMasterConfig};
 use super::sessions::SshSessions;
 use super::supervised::{KillSignal, SupervisedSsh, stop_child};
@@ -168,6 +170,10 @@ pub struct SshTunnelConfig {
     pub remote_herdr_path: Option<String>,
     /// Control socket of the runtime's command master; unset disables it.
     pub master_control_path: Option<String>,
+    /// Puts the Herdr relay (ssh::herdr_relay) in front of the host's
+    /// control socket, so Herdr answers calls at once instead of 100 ms
+    /// late. A host where it does not start gets the direct forward instead.
+    pub herdr_relay: bool,
 }
 
 /// What a run of the HOME probe printed.
@@ -217,6 +223,10 @@ pub struct TunnelDeps {
     pub remove: Arc<dyn Fn(&str) + Send + Sync>,
     pub remove_directory: Arc<dyn Fn(&str) + Send + Sync>,
     pub spawn: Arc<dyn Fn(SshCommand) -> Result<SupervisedSsh, String> + Send + Sync>,
+    /// Spawns a tunnel running the Herdr relay ([`SupervisedSsh::spawn_relay`]).
+    pub spawn_relay: Arc<dyn Fn(SshCommand) -> Result<SupervisedSsh, String> + Send + Sync>,
+    /// Names the relay's socket on the host; random by default.
+    pub relay_token: Arc<dyn Fn() -> String + Send + Sync>,
     /// None: the clock's own sleep.
     pub schedule_poll: Option<Arc<dyn Fn(Duration) -> ScheduledPoll + Send + Sync>>,
     pub socket_wait_timeout_ms: i64,
@@ -247,7 +257,12 @@ impl TunnelDeps {
             remove_directory: Arc::new(|path| {
                 let _ = std::fs::remove_dir_all(path);
             }),
-            spawn: Arc::new(move |command| SupervisedSsh::spawn(&runner, &command)),
+            spawn: Arc::new({
+                let runner = runner.clone();
+                move |command| SupervisedSsh::spawn(&runner, &command)
+            }),
+            spawn_relay: Arc::new(move |command| SupervisedSsh::spawn_relay(&runner, &command)),
+            relay_token: Arc::new(random_relay_token),
             schedule_poll: None,
             socket_wait_timeout_ms: 8000,
             socket_poll_interval_ms: 100,
@@ -315,6 +330,9 @@ type Task = Shared<BoxFuture<Result<(), TunnelError>>>;
 
 #[derive(Default)]
 struct TunnelState {
+    /// Set when the relay did not start on the host (no python3, say): its
+    /// tunnels forward Herdr's socket directly from then on.
+    relay_unavailable: bool,
     cached_home: Option<(String, String)>,
     proc: Option<SupervisedSsh>,
     stop_task: Option<Task>,
@@ -342,8 +360,14 @@ enum Outcome {
     Ready,
     Exited(Result<i32, String>),
     Failed(String),
+    /// The relay never said it listens.
+    RelayTimedOut,
     Cancelled,
 }
+
+// ssh's own exit status for a connection error; anything else is the remote
+// command's.
+const SSH_CONNECTION_FAILED: i32 = 255;
 
 impl SshTunnelManager {
     /// The tunnel of a host: a POSIX host's stream-local forwards, or for a
@@ -387,10 +411,13 @@ impl SshTunnelManager {
         };
         Ok(Self {
             inner: Arc::new(TunnelInner {
+                state: Mutex::new(TunnelState {
+                    relay_unavailable: !args.config.herdr_relay,
+                    ..TunnelState::default()
+                }),
                 args,
                 master,
                 windows: None,
-                state: Mutex::new(TunnelState::default()),
                 generation: watch::channel(0).0,
             }),
         })
@@ -608,6 +635,36 @@ impl SshTunnelManager {
         if forwards.is_empty() {
             return Ok(());
         }
+        let control = forwards
+            .iter()
+            .position(|(_, label)| *label == "herdr socket");
+        let mut relay: Option<HerdrRelay> = None;
+        if let Some(index) = control
+            && !self.lock().relay_unavailable
+        {
+            let made = match self.remote_home(&host).await {
+                Ok(home) => herdr_relay(
+                    &home,
+                    &forwards[index].0.remote,
+                    &(self.inner.args.deps.relay_token)(),
+                )
+                .map_err(|error| error.to_string()),
+                Err(error) => Err(error.to_string()),
+            };
+            match made {
+                Ok(made) => relay = made,
+                Err(error) => {
+                    tracing::warn!(connection = %self.connection(), %error, "Herdr relay unavailable, forwarding Herdr directly");
+                }
+            }
+            if generation != self.generation() {
+                return Ok(());
+            }
+            if let Some(relay) = &relay {
+                forwards[index].0.remote = relay.socket.clone();
+                forwards[index].1 = "herdr socket (relay)";
+            }
+        }
         let paths: Vec<String> = forwards
             .iter()
             .map(|(forward, _)| forward.local.clone())
@@ -620,8 +677,12 @@ impl SshTunnelManager {
             .iter()
             .map(|(forward, _)| forward.clone())
             .collect();
-        let argv = ssh_tunnel_argv(&host, &streams)
-            .map_err(|error| TunnelError::Message(error.to_string()))?;
+        let argv = ssh_tunnel_argv(
+            &host,
+            &streams,
+            relay.as_ref().map(|relay| relay.command.as_str()),
+        )
+        .map_err(|error| TunnelError::Message(error.to_string()))?;
         let command = SshCommand::plain(argv).annotated(SshAnnotation {
             tag: Some("tunnel".into()),
             connection: self.inner.args.connection_id.clone(),
@@ -631,17 +692,61 @@ impl SshTunnelManager {
         for (forward, label) in &forwards {
             tracing::debug!(connection = %self.connection(), label, local = %forward.local, remote = %forward.remote, "SSH tunnel forwarding socket");
         }
-        let proc = (self.inner.args.deps.spawn)(command).map_err(TunnelError::Message)?;
+        let spawn = if relay.is_some() {
+            &self.inner.args.deps.spawn_relay
+        } else {
+            &self.inner.args.deps.spawn
+        };
+        let proc = spawn(command).map_err(TunnelError::Message)?;
         self.lock().proc = Some(proc.clone());
         let mut generations = self.inner.generation.subscribe();
         let outcome = tokio::select! {
-            ready = self.wait_for_sockets(&paths) => match ready {
-                Ok(()) => Outcome::Ready,
+            ready = async {
+                self.wait_for_sockets(&paths).await?;
+                Ok::<_, String>(if relay.is_some() {
+                    self.wait_for_relay(&proc).await
+                } else {
+                    Outcome::Ready
+                })
+            } => match ready {
+                Ok(outcome) => outcome,
                 Err(error) => Outcome::Failed(error),
             },
             exit = proc.exited() => Outcome::Exited(exit),
             _ = generations.wait_for(|current| *current != generation) => Outcome::Cancelled,
         };
+        let relay_failed = relay.is_some()
+            && match &outcome {
+                Outcome::RelayTimedOut => true,
+                Outcome::Exited(Ok(code)) => *code != SSH_CONNECTION_FAILED,
+                _ => false,
+            };
+        if relay_failed {
+            if generation != self.generation() {
+                return Ok(());
+            }
+            // ssh connected, but the relay did not start: no python3 on the
+            // host, a home it cannot write. The direct forward works there.
+            if self.lock().proc.as_ref() == Some(&proc) {
+                self.stop_tunnel_process().await?;
+            }
+            self.lock().relay_unavailable = true;
+            let stderr = proc.stderr().await;
+            let error = if stderr.trim().is_empty() {
+                "timed out".to_owned()
+            } else {
+                SPACES
+                    .replace_all(stderr.trim(), " ")
+                    .chars()
+                    .take(300)
+                    .collect()
+            };
+            tracing::warn!(connection = %self.connection(), %error, "Herdr relay did not start, forwarding Herdr directly");
+            if generation != self.generation() {
+                return Ok(());
+            }
+            return Box::pin(self.start()).await;
+        }
         match outcome {
             Outcome::Cancelled => return Ok(()),
             Outcome::Failed(error) => {
@@ -650,6 +755,7 @@ impl SshTunnelManager {
                 }
                 return Err(TunnelError::Message(error));
             }
+            Outcome::RelayTimedOut => unreachable!("handled with the relay"),
             Outcome::Exited(exit) => {
                 if generation != self.generation() {
                     return Ok(());
@@ -668,8 +774,10 @@ impl SshTunnelManager {
             return Ok(());
         }
         let tunnel = self.clone();
+        let relayed = relay.is_some();
         tokio::spawn(async move {
             let exit = proc.exited().await;
+            let relay_ended = relayed && !matches!(exit, Ok(SSH_CONNECTION_FAILED));
             let failure = tunnel.failure(&proc, exit).await;
             {
                 let mut state = tunnel.lock();
@@ -680,6 +788,12 @@ impl SshTunnelManager {
                     return;
                 }
                 state.proc = None;
+                if relay_ended {
+                    // The connection held but the relay ended: reconnect
+                    // without it.
+                    state.relay_unavailable = true;
+                    tracing::warn!(connection = %tunnel.connection(), "Herdr relay exited, forwarding Herdr directly");
+                }
             }
             if let Some(report) = &tunnel.inner.args.on_unexpected_exit {
                 report(failure);
@@ -687,6 +801,18 @@ impl SshTunnelManager {
         });
         tracing::debug!(connection = %self.connection(), "SSH tunnel ready");
         Ok(())
+    }
+
+    /// Once the local sockets listen, waits for the relay to listen on the
+    /// host: a call made before would fail.
+    async fn wait_for_relay(&self, proc: &SupervisedSsh) -> Outcome {
+        let clock = self.inner.args.sessions.clock().clone();
+        let wait = Duration::from_millis(self.inner.args.deps.socket_wait_timeout_ms.max(0) as u64);
+        match roamgate_base::clock::timeout(&*clock, wait, proc.relay_ready()).await {
+            Ok(true) => Outcome::Ready,
+            Ok(false) => Outcome::Exited(proc.exited().await),
+            Err(_) => Outcome::RelayTimedOut,
+        }
     }
 
     async fn failure(&self, proc: &SupervisedSsh, exit: Result<i32, String>) -> TunnelError {

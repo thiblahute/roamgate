@@ -6,6 +6,23 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.10
+
+inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b
+
+The Herdr relay on SSH tunnels (Work item 3c813194): Herdr sleeps 100 ms
+when a control connection's request is not there yet, which through an ssh
+`-L` forward it never is, so every call to an SSH host took about 105 ms.
+
+- exec, connections: the Herdr tunnel of a POSIX SSH host runs
+  contract/assets/python/herdr-relay.py as its remote command instead of
+  `-N`, and forwards the control socket to the relay's
+  `~/.cache/roamgate/herdr-relay-<token>.sock`; the tunnel is ready once
+  the relay prints `roamgate-herdr-relay ready`. A host where it does not
+  start gets the direct forward for the rest of the runtime.
+- env, connections: `ROAMGATE_DISABLE_HERDR_RELAY=1` (legacy
+  `HERDR_GUI_DISABLE_HERDR_RELAY`) always forwards directly.
+
 ## 1.9
 
 inventory: 858ef95c89ead36eee2dfeab1288e69afcb4fe9363a8f263bd97d5706ba06107

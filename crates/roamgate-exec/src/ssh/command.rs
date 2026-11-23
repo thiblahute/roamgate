@@ -361,9 +361,13 @@ pub struct StreamForward {
     pub remote: String,
 }
 
+/// The Herdr tunnel: stream-local forwards, and no remote command (`-N`)
+/// unless `remote_command` gives one (the Herdr relay, ssh::herdr_relay),
+/// which then runs for as long as the tunnel.
 pub fn ssh_tunnel_argv(
     destination: &str,
     forwards: &[StreamForward],
+    remote_command: Option<&str>,
 ) -> Result<Vec<String>, InvalidDestination> {
     let mut argv = vec!["ssh".to_owned()];
     argv.extend(strings(&SSH_NONINTERACTIVE_ARGS));
@@ -374,14 +378,19 @@ pub fn ssh_tunnel_argv(
         "StreamLocalBindUnlink=yes",
         "-o",
         "StreamLocalBindMask=0177",
-        "-N",
     ]));
+    if remote_command.is_none() {
+        argv.push("-N".into());
+    }
     for forward in forwards {
         argv.push("-L".into());
         argv.push(format!("{}:{}", forward.local, forward.remote));
     }
     argv.push("--".into());
     argv.push(validate_ssh_destination(destination)?.into());
+    if let Some(command) = remote_command {
+        argv.push(command.to_owned());
+    }
     Ok(argv)
 }
 
@@ -434,7 +443,8 @@ mod tests {
                                 remote: text(&forward["remote"]),
                             })
                             .collect();
-                        ssh_tunnel_argv(&text(&call.args[0]), &forwards)
+                        let command = call.args.get(2).map(text);
+                        ssh_tunnel_argv(&text(&call.args[0]), &forwards, command.as_deref())
                             .map(|argv| json!(argv))
                             .map_err(|error| error.to_string())
                     }

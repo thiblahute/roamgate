@@ -132,6 +132,8 @@ pub fn create_ssh_profile_runtime_config(
                 .as_ref()
                 .map(|path| path.replace('/', "\\")),
             master_control_path: (!master_disabled).then(|| text(&master_control_path)),
+            herdr_relay: roamgate_env(deps.environment.as_ref(), "DISABLE_HERDR_RELAY").as_deref()
+                != Some("1"),
         })
     })();
     if configured.is_err() {

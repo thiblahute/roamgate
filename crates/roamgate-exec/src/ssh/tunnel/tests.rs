@@ -40,6 +40,8 @@ struct Children {
     controls: Arc<Mutex<Vec<ChildControl>>>,
     argv: Arc<Mutex<Vec<Vec<String>>>>,
     signals: Arc<Mutex<Vec<KillSignal>>>,
+    /// Whether each child was spawned to run the Herdr relay.
+    relays: Arc<Mutex<Vec<bool>>>,
 }
 
 impl Children {
@@ -47,8 +49,24 @@ impl Children {
         &self,
         kill: impl Fn(KillSignal, &ChildControl) -> Result<(), String> + Send + Sync + Clone + 'static,
     ) -> Arc<dyn Fn(SshCommand) -> Result<SupervisedSsh, String> + Send + Sync> {
+        self.spawn_as(false, kill)
+    }
+
+    fn spawn_relay(
+        &self,
+        kill: impl Fn(KillSignal, &ChildControl) -> Result<(), String> + Send + Sync + Clone + 'static,
+    ) -> Arc<dyn Fn(SshCommand) -> Result<SupervisedSsh, String> + Send + Sync> {
+        self.spawn_as(true, kill)
+    }
+
+    fn spawn_as(
+        &self,
+        relay: bool,
+        kill: impl Fn(KillSignal, &ChildControl) -> Result<(), String> + Send + Sync + Clone + 'static,
+    ) -> Arc<dyn Fn(SshCommand) -> Result<SupervisedSsh, String> + Send + Sync> {
         let children = self.clone();
         Arc::new(move |command: SshCommand| {
+            children.relays.lock().unwrap().push(relay);
             let signals = children.signals.clone();
             let kill = kill.clone();
             let (child, control) = SupervisedSsh::manual(move |signal, control| {
@@ -717,4 +735,187 @@ async fn runs_without_a_master_when_the_runtime_has_no_control_path() {
     t.manager.cleanup().await.unwrap();
     assert!(t.created.lock().unwrap().is_empty());
     assert!(t.calls.lock().unwrap().is_empty());
+}
+
+// Herdr relay on the tunnel.
+
+const RELAY_SOCKET: &str = "/home/test/.cache/roamgate/herdr-relay-t0ken.sock";
+
+fn relay_manager(
+    children: &Children,
+    failures: Option<Arc<Mutex<Vec<TunnelError>>>>,
+    deps_override: impl FnOnce(TunnelDeps) -> TunnelDeps,
+) -> SshTunnelManager {
+    SshTunnelManager::new(SshTunnelArgs {
+        sessions: sessions(),
+        connection_id: None,
+        config: SshTunnelConfig {
+            herdr_relay: true,
+            ..config()
+        },
+        run_process: home("/home/test"),
+        on_unexpected_exit: failures.map(|failures| {
+            Arc::new(move |error| failures.lock().unwrap().push(error))
+                as Arc<dyn Fn(TunnelError) + Send + Sync>
+        }),
+        on_master_ready: None,
+        deps: deps_override(TunnelDeps {
+            spawn: children.spawn(exits_on_kill),
+            spawn_relay: children.spawn_relay(exits_on_kill),
+            relay_token: Arc::new(|| "t0ken".into()),
+            ..deps()
+        }),
+    })
+    .unwrap()
+}
+
+async fn wait_children(children: &Children, count: usize) {
+    for _ in 0..1000 {
+        if children.count() >= count {
+            return;
+        }
+        flush().await;
+    }
+    panic!("condition not reached");
+}
+
+fn relays(children: &Children) -> Vec<bool> {
+    children.relays.lock().unwrap().clone()
+}
+
+#[tokio::test(start_paused = true)]
+async fn forwards_the_control_socket_to_the_relay_and_waits_for_it_to_listen() {
+    let children = Children::default();
+    let manager = relay_manager(&children, None, |deps| deps);
+    let starting = tokio::spawn({
+        let manager = manager.clone();
+        async move { manager.start().await }
+    });
+    wait_children(&children, 1).await;
+    let argv = children.argv.lock().unwrap()[0].clone();
+    assert_eq!(relays(&children), [true]);
+    assert!(!argv.contains(&"-N".to_owned()));
+    assert!(argv.contains(&format!("/tmp/herdr-control.sock:{RELAY_SOCKET}")));
+    // The render socket stays a direct forward.
+    assert!(
+        argv.contains(
+            &"/tmp/herdr-client.sock:/home/test/.config/herdr/herdr-client.sock".to_owned()
+        )
+    );
+    assert_eq!(argv[argv.len() - 2], "test-host");
+    let command = argv.last().unwrap();
+    assert!(command.starts_with("exec python3 -c "));
+    assert!(command.contains("'/home/test/.config/herdr/herdr.sock'"));
+    assert!(command.ends_with(&format!("'{RELAY_SOCKET}'")));
+
+    flush().await;
+    assert!(!starting.is_finished());
+    children.control(0).relay_ready(true);
+    starting.await.unwrap().unwrap();
+    manager.cleanup().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn falls_back_to_the_direct_forward_when_the_relay_does_not_start() {
+    let children = Children::default();
+    let manager = relay_manager(&children, None, |deps| deps);
+    let starting = tokio::spawn({
+        let manager = manager.clone();
+        async move { manager.start().await }
+    });
+    wait_children(&children, 1).await;
+    // No python3 on the host: the login shell's 127, output ended.
+    children.control(0).exit(127);
+    starting.await.unwrap().unwrap();
+    assert_eq!(relays(&children), [true, false]);
+    let direct = children.argv.lock().unwrap()[1].clone();
+    assert!(direct.contains(&"-N".to_owned()));
+    assert_eq!(direct[direct.len() - 2..], ["--", "test-host"]);
+    assert!(
+        direct.contains(&"/tmp/herdr-control.sock:/home/test/.config/herdr/herdr.sock".to_owned())
+    );
+
+    // Later tunnels of this runtime skip it.
+    children.control(1).exit(255);
+    manager.start().await.unwrap();
+    assert_eq!(relays(&children), [true, false, false]);
+    manager.cleanup().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn falls_back_when_the_relay_never_says_it_listens() {
+    let children = Children::default();
+    let manager = relay_manager(&children, None, |deps| TunnelDeps {
+        socket_wait_timeout_ms: 20,
+        ..deps
+    });
+    manager.start().await.unwrap();
+    assert_eq!(relays(&children), [true, false]);
+    manager.cleanup().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_connection_failure_keeps_the_relay_for_the_next_attempt() {
+    let children = Children::default();
+    let manager = relay_manager(&children, None, |deps| deps);
+    let starting = tokio::spawn({
+        let manager = manager.clone();
+        async move { manager.start().await }
+    });
+    wait_children(&children, 1).await;
+    children.control(0).exit(255);
+    assert!(matches!(
+        starting.await.unwrap(),
+        Err(TunnelError::Failure(_))
+    ));
+    assert_eq!(relays(&children), [true]);
+
+    let again = tokio::spawn({
+        let manager = manager.clone();
+        async move { manager.start().await }
+    });
+    wait_children(&children, 2).await;
+    assert_eq!(relays(&children), [true, true]);
+    children.control(1).relay_ready(true);
+    again.await.unwrap().unwrap();
+    manager.cleanup().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_relay_that_exits_later_is_left_out_of_the_reconnect() {
+    let children = Children::default();
+    let failures: Arc<Mutex<Vec<TunnelError>>> = Arc::default();
+    let manager = relay_manager(&children, Some(failures.clone()), |deps| deps);
+    let starting = tokio::spawn({
+        let manager = manager.clone();
+        async move { manager.start().await }
+    });
+    wait_children(&children, 1).await;
+    children.control(0).relay_ready(true);
+    starting.await.unwrap().unwrap();
+    children.control(0).exit(1);
+    flush().await;
+    assert_eq!(failures.lock().unwrap().len(), 1);
+
+    manager.start().await.unwrap();
+    assert_eq!(relays(&children), [true, false]);
+    manager.cleanup().await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn forwards_directly_when_the_runtime_does_not_ask_for_the_relay() {
+    let children = Children::default();
+    let manager = manager(
+        config(),
+        home("/home/test"),
+        TunnelDeps {
+            spawn: children.spawn(exits_on_kill),
+            spawn_relay: children.spawn_relay(exits_on_kill),
+            ..deps()
+        },
+    );
+    manager.start().await.unwrap();
+    assert_eq!(relays(&children), [false]);
+    assert!(children.argv.lock().unwrap()[0].contains(&"-N".to_owned()));
+    manager.cleanup().await.unwrap();
 }
