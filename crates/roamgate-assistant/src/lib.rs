@@ -4,6 +4,8 @@
 //! `serde_json` values in insertion order, so the JSON text either side
 //! writes is the other's.
 
+pub mod context;
+pub mod driver;
 pub mod errors;
 pub mod saved;
 pub mod schema;
