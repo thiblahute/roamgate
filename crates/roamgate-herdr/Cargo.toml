@@ -1,0 +1,26 @@
+[package]
+name = "roamgate-herdr"
+version = "0.0.0"
+description = "Herdr for Roamgate: the verified release and its managed install, the user service running `herdr server`, setup and status, the control client's handshake, `roamgate herdr`"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+rand = "0.9"
+roamgate-base = { path = "../roamgate-base" }
+roamgate-exec = { path = "../roamgate-exec" }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+hex = "0.4"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }

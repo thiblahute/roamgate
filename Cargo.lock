@@ -6336,8 +6336,10 @@ dependencies = [
  "axum",
  "roamgate-activity",
  "roamgate-base",
+ "roamgate-cli",
  "roamgate-connections",
  "roamgate-exec",
+ "roamgate-herdr",
  "roamgate-sidecar",
  "rust-embed",
  "serde",
@@ -6386,6 +6388,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "roamgate-cli"
+version = "0.0.0"
+dependencies = [
+ "hex",
+ "regex",
+ "roamgate-base",
+ "roamgate-exec",
+ "roamgate-herdr",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "roamgate-connections"
 version = "0.0.0"
 dependencies = [
@@ -6405,16 +6423,33 @@ version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
+ "hex",
  "regex",
  "roamgate-base",
  "roamgate-protocol",
  "rustix",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "roamgate-herdr"
+version = "0.0.0"
+dependencies = [
+ "hex",
+ "rand 0.9.5",
+ "roamgate-base",
+ "roamgate-exec",
+ "rustix",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

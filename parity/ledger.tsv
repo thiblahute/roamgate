@@ -1353,12 +1353,12 @@ server/src/cli/setup.test.ts	answering no changes nothing	rust-unit:roamgate-cli
 server/src/cli/setup.test.ts	bad arguments are usage errors	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/setup.test.ts	remove-unused frees what voice.json no longer uses	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/update.test.ts	--check compares against the latest manifest	scenario:parity/scenarios/update/cli.yaml	
-server/src/cli/update.test.ts	uses a mirror from the service config	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/update.test.ts	installs over the running executable with the shared verifier	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
+server/src/cli/update.test.ts	uses a mirror from the service config	rust-unit:roamgate-cli:commands::tests::uses_a_mirror_from_the_service_config	CLI internals beyond its help and outputs
+server/src/cli/update.test.ts	installs over the running executable with the shared verifier	rust-unit:roamgate-cli:commands::tests::installs_over_the_running_executable_with_the_shared_verifier	CLI internals beyond its help and outputs
 server/src/cli/update.test.ts	reports installer failures and refuses source checkouts	scenario:parity/scenarios/update/cli.yaml	
-server/src/cli/update.test.ts	explains platforms without update packages	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/update.test.ts	swaps the executable with roamgate.previous and back	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/update.test.ts	leaves files alone when the previous executable is unusable	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
+server/src/cli/update.test.ts	explains platforms without update packages	rust-unit:roamgate-cli:commands::tests::explains_platforms_without_update_packages	CLI internals beyond its help and outputs
+server/src/cli/update.test.ts	swaps the executable with roamgate.previous and back	rust-unit:roamgate-cli:commands::tests::swaps_the_executable_with_roamgate_previous_and_back	CLI internals beyond its help and outputs
+server/src/cli/update.test.ts	leaves files alone when the previous executable is unusable	rust-unit:roamgate-cli:commands::tests::leaves_files_alone_when_the_previous_executable_is_unusable	CLI internals beyond its help and outputs
 server/src/cli/url.test.ts	draws exactly the library's modules with a quiet zone	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/url.test.ts	prints tokenized local and LAN URLs from the service config	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/url.test.ts	omits the token for fixed-password services and applies --address	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
@@ -2230,22 +2230,22 @@ server/src/core-channel/supervisor.test.ts	a crashing core is started again with
 server/src/core-channel/supervisor.test.ts	a core with the ${reason} is refused	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/supervisor.test.ts	in the runtime directory, else a private temporary one, else a pipe	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/supervisor.test.ts	sockets of processes that are gone are removed	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
-server/src/herdr/bootstrap.test.ts	rejects non-local or customized Herdr targets	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/bootstrap.test.ts	prefers whatever is on PATH	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/bootstrap.test.ts	falls back to the official installer location	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/bootstrap.test.ts	returns null when no herdr binary exists	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/bootstrap.test.ts	looks for herdr.exe on Windows, including the managed directory	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/bootstrap.test.ts	reports a reachable server as running	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/bootstrap.test.ts	distinguishes installed-but-down from missing	rust-unit:roamgate-herdr	local Herdr release download and service setup
+server/src/herdr/bootstrap.test.ts	rejects non-local or customized Herdr targets	rust-unit:roamgate-herdr:bootstrap::tests::rejects_non_local_or_customized_herdr_targets	local Herdr release download and service setup
+server/src/herdr/bootstrap.test.ts	prefers whatever is on PATH	rust-unit:roamgate-herdr:bootstrap::tests::prefers_whatever_is_on_path	local Herdr release download and service setup
+server/src/herdr/bootstrap.test.ts	falls back to the official installer location	rust-unit:roamgate-herdr:bootstrap::tests::falls_back_to_the_official_installer_location	local Herdr release download and service setup
+server/src/herdr/bootstrap.test.ts	returns null when no herdr binary exists	rust-unit:roamgate-herdr:bootstrap::tests::returns_null_when_no_herdr_binary_exists	local Herdr release download and service setup
+server/src/herdr/bootstrap.test.ts	looks for herdr.exe on Windows, including the managed directory	rust-unit:roamgate-herdr:bootstrap::tests::looks_for_herdr_exe_on_windows_including_the_managed_directory	local Herdr release download and service setup
+server/src/herdr/bootstrap.test.ts	reports a reachable server as running	rust-unit:roamgate-herdr:bootstrap::tests::reports_a_reachable_server_as_running	local Herdr release download and service setup
+server/src/herdr/bootstrap.test.ts	distinguishes installed-but-down from missing	rust-unit:roamgate-herdr:bootstrap::tests::distinguishes_installed_but_down_from_missing	local Herdr release download and service setup
 server/src/herdr/bootstrap.test.ts	does nothing when Herdr is already running	scenario:parity/scenarios/herdr/setup-success.yaml	
 server/src/herdr/bootstrap.test.ts	starts an installed binary as a service without downloading	scenario:parity/scenarios/herdr/setup-success.yaml	
-server/src/herdr/bootstrap.test.ts	installs the verified release when no binary exists	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/bootstrap.test.ts	fails when the server never becomes reachable	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/bootstrap.test.ts	fails fast for SSH or customized setups	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/cli.test.ts	ignores non-herdr commands	rust-unit:roamgate-herdr	local Herdr release download and service setup
+server/src/herdr/bootstrap.test.ts	installs the verified release when no binary exists	rust-unit:roamgate-herdr:bootstrap::tests::installs_the_verified_release_when_no_binary_exists	local Herdr release download and service setup
+server/src/herdr/bootstrap.test.ts	fails when the server never becomes reachable	rust-unit:roamgate-herdr:bootstrap::tests::fails_when_the_server_never_becomes_reachable	local Herdr release download and service setup
+server/src/herdr/bootstrap.test.ts	fails fast for SSH or customized setups	rust-unit:roamgate-herdr:bootstrap::tests::fails_fast_for_ssh_or_customized_setups	local Herdr release download and service setup
+server/src/herdr/cli.test.ts	ignores non-herdr commands	rust-unit:roamgate:tests::family_commands_go_to_their_family_and_nothing_else_does	local Herdr release download and service setup
 server/src/herdr/cli.test.ts	prints help for bare or unknown herdr commands	scenario:parity/scenarios/herdr/cli-status.yaml	
 server/src/herdr/cli.test.ts	status reports a running server	scenario:parity/scenarios/herdr/cli-status.yaml	
-server/src/herdr/cli.test.ts	status points missing installs at setup	rust-unit:roamgate-herdr	local Herdr release download and service setup
+server/src/herdr/cli.test.ts	status points missing installs at setup	rust-unit:roamgate-cli:herdr::tests::status_points_missing_installs_at_setup	local Herdr release download and service setup
 server/src/herdr/cli.test.ts	setup prints the outcome	scenario:parity/scenarios/herdr/setup-success.yaml	
 server/src/herdr/cli.test.ts	setup failures print the reason and exit 1	scenario:parity/scenarios/herdr/cli-status.yaml	
 server/src/herdr/integration-versions.test.ts	CLI supplements missing current/outdated versions without leaking paths or adding targets	scenario:parity/scenarios/herdr/integration-versions.yaml	black-box suite, ported by another S6 slice
@@ -2254,26 +2254,26 @@ server/src/herdr/integration-versions.test.ts	unknown, malformed, duplicated, an
 server/src/herdr/integration-versions.test.ts	complete, uninstalled, and invalid RPC results do not invoke the CLI	scenario:parity/scenarios/herdr/integration-versions.yaml	black-box suite, ported by another S6 slice
 server/src/herdr/integration-versions.test.ts	unavailable CLI, timeout, nonzero exit, ping failure, and binary mismatch retain the RPC list	scenario:parity/scenarios/herdr/integration-versions.yaml	black-box suite, ported by another S6 slice
 server/src/herdr/integration-versions.test.ts	SSH lookups stay on their selected host and never fall back to the local CLI	scenario:parity/scenarios/herdr/integration-versions-ssh.yaml	black-box suite, ported by another S6 slice
-server/src/herdr/release.test.ts	maps supported platforms to published assets	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/release.test.ts	rejects platforms without a verified asset	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/release.test.ts	pins a checksum for every published asset	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/release.test.ts	builds GitHub release URLs for the verified version	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/release.test.ts	rejects unsupported platforms before downloading	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/release.test.ts	keeps an existing managed binary without downloading	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/release.test.ts	downloads the verified asset and installs it executable	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/release.test.ts	refuses a download whose checksum does not match	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/release.test.ts	extracts the Windows zip layout via PowerShell	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/release.test.ts	Windows ${failure} failure leaves no partial installation and can retry	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/service.test.ts	uses per-platform user service locations	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/service.test.ts	systemd runs `herdr server` with restart supervision	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/service.test.ts	launchd keeps the server alive with log files	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/service.test.ts	windows task starts herdr server at logon from its install directory	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/service.test.ts	writes the unit and runs the systemd activation sequence	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/service.test.ts	replaces a loaded launchd service before bootstrapping	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/service.test.ts	fails when an activation command fails	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/service.test.ts	refuses to replace a definition not generated by roamgate	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/service.test.ts	only running Windows tasks are active	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/herdr/service.test.ts	reports systemd installation and activity	rust-unit:roamgate-herdr	local Herdr release download and service setup
+server/src/herdr/release.test.ts	maps supported platforms to published assets	rust-unit:roamgate-herdr:release::tests::maps_supported_platforms_to_published_assets	local Herdr release download and service setup
+server/src/herdr/release.test.ts	rejects platforms without a verified asset	rust-unit:roamgate-herdr:release::tests::rejects_platforms_without_a_verified_asset	local Herdr release download and service setup
+server/src/herdr/release.test.ts	pins a checksum for every published asset	rust-unit:roamgate-herdr:release::tests::pins_a_checksum_for_every_published_asset	local Herdr release download and service setup
+server/src/herdr/release.test.ts	builds GitHub release URLs for the verified version	rust-unit:roamgate-herdr:release::tests::builds_github_release_urls_for_the_verified_version	local Herdr release download and service setup
+server/src/herdr/release.test.ts	rejects unsupported platforms before downloading	rust-unit:roamgate-herdr:release::tests::rejects_unsupported_platforms_before_downloading	local Herdr release download and service setup
+server/src/herdr/release.test.ts	keeps an existing managed binary without downloading	rust-unit:roamgate-herdr:release::tests::keeps_an_existing_managed_binary_without_downloading	local Herdr release download and service setup
+server/src/herdr/release.test.ts	downloads the verified asset and installs it executable	rust-unit:roamgate-herdr:release::tests::downloads_the_verified_asset_and_installs_it_executable	local Herdr release download and service setup
+server/src/herdr/release.test.ts	refuses a download whose checksum does not match	rust-unit:roamgate-herdr:release::tests::refuses_a_download_whose_checksum_does_not_match	local Herdr release download and service setup
+server/src/herdr/release.test.ts	extracts the Windows zip layout via PowerShell	rust-unit:roamgate-herdr:release::tests::extracts_the_windows_zip_layout_via_powershell	local Herdr release download and service setup
+server/src/herdr/release.test.ts	Windows ${failure} failure leaves no partial installation and can retry	rust-unit:roamgate-herdr:release::tests::windows_failure_leaves_no_partial_installation_and_can_retry	local Herdr release download and service setup
+server/src/herdr/service.test.ts	uses per-platform user service locations	rust-unit:roamgate-herdr:service::tests::uses_per_platform_user_service_locations	local Herdr release download and service setup
+server/src/herdr/service.test.ts	systemd runs `herdr server` with restart supervision	rust-unit:roamgate-herdr:service::tests::systemd_runs_herdr_server_with_restart_supervision	local Herdr release download and service setup
+server/src/herdr/service.test.ts	launchd keeps the server alive with log files	rust-unit:roamgate-herdr:service::tests::launchd_keeps_the_server_alive_with_log_files	local Herdr release download and service setup
+server/src/herdr/service.test.ts	windows task starts herdr server at logon from its install directory	rust-unit:roamgate-herdr:service::tests::windows_task_starts_herdr_server_at_logon_from_its_install_directory	local Herdr release download and service setup
+server/src/herdr/service.test.ts	writes the unit and runs the systemd activation sequence	rust-unit:roamgate-herdr:service::tests::writes_the_unit_and_runs_the_systemd_activation_sequence	local Herdr release download and service setup
+server/src/herdr/service.test.ts	replaces a loaded launchd service before bootstrapping	rust-unit:roamgate-herdr:service::tests::replaces_a_loaded_launchd_service_before_bootstrapping	local Herdr release download and service setup
+server/src/herdr/service.test.ts	fails when an activation command fails	rust-unit:roamgate-herdr:service::tests::fails_when_an_activation_command_fails	local Herdr release download and service setup
+server/src/herdr/service.test.ts	refuses to replace a definition not generated by roamgate	rust-unit:roamgate-herdr:service::tests::refuses_to_replace_a_definition_not_generated_by_roamgate	local Herdr release download and service setup
+server/src/herdr/service.test.ts	only running Windows tasks are active	rust-unit:roamgate-herdr:service::tests::only_running_windows_tasks_are_active	local Herdr release download and service setup
+server/src/herdr/service.test.ts	reports systemd installation and activity	rust-unit:roamgate-herdr:service::tests::reports_systemd_installation_and_activity	local Herdr release download and service setup
 server/src/history/files.test.ts	settings: one file per allowed key, without secrets	rust-unit:roamgate-history	the local git history of what is authored in Roamgate (settings, Work, reviews, MR reviews): its own crate, on roamgate-git, ported once the stores it renders are in Rust (plan 6.2, decided 2026-11-23)
 server/src/history/files.test.ts	the small files areas copy their stores, JSON key-sorted, Markdown as it is	rust-unit:roamgate-history	the local git history of what is authored in Roamgate (settings, Work, reviews, MR reviews): its own crate, on roamgate-git, ported once the stores it renders are in Rust (plan 6.2, decided 2026-11-23)
 server/src/history/files.test.ts	a missing store writes nothing; a broken one is an error	rust-unit:roamgate-history	the local git history of what is authored in Roamgate (settings, Work, reviews, MR reviews): its own crate, on roamgate-git, ported once the stores it renders are in Rust (plan 6.2, decided 2026-11-23)
@@ -2397,12 +2397,12 @@ server/src/http/call-handoff.test.ts	a watch whose server closed is opened again
 server/src/http/call-handoff.test.ts	the app's two signalling sockets are each proxied on their own	rust-unit:roamgate-voice-server	call handoff
 server/src/http/call-handoff.test.ts	exchanges a valid token for the call and a login, once	rust-unit:roamgate-voice-server	call handoff
 server/src/http/call-handoff.test.ts	refuses other methods, other sites, and too many failures	rust-unit:roamgate-voice-server	call handoff
-server/src/http/herdr-info.test.ts	returns only the connected server identity	rust-unit:roamgate-herdr	Herdr setup and info routes
-server/src/http/herdr-info.test.ts	does not hide connection or malformed-response failures	rust-unit:roamgate-herdr	Herdr setup and info routes
+server/src/http/herdr-info.test.ts	returns only the connected server identity	rust-unit:roamgate-herdr:http::tests::returns_only_the_connected_server_identity	Herdr setup and info routes
+server/src/http/herdr-info.test.ts	does not hide connection or malformed-response failures	rust-unit:roamgate-herdr:http::tests::does_not_hide_connection_or_malformed_response_failures	Herdr setup and info routes
 server/src/http/herdr-setup.test.ts	setup guard uses the configured profile even without a ready runtime	scenario:parity/scenarios/herdr/status-routes.yaml	
-server/src/http/herdr-setup.test.ts	missing installations require a verified asset, existing binaries do not	rust-unit:roamgate-herdr	Herdr setup and info routes
-server/src/http/herdr-setup.test.ts	download deadline aborts stalled headers and bodies and releases the setup lock	rust-unit:roamgate-herdr	Herdr setup and info routes
-server/src/http/herdr-setup.test.ts	setup UI metadata uses the pinned release and hides unsupported targets	rust-unit:roamgate-herdr	Herdr setup and info routes
+server/src/http/herdr-setup.test.ts	missing installations require a verified asset, existing binaries do not	rust-unit:roamgate-herdr:http::tests::missing_installations_require_a_verified_asset_existing_binaries_do_not	Herdr setup and info routes
+server/src/http/herdr-setup.test.ts	download deadline aborts stalled headers and bodies and releases the setup lock	rust-unit:roamgate-herdr:http::tests::download_deadline_aborts_stalled_headers_and_bodies_and_releases_the_setup_lock,rust-unit:roamgate-exec:install::tests::downloads_names_http_failures_and_gives_up_at_its_deadline	Herdr setup and info routes
+server/src/http/herdr-setup.test.ts	setup UI metadata uses the pinned release and hides unsupported targets	rust-unit:roamgate-herdr:http::tests::setup_ui_metadata_uses_the_pinned_release_and_hides_unsupported_targets	Herdr setup and info routes
 server/src/http/history.test.ts	GET is the status; other paths are not the route's	rust-unit:roamgate-http	HTTP front internals
 server/src/http/history.test.ts	PUT sets the location and the switch; POST commit runs a pass	rust-unit:roamgate-http	HTTP front internals
 server/src/http/history.test.ts	a write without the settings header, or cross-site, is refused	rust-unit:roamgate-http	HTTP front internals
@@ -2543,32 +2543,32 @@ server/src/http/terminal-upload.test.ts	the remote script's path has no doubled 
 server/src/http/terminal-upload.test.ts	a failed request stream removes the partial upload	rust-unit:roamgate-http	HTTP front internals
 server/src/http/terminal-upload.test.ts	HTTP uploads honor a configured cap above Bun's default body limit	rust-unit:roamgate-http	HTTP front internals
 server/src/http/terminal-upload.test.ts	SSH upload %s terminates the process and removes local staging	rust-unit:roamgate-http	HTTP front internals
-server/src/http/update-install.test.ts	verifies, narrows, and atomically replaces the running executable	rust-unit:roamgate-cli	update and rollback
-server/src/http/update-install.test.ts	keeps the old executable when the archive digest does not match	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	keeps HTTP requests alive for the full update budget	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	parses bounded Roamgate manifests and rejects legacy identities	rust-unit:roamgate-cli	update and rollback
+server/src/http/update-install.test.ts	verifies, narrows, and atomically replaces the running executable	rust-unit:roamgate-cli:update_http::tests::verifies_narrows_and_atomically_replaces_the_running_executable	update and rollback
+server/src/http/update-install.test.ts	keeps the old executable when the archive digest does not match	rust-unit:roamgate-cli:update_http::tests::keeps_the_old_executable_when_the_archive_digest_does_not_match	update and rollback
+server/src/http/update.test.ts	keeps HTTP requests alive for the full update budget	rust-unit:roamgate-cli:update::tests::keeps_http_requests_alive_for_the_full_update_budget	update and rollback
+server/src/http/update.test.ts	parses bounded Roamgate manifests and rejects legacy identities	rust-unit:roamgate-cli:update::tests::parses_bounded_roamgate_manifests_and_rejects_legacy_identities	update and rollback
 server/src/http/update.test.ts	normalizes safe update base URLs without exposing credentials	scenario:parity/scenarios/update/check-failures.yaml	
-server/src/http/update.test.ts	compares release and prerelease versions numerically	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	maps only published runtime architectures to update packages	rust-unit:roamgate-cli	update and rollback
+server/src/http/update.test.ts	compares release and prerelease versions numerically	rust-unit:roamgate-cli:update::tests::compares_release_and_prerelease_versions_numerically	update and rollback
+server/src/http/update.test.ts	maps only published runtime architectures to update packages	rust-unit:roamgate-cli:update::tests::maps_only_published_runtime_architectures_to_update_packages	update and rollback
 server/src/http/update.test.ts	detects systemd and launchd while allowing explicit overrides	scenario:parity/scenarios/env/update-supervisor.yaml	
-server/src/http/update.test.ts	checks the package matching a Darwin arm64 standalone binary	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	keeps Linux x64 update checks on the Linux archive	rust-unit:roamgate-cli	update and rollback
+server/src/http/update.test.ts	checks the package matching a Darwin arm64 standalone binary	rust-unit:roamgate-cli:update_http::tests::checks_the_package_matching_a_darwin_arm64_standalone_binary	update and rollback
+server/src/http/update.test.ts	keeps Linux x64 update checks on the Linux archive	rust-unit:roamgate-cli:update_http::tests::keeps_linux_x64_update_checks_on_the_linux_archive	update and rollback
 server/src/http/update.test.ts	uses a configured release mirror	scenario:parity/scenarios/update/check.yaml	
 server/src/http/update.test.ts	caches successful metadata checks across browser clients	scenario:parity/scenarios/update/check.yaml	
 server/src/http/update.test.ts	missing metadata fails closed without any archive fallback	scenario:parity/scenarios/update/check-failures.yaml	
-server/src/http/update.test.ts	rejects malformed manifests instead of treating them as legacy	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	does not expose credentials from an invalid update base URL	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	does not check a mismatched package on unsupported architectures	rust-unit:roamgate-cli	update and rollback
+server/src/http/update.test.ts	rejects malformed manifests instead of treating them as legacy	rust-unit:roamgate-cli:update_http::tests::rejects_malformed_manifests_instead_of_treating_them_as_legacy	update and rollback
+server/src/http/update.test.ts	does not expose credentials from an invalid update base URL	rust-unit:roamgate-cli:update_http::tests::does_not_expose_credentials_from_an_invalid_update_base_url	update and rollback
+server/src/http/update.test.ts	does not check a mismatched package on unsupported architectures	rust-unit:roamgate-cli:update_http::tests::does_not_check_a_mismatched_package_on_unsupported_architectures	update and rollback
 server/src/http/update.test.ts	checks for updates but refuses to replace a development runtime	scenario:parity/scenarios/update/check.yaml	
 server/src/http/update.test.ts	checks for updates but requires an external supervisor to install	scenario:parity/scenarios/env/update-supervisor.yaml	
 server/src/http/update.test.ts	requires an explicit browser confirmation header for update requests	scenario:parity/scenarios/update/check-failures.yaml	
-server/src/http/update.test.ts	rejects installation when no external supervisor owns restart	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	rejects a release archive whose platform metadata does not match	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	installs a Darwin update and schedules only the managed process exit	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	serializes update installs across connected clients	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	does not download an update when the current version is latest	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	returns an install failure without scheduling a restart	rust-unit:roamgate-cli	update and rollback
-server/src/http/update.test.ts	rejects install requests on unsupported architectures before download	rust-unit:roamgate-cli	update and rollback
+server/src/http/update.test.ts	rejects installation when no external supervisor owns restart	rust-unit:roamgate-cli:update_http::tests::rejects_installation_when_no_external_supervisor_owns_restart	update and rollback
+server/src/http/update.test.ts	rejects a release archive whose platform metadata does not match	rust-unit:roamgate-cli:update_http::tests::rejects_a_release_archive_whose_platform_metadata_does_not_match	update and rollback
+server/src/http/update.test.ts	installs a Darwin update and schedules only the managed process exit	rust-unit:roamgate-cli:update_http::tests::installs_a_darwin_update_and_schedules_only_the_managed_process_exit	update and rollback
+server/src/http/update.test.ts	serializes update installs across connected clients	rust-unit:roamgate-cli:update_http::tests::serializes_update_installs_across_connected_clients	update and rollback
+server/src/http/update.test.ts	does not download an update when the current version is latest	rust-unit:roamgate-cli:update_http::tests::does_not_download_an_update_when_the_current_version_is_latest	update and rollback
+server/src/http/update.test.ts	returns an install failure without scheduling a restart	rust-unit:roamgate-cli:update_http::tests::returns_an_install_failure_without_scheduling_a_restart	update and rollback
+server/src/http/update.test.ts	rejects install requests on unsupported architectures before download	rust-unit:roamgate-cli:update_http::tests::rejects_install_requests_on_unsupported_architectures_before_download	update and rollback
 server/src/http/update.test.ts	reports disabled update checks without running curl	scenario:parity/scenarios/update/check-failures.yaml	
 server/src/http/update.test.ts	returns a 502 when update checks fail	scenario:parity/scenarios/update/check-failures.yaml	
 server/src/http/update.test.ts	Roamgate and legacy confirmation headers share the same update boundary	scenario:parity/scenarios/update/check.yaml	

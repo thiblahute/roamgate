@@ -11,10 +11,12 @@ workspace = true
 
 [dependencies]
 base64 = "0.22"
+hex = "0.4"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 regex = "1"
 roamgate-base = { path = "../roamgate-base" }
 roamgate-protocol = { path = "../roamgate-protocol" }
+sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"

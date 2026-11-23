@@ -80,6 +80,9 @@ async fn says_hello_and_exits_when_the_channel_closes() {
     assert_eq!(families, implemented);
     assert!(families.iter().any(|family| family == "limit_resume"));
     assert!(families.iter().any(|family| family == "time_report"));
+    for family in ["update", "herdr_setup"] {
+        assert!(families.iter().any(|name| name == family), "{family}");
+    }
     assert!(!families.iter().any(|family| family == "test.echo"));
     assert!(!test);
     drop(stream);

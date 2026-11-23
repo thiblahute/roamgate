@@ -230,4 +230,26 @@ mod tests {
         assert!(parse_args(&args(&["--nope"]), |_| None).is_err());
         assert!(parse_args(&args(&["--port"]), |_| None).is_err());
     }
+
+    /// A family's command goes to its family with the words after it;
+    /// nothing else does (runHerdrCommand's null for other commands).
+    #[test]
+    fn family_commands_go_to_their_family_and_nothing_else_does() {
+        assert_eq!(
+            parse_args(&args(&["herdr", "status", "--socket-path", "/x"]), |_| None),
+            Ok(Options::Command(
+                "herdr".into(),
+                args(&["status", "--socket-path", "/x"])
+            ))
+        );
+        assert_eq!(
+            parse_args(&args(&["rollback"]), |_| None),
+            Ok(Options::Command("rollback".into(), vec![]))
+        );
+        assert!(parse_args(&args(&["service", "install"]), |_| None).is_err());
+        assert!(matches!(
+            parse_args(&args(&[]), |_| None),
+            Ok(Options::Serve { .. })
+        ));
+    }
 }
