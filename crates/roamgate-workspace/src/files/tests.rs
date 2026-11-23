@@ -991,3 +991,188 @@ async fn audio_http_ranges_and_size_limits() {
         assert_eq!(body(download).await.len(), 2);
     }
 }
+
+// git-actions.test.ts: createFileHandlers' Git support end to end.
+
+fn git_in(root: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+/// A repository with `tracked.txt` committed.
+fn action_repository() -> tempfile::TempDir {
+    let dir = temp("herdr-git-actions-");
+    let root = dir.path();
+    git_in(root, &["init", "-b", "main"]);
+    git_in(root, &["config", "user.email", "test@example.com"]);
+    git_in(root, &["config", "user.name", "Herdr Test"]);
+    fs::write(root.join("tracked.txt"), "base\n").unwrap();
+    git_in(root, &["add", "tracked.txt"]);
+    git_in(root, &["commit", "-m", "initial"]);
+    dir
+}
+
+fn on_checkout(root: &Path) -> WorkspaceConnection {
+    connection(None, Loopback::new(), checkout_herdr(text(root))).0
+}
+
+#[tokio::test]
+async fn runs_file_and_repo_actions_against_a_real_repository() {
+    let dir = action_repository();
+    let root = dir.path();
+    let conn = on_checkout(root);
+    let files = Files::new();
+    fs::write(root.join("new.txt"), "fresh\n").unwrap();
+    let staged = call(
+        &files,
+        &conn,
+        "git.file_action",
+        json!({ "workspace_id": "w1", "action": "stage", "path": "new.txt" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(staged["workspace_id"], "w1");
+    assert_eq!(staged["root"], text(&fs::canonicalize(root).unwrap()));
+    assert_eq!(staged["action"], "stage");
+    assert_eq!(staged["path"], "new.txt");
+    let status = git_in(
+        root,
+        &[
+            "-c",
+            "core.quotepath=false",
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+        ],
+    );
+    assert!(status.contains("A  new.txt"), "{status}");
+    let repo = call(
+        &files,
+        &conn,
+        "git.repo_action",
+        json!({ "workspace_id": "w1", "action": "unstage_all" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(repo["counts"]["staged"], 0);
+    assert_eq!(repo["counts"]["untracked"], 1);
+}
+
+#[tokio::test]
+async fn attaches_worktree_fingerprints_to_working_summary_entries() {
+    let dir = action_repository();
+    let root = dir.path();
+    fs::write(root.join("tracked.txt"), "changed\n").unwrap();
+    let summary = call(
+        &Files::new(),
+        &on_checkout(root),
+        "git.diff_summary",
+        json!({ "workspace_id": "w1", "mode": "working" }),
+    )
+    .await
+    .unwrap();
+    let modified = summary["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["path"] == "tracked.txt")
+        .unwrap();
+    assert_eq!(modified["size"], "changed\n".len());
+    assert!(modified["mtime_ms"].as_f64().unwrap_or(0.0) > 0.0);
+}
+
+#[tokio::test]
+async fn marks_git_ignored_entries_in_file_listings() {
+    let dir = action_repository();
+    let root = dir.path();
+    fs::write(root.join(".gitignore"), "build-output/\n*.log\n").unwrap();
+    fs::create_dir(root.join("build-output")).unwrap();
+    fs::write(root.join("debug.log"), "x").unwrap();
+    let list = call(
+        &Files::new(),
+        &on_checkout(root),
+        "file.list",
+        json!({ "workspace_id": "w1", "show_hidden": true }),
+    )
+    .await
+    .unwrap();
+    let entry = |name: &str| {
+        list["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["name"] == name)
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(entry("debug.log")["ignored"], true);
+    assert_eq!(entry("build-output")["ignored"], true);
+    assert!(entry("tracked.txt").get("ignored").is_none());
+    assert!(entry(".gitignore").get("ignored").is_none());
+}
+
+// html-preview.test.ts's handler case.
+
+#[tokio::test]
+async fn renders_bounded_utf_8_html_with_exact_policy_and_leaves_ordinary_downloads_intact() {
+    let dir = temp("roamgate-html-preview-");
+    let root = dir.path();
+    let max = roamgate_git::preview::PREVIEW_MAX_BYTES;
+    let mut html = "<!doctype html><h1>boundary marker</h1>".to_owned();
+    html.push_str(&" ".repeat(max - html.len()));
+    fs::write(root.join("page.HTM"), &html).unwrap();
+    let conn = on_checkout(root);
+    let files = Files::new();
+    let inline = query(&[
+        ("workspace_id", "w1"),
+        ("path", "page.HTM"),
+        ("inline", "1"),
+    ]);
+    let plain = query(&[("workspace_id", "w1"), ("path", "page.HTM")]);
+    let response = files.http_download(&conn, &inline, None, None).await;
+    assert_eq!(response.status, 200);
+    assert_eq!(
+        response.header("content-type"),
+        Some("text/html; charset=utf-8")
+    );
+    assert!(
+        response
+            .header("content-disposition")
+            .unwrap()
+            .starts_with("inline;")
+    );
+    assert_eq!(
+        response.header("content-security-policy"),
+        Some(crate::html_preview::HTML_PREVIEW_CSP)
+    );
+    assert_eq!(
+        crate::html_preview::HTML_PREVIEW_CSP,
+        "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; style-src 'unsafe-inline' data: https:; img-src data:; font-src data:"
+    );
+    assert_eq!(response.header("referrer-policy"), Some("no-referrer"));
+    assert_eq!(response.header("x-content-type-options"), Some("nosniff"));
+    assert!(
+        String::from_utf8(body(response).await)
+            .unwrap()
+            .contains("boundary marker")
+    );
+    fs::write(root.join("page.HTM"), format!("{html}x")).unwrap();
+    assert_eq!(
+        files.http_download(&conn, &inline, None, None).await.status,
+        413
+    );
+    let download = files.http_download(&conn, &plain, None, None).await;
+    assert!(
+        download
+            .header("content-disposition")
+            .unwrap()
+            .starts_with("attachment;")
+    );
+    assert_eq!(body(download).await, format!("{html}x").into_bytes());
+}
