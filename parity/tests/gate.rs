@@ -110,6 +110,26 @@ fn the_ledger_accounts_for_every_old_test() {
             );
         }
     }
+    // A rust-unit mapping to a crate the workspace has names the test that
+    // covers it, and that test exists.
+    let mut unnamed = 0usize;
+    let mut broken = Vec::new();
+    for row in &rows {
+        for (name, test) in ledger::rust_units(&row.mapping) {
+            let Some(dir) = ledger::crate_dir(&root, &name) else {
+                continue;
+            };
+            match test {
+                None => unnamed += 1,
+                Some(test) if !ledger::rust_test_exists(&dir, &test) => broken.push(format!(
+                    "{} > {}: no test {test} in crates/{name}",
+                    row.id.file, row.id.title
+                )),
+                Some(_) => {}
+            }
+        }
+    }
+    assert!(broken.is_empty(), "{}", broken.join("\n"));
     let todo = rows.iter().filter(|row| row.mapping == "todo").count();
     let mut pending: std::collections::BTreeMap<&str, usize> = Default::default();
     for row in &rows {
@@ -122,8 +142,15 @@ fn the_ledger_accounts_for_every_old_test() {
         rows.len(),
         rows.len() - todo - pending.values().sum::<usize>()
     );
+    if unnamed > 0 {
+        eprintln!("ledger: {unnamed} rust-unit rows of existing crates name no test");
+    }
     if strict() {
         assert_eq!(todo, 0, "unmapped tests in parity/ledger.tsv");
+        assert_eq!(
+            unnamed, 0,
+            "rust-unit rows of existing crates must name the Rust test that covers them"
+        );
     }
 }
 

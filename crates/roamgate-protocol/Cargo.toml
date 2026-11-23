@@ -1,0 +1,24 @@
+[package]
+name = "roamgate-protocol"
+version = "0.0.0"
+description = "Roamgate's wire and storage types, and the voice helper's frame codec: no async runtime and no OS calls, for the server, the voice helper and the Android core alike"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# The reader of contract/vectors/*.json, for the crates' tests.
+vectors = []
+
+[dependencies]
+indexmap = { version = "2", features = ["serde"] }
+schemars = { version = "1", features = ["indexmap2", "preserve_order"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+ts-rs = { version = "11", features = ["indexmap-impl", "no-serde-warnings", "serde-json-impl"] }
+
+[dev-dependencies]
+tempfile = "3"

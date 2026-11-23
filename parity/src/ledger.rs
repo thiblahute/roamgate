@@ -7,7 +7,9 @@
 //! mapping is `scenario:<path>` (a parity scenario replaces it: scenarios
 //! name the tests they replace in their `ledger:` list), `vector:<file>`
 //! (contract/vectors), `rust-unit:<crate>` (internal behaviour, a Rust unit
-//! test), `internal:<reason>` (nothing observable to keep),
+//! test, in a crate not written yet), `rust-unit:<crate>:<test>` (the Rust
+//! test that covers it, once `crates/<crate>` exists: see [`rust_units`]),
+//! `internal:<reason>` (nothing observable to keep),
 //! `pending:<what>` (mapped once that lands: `pending:S5` for the vectors
 //! of the plan's subtask S5, `pending:windows-runner`), or `todo`.
 //! `parity-ledger` rewrites the file from the sources, keeping the
@@ -479,9 +481,123 @@ pub fn rebuild(
         .collect()
 }
 
+/// The crates and Rust tests a mapping names: each `rust-unit:<crate>` part
+/// (none named) or `rust-unit:<crate>:<test>` part, in order. Several parts
+/// are separated by commas, as scenarios are.
+///
+/// `<test>` is the test's path as `cargo test -p <crate>` lists it for the
+/// crate's library (`settings::tests::keeps_unknown_keys`), or for an
+/// integration test `tests/<target>.rs`, the target's name then the path in
+/// it (`lock_coexistence::bun_and_rust_take_turns`).
+pub fn rust_units(mapping: &str) -> Vec<(String, Option<String>)> {
+    mapping
+        .split(',')
+        .filter_map(|part| part.strip_prefix("rust-unit:"))
+        .map(|unit| match unit.split_once(':') {
+            Some((name, test)) => (name.to_owned(), Some(test.to_owned())),
+            None => (unit.to_owned(), None),
+        })
+        .collect()
+}
+
+/// The directory of a crate the workspace has under `crates/`, if any.
+pub fn crate_dir(root: &Path, name: &str) -> Option<PathBuf> {
+    let dir = root.join("crates").join(name);
+    dir.join("Cargo.toml").is_file().then_some(dir)
+}
+
+/// Whether `<test>` (see [`rust_units`]) is a test of the crate at `dir`:
+/// a function under `#[test]` (or an attribute ending in `::test`, as
+/// `#[tokio::test]`) in the file its path leads to, inside the inline
+/// modules the rest of the path names.
+pub fn rust_test_exists(dir: &Path, test: &str) -> bool {
+    let parts: Vec<&str> = test.split("::").collect();
+    let Some((name, modules)) = parts.split_last() else {
+        return false;
+    };
+    // The longest prefix of the modules that is a file, the rest inline.
+    let mut candidates: Vec<(PathBuf, usize)> = Vec::new();
+    for taken in 0..=modules.len() {
+        let path = &modules[..taken];
+        if taken == 0 {
+            candidates.push((dir.join("src").join("lib.rs"), 0));
+            continue;
+        }
+        let joined: PathBuf = path.iter().collect();
+        candidates.push((dir.join("src").join(&joined).with_extension("rs"), taken));
+        candidates.push((dir.join("src").join(&joined).join("mod.rs"), taken));
+        if taken == 1 {
+            candidates.push((dir.join("tests").join(path[0]).with_extension("rs"), taken));
+        }
+    }
+    candidates.into_iter().rev().any(|(file, taken)| {
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            return false;
+        };
+        let inline = &modules[taken..];
+        inline
+            .iter()
+            .all(|module| text.contains(&format!("mod {module} {{")))
+            && has_test_fn(&text, name)
+    })
+}
+
+/// Whether `text` has `fn <name>` right after a test attribute (other
+/// attributes, comments and blank lines may come between).
+fn has_test_fn(text: &str, name: &str) -> bool {
+    let lines: Vec<&str> = text.lines().collect();
+    let wanted = [format!("fn {name}("), format!("fn {name}<")];
+    lines.iter().enumerate().any(|(index, line)| {
+        let trimmed = line.trim_start();
+        let is_fn = wanted.iter().any(|want| {
+            trimmed.starts_with(want.as_str())
+                || trimmed.starts_with(&format!("async {want}"))
+                || trimmed.starts_with(&format!("pub {want}"))
+        });
+        if !is_fn {
+            return false;
+        }
+        lines[..index]
+            .iter()
+            .rev()
+            .map(|line| line.trim())
+            .take_while(|line| {
+                line.is_empty()
+                    || line.starts_with("#[")
+                    || line.starts_with("//")
+                    || line.ends_with(")]")
+            })
+            .any(|line| line == "#[test]" || (line.starts_with("#[") && line.contains("::test")))
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{titles, vector_names};
+    use super::{has_test_fn, rust_units, titles, vector_names};
+
+    #[test]
+    fn reads_the_crates_and_tests_a_mapping_names() {
+        assert_eq!(
+            rust_units("rust-unit:roamgate-base:settings::tests::a,rust-unit:roamgate-exec"),
+            vec![
+                (
+                    "roamgate-base".to_owned(),
+                    Some("settings::tests::a".to_owned())
+                ),
+                ("roamgate-exec".to_owned(), None)
+            ]
+        );
+        assert!(rust_units("scenario:x.yaml").is_empty());
+    }
+
+    #[test]
+    fn finds_test_functions_under_their_attribute() {
+        let text = "mod tests {\n    #[test]\n    fn plain() {}\n\n    #[tokio::test(start_paused = true)]\n    // why\n    async fn timed() {}\n\n    fn helper() {}\n}\n";
+        assert!(has_test_fn(text, "plain"));
+        assert!(has_test_fn(text, "timed"));
+        assert!(!has_test_fn(text, "helper"));
+        assert!(!has_test_fn(text, "missing"));
+    }
 
     #[test]
     fn finds_the_vector_files_a_test_file_runs() {

@@ -1,5 +1,5 @@
 {
-  "description": "Paths typed into a terminal: POSIX and PowerShell quoting. Read by `bun test` in server/src/http/terminal-path-text.test.ts.",
+  "description": "Paths typed into a terminal: POSIX and PowerShell quoting. Read by `bun test` in server/src/http/terminal-path-text.test.ts and by cargo test in crates/roamgate-exec/src/quote.rs.",
   "modules": { "terminal-path-text": "server/src/http/terminal-path-text.ts" },
   "cases": [
     {

@@ -1,5 +1,5 @@
 {
-  "description": "Instance names: cleaning and defaults. Read by `bun test` in shared/instanceName.test.ts.",
+  "description": "Instance names: cleaning and defaults. Read by `bun test` in shared/instanceName.test.ts and by cargo test in crates/roamgate-base/src/settings/tests.rs.",
   "modules": { "instanceName": "shared/instanceName.ts" },
   "cases": [
     {

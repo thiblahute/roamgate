@@ -1,5 +1,5 @@
 {
-  "description": "Log lines: levels, formatting, scopes, redaction and recovery summaries. Read by `bun test` in server/src/utils/logger.test.ts.",
+  "description": "Log lines: levels, formatting, scopes, redaction and recovery summaries. Read by `bun test` in server/src/utils/logger.test.ts and by cargo test in crates/roamgate-base/src/log.rs.",
   "modules": { "logger": "server/src/utils/logger.ts" },
   "cases": [
     {

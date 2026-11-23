@@ -24,9 +24,6 @@ harness = false
 name = "gate"
 
 [[test]]
-name = "vectors"
-
-[[test]]
 name = "fakes"
 
 [[test]]
@@ -44,6 +41,7 @@ jsonschema = { version = "0.33", default-features = false }
 libtest-mimic = "0.8"
 p256 = { version = "0.13", features = ["ecdh", "ecdsa"] }
 regex = "1"
+roamgate-protocol = { path = "../crates/roamgate-protocol" }
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

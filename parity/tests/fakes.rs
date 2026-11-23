@@ -207,19 +207,16 @@ fn the_voice_helper_answers_frames_and_starts_signalling() {
             .to_string(),
     )
     .unwrap();
-    let mut input = voice::encode_frame(voice::JSON, br#"{"op":"ping","id":1}"#);
-    input.extend(voice::encode_frame(
+    let mut input = voice::encode(voice::JSON, br#"{"op":"ping","id":1}"#);
+    input.extend(voice::encode(
         voice::JSON,
         br#"{"op":"call_start","id":2,"call":4}"#,
     ));
-    input.extend(voice::encode_frame(
-        voice::JSON,
-        br#"{"op":"speak","id":3}"#,
-    ));
+    input.extend(voice::encode(voice::JSON, br#"{"op":"speak","id":3}"#));
     let output = fake(dir.path(), "roamgate-voice", &[], &input);
     let mut reader = output.stdout.as_slice();
     let mut replies = Vec::new();
-    while let Some((kind, payload)) = voice::read_frame(&mut reader).unwrap() {
+    while let Some((kind, payload)) = voice::read(&mut reader).unwrap() {
         assert_eq!(kind, voice::JSON);
         replies.push(serde_json::from_slice::<Value>(&payload).unwrap());
     }

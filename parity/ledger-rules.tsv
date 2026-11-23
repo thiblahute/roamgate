@@ -21,12 +21,19 @@ server/src/config/launchd-environment	rust-unit:roamgate-cli	launchd service env
 server/src/config/plugin-command	rust-unit:roamgate-cli	plugin commands
 server/src/config/server-config	rust-unit:roamgate-cli	server flags and their precedence
 server/src/config/auth-token	rust-unit:roamgate-http	generated login token
+server/src/config/workspace-tree	rust-unit:roamgate-workspace	the workspace tree's store: its operations are the workspace-tree vectors' logic, which ports with the workspace family; it writes through SettingsStore (decided 2026-11-23)
+server/src/utils/cpu-profile	rust-unit:roamgate-cli	the server's opt-in CPU profile (--profile, ROAMGATE_PROFILE), rebuilt on a Rust sampler with the server start (decided 2026-11-23)
 server/src/connections/	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
 server/src/contract-record/	rust-unit:roamgate-base	record mode, which the Rust server keeps for soak diffs (plan 5.6)
+server/src/contract-record/check	pending:S25	the record checker is tooling the parity suite runs under Bun; ported into parity/ when Bun goes (decided 2026-11-23)
+server/src/contract-record/hooks	rust-unit:roamgate-http	record mode's wrappers of the HTTP front and /ws (decided 2026-11-23)
+server/src/contract-record/hooks	rust-unit:roamgate-review	record mode's wrapper of the agent socket	^records the agent socket
+server/src/contract-record/hooks	rust-unit:roamgate-cli	record mode's wrapper of a CLI run	^records a CLI run
+server/src/contract-record/hooks	rust-unit:roamgate-exec	record mode's process observer on the ProcessRunner	^records the processes run
 server/src/conversation/	rust-unit:roamgate-conversation	leases, handover, holder protocol, queue
 server/src/conversation/drivers/claude-	rust-unit:roamgate-claude	Claude driver internals
 server/src/herdr/	rust-unit:roamgate-herdr	local Herdr release download and service setup
-server/src/history/	rust-unit:roamgate-base	settings history repository
+server/src/history/	rust-unit:roamgate-history	the local git history of what is authored in Roamgate (settings, Work, reviews, MR reviews): its own crate, on roamgate-git, ported once the stores it renders are in Rust (plan 6.2, decided 2026-11-23)
 server/src/http/	rust-unit:roamgate-http	HTTP front internals
 server/src/http/voice	rust-unit:roamgate-voice-server	voice HTTP and socket
 server/src/http/call-handoff	rust-unit:roamgate-voice-server	call handoff

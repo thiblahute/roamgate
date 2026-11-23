@@ -7,6 +7,8 @@ license = "MIT"
 publish = false
 
 [dependencies]
+# The frame codec, shared with the server and the parity fake.
+roamgate-protocol = { path = "../../crates/roamgate-protocol" }
 # Which language a sentence is read in: only the voices' languages.
 lingua = { version = "1.8", default-features = false, features = ["chinese", "english", "french", "hindi", "italian", "japanese", "portuguese", "spanish"] }
 # GStreamer, its plugins and ours are all linked into the binary: the

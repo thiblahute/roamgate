@@ -1,5 +1,5 @@
 {
-  "description": "SSH command lines: destinations, policy options and stream-local forwards. Read by `bun test` in server/src/bridge/ssh-command.test.ts.",
+  "description": "SSH command lines: destinations, policy options and stream-local forwards. Read by `bun test` in server/src/bridge/ssh-command.test.ts and by cargo test in crates/roamgate-exec/src/ssh/command.rs.",
   "modules": { "ssh-command": "server/src/bridge/ssh-command.ts" },
   "cases": [
     {

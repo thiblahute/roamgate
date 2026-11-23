@@ -2910,8 +2910,9 @@ once it resets ([settings](DEPLOYMENT.md#resuming-after-a-usage-limit)).
 ## Voice helper
 
 The bridge runs the voice helper (`voice/helper`) as a child process and
-talks to it in frames (`voice/helper/src/frames.rs`,
-`server/src/voice/voice-helper.ts`): a little-endian u32 length, a kind
+talks to it in frames (`crates/roamgate-protocol/src/frames.rs`, the
+helper's codec, and `server/src/voice/voice-helper.ts`): a little-endian
+u32 length, a kind
 byte (0 for JSON, 1 for a listening session's audio), then the payload,
 16 MiB at most. The helper keeps its stdout for frames alone; whatever it
 or a library prints goes to its stderr. A length of 0 or past 16 MiB, or

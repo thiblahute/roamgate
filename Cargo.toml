@@ -1,13 +1,15 @@
 # The Rust side of Roamgate (docs: the Rust migration plan, section 6.2).
 # `roamgate` (crates/roamgate) is the server binary, `roamgate-ws`
-# (crates/roamgate-ws) its /ws transport, the parity suite drives a server
+# (crates/roamgate-ws) its /ws transport, `roamgate-protocol`,
+# `roamgate-base` and `roamgate-exec` the foundation crates (wire types,
+# storage and process plumbing), the parity suite drives a server
 # from outside, xtask builds and packages the release targets of
 # targets.toml. The voice helper is a member that only builds when asked
 # (`-p roamgate-voice`, or from voice/helper): it pulls GStreamer's bundle.
 [workspace]
 resolver = "3"
-members = ["crates/roamgate", "crates/roamgate-ws", "parity", "parity/herdr-api", "voice/helper", "xtask"]
-default-members = ["crates/roamgate", "crates/roamgate-ws", "parity", "parity/herdr-api", "xtask"]
+members = ["crates/roamgate", "crates/roamgate-base", "crates/roamgate-exec", "crates/roamgate-protocol", "crates/roamgate-ws", "parity", "parity/herdr-api", "voice/helper", "xtask"]
+default-members = ["crates/roamgate", "crates/roamgate-base", "crates/roamgate-exec", "crates/roamgate-protocol", "crates/roamgate-ws", "parity", "parity/herdr-api", "xtask"]
 # Its own workspace: a benchmark with its own lockfile.
 exclude = ["scripts/bench-terminal"]
 

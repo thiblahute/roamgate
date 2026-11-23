@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { encodeFrame, FrameReader } from "./voice-helper";
 
-// The vectors the parity suite's fake voice helper is held to as well
-// (parity/tests/vectors.rs): both codecs read the same file.
+// The vectors the Rust codec (crates/roamgate-protocol/src/frames.rs, used
+// by the voice helper and the parity fake) is held to as well: both codecs
+// read the same file.
 type Vectors = {
   max_frame: number;
   frames: {

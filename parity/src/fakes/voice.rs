@@ -1,6 +1,6 @@
 //! fake-voice-helper: `roamgate-voice` on its frame protocol
-//! (voice/helper/src/frames.rs: a u32 little-endian length, a kind byte,
-//! the payload; kind 0 is JSON, kind 1 audio).
+//! (roamgate_protocol::frames, the helper's own codec: a u32 little-endian
+//! length, a kind byte, the payload; kind 0 is JSON, kind 1 audio).
 //!
 //! Each JSON request with an `id` is answered `{"id", "ok": true}` merged
 //! with the script's `replies.<op>` (an object), or, when that is a list,
@@ -18,47 +18,17 @@
 //! request is appended to `roamgate-voice.frames.jsonl` in the fakes
 //! directory, and audio frames as `{"audio": <session>, "bytes": n}`.
 
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::net::TcpListener;
 
 use serde_json::{Map, Value, json};
 
 use super::script::Script;
 
-pub const JSON: u8 = 0;
-pub const AUDIO: u8 = 1;
-pub const MAX_FRAME: usize = 16 * 1024 * 1024;
-
-pub fn read_frame(input: &mut impl Read) -> io::Result<Option<(u8, Vec<u8>)>> {
-    let mut length = [0u8; 4];
-    match input.read_exact(&mut length) {
-        Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(error) => return Err(error),
-    }
-    let length = u32::from_le_bytes(length) as usize;
-    if length == 0 || length > MAX_FRAME {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("bad frame length {length}"),
-        ));
-    }
-    let mut frame = vec![0u8; length];
-    input.read_exact(&mut frame)?;
-    let kind = frame.remove(0);
-    Ok(Some((kind, frame)))
-}
-
-pub fn encode_frame(kind: u8, payload: &[u8]) -> Vec<u8> {
-    let mut frame = Vec::with_capacity(5 + payload.len());
-    frame.extend_from_slice(&(payload.len() as u32 + 1).to_le_bytes());
-    frame.push(kind);
-    frame.extend_from_slice(payload);
-    frame
-}
+pub use roamgate_protocol::frames::{AUDIO, JSON, MAX_FRAME, encode, read};
 
 fn send(out: &mut impl Write, value: &Value) {
-    let _ = out.write_all(&encode_frame(JSON, value.to_string().as_bytes()));
+    let _ = out.write_all(&encode(JSON, value.to_string().as_bytes()));
     let _ = out.flush();
 }
 
@@ -189,7 +159,7 @@ pub fn run(script: &Script) -> i32 {
         send(&mut out, event);
     }
     loop {
-        let (kind, payload) = match read_frame(&mut input) {
+        let (kind, payload) = match read(&mut input) {
             Ok(Some(frame)) => frame,
             Ok(None) => return 0,
             Err(error) => {
