@@ -22,6 +22,7 @@ percent-encoding = "2"
 regex = "1"
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
+roamgate-forge = { path = "../roamgate-forge" }
 roamgate-git = { path = "../roamgate-git" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
