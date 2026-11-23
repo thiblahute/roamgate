@@ -452,8 +452,43 @@ pub fn redact_history_update(update: &Value) -> Value {
     Value::Object(out)
 }
 
-/// The update from the revision the client has to the current one: a
-/// snapshot, or a delta from a revision still known.
+/// A transcript's history epoch (`historyEpoch`): the same for every
+/// process that reads the same file, so a browser's cursor holds across a
+/// restart or a change of the family's owner. `generation` is set once the
+/// file was rewritten (cut, or changed without growing): its signature then.
+pub fn history_epoch(
+    agent: &str,
+    path: &str,
+    identity: Option<&str>,
+    generation: Option<&str>,
+) -> String {
+    let mut hash = Sha256::new();
+    hash.update(["roamgate-history", agent, path, identity.unwrap_or("")].join("\0"));
+    if let Some(generation) = generation {
+        hash.update(format!("\0cut\0{generation}"));
+    }
+    let hex = hex::encode(hash.finalize());
+    format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    )
+}
+
+/// Whether an agent's transcripts only grow (`appendOnlyHistory`): their
+/// revision is their size plus one, and an earlier revision is the
+/// projection of their prefix. Antigravity's SQLite store is rewritten in
+/// place: a change is a new epoch, answered whole.
+pub fn append_only_history(agent: &str) -> bool {
+    agent != "agy"
+}
+
+/// The update from the revision the client has to the current one: an
+/// empty delta at the current revision, a delta from a revision known, or
+/// a snapshot.
 pub fn history_update(
     cursor: &Value,
     entries: &[Value],
@@ -467,24 +502,10 @@ pub fn history_update(
         .and_then(Value::as_f64)
         .unwrap_or(0.0);
     let base_revision = base.and_then(|b| b.get("revision")).and_then(Value::as_f64);
-    let previous = match (base, base_revision) {
-        (Some(b), Some(r)) if b.get("epoch") == epoch && js::is_safe_integer(r) => {
-            versions.get(&(r as i64))
-        }
-        _ => None,
-    };
+    let known = matches!((base, base_revision),
+        (Some(b), Some(r)) if b.get("epoch") == epoch && js::is_safe_integer(r));
     let limit = js::int(HISTORY_WINDOW_LIMIT as i64);
-    let Some(previous) = previous.filter(|_| base_revision.unwrap_or(f64::INFINITY) <= revision)
-    else {
-        return Value::Object(obj! {
-            "history_version" => 2i64,
-            "mode" => "snapshot",
-            "cursor" => cursor.clone(),
-            "window_limit" => limit,
-            "entries" => entries.to_vec(),
-        });
-    };
-    if base_revision == Some(revision) {
+    if known && base_revision == Some(revision) {
         return Value::Object(obj! {
             "history_version" => 2i64,
             "mode" => "delta",
@@ -495,6 +516,21 @@ pub fn history_update(
             "removed" => Vec::<Value>::new(),
         });
     }
+    let previous = if known {
+        base_revision.and_then(|r| versions.get(&(r as i64)))
+    } else {
+        None
+    };
+    let Some(previous) = previous.filter(|_| base_revision.unwrap_or(f64::INFINITY) <= revision)
+    else {
+        return Value::Object(obj! {
+            "history_version" => 2i64,
+            "mode" => "snapshot",
+            "cursor" => cursor.clone(),
+            "window_limit" => limit,
+            "entries" => entries.to_vec(),
+        });
+    };
     let old: HashMap<&str, &Value> = previous.iter().map(|e| (sv(e.get("id")), e)).collect();
     let ids: HashSet<&str> = entries.iter().map(|e| sv(e.get("id"))).collect();
     let order: Vec<String> = entries.iter().map(|e| sv(e.get("id")).to_owned()).collect();

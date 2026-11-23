@@ -472,7 +472,8 @@ async fn recent_window_removes_oldest_entries_full_export_is_not_windowed() {
 }
 
 #[tokio::test]
-async fn truncation_replacement_missing_file_invalid_cursors_and_reconnect_reset_safely() {
+async fn truncation_replacement_missing_file_and_invalid_cursors_reset_safely_a_reconnect_goes_on()
+{
     let s = session("pi");
     s.fixture
         .set(&[message("long message"), message("second")], None, "");
@@ -486,6 +487,16 @@ async fn truncation_replacement_missing_file_invalid_cursors_and_reconnect_reset
     let next = s.ok(current["cursor"].clone()).await;
     assert_eq!(mode(&next), "snapshot");
     assert_ne!(next["cursor"]["epoch"], current["cursor"]["epoch"]);
+    // Another process (a restart, the other owner) answers the same cursor
+    // the same: the cursor is the file's.
+    let other = handlers(&s.files, "pi");
+    let reconnected = other
+        .read_history(&json!({ "pane_id": "p", "history_version": 2, "cursor": next["cursor"] }))
+        .await
+        .map_err(|e| e.message)
+        .unwrap();
+    assert_eq!(mode(&reconnected), "delta");
+    assert_eq!(reconnected["cursor"], next["cursor"]);
     for cursor in [
         json!({ "epoch": next["cursor"]["epoch"], "revision": -1 }),
         json!({ "epoch": next["cursor"]["epoch"], "revision": 999 }),
@@ -494,23 +505,22 @@ async fn truncation_replacement_missing_file_invalid_cursors_and_reconnect_reset
     ] {
         assert_eq!(mode(&s.ok(cursor).await), "snapshot");
     }
-    let other = handlers(&s.files, "pi");
-    let reconnected = other
-        .read_history(&json!({ "pane_id": "p", "history_version": 2, "cursor": next["cursor"] }))
-        .await
-        .map_err(|e| e.message)
-        .unwrap();
-    assert_eq!(mode(&reconnected), "snapshot");
+    // A cursor past the end: rewritten, a new epoch from then on.
+    let cut = s.ok(Value::Null).await;
+    assert_ne!(cut["cursor"]["epoch"], next["cursor"]["epoch"]);
     s.fixture.missing();
     let missing = s.ok(next["cursor"].clone()).await;
     assert_eq!(mode(&missing), "snapshot");
     assert_eq!(missing["entries"], json!([]));
     s.fixture.set(&[message("short")], Some("replacement"), "");
-    assert_eq!(mode(&s.ok(next["cursor"].clone()).await), "snapshot");
+    // The same file again, read afresh: what the cursor had, nothing new.
+    let again = s.ok(next["cursor"].clone()).await;
+    assert_eq!(mode(&again), "delta");
+    assert_eq!(again["upserts"], json!([]));
 }
 
 #[tokio::test]
-async fn expired_revision_history_falls_back_to_snapshot() {
+async fn a_revision_no_longer_kept_is_read_again_from_the_transcript_s_start() {
     let s = session("pi");
     s.fixture.set(&[message("0")], None, "");
     let first = s.ok(Value::Null).await;
@@ -519,7 +529,48 @@ async fn expired_revision_history_falls_back_to_snapshot() {
         s.fixture.set(&records, None, "");
         s.ok(Value::Null).await;
     }
-    assert_eq!(mode(&s.ok(first["cursor"].clone()).await), "snapshot");
+    let update = s.ok(first["cursor"].clone()).await;
+    assert_eq!(mode(&update), "delta");
+    assert_eq!(update["base_revision"], first["cursor"]["revision"]);
+    let texts: Vec<&Value> = update["upserts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| &e["text"])
+        .collect();
+    assert_eq!(texts, [&json!("1"), &json!("2"), &json!("3"), &json!("4")]);
+    assert_eq!(update["removed"], json!([]));
+}
+
+#[tokio::test]
+async fn antigravity_s_store_rewritten_in_place_each_change_a_new_epoch_answered_whole() {
+    let s = session("agy");
+    s.fixture.set(&[message("one")], None, "");
+    let cache = ProjectionCache::new(s.files.clone(), None);
+    let resolved = s.resolved();
+    let (_, first) = cache.history(&resolved, None).await.unwrap();
+    // Unchanged: an empty delta, from any process.
+    let (_, same) = cache
+        .history(&resolved, Some(&first["cursor"]))
+        .await
+        .unwrap();
+    assert_eq!(mode(&same), "delta");
+    assert_eq!(same["upserts"], json!([]));
+    let other = ProjectionCache::new(s.files.clone(), None);
+    let (_, elsewhere) = other
+        .history(&resolved, Some(&first["cursor"]))
+        .await
+        .unwrap();
+    assert_eq!(elsewhere, same);
+    // Grown, but not append-only: no delta from its prefix.
+    s.fixture.set(&[message("one"), message("two")], None, "");
+    let resolved = s.resolved();
+    let (_, grown) = cache
+        .history(&resolved, Some(&first["cursor"]))
+        .await
+        .unwrap();
+    assert_eq!(mode(&grown), "snapshot");
+    assert_ne!(grown["cursor"]["epoch"], first["cursor"]["epoch"]);
 }
 
 #[tokio::test]
@@ -580,13 +631,11 @@ async fn grok_descriptor_creation_time_changes_refresh_history_and_atif_timestam
         }));
         let (projection, update) = cache.history(&resolved, Some(&cursor)).await.unwrap();
         let timestamp = js::iso(created.unwrap_or(original.mtime_ms));
-        assert_eq!(mode(&update), "delta");
-        assert_eq!(update["cursor"]["epoch"], cursor["epoch"]);
-        assert_eq!(
-            update["cursor"]["revision"].as_f64(),
-            Some(cursor["revision"].as_f64().unwrap() + 1.0)
-        );
-        assert_eq!(update["upserts"][0]["sent_at"], json!(timestamp));
+        // Changed without growing: a new epoch, answered whole.
+        assert_eq!(mode(&update), "snapshot");
+        assert_ne!(update["cursor"]["epoch"], cursor["epoch"]);
+        assert_eq!(update["cursor"]["revision"], cursor["revision"]);
+        assert_eq!(update["entries"][0]["sent_at"], json!(timestamp));
         assert_eq!(projection.messages[0]["sent_at"], json!(timestamp));
         expected += 1;
         assert_eq!(s.fixture.reads(), expected);
@@ -618,13 +667,14 @@ async fn oversized_cache_admission_does_not_serialize_the_entire_projection() {
         .history(&resolved, Some(&first["cursor"]))
         .await
         .unwrap();
-    assert_eq!(mode(&next), "snapshot");
-    assert_ne!(next["cursor"]["epoch"], first["cursor"]["epoch"]);
+    // Not kept, read again: the same cursor, nothing new.
+    assert_eq!(mode(&next), "delta");
+    assert_eq!(next["cursor"], first["cursor"]);
     assert_eq!(s.fixture.reads(), 2);
 }
 
 #[tokio::test]
-async fn entry_and_retained_payload_budgets_evict_with_a_fresh_epoch() {
+async fn entry_and_retained_payload_budgets_evict_the_cursor_holds() {
     let s = session("pi");
     s.fixture.set(&[message("hello")], None, "");
     let cache = ProjectionCache::with_limits(s.files.clone(), None, 1, 1024 * 1024);
@@ -638,7 +688,7 @@ async fn entry_and_retained_payload_budgets_evict_with_a_fresh_epoch() {
         .history(&resolved, Some(&first["cursor"]))
         .await
         .unwrap();
-    assert_eq!(mode(&next), "snapshot");
+    assert_eq!(mode(&next), "delta");
     assert_eq!(s.fixture.reads(), 3);
     let tiny = ProjectionCache::with_limits(s.files.clone(), None, 10, 1);
     let (_, oversized) = tiny.history(&resolved, None).await.unwrap();
@@ -646,6 +696,6 @@ async fn entry_and_retained_payload_budgets_evict_with_a_fresh_epoch() {
         .history(&resolved, Some(&oversized["cursor"]))
         .await
         .unwrap();
-    assert_eq!(mode(&again), "snapshot");
+    assert_eq!(mode(&again), "delta");
     assert_eq!(s.fixture.reads(), 5);
 }

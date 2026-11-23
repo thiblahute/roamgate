@@ -13,7 +13,8 @@ use crate::activity::{ACTIVITY_TIMEOUT, RemoteActivity, enrich_agent_activity};
 use crate::compaction::{COMPACTION_TAIL_BYTES, compacted_since};
 use crate::files::SessionFiles;
 use crate::history::{
-    HISTORY_WINDOW_LIMIT, history_text_hash, redact_history_entry, redact_history_update,
+    HISTORY_WINDOW_LIMIT, history_epoch, history_text_hash, redact_history_entry,
+    redact_history_update,
 };
 use crate::holders::held_open_files;
 use crate::images::session_image;
@@ -323,7 +324,10 @@ impl AgentSessionHandlers {
                 obj! {
                     "history_version" => 2i64,
                     "mode" => "snapshot",
-                    "cursor" => obj! { "epoch" => roamgate_base::paths::random_uuid(), "revision" => 1i64 },
+                    "cursor" => obj! {
+                        "epoch" => history_epoch(&resolved.agent, "", None, None),
+                        "revision" => 1i64,
+                    },
                     "window_limit" => HISTORY_WINDOW_LIMIT,
                     "entries" => Vec::<Value>::new(),
                 },

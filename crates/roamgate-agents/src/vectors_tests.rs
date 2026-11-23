@@ -206,6 +206,19 @@ impl Runner {
             "session-history.historyTextHash" => {
                 Value::String(history::history_text_hash(&text_arg(call, 0)))
             }
+            "session-history.historyEpoch" => {
+                let identity = arg(call, 2);
+                let generation = arg(call, 3);
+                Value::String(history::history_epoch(
+                    &text_arg(call, 0),
+                    &text_arg(call, 1),
+                    identity.as_str(),
+                    generation.as_str(),
+                ))
+            }
+            "session-history.appendOnlyHistory" => {
+                Value::Bool(history::append_only_history(&text_arg(call, 0)))
+            }
             "session-history.historyUpdate" => {
                 let versions: HashMap<i64, Vec<Value>> = map_arg(&arg(call, 3))
                     .into_iter()

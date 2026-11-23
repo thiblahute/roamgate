@@ -33,10 +33,14 @@ pub fn normalize(path: &Path) -> PathBuf {
 
 /// A file's modification time in ms, as `stat().mtimeMs`.
 pub fn mtime_ms(meta: &std::fs::Metadata) -> f64 {
+    // As Node's and Bun's `mtimeMs`: seconds times 1000 plus nanoseconds
+    // over a million, so the same file gives the same number on both sides.
     meta.modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(0.0, |d| d.as_secs_f64() * 1000.0)
+        .map_or(0.0, |d| {
+            d.as_secs() as f64 * 1000.0 + f64::from(d.subsec_nanos()) / 1e6
+        })
 }
 
 /// `encodeURIComponent`.

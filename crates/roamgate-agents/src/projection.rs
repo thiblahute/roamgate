@@ -10,9 +10,11 @@ use std::sync::{Arc, LazyLock};
 use serde_json::Value;
 use tokio::sync::Mutex;
 
+use crate::files::BoxFut;
 use crate::files::SessionFiles;
 use crate::history::{
-    HISTORY_WINDOW_LIMIT, all_history_entries, history_entries_from_trajectory, history_update,
+    HISTORY_WINDOW_LIMIT, all_history_entries, append_only_history,
+    history_entries_from_trajectory, history_epoch, history_update,
 };
 use crate::index_store::SessionIndexStore;
 use crate::js::{self, Obj, sv};
@@ -359,11 +361,16 @@ struct Large {
     index: Mutex<Option<SlimIndex>>,
 }
 
+#[derive(Clone)]
 struct Cached {
     projection: Projection,
     signature: String,
+    /// `history_epoch`'s: the same in every process reading this file.
     epoch: String,
+    /// The transcript's size plus one: its prefix is the earlier revision.
     revision: i64,
+    /// Set once this file was seen rewritten: its signature then.
+    generation: Option<String>,
     versions: Vec<(i64, Vec<Value>)>,
     bytes: usize,
     fallback_time: f64,
@@ -384,6 +391,121 @@ fn signature(file: &SessionFile) -> String {
             .clone()
             .map_or(Value::Null, Value::String),
     ]))
+}
+
+/// The cursor of a transcript as it stands (`historyCursor`): a pure
+/// function of the file, so every process answers a browser's cursor the
+/// same. A format rewritten in place takes its signature into its epoch.
+fn history_cursor(agent: &str, file: &SessionFile, generation: Option<&str>) -> (String, i64) {
+    let whole = signature(file);
+    let generation = if append_only_history(agent) {
+        generation
+    } else {
+        Some(whole.as_str())
+    };
+    (
+        history_epoch(agent, &file.path, file.identity.as_deref(), generation),
+        file.size.unwrap_or(0.0) as i64 + 1,
+    )
+}
+
+/// The versions kept under a cursor: those of the same epoch, and its own.
+fn next_versions(
+    old: Option<&Cached>,
+    epoch: &str,
+    revision: i64,
+    entries: &[Value],
+) -> Vec<(i64, Vec<Value>)> {
+    let mut versions = match old {
+        Some(old) if old.epoch == epoch => old.versions.clone(),
+        _ => Vec::new(),
+    };
+    versions.retain(|(r, _)| *r != revision);
+    versions.push((revision, entries.to_vec()));
+    while versions.len() > 4 {
+        versions.remove(0);
+    }
+    versions
+}
+
+/// A file access that sees a file's first `size` bytes only.
+struct PrefixFiles<'f> {
+    files: &'f dyn SessionFiles,
+    size: u64,
+}
+
+impl SessionFiles for PrefixFiles<'_> {
+    fn remote(&self) -> bool {
+        self.files.remote()
+    }
+    fn stat_file<'a>(&'a self, path: &'a str) -> BoxFut<'a, io::Result<Option<SessionFile>>> {
+        self.files.stat_file(path)
+    }
+    fn read_text<'a>(&'a self, path: &'a str) -> BoxFut<'a, io::Result<String>> {
+        Box::pin(async move {
+            if self.size == 0 {
+                return Ok(String::new());
+            }
+            let mut bytes = self.files.read_prefix(path, self.size).await?;
+            bytes.truncate(self.size as usize);
+            Ok(String::from_utf8_lossy(&bytes).into_owned())
+        })
+    }
+    fn read_prefix<'a>(&'a self, path: &'a str, limit: u64) -> BoxFut<'a, io::Result<Vec<u8>>> {
+        self.files.read_prefix(path, limit.min(self.size))
+    }
+    fn read_tail<'a>(&'a self, path: &'a str, limit: u64) -> BoxFut<'a, io::Result<Vec<u8>>> {
+        self.files.read_tail(path, limit)
+    }
+    fn has_range(&self) -> bool {
+        self.files.has_range()
+    }
+    fn read_range<'a>(
+        &'a self,
+        path: &'a str,
+        start: u64,
+        end: u64,
+    ) -> BoxFut<'a, io::Result<Vec<u8>>> {
+        let end = end.min(self.size);
+        if end <= start {
+            return Box::pin(async { Ok(Vec::new()) });
+        }
+        self.files.read_range(path, start, end)
+    }
+    fn read_download<'a>(&'a self, path: &'a str) -> BoxFut<'a, io::Result<Vec<u8>>> {
+        self.files.read_download(path)
+    }
+    fn find_pi_session_by_id<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> BoxFut<'a, io::Result<Option<SessionFile>>> {
+        self.files.find_pi_session_by_id(id)
+    }
+    fn find_pi_session_for_cwd<'a>(
+        &'a self,
+        cwd: &'a str,
+    ) -> BoxFut<'a, io::Result<Option<SessionFile>>> {
+        self.files.find_pi_session_for_cwd(cwd)
+    }
+    fn find_claude_session_by_id<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> BoxFut<'a, io::Result<Option<SessionFile>>> {
+        self.files.find_claude_session_by_id(id)
+    }
+    fn find_claude_successor<'a>(
+        &'a self,
+        path: &'a str,
+        id: &'a str,
+    ) -> BoxFut<'a, io::Result<Option<String>>> {
+        self.files.find_claude_successor(path, id)
+    }
+    fn find_codex_session_by_id<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> BoxFut<'a, io::Result<Option<SessionFile>>> {
+        self.files.find_codex_session_by_id(id)
+    }
 }
 
 /// A conservative estimate of what a value retains (`estimateRetainedBytes`).
@@ -434,10 +556,6 @@ pub fn estimate_retained_bytes(value: &Value, budget: f64, depth: usize) -> f64 
             }
         }
     }
-}
-
-fn random_uuid() -> String {
-    roamgate_base::paths::random_uuid()
 }
 
 type Known = Vec<(String, (Option<String>, u64, Aggregates))>;
@@ -563,6 +681,7 @@ impl ProjectionCache {
         &self,
         inner: &mut Inner,
         key: &str,
+        agent: &str,
         current: &SessionFile,
     ) -> io::Result<Arc<Cached>> {
         let size = current.size.unwrap_or(0.0) as u64;
@@ -571,21 +690,30 @@ impl ProjectionCache {
             .iter()
             .find(|(k, _)| k == key)
             .map(|(_, s)| s.clone());
-        if let Some(existing) = &large {
-            let s = existing.state.lock().await;
-            let stale = s.identity != current.identity || size < s.end;
-            drop(s);
-            if stale {
-                large = None;
-                inner.larges.retain(|(k, _)| k != key);
-            }
-        }
         let old = inner
             .cache
             .iter()
             .find(|(k, _)| k == key)
             .map(|(_, c)| c.clone())
             .filter(|c| c.large.is_some());
+        // Cut, or changed without growing: the same file rewritten.
+        let mut cut = false;
+        if let Some(existing) = &large {
+            let s = existing.state.lock().await;
+            let same = s.identity == current.identity;
+            cut = same
+                && (size < s.end
+                    || (size == s.end
+                        && old
+                            .as_ref()
+                            .is_some_and(|o| o.signature != signature(current))));
+            let stale = !same || cut;
+            drop(s);
+            if stale {
+                large = None;
+                inner.larges.retain(|(k, _)| k != key);
+            }
+        }
         if large.is_some()
             && let Some(old) = &old
             && old.signature == signature(current)
@@ -639,14 +767,13 @@ impl ProjectionCache {
         };
         let records = large.state.lock().await.records.clone();
         let tail = project_tail(current, &records, fallback);
-        let (revision, epoch, mut versions) = match &old {
-            Some(o) => (o.revision + 1, o.epoch.clone(), o.versions.clone()),
-            None => (1, random_uuid(), Vec::new()),
+        let generation = if cut {
+            Some(signature(current))
+        } else {
+            old.as_ref().and_then(|o| o.generation.clone())
         };
-        versions.push((revision, tail.entries.clone()));
-        while versions.len() > 4 {
-            versions.remove(0);
-        }
+        let (epoch, revision) = history_cursor(agent, current, generation.as_deref());
+        let versions = next_versions(old.as_deref(), &epoch, revision, &tail.entries);
         let value = Arc::new(Cached {
             projection: Projection {
                 file: current.clone(),
@@ -665,6 +792,7 @@ impl ProjectionCache {
             signature: signature(current),
             epoch,
             revision,
+            generation,
             versions,
             bytes: 0,
             fallback_time: fallback,
@@ -696,7 +824,9 @@ impl ProjectionCache {
         };
         let mut current = merge_file(file, &before);
         if reads_by_tail(&resolved.agent, &current, self.files.as_ref()) {
-            return self.load_large(&mut inner, &key, &current).await;
+            return self
+                .load_large(&mut inner, &key, &resolved.agent, &current)
+                .await;
         }
         inner.larges.retain(|(k, _)| *k != key);
         let old = inner
@@ -759,15 +889,22 @@ impl ProjectionCache {
                 "Session file changed while reading; retry on the next refresh",
             ));
         };
-        let reset = is_reset(&current);
-        let (revision, epoch, mut versions) = match old.as_ref().filter(|_| !reset) {
-            Some(o) => (o.revision + 1, o.epoch.clone(), o.versions.clone()),
-            None => (1, random_uuid(), Vec::new()),
+        // The same file cut, or changed without growing: rewritten.
+        let same_file = old
+            .as_ref()
+            .is_some_and(|o| o.projection.file.identity == current.identity);
+        let cut = same_file
+            && current.size.unwrap_or(0.0)
+                <= old.as_ref().unwrap().projection.file.size.unwrap_or(0.0);
+        let generation = if !same_file {
+            None
+        } else if cut {
+            Some(signature(&current))
+        } else {
+            old.as_ref().and_then(|o| o.generation.clone())
         };
-        versions.push((revision, projection.entries.clone()));
-        while versions.len() > 4 {
-            versions.remove(0);
-        }
+        let (epoch, revision) = history_cursor(&resolved.agent, &current, generation.as_deref());
+        let versions = next_versions(old.as_deref(), &epoch, revision, &projection.entries);
         let mut estimate_input: Vec<Value> = vec![projection_value(&projection)];
         estimate_input.extend(versions.iter().map(|(_, v)| Value::Array(v.clone())));
         let bytes =
@@ -777,6 +914,7 @@ impl ProjectionCache {
             signature: signature(&current),
             epoch,
             revision,
+            generation,
             versions,
             bytes: if bytes.is_finite() {
                 bytes as usize
@@ -813,14 +951,71 @@ impl ProjectionCache {
         Ok(cached.projection.all_entries.clone())
     }
 
-    /// The history update from the client's cursor.
+    /// The entries a transcript's first `size` bytes showed.
+    async fn entries_at(&self, agent: &str, cached: &Cached, size: u64) -> io::Result<Vec<Value>> {
+        let mut file = cached.projection.file.clone();
+        file.size = Some(size as f64);
+        let limited = PrefixFiles {
+            files: self.files.as_ref(),
+            size,
+        };
+        if reads_by_tail(agent, &file, &limited) {
+            let tail = read_large_tail(&file, &limited, cached.fallback_time).await?;
+            return Ok(project_tail(&file, &tail.records, cached.fallback_time).entries);
+        }
+        let (projection, _) =
+            read_session_projection(agent, &file, &limited, Some(cached.fallback_time)).await?;
+        Ok(projection.entries)
+    }
+
+    /// The history as it stands, as a delta from the browser's `cursor`
+    /// when that cursor is this file's: its revision, if not kept, is
+    /// projected again from the transcript's prefix, so any process
+    /// answers it the same.
     pub async fn history(
         &self,
         resolved: &Resolved,
         cursor: Option<&Value>,
     ) -> io::Result<(Projection, Value)> {
-        let cached = self.load(resolved).await?;
-        let versions: HashMap<i64, Vec<Value>> = cached.versions.iter().cloned().collect();
+        let mut cached = self.load(resolved).await?;
+        let agent = resolved.agent.as_str();
+        let append = append_only_history(agent);
+        let base = cursor.and_then(Value::as_object);
+        let requested = |cached: &Cached| {
+            base.filter(|b| b.get("epoch").and_then(Value::as_str) == Some(cached.epoch.as_str()))
+                .and_then(|b| b.get("revision"))
+                .and_then(Value::as_f64)
+                .filter(|r| js::is_safe_integer(*r))
+                .map(|r| r as i64)
+        };
+        if append && requested(&cached).is_some_and(|r| r > cached.revision) {
+            // Its cursor is past the file's end: rewritten, unseen here.
+            let mut next = (*cached).clone();
+            next.generation = Some(signature(&next.projection.file));
+            let (epoch, revision) =
+                history_cursor(agent, &next.projection.file, next.generation.as_deref());
+            next.versions = next_versions(None, &epoch, revision, &next.projection.entries);
+            next.epoch = epoch;
+            let next = Arc::new(next);
+            let mut inner = self.inner.lock().await;
+            for (_, entry) in inner.cache.iter_mut() {
+                if Arc::ptr_eq(entry, &cached) {
+                    *entry = next.clone();
+                }
+            }
+            drop(inner);
+            cached = next;
+        }
+        let mut versions: HashMap<i64, Vec<Value>> = cached.versions.iter().cloned().collect();
+        if append
+            && let Some(r) = requested(&cached)
+            && r >= 1
+            && r < cached.revision
+            && !versions.contains_key(&r)
+        {
+            let entries = self.entries_at(agent, &cached, (r - 1) as u64).await?;
+            versions.insert(r, entries);
+        }
         let update = history_update(
             &serde_json::json!({ "epoch": cached.epoch, "revision": cached.revision }),
             &cached.projection.entries,
@@ -1178,5 +1373,7 @@ fn projection_value(projection: &Projection) -> Value {
     })
 }
 
+#[cfg(test)]
+mod history_cursor_tests;
 #[cfg(test)]
 mod tests;
