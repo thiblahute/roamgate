@@ -24,7 +24,8 @@ roamgate-connections	server/src/connections/agent-tab-title	S21
 roamgate-connections	server/src/connections/agent-tasks	S21
 roamgate-connections	server/src/connections/http-routing	S18
 roamgate-connections	server/src/connections/protocol	S18
-roamgate-connections	server/src/connections/runtime	S16
+roamgate-connections	server/src/connections/runtime	S21
+roamgate-notify	server/src/connections/runtime	S18
 roamgate-connections	server/src/connections/shutdown	S18
 roamgate-connections	server/src/connections/startup	S18
 roamgate-connections	server/src/connections/tab-auto-rename	S21
@@ -61,7 +62,7 @@ roamgate-http	server/src/bridge/settings-rpc.test.ts	S18
 
 roamgate-notify	server/src/notifications/notification-feed	S18
 roamgate-notify	server/src/notifications/herdr-notification-listener	S18
-roamgate-connections	server/src/notifications/web-push.test.ts	S16
+roamgate-notify	server/src/notifications/web-push.test.ts	S18
 
 roamgate-assistant	server/src/assistant/archive-tools	S13
 roamgate-assistant	server/src/assistant/workspace-tree-tools	S17
