@@ -23,6 +23,18 @@ pub struct ProjectRef {
     pub provider: String,
 }
 
+impl ProjectRef {
+    /// A request's project.
+    pub fn of(item: &roamgate_agents::js::Obj) -> ProjectRef {
+        use roamgate_agents::js;
+        ProjectRef {
+            host: js::sv(item.get("host")).to_owned(),
+            project: js::sv(item.get("project")).to_owned(),
+            provider: js::sv(item.get("provider")).to_owned(),
+        }
+    }
+}
+
 /// `FoundClone`: a clone of a project on a connection.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FoundClone {

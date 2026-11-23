@@ -163,11 +163,7 @@ pub fn match_workspaces(
             whys.push(json!(why));
         }
     };
-    let project = ProjectRef {
-        host: js::sv(item.get("host")).to_owned(),
-        project: js::sv(item.get("project")).to_owned(),
-        provider: js::sv(item.get("provider")).to_owned(),
-    };
+    let project = ProjectRef::of(item);
     let branch = js::sv(item.get("sourceBranch"));
     let usable = !branch.is_empty()
         && item.get("targetBranch").and_then(Value::as_str) != Some(branch)

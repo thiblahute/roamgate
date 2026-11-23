@@ -75,6 +75,23 @@ pub struct FetchWant {
     pub target_branch: Option<String>,
 }
 
+impl FetchWant {
+    /// A request's head, and its base with the target branch when the
+    /// forge gave one (`want` of open.ts).
+    pub fn of(item: &Obj) -> FetchWant {
+        let base = item
+            .get("baseSha")
+            .and_then(Value::as_str)
+            .filter(|sha| !sha.is_empty());
+        FetchWant {
+            number: js::num(item.get("number")).unwrap_or(0.0) as u64,
+            head_sha: js::sv(item.get("headSha")).to_owned(),
+            base_sha: base.map(str::to_owned),
+            target_branch: base.map(|_| js::sv(item.get("targetBranch")).to_owned()),
+        }
+    }
+}
+
 fn filled(value: &Option<String>) -> Option<&str> {
     value.as_deref().filter(|v| !v.is_empty())
 }
