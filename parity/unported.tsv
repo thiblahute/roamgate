@@ -97,3 +97,10 @@ roamgate-mr-reviews	server/src/mr-reviews/prefetch.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/tree.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/upstream.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/worktree.test.ts	S20
+
+# roamgate-workspace was made by S17 with the HTML preview and the worktree
+# command templates; the rest of the workspace and worktree files are S17's
+# still (plan section 11, S17's left).
+roamgate-workspace	server/src/workspace/	S17
+roamgate-workspace	server/src/worktree/	S17
+roamgate-workspace	server/src/config/workspace-tree	S17
