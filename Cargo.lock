@@ -6448,6 +6448,7 @@ dependencies = [
 name = "roamgate-assistant"
 version = "0.0.0"
 dependencies = [
+ "futures-util",
  "hex",
  "jiff",
  "regex",

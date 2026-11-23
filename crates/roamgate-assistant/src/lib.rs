@@ -9,5 +9,6 @@ pub mod saved;
 pub mod schema;
 pub mod task_schedule;
 pub mod task_storage;
+pub mod tasks;
 pub mod tools;
 pub mod wire;

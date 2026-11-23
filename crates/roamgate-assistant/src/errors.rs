@@ -16,6 +16,12 @@ pub enum AssistantError {
     Platform(String),
     /// Any other failure; its message is never shown unmasked.
     Internal(String),
+    /// `AssistantRecoveryNotReadyError`: a connection a task needs is down
+    /// for now; the run waits for it.
+    RecoveryNotReady(String),
+    /// `AssistantServerRestartedError` (a user error): a connection's Herdr
+    /// restarted since a task's workspaces were checked.
+    ServerRestarted { connection: String, message: String },
 }
 
 impl AssistantError {
@@ -29,13 +35,30 @@ impl AssistantError {
 
     pub fn message(&self) -> &str {
         match self {
-            Self::User(message) | Self::Platform(message) | Self::Internal(message) => message,
+            Self::User(message)
+            | Self::Platform(message)
+            | Self::Internal(message)
+            | Self::RecoveryNotReady(message)
+            | Self::ServerRestarted { message, .. } => message,
         }
     }
 
     /// Whether the message may be shown as it is.
     pub fn surfaced(&self) -> bool {
-        matches!(self, Self::User(_) | Self::Platform(_))
+        matches!(
+            self,
+            Self::User(_) | Self::Platform(_) | Self::ServerRestarted { .. }
+        )
+    }
+
+    /// `new AssistantServerRestartedError(connection)`.
+    pub fn server_restarted(connection: &str) -> Self {
+        Self::ServerRestarted {
+            connection: connection.to_owned(),
+            message: format!(
+                "Herdr on {connection} restarted since the task's workspaces were checked (its server identity changed)."
+            ),
+        }
     }
 
     /// `surfaceAssistantUserError`: user-facing errors as they are, any

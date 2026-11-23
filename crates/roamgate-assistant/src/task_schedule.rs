@@ -88,9 +88,33 @@ fn validate_once(map: &Map<String, Value>) -> Result<Value, AssistantError> {
     ))
 }
 
-/// The zone a daily schedule names, as `Intl` resolves it (`scheduleKey`).
+/// The zone a daily schedule names, as `Intl` resolves it (`scheduleKey`):
+/// UTC and GMT under any of their names are `UTC`.
 pub fn resolved_timezone(zone: &str) -> Option<String> {
+    const UTC: [&str; 18] = [
+        "utc",
+        "etc/utc",
+        "etc/uct",
+        "uct",
+        "universal",
+        "etc/universal",
+        "zulu",
+        "etc/zulu",
+        "gmt",
+        "etc/gmt",
+        "etc/gmt+0",
+        "etc/gmt-0",
+        "etc/gmt0",
+        "gmt0",
+        "gmt+0",
+        "gmt-0",
+        "greenwich",
+        "etc/greenwich",
+    ];
     let tz = TimeZone::get(zone).ok()?;
+    if UTC.contains(&zone.to_ascii_lowercase().as_str()) {
+        return Some("UTC".to_owned());
+    }
     Some(tz.iana_name().unwrap_or(zone).to_owned())
 }
 
