@@ -13,12 +13,14 @@ workspace = true
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 base64 = "0.22"
 bytes = "1"
+fancy-regex = "0.17"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 hmac = "0.12"
 http = "1"
 lol_html = "2"
 rand = "0.9"
+regex = "1"
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-sidecar = { path = "../roamgate-sidecar" }
@@ -28,6 +30,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 subtle = "2"
 tempfile = "3"
+thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["fs", "macros", "net", "process", "rt", "sync", "time"] }
 unicode-width = "0.2"

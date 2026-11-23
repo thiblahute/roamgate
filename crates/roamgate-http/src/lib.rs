@@ -13,6 +13,7 @@
 //! | [`front`] | the Rust front: listener, gate, web app, `/ws`, the Bun core spawned and reached over the core channel | index.ts's `Bun.serve` |
 //! | [`frame_to_ansi`] | a Herdr cell grid re-encoded as ANSI for xterm.js | bridge/frame-to-ansi |
 //! | [`terminal_upload`] | dropped files and pasted images staged privately, copied over SSH | http/terminal-upload, http/image-upload |
+//! | [`rendered_pages`] | pages of rendered reviews under `/rendered/<token>/`, their sites' storage | http/rendered-pages, http/rendered-storage, http/rendered-helper |
 //! | [`list_delta`] | topology lists answered as changes | bridge/list-delta |
 //! | [`rpc_reply`] | an RPC's reply in its connection's envelope | connections/protocol `serializeConnectionEnvelope` |
 //! | [`forward_rpc`] | the `forward.*` RPCs over the SSH forwards registry | bridge/forward-rpc |
@@ -28,6 +29,7 @@ pub mod history;
 pub mod list_delta;
 pub mod login_page;
 pub mod public_origin;
+pub mod rendered_pages;
 pub mod response;
 pub mod rpc_reply;
 pub mod settings;
