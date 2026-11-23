@@ -12,6 +12,7 @@ pub mod kokoro_language;
 pub mod models;
 pub mod process;
 pub mod profiles;
+pub mod setup;
 pub mod speakers;
 pub mod speech_rate;
 

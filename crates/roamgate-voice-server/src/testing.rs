@@ -236,3 +236,36 @@ pub async fn serve_models() -> ModelServer {
         state,
     }
 }
+
+/// A temporary home with the voice's directories, on `hardware` (setupHome).
+pub struct SetupHome {
+    pub home: tempfile::TempDir,
+    pub deps: crate::setup::SetupDeps,
+}
+
+pub fn setup_home(server: &ModelServer, hardware: VoiceHardware) -> SetupHome {
+    let home = tempfile::Builder::new()
+        .prefix("roamgate-voice-setup-")
+        .tempdir()
+        .unwrap();
+    let data = home
+        .path()
+        .join(".local")
+        .join("share")
+        .join("roamgate")
+        .join("voice");
+    let mut deps = crate::setup::SetupDeps::new(
+        data.join("models"),
+        home.path()
+            .join(".config")
+            .join("roamgate")
+            .join("voice.json"),
+        data.join("roamgate-voice"),
+        Arc::new(move || hardware.clone()),
+    );
+    deps.packages = Some(server.packages.clone());
+    deps.fetch = Some(server.fetch());
+    deps.free_bytes = Some(Arc::new(|_| Some(100.0 * GIB)));
+    deps.retry_delay_ms = Some(0);
+    SetupHome { home, deps }
+}

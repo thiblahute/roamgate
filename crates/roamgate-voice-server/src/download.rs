@@ -233,9 +233,16 @@ async fn attempt(target: &DownloadTarget, options: &DownloadOptions) -> Result<(
             let chunk = match &options.signal {
                 Some(signal) => {
                     let mut signal = signal.clone();
+                    let stopped = async move {
+                        // The guard wait_for gives is not Send: dropped here.
+                        // A stop dropped unused never stops it.
+                        if signal.wait_for(|done| *done).await.is_err() {
+                            std::future::pending::<()>().await;
+                        }
+                    };
                     tokio::select! {
                         chunk = response.body.recv() => chunk,
-                        _ = signal.wait_for(|done| *done) => {
+                        _ = stopped => {
                             let _ = file.flush().await;
                             return Err(DownloadError::Aborted.into());
                         }
