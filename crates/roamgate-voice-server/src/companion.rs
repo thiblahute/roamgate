@@ -7,6 +7,7 @@
 pub mod answers;
 pub mod claude;
 pub mod cleaner;
+pub mod dictation;
 pub mod errands;
 pub mod images;
 pub mod keyed;

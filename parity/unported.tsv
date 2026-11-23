@@ -111,7 +111,6 @@ roamgate-workspace	server/src/config/workspace-tree	S17
 # socket and its signalling relay are ported; voice.test.ts's companion cases,
 # call-audio.test.ts's and the front's music cases wait for the companion layer.
 roamgate-voice-server	server/src/voice/call-audio	S22
-roamgate-voice-server	server/src/voice/voice-dictation	S22
 roamgate-voice-server	server/src/voice/voice-front	S22
 roamgate-voice-server	server/src/voice/voice-memory	S22
 roamgate-voice-server	server/src/voice/voice-tools	S22

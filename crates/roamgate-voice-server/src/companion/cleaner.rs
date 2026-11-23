@@ -414,6 +414,11 @@ impl VoiceCleaner {
         }))
     }
 
+    /// Whether both are the same cleaner (one kept by a factory).
+    pub fn same(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
     /// Starts the sessions, so the first utterance does not wait for them.
     pub fn warm(&self) {
         for worker in &self.0.workers {
