@@ -85,7 +85,21 @@ steps:
       { text: Inspect workspace and propose a tab, request_id: crash-question }
   - http_fake_calls: { fake: anthropic, count: 2 }
     retry: 10000
-  # Streamed text reaches browsers on the bridge's publishing timer.
+  # Pi in the server streams on its clock; Pi in a sidecar (the core's)
+  # sends its text as notifications in real time: wait until the server has
+  # it either way, then it reaches browsers on the bridge's publishing timer.
+  - advance: 1000
+  - call: bridge.assistant.get
+    reply:
+      messages:
+        $contains:
+          [
+            {
+              role: assistant,
+              text: "{{contains:This interrupted answer must not be kept.}}",
+            },
+          ]
+    retry: 10000
   - advance: 1000
   - expect_push: assistant
     message:

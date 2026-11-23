@@ -48,6 +48,8 @@ export type { CallContext, PushMessage } from "./channel";
 
 export const CORE_BIN_ENV = "ROAMGATE_CORE_BIN";
 export const CORE_TEST_ENV = "ROAMGATE_CORE_TEST";
+/** Names the Pi sidecar (contract/wire/pi-sidecar.md). */
+const PI_SIDECAR_ENV = "ROAMGATE_PI_SIDECAR";
 
 /** Whether a Rust core is configured (`ROAMGATE_CORE_BIN`). */
 export function coreConfigured(
@@ -164,6 +166,16 @@ export function startCoreFront(deps: CoreFrontDeps): CoreFront | null {
 
   const env = { ...deps.env };
   delete env[CORE_BIN_ENV];
+  // The core's Ranger runs Pi in the sidecar: from source, Bun's own entry
+  // unless the environment names one (a package ships roamgate-pi beside
+  // the core instead).
+  if (deps.fromSource && !env[PI_SIDECAR_ENV]?.trim())
+    env[PI_SIDECAR_ENV] = join(
+      import.meta.dir,
+      "..",
+      "assistant",
+      "pi-sidecar-main.ts",
+    );
 
   let owners: ReturnType<typeof watchOwners> | null = null;
   const table = () => owners?.table() ?? DEFAULT_TABLE;
