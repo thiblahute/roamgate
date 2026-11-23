@@ -19,6 +19,7 @@
 //! | [`links`] | The workspaces that are a request's | mr-reviews/links.ts |
 //! | [`upstream`] | Branches headed upstream, read from their checkouts | mr-reviews/upstream.ts |
 //! | [`effort_board`] | The inbox entry of each planned request of an effort | mr-reviews/effort-board.ts |
+//! | [`open`] | Opening a request: clone, review worktree and workspace, review, checkout, prefetch | mr-reviews/open.ts |
 //! | [`claude`] | The review workspace's Claude: one pane, a session per request | mr-reviews/claude.ts |
 //! | [`home`] | A request's home: its own worktree workspace, review and agent | mr-reviews/home.ts |
 //! | [`workspace_tree`] | The Workspaces tree's paths, ancestors and live resolution | shared/workspaceTree.ts (in part) |
@@ -38,6 +39,7 @@ pub mod inbox;
 pub mod inference;
 pub mod lanes;
 pub mod links;
+pub mod open;
 pub mod order;
 pub mod overrides;
 pub mod queries;
