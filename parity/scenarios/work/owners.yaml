@@ -90,25 +90,30 @@ steps:
   # Comments go out 2.5 s after the last one, on the server's clock.
   - advance: 1000
     repeat: 5
-  # Each owned item the user added is told to its pane, with its comments.
+  # Each owned item the user added is told to its pane, with its comments,
+  # in either order: both are due in the same advance.
+  - herdr_calls: { method: agent.prompt, count: 2 }
+    retry: 10000
   - herdr_calls:
       method: agent.prompt
-      count: 2
-      calls:
-        - {
-            valid: true,
-            params:
-              { target: p1, text: '{{contains:"A subagent''s" (yours)]}}' },
-          }
-        - {
-            valid: true,
-            params:
-              {
-                target: p1,
-                text: "{{re:^\\[Roamgate work item [0-9a-f]{8} \"Deliver me\" \\(yours\\)\\](?s).*Please look.*roamgate-review work work_list}}",
-              },
-          }
-    retry: 10000
+      where:
+        {
+          valid: true,
+          params: { target: p1, text: '{{contains:"A subagent''s" (yours)]}}' },
+        }
+      count: 1
+  - herdr_calls:
+      method: agent.prompt
+      where:
+        {
+          valid: true,
+          params:
+            {
+              target: p1,
+              text: "{{re:^\\[Roamgate work item [0-9a-f]{8} \"Deliver me\" \\(yours\\)\\](?s).*Please look.*roamgate-review work work_list}}",
+            },
+        }
+      count: 1
   # The project's coordinator gets what nobody owns, and is told of it.
   - call: bridge.work.project.set
     params: { name: roamgate, coordinator: { session: legacy-default/p1 } }
