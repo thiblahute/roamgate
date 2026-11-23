@@ -16,6 +16,8 @@ jiff = "0.2"
 regex = "1"
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
+roamgate-connections = { path = "../roamgate-connections" }
+roamgate-review = { path = "../roamgate-review" }
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

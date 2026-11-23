@@ -14,7 +14,10 @@ use crate::errors::{AssistantError, AssistantResult};
 use crate::tools::{BoxFuture, ToolResult};
 
 pub mod actions;
+#[cfg(test)]
+mod fake;
 pub mod live;
+pub mod ported;
 
 /// A turn's captured workspaces (`AssistantWorkspace[]`) with what the
 /// context keeps of them out of model data (its leases and identities),
@@ -64,7 +67,8 @@ pub type Authorized = Arc<dyn Fn() -> bool + Send + Sync>;
 pub struct PreparedAction {
     /// `AssistantActionPreview`.
     pub preview: Value,
-    pub execute: Box<dyn FnOnce(Option<Authorized>) -> BoxFuture<ActionResult> + Send>,
+    pub execute:
+        Box<dyn FnOnce(Option<Authorized>) -> BoxFuture<AssistantResult<ActionResult>> + Send>,
 }
 
 /// The optional members of `AssistantContext` (the TS type's `Partial`).

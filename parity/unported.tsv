@@ -64,9 +64,7 @@ roamgate-notify	server/src/notifications/notification-feed	S18
 roamgate-notify	server/src/notifications/herdr-notification-listener	S18
 roamgate-connections	server/src/notifications/web-push.test.ts	S16
 
-roamgate-assistant	server/src/assistant/actions	S23
 roamgate-assistant	server/src/assistant/archive-tools	S13
-roamgate-assistant	server/src/assistant/context	S23
 roamgate-assistant	server/src/assistant/service	S23
 roamgate-assistant	server/src/assistant/workspace-tree-tools	S17
 roamgate-assistant	server/src/assistant/durable-storage	S24
