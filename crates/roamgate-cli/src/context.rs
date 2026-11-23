@@ -208,6 +208,17 @@ pub mod testing {
             lines(&self.context.console.printed(0).stderr)
         }
 
+        /// `runCli(argv, context)` with this crate's commands: the exit
+        /// code (-1 for the server's turn or the listener's argv).
+        pub async fn run_cli(&self, argv: &[&str]) -> i32 {
+            let argv: Vec<String> = argv.iter().map(|arg| (*arg).to_owned()).collect();
+            let commands = crate::index::cli_commands(crate::index::rust_runner);
+            match crate::index::run_cli(&argv, &self.context, &commands).await {
+                Some(crate::index::Outcome::Code(code)) => code,
+                _ => -1,
+            }
+        }
+
         /// The commands run or captured.
         pub fn commands(&self) -> Vec<Vec<String>> {
             self.recorder.argvs()
