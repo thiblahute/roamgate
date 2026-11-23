@@ -1,0 +1,12 @@
+# What `roamgate update` runs on a host (sh, curl, tar with xz, sha256sum,
+# install, mktemp), for `cargo xtask update-proof --exec-prefix`: an
+# emulated linux-arm64 host, for example
+#
+#   podman build --platform linux/arm64 -t roamgate-update-proof:arm64 xtask/proof
+#   cargo xtask update-proof linux-arm64 --from server/roamgate-linux-arm64 \
+#     --keep target/proof --exec-prefix "podman run --rm --platform linux/arm64 \
+#     --network host -v $PWD/target/proof:$PWD/target/proof roamgate-update-proof:arm64"
+FROM docker.io/library/debian:trixie-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl xz-utils ca-certificates \
+    && rm -rf /var/lib/apt/lists/*

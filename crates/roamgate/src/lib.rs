@@ -1,0 +1,193 @@
+//! The skeleton server: version, arguments and the embedded web app.
+
+use std::future::Future;
+
+use axum::Router;
+use axum::body::Body;
+use axum::http::{HeaderValue, StatusCode, Uri, header};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use rust_embed::RustEmbed;
+
+/// The version: `ROAMGATE_BUILD_VERSION` at build time (`cargo xtask
+/// package --version`), else the workspace's.
+pub const VERSION: &str = match option_env!("ROAMGATE_BUILD_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
+/// `roamgate --version`: the line `roamgate update` and the release checks
+/// compare with the package's VERSION.
+pub fn version_line() -> String {
+    format!("roamgate {VERSION}")
+}
+
+pub const USAGE: &str = "Usage:
+  roamgate [--host <addr>] [--port <n>]   serve the web app
+  roamgate --version                      print the version
+  roamgate --help                         print this help
+
+Options:
+  --host <addr>  listen address (env HOST, default 127.0.0.1)
+  --port <n>     listen port    (env PORT, default 8787)
+";
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Options {
+    Version,
+    Help,
+    Serve { host: String, port: u16 },
+}
+
+/// Reads the command line; `env` gives the environment's HOST and PORT.
+pub fn parse_args(
+    args: &[String],
+    env: impl Fn(&str) -> Option<String>,
+) -> Result<Options, String> {
+    let mut host = env("HOST").unwrap_or_else(|| "127.0.0.1".into());
+    let mut port = env("PORT").unwrap_or_else(|| "8787".into());
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--version" | "-v" | "-V" | "version" => return Ok(Options::Version),
+            "--help" | "-h" | "help" => return Ok(Options::Help),
+            "--host" => host = rest.next().ok_or("--host needs a value")?.clone(),
+            "--port" => port = rest.next().ok_or("--port needs a value")?.clone(),
+            other => {
+                if let Some(value) = other.strip_prefix("--host=") {
+                    host = value.into();
+                } else if let Some(value) = other.strip_prefix("--port=") {
+                    port = value.into();
+                } else {
+                    return Err(format!("unknown argument {other}"));
+                }
+            }
+        }
+    }
+    let port = port.parse().map_err(|_| format!("invalid port {port}"))?;
+    Ok(Options::Serve { host, port })
+}
+
+#[derive(RustEmbed)]
+#[folder = "$ROAMGATE_WEB_DIST"]
+struct Web;
+
+/// Whether the binary was built with a web app (its index.html).
+pub fn has_web() -> bool {
+    Web::get("index.html").is_some()
+}
+
+async fn healthz() -> Response {
+    (
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        )],
+        "Ok",
+    )
+        .into_response()
+}
+
+fn asset(path: &str) -> Option<Response> {
+    let file = Web::get(path)?;
+    let mime = file.metadata.mimetype().to_owned();
+    let mut response = Response::new(Body::from(file.data.into_owned()));
+    if let Ok(value) = HeaderValue::from_str(&mime) {
+        response.headers_mut().insert(header::CONTENT_TYPE, value);
+    }
+    Some(response)
+}
+
+/// A file of the web app, else its index.html for an app route (a path
+/// whose last part has no extension).
+async fn web(uri: Uri) -> Response {
+    let path = uri.path().trim_start_matches('/');
+    let path = if path.is_empty() { "index.html" } else { path };
+    if let Some(response) = asset(path) {
+        return response;
+    }
+    let last = path.rsplit('/').next().unwrap_or_default();
+    if !last.contains('.')
+        && let Some(response) = asset("index.html")
+    {
+        return response;
+    }
+    (StatusCode::NOT_FOUND, "Not found").into_response()
+}
+
+pub fn app() -> Router {
+    Router::new()
+        .route("/health", get(healthz))
+        .route("/healthz", get(healthz))
+        .fallback(get(web))
+}
+
+/// Serves until `shutdown` completes.
+pub async fn serve(
+    listener: tokio::net::TcpListener,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
+    axum::serve(listener, app())
+        .with_graceful_shutdown(shutdown)
+        .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|arg| (*arg).to_owned()).collect()
+    }
+
+    #[test]
+    fn version_line_is_what_update_checks() {
+        assert_eq!(version_line(), format!("roamgate {VERSION}"));
+        assert!(!VERSION.is_empty());
+    }
+
+    #[test]
+    fn flags_override_the_environment() {
+        let env = |name: &str| match name {
+            "HOST" => Some("0.0.0.0".to_owned()),
+            "PORT" => Some("9000".to_owned()),
+            _ => None,
+        };
+        assert_eq!(
+            parse_args(&args(&[]), env),
+            Ok(Options::Serve {
+                host: "0.0.0.0".into(),
+                port: 9000
+            })
+        );
+        assert_eq!(
+            parse_args(&args(&["--port", "1234", "--host=::1"]), env),
+            Ok(Options::Serve {
+                host: "::1".into(),
+                port: 1234
+            })
+        );
+        assert_eq!(
+            parse_args(&args(&[]), |_| None),
+            Ok(Options::Serve {
+                host: "127.0.0.1".into(),
+                port: 8787
+            })
+        );
+    }
+
+    #[test]
+    fn version_and_help_win() {
+        assert_eq!(
+            parse_args(&args(&["--version"]), |_| None),
+            Ok(Options::Version)
+        );
+        assert_eq!(
+            parse_args(&args(&["--port", "1", "-h"]), |_| None),
+            Ok(Options::Help)
+        );
+        assert!(parse_args(&args(&["--port", "x"]), |_| None).is_err());
+        assert!(parse_args(&args(&["--nope"]), |_| None).is_err());
+        assert!(parse_args(&args(&["--port"]), |_| None).is_err());
+    }
+}

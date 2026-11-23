@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
+  parseCargoVersion,
   parseManifestVersion,
   parsePackageVersion,
+  replaceCargoLockVersions,
+  replaceCargoVersion,
   replaceManifestVersion,
   replacePackageVersion,
   resolveNextVersion,
@@ -109,5 +113,79 @@ describe("resolveNextVersion", () => {
     expect(() => resolveNextVersion("0.4.1", "next")).toThrow("X.Y.Z");
     expect(() => resolveNextVersion("0.4.1", "")).toThrow("X.Y.Z");
     expect(() => resolveNextVersion("0.4", "patch")).toThrow("X.Y.Z");
+  });
+});
+
+const CARGO_TOML = `[workspace]
+members = ["crates/roamgate"]
+
+[workspace.package]
+# The release version.
+version = "0.4.1"
+edition = "2024"
+
+[workspace.dependencies]
+version = "not this one"
+`;
+
+const CARGO_LOCK = `version = 4
+
+[[package]]
+name = "roamgate"
+version = "9.9.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00"
+
+[[package]]
+name = "roamgate"
+version = "0.4.1"
+dependencies = [
+ "axum",
+]
+
+[[package]]
+name = "roamgate-voice"
+version = "0.4.1"
+`;
+
+describe("Cargo workspace version", () => {
+  test("reads and replaces only [workspace.package]'s version", () => {
+    expect(parseCargoVersion(CARGO_TOML)).toBe("0.4.1");
+    const next = replaceCargoVersion(CARGO_TOML, "0.4.1", "0.4.2");
+    expect(next).toBe(
+      CARGO_TOML.replace('version = "0.4.1"', 'version = "0.4.2"'),
+    );
+    expect(() => replaceCargoVersion(CARGO_TOML, "0.4.0", "0.4.2")).toThrow(
+      "expected 0.4.0",
+    );
+    expect(() => parseCargoVersion("[workspace]\n")).toThrow(
+      "workspace.package",
+    );
+  });
+
+  test("bumps the workspace crate in Cargo.lock, not a registry namesake", () => {
+    const next = replaceCargoLockVersions(CARGO_LOCK, "0.4.1", "0.4.2");
+    expect(next).toBe(
+      CARGO_LOCK.replace(
+        'name = "roamgate"\nversion = "0.4.1"',
+        'name = "roamgate"\nversion = "0.4.2"',
+      ),
+    );
+    expect(next).toContain('name = "roamgate-voice"\nversion = "0.4.1"');
+    expect(() =>
+      replaceCargoLockVersions(CARGO_LOCK, "0.4.0", "0.4.2"),
+    ).toThrow("expected 0.4.0");
+  });
+
+  test("the repository's Cargo files carry the release version", () => {
+    const root = new URL("../", import.meta.url);
+    const version = parsePackageVersion(
+      readFileSync(new URL("package.json", root), "utf8"),
+    );
+    expect(
+      parseCargoVersion(readFileSync(new URL("Cargo.toml", root), "utf8")),
+    ).toBe(version);
+    const lock = readFileSync(new URL("Cargo.lock", root), "utf8");
+    expect(replaceCargoLockVersions(lock, version, version)).toBe(lock);
   });
 });

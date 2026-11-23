@@ -86,6 +86,33 @@ refreshes `parity/ledger.tsv`, which maps every TS test to what replaces it;
 on gaps. `PARITY_KEEP=1` keeps a run's directory, `PARITY_JOBS` bounds the
 servers run at once.
 
+### Rust workspace
+
+The repository root is a Cargo workspace: `crates/roamgate` (the server
+binary, for now a skeleton that answers `--version` and serves the embedded
+web app), `parity/`, `xtask/`, and the voice helper, which builds only when
+asked (`-p roamgate-voice`, or from `voice/helper`). Check it with
+`cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D warnings`
+and `cargo nextest run --locked` (the Rust workflow runs them).
+
+`targets.toml` lists the seven release targets; `scripts/targets.test.ts` keeps
+the Bun build's platform lists in line with it. `cargo xtask` reads it:
+
+- `cargo xtask package <platform...|all> [--version X.Y.Z]` builds `roamgate`
+  for each target with the web app in `server/public` embedded
+  (`bun run build:web` first), packages it in the release layout (versioned
+  and latest `tar.xz`, `.sha256`, `.update.json`) in `target/dist`, and
+  verifies the package, running the binary when this machine can. Linux and
+  macOS targets build with cargo-zigbuild off their OS, Windows targets with
+  cargo-xwin.
+- `cargo xtask update-proof <platform> --from <Bun-built roamgate>` installs
+  the Bun build in a sandbox (its own HOME, XDG directories and TMPDIR), lets
+  its `roamgate update` install the package from a loopback mirror, and checks
+  the new binary, `roamgate.previous` and the served web app. Package with
+  `--version "$(cargo xtask version --next)"` so there is something to update
+  to. `--exec-prefix` runs the sandbox through an emulated container, such as
+  linux-arm64 with `xtask/proof/Containerfile`.
+
 ### Manual browser checks
 
 Automated tests do not launch browsers. For affected UI, check against a real

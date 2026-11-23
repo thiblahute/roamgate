@@ -85,6 +85,9 @@ esac
 
 here=$(cd "$(dirname "$0")" && pwd)
 helper=$(dirname "$here")
+# The helper is a member of the repository's Cargo workspace: its lockfile,
+# [patch] sections and release profile are the root's.
+repo=$(cd "$helper/../.." && pwd)
 image=${ROAMGATE_VOICE_BUILD_IMAGE:-roamgate-voice-build}
 cache=${ROAMGATE_VOICE_BUILD_CACHE:-roamgate-voice-build-cache}
 test=
@@ -105,16 +108,17 @@ podman volume exists "$cache" || podman volume create "$cache" >/dev/null
 
 # whisper-rs passes CMAKE_* variables on to whisper.cpp's CMake. The build
 # directory is not under the project: system-deps is told where its
-# manifest (the bundle, the plugins) is.
+# manifest (the bundle, the plugins) is. Cargo runs in voice/helper, so it
+# builds only the helper, with voice/helper/.cargo/config.toml's link flags.
 $yield podman run --rm --security-opt label=disable \
     -v "$vectors:/contract/vectors:ro" \
     ${test:+--device nvidia.com/gpu=all} \
     ${jobs:+-e CARGO_BUILD_JOBS=$jobs -e RUST_TEST_THREADS=$jobs} \
-    -v "$helper:/src:ro" -v "$cache:/cache" -v "$out:/out" \
+    -v "$repo:/src:ro" -v "$cache:/cache" -v "$out:/out" \
     -e CUDA_COMPUTE_CAP="$cap" -e CMAKE_CUDA_ARCHITECTURES="$cap" \
-    -e SYSTEM_DEPS_BUILD_MANIFEST=/src/Cargo.toml -e TEST="$test" \
+    -e SYSTEM_DEPS_BUILD_MANIFEST=/src/voice/helper/Cargo.toml -e TEST="$test" \
     "$image" sh -euc '
-        cd /src
+        cd /src/voice/helper
         if [ -n "$TEST" ]; then cargo test --release --locked; fi
         cargo build --release --locked
         bin=$CARGO_TARGET_DIR/release/roamgate-voice

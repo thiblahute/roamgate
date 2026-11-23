@@ -126,33 +126,6 @@ checksum = "e6d380bc17be7eccf13e0154567d4718fc9321da822408c7ca0cd808b3d4a3f7"
 url = "https://people.freedesktop.org/~tsaunier/gstreamer/pkg/linux/1.28.8/gstreamer-1.0-linux-x86_64-1.28.8.tar.xz"
 checksum = "b6f5a061950541f419e1cccc3559e2154779140d8d051a4cfad395481fc081cd"
 
-# gstreamer-rs's prebuilt bundle support, until it is merged:
-# https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/-/merge_requests/1980
-[patch."https://gitlab.freedesktop.org/gstreamer/gstreamer-rs"]
-gstreamer = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-base = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-base-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-audio = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-audio-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-app = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-app-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-tag = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-tag-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-webrtc = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-webrtc-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-sdp = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-sdp-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-rtp = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-rtp-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-pbutils = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-pbutils-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-video = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-video-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-net = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-net-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-gstreamer-utils = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
-
 [target.'cfg(unix)'.dependencies]
 # A call's ICE addresses (call.rs): getifaddrs.
 libc = "0.2"
@@ -171,10 +144,5 @@ gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugi
 gst-plugin-whisper = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "cuda"] }
 gst-plugin-anytts = { git = "https://gitlab.freedesktop.org/thiblahute/gst-plugins-rs", branch = "roamgate-voice", features = ["static", "cuda"] }
 
-# any-tts with the Metal and CUDA speedups, streaming Qwen3-TTS decoding
-# and voice cloning, until they are merged upstream.
-[patch.crates-io]
-any-tts = { git = "https://github.com/thiblahute/any-tts", branch = "roamgate" }
-
-[profile.release]
-strip = true
+# Its [patch] sections and release profile are the workspace's (the
+# repository's Cargo.toml): Cargo reads them only there.

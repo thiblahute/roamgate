@@ -842,8 +842,11 @@ with RNNoise (`audiornnoise`), and `speechgate` (from the same
 gst-plugins-rs branch as the Parakeet element) lets only the speech through
 to the transcriber, ending each utterance when the speaker is done; the
 speaker and turn models below are its properties.
-`cargo build --release` in `voice/helper` makes one binary with GStreamer,
-those plugins and ONNX Runtime linked in: it downloads a prebuilt GStreamer
+`cargo build --release` in `voice/helper` makes one binary
+(`target/release/roamgate-voice` at the repository root: the helper is a
+member of the repository's Cargo workspace, built only when asked, and from
+its directory, whose `.cargo/config.toml` adds the C++ runtime to the link)
+with GStreamer, those plugins and ONNX Runtime linked in: it downloads a prebuilt GStreamer
 package once through gstreamer-rs's `binary` feature, GStreamer's official
 one on macOS (about 720 MB), and on Linux (x86-64) the bundle
 `voice/helper/Cargo.toml` names (about 580 MB). Whisper and the any-tts

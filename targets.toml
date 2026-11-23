@@ -1,0 +1,108 @@
+# Roamgate's release targets: one table per published platform. The single
+# list the release tooling reads: `cargo xtask` builds, packages and checks
+# them (xtask/src/targets.rs), CI's Rust matrix comes from `cargo xtask
+# targets --json`, and scripts/targets.test.ts pins the Bun build's lists
+# (package-release.sh, server/package.json, the updater and the installers)
+# to it.
+#
+#   platform  the name in archives, VERSION and update manifests
+#   triple    the Rust target
+#   os, arch  Node's process.platform and process.arch on that platform
+#   binary    the executable's name in the package
+#   builder   how CI builds it: cargo (on a runner of that OS), zigbuild
+#             (cargo-zigbuild) or xwin (cargo-xwin)
+#   cross     the builder used elsewhere (a Linux desktop building macOS)
+#   glibc     the oldest glibc the binary runs on (zigbuild links against it)
+#   runner    the CI runner that builds it
+#   check     the CI runner that runs it natively: its --version, and the
+#             update proof for an `update` target
+#   update    `roamgate update` installs it: the updater knows the platform
+#   bun       the Bun compile target of the Bun build, until the cut-over
+
+[[target]]
+platform = "linux-x64"
+triple = "x86_64-unknown-linux-gnu"
+os = "linux"
+arch = "x64"
+binary = "roamgate"
+builder = "zigbuild"
+glibc = "2.28"
+runner = "ubuntu-latest"
+check = "ubuntu-latest"
+update = true
+bun = "bun-linux-x64"
+
+[[target]]
+platform = "linux-x64-musl"
+triple = "x86_64-unknown-linux-musl"
+os = "linux"
+arch = "x64"
+binary = "roamgate"
+builder = "zigbuild"
+runner = "ubuntu-latest"
+check = "ubuntu-latest"
+update = false
+bun = "bun-linux-x64-musl"
+
+[[target]]
+platform = "linux-arm64"
+triple = "aarch64-unknown-linux-gnu"
+os = "linux"
+arch = "arm64"
+binary = "roamgate"
+builder = "zigbuild"
+glibc = "2.28"
+runner = "ubuntu-latest"
+check = "ubuntu-24.04-arm"
+update = true
+bun = "bun-linux-arm64"
+
+[[target]]
+platform = "darwin-x64"
+triple = "x86_64-apple-darwin"
+os = "darwin"
+arch = "x64"
+binary = "roamgate"
+builder = "cargo"
+cross = "zigbuild"
+runner = "macos-latest"
+check = "macos-15-intel"
+update = true
+bun = "bun-darwin-x64"
+
+[[target]]
+platform = "darwin-arm64"
+triple = "aarch64-apple-darwin"
+os = "darwin"
+arch = "arm64"
+binary = "roamgate"
+builder = "cargo"
+cross = "zigbuild"
+runner = "macos-latest"
+check = "macos-latest"
+update = true
+bun = "bun-darwin-arm64"
+
+[[target]]
+platform = "windows-x64"
+triple = "x86_64-pc-windows-msvc"
+os = "win32"
+arch = "x64"
+binary = "roamgate.exe"
+builder = "xwin"
+runner = "ubuntu-latest"
+check = "windows-latest"
+update = false
+bun = "bun-windows-x64"
+
+[[target]]
+platform = "windows-arm64"
+triple = "aarch64-pc-windows-msvc"
+os = "win32"
+arch = "arm64"
+binary = "roamgate.exe"
+builder = "xwin"
+runner = "ubuntu-latest"
+check = "windows-11-arm"
+update = false
+bun = "bun-windows-arm64"

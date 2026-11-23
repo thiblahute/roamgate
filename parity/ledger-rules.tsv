@@ -143,6 +143,7 @@ scripts/prepare-release.	internal:repository tooling	tests the repository's own 
 scripts/security-workflows.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/source-map-security.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/studio-plugin.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/targets.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/tutorial-storage.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/workspaces.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/contract/	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates

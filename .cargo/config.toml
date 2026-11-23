@@ -1,0 +1,4 @@
+# `cargo xtask <command>`: builds, packages and checks the release targets
+# of targets.toml (xtask/src/main.rs).
+[alias]
+xtask = "run --quiet --package xtask --"

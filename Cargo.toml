@@ -1,13 +1,18 @@
 # The Rust side of Roamgate (docs: the Rust migration plan, section 6.2).
-# For now it holds the parity suite only; the server crates join under crates/.
+# `roamgate` (crates/roamgate) is the server binary, the parity suite drives
+# a server from outside, xtask builds and packages the release targets of
+# targets.toml. The voice helper is a member that only builds when asked
+# (`-p roamgate-voice`, or from voice/helper): it pulls GStreamer's bundle.
 [workspace]
 resolver = "3"
-members = ["parity", "parity/herdr-api"]
-default-members = ["parity", "parity/herdr-api"]
-# Own workspaces until they join this one.
-exclude = ["voice/helper", "scripts/bench-terminal"]
+members = ["crates/roamgate", "parity", "parity/herdr-api", "voice/helper", "xtask"]
+default-members = ["crates/roamgate", "parity", "parity/herdr-api", "xtask"]
+# Its own workspace: a benchmark with its own lockfile.
+exclude = ["scripts/bench-terminal"]
 
 [workspace.package]
+# The release version, bumped with package.json by scripts/prepare-release.ts.
+version = "0.8.15"
 edition = "2024"
 license = "MIT"
 publish = false
@@ -17,3 +22,38 @@ unsafe_code = "deny"
 
 [workspace.lints.clippy]
 dbg_macro = "deny"
+
+[profile.release]
+strip = true
+
+# The voice helper's: gstreamer-rs's prebuilt bundle support, until it is
+# merged: https://gitlab.freedesktop.org/gstreamer/gstreamer-rs/-/merge_requests/1980
+[patch."https://gitlab.freedesktop.org/gstreamer/gstreamer-rs"]
+gstreamer = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-base = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-base-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-audio = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-audio-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-app = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-app-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-tag = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-tag-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-webrtc = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-webrtc-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-sdp = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-sdp-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-rtp = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-rtp-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-pbutils = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-pbutils-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-video = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-video-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-net = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-net-sys = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+gstreamer-utils = { git = "https://gitlab.freedesktop.org/calvaris/gstreamer-rs", branch = "binaries" }
+
+# The voice helper's: any-tts with the Metal and CUDA speedups, streaming
+# Qwen3-TTS decoding and voice cloning, until they are merged upstream.
+[patch.crates-io]
+any-tts = { git = "https://github.com/thiblahute/any-tts", branch = "roamgate" }
