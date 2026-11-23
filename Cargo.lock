@@ -6392,6 +6392,7 @@ dependencies = [
  "roamgate-cli",
  "roamgate-connections",
  "roamgate-exec",
+ "roamgate-forge",
  "roamgate-herdr",
  "roamgate-http",
  "roamgate-sidecar",
@@ -6509,6 +6510,19 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "roamgate-forge"
+version = "0.0.0"
+dependencies = [
+ "futures-util",
+ "roamgate-base",
+ "roamgate-protocol",
+ "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
 ]

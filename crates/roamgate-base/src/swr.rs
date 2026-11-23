@@ -13,9 +13,9 @@
 //!   failure is forgotten at once.
 //! - [`KeyedQueue`]: runs one task at a time per key.
 //!
-//! The card subject check of mr-cache (a checkout's HEAD moved under a
-//! cached answer) is the forge layer's: it puts the subject in the key or
-//! invalidates.
+//! The card subject check of mr-cache is here too: an answer may keep the
+//! subject it was read for (a checkout's `ref\ncommit` HEAD); an answer of
+//! another ref is not reused, and one whose commit moved is due.
 
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
@@ -51,6 +51,8 @@ pub struct Stored<V> {
     /// Epoch ms of the read it comes from.
     pub fetched_at: i64,
     pub ttl_ms: i64,
+    /// What the subject was when it was read (a checkout's HEAD).
+    pub head: Option<String>,
 }
 
 /// What a read of the cache gives.
@@ -69,6 +71,8 @@ pub type FailedFn<V> = Arc<dyn Fn(&V) -> bool + Send + Sync>;
 pub type PausedFn<V> = Arc<dyn Fn(Option<&V>) -> i64 + Send + Sync>;
 
 type Load<V, E> = Arc<dyn Fn() -> BoxFuture<Result<V, E>> + Send + Sync>;
+/// Where the subject is now (a checkout's `ref\ncommit` HEAD); None: unknown.
+pub type HeadFn = Arc<dyn Fn() -> BoxFuture<Option<String>> + Send + Sync>;
 
 /// How a key is read.
 pub struct SwrOptions<V, E> {
@@ -82,6 +86,8 @@ pub struct SwrOptions<V, E> {
     pub failed: Option<FailedFn<V>>,
     /// Epoch ms until which the source asked to be left alone.
     pub paused_until: Option<PausedFn<V>>,
+    /// Where the subject is now: answers of another ref are not reused.
+    pub head: Option<HeadFn>,
 }
 
 impl<V, E> Clone for SwrOptions<V, E> {
@@ -92,6 +98,7 @@ impl<V, E> Clone for SwrOptions<V, E> {
             fresh: self.fresh,
             failed: self.failed.clone(),
             paused_until: self.paused_until.clone(),
+            head: self.head.clone(),
         }
     }
 }
@@ -109,8 +116,14 @@ impl<V, E> SwrOptions<V, E> {
             fresh: false,
             failed: None,
             paused_until: None,
+            head: None,
         }
     }
+}
+
+/// The ref half of a `ref\ncommit` HEAD description.
+fn head_ref(head: Option<&str>) -> &str {
+    head.and_then(|head| head.split('\n').next()).unwrap_or("")
 }
 
 /// An answer changed: the key, the value, when it was read.
@@ -196,7 +209,14 @@ where
     }
 
     /// Keeps an answer, forgetting the least recently fetched past the cap.
-    fn put(&self, state: &mut State<V, E>, key: &str, value: V, ttl_ms: i64) -> i64 {
+    fn put(
+        &self,
+        state: &mut State<V, E>,
+        key: &str,
+        value: V,
+        ttl_ms: i64,
+        head: Option<String>,
+    ) -> i64 {
         let fetched_at = self.now();
         state.entries.insert(
             key.to_owned(),
@@ -204,6 +224,7 @@ where
                 value,
                 fetched_at,
                 ttl_ms,
+                head: head.filter(|head| !head.is_empty()),
             },
         );
         let cap = (self.inner.settings)().max_entries;
@@ -269,6 +290,10 @@ where
         let options = options.clone();
         let task: BoxFuture<Result<V, E>> = Box::pin(async move {
             let key = owned_key;
+            let head = match &options.head {
+                Some(head) => head().await,
+                None => None,
+            };
             let result = (options.load)().await;
             let outcome = match result {
                 Err(error) => {
@@ -284,7 +309,7 @@ where
                             let mut state = cache.inner.state.lock().unwrap();
                             state.failures.remove(&key);
                             if ttl > 0 {
-                                Some(cache.put(&mut state, &key, value.clone(), ttl))
+                                Some(cache.put(&mut state, &key, value.clone(), ttl, head))
                             } else {
                                 state.entries.remove(&key);
                                 None
@@ -331,10 +356,26 @@ where
     pub async fn get(&self, key: &str, options: &SwrOptions<V, E>) -> Result<SwrAnswer<V>, E> {
         let at = self.now();
         let known = self.inner.state.lock().unwrap().entries.get(key).cloned();
+        let head = match (&options.head, &known) {
+            (Some(head), Some(_)) => head().await,
+            _ => None,
+        };
+        // An answer of another ref is not reused; one whose commit moved
+        // is due.
+        let reusable = known.as_ref().is_some_and(|known| {
+            options.head.is_none()
+                || head.is_none()
+                || head_ref(known.head.as_deref()).is_empty()
+                || head_ref(known.head.as_deref()) == head_ref(head.as_deref())
+        });
+        let moved = known.as_ref().is_some_and(
+            |known| matches!((&head, &known.head), (Some(now), Some(then)) if now != then),
+        );
+        let known = known.filter(|_| reusable);
         if let Some(known) = &known
             && !options.fresh
         {
-            if at - known.fetched_at < known.ttl_ms {
+            if at - known.fetched_at < known.ttl_ms && !moved {
                 return Ok(SwrAnswer {
                     value: known.value.clone(),
                     fetched_at: known.fetched_at,
@@ -410,13 +451,13 @@ where
     }
 
     /// Hands the cache an answer read elsewhere.
-    pub fn offer(&self, key: &str, value: V, ttl_ms: i64) {
+    pub fn offer(&self, key: &str, value: V, ttl_ms: i64, head: Option<String>) {
         if ttl_ms <= 0 {
             return;
         }
         let fetched_at = {
             let mut state = self.inner.state.lock().unwrap();
-            self.put(&mut state, key, value.clone(), ttl_ms)
+            self.put(&mut state, key, value.clone(), ttl_ms, head)
         };
         self.changed();
         if let Some(publish) = &self.inner.publish {
@@ -762,10 +803,10 @@ mod tests {
                 max_entries: 2,
             });
         for key in ["a", "b", "c"] {
-            cache.offer(key, key.to_uppercase(), 1_000);
+            cache.offer(key, key.to_uppercase(), 1_000, None);
             clock.advance(1).await;
         }
-        cache.offer("zero", "Z".into(), 0);
+        cache.offer("zero", "Z".into(), 0, None);
         assert_eq!(
             cache
                 .entries()
