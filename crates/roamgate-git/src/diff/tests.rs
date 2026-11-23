@@ -1843,3 +1843,98 @@ async fn returns_an_empty_state_when_the_baseline_object_is_missing() {
         None
     );
 }
+
+#[tokio::test]
+async fn a_last_step_read_during_a_turn_waits_for_the_turns_baseline() {
+    let repo = init_repository();
+    let root = &repo.root;
+    let hold = Arc::new(AtomicBool::new(false));
+    let reads_during_capture = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let (h, r, s, g) = (
+        hold.clone(),
+        reads_during_capture.clone(),
+        started.clone(),
+        release.clone(),
+    );
+    let cx = Hooked::context(move |request| {
+        let (hold, reads, started, release) = (h.clone(), r.clone(), s.clone(), g.clone());
+        async move {
+            if hold.load(Ordering::SeqCst) {
+                if text(&request).contains("roamgate-last-step-capture") {
+                    started.notify_one();
+                    release.notified().await;
+                    hold.store(false, Ordering::SeqCst);
+                } else {
+                    reads.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+            None
+        }
+        .boxed()
+    });
+    let baselines = store(&cx);
+    write(root, "tracked.txt", "initial\n");
+    baselines
+        .capture_workspace("workspace", root_of(repo.path()))
+        .await
+        .unwrap();
+    write(root, "tracked.txt", "first turn\n");
+    baselines.complete_workspace("workspace").await.unwrap();
+
+    // The next turn starts; its baseline's snapshot is still running when
+    // Changes reads the last step.
+    hold.store(true, Ordering::SeqCst);
+    let capture = {
+        let baselines = baselines.clone();
+        let root = repo.path().to_owned();
+        tokio::spawn(async move {
+            baselines
+                .capture_workspace("workspace", root_of(&root))
+                .await
+                .unwrap()
+        })
+    };
+    started.notified().await;
+    let read = {
+        let (cx, baselines, root) = (cx.clone(), baselines.clone(), repo.path().to_owned());
+        tokio::spawn(async move {
+            summary(&cx, &root, json!({}), last_step(), Some(&baselines))
+                .await
+                .unwrap()
+        })
+    };
+    for _ in 0..20 {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert_eq!(reads_during_capture.load(Ordering::SeqCst), 0);
+    assert!(!read.is_finished());
+
+    release.notify_one();
+    capture.await.unwrap();
+    let result = read.await.unwrap();
+    assert_eq!(paths(&result), ["tracked.txt"]);
+
+    // The turn's edit, made once the read answered, is the turn's own.
+    write(root, "tracked.txt", "second turn\n");
+    assert!(baselines.complete_workspace("workspace").await.unwrap());
+    let completed = summary(&cx, repo.path(), json!({}), last_step(), Some(&baselines))
+        .await
+        .unwrap();
+    assert_eq!(paths(&completed), ["tracked.txt"]);
+    let diff = file(
+        &cx,
+        repo.path(),
+        "workspace",
+        step_file("tracked.txt", &completed["snapshot_id"]),
+        Some(&baselines),
+    )
+    .await
+    .unwrap();
+    let diff = diff["diff"].as_str().unwrap();
+    assert!(diff.contains("-first turn"), "{diff}");
+    assert!(diff.contains("+second turn"), "{diff}");
+    baselines.dispose().await;
+}

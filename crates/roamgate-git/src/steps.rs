@@ -39,6 +39,8 @@ struct Cycle {
     capture: CaptureFuture,
     completion: Option<CompletionFuture>,
     next_capture: Option<CaptureFuture>,
+    /// The previous turn's end, when this turn started before it was done.
+    prior_completion: Option<CompletionFuture>,
 }
 
 #[derive(Default)]
@@ -186,6 +188,10 @@ impl LastStepStore {
             let mut state = self.state.lock().unwrap();
             let version = state.versions.get(workspace_id).copied().unwrap_or(0) + 1;
             state.versions.insert(workspace_id.to_owned(), version);
+            let prior_completion = state
+                .cycles
+                .get(workspace_id)
+                .and_then(|cycle| cycle.lock().unwrap().completion.clone());
             let prior = state.cycles.insert(
                 workspace_id.to_owned(),
                 Arc::new(Mutex::new(Cycle {
@@ -193,6 +199,7 @@ impl LastStepStore {
                     capture: capture.clone(),
                     completion: None,
                     next_capture: None,
+                    prior_completion,
                 })),
             );
             if let Some(prior) = prior {
@@ -319,17 +326,35 @@ impl LastStepStore {
         completion.await.map_err(GitError::Message)
     }
 
+    /// Lets a read see the workspace's steps as of its call: the current
+    /// turn's baseline captured (so the turn's edits are not in it, however
+    /// soon they follow the read), its end if it is being recorded, and a
+    /// previous turn's end still being recorded. A failed capture or end
+    /// keeps the previous completed step.
     async fn settle_completion(&self, workspace_id: &str) {
-        let completion = self
+        let pending = self
             .state
             .lock()
             .unwrap()
             .cycles
             .get(workspace_id)
-            .and_then(|cycle| cycle.lock().unwrap().completion.clone());
+            .map(|cycle| {
+                let cycle = cycle.lock().unwrap();
+                (
+                    cycle.capture.clone(),
+                    cycle.completion.clone(),
+                    cycle.prior_completion.clone(),
+                )
+            });
+        let Some((capture, completion, prior)) = pending else {
+            return;
+        };
+        let _ = capture.await;
         if let Some(completion) = completion {
-            // A failed end keeps the previous completed step.
             let _ = completion.await;
+        }
+        if let Some(prior) = prior {
+            let _ = prior.await;
         }
     }
 
