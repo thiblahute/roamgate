@@ -14,6 +14,7 @@ pub mod families;
 pub mod front;
 pub mod front_tls;
 pub mod owners_cmd;
+pub mod reviews_cmd;
 
 pub use families::core_families;
 
@@ -81,6 +82,7 @@ pub const FAMILY_COMMANDS: &[&str] = &[
     "connections",
     "plugin",
     "completion",
+    "reviews",
 ];
 
 /// Reads the command line; `env` gives the environment's HOST and PORT.

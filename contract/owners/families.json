@@ -180,7 +180,8 @@
         "data:mr-reviews/agent.json",
         "data:mr-reviews/efforts"
       ],
-      "shadow": ["bridge.mr_reviews.inbox"]
+      "shadow": ["bridge.mr_reviews.inbox"],
+      "cli": ["reviews"]
     },
     "agent_sessions": {
       "phase": 9,
