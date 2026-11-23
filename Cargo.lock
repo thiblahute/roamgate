@@ -6517,12 +6517,17 @@ dependencies = [
 name = "roamgate-connections"
 version = "0.0.0"
 dependencies = [
+ "fancy-regex 0.17.0",
  "futures-util",
+ "hex",
  "indexmap",
  "roamgate-base",
+ "roamgate-exec",
+ "roamgate-herdr",
  "roamgate-protocol",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "tokio",
 ]
@@ -6564,6 +6569,7 @@ dependencies = [
 name = "roamgate-herdr"
 version = "0.0.0"
 dependencies = [
+ "futures-util",
  "hex",
  "rand 0.9.5",
  "roamgate-base",

@@ -10,6 +10,7 @@
 
 pub mod limit_resume;
 pub mod manager;
+pub mod profiles;
 pub mod usage_limit;
 
 /// A boxed future, as the effects traits return.
