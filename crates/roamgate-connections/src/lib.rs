@@ -25,7 +25,7 @@
 //! | [`tab_auto_rename`] | tabs named after their agent's session (connections/tab-auto-rename.ts) |
 //! | [`host_ops`] | the front's SSH commands run or held in the core's session slots (bridge/ssh-sessions.ts) |
 
-pub mod agent_models;
+pub use roamgate_agents::shared::agent_models;
 pub mod agent_profiles;
 pub mod agent_status;
 pub mod agent_summaries;

@@ -2,6 +2,7 @@
 //! dual-use logic stays in TS for the web and is pinned by vectors).
 
 pub mod agent_message;
+pub mod agent_models;
 pub mod bash_mode;
 pub mod file_edits;
 pub mod history_window;
