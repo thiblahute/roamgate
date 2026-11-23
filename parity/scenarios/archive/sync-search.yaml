@@ -56,17 +56,11 @@ steps:
   - assert_file:
       path: .config/roamgate/archive/raw/desk/claude/-home-t-proj/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl.zst
       zstd_contains: ["where is the zebra", "the zebra is in the zoo"]
+  # The bookkeeping, no search index (archive step 5): search is the text repo's.
   - assert_rows:
-      db: .config/roamgate/archive/index.sqlite
-      sql: "select name from sqlite_master where type='table' and name in ('meta','files','docs','history','fts') order by name"
-      rows:
-        [
-          { name: docs },
-          { name: files },
-          { name: fts },
-          { name: history },
-          { name: meta },
-        ]
+      db: .config/roamgate/archive/archive.sqlite
+      sql: "select name from sqlite_master where type='table' order by name"
+      rows: [{ name: files }, { name: meta }]
   # A second sync finds nothing new.
   - cli: [archive, sync, --local-only, --json]
     expect:
@@ -84,31 +78,29 @@ steps:
               ],
           },
       }
-  - cli: [archive, search, zebra, --index, --json]
+  # Tool output is searched in raw/, whatever the text repo holds.
+  - cli: [archive, search, zebra, --tool-output, --json]
     expect:
       exit: 0
       stdout_json:
         query: zebra
         total: 2
-        source: index
+        sessions: 1
+        source: raw
         hits:
-          $unordered:
-            - {
-                session: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee,
-                agent: claude,
-                host: desk,
-                project: "-home-t-proj",
-                role: assistant,
-                snippet: "the [zebra] is in the zoo",
-              }
-            - {
-                session: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee,
-                agent: claude,
-                host: desk,
-                project: "-home-t-proj",
-                role: user,
-                snippet: "where is the [zebra]",
-              }
+          [
+            {
+              session: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee,
+              agent: claude,
+              host: desk,
+              role: assistant,
+              snippet: "the [zebra] is in the zoo",
+              matches: 2,
+            },
+          ]
+  # The text repo built now, GameMode or not: the text search is certain.
+  - cli: [archive, rebuild-text, --now, --json]
+    expect: { exit: 0, stdout_json: { text: { status: committed } } }
   - cli: [archive, search, zebra, --json]
     expect:
       {
@@ -116,7 +108,7 @@ steps:
         stdout_json:
           {
             query: zebra,
-            source: "{{re:^(text|index)$}}",
+            source: text,
             hits:
               {
                 $contains:
@@ -181,7 +173,7 @@ steps:
                   last_error: null,
                 },
               ],
-            totals: { files: 1, sessions: 1, docs: 2 },
+            totals: { files: 1, sessions: 1 },
             warnings: [],
           },
       }

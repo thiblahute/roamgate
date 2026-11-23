@@ -36,12 +36,14 @@ steps:
     params: { query: zebra }
     error: { message: There is no session archive here yet. }
   - cli: [archive, sync, --local-only]
+  # The text repo built now, GameMode or not (sync defers it while a game runs).
+  - cli: [archive, rebuild-text, --now]
   - call: bridge.archive.search
     params: { query: zebra }
     reply:
       {
         query: zebra,
-        source: "{{re:^(text|index)$}}",
+        source: text,
         hits:
           {
             $contains:
