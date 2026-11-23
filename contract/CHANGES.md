@@ -6,6 +6,30 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.16
+
+inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b
+
+The MR reviews served by the Rust core (Phase 8, S20; wire/core-channel.md,
+Reverse targets and Families in the core), while the owners table gives the
+mr_reviews family to Rust. The browser surface (`bridge.mr_reviews.*`, the
+`mr_reviews` pushes) is unchanged; the inventory too.
+
+- wire: the front's own calls `internal.mr_reviews.board_tool` (the agent
+  socket's `reviews` command), `.call` (a `bridge.mr_reviews.*` method the
+  front asks, for an effort's leader pane), `.tree_changed`, and, for the
+  reviews agent's turns run by Bun, `.agent_tool` and `.agent_event`.
+- wire, reverse targets: `mr_reviews.connections`, `mr_reviews.connection`
+  (scripts, folders, Herdr, launch and conversation mode on a connection),
+  `mr_reviews.fetch` (glab and gh reads through Bun's forge gate),
+  `mr_reviews.settings_write` (settings.json's `mr_reviews`, written only
+  when unchanged since the core read it), `mr_reviews.review`,
+  `mr_reviews.tree`, `mr_reviews.create_worktree`, `mr_reviews.run_model`,
+  `mr_reviews.inference_models`, `mr_reviews.agent_command`,
+  `mr_reviews.agent_turn` and `mr_reviews.agent_stop`.
+- owners: the mr_reviews family takes the `roamgate reviews` command
+  (`cli: ["reviews"]`): the core binary runs it while Rust owns the family.
+
 ## 1.15
 
 inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b
