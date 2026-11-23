@@ -15,6 +15,7 @@ hex = "0.4"
 if-addrs = "0.13"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 indexmap = { version = "2", features = ["serde"] }
+rand = "0.9"
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-herdr = { path = "../roamgate-herdr" }

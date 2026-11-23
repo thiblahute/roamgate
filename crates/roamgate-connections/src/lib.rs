@@ -1,7 +1,7 @@
 //! Roamgate's connections (Rust migration plan, section 6.2): the leaf
 //! Phase 2 moved (S12, limit-resume and the usage-limit module) and the
-//! host layer of S16. The runtime composition, the profile service and the
-//! `host` family's adapter come with S16's next steps; routing, agent
+//! host layer of S16 with its profile service. The runtime composition and
+//! the `host` family's adapter come with S16's next steps; routing, agent
 //! sessions, tab titles and agent profiles with S18 and S21.
 //!
 //! | Module | What |
@@ -10,6 +10,7 @@
 //! | [`limit_resume`] | the store, a connection as the resumer sees it, the scheduler (server/src/limit-resume) |
 //! | [`manager`] | connections, generations, runtime leases (connections/manager.ts) |
 //! | [`profiles`] | `connections.json`: validation and the private store (connections/profiles.ts) |
+//! | [`profile_service`] | the profiles the manager runs, their mutations, probes and SSH retry supervision (connections/profile-service.ts) |
 //! | [`ssh_profile_runtime`] | an SSH profile's private runtime directory (connections/ssh-profile-runtime.ts) |
 //! | [`ssh_guard`] | the test server's refusal of SSH hosts (connections/ssh-guard.ts) |
 //! | [`network_watch`] | external address changes (connections/network-watch.ts) |
@@ -22,6 +23,7 @@ pub mod host_runtime;
 pub mod limit_resume;
 pub mod manager;
 pub mod network_watch;
+pub mod profile_service;
 pub mod profiles;
 pub mod ssh_guard;
 pub mod ssh_profile_runtime;
