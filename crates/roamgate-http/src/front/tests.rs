@@ -118,13 +118,15 @@ async fn setup(with_core: bool) -> Setup {
         std::mem::forget(_core_peer);
         link.send(Some(front_peer)).unwrap();
     }
-    let front = Arc::new(Front::new(
+    let mut front = Front::new(
         auth,
         static_dirs(public.path().to_owned(), None),
         Box::new(String::new),
         rx,
         sockets,
-    ));
+    );
+    front.core_wait = std::time::Duration::from_millis(50);
+    let front = Arc::new(front);
     Setup {
         front,
         core,

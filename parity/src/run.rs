@@ -430,6 +430,13 @@ impl Run {
             set(CORE_BIN_ENV, core);
             set(CORE_SERVED_LOG_ENV, text(&root.join("core-served.log")));
         }
+        // Stage 2 (contract/wire/core-channel.md): the Rust front runs
+        // the Bun server the suite names as its core.
+        if let Ok(sidecar) = std::env::var("ROAMGATE_SIDECAR_BIN")
+            && !sidecar.trim().is_empty()
+        {
+            set("ROAMGATE_SIDECAR_BIN", sidecar);
+        }
         for (key, value) in &options.env {
             // `{{unset}}`: a variable the run would set, left out (a
             // legacy name read alone).

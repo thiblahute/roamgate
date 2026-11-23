@@ -151,6 +151,9 @@ pub struct Front {
     pub title_suffix: Box<dyn Fn() -> String + Send + Sync>,
     pub core: CoreLink,
     pub sockets: Sockets,
+    /// How long a request waits for the core to connect (its start, a
+    /// restart) before a 503.
+    pub core_wait: std::time::Duration,
     next_socket: AtomicU64,
 }
 
@@ -225,12 +228,18 @@ impl Front {
             title_suffix,
             core,
             sockets,
+            core_wait: std::time::Duration::from_secs(30),
             next_socket: AtomicU64::new(1),
         }
     }
 
-    fn peer(&self) -> Option<Peer> {
-        self.core.borrow().clone().filter(|peer| !peer.is_closed())
+    async fn peer(&self) -> Option<Peer> {
+        let mut core = self.core.clone();
+        let connected = core.wait_for(|peer| peer.as_ref().is_some_and(|peer| !peer.is_closed()));
+        match tokio::time::timeout(self.core_wait, connected).await {
+            Ok(Ok(peer)) => peer.clone(),
+            _ => None,
+        }
     }
 
     /// The whole router.
@@ -334,7 +343,7 @@ impl Front {
 
     /// An `http` to the core, the request as the browser sent it.
     async fn forward(&self, parts: Parts, body: Body, client_ip: String) -> http::Response<Body> {
-        let Some(peer) = self.peer() else {
+        let Some(peer) = self.peer().await else {
             return plain(503, "the server is starting");
         };
         let has_body = !matches!(parts.method, http::Method::GET | http::Method::HEAD);
@@ -372,7 +381,7 @@ impl Front {
         body: Body,
         client_ip: String,
     ) -> http::Response<Body> {
-        let Some(peer) = self.peer() else {
+        let Some(peer) = self.peer().await else {
             return plain(503, "the server is starting");
         };
         let mut request = http::Request::from_parts(parts, body);

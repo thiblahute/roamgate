@@ -85,6 +85,7 @@ pub async fn run(args: &[String]) -> u8 {
     let data = runtime.data();
     let root = data.data_root();
     let clock = Arc::new(SystemClock);
+    let clock_for_log: Arc<dyn roamgate_base::clock::Clock> = clock.clone();
     let mut session_secret = String::new();
     if config.auth_required {
         let mut credentials = vec![config.password.as_str()];
@@ -186,7 +187,15 @@ pub async fn run(args: &[String]) -> u8 {
         }
     };
     let bound: SocketAddr = listener.local_addr().expect("listener address");
-    println!("[bridge] Rust front listening on http://{bound}");
+    let logger = roamgate_base::log::Logger::new(config.log_level, clock_for_log);
+    let mut fields = roamgate_base::log::LogFields::new();
+    fields.insert(
+        "url".into(),
+        roamgate_cli::server_config::browser_url_for(&config.host, bound.port(), false).into(),
+    );
+    fields.insert("websocket".into(), "/ws".into());
+    fields.insert("log_level".into(), config.log_level.as_str().into());
+    logger.info("listening", Some(&fields));
     let served = axum::serve(
         listener,
         app(front).into_make_service_with_connect_info::<SocketAddr>(),
