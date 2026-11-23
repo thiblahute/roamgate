@@ -39,7 +39,7 @@
     },
     "voice": {
       "gate": "not_later",
-      "rule": "not measured yet: needs a fake voice helper speaking its frame protocol (voice-helper.ts) and a voice socket client; final transcript to first audio and helper ping round trip"
+      "rule": "final_to_first_audio.ms.p50 and helper_ping.ms.p50 not later than Bun's"
     }
   },
   "machines": {
@@ -838,6 +838,19 @@
             8.72
           ],
           "game_active_after": false
+        },
+        "voice": {
+          "load_before": [
+            12.42,
+            12.93,
+            11.35
+          ],
+          "load_after": [
+            12.68,
+            12.97,
+            11.38
+          ],
+          "game_active_after": false
         }
       },
       "metrics": {
@@ -1384,6 +1397,189 @@
             "p99": 50,
             "max": 50,
             "mean": 50
+          }
+        },
+        "voice": {
+          "helper": "parity-fake as roamgate-voice (parity/src/fakes/voice.rs), timestamps on",
+          "final_to_first_audio": {
+            "turns": 52,
+            "audio_bytes": 24576,
+            "ms": {
+              "n": 50,
+              "min": 2.321,
+              "p50": 4.513,
+              "p90": 7.07,
+              "p99": 27.173,
+              "max": 27.173,
+              "mean": 5.202
+            },
+            "samples_ms": [
+              7.314,
+              4.568,
+              4.575,
+              4.513,
+              3.957,
+              3.267,
+              3.243,
+              3.998,
+              2.483,
+              3.367,
+              3.34,
+              3.532,
+              3.144,
+              4.694,
+              3.684,
+              8.368,
+              7.07,
+              4.618,
+              4.32,
+              4.974,
+              6.253,
+              5.38,
+              6.264,
+              5.367,
+              2.732,
+              4.023,
+              3.821,
+              5.106,
+              4.317,
+              4.379,
+              4.085,
+              4.523,
+              5.35,
+              27.173,
+              4.403,
+              3.208,
+              2.321,
+              5.844,
+              2.622,
+              2.621,
+              2.673,
+              3.801,
+              6.316,
+              8.404,
+              7.361,
+              6.949,
+              7.906,
+              6.585,
+              5.589,
+              6.782,
+              6.207,
+              4.601
+            ],
+            "legs": {
+              "final_to_page_ms": {
+                "n": 50,
+                "min": 0.054,
+                "p50": 0.078,
+                "p90": 0.122,
+                "p99": 0.795,
+                "max": 0.795,
+                "mean": 0.101
+              },
+              "speak_to_helper_ms": {
+                "n": 50,
+                "min": 1.66,
+                "p50": 3.456,
+                "p90": 5.778,
+                "p99": 25.31,
+                "max": 25.31,
+                "mean": 4.115
+              },
+              "helper_ms": {
+                "n": 50,
+                "min": 0.091,
+                "p50": 0.156,
+                "p90": 0.236,
+                "p99": 0.848,
+                "max": 0.848,
+                "mean": 0.178
+              },
+              "audio_to_page_ms": {
+                "n": 50,
+                "min": 0.32,
+                "p50": 0.54,
+                "p90": 1.043,
+                "p99": 4.41,
+                "max": 4.41,
+                "mean": 0.797
+              }
+            }
+          },
+          "helper_ping": {
+            "rounds": 21,
+            "ms": {
+              "n": 20,
+              "min": 0.659,
+              "p50": 0.999,
+              "p90": 1.526,
+              "p99": 2.285,
+              "max": 2.285,
+              "mean": 1.127
+            },
+            "samples_ms": [
+              3.496,
+              1.278,
+              1.12,
+              2.285,
+              0.911,
+              0.72,
+              0.999,
+              1.191,
+              1.293,
+              1.143,
+              1.352,
+              0.998,
+              0.808,
+              0.737,
+              0.887,
+              1.757,
+              1.526,
+              0.818,
+              0.864,
+              1.2,
+              0.659
+            ],
+            "helper_us": {
+              "n": 20,
+              "min": 349,
+              "p50": 521,
+              "p90": 633,
+              "p99": 843,
+              "max": 843,
+              "mean": 519.7
+            },
+            "clock_to_ping_ms": {
+              "n": 20,
+              "min": 2.157,
+              "p50": 19.223,
+              "p90": 84.604,
+              "p99": 113.267,
+              "max": 113.267,
+              "mean": 30.86
+            }
+          }
+        }
+      },
+      "added": {
+        "voice": {
+          "started": "2026-11-23T10:29:47.308Z",
+          "finished": "2026-11-23T10:30:12.143Z",
+          "quick": false,
+          "machine": {
+            "hostname": "toolbx",
+            "platform": "linux",
+            "kernel": "7.2.15-200.fc44.x86_64",
+            "cpu": "AMD Ryzen 9 3950X 16-Core Processor",
+            "logical_cpus": 32,
+            "memory_gb": 62.7,
+            "bun": "1.4.4",
+            "herdr": "herdr 0.9.5",
+            "server_command": "/var/home/thiblahute/.bun/bin/bun ./server/src/index.ts",
+            "source_commit": "d04fbf449dd24b2d9e48933b948f6a46dad68d87",
+            "source_dirty": false,
+            "fixture": "v0.8.15",
+            "rust_families": []
           }
         }
       }
