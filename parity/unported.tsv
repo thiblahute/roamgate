@@ -116,5 +116,4 @@ roamgate-voice-server	server/src/http/voice.test	S22
 # roamgate-claude was made by S15 for the tool registry; the Claude driver,
 # the claude-mod hub and the conversation drivers come with their subtasks.
 roamgate-claude	server/src/agent/claude-mod	S19
-roamgate-claude	server/src/assistant/claude-	S23
 roamgate-claude	server/src/conversation/drivers/claude-	S21

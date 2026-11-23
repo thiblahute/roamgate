@@ -7,9 +7,16 @@
 //! S23).
 
 pub mod catalog;
+pub mod driver;
+pub mod mcp;
 pub mod registry;
 pub mod schema;
 
 pub use catalog::{Catalog, Table, Tool, catalog};
+pub use driver::{
+    ClaudeCodeDriver, ClaudeCodeOptions, ClaudeCommand, ClaudeProcess, ClaudeTurn, CommandSource,
+    SpawnClaude, ToolStatus, TurnEvent,
+};
+pub use mcp::{ClaudeError, ClaudeMcp, McpLease, McpTool, McpToolResult, McpTurn};
 pub use registry::{ToolCallError, mod_catalog_module, skill_tool_names, table};
 pub use schema::{SchemaError, errors, first_error};

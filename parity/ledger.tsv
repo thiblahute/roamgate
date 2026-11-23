@@ -469,20 +469,20 @@ server/src/assistant/archive-tools.test.ts	hidden projects are never shown	rust-
 server/src/assistant/archive-tools.test.ts	invalid parameters are refused	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/archive-tools.test.ts	search finds what was said since the last pass, and regexes	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/archive-tools.test.ts	without a text repo there is no archive to search yet	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/assistant/claude-driver.test.ts	lists Claude models, with Claude Code's effort levels	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-driver.test.ts	runs a turn in a new session with only Ranger's tools	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-driver.test.ts	resumes the session the last turn left, at the chosen effort	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-driver.test.ts	a failed answer is reported	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-driver.test.ts	stopping kills the run and keeps its session, without an error	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-driver.test.ts	refuses an unknown model and a foreign context	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-driver.test.ts	recovery clears the CLI context without respawning or replaying tools	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-driver.test.ts	a spawn failure removes the private MCP configuration	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-driver.test.ts	a write after stdin closed throws instead of vanishing	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-mcp.test.ts	lists the turn's tools and runs them, passing their sources	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-mcp.test.ts	refuses other tokens, and the turn's own once it ended	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-mcp.test.ts	tool errors show their safe message, any other is masked	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-mcp.test.ts	a stopped turn runs no more tools	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
-server/src/assistant/claude-mcp.test.ts	queued tools respect sequential execution and lease revocation: %s	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
+server/src/assistant/claude-driver.test.ts	lists Claude models, with Claude Code's effort levels	rust-unit:roamgate-claude:driver::tests::lists_claude_models_with_claude_codes_effort_levels	assistant Claude driver and loopback MCP
+server/src/assistant/claude-driver.test.ts	runs a turn in a new session with only Ranger's tools	rust-unit:roamgate-claude:driver::tests::runs_a_turn_in_a_new_session_with_only_rangers_tools	assistant Claude driver and loopback MCP
+server/src/assistant/claude-driver.test.ts	resumes the session the last turn left, at the chosen effort	rust-unit:roamgate-claude:driver::tests::resumes_the_session_the_last_turn_left_at_the_chosen_effort	assistant Claude driver and loopback MCP
+server/src/assistant/claude-driver.test.ts	a failed answer is reported	rust-unit:roamgate-claude:driver::tests::a_failed_answer_is_reported	assistant Claude driver and loopback MCP
+server/src/assistant/claude-driver.test.ts	stopping kills the run and keeps its session, without an error	rust-unit:roamgate-claude:driver::tests::stopping_kills_the_run_and_keeps_its_session_without_an_error	assistant Claude driver and loopback MCP
+server/src/assistant/claude-driver.test.ts	refuses an unknown model and a foreign context	rust-unit:roamgate-claude:driver::tests::refuses_an_unknown_model_and_a_foreign_context	assistant Claude driver and loopback MCP
+server/src/assistant/claude-driver.test.ts	recovery clears the CLI context without respawning or replaying tools	rust-unit:roamgate-claude:driver::tests::recovery_clears_the_cli_context_without_respawning_or_replaying_tools	assistant Claude driver and loopback MCP
+server/src/assistant/claude-driver.test.ts	a spawn failure removes the private MCP configuration	rust-unit:roamgate-claude:driver::tests::a_spawn_failure_removes_the_private_mcp_configuration	assistant Claude driver and loopback MCP
+server/src/assistant/claude-driver.test.ts	a write after stdin closed throws instead of vanishing	rust-unit:roamgate-claude:driver::tests::a_write_after_stdin_closed_throws_instead_of_vanishing	assistant Claude driver and loopback MCP
+server/src/assistant/claude-mcp.test.ts	lists the turn's tools and runs them, passing their sources	rust-unit:roamgate-claude:mcp::tests::lists_the_turns_tools_and_runs_them_passing_their_sources	assistant Claude driver and loopback MCP
+server/src/assistant/claude-mcp.test.ts	refuses other tokens, and the turn's own once it ended	rust-unit:roamgate-claude:mcp::tests::refuses_other_tokens_and_the_turns_own_once_it_ended	assistant Claude driver and loopback MCP
+server/src/assistant/claude-mcp.test.ts	tool errors show their safe message, any other is masked	rust-unit:roamgate-claude:mcp::tests::tool_errors_show_their_safe_message_any_other_is_masked	assistant Claude driver and loopback MCP
+server/src/assistant/claude-mcp.test.ts	a stopped turn runs no more tools	rust-unit:roamgate-claude:mcp::tests::a_stopped_turn_runs_no_more_tools	assistant Claude driver and loopback MCP
+server/src/assistant/claude-mcp.test.ts	queued tools respect sequential execution and lease revocation: %s	rust-unit:roamgate-claude:mcp::tests::queued_tools_respect_sequential_execution_and_lease_revocation	assistant Claude driver and loopback MCP
 server/src/assistant/context.test.ts	restores the same endpoint into fresh leases without exposing private identities	rust-unit:roamgate-assistant:context::live::tests::restores_the_same_endpoint_into_fresh_leases_without_exposing_private_identities	Ranger service, tasks, tools and context
 server/src/assistant/context.test.ts	changed endpoints and server boots reject before workspace reads	rust-unit:roamgate-assistant:context::live::tests::changed_endpoints_and_server_boots_reject_before_workspace_reads	Ranger service, tasks, tools and context
 server/src/assistant/context.test.ts	same-ID workspace replacement rejects both capture and restore	rust-unit:roamgate-assistant:context::live::tests::same_id_workspace_replacement_rejects_both_capture_and_restore	Ranger service, tasks, tools and context
