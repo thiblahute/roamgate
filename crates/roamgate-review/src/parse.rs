@@ -182,7 +182,7 @@ pub fn one_line(value: &str, max: usize) -> String {
     }
 }
 
-fn record<'a>(value: Option<&'a Value>) -> Option<&'a Map<String, Value>> {
+fn record(value: Option<&Value>) -> Option<&Map<String, Value>> {
     value.and_then(Value::as_object)
 }
 

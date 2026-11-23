@@ -109,7 +109,7 @@ impl ReviewService {
         let task: BoxFut<()> = Box::pin(async move {
             let load = this.0.host.load_diff(&target, None, Some(paths));
             let diff = this
-                .from_checkout(&target, load)
+                .read_checkout(&target, load)
                 .await
                 .ok()
                 .and_then(diff_of);
@@ -241,7 +241,7 @@ impl ReviewService {
                 let Some(load) = this.0.host.load_file(&target, String::new(), file) else {
                     continue;
                 };
-                let text = this.from_checkout(&target, load).await.ok();
+                let text = this.read_checkout(&target, load).await.ok();
                 let inner = &this.0;
                 let mut state = inner.lock();
                 if !state.live(&key, target.inst) {
@@ -423,7 +423,7 @@ impl ReviewService {
             }
         }
         let whole = self
-            .from_checkout(target, inner.host.load_diff(target, None, Some(paths)))
+            .read_checkout(target, inner.host.load_diff(target, None, Some(paths)))
             .await
             .ok()
             .and_then(diff_of);
@@ -444,7 +444,7 @@ impl ReviewService {
             let anchor = if let Some(to) = &to {
                 if !commit_diffs.contains_key(&to.sha) {
                     let diff = self
-                        .from_checkout(
+                        .read_checkout(
                             target,
                             inner.host.load_diff(target, Some(to.sha.clone()), None),
                         )

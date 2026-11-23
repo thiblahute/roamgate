@@ -33,7 +33,7 @@ impl ReviewService {
     }
 
     /// A load from the review's checkout, given up on while it is gone.
-    pub(crate) async fn from_checkout<T>(
+    pub(crate) async fn read_checkout<T>(
         &self,
         target: &ReviewSession,
         load: BoxFut<Result<T, LoadError>>,
@@ -83,7 +83,7 @@ impl ReviewService {
                     let this = self.clone();
                     let owned = target.clone();
                     let future: BoxFut<Result<Vec<ReviewCommit>, LoadError>> =
-                        Box::pin(async move { this.from_checkout(&owned, load).await });
+                        Box::pin(async move { this.read_checkout(&owned, load).await });
                     let list = future.shared();
                     let id = state.next();
                     state.listing.insert(target.id.clone(), (id, list.clone()));
@@ -228,7 +228,7 @@ impl ReviewService {
         let Some(load) = self.0.host.load_state(target) else {
             return Ok(json!({"state": ""}));
         };
-        Ok(json!({"state": self.from_checkout(target, load).await?}))
+        Ok(json!({"state": self.read_checkout(target, load).await?}))
     }
 
     /// The review's diff (`diff`).
@@ -261,7 +261,7 @@ impl ReviewService {
             let Some(load) = host.load_files(target, base.clone(), head.clone(), files) else {
                 return Err(ReviewError::new("files are read whole here"));
             };
-            let files = self.from_checkout(target, load).await?;
+            let files = self.read_checkout(target, load).await?;
             return Ok(
                 json!({"files": files, "baseSha": base, "headSha": head, "truncated": false}),
             );
@@ -276,7 +276,7 @@ impl ReviewService {
             host.load_diff(target, commit, None)
         };
         if let Some(commit) = commit {
-            return Ok(self.from_checkout(target, load(Some(commit))).await?);
+            return Ok(self.read_checkout(target, load(Some(commit))).await?);
         }
         if field(params, "first") == Some(&Value::Bool(true)) {
             let first = if matches!(
@@ -293,7 +293,7 @@ impl ReviewService {
             };
             if let Some(first) = first {
                 let mut diff = self
-                    .from_checkout(target, load(Some(first.clone())))
+                    .read_checkout(target, load(Some(first.clone())))
                     .await?;
                 diff["view"] = json!(first);
                 return Ok(diff);
@@ -316,7 +316,7 @@ impl ReviewService {
             state.loads.insert(target.id.clone(), load);
             load
         };
-        let result = self.from_checkout(target, read).await?;
+        let result = self.read_checkout(target, read).await?;
         let head = result
             .get("headSha")
             .and_then(Value::as_str)
@@ -473,7 +473,7 @@ impl ReviewService {
         let Some(load) = self.0.host.load_file(target, rev, path) else {
             return Err(ReviewError::new("files are not available here"));
         };
-        Ok(json!({"text": self.from_checkout(target, load).await?}))
+        Ok(json!({"text": self.read_checkout(target, load).await?}))
     }
 
     /// The target to open for an agent's range of the checkout

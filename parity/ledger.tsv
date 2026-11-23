@@ -3138,7 +3138,7 @@ server/src/review/feedback-migration.test.ts	migration: a note with no words sta
 server/src/review/feedback-migration.test.ts	migration: a page closed mid-way loses nothing and writes nothing twice	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/feedback-migration.test.ts	migration: each note becomes a held thread of its review, a terminal's in its agent's chat review	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/feedback-migration.test.ts	the hand-off names the threads and the region's picture	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/file-anchors.test.ts	the threads of a rendered file follow its lines once the file changes, and keep that	rust-unit:roamgate-review	the review service moving stored threads as files change on disk
+server/src/review/file-anchors.test.ts	the threads of a rendered file follow its lines once the file changes, and keep that	rust-unit:roamgate-review:service::tests::the_threads_of_a_rendered_file_follow_its_lines_once_the_file_changes	the review service moving stored threads as files change on disk
 server/src/review/file-anchors.test.ts	the agent's update, a thread written and an open look at the file; reads only now and then	rust-unit:roamgate-review	the review service moving stored threads as files change on disk
 server/src/review/file-anchors.test.ts	the checkout's review moves its Files preview threads with their files, its diff's own untouched	rust-unit:roamgate-review	the review service moving stored threads as files change on disk
 server/src/review/file-anchors.test.ts	a thread an agent wrote with no line text is given its line's, and follows it	rust-unit:roamgate-review	the review service moving stored threads as files change on disk
@@ -3196,16 +3196,16 @@ server/src/review/gitlab.test.ts	a removed checkout is told as such when finding
 server/src/review/gitlab.test.ts	paged answers keep brackets inside code and comments	rust-unit:roamgate-forge	GitLab through glab
 server/src/review/gitlab.test.ts	tokens from the environment go only to glab's default host	rust-unit:roamgate-forge	GitLab through glab
 server/src/review/gitlab.test.ts	ranges and old-side lines are placed as GitLab numbers them	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/idempotent.test.ts	a reply sent again with the same id is written once	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/idempotent.test.ts	a new thread sent again with the same id is made once	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/idempotent.test.ts	an id taken elsewhere or badly shaped is refused	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/idempotent.test.ts	a reply sent again with the same id is written once	rust-unit:roamgate-review:service::tests::ids_from_the_browser_make_writes_idempotent	review service, storage, delivery and agent socket
+server/src/review/idempotent.test.ts	a new thread sent again with the same id is made once	rust-unit:roamgate-review:service::tests::ids_from_the_browser_make_writes_idempotent	review service, storage, delivery and agent socket
+server/src/review/idempotent.test.ts	an id taken elsewhere or badly shaped is refused	rust-unit:roamgate-review:service::tests::ids_from_the_browser_make_writes_idempotent	review service, storage, delivery and agent socket
 server/src/review/images.test.ts	a pasted image is kept with its review, named by its content	scenario:parity/scenarios/review/browser-review.yaml	
-server/src/review/images.test.ts	only real images, and no way out of the review's folder	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/images.test.ts	pruning removes the images of gone reviews only	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/images.test.ts	only real images, and no way out of the review's folder	rust-unit:roamgate-review:images::tests::only_real_images_and_no_way_out_of_the_reviews_folder	review service, storage, delivery and agent socket
+server/src/review/images.test.ts	pruning removes the images of gone reviews only	rust-unit:roamgate-review:images::tests::pruning_removes_the_images_of_gone_reviews_only	review service, storage, delivery and agent socket
 server/src/review/images.test.ts	an agent's image by its path: only image files, by their bytes	scenario:parity/scenarios/review/browser-review.yaml	
-server/src/review/list-since.test.ts	a review list sends again only the reviews the page does not hold	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/list-since.test.ts	a list read in pages sends the most recent reviews first, then the rest	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/list-since.test.ts	summaries come in larger pages than whole snapshots	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/list-since.test.ts	a review list sends again only the reviews the page does not hold	rust-unit:roamgate-review:list_since::tests::a_review_list_sends_again_only_the_reviews_the_page_does_not_hold	review service, storage, delivery and agent socket
+server/src/review/list-since.test.ts	a list read in pages sends the most recent reviews first, then the rest	rust-unit:roamgate-review:list_since::tests::a_list_read_in_pages_sends_the_most_recent_reviews_first_then_the_rest	review service, storage, delivery and agent socket
+server/src/review/list-since.test.ts	summaries come in larger pages than whole snapshots	rust-unit:roamgate-review:list_since::tests::summaries_come_in_larger_pages_than_whole_snapshots	review service, storage, delivery and agent socket
 server/src/review/patch.test.ts	parses git diffs with renames, additions and numbered lines	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
 server/src/review/patch.test.ts	a mailed patch: '--- ' after a finished hunk starts the next file	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
 server/src/review/patch.test.ts	binary files and deletions	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
@@ -3215,14 +3215,14 @@ server/src/review/patch.test.ts	a header with one quoted side and one plain side
 server/src/review/patch.test.ts	a pure rename of names with spaces takes its paths from rename lines	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
 server/src/review/patch.test.ts	an empty line inside a hunk is a blank context line	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
 server/src/review/prompts.test.ts	a prompt waits for the browser's answer	scenario:parity/scenarios/agent_socket/prompts.yaml	
-server/src/review/prompts.test.ts	an unanswered prompt goes back to the terminal	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/prompts.test.ts	always needs the terminal's own don't-ask-again rules	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/prompts.test.ts	the summary is what the tool would do	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/prompts.test.ts	an unanswered prompt goes back to the terminal	rust-unit:roamgate-review:prompts::tests::an_unanswered_prompt_goes_back_to_the_terminal	review service, storage, delivery and agent socket
+server/src/review/prompts.test.ts	always needs the terminal's own don't-ask-again rules	rust-unit:roamgate-review:prompts::tests::always_needs_the_terminals_own_dont_ask_again_rules	review service, storage, delivery and agent socket
+server/src/review/prompts.test.ts	the summary is what the tool would do	rust-unit:roamgate-review:prompts::tests::the_summary_is_what_the_tool_would_do	review service, storage, delivery and agent socket
 server/src/review/prompts.test.ts	Claude's questions are answered with the chosen options	scenario:parity/scenarios/agent_socket/prompts.yaml	
 server/src/review/prompts.test.ts	In the terminal hands a prompt back unanswered	scenario:parity/scenarios/agent_socket/prompts.yaml	
-server/src/review/prompts.test.ts	a question or a permission may be dismissed, unanswered	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/prompts.test.ts	a file edit's prompt carries the change it asks to make	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/reply-own.test.ts	an agent replying to its own last comment is pointed at review_edit	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/prompts.test.ts	a question or a permission may be dismissed, unanswered	rust-unit:roamgate-review:prompts::tests::a_question_or_a_permission_may_be_dismissed_unanswered	review service, storage, delivery and agent socket
+server/src/review/prompts.test.ts	a file edit's prompt carries the change it asks to make	rust-unit:roamgate-review:prompts::tests::a_file_edits_prompt_carries_the_change_it_asks_to_make	review service, storage, delivery and agent socket
+server/src/review/reply-own.test.ts	an agent replying to its own last comment is pointed at review_edit	rust-unit:roamgate-review:service::tests::an_agent_answers_the_user_not_itself	review service, storage, delivery and agent socket
 server/src/review/review-base.test.ts	review_open with no target, Option+R and a Branch-scope comment land on the same review	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/review-base.test.ts	a comment under a picked Compare against base lands in that base's review	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/review-base.test.ts	a stale local main: Changes and the review both compare with origin/main	rust-unit:roamgate-review	review service, storage, delivery and agent socket
@@ -3277,69 +3277,69 @@ server/src/review/service.shared.test.ts	a sub-thread on a part of a shared thre
 server/src/review/service.shared.test.ts	a checkout's code reviews show each other's threads, whatever they compare	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.shared.test.ts	a merge request's review of the checkout lists only its own threads, the checkout's others' never	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.shared.test.ts	a draft the agent answered in is talked through: the user's next reply reaches the agent	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	open finds the existing session for the same checkout and target	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	targets refuse option-like or multi-word refs and non-MR URLs	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	threads, replies and the needs-an-answer rule	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	a handoff wakes the agent even with nothing to answer	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	watch times out and reports a removed review as gone	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	agents edit and delete only their own comments; the user takes over drafts	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	an agent reply keeps a resolved thread resolved; the user's reopens it	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	reviews survive a restart, and a deleted thread can be restored	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	agent status: working, update and done	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	agent status on one thread lasts until the agent answers it	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	activity tells which branches moved since their diff was seen	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	open finds the existing session for the same checkout and target	rust-unit:roamgate-review:service::tests::open_finds_the_existing_session_for_the_same_checkout_and_target	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	targets refuse option-like or multi-word refs and non-MR URLs	rust-unit:roamgate-review:service::tests::targets_refuse_option_like_or_multi_word_refs_and_non_mr_urls	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	threads, replies and the needs-an-answer rule	rust-unit:roamgate-review:service::tests::threads_replies_and_the_needs_an_answer_rule	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	a handoff wakes the agent even with nothing to answer	rust-unit:roamgate-review:service::tests::a_handoff_wakes_the_agent_even_with_nothing_to_answer	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	watch times out and reports a removed review as gone	rust-unit:roamgate-review:service::tests::watch_times_out_and_reports_a_removed_review_as_gone	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	agents edit and delete only their own comments; the user takes over drafts	rust-unit:roamgate-review:service::tests::agents_edit_and_delete_only_their_own_comments_the_user_takes_over_drafts	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	an agent reply keeps a resolved thread resolved; the user's reopens it	rust-unit:roamgate-review:service::tests::an_agent_reply_keeps_a_resolved_thread_resolved_the_users_reopens_it	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	reviews survive a restart, and a deleted thread can be restored	rust-unit:roamgate-review:service::tests::reviews_survive_a_restart_and_a_deleted_thread_can_be_restored	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	agent status: working, update and done	rust-unit:roamgate-review:service::tests::agent_status_working_update_and_done	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	agent status on one thread lasts until the agent answers it	rust-unit:roamgate-review:service::tests::agent_status_on_one_thread_lasts_until_the_agent_answers_it	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	activity tells which branches moved since their diff was seen	rust-unit:roamgate-review:service::tests::activity_tells_which_branches_moved_since_their_diff_was_seen	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	activity reads each checkout on its own: the reviews asked for, a slow one told unreadable without holding back the others	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	the commit the overlay showed, gone, brings the patch ids along	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	the view a review opens on loads with its commits, from one listing	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	a removed checkout is remembered, not asked of the host each poll	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	a removed checkout is remembered, not asked of the host each poll	rust-unit:roamgate-review:service::tests::a_removed_checkout_is_remembered_not_asked_of_the_host_each_poll	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a merge request's review is never given up for its checkout	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	a range whose base is gone can compare against another	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	a discarded review comes back with its threads	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	a range whose base is gone can compare against another	rust-unit:roamgate-review:service::tests::a_range_whose_base_is_gone_can_compare_against_another	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	a discarded review comes back with its threads	rust-unit:roamgate-review:service::tests::a_discarded_review_comes_back_with_its_threads	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a merge request's review sends your discussions to the agent as written, one that came after it opened too; its drafts for GitLab stay put	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a merge request's review: drafts are draft notes; agents write only here	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	agent review: the previous pass goes, the prompt reaches the pane	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	the overall comment goes to the agent with a handoff, once	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	held comments wait for the user's handoff	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	the user's comments reach the agent by themselves, batched	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	held comments wait for the user's handoff	rust-unit:roamgate-review:service::tests::held_comments_wait_for_the_users_handoff	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	the user's comments reach the agent by themselves, batched	rust-unit:roamgate-review:service::tests::the_users_comments_reach_the_agent_by_themselves_batched	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a comment on a commit message reaches the agent as such	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a comment on a part of a message reaches the agent with its quote	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a chat's threads: no diff, kept out of the reviews, sent with context	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a comment on a file a chat's tool call changed says the file and lines	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a Ranger chat's threads go to Ranger, answered with its own tool	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	attaching an agent delivers what was written; failures are reported	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	attaching an agent delivers what was written; failures are reported	rust-unit:roamgate-review:service::tests::attaching_an_agent_delivers_what_was_written_failures_are_reported	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	an edit to an answered comment reaches the agent again	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	an agent watching one repository hears about the workspace's others	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	an agent watching one repository hears about the workspace's others	rust-unit:roamgate-review:service::tests::an_agent_watching_one_repository_hears_about_the_workspaces_others	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	in a local review a suggested change goes to the agent	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a local review finds its branch's merge request, cached until the head moves	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	no merge request, another branch, or a failure: none, quietly	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a merge request review is offered locally only on its own branch	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	the checkout's branch is the one of a range up to HEAD or that branch	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	the checkout's branch is the one of a range up to HEAD or that branch	rust-unit:roamgate-review:parse::tests::the_checkouts_branch_is_the_one_of_a_range_up_to_head_or_that_branch	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	another branch at the same commit is looked up again	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	GitLab is the merge request's review: the local review stays local	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	only an open merge request is found, for the chip and GitLab	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a failed lookup: no chip, GitLab says why and waits to retry	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	an unreadable checkout is not asked again before the retry delay	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	the local review's review comments wait in the merge request's review	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	a merge request's review stored with sending off, as they once started, sends your discussions again	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	a local review left in the old GitLab mode is local again, threads kept	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	a merge request's review stored with sending off, as they once started, sends your discussions again	rust-unit:roamgate-review:service::tests::a_merge_requests_review_stored_with_sending_off_as_they_once_started_sends_your_discussions_again	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	a local review left in the old GitLab mode is local again, threads kept	rust-unit:roamgate-review:service::tests::a_local_review_left_in_the_old_gitlab_mode_is_local_again_threads_kept	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a review comment waits for the merge request of the branch it was written on	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a pending review comment is reached by an id prefix from the merge request's review	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	a refresh that works again forgets the earlier failure	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/service.test.ts	Local from a merge request's review is a local review of its branch	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	comparing two versions is its own review, titled OLD vs NEW	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/service.test.ts	the turn a review comment starts is noted as the user's	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/sessions.test.ts	listing many reviews looks through each one's checkout alone	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	comparing two versions is its own review, titled OLD vs NEW	rust-unit:roamgate-review:parse::tests::comparing_two_versions_is_its_own_review_titled_old_vs_new	review service, storage, delivery and agent socket
+server/src/review/service.test.ts	the turn a review comment starts is noted as the user's	rust-unit:roamgate-review:service::tests::the_turn_a_review_comment_starts_is_noted_as_the_users	review service, storage, delivery and agent socket
+server/src/review/sessions.test.ts	listing many reviews looks through each one's checkout alone	rust-unit:roamgate-review:service::tests::listing_many_reviews_looks_through_each_ones_checkout_alone	review service, storage, delivery and agent socket
 server/src/review/step-review.test.ts	a step's review is one per step: the same two snapshots open the same session	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/step-review.test.ts	a step's target refuses what is not a tree id, an option-like step or a path outside the checkout	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/step-review.test.ts	a step's review has no commits; its diff is the step's; the steps with threads are kept	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/step-review.test.ts	reading a scope with no review (Changes showing it) creates, touches and publishes no session	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/step-review.test.ts	a review of a kind from a newer build is kept and listed, never crashing a read	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/storage.test.ts	sessions and threads come back after reopening	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/storage.test.ts	deleting a session deletes its threads	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/storage.test.ts	a thread id of another review is refused and that thread kept	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/storage.test.ts	a review's threads are only those that name it	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/storage.test.ts	a row that does not parse is skipped	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/storage.test.ts	a database from an unknown version is refused	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/storage.test.ts	sessions and threads come back after reopening	rust-unit:roamgate-review:storage::tests::sessions_and_threads_come_back_after_reopening	review service, storage, delivery and agent socket
+server/src/review/storage.test.ts	deleting a session deletes its threads	rust-unit:roamgate-review:storage::tests::deleting_a_session_deletes_its_threads	review service, storage, delivery and agent socket
+server/src/review/storage.test.ts	a thread id of another review is refused and that thread kept	rust-unit:roamgate-review:storage::tests::a_thread_id_of_another_review_is_refused_and_that_thread_kept	review service, storage, delivery and agent socket
+server/src/review/storage.test.ts	a review's threads are only those that name it	rust-unit:roamgate-review:storage::tests::a_reviews_threads_are_only_those_that_name_it	review service, storage, delivery and agent socket
+server/src/review/storage.test.ts	a row that does not parse is skipped	rust-unit:roamgate-review:storage::tests::a_row_that_does_not_parse_is_skipped	review service, storage, delivery and agent socket
+server/src/review/storage.test.ts	a database from an unknown version is refused	rust-unit:roamgate-review:storage::tests::a_database_from_an_unknown_version_is_refused	review service, storage, delivery and agent socket
 server/src/time-report/provider.test.ts	the operation follows the command; the body goes on stdin; an empty directory	scenario:parity/scenarios/time_report/operations.yaml	
 server/src/time-report/provider.test.ts	a hung provider is killed at the timeout	scenario:parity/scenarios/time_report/timeout.yaml	
 server/src/time-report/provider.test.ts	errors carry the provider's message and code, and submit's partial result	scenario:parity/scenarios/time_report/errors.yaml	

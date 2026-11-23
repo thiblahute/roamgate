@@ -41,6 +41,8 @@ use crate::prompts::{AgentPrompts, Publish};
 use crate::storage::ReviewStorage;
 
 pub(crate) type SharedTask = Shared<BoxFut<()>>;
+/// A listing of a review's commits, shared by those who ask meanwhile.
+pub(crate) type CommitListing = Shared<BoxFut<Result<Vec<ReviewCommit>, LoadError>>>;
 
 /// How long a branch's merge request, or its absence, is remembered.
 pub(crate) const FIND_TTL_MS: i64 = 5 * 60_000;
@@ -135,7 +137,7 @@ pub(crate) struct State {
     pub rewrite_tried: HashMap<String, String>,
     pub rewrite_read_at: HashMap<String, i64>,
     pub rewriting: HashMap<String, SharedTask>,
-    pub listing: HashMap<String, (u64, Shared<BoxFut<Result<Vec<ReviewCommit>, LoadError>>>)>,
+    pub listing: HashMap<String, (u64, CommitListing)>,
     pub queues: HashMap<String, Arc<tokio::sync::Mutex<()>>>,
     pub next: u64,
 }
@@ -1289,10 +1291,10 @@ impl ReviewService {
                 session.automatic_base = Some(false);
             }
         }
-        if let Some(session) = state.sessions.get_mut(&id) {
-            if let Some(title) = title {
-                session.title = title;
-            }
+        if let Some(session) = state.sessions.get_mut(&id)
+            && let Some(title) = title
+        {
+            session.title = title;
         }
         if let Some(reviewed) = reviewed {
             if let Some(session) = state.sessions.get_mut(&id) {

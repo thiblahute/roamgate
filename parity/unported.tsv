@@ -74,3 +74,13 @@ roamgate-assistant	server/src/assistant/ranger-driver	S23
 roamgate-assistant	server/src/assistant/service	S23
 roamgate-assistant	server/src/assistant/workspace-tree-tools	S23
 roamgate-assistant	server/src/assistant/durable-storage	S24
+roamgate-review	server/src/contract-record/hooks	S19
+roamgate-review	server/src/review/agent-	S19
+roamgate-review	server/src/review/changes-anchors	S19
+roamgate-review	server/src/review/feedback-migration	S19
+roamgate-review	server/src/review/file-anchors	S19
+roamgate-review	server/src/review/review-base	S19
+roamgate-review	server/src/review/rewritten-anchors	S19
+roamgate-review	server/src/review/rpc	S19
+roamgate-review	server/src/review/service	S19
+roamgate-review	server/src/review/step-review	S19

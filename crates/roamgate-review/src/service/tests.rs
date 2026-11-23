@@ -879,6 +879,75 @@ async fn ids_from_the_browser_make_writes_idempotent() {
         .await
         .unwrap_err();
     assert_eq!(error.status, 409);
+    let error = service
+        .add_thread(&json!({"sessionId": other.id, "text": "Bad", "newThreadId": "not-hex"}))
+        .await
+        .unwrap_err();
+    assert_eq!(error.message, "new_thread_id must be 16 hexadecimal digits");
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_turn_a_review_comment_starts_is_noted_as_the_users() {
+    let Setup { service, host, .. } = setup();
+    let session = open_session(&service);
+    service
+        .add_thread(&json!({"sessionId": session.id, "text": "Go"}))
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+    assert_eq!(host.prompts.lock().unwrap().len(), 1);
+    assert_eq!(
+        host.causes.lock().unwrap().as_slice(),
+        &[("local".to_owned(), "w1:p2".to_owned())]
+    );
+}
+
+fn stored_session(dir: &std::path::Path, session: Value) {
+    let storage = ReviewStorage::open(&DataContext::new(dir, Platform::Unix, None), dir).unwrap();
+    storage.save_session_value(&session).unwrap();
+}
+
+fn raw_session(target: Value, gitlab: bool) -> Value {
+    json!({
+        "id": "0123456789abcdef", "connectionId": "local", "root": "/repo", "title": "t",
+        "target": target, "gitlab": gitlab, "summary": "", "agent": {},
+        "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z",
+    })
+}
+
+#[tokio::test]
+async fn a_merge_requests_review_stored_with_sending_off_as_they_once_started_sends_your_discussions_again()
+ {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stored = raw_session(
+        json!({"kind": "mr", "url": "https://gitlab.example/g/p/-/merge_requests/1"}),
+        true,
+    );
+    stored["autoSend"] = json!(false);
+    stored_session(dir.path(), stored);
+    let (service, _) = service_in(dir.path(), Arc::new(FakeHost::default()), 2500);
+    let session = service
+        .get(&json!({"sessionId": "0123456789abcdef"}))
+        .unwrap()
+        .session;
+    assert_eq!(session.auto_send, None);
+}
+
+#[tokio::test]
+async fn a_local_review_left_in_the_old_gitlab_mode_is_local_again_threads_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stored = raw_session(json!({"kind": "worktree"}), true);
+    stored["autoSend"] = json!(false);
+    stored["summaryUnsent"] = json!(true);
+    stored_session(dir.path(), stored);
+    let (service, _) = service_in(dir.path(), Arc::new(FakeHost::default()), 2500);
+    let session = service
+        .get(&json!({"sessionId": "0123456789abcdef"}))
+        .unwrap()
+        .session;
+    assert!(!session.gitlab);
+    assert_eq!(session.auto_send, None);
+    assert_eq!(session.summary_unsent, None);
 }
 
 #[tokio::test]
