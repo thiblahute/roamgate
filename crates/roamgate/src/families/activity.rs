@@ -289,7 +289,7 @@ impl Inner {
         }
     }
 
-    async fn timeline(&self, params: &Value) -> Result<Value, RpcError> {
+    async fn timeline(&self, params: &Value, now: i64) -> Result<Value, RpcError> {
         let raw = settings_json().await;
         let settings = ActivitySettings::from_settings(&raw);
         let recording = match self.current() {
@@ -301,9 +301,6 @@ impl Inner {
         if !settings.enabled || !recording {
             return Ok(json!({"recording": false}));
         }
-        let now = self
-            .current()
-            .map_or_else(|| SystemClock.now(), |recorder| recorder.now());
         let range = timeline_range(params, now, &settings.day_start).map_err(RpcError::new)?;
         let context = DataContext::from_env(&ProcessEnv);
         let reader = ActivityReader::open(
@@ -385,7 +382,7 @@ impl CoreFamily for ActivityFamily {
                         }
                     }
                 }
-                "bridge.activity.timeline" => this.timeline(params).await,
+                "bridge.activity.timeline" => this.timeline(params, cx.clock.now()).await,
                 other => Err(RpcError::with_code(
                     format!("unknown method {other}"),
                     "unknown_method",
@@ -410,8 +407,10 @@ impl CoreFamily for ActivityFamily {
         };
         let cx = cx.clone();
         if owned {
-            // Bun says when its recorder stopped; record anyway if it never does.
+            // Bun says when its recorder stopped (maybe already, before the
+            // table reached the core); record anyway if it never does.
             tokio::spawn(async move {
+                this.start_if_due(&cx).await;
                 SystemClock.sleep(START_FALLBACK).await;
                 {
                     let mut state = this.state.lock().unwrap();
