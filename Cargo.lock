@@ -6633,6 +6633,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "roamgate-mr-reviews"
+version = "0.0.0"
+dependencies = [
+ "fancy-regex 0.17.0",
+ "regex",
+ "roamgate-agents",
+ "roamgate-base",
+ "roamgate-protocol",
+ "serde_json",
+ "tempfile",
+ "url",
+]
+
+[[package]]
 name = "roamgate-notify"
 version = "0.0.0"
 dependencies = [

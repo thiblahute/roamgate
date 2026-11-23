@@ -1,0 +1,22 @@
+[package]
+name = "roamgate-mr-reviews"
+version = "0.0.0"
+description = "Roamgate's MR reviews (Rust migration plan, section 6.2): the inbox, its order, pins, overrides and lanes, inference and curation, open, home and Claude panes, upstream tracking, efforts and their ledger, export and import, and the reviews agent"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fancy-regex = "0.17"
+regex = "1"
+roamgate-agents = { path = "../roamgate-agents" }
+roamgate-base = { path = "../roamgate-base" }
+serde_json = { version = "1", features = ["preserve_order"] }
+url = "2"
+
+[dev-dependencies]
+roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
+tempfile = "3"
