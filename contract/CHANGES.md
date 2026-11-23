@@ -10,21 +10,36 @@ Rust owner of that family can take it over.
 
 inventory: e8d2775b8d2d0d084c05cd3b9614c25f53df62090f92d05dd69d596b212ede72
 
-Families served by the Rust core (wire/core-channel.md, Families in the
-core, CLI pass-through; the channel, no family yet):
+The leaf families served by the Rust core (Phase 2, S12; wire/core-channel.md,
+Families in the core, CLI pass-through): limit_resume, time_report, update
+and herdr_setup, each while the owners table gives it to Rust.
 
 - owners: `owners/families.json` gains `cli`, the commands of a family
-  (`herdr` for herdr_setup, `update` and `rollback` for update); the owners
-  table gains `core`, written by the Rust binary's hidden `roamgate owners`.
+  (`herdr` for herdr_setup, `update` and `rollback` for update); herdr_setup
+  no longer lists `/api/herdr-info` (a connection endpoint, moving with the
+  host family); the owners table gains `core`, written by the Rust binary's
+  hidden `roamgate owners`.
 - exec: `spawn core-channel/cli.ts#defaultRunCore`, the core binary running
   such a command while Rust owns its family.
 - storage: `data:runtime`, the channel's runtime directory, now named by the
   CLI too.
 - wire: `welcome.clock` and `internal.clock.advance`, the front's test clock
   followed by the core's families; `internal.<family>.<op>`, the front's own
-  calls to a Rust-owned family; the core's variables
-  `ROAMGATE_CORE_SERVED_LOG`, `ROAMGATE_CLI_EXEC`, `ROAMGATE_CLI_VERSION`,
-  `ROAMGATE_CLI_STANDALONE`.
+  calls to a Rust-owned family (`internal.limit_resume.poke`); the core's
+  variables `ROAMGATE_CORE_SERVED_LOG`, `ROAMGATE_CLI_EXEC`,
+  `ROAMGATE_CLI_VERSION`, `ROAMGATE_CLI_STANDALONE` (the executable an update
+  replaces, set by the CLI pass-through and by the Bun server for its core).
+- wire, reverse targets: limit_resume's `connections.ready`,
+  `settings.limit_resume.get`, `conversation.owned_panes`,
+  `conversation.prompt`, `claude_mod.panes`, `claude_mod.deliver`,
+  `agent.transcript_tail` and `herdr.call`'s `timeout_ms`; time_report's
+  `activity.dayInput` (until the activity family moves, S13); herdr_setup's
+  `herdr.setupGuard` and `herdr.ping`; update's `server.scheduleExit`. The
+  update and herdr_setup families are routed to the core at their own
+  routes, keeping the front's method match and idle budget.
+- rpc: `limit_resume.resume_now` and `limit_resume.skip` replies list
+  `reason` (both servers always sent it; the schema was typed from
+  recordings that lacked it).
 
 ## 1.4
 
