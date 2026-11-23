@@ -624,6 +624,10 @@ const read = {
   heads: () => patch.readReviewHeads(args),
   patchIds: () => patch.readReviewPatchIds(args),
   defaultBase: () => patch.readDefaultBase(args),
+  branchBase: async () => {
+    const { resolveDefaultBase } = await import(`${repo}/server/src/workspace/diff-base.ts`);
+    return (await resolveDefaultBase(args)).base;
+  },
 }[op];
 try {
   console.log(JSON.stringify({ ok: (await read()) ?? null }));
