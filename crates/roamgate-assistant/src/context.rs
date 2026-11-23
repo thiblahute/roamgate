@@ -63,7 +63,8 @@ pub type ActionResult = Value;
 pub type Authorized = Arc<dyn Fn() -> bool + Send + Sync>;
 
 /// A prepared action (`PreparedAssistantAction`): what the user confirms,
-/// and what runs it.
+/// and what runs it. `execute` may fail (a task run's scope check around
+/// it does): the service records an uncertain outcome then.
 pub struct PreparedAction {
     /// `AssistantActionPreview`.
     pub preview: Value,

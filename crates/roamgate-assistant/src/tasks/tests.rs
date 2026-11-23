@@ -4,44 +4,14 @@
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use roamgate_base::clock::{Clock, TestClock};
+use roamgate_base::clock::Clock;
 use roamgate_base::paths::Platform;
-use tokio::sync::Notify;
 
 use super::*;
+pub(super) use crate::test_support::{ClockRef, Gate, JestClock, clock_at, flush};
 use crate::wire::{ASSISTANT_MAX_MENTIONS, is_hex64};
 
 const START: &str = "2026-10-04T00:00:00Z";
-
-pub(super) async fn flush() {
-    for _ in 0..30 {
-        tokio::task::yield_now().await;
-    }
-}
-
-/// A gate a child waits on (`Promise.withResolvers`).
-#[derive(Default)]
-pub(super) struct Gate {
-    open: AtomicBool,
-    notify: Notify,
-}
-
-impl Gate {
-    pub(super) fn open(&self) {
-        self.open.store(true, Ordering::SeqCst);
-        self.notify.notify_waiters();
-    }
-
-    pub(super) async fn wait(&self) {
-        loop {
-            let notified = self.notify.notified();
-            if self.open.load(Ordering::SeqCst) {
-                return;
-            }
-            notified.await;
-        }
-    }
-}
 
 /// What the fixture's child saw.
 pub(super) struct Observed {
@@ -100,31 +70,6 @@ impl Observed {
 
     pub(super) fn id(&self) -> &str {
         self.run["id"].as_str().unwrap()
-    }
-}
-
-/// A shared clock on a test's JestClock.
-struct ClockRef(&'static JestClock);
-
-impl Clock for ClockRef {
-    fn now(&self) -> i64 {
-        self.0.now()
-    }
-
-    fn monotonic(&self) -> f64 {
-        self.0.monotonic()
-    }
-
-    fn sleep_until(&self, deadline: i64) -> BoxFuture<()> {
-        self.0.sleep_until(deadline)
-    }
-
-    fn sleep(&self, duration: std::time::Duration) -> BoxFuture<()> {
-        self.0.sleep(duration)
-    }
-
-    fn interval(&self, period: std::time::Duration) -> roamgate_base::clock::Interval {
-        self.0.interval(period)
     }
 }
 
@@ -258,66 +203,6 @@ pub(super) struct FixtureOptions {
     pub rescope: Option<Rescope>,
     pub narrow: Option<Narrow>,
     pub validate_cleanup: Option<Validate>,
-}
-
-/// Bun's fake timers: the test clock, where a timer already due waits for
-/// the next `advance` as `setTimeout(fn, 0)` waits for
-/// `advanceTimersByTime(0)`, where the test clock fires it at once.
-pub(super) struct JestClock {
-    clock: TestClock,
-    /// The advances so far, and their signal.
-    advances: Arc<(Notify, AtomicUsize)>,
-}
-
-impl JestClock {
-    pub(super) async fn advance(&self, ms: u64) {
-        self.advances.1.fetch_add(1, Ordering::SeqCst);
-        self.advances.0.notify_waiters();
-        self.clock.advance(ms).await;
-    }
-}
-
-impl Clock for JestClock {
-    fn now(&self) -> i64 {
-        self.clock.now()
-    }
-
-    fn monotonic(&self) -> f64 {
-        self.clock.monotonic()
-    }
-
-    fn sleep_until(&self, deadline: i64) -> BoxFuture<()> {
-        if deadline > self.clock.now() {
-            return self.clock.sleep_until(deadline);
-        }
-        let advances = self.advances.clone();
-        let seen = advances.1.load(Ordering::SeqCst);
-        Box::pin(async move {
-            loop {
-                let notified = advances.0.notified();
-                if advances.1.load(Ordering::SeqCst) != seen {
-                    return;
-                }
-                notified.await;
-            }
-        })
-    }
-
-    fn sleep(&self, duration: std::time::Duration) -> BoxFuture<()> {
-        self.sleep_until(self.now() + duration.as_millis() as i64)
-    }
-
-    fn interval(&self, period: std::time::Duration) -> roamgate_base::clock::Interval {
-        self.clock.interval(period)
-    }
-}
-
-/// A test's clock, kept for the whole test (managers outlive their tasks).
-pub(super) fn clock_at(iso: &str) -> &'static JestClock {
-    Box::leak(Box::new(JestClock {
-        clock: TestClock::new(js::date_parse(iso) as i64),
-        advances: Arc::default(),
-    }))
 }
 
 pub(super) fn fixture_with(options: FixtureOptions) -> Fixture {

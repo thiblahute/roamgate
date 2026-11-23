@@ -10,8 +10,12 @@ pub mod errors;
 pub mod ranger_driver;
 pub mod saved;
 pub mod schema;
+pub mod service;
 pub mod task_schedule;
 pub mod task_storage;
 pub mod tasks;
 pub mod tools;
 pub mod wire;
+
+#[cfg(test)]
+mod test_support;
