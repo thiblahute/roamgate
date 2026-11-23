@@ -587,3 +587,169 @@ fn draft_thread(
     }))
     .unwrap()
 }
+
+/// The repository's root.
+pub(crate) fn repo() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap()
+}
+
+/// bun, when it is on PATH: the suites on a real checkout read it with
+/// the review loaders the TS suites use (workspace/review-patch.ts, Bun's
+/// until S17 ports them), so they skip, saying why, without it.
+pub(crate) fn bun() -> Option<std::path::PathBuf> {
+    let found = std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join("bun"))
+            .find(|path| path.is_file())
+    });
+    if found.is_none() {
+        eprintln!("skipped: bun is not on PATH, the review loaders cannot read the checkout");
+    }
+    found
+}
+
+const LOADER: &str = r#"
+const repo = process.env.ROAMGATE_REPO;
+const patch = await import(`${repo}/server/src/workspace/review-patch.ts`);
+const { runProcessWithCodeTimeout, shQuote } = await import(`${repo}/server/src/utils/process-utils.ts`);
+const [op, raw] = process.argv.slice(-2);
+const args = { ...JSON.parse(raw), shQuote, runProcessWithCodeTimeout };
+const read = {
+  patch: () => patch.readReviewPatch(args),
+  commitPatch: () => patch.readReviewCommitPatch(args),
+  commits: () => patch.readReviewCommits(args),
+  heads: () => patch.readReviewHeads(args),
+  patchIds: () => patch.readReviewPatchIds(args),
+  defaultBase: () => patch.readDefaultBase(args),
+}[op];
+try {
+  console.log(JSON.stringify({ ok: (await read()) ?? null }));
+} catch (error) {
+  console.log(JSON.stringify({ error: String(error?.message ?? error), code: error?.code }));
+}
+"#;
+
+/// One read of review-patch.ts, through bun.
+pub(crate) fn load_with(bun: &Path, op: &str, args: Value) -> BoxFuture<Result<Value, LoadError>> {
+    let mut command = tokio::process::Command::new(bun);
+    command
+        .current_dir(repo().join("server"))
+        .env("ROAMGATE_REPO", repo())
+        .arg("-e")
+        .arg(LOADER)
+        .arg(op)
+        .arg(args.to_string());
+    Box::pin(async move {
+        let output = command
+            .output()
+            .await
+            .map_err(|error| LoadError::Failed(error.to_string()))?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let line = text.lines().last().unwrap_or("");
+        let answer: Value = serde_json::from_str(line).map_err(|_| {
+            LoadError::Failed(format!(
+                "bun: {}{}",
+                text,
+                String::from_utf8_lossy(&output.stderr)
+            ))
+        })?;
+        match (answer.get("ok"), answer["error"].as_str()) {
+            (Some(value), _) => Ok(value.clone()),
+            (None, Some(message)) => Err(match answer["code"].as_str() {
+                Some(code) if crate::model::is_review_gone_code(code) => LoadError::Gone {
+                    code: code.into(),
+                    message: message.into(),
+                },
+                _ => LoadError::Failed(message.into()),
+            }),
+            _ => Err(LoadError::Failed(line.into())),
+        }
+    })
+}
+
+/// A host whose git reads are review-patch.ts's, as the TS suites wire
+/// them: a commit's patch, else the review's; its commits, heads and
+/// patch ids.
+pub(crate) fn git_host(bun: &Path) -> Host {
+    let (diff, commits, ids, heads) = (bun.to_owned(), bun.to_owned(), bun.to_owned(), bun.to_owned());
+    Host {
+        diff: Some(Box::new(move |session, commit, paths| match commit {
+            Some(commit) => load_with(&diff, "commitPatch", json!({"root": session.root, "commit": commit})),
+            None => load_with(
+                &diff,
+                "patch",
+                json!({"root": session.root, "target": session.target.to_value(), "paths": paths}),
+            ),
+        })),
+        commits: Some(Box::new(move |session| {
+            let load = match &session.target {
+                crate::model::ReviewTarget::Range { base, head, .. } => Some(load_with(
+                    &commits,
+                    "commits",
+                    json!({"root": session.root, "base": base, "head": head}),
+                )),
+                _ => None,
+            };
+            Box::pin(async move {
+                let Some(load) = load else {
+                    return Ok(Vec::new());
+                };
+                serde_json::from_value(load.await?).map_err(|error| LoadError::Failed(error.to_string()))
+            })
+        })),
+        patch_ids: Some(Box::new(move |session, shas| {
+            let load = load_with(&ids, "patchIds", json!({"root": session.root, "shas": shas}));
+            Box::pin(async move {
+                serde_json::from_value(load.await?).map_err(|error| LoadError::Failed(error.to_string()))
+            })
+        })),
+        heads: Some(Box::new(move |_, entries| {
+            let entries: Vec<Value> = entries
+                .into_iter()
+                .map(|(root, reference)| json!({"root": root, "ref": reference}))
+                .collect();
+            let load = load_with(&heads, "heads", json!({"entries": entries}));
+            Box::pin(async move {
+                serde_json::from_value(load.await?).map_err(|error| LoadError::Failed(error.to_string()))
+            })
+        })),
+        ..Host::default()
+    }
+}
+
+/// git in a test repository, with no user or system configuration.
+pub(crate) fn git(cwd: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .env("HOME", "/nonexistent")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_AUTHOR_NAME", "Test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "Test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {}: {}",
+        args.join(" "),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+/// Waits (a few seconds at most) until `done` holds.
+pub(crate) async fn until(mut done: impl FnMut() -> bool) -> bool {
+    for _ in 0..500 {
+        if done() {
+            return true;
+        }
+        sleep(10).await;
+    }
+    done()
+}
