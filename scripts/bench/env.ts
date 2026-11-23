@@ -314,6 +314,9 @@ export async function createEnv(options: EnvOptions = {}): Promise<BenchEnv> {
       BENCH_REMOTE_HOME: remoteHome,
       BENCH_REMOTE_CONTROL: join(root, "remote-herdr/herdr.sock"),
       BENCH_REMOTE_CLIENT: join(root, "remote-herdr/herdr-client.sock"),
+      // A HOME of its own, a fake ssh: its SSH hosts are fakes. (Bun's
+      // guard reads that HOME as the account's; the Rust core's does not.)
+      ROAMGATE_ALLOW_SSH: "1",
     },
     herdrSockets: {
       control: join(root, "herdr/herdr.sock"),
