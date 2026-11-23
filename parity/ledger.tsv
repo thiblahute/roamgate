@@ -1015,24 +1015,24 @@ server/src/bridge/endpoint-terminal-session.test.ts	optional link lookup timeout
 server/src/bridge/endpoint-terminal-session.test.ts	debug echo timing samples one typed character until the next surface	rust-unit:roamgate-herdr	Herdr endpoint generation 1 client
 server/src/bridge/endpoint-terminal-session.test.ts	debug echo timing drops a typed character older than 5 s	rust-unit:roamgate-herdr	Herdr endpoint generation 1 client
 server/src/bridge/endpoint-terminal-session.test.ts	echo timing counts only single typed characters	rust-unit:roamgate-herdr	Herdr endpoint generation 1 client
-server/src/bridge/forward-rpc.test.ts	a local forward is reported open only once its port accepts connections	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	a remote forward waits for ssh's confirmation of the far bind	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	a forward whose ssh exits is reported failed with ssh's reason	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	a forward that never becomes ready is killed at the deadline	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	a local forward that binds late is reported open only once it is reachable	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	a remote forward is reported open only after ssh confirms it	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	a failed scan lists nothing instead of failing the request	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	are neither offered nor opened as remote forwards	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	the Vite port is Roamgate's only in development	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	a request already stale spawns nothing	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	a connection disposed while ssh starts leaves no ssh behind	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	a stale request leaves a forward opened since alone	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	concurrent scans share one process, with a deadline, and a capped list	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	the server refuses forwards past its cap	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	lists and closes forwards in wire form	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	a connection without an SSH transport is refused	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	an invalid port is refused before anything starts	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/forward-rpc.test.ts	the global forward registry can be closed while a local profile is active	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	a local forward is reported open only once its port accepts connections	rust-unit:roamgate-http:forward_rpc::tests::a_local_forward_is_reported_open_only_once_its_port_accepts_connections	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	a remote forward waits for ssh's confirmation of the far bind	rust-unit:roamgate-http:forward_rpc::tests::a_remote_forward_waits_for_sshs_confirmation_of_the_far_bind	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	a forward whose ssh exits is reported failed with ssh's reason	rust-unit:roamgate-http:forward_rpc::tests::a_forward_whose_ssh_exits_is_reported_failed_with_sshs_reason	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	a forward that never becomes ready is killed at the deadline	rust-unit:roamgate-http:forward_rpc::tests::a_forward_that_never_becomes_ready_is_killed_at_the_deadline	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	a local forward that binds late is reported open only once it is reachable	rust-unit:roamgate-http:forward_rpc::tests::real_ssh::a_local_forward_that_binds_late_is_reported_open_only_once_it_is_reachable	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	a remote forward is reported open only after ssh confirms it	rust-unit:roamgate-http:forward_rpc::tests::real_ssh::a_remote_forward_is_reported_open_only_after_ssh_confirms_it	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	a failed scan lists nothing instead of failing the request	rust-unit:roamgate-http:forward_rpc::tests::a_failed_scan_lists_nothing_instead_of_failing_the_request	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	are neither offered nor opened as remote forwards	rust-unit:roamgate-http:forward_rpc::tests::are_neither_offered_nor_opened_as_remote_forwards	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	the Vite port is Roamgate's only in development	rust-unit:roamgate-http:forward_rpc::tests::the_vite_port_is_roamgates_only_in_development	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	a request already stale spawns nothing	rust-unit:roamgate-http:forward_rpc::tests::a_request_already_stale_spawns_nothing	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	a connection disposed while ssh starts leaves no ssh behind	rust-unit:roamgate-http:forward_rpc::tests::a_connection_disposed_while_ssh_starts_leaves_no_ssh_behind	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	a stale request leaves a forward opened since alone	rust-unit:roamgate-http:forward_rpc::tests::a_stale_request_leaves_a_forward_opened_since_alone	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	concurrent scans share one process, with a deadline, and a capped list	rust-unit:roamgate-http:forward_rpc::tests::concurrent_scans_share_one_process_with_a_deadline_and_a_capped_list	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	the server refuses forwards past its cap	rust-unit:roamgate-http:forward_rpc::tests::the_server_refuses_forwards_past_its_cap	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	lists and closes forwards in wire form	rust-unit:roamgate-http:forward_rpc::tests::lists_and_closes_forwards_in_wire_form	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	a connection without an SSH transport is refused	rust-unit:roamgate-http:forward_rpc::tests::a_connection_without_an_ssh_transport_is_refused	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	an invalid port is refused before anything starts	rust-unit:roamgate-http:forward_rpc::tests::an_invalid_port_is_refused_before_anything_starts	transport and RPC plumbing
+server/src/bridge/forward-rpc.test.ts	the global forward registry can be closed while a local profile is active	rust-unit:roamgate-http:forward_rpc::tests::the_global_forward_registry_can_be_closed_while_a_local_profile_is_active	transport and RPC plumbing
 server/src/bridge/frame-to-ansi.test.ts	emits a full repaint and hides a missing cursor	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
 server/src/bridge/frame-to-ansi.test.ts	encodes named, indexed, and RGB colors	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
 server/src/bridge/frame-to-ansi.test.ts	encodes modifiers including styled underlines	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
@@ -1076,7 +1076,7 @@ server/src/bridge/settings-rpc.conversation.test.ts	idle stop: 30 minutes by def
 server/src/bridge/settings-rpc.limit-resume.test.ts	usage limit resume: on, a minute after the reset, the message; each key checked	rust-unit:roamgate-http:settings::tests::limit_resume_is_on_a_minute_after_the_reset_and_each_key_is_checked	the settings family (S13)
 server/src/bridge/settings-rpc.test.ts	terminal transport settings validate input, persist by connection, and reconnect only on change	scenario:parity/scenarios/settings/connection-settings.yaml	
 server/src/bridge/settings-rpc.test.ts	agent auto rename settings read and update successfully	scenario:parity/scenarios/settings/connection-settings.yaml	
-server/src/bridge/settings-rpc.test.ts	settings RPC errors carry their runtime connection identity	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/settings-rpc.test.ts	settings RPC errors carry their runtime connection identity	rust-unit:roamgate-http:settings::tests::settings_rpc_errors_carry_their_runtime_connection_identity	transport and RPC plumbing
 server/src/bridge/settings-rpc.test.ts	settings RPC lists and mutates only its connection namespace	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/settings-rpc.test.ts	settings RPC suppresses a delayed result after replacement	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/settings-rpc.test.ts	settings RPC cancels a queued mutation after replacement	rust-unit:roamgate-http	transport and RPC plumbing
@@ -1284,12 +1284,12 @@ server/src/bridge/vt-input-classifier.test.ts	encodes the frozen generation-1 mo
 server/src/bridge/vt-input-classifier.test.ts	encodes Ctrl+/ as a semantic slash press, not Ctrl+_	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
 server/src/bridge/vt-input-classifier.test.ts	encodes the ClientShellPaneInput frame	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
 server/src/bridge/websocket-send.test.ts	negotiated compression reduces wire bytes and preserves uncompressed-client compatibility	rust-unit:roamgate-ws:socket::negotiates_like_bun_and_compresses_only_terminal_frames	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	preserves the first cleanup snapshot until close handling completes	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	preserves the first cleanup snapshot until close handling completes	rust-unit:roamgate-ws:flow::preserves_the_first_cleanup_snapshot_until_close_handling_completes	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	compresses only terminal frames at or above the byte threshold	rust-unit:roamgate-ws:flow::compresses_only_terminal_frames_at_or_above_the_byte_threshold	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	keeps the connection open when Bun queues a message under backpressure	rust-unit:roamgate-ws:flow::keeps_the_connection_open_when_a_message_is_queued_under_backpressure	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	closes a slow connection when a queued send crosses the hard limit	rust-unit:roamgate-ws:flow::closes_a_slow_connection_when_a_queued_send_crosses_the_hard_limit	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	cleans up when Bun drops a message because of a connection issue	rust-unit:roamgate-ws:flow::cleans_up_when_a_message_is_dropped_because_of_a_connection_issue	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	a reply made after the browser left is skipped quietly	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	a reply made after the browser left is skipped quietly	rust-unit:roamgate-ws:flow::a_reply_made_after_the_browser_left_is_skipped_quietly	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	uses Bun's buffered amount API to close a client past the hard limit	rust-unit:roamgate-ws:flow::uses_the_buffered_amount_to_close_a_client_past_the_hard_limit	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	logs and cleans up when sending throws	rust-unit:roamgate-ws:flow::logs_and_cleans_up_when_sending_fails	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	holds a frame back instead of queueing it once the socket is behind	rust-unit:roamgate-ws:flow::holds_a_frame_back_instead_of_queueing_it_once_the_socket_is_behind	transport and RPC plumbing
@@ -2445,7 +2445,7 @@ server/src/http/auth-process.test.ts	instance naming is authenticated, persisten
 server/src/http/auth-process.test.ts	instance name save failures preserve the current name and permit retry	scenario:parity/scenarios/auth/instance-settings-save-failure.yaml	
 server/src/http/auth-process.test.ts	PIN login uses a separate endpoint and preserves password recovery during PIN cooldown	scenario:parity/scenarios/auth/pin-login.yaml	
 server/src/http/auth-process.test.ts	PIN endpoint is disabled by default	scenario:parity/scenarios/auth/pin-disabled.yaml	
-server/src/http/auth-process.test.ts	instances sharing a home preserve independent sessions across restarts and credential rotations	rust-unit:roamgate-http	HTTP front internals
+server/src/http/auth-process.test.ts	instances sharing a home preserve independent sessions across restarts and credential rotations	rust-unit:roamgate-http:auth::tests::instances_sharing_a_home_preserve_independent_sessions_across_restarts_and_credential_rotations	HTTP front internals
 server/src/http/auth-process.test.ts	generated-token login takes only page openings: sockets and API requests with a token are never failed logins	scenario:parity/scenarios/auth/generated-token.yaml	
 server/src/http/auth-process.test.ts	a call's signalling socket needs login, this site, and the call's own token	scenario:parity/scenarios/auth/signalling-needs-call-token.yaml	
 server/src/http/auth-process.test.ts	a call's signalling upgrades for its owner in generated-token mode, and refusals are 403, never 303 or 429	scenario:parity/scenarios/voice/call-signalling-token.yaml	
@@ -2509,9 +2509,9 @@ server/src/http/herdr-setup.test.ts	setup guard uses the configured profile even
 server/src/http/herdr-setup.test.ts	missing installations require a verified asset, existing binaries do not	rust-unit:roamgate-herdr:http::tests::missing_installations_require_a_verified_asset_existing_binaries_do_not	Herdr setup and info routes
 server/src/http/herdr-setup.test.ts	download deadline aborts stalled headers and bodies and releases the setup lock	rust-unit:roamgate-herdr:http::tests::download_deadline_aborts_stalled_headers_and_bodies_and_releases_the_setup_lock,rust-unit:roamgate-exec:install::tests::downloads_names_http_failures_and_gives_up_at_its_deadline	Herdr setup and info routes
 server/src/http/herdr-setup.test.ts	setup UI metadata uses the pinned release and hides unsupported targets	rust-unit:roamgate-herdr:http::tests::setup_ui_metadata_uses_the_pinned_release_and_hides_unsupported_targets	Herdr setup and info routes
-server/src/http/history.test.ts	GET is the status; other paths are not the route's	rust-unit:roamgate-http	HTTP front internals
-server/src/http/history.test.ts	PUT sets the location and the switch; POST commit runs a pass	rust-unit:roamgate-http	HTTP front internals
-server/src/http/history.test.ts	a write without the settings header, or cross-site, is refused	rust-unit:roamgate-http	HTTP front internals
+server/src/http/history.test.ts	GET is the status; other paths are not the route's	rust-unit:roamgate-http:history::tests::get_is_the_status_other_paths_are_not_the_routes	HTTP front internals
+server/src/http/history.test.ts	PUT sets the location and the switch; POST commit runs a pass	rust-unit:roamgate-http:history::tests::put_sets_the_location_and_the_switch_post_commit_runs_a_pass	HTTP front internals
+server/src/http/history.test.ts	a write without the settings header, or cross-site, is refused	rust-unit:roamgate-http:history::tests::a_write_without_the_settings_header_or_cross_site_is_refused	HTTP front internals
 server/src/http/image-upload.test.ts	local pastes are written to a private folder under the temp root	rust-unit:roamgate-http:terminal_upload::tests::local_pastes_are_written_to_a_private_folder_under_the_temp_root	HTTP front internals
 server/src/http/image-upload.test.ts	the folder and files are readable only by the current user	rust-unit:roamgate-http:terminal_upload::tests::the_folder_and_files_are_readable_only_by_the_current_user	HTTP front internals
 server/src/http/image-upload.test.ts	each image gets a separate upload folder	rust-unit:roamgate-http:terminal_upload::tests::each_image_gets_a_separate_upload_folder	HTTP front internals
@@ -2629,7 +2629,7 @@ server/src/http/static-paths.test.ts	rejects malformed encoding and NUL bytes	ru
 server/src/http/static-paths.test.ts	keeps resolved files inside the public directory	rust-unit:roamgate-http:static_paths::tests::keeps_resolved_files_inside_the_public_directory	HTTP front internals
 server/src/http/static-paths.test.ts	uses the SPA entry only for browser page navigations	rust-unit:roamgate-http:static_paths::tests::uses_the_spa_entry_only_for_browser_page_navigations	HTTP front internals
 server/src/http/static-paths.test.ts	only serves static content for read-only HTTP methods	rust-unit:roamgate-http:static_paths::tests::only_serves_static_content_for_read_only_http_methods	HTTP front internals
-server/src/http/terminal-path-text.test.ts	POSIX shell receives each supported path as one unchanged argument	rust-unit:roamgate-http	runs the quoted path through a real sh; the quoting itself is vectors
+server/src/http/terminal-path-text.test.ts	POSIX shell receives each supported path as one unchanged argument	rust-unit:roamgate-exec:quote::tests::posix_shell_receives_each_supported_path_as_one_unchanged_argument	runs the quoted path through a real sh; the quoting itself is vectors
 server/src/http/terminal-path-text.test.ts	PowerShell receives comma and quoted paths as one unchanged argument	pending:windows-runner	runs the quoted path through a real PowerShell, on Windows only (plan 5.10)
 server/src/http/terminal-path-text.test.ts	keeps plain POSIX paths bare	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
 server/src/http/terminal-path-text.test.ts	single-quotes POSIX paths with spaces or shell characters	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
