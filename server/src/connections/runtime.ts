@@ -1,85 +1,47 @@
-import {
-  createTaskEventTracker,
-  type TaskEvent,
-} from "../notifications/task-events";
-import {
-  createHerdrNotificationListener,
-  taskEventFromSemanticNotification,
-  type TaskNotificationSource,
-} from "../notifications/herdr-notification-listener";
-import {
-  assertEndpointCreationSource,
-  createEmptyWorkspaceCreator,
-} from "../bridge/endpoint-creation";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import type { ServerWebSocket } from "bun";
+import { latestSessionModel } from "../../../shared/agentProfiles";
 import type { AgentPromptAnswer } from "../../../shared/review";
 import {
   createAgentSessionHandlers,
   withOwnedSessions,
 } from "../agent/agent-sessions";
+import { type ClaudeModHub, overlayModPanes } from "../agent/claude-mod";
 import {
   createHistoryWatcher,
   createRemoteStatSpawner,
   type HistoryWatcher,
 } from "../agent/history-watch";
-import { sshReadCommandArgv } from "../bridge/ssh-command";
-import {
-  type ConversationHerdr,
-  conversationCloseEvent,
-  createConversationHerdr,
-  localPidAlive,
-} from "../conversation/herdr";
-import type { SpawnHeadless } from "../conversation/headless";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import {
-  holderCommand,
-  launchCommand,
-  resumeCommand,
-} from "../conversation/holder-script";
-import { handleProfileRpc, type ProfileRpcDeps } from "../profiles/rpc";
-import { limitConnection } from "../limit-resume/connection";
-import { isRecord } from "../agent/session-utils";
-import {
-  sessionProfiles,
-  commandForSession,
-  type LaunchSpec,
-  launchRegistry,
-  profileForSession,
-} from "../profiles/profiles";
-import { profileModels } from "../profiles/models";
-import { latestSessionModel } from "../../../shared/agentProfiles";
-import { REVIEW_HOME_DIR } from "../review/agent-server";
-import { exitSentAsMessage } from "../conversation/handover";
-import { createImageReader } from "../conversation/images";
-import { createShellRunner } from "../conversation/shell";
-import { createLeaseStore } from "../conversation/lease";
-import {
-  type ConversationCore,
-  conversationFront,
-  emptyConversationMirror,
-} from "../conversation/core-front";
-import { createSessionIndexStore } from "../agent/session-index-store";
-import {
-  type ConversationService,
-  createConversationService,
-} from "../conversation/service";
-import type { ConversationPrompt } from "../conversation/session";
-import { serializeHerdrEventEnvelope } from "./protocol";
 import { createAgentSessionFileAccess } from "../agent/session-file-access";
-import { HerdrClient } from "../bridge/herdr-client";
+import { createSessionIndexStore } from "../agent/session-index-store";
+import { isRecord } from "../agent/session-utils";
 import {
   EndpointClient,
   type EndpointSnapshot,
 } from "../bridge/endpoint-client";
 import {
+  assertEndpointCreationSource,
+  createEmptyWorkspaceCreator,
+} from "../bridge/endpoint-creation";
+import { createForwardRpcHandler } from "../bridge/forward-rpc";
+import { HerdrClient } from "../bridge/herdr-client";
+import {
   assertSupportedHerdrProtocol,
   isTerminalHelloProtocol,
 } from "../bridge/protocol-compat";
-import { roamgateEnv } from "../config/environment";
 import { createSettingsRpcHandler } from "../bridge/settings-rpc";
-import { createForwardRpcHandler } from "../bridge/forward-rpc";
+import { sshReadCommandArgv } from "../bridge/ssh-command";
 import type { SshForwards } from "../bridge/ssh-forward";
+import { annotateSshArgv } from "../bridge/ssh-metrics";
+import {
+  createSshTunnelManager,
+  type SshTunnelConfig,
+  type SshTunnelError,
+} from "../bridge/ssh-tunnel";
+import { createTerminalBridge } from "../bridge/terminal-bridge";
+import { dropCoalescedMessage } from "../bridge/websocket-send";
+import { roamgateEnv } from "../config/environment";
 import {
   conversationIdleStopMinutes,
   onGuiSettingsChanged,
@@ -87,16 +49,54 @@ import {
   terminalSurfaceCodecsEnabled,
 } from "../config/gui-settings";
 import {
-  createSshTunnelManager,
-  type SshTunnelConfig,
-  type SshTunnelError,
-} from "../bridge/ssh-tunnel";
-import { dropCoalescedMessage } from "../bridge/websocket-send";
-import { annotateSshArgv } from "../bridge/ssh-metrics";
-import { createTerminalBridge } from "../bridge/terminal-bridge";
+  type ConversationCore,
+  conversationFront,
+  emptyConversationMirror,
+} from "../conversation/core-front";
+import { exitSentAsMessage } from "../conversation/handover";
+import type { SpawnHeadless } from "../conversation/headless";
+import {
+  type ConversationHerdr,
+  conversationCloseEvent,
+  createConversationHerdr,
+  localPidAlive,
+} from "../conversation/herdr";
+import {
+  holderCommand,
+  launchCommand,
+  resumeCommand,
+} from "../conversation/holder-script";
+import { createImageReader } from "../conversation/images";
+import { createLeaseStore } from "../conversation/lease";
+import {
+  type ConversationService,
+  createConversationService,
+} from "../conversation/service";
+import type { ConversationPrompt } from "../conversation/session";
+import { createShellRunner } from "../conversation/shell";
 import { createHerdrInfoHandler } from "../http/herdr-info";
 import { createImageUploadHandler } from "../http/image-upload";
 import { createTerminalUploadHandler } from "../http/terminal-upload";
+import { limitConnection } from "../limit-resume/connection";
+import {
+  createHerdrNotificationListener,
+  type TaskNotificationSource,
+  taskEventFromSemanticNotification,
+} from "../notifications/herdr-notification-listener";
+import {
+  createTaskEventTracker,
+  type TaskEvent,
+} from "../notifications/task-events";
+import { profileModels } from "../profiles/models";
+import {
+  commandForSession,
+  type LaunchSpec,
+  launchRegistry,
+  profileForSession,
+  sessionProfiles,
+} from "../profiles/profiles";
+import { handleProfileRpc, type ProfileRpcDeps } from "../profiles/rpc";
+import { REVIEW_HOME_DIR } from "../review/agent-server";
 import {
   createRecoveryReporter,
   type Logger,
@@ -110,8 +110,8 @@ import {
 } from "../utils/process-utils";
 import { turnCauses } from "../voice/turn-causes";
 import { createWorkspaceAutoSync } from "../workspace/auto-sync";
-import type { WorkspaceFront } from "../workspace/front";
 import { createFileHandlers } from "../workspace/files";
+import type { WorkspaceFront } from "../workspace/front";
 import {
   createLastStepBaselineStore,
   type LastStepBaselineStore,
@@ -122,19 +122,19 @@ import {
   spawnStreamingProcess,
 } from "../workspace/process";
 import { createStatusEnricher } from "../workspace/status";
-import { createWorktreeHookRunner } from "../worktree/worktree-hooks";
 import { createWorktreeParentStore } from "../worktree/parents";
 import {
   createWorktreeRemovalCoordinator,
   createWorktreeRemovalRuntime,
 } from "../worktree/remove";
+import { createWorktreeHookRunner } from "../worktree/worktree-hooks";
 import { createAgentStatusSubscriptionLoop } from "./agent-status-subscription";
-import { type ClaudeModHub, overlayModPanes } from "../agent/claude-mod";
-import { createTabAutoRenamer } from "./tab-auto-rename";
 import { createAgentTabTitleReader } from "./agent-tab-title";
-import { sanitizeConnectionError } from "./manager";
-import { createEventSubscriptionLoop } from "./subscription-loop";
 import type { HostEvent } from "./host-facade";
+import { sanitizeConnectionError } from "./manager";
+import { serializeHerdrEventEnvelope } from "./protocol";
+import { createEventSubscriptionLoop } from "./subscription-loop";
+import { createTabAutoRenamer } from "./tab-auto-rename";
 import { type ConnectionIdentity, LEGACY_DEFAULT_CONNECTION } from "./types";
 import { unixOnlyHandlers } from "./unix-only";
 

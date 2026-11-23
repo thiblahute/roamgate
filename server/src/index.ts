@@ -1,67 +1,27 @@
 // First: with ROAMGATE_TEST_CLOCK set, every module must see the test clock.
 import "./utils/test-clock-env";
-import { defaultSessionIndexDir } from "./agent/session-index-store";
-import {
-  commandForSession,
-  type LaunchSpec,
-  launchRegistry,
-  profileForSession,
-  profilesOf,
-  sessionProfiles,
-} from "./profiles/profiles";
-import { parseHolderStatus } from "./conversation/pane-child";
-import { parseHolderShell, parseSuspendedSpec } from "./conversation/suspended";
-import { PROFILE_RPC_METHODS, returnAfterReset } from "./profiles/rpc";
-import { createUiSettingsRpcHandler } from "./bridge/settings-rpc";
-import {
-  currentSshLane,
-  runInSshLane,
-  type SshLane,
-} from "./bridge/ssh-sessions";
-import { sshCommandArgv, sshReadCommandArgv } from "./bridge/ssh-command";
-import { watchLoopStalls } from "./utils/loop-stall";
-import { openRevokedSessions } from "./config/revoked-sessions";
-import {
-  loadOrCreateSessionSecret,
-  revokedSessionsPath,
-} from "./config/session-secret";
-import { removeLeftoverDataTemporaries } from "./config/data-paths";
-import {
-  createAgentSeenStore,
-  createHerdrBootCache,
-  markAgentSeen,
-} from "./agent/agent-seen";
-import {
-  createRemoteStatSpawner,
-  historyFilePath,
-  type WatchHandle,
-} from "./agent/history-watch";
-import {
-  overlaySuspendedPanes,
-  withOwnedSessions,
-} from "./agent/agent-sessions";
-import {
-  authTokenPrintCommand,
-  isShortAuthPassword,
-  RECOMMENDED_PASSWORD_LENGTH,
-} from "./config/auth-token";
+import { rmSync } from "node:fs";
+import { stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { ServerWebSocket, WebSocketHandler } from "bun";
+import packageJson from "../../package.json";
+import { agentAddress } from "../../shared/agentMessage";
+import type { AssistantTaskNotification } from "../../shared/assistant";
+import { isHtmlPath } from "../../shared/filePreview";
 import {
-  recordCli,
-  recordFetch,
-  recordServe,
-  recordSpawns,
-  recordWebSocket,
-} from "./contract-record/hooks";
-import { contractRecorder } from "./contract-record/recorder";
-import { createAssistantContext } from "./assistant/context";
+  LIMIT_PAUSES_EVENT,
+  type LimitPause,
+  parseLimitPauses,
+} from "../../shared/limitResume";
+import type { MrItem } from "../../shared/mrReviews";
 import {
   RANGER_THREAD_AUTHOR,
   RANGER_THREAD_TOOL,
   rangerChatKey,
   rangerChatSession,
 } from "../../shared/rangerChat";
-import { isHtmlPath } from "../../shared/filePreview";
+import { parseStorageWrite, RENDERED_PREFIX } from "../../shared/renderedPage";
 import {
   type AgentPermissionPrompt,
   type AgentPromptAnswer,
@@ -74,25 +34,86 @@ import {
   type ReviewThread,
   WORK_SESSION_PREFIX,
 } from "../../shared/review";
-import { agentAddress } from "../../shared/agentMessage";
-import { DOWNLOAD_TIMEOUT_MS } from "./workspace/file-constants";
-import { canRevealFiles } from "./workspace/file-manager";
-import { createNotificationFeed } from "./notifications/notification-feed";
-import { herdrEventName } from "./utils/herdr-events";
-import { createWebPushService } from "./notifications/web-push";
-import { rmSync } from "node:fs";
-import { stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import {
-  type ConversationMirror,
-  emptyConversationMirror,
-} from "./conversation/core-front";
-import { flushLeaseFiles, forgetLeaseFiles } from "./conversation/lease";
-import { profileModels } from "./profiles/models";
-import packageJson from "../../package.json";
 import { diffState } from "../../shared/stateDelta";
-import type { AssistantTaskNotification } from "../../shared/assistant";
+import type { WorkItem } from "../../shared/work";
+import {
+  parseWorkspaceTreeOp,
+  WorkspaceTreeError,
+  type WorkspaceTreeOp,
+  workspaceRefFor,
+} from "../../shared/workspaceTree";
+import { createActivityFront } from "./activity/front";
+import { openActivityReader } from "./activity/reader";
+import { createActivityRecorder } from "./activity/recorder";
+import { subjectsFromSettings } from "./activity/subject-settings";
+import { isDate } from "./activity/timeline";
+import { readActivityTimeline } from "./activity/timeline-rpc";
+import {
+  type AgentMessenger,
+  createAgentMessenger,
+} from "./agent/agent-messenger";
+import {
+  createAgentSeenStore,
+  createHerdrBootCache,
+  markAgentSeen,
+} from "./agent/agent-seen";
+import {
+  overlaySuspendedPanes,
+  withOwnedSessions,
+} from "./agent/agent-sessions";
+import {
+  type ClaudeModChange,
+  type ClaudeModTypeResult,
+  createClaudeModHub,
+} from "./agent/claude-mod";
+import {
+  type ClaudeModMirror,
+  createClaudeModFront,
+} from "./agent/claude-mod-front";
+import {
+  type ClaudeModInstallState,
+  claudeModHostScript,
+  claudeModStateOf,
+  parseClaudeModHostOutput,
+} from "./agent/claude-mod-plugin";
+import {
+  createRemoteStatSpawner,
+  historyFilePath,
+  type WatchHandle,
+} from "./agent/history-watch";
+import { useArchivedSessionFiles } from "./agent/session-file-access";
+import { SessionImageGoneError } from "./agent/session-images";
+import { defaultSessionIndexDir } from "./agent/session-index-store";
+import { resolveArchiveDir } from "./archive/dir";
+import { createArchivedSessionReader } from "./archive/file-access";
+import { createArchiveRpc } from "./archive/rpc";
+import { NoTextRepo, searchArchive } from "./archive/search";
+import { normalizeArchiveSettings } from "./archive/settings";
+import { createArchiveToolHandler } from "./assistant/archive-tools";
+import { createAssistantContext } from "./assistant/context";
+import { AssistantUserError } from "./assistant/errors";
+import {
+  createWorkspaceTreeToolHandler,
+  readWorkspaceTreeConnections,
+} from "./assistant/workspace-tree-tools";
+import { HerdrClient } from "./bridge/herdr-client";
 import { createListDeltas, LIST_DELTA_SHAPES } from "./bridge/list-delta";
+import { createUiSettingsRpcHandler } from "./bridge/settings-rpc";
+import { sshCommandArgv, sshReadCommandArgv } from "./bridge/ssh-command";
+import {
+  createSshForwards,
+  forwardToWire,
+  roamgateOwnPorts,
+} from "./bridge/ssh-forward";
+import { sweepOrphanedSshMasters } from "./bridge/ssh-master";
+import { annotateSshArgv } from "./bridge/ssh-metrics";
+import {
+  currentSshLane,
+  runInSshLane,
+  type SshLane,
+  setSshCommandFacade,
+  sshMasterControlPath,
+} from "./bridge/ssh-sessions";
 import type { SshTunnelConfig } from "./bridge/ssh-tunnel";
 import {
   flushCoalescedMessages,
@@ -103,6 +124,29 @@ import {
   WS_PER_MESSAGE_DEFLATE,
   webSocketFlowStats,
 } from "./bridge/websocket-send";
+import { cliCommands, runCli, topLevelHelp } from "./cli";
+import { CONTINUE_TO_SERVER, defaultCliContext } from "./cli/command";
+import {
+  authTokenPrintCommand,
+  isShortAuthPassword,
+  RECOMMENDED_PASSWORD_LENGTH,
+} from "./config/auth-token";
+import { dataRoot, removeLeftoverDataTemporaries } from "./config/data-paths";
+import {
+  activitySettings,
+  applyRemoteGuiSettings,
+  claudeStartMode,
+  conversationIdleStopMinutes,
+  type GuiSettings,
+  type GuiSettingsRemote,
+  limitResumeSettings,
+  onGuiSettingsChanged,
+  readGuiSettings,
+  setGuiSettingsRemote,
+  updateGuiSettings,
+  worktreeRemoveCommandFor,
+} from "./config/gui-settings";
+import { openRevokedSessions } from "./config/revoked-sessions";
 import {
   browserUrlFor,
   getLanIPs,
@@ -111,14 +155,33 @@ import {
   openBrowser,
   withLoginToken,
 } from "./config/server-config";
-import { cliCommands, runCli, topLevelHelp } from "./cli";
-import { CONTINUE_TO_SERVER, defaultCliContext } from "./cli/command";
-import { enrichIntegrationVersions } from "./herdr/integration-versions";
 import {
-  createHerdrSetupHandlers,
-  herdrSetupGuardForProfile,
-} from "./http/herdr-setup";
-import { HerdrClient } from "./bridge/herdr-client";
+  loadOrCreateSessionSecret,
+  revokedSessionsPath,
+} from "./config/session-secret";
+import { isStandaloneBinary } from "./config/standalone";
+import {
+  agentGroupPaths,
+  agentGroupPlacementOps,
+  applyWorkspaceTreeOps,
+  createWorkspaceTreePruner,
+  listWorkspaceIdentities,
+  notifyWorkspaceTreeChanged,
+  onWorkspaceTreeChanged,
+  placeCreatedWorkspace,
+  readWorkspaceTree,
+  setWorkspaceTreeCore,
+} from "./config/workspace-tree";
+import { readConnectionAgentSessions } from "./connections/agent-sessions";
+import { readConnectionAgentTasks } from "./connections/agent-tasks";
+import {
+  type HostEvent,
+  type HostStatusPush,
+  RemoteConnections,
+  RemoteHerdrClient,
+  SwitchingConnectionManager,
+  sshCommandFacade,
+} from "./connections/host-facade";
 import {
   connectionRoutingErrorResponse,
   type ParsedConnectionHttpRoute,
@@ -135,40 +198,27 @@ import {
 } from "./connections/manager";
 import { watchNetworkChanges } from "./connections/network-watch";
 import {
-  type HostEvent,
-  type HostStatusPush,
-  RemoteConnections,
-  RemoteHerdrClient,
-  SwitchingConnectionManager,
-  sshCommandFacade,
-} from "./connections/host-facade";
-import { setSshCommandFacade } from "./bridge/ssh-sessions";
-import type { ConnectionIdentity, ConnectionStatus } from "./connections/types";
-import {
-  type ConnectionProfileBootstrap,
   ConnectionProbeError,
+  type ConnectionProfileBootstrap,
   ConnectionProfileService,
   connectionIdentityForProfile,
   loadConnectionProfileBootstrap,
   type SyntheticLocalProfile,
   testConnectionSockets,
 } from "./connections/profile-service";
-import { sshRefusal } from "./connections/ssh-guard";
 import {
   type ConnectionProfile,
   ConnectionProfileStore,
   connectionRecoveryFingerprint,
 } from "./connections/profiles";
-import { createSshProfileRuntimeConfig } from "./connections/ssh-profile-runtime";
-import { sweepOrphanedSshMasters } from "./bridge/ssh-master";
 import {
   CONNECTION_CHANGED_DURING_REQUEST,
   ConnectionRoutingError,
   createConnectionReplyPublisher,
   createLegacyRoutingLogger,
   isBridgeGlobalMethod,
-  serializeConnectionEnvelope,
   resolveReadyConnection,
+  serializeConnectionEnvelope,
   serializeHerdrEventEnvelope,
   validateConnectionGeneration,
   validateConnectionId,
@@ -183,239 +233,62 @@ import {
   type LegacyConnectionRuntime,
 } from "./connections/runtime";
 import { createShutdownController } from "./connections/shutdown";
-import { readConnectionAgentSessions } from "./connections/agent-sessions";
-import { readConnectionAgentTasks } from "./connections/agent-tasks";
-import {
-  createWorkspaceTreeToolHandler,
-  readWorkspaceTreeConnections,
-} from "./assistant/workspace-tree-tools";
-import {
-  agentGroupPaths,
-  agentGroupPlacementOps,
-  applyWorkspaceTreeOps,
-  createWorkspaceTreePruner,
-  listWorkspaceIdentities,
-  notifyWorkspaceTreeChanged,
-  onWorkspaceTreeChanged,
-  placeCreatedWorkspace,
-  readWorkspaceTree,
-  setWorkspaceTreeCore,
-} from "./config/workspace-tree";
-import { createWorkspaceFront } from "./workspace/front";
-import {
-  runBinaryProcessWithTimeout,
-  runProcessWithInputTimeout,
-} from "./workspace/process";
-import { annotateSshArgv } from "./bridge/ssh-metrics";
-import {
-  parseWorkspaceTreeOp,
-  WorkspaceTreeError,
-  type WorkspaceTreeOp,
-  workspaceRefFor,
-} from "../../shared/workspaceTree";
+import { sshRefusal } from "./connections/ssh-guard";
+import { createSshProfileRuntimeConfig } from "./connections/ssh-profile-runtime";
 import { bindListenerBeforeConnectionStart } from "./connections/startup";
+import type { ConnectionIdentity, ConnectionStatus } from "./connections/types";
 import { LEGACY_DEFAULT_CONNECTION_ID } from "./connections/types";
-import { unixOnlyMessage } from "./connections/unix-only";
 import {
-  createSshForwards,
-  forwardToWire,
-  roamgateOwnPorts,
-} from "./bridge/ssh-forward";
-import { createAuthHandlers, unauthenticatedLoginRedirect } from "./http/auth";
+  UnsupportedPlatformError,
+  unixOnlyMessage,
+} from "./connections/unix-only";
 import {
-  CALL_HANDOFF_PATH,
-  createCallHandoffRedeem,
-} from "./http/call-handoff";
-import { serveStatic } from "./http/static-files";
-import { publicOrigin } from "./http/public-origin";
-import { handleInstanceSettings } from "./http/instance-settings";
-import {
-  connectionFileReader,
-  connectionRootFinder,
-  createRenderedPages,
-  renderedSvgPage,
-  renderedAddress,
-  renderedStray,
-  RENDERED_BODY_MAX_BYTES,
-} from "./http/rendered-pages";
-import {
-  createSiteStorage,
-  renderedStoragePath,
-} from "./http/rendered-storage";
-import { parseStorageWrite, RENDERED_PREFIX } from "../../shared/renderedPage";
-import type { MrItem } from "../../shared/mrReviews";
-import { downloadLocalFile } from "./workspace/local-files";
-import { downloadRemoteFile } from "./workspace/remote-files";
-import {
-  activitySettings,
-  applyRemoteGuiSettings,
-  claudeStartMode,
-  type GuiSettings,
-  type GuiSettingsRemote,
-  limitResumeSettings,
-  onGuiSettingsChanged,
-  readGuiSettings,
-  setGuiSettingsRemote,
-  updateGuiSettings,
-  worktreeRemoveCommandFor,
-  conversationIdleStopMinutes,
-} from "./config/gui-settings";
+  recordCli,
+  recordFetch,
+  recordServe,
+  recordSpawns,
+  recordWebSocket,
+} from "./contract-record/hooks";
+import { contractRecorder } from "./contract-record/recorder";
 import {
   claudeStartHookInstallArgv,
   claudeStartHookInstallCommand,
 } from "./conversation/claude-start-hook";
-import { createActivityRecorder } from "./activity/recorder";
-import { createActivityFront } from "./activity/front";
-import { activeTestClock, realTimers } from "./utils/test-clock";
-import { readActivityTimeline } from "./activity/timeline-rpc";
-import { subjectsFromSettings } from "./activity/subject-settings";
-import { openActivityReader } from "./activity/reader";
-import { isDate } from "./activity/timeline";
-import { createTimeReport, dayInput, TimeReportError } from "./time-report/rpc";
-import { createArchiveToolHandler } from "./assistant/archive-tools";
-import { createArchivedSessionReader } from "./archive/file-access";
-import { createArchiveRpc } from "./archive/rpc";
-import { NoTextRepo, searchArchive } from "./archive/search";
-import { normalizeArchiveSettings } from "./archive/settings";
-import { useArchivedSessionFiles } from "./agent/session-file-access";
-import { dataRoot } from "./config/data-paths";
-import { resolveArchiveDir } from "./archive/dir";
-import { join } from "node:path";
 import {
-  TERMINAL_UPLOAD_TIMEOUT_MS,
-  terminalUploadRequestBodyLimit,
-} from "./http/terminal-upload";
-import { tastePath, VoiceTaste } from "./voice/voice-taste";
-import { createVoiceRoutes, withSearches } from "./http/voice";
-import { createVoiceSetupRoute } from "./http/voice-setup";
-import { createVoiceLowGpuRoute } from "./http/voice-low-gpu";
-import { createVoiceSocket } from "./http/voice-socket";
-import { configuredCleaner } from "./voice/voice-cleaner";
-import { configuredDictation } from "./voice/voice-dictation";
-import { configuredFront } from "./voice/voice-front";
+  type ConversationMirror,
+  emptyConversationMirror,
+} from "./conversation/core-front";
 import {
-  CompanionMemory,
-  companionMemoryPath,
-  frontCompaction,
-} from "./voice/voice-memory";
-import { CompanionMemoryFiles } from "./voice/voice-memory-files";
-import { configuredResearch } from "./voice/voice-research";
+  defaultLeaseFile,
+  flushLeaseFiles,
+  forgetLeaseFiles,
+} from "./conversation/lease";
+import { parseHolderStatus } from "./conversation/pane-child";
+import { promptPaneAgent } from "./conversation/prompt-pane";
 import {
-  configuredTools,
-  type VoiceWorkBoard,
-  voiceWorkBoard,
-} from "./voice/voice-tools";
-import { configuredRouter } from "./voice/voice-router";
-import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
-import { WaitingAnswers } from "./voice/voice-waiting";
-import {
-  callBackground,
-  frontMode,
-  readVoiceConfig,
-  VoiceHelper,
-  voiceConfigPath,
-  writeFrontMode,
-} from "./voice/voice-helper";
-import { detectHardware, systemProbe } from "./voice/voice-hardware";
-import { voiceTestOverrides } from "./voice/voice-test-env";
-import { defaultHelperPath, defaultModelsDir } from "./voice/voice-models";
-import { VoiceSetupRunner } from "./voice/voice-setup";
-import { gameModeActive, lowGpuPath, VoiceLowGpu } from "./voice/voice-low-gpu";
-import { VoiceLibrary } from "./voice/voice-library";
-import { VoiceProfiles, voiceProfilesDir } from "./voice/voice-profiles";
-import {
-  createUpdateHandlers,
-  UPDATE_HTTP_IDLE_TIMEOUT_SECONDS,
-} from "./http/update";
-import {
-  configureServerLogger,
-  createRecoveryReporter,
-  type RecoveryReporter,
-  serverLogger,
-} from "./utils/logger";
-import { runProcessWithCodeTimeout, shQuote } from "./utils/process-utils";
-import { isStandaloneBinary } from "./config/standalone";
-import { ChannelError } from "./core-channel/channel";
+  AGENT_CHAT_METHODS,
+  handleAgentChatRpc,
+  isAgentChatMethod,
+} from "./conversation/rpc";
+import { parseHolderShell, parseSuspendedSpec } from "./conversation/suspended";
 import {
   bunOwns,
   type CallContext,
-  coreConfigured,
   type CoreFront,
+  coreConfigured,
   onOwnershipChanged,
   type PushMessage,
   sessionIdOf,
   socketIdOf,
   startCoreFront,
 } from "./core-channel";
-import { coreChannelOf, startSidecar } from "./core-channel/sidecar";
-import { FAMILIES, httpFamilyOf } from "./core-channel/protocol";
-import { AssistantUserError } from "./assistant/errors";
-import { UnsupportedPlatformError } from "./connections/unix-only";
+import { ChannelError } from "./core-channel/channel";
 import { readOwners } from "./core-channel/owners";
-import { rpcLogLevel } from "./utils/rpc-logging";
-import {
-  handleReviewRpc,
-  isReviewMethod,
-  type ReviewRpcConnection,
-} from "./review/rpc";
-import { createMrReviews, type MrReviews } from "./mr-reviews/module";
-import {
-  createInboxFetchers,
-  type FetchCall,
-  ForgeToolMissingError,
-  NotSignedInError,
-} from "./mr-reviews/fetchers";
-import { runClaudeModel } from "./mr-reviews/curation";
-import {
-  type CoreAgentTurn,
-  createCoreAgentTurns,
-} from "./mr-reviews/core-agent";
-import { defaultProfileInferenceModels } from "./mr-reviews/inference";
-import { stableJson } from "./history/format";
-import { isMrReviewsMethod } from "./mr-reviews/rpc";
-import { handleWorkRpc, isWorkMethod } from "./work/rpc";
-import {
-  createWorkService,
-  type WorkService,
-  type WorkServiceDeps,
-} from "./work/service";
-import {
-  openWorkStore,
-  workDirectory,
-  WorkError,
-  type WorkStore,
-} from "./work/store";
-import { type WorkUserToolName, workTool } from "./work/tools";
-import type { WorkItem } from "../../shared/work";
-import { ownCheckout, readDeployed, readHead } from "./work/deployed";
-import { type MrConnection, orderConnections } from "./mr-reviews/clones";
-import { gitShellCommandArgv } from "./workspace/git-shell";
-import { keepLastSteps } from "./workspace/git-diff";
-import {
-  AGENT_CHAT_METHODS,
-  handleAgentChatRpc,
-  isAgentChatMethod,
-} from "./conversation/rpc";
-import { defaultLeaseFile } from "./conversation/lease";
-import { promptPaneAgent } from "./conversation/prompt-pane";
-import { turnCauses } from "./voice/turn-causes";
-import {
-  type AgentMessenger,
-  createAgentMessenger,
-} from "./agent/agent-messenger";
-import {
-  createReviewService,
-  ReviewError,
-  type ReviewService,
-} from "./review/service";
-import {
-  localImageFile,
-  pruneReviewImages,
-  reviewImageFile,
-  saveReviewImage,
-} from "./review/images";
-import { openReviewStorage, reviewDirectory } from "./review/storage";
+import { FAMILIES, httpFamilyOf } from "./core-channel/protocol";
+import { coreChannelOf, startSidecar } from "./core-channel/sidecar";
+import { enrichIntegrationVersions } from "./herdr/integration-versions";
 import { historyPaths, type ReviewSource } from "./history/area";
+import { stableJson } from "./history/format";
 import {
   historyChanged,
   historyWorkChanged,
@@ -424,9 +297,49 @@ import {
 import { expandLocation, historyAreas, historyPlace } from "./history/place";
 import { withHistoryHooks } from "./history/reviews";
 import { HistoryRuntime } from "./history/runtime";
+import { createAuthHandlers, unauthenticatedLoginRedirect } from "./http/auth";
+import {
+  CALL_HANDOFF_PATH,
+  createCallHandoffRedeem,
+} from "./http/call-handoff";
+import {
+  createHerdrSetupHandlers,
+  herdrSetupGuardForProfile,
+} from "./http/herdr-setup";
 import { createHistoryRoute } from "./http/history";
-import { isHostPath, ReviewGoneError } from "./workspace/review-patch";
-import { createForgeCache, parseForgeRefParam } from "./review/forge";
+import { handleInstanceSettings } from "./http/instance-settings";
+import { publicOrigin } from "./http/public-origin";
+import {
+  connectionFileReader,
+  connectionRootFinder,
+  createRenderedPages,
+  RENDERED_BODY_MAX_BYTES,
+  renderedAddress,
+  renderedStray,
+  renderedSvgPage,
+} from "./http/rendered-pages";
+import {
+  createSiteStorage,
+  renderedStoragePath,
+} from "./http/rendered-storage";
+import { serveStatic } from "./http/static-files";
+import {
+  TERMINAL_UPLOAD_TIMEOUT_MS,
+  terminalUploadRequestBodyLimit,
+} from "./http/terminal-upload";
+import {
+  createUpdateHandlers,
+  UPDATE_HTTP_IDLE_TIMEOUT_SECONDS,
+} from "./http/update";
+import { createVoiceRoutes, withSearches } from "./http/voice";
+import { createVoiceLowGpuRoute } from "./http/voice-low-gpu";
+import { createVoiceSetupRoute } from "./http/voice-setup";
+import { createVoiceSocket } from "./http/voice-socket";
+import {
+  createLimitResumer,
+  type LimitResumer,
+} from "./limit-resume/scheduler";
+import { createLimitResumeStore, limitResumeStore } from "./limit-resume/store";
 import { mrCachePush } from "./mr-cache/push";
 import {
   mrCacheLoad,
@@ -435,15 +348,49 @@ import {
   setMrCacheCore,
   sharedMrCache,
 } from "./mr-cache/shared";
-import { SessionImageGoneError } from "./agent/session-images";
+import { type MrConnection, orderConnections } from "./mr-reviews/clones";
+import {
+  type CoreAgentTurn,
+  createCoreAgentTurns,
+} from "./mr-reviews/core-agent";
+import { runClaudeModel } from "./mr-reviews/curation";
+import {
+  createInboxFetchers,
+  type FetchCall,
+  ForgeToolMissingError,
+  NotSignedInError,
+} from "./mr-reviews/fetchers";
+import { defaultProfileInferenceModels } from "./mr-reviews/inference";
+import { createMrReviews, type MrReviews } from "./mr-reviews/module";
+import { isMrReviewsMethod } from "./mr-reviews/rpc";
+import { createNotificationFeed } from "./notifications/notification-feed";
+import { createWebPushService } from "./notifications/web-push";
+import { profileModels } from "./profiles/models";
+import {
+  commandForSession,
+  type LaunchSpec,
+  launchRegistry,
+  profileForSession,
+  profilesOf,
+  sessionProfiles,
+} from "./profiles/profiles";
+import { PROFILE_RPC_METHODS, returnAfterReset } from "./profiles/rpc";
+import { setupRemoteReviewAgent as setupRemoteReviewClient } from "./review/agent-remote";
+import {
+  createReviewAgentServer,
+  LOCAL_SOCKET_KEY,
+  REVIEW_HOME_DIR,
+  type ReviewAgentServer,
+} from "./review/agent-server";
+import { createForgeCache, parseForgeRefParam } from "./review/forge";
 import {
   createDraftNote,
   createDraftReply,
   deleteDraftNote,
   draftReply,
   draftThread,
-  type GlabContext,
   findBranchMergeRequest,
+  type GlabContext,
   type MergeRequestInfo,
   readCheckout,
   readCommitDiff,
@@ -455,43 +402,100 @@ import {
   updateDraftNote,
 } from "./review/gitlab";
 import {
-  REVIEW_HOME_DIR,
-  createReviewAgentServer,
-  LOCAL_SOCKET_KEY,
-  type ReviewAgentServer,
-} from "./review/agent-server";
-import { setupRemoteReviewAgent as setupRemoteReviewClient } from "./review/agent-remote";
-import { sshMasterControlPath } from "./bridge/ssh-sessions";
+  localImageFile,
+  pruneReviewImages,
+  reviewImageFile,
+  saveReviewImage,
+} from "./review/images";
+import {
+  handleReviewRpc,
+  isReviewMethod,
+  type ReviewRpcConnection,
+} from "./review/rpc";
+import {
+  createReviewService,
+  ReviewError,
+  type ReviewService,
+} from "./review/service";
+import { openReviewStorage, reviewDirectory } from "./review/storage";
+import { createTimeReport, dayInput, TimeReportError } from "./time-report/rpc";
+import { herdrEventName } from "./utils/herdr-events";
+import {
+  configureServerLogger,
+  createRecoveryReporter,
+  type RecoveryReporter,
+  serverLogger,
+} from "./utils/logger";
+import { watchLoopStalls } from "./utils/loop-stall";
+import { runProcessWithCodeTimeout, shQuote } from "./utils/process-utils";
+import { rpcLogLevel } from "./utils/rpc-logging";
+import { activeTestClock, realTimers } from "./utils/test-clock";
+import { turnCauses } from "./voice/turn-causes";
+import { configuredCleaner } from "./voice/voice-cleaner";
+import { configuredDictation } from "./voice/voice-dictation";
+import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
+import { configuredFront } from "./voice/voice-front";
+import { detectHardware, systemProbe } from "./voice/voice-hardware";
+import {
+  callBackground,
+  frontMode,
+  readVoiceConfig,
+  VoiceHelper,
+  voiceConfigPath,
+  writeFrontMode,
+} from "./voice/voice-helper";
+import { VoiceLibrary } from "./voice/voice-library";
+import { gameModeActive, lowGpuPath, VoiceLowGpu } from "./voice/voice-low-gpu";
+import {
+  CompanionMemory,
+  companionMemoryPath,
+  frontCompaction,
+} from "./voice/voice-memory";
+import { CompanionMemoryFiles } from "./voice/voice-memory-files";
+import { defaultHelperPath, defaultModelsDir } from "./voice/voice-models";
+import { VoiceProfiles, voiceProfilesDir } from "./voice/voice-profiles";
+import { configuredResearch } from "./voice/voice-research";
+import { configuredRouter } from "./voice/voice-router";
+import { VoiceSetupRunner } from "./voice/voice-setup";
+import { tastePath, VoiceTaste } from "./voice/voice-taste";
+import { voiceTestOverrides } from "./voice/voice-test-env";
+import {
+  configuredTools,
+  type VoiceWorkBoard,
+  voiceWorkBoard,
+} from "./voice/voice-tools";
+import { WaitingAnswers } from "./voice/voice-waiting";
+import { ownCheckout, readDeployed, readHead } from "./work/deployed";
+import { handleWorkRpc, isWorkMethod } from "./work/rpc";
+import {
+  createWorkService,
+  type WorkService,
+  type WorkServiceDeps,
+} from "./work/service";
+import {
+  openWorkStore,
+  WorkError,
+  type WorkStore,
+  workDirectory,
+} from "./work/store";
+import { type WorkUserToolName, workTool } from "./work/tools";
+import { DOWNLOAD_TIMEOUT_MS } from "./workspace/file-constants";
+import { canRevealFiles } from "./workspace/file-manager";
+import { createWorkspaceFront } from "./workspace/front";
+import { keepLastSteps } from "./workspace/git-diff";
+import { gitShellCommandArgv } from "./workspace/git-shell";
+import { downloadLocalFile } from "./workspace/local-files";
+import { inspectWorkspacePath } from "./workspace/path";
+import {
+  runBinaryProcessWithTimeout,
+  runProcessWithInputTimeout,
+} from "./workspace/process";
+import { downloadRemoteFile } from "./workspace/remote-files";
+import { isHostPath, ReviewGoneError } from "./workspace/review-patch";
 import {
   createWorkspaceWorktree,
   resolveRepoSettingsKey,
 } from "./worktree/create";
-import {
-  createLimitResumer,
-  type LimitResumer,
-} from "./limit-resume/scheduler";
-import { createLimitResumeStore, limitResumeStore } from "./limit-resume/store";
-import {
-  LIMIT_PAUSES_EVENT,
-  type LimitPause,
-  parseLimitPauses,
-} from "../../shared/limitResume";
-import {
-  type ClaudeModChange,
-  type ClaudeModTypeResult,
-  createClaudeModHub,
-} from "./agent/claude-mod";
-import {
-  type ClaudeModMirror,
-  createClaudeModFront,
-} from "./agent/claude-mod-front";
-import {
-  type ClaudeModInstallState,
-  claudeModHostScript,
-  claudeModStateOf,
-  parseClaudeModHostOutput,
-} from "./agent/claude-mod-plugin";
-import { inspectWorkspacePath } from "./workspace/path";
 import {
   removeWorktreeWithRecovery,
   runWorktreeRemoveCommand,
