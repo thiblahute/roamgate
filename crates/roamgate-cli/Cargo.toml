@@ -30,17 +30,18 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
+tempfile = "3"
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "signal", "sync", "time"] }
 url = "2"
 x509-parser = "0.17"
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1", features = ["process", "termios"] }
+pprof = { version = "0.15", default-features = false }
+rustix = { version = "1", features = ["param", "process", "termios"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
 
 [dev-dependencies]
 roamgate-voice-server = { path = "../roamgate-voice-server", features = ["testing"] }
-tempfile = "3"
 tokio = { version = "1", features = ["full", "test-util"] }

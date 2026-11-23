@@ -29,6 +29,7 @@ pub mod completion;
 pub mod config;
 pub mod connections;
 pub mod context;
+pub mod cpu_profile;
 pub mod doctor;
 pub mod herdr;
 pub mod index;
