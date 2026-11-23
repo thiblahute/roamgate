@@ -26,9 +26,9 @@ pub mod pull_request;
 pub mod remote_files;
 pub mod search;
 pub mod status;
-pub mod tree;
-pub mod worktree;
 #[cfg(test)]
 mod status_test_support;
 #[cfg(test)]
 mod test_support;
+pub mod tree;
+pub mod worktree;
