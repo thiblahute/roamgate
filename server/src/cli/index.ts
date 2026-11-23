@@ -4,6 +4,7 @@ import {
   runServiceCommand,
   SERVICE_COMMAND_CONTINUE,
 } from "../config/service-manager";
+import { passThroughToCore } from "../core-channel/cli";
 import { runHerdrCommand } from "../herdr/cli";
 import { createActivityCommand } from "./activity";
 import { createArchiveCommand } from "./archive";
@@ -172,6 +173,13 @@ export async function runCli(
     return EXIT_USAGE;
   }
   try {
+    // A family the owners table gives to Rust: the core binary runs it.
+    const passed = await passThroughToCore(
+      command.name,
+      argv.slice(1),
+      context,
+    );
+    if (passed !== null) return passed;
     return await command.run(argv.slice(1), context);
   } catch (error) {
     context.error(`roamgate ${command.name}: ${(error as Error).message}`);

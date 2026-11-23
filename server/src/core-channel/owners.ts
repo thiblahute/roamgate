@@ -10,7 +10,12 @@ import { REAL_TIMERS, type Timers } from "./channel";
 import type { Owners } from "./protocol";
 
 export type ShadowSettings = { enabled: boolean; rate: number };
-export type OwnersTable = { owners: Owners; shadow: ShadowSettings };
+export type OwnersTable = {
+  owners: Owners;
+  shadow: ShadowSettings;
+  /** The core binary that last wrote the table (`roamgate owners`). */
+  core?: string;
+};
 
 export const OWNERS_FILE = "owners.json";
 export const DEFAULT_SHADOW: ShadowSettings = { enabled: true, rate: 0.1 };
@@ -24,7 +29,7 @@ export function parseOwners(text: string): OwnersTable {
   const value = JSON.parse(text) as unknown;
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("not a JSON object");
-  const { version, owners, shadow } = value as Record<string, unknown>;
+  const { version, owners, shadow, core } = value as Record<string, unknown>;
   if (version !== 1) throw new Error(`unknown version ${String(version)}`);
   const table: OwnersTable = { owners: {}, shadow: { ...DEFAULT_SHADOW } };
   if (owners !== undefined) {
@@ -51,6 +56,7 @@ export function parseOwners(text: string): OwnersTable {
       table.shadow.rate = rate;
     }
   }
+  if (typeof core === "string" && core) table.core = core;
   return table;
 }
 
@@ -132,6 +138,28 @@ export function watchOwners(
 }
 
 let ownsCheck: ((family: string) => boolean) | null = null;
+const ownershipListeners = new Set<() => void>();
+
+/**
+ * Calls `listener` whenever what bunOwns answers may have changed (the
+ * table changed, the core connected or went away): a family's background
+ * work starts or stops with it. Returns the unsubscribe.
+ */
+export function onOwnershipChanged(listener: () => void): () => void {
+  ownershipListeners.add(listener);
+  return () => ownershipListeners.delete(listener);
+}
+
+/** Tells the listeners of onOwnershipChanged. */
+export function ownershipChanged(): void {
+  for (const listener of ownershipListeners) {
+    try {
+      listener();
+    } catch {
+      // A listener's own failure is its own to report.
+    }
+  }
+}
 
 /** Sets what bunOwns asks (the core facade, while it runs). */
 export function setOwnershipCheck(

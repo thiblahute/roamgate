@@ -99,6 +99,35 @@ describe("TestClock", () => {
     await expect(clock.advance(1.5)).rejects.toThrow();
     expect(clock.now()).toBe(EPOCH);
   });
+
+  test("advance waits for its followers, which see the new time", async () => {
+    const clock = new TestClock(EPOCH);
+    const seen: number[] = [];
+    let release = () => {};
+    const unfollow = clock.follow(async (now) => {
+      seen.push(now);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    let done = false;
+    const advanced = clock.advance(500).then((now) => {
+      done = true;
+      return now;
+    });
+    for (let turn = 0; turn < 5 && !seen.length; turn++)
+      await new Promise((resolve) => setImmediate(resolve));
+    expect(seen).toEqual([EPOCH + 500]);
+    expect(done).toBe(false);
+    release();
+    expect(await advanced).toBe(EPOCH + 500);
+    unfollow();
+    clock.follow(async () => {
+      throw new Error("behind");
+    });
+    expect(await clock.advance(1)).toBe(EPOCH + 501);
+    expect(seen).toEqual([EPOCH + 500]);
+  });
 });
 
 describe("installTestClock", () => {

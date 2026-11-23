@@ -19,7 +19,17 @@ import {
   type PushMessage,
   type Timers,
 } from "./channel";
-import { DEFAULT_TABLE, setOwnershipCheck, watchOwners } from "./owners";
+import {
+  activeTestClock,
+  realTimers,
+  type TestClock,
+} from "../utils/test-clock";
+import {
+  DEFAULT_TABLE,
+  ownershipChanged,
+  setOwnershipCheck,
+  watchOwners,
+} from "./owners";
 import {
   type CoreState,
   FAMILIES,
@@ -33,7 +43,7 @@ import {
 import { ShadowSampler } from "./shadow";
 import { CoreSupervisor, type SpawnCore } from "./supervisor";
 
-export { bunOwns } from "./owners";
+export { bunOwns, onOwnershipChanged } from "./owners";
 export type { CallContext, PushMessage } from "./channel";
 
 export const CORE_BIN_ENV = "ROAMGATE_CORE_BIN";
@@ -60,9 +70,21 @@ export type CoreFrontDeps = {
   timers?: Timers;
   families?: Families;
   random?: () => number;
+  /** The test clock the families follow (default: the process's). */
+  testClock?: TestClock | null;
 };
 
 export type CoreFront = {
+  /**
+   * The front's own call to a Rust-owned family
+   * (`internal.<family>.<op>`): its result, or a ChannelError.
+   */
+  callInternal: (
+    family: string,
+    op: string,
+    params: unknown,
+    signal?: AbortSignal,
+  ) => Promise<unknown>;
   /** Whether the core answers `method` now. */
   routesRpc: (method: string) => boolean;
   /** Forwards a browser RPC to the core: its result, or a ChannelError. */
@@ -138,11 +160,38 @@ export function startCoreFront(deps: CoreFrontDeps): CoreFront | null {
     return { connected: hello !== null, families: hello?.families ?? [] };
   };
 
+  const testClock =
+    deps.testClock === undefined ? activeTestClock() : deps.testClock;
+  // The core's families follow the test clock: told after each advance,
+  // which waits for them (contract/wire/core-channel.md).
+  const unfollow = testClock?.follow(async (now) => {
+    const channel = supervisor.channel();
+    if (!channel) return;
+    const abort = new AbortController();
+    const timer = realTimers.setTimeout(() => abort.abort(), 10_000);
+    try {
+      await channel.call(
+        "internal.clock.advance",
+        { to: now },
+        {},
+        { signal: abort.signal },
+      );
+    } finally {
+      realTimers.clearTimeout(timer);
+    }
+  });
+
   const supervisor = new CoreSupervisor({
     bin,
     runtimeDir,
     env,
-    welcome: () => ({ owners: table().owners, shadow: table().shadow }),
+    welcome: () => ({
+      owners: table().owners,
+      shadow: table().shadow,
+      ...(testClock ? { clock: testClock.now() } : {}),
+    }),
+    onConnect: () => ownershipChanged(),
+    onDisconnect: () => ownershipChanged(),
     handlers: {
       reverseCall: async (target, args, ctx, signal) => {
         const run = targets[target];
@@ -198,6 +247,7 @@ export function startCoreFront(deps: CoreFrontDeps): CoreFront | null {
         owners: next.owners,
         shadow: next.shadow,
       });
+      ownershipChanged();
     },
     warn: (message) => log.warn(message),
     ...(deps.timers ? { timers: deps.timers } : {}),
@@ -214,6 +264,13 @@ export function startCoreFront(deps: CoreFrontDeps): CoreFront | null {
       routeRpc(method, families, ownersOf(), coreState(), test) === "rust",
     callRpc: async (method, params, ctx, signal) =>
       channelOrThrow().call(method, params, ctx, signal ? { signal } : {}),
+    callInternal: async (family, op, params, signal) =>
+      channelOrThrow().call(
+        `internal.${family}.${op}`,
+        params,
+        {},
+        signal ? { signal } : {},
+      ),
     observeReply: (method, params, ctx, message) => {
       if (!("result" in message)) return undefined;
       if (
@@ -270,11 +327,14 @@ export function startCoreFront(deps: CoreFrontDeps): CoreFront | null {
     },
     stop: async () => {
       owners?.stop();
+      unfollow?.();
       setOwnershipCheck(null);
+      ownershipChanged();
       await supervisor.stop();
     },
     stopNow: () => {
       owners?.stop();
+      unfollow?.();
       setOwnershipCheck(null);
       supervisor.stopNow();
     },

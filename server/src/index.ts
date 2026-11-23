@@ -205,7 +205,8 @@ import { createActivityRecorder } from "./activity/recorder";
 import { readActivityTimeline } from "./activity/timeline-rpc";
 import { subjectsFromSettings } from "./activity/subject-settings";
 import { openActivityReader } from "./activity/reader";
-import { createTimeReport, TimeReportError } from "./time-report/rpc";
+import { isDate } from "./activity/timeline";
+import { createTimeReport, dayInput, TimeReportError } from "./time-report/rpc";
 import { createArchiveToolHandler } from "./assistant/archive-tools";
 import { createArchivedSessionReader } from "./archive/file-access";
 import { createArchiveRpc } from "./archive/rpc";
@@ -264,13 +265,16 @@ import {
 import { runProcessWithCodeTimeout, shQuote } from "./utils/process-utils";
 import { isStandaloneBinary } from "./config/standalone";
 import {
+  bunOwns,
   type CallContext,
   type CoreFront,
+  onOwnershipChanged,
   type PushMessage,
   sessionIdOf,
   socketIdOf,
   startCoreFront,
 } from "./core-channel";
+import { FAMILIES, httpFamilyOf } from "./core-channel/protocol";
 import { rpcLogLevel } from "./utils/rpc-logging";
 import { handleReviewRpc, isReviewMethod } from "./review/rpc";
 import { createMrReviews, type MrReviews } from "./mr-reviews/module";
@@ -339,8 +343,12 @@ import {
   createLimitResumer,
   type LimitResumer,
 } from "./limit-resume/scheduler";
-import { limitResumeStore } from "./limit-resume/store";
-import { LIMIT_PAUSES_EVENT } from "../../shared/limitResume";
+import { createLimitResumeStore, limitResumeStore } from "./limit-resume/store";
+import {
+  LIMIT_PAUSES_EVENT,
+  type LimitPause,
+  parseLimitPauses,
+} from "../../shared/limitResume";
 import {
   type ClaudeModTypeResult,
   createClaudeModHub,
@@ -474,7 +482,7 @@ const activity = createActivityRecorder({
   },
   logger: logger.child("activity"),
 });
-const timeReport = createTimeReport({
+const timeReportDeps = {
   settings: async () => {
     const settings = await readGuiSettings();
     return {
@@ -486,7 +494,8 @@ const timeReport = createTimeReport({
     openActivityReader(dataRoot(), Date.now, {
       subjectOf: subjectsFromSettings(await readGuiSettings()),
     }),
-});
+};
+const timeReport = createTimeReport(timeReportDeps);
 const webPush = createWebPushService({
   warn: (message) => logger.warn(message),
 });
@@ -772,7 +781,7 @@ const claudeModHub = createClaudeModHub({
       for (const ws of clients) safeSend(ws, line, "claude-mod");
     } catch {}
     // A turn ended (on a usage limit, maybe).
-    if (change !== "usage") limitResumer?.poke(connectionId, paneId);
+    if (change !== "usage") pokeLimit(connectionId, paneId);
   },
 });
 
@@ -872,6 +881,9 @@ let coreFront: CoreFront | null = null;
 
 /** A push of the core's, to the browsers it names. */
 function deliverCorePush(push: PushMessage): void {
+  const message = push.message as { event?: unknown; data?: unknown };
+  if (message?.event === LIMIT_PAUSES_EVENT && push.connection_id)
+    rustLimitPauses.set(push.connection_id, parseLimitPauses(message.data));
   const line = push.connection_id
     ? serializeConnectionEnvelope(
         push.connection_id,
@@ -902,19 +914,77 @@ function coreRuntime(args: { connection_id?: unknown }) {
   return lease.runtime;
 }
 
+/** A reverse call's pane and text. */
+function corePaneText(args: unknown): { pane_id: string; text: string } {
+  const { pane_id, text } = (args ?? {}) as {
+    pane_id?: unknown;
+    text?: unknown;
+  };
+  if (typeof pane_id !== "string" || typeof text !== "string")
+    throw new Error("needs a pane_id and a text");
+  return { pane_id, text };
+}
+
 /** What the core may call in Bun (contract/wire/core-channel.md). */
 const coreReverseTargets = {
   "herdr.call": async (args: unknown) => {
-    const { method, params } = (args ?? {}) as {
+    const { method, params, timeout_ms } = (args ?? {}) as {
       method?: unknown;
       params?: unknown;
+      timeout_ms?: unknown;
     };
     if (typeof method !== "string")
       throw new Error("herdr.call needs a method");
     return coreRuntime(args as { connection_id?: unknown }).herdr.call(
       method,
       (params ?? {}) as Record<string, unknown>,
+      ...(typeof timeout_ms === "number" ? [timeout_ms] : []),
     );
+  },
+  // What the limit_resume family asks of what Bun still owns.
+  "connections.ready": async () =>
+    connectionManager.list().flatMap((status) => {
+      const lease = connectionManager.readyRuntimeLease(status.id);
+      if (!lease) return [];
+      return [
+        {
+          id: status.id,
+          generation: lease.generation,
+          remote_platform: lease.runtime.remotePlatform ?? null,
+        },
+      ];
+    }),
+  "settings.limit_resume.get": async () =>
+    limitResumeSettings(await readGuiSettings()),
+  "conversation.owned_panes": async (args: unknown) =>
+    coreRuntime(args as { connection_id?: unknown }).conversation.ownedPanes(),
+  "conversation.prompt": async (args: unknown) => {
+    const { pane_id, text } = corePaneText(args);
+    return coreRuntime(args as { connection_id?: unknown }).conversation.prompt(
+      pane_id,
+      text,
+    );
+  },
+  "claude_mod.panes": async (args: unknown) =>
+    coreRuntime(args as { connection_id?: unknown }).claudeMod.panes(),
+  "claude_mod.deliver": async (args: unknown) => {
+    const { pane_id, text } = corePaneText(args);
+    const kind = (args as { kind?: unknown }).kind;
+    return (
+      coreRuntime(args as { connection_id?: unknown }).claudeMod.deliver(
+        pane_id,
+        text,
+        typeof kind === "string" ? kind : "",
+      ) !== null
+    );
+  },
+  "agent.transcript_tail": async (args: unknown) => {
+    const { pane_id } = (args ?? {}) as { pane_id?: unknown };
+    if (typeof pane_id !== "string")
+      throw new Error("agent.transcript_tail needs a pane_id");
+    return coreRuntime(
+      args as { connection_id?: unknown },
+    ).limitConnection.transcriptTail(pane_id);
   },
   "host.run": async (args: unknown) => {
     const { argv, cwd, timeout_ms } = (args ?? {}) as {
@@ -946,7 +1016,34 @@ const coreReverseTargets = {
   },
   "review.addThread": async (args: unknown) =>
     getReviewService().addThread((args ?? {}) as Record<string, unknown>),
+  // time_report in Rust: the activity log Bun owns until it moves too.
+  "activity.dayInput": async (args: unknown) => {
+    const { date } = (args ?? {}) as { date?: unknown };
+    if (typeof date !== "string" || !isDate(date))
+      throw new Error("activity.dayInput needs a date, YYYY-MM-DD");
+    const { activity } = await timeReportDeps.settings();
+    return dayInput(timeReportDeps, activity, date);
+  },
+  // The herdr_setup family: the default connection is still Bun's.
+  "herdr.setupGuard": async () => herdrSetupGuard(),
+  "herdr.ping": async () => herdrSetupPing(),
+  // The update family: after an install, the supervisor starts the new one.
+  "server.scheduleExit": async () => {
+    scheduleManagedShutdown();
+    return { scheduled: true };
+  },
 };
+
+/**
+ * Families whose paths keep Bun's own route checks (the method, the idle
+ * budget): Bun hands them to the core at their route, not before it.
+ */
+const CORE_ROUTED_IN_PLACE = new Set(["update", "herdr_setup"]);
+
+function coreRoutedInPlace(path: string): boolean {
+  const family = httpFamilyOf(path, FAMILIES);
+  return family !== null && CORE_ROUTED_IN_PLACE.has(family);
+}
 interface WebSocketCleanupSnapshot {
   client: string;
   viewedTerminals: string[];
@@ -1313,7 +1410,8 @@ const connectionManager = new ConnectionManager<LegacyConnectionRuntime>(
 );
 
 const assistantContext = createAssistantContext({
-  limitPauses: (connectionId) => limitResumer?.list(connectionId) ?? [],
+  limitPauses: (connectionId) =>
+    limitResumer?.list(connectionId) ?? rustLimitPauses.get(connectionId) ?? [],
   catalog: () => connectionProfiles.list(),
   // A turn Ranger starts is not one the user has to look at.
   onAgentPrompted: ({ connectionId, paneId, terminalId, seq, status }) =>
@@ -2928,20 +3026,27 @@ function resumeAssistantIfLoaded() {
     });
 }
 
+/** The default connection's Herdr identity (setup's and the core's). */
+function herdrSetupPing() {
+  const runtime = connectionManager.defaultReadyRuntime();
+  return runtime
+    ? runtime.herdr.ping()
+    : new HerdrClient(config.socketPath).ping();
+}
+
+/** What makes a managed Herdr impossible for the default connection. */
+function herdrSetupGuard() {
+  return herdrSetupGuardForProfile(
+    config,
+    connectionProfiles
+      .list()
+      .find((profile) => profile.id === connectionManager.defaultId()),
+  );
+}
+
 const { handleHerdrStatus, handleHerdrSetup } = createHerdrSetupHandlers({
-  ping: () => {
-    const runtime = connectionManager.defaultReadyRuntime();
-    return runtime
-      ? runtime.herdr.ping()
-      : new HerdrClient(config.socketPath).ping();
-  },
-  guard: () =>
-    herdrSetupGuardForProfile(
-      config,
-      connectionProfiles
-        .list()
-        .find((profile) => profile.id === connectionManager.defaultId()),
-    ),
+  ping: herdrSetupPing,
+  guard: herdrSetupGuard,
 });
 
 function runtimeFactoryForProfile(
@@ -3022,7 +3127,7 @@ function runtimeFactoryForProfile(
           if (!context.isCurrent()) return;
           activity.ownedAgentChanged(identity.id, paneId);
           // A conversation's turn ended (on a usage limit, maybe).
-          limitResumer?.poke(identity.id, paneId);
+          pokeLimit(identity.id, paneId);
         },
         onEvent: (event, eventIdentity) => {
           if (!context.isCurrent()) return;
@@ -3054,8 +3159,7 @@ function runtimeFactoryForProfile(
             void ensureClaudeStartHook(status.id);
         },
         onLimitResumeSettingsChanged: () => {
-          for (const status of connectionManager.list())
-            limitResumer?.poke(status.id);
+          for (const status of connectionManager.list()) pokeLimit(status.id);
         },
         onSshMasterReady: profileConfig.sshHost
           ? () => {
@@ -3105,7 +3209,7 @@ const connectionProfiles = new ConnectionProfileService({
 });
 /** A terminal agent's status changed: it may have stopped on a limit. */
 function pokeLimitResumer(connectionId: string, event: unknown) {
-  if (!limitResumer || !event || typeof event !== "object") return;
+  if (!event || typeof event !== "object") return;
   const { event: name, data } = event as { event?: unknown; data?: unknown };
   if (
     name !== "pane.agent_status_changed" &&
@@ -3118,41 +3222,82 @@ function pokeLimitResumer(connectionId: string, event: unknown) {
     data && typeof data === "object"
       ? (data as { pane_id?: unknown }).pane_id
       : undefined;
-  limitResumer.poke(
-    connectionId,
-    typeof paneId === "string" ? paneId : undefined,
-  );
+  pokeLimit(connectionId, typeof paneId === "string" ? paneId : undefined);
 }
+
+/**
+ * Something changed in a pane (a turn ended): the resumer looks shortly,
+ * Bun's own, or the Rust core's while it owns the family.
+ */
+function pokeLimit(connectionId: string, paneId?: string) {
+  if (limitResumer) {
+    limitResumer.poke(connectionId, paneId);
+    return;
+  }
+  if (!coreFront || bunOwns("limit_resume")) return;
+  void coreFront
+    .callInternal("limit_resume", "poke", {
+      connection_id: connectionId,
+      ...(paneId ? { pane_id: paneId } : {}),
+    })
+    .catch(() => undefined);
+}
+
+/**
+ * The pauses the Rust core last pushed, by connection, while it owns the
+ * family (for limitPauses; its browsers get the pushes themselves).
+ */
+const rustLimitPauses = new Map<string, LimitPause[]>();
 
 // Every connection's Claude sessions a usage limit stopped are resumed
 // once it resets; the browsers are told of each pause as it changes.
-limitResumer = createLimitResumer({
-  connections: () =>
-    connectionManager.list().flatMap((status) => {
-      const runtime = connectionManager.readyRuntime(status.id);
-      // No transcripts to read on a Windows host (Agent history is Unix).
-      if (!runtime || runtime.remotePlatform === "windows") return [];
-      return [runtime.limitConnection];
-    }),
-  settings: async () => limitResumeSettings(await readGuiSettings()),
-  store: limitResumeStore(),
-  onChange: (connectionId, pauses) => {
-    let generation: number | undefined;
-    try {
-      generation =
-        connectionManager.readyRuntimeLease(connectionId)?.generation;
-    } catch {
-      generation = undefined;
-    }
-    const line = serializeHerdrEventEnvelope(
-      connectionId,
-      { event: LIMIT_PAUSES_EVENT, data: { pauses } },
-      generation,
-    );
-    for (const ws of clients) safeSend(ws, line, "limit-pauses");
-  },
-  log: (level, message, fields) =>
-    logger.child("limit-resume")[level](message, fields),
+// Bun's resumer runs only while Bun owns the limit_resume family (always,
+// without a Rust core); it stops when the core takes it, and a fresh one
+// (with the store read again: the core wrote it meanwhile) starts when it
+// comes back.
+const createBunLimitResumer = (store = limitResumeStore()) =>
+  createLimitResumer({
+    connections: () =>
+      connectionManager.list().flatMap((status) => {
+        const runtime = connectionManager.readyRuntime(status.id);
+        // No transcripts to read on a Windows host (Agent history is Unix).
+        if (!runtime || runtime.remotePlatform === "windows") return [];
+        return [runtime.limitConnection];
+      }),
+    settings: async () => limitResumeSettings(await readGuiSettings()),
+    store,
+    onChange: (connectionId, pauses) => {
+      let generation: number | undefined;
+      try {
+        generation =
+          connectionManager.readyRuntimeLease(connectionId)?.generation;
+      } catch {
+        generation = undefined;
+      }
+      const line = serializeHerdrEventEnvelope(
+        connectionId,
+        { event: LIMIT_PAUSES_EVENT, data: { pauses } },
+        generation,
+      );
+      for (const ws of clients) safeSend(ws, line, "limit-pauses");
+    },
+    log: (level, message, fields) =>
+      logger.child("limit-resume")[level](message, fields),
+  });
+limitResumer = createBunLimitResumer();
+let limitResumerStarted = false;
+onOwnershipChanged(() => {
+  const ours = bunOwns("limit_resume");
+  if (!ours && limitResumer) {
+    limitResumer.stop();
+    limitResumer = null;
+    logger.child("limit-resume").info("handed to the Rust core");
+  } else if (ours && !limitResumer) {
+    rustLimitPauses.clear();
+    limitResumer = createBunLimitResumer(createLimitResumeStore());
+    if (limitResumerStarted) limitResumer.start();
+    logger.child("limit-resume").info("served by Bun again");
+  }
 });
 
 // A pending SSH retry may wait up to its capped backoff. When the host's
@@ -4994,18 +5139,24 @@ function main() {
 
           // A family given to the Rust core: it serves the path (never a
           // WebSocket: Bun terminates them all).
-          if (
-            coreFront &&
-            !req.headers.get("upgrade") &&
-            coreFront.routesHttp(url.pathname)
-          ) {
-            server.timeout(req, DOWNLOAD_TIMEOUT_MS / 1000);
-            return coreFront.forwardHttp(req, {
+          const forwardToCore = () =>
+            coreFront!.forwardHttp(req, {
               ...(sessionToken(req)
                 ? { session_id: sessionIdOf(sessionToken(req)) }
                 : {}),
               client_ip: clientIp,
             });
+          const coreServesHere = () =>
+            !!coreFront?.routesHttp(url.pathname) &&
+            !req.headers.get("upgrade");
+          if (
+            coreFront &&
+            !req.headers.get("upgrade") &&
+            !coreRoutedInPlace(url.pathname) &&
+            coreFront.routesHttp(url.pathname)
+          ) {
+            server.timeout(req, DOWNLOAD_TIMEOUT_MS / 1000);
+            return forwardToCore();
           }
 
           if (url.pathname === "/ws") {
@@ -5064,23 +5215,27 @@ function main() {
           }
           if (url.pathname === "/api/update/check" && req.method === "GET") {
             server.timeout(req, UPDATE_HTTP_IDLE_TIMEOUT_SECONDS);
+            if (coreServesHere()) return forwardToCore();
             return handleUpdateCheck(req);
           }
           if (url.pathname === "/api/update/install" && req.method === "POST") {
             // Binary download and verification can exceed Bun's default ten-second
             // request timeout. Keep the larger budget scoped to update requests.
             server.timeout(req, UPDATE_HTTP_IDLE_TIMEOUT_SECONDS);
+            if (coreServesHere()) return forwardToCore();
             return handleUpdateInstall(req);
           }
           if (url.pathname === "/api/review/image" && req.method === "GET") {
             return serveReviewImage(url);
           }
           if (url.pathname === "/api/herdr/status" && req.method === "GET") {
+            if (coreServesHere()) return forwardToCore();
             return handleHerdrStatus();
           }
           if (url.pathname === "/api/herdr/setup" && req.method === "POST") {
             // Herdr download plus service start shares the update budget.
             server.timeout(req, UPDATE_HTTP_IDLE_TIMEOUT_SECONDS);
+            if (coreServesHere()) return forwardToCore();
             return handleHerdrSetup(req);
           }
           if (url.pathname === "/api/voice/ws") {
@@ -5380,6 +5535,7 @@ function main() {
   // Agent profiles: the settings read now (spawns that cannot wait use
   // them), and sessions a usage limit moved go back after its reset.
   void readGuiSettings().catch(() => undefined);
+  limitResumerStarted = true;
   limitResumer?.start();
   setInterval(() => {
     void readGuiSettings()
@@ -5421,7 +5577,13 @@ function main() {
   });
   // The Rust core, when ROAMGATE_CORE_BIN names one; nothing otherwise.
   coreFront = startCoreFront({
-    env: process.env,
+    // The front's executable, which the update family replaces.
+    env: {
+      ...process.env,
+      ROAMGATE_CLI_EXEC: process.execPath,
+      ROAMGATE_CLI_VERSION: APP_VERSION,
+      ROAMGATE_CLI_STANDALONE: isStandaloneBinary(process) ? "1" : "0",
+    },
     dataDir: dataRoot(),
     fromSource: !isStandaloneBinary(process),
     deliverPush: deliverCorePush,

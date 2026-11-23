@@ -1,5 +1,5 @@
 {
-  "description": "The families that move from Bun to Rust one at a time (Rust migration plan, section 8). A family names the browser RPC methods it answers (`rpc`: an exact name, or a prefix ending in a dot), the HTTP paths it serves (`http`: an exact path, or a prefix ending in a slash), the files it alone writes (`files`: keys of contract/storage/index.json; one writer per file), and its cheap idempotent reads that may be shadowed (`shadow`). `phase` is the plan's phase that flips it. The owner of each family is in <data>/runtime/owners.json; see contract/wire/core-channel.md.",
+  "description": "The families that move from Bun to Rust one at a time (Rust migration plan, section 8). A family names the browser RPC methods it answers (`rpc`: an exact name, or a prefix ending in a dot), the HTTP paths it serves (`http`: an exact path, or a prefix ending in a slash), the files it alone writes (`files`: keys of contract/storage/index.json; one writer per file), its cheap idempotent reads that may be shadowed (`shadow`), and the CLI commands it answers (`cli`: `roamgate <command>`, passed through to the core binary while Rust owns the family). `phase` is the plan's phase that flips it. The owner of each family is in <data>/runtime/owners.json; see contract/wire/core-channel.md.",
   "version": 1,
   "families": {
     "limit_resume": {
@@ -19,16 +19,18 @@
     "herdr_setup": {
       "phase": 2,
       "rpc": [],
-      "http": ["/api/herdr/setup", "/api/herdr/status", "/api/herdr-info"],
+      "http": ["/api/herdr/setup", "/api/herdr/status"],
       "files": [],
-      "shadow": []
+      "shadow": [],
+      "cli": ["herdr"]
     },
     "update": {
       "phase": 2,
       "rpc": [],
       "http": ["/api/update/check", "/api/update/install"],
       "files": [],
-      "shadow": []
+      "shadow": [],
+      "cli": ["update", "rollback"]
     },
     "archive": {
       "phase": 3,

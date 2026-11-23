@@ -38,6 +38,8 @@ export type Family = {
   http: string[];
   files: string[];
   shadow: string[];
+  /** CLI commands it answers (`roamgate <command>`). */
+  cli?: string[];
 };
 export type Families = Record<string, Family>;
 export type Owners = Record<string, string>;
@@ -114,6 +116,16 @@ export function familyOf(method: string, families: Families): string | null {
 
 export function httpFamilyOf(path: string, families: Families): string | null {
   return familyFor(path, families, (entry) => entry.http, "/");
+}
+
+/** The family a CLI command belongs to (exact names only). */
+export function cliFamilyOf(
+  command: string,
+  families: Families,
+): string | null {
+  for (const [family, entry] of Object.entries(families))
+    if (!entry.test && entry.cli?.includes(command)) return family;
+  return null;
 }
 
 /** Who serves `family` now (null: a name of no family, Bun's). */

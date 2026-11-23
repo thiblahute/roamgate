@@ -89,6 +89,32 @@ function body(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+/**
+ * The activity log's `day` as the provider gets it, or a not_configured
+ * TimeReportError while recording is off or there is no log. Also the
+ * Rust core's `activity.dayInput` reverse target while Bun owns the
+ * activity log (contract/wire/core-channel.md).
+ */
+export async function dayInput(
+  deps: Pick<TimeReportDeps, "openReader" | "timezone">,
+  activity: GuiActivitySettings,
+  day: string,
+): Promise<unknown> {
+  if (!activity.enabled)
+    throw new TimeReportError(
+      "Activity recording is off (activity.enabled).",
+      "not_configured",
+    );
+  const reader = await deps.openReader();
+  if (!reader)
+    throw new TimeReportError("No activity log yet.", "not_configured");
+  try {
+    return buildDayInput(reader, activity, day, deps.timezone);
+  } finally {
+    reader.close();
+  }
+}
+
 export function createTimeReport(deps: TimeReportDeps) {
   const now = deps.now ?? Date.now;
   const dayLocks = new Map<string, Promise<unknown>>();
@@ -149,20 +175,7 @@ export function createTimeReport(deps: TimeReportDeps) {
       case "refresh": {
         const day = date(request.date);
         return locked(day, async () => {
-          if (!activity.enabled)
-            throw new TimeReportError(
-              "Activity recording is off (activity.enabled).",
-              "not_configured",
-            );
-          const reader = await deps.openReader();
-          if (!reader)
-            throw new TimeReportError("No activity log yet.", "not_configured");
-          let input: unknown;
-          try {
-            input = buildDayInput(reader, activity, day, deps.timezone);
-          } finally {
-            reader.close();
-          }
+          const input = await dayInput(deps, activity, day);
           return call(timeReport, [operation, day], input);
         });
       }

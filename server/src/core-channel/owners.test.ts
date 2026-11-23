@@ -25,6 +25,9 @@ describe("the owners table", () => {
     expect(
       parseOwners('{"version":1,"shadow":{"enabled":false}}').shadow,
     ).toEqual({ enabled: false, rate: 0.1 });
+    expect(parseOwners('{"version":1,"core":"/opt/core"}').core).toBe(
+      "/opt/core",
+    );
   });
 
   test("refuses what is not one", () => {

@@ -117,6 +117,7 @@ export class TestClock {
   #drainQueued = false;
   #refListener: ((hasRef: boolean) => void) | null = null;
   #hadRef = false;
+  #followers = new Set<(now: number) => Promise<unknown>>();
 
   constructor(
     epoch: number,
@@ -217,7 +218,28 @@ export class TestClock {
         new Error(`advance needs a whole number of ms >= 0: ${ms}`),
       );
     }
-    return this.#serialised(() => this.#fireUntil(this.#now + ms));
+    return this.#serialised(async () => {
+      const now = await this.#fireUntil(this.#now + ms);
+      // What follows this clock (the Rust core's families) catches up
+      // before the advance is answered.
+      for (const follower of this.#followers) {
+        try {
+          await follower(now);
+        } catch {
+          // A follower that failed is behind; the clock keeps going.
+        }
+      }
+      return now;
+    });
+  }
+
+  /**
+   * Calls `follower` with the new time after each `advance`, before the
+   * advance resolves. Returns the unsubscribe.
+   */
+  follow(follower: (now: number) => Promise<unknown>): () => void {
+    this.#followers.add(follower);
+    return () => this.#followers.delete(follower);
   }
 
   #serialised(step: () => Promise<number>): Promise<number> {
@@ -329,6 +351,13 @@ type ClockGlobals = {
  * Routes the process's time and timers through `clock`, and returns what
  * puts the originals back (for tests). Timers created before stay real.
  */
+let installed: TestClock | null = null;
+
+/** The test clock the process runs on, if any. */
+export function activeTestClock(): TestClock | null {
+  return installed;
+}
+
 export function installTestClock(
   clock: TestClock,
   target: ClockGlobals = globalThis as unknown as ClockGlobals,
@@ -524,6 +553,7 @@ export function installTestClockFromEnv(
   delete environment[TEST_CLOCK_EPOCH_ENV];
   const clock = new TestClock(epoch, { monotonicBase: performance.now() });
   installTestClock(clock);
+  installed = clock;
   serveTestClock(clock, path);
   return clock;
 }
