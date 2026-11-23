@@ -118,6 +118,50 @@ core rather than filling the front's memory.
 The front never forwards a WebSocket upgrade: in stage 1 it terminates every
 browser WebSocket itself and the core reaches browsers through `push`.
 
+In stage 2 the front (Rust) still terminates every browser WebSocket, and a
+socket whose route the core serves (the Bun core: `/ws`,
+`/api/notifications/ws`, `/api/voice/ws`, `/api/voice/call/signalling`, the
+terminal sockets) becomes a **virtual socket** in the core, driven by the
+messages of "Stage 2: the Rust front" below.
+
+## Stage 2: the Rust front
+
+From phase 7 the Rust binary can be the front (`roamgate front`, hidden; the
+default stays the Bun front until the switch) and the Bun server its core,
+on this same channel: the front listens and spawns, the core connects and
+says `hello` with `side: "bun"`, every message above keeps its meaning.
+
+| Variable                 | Read by    | Meaning                                                                                                                                                                                                                       |
+| ------------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ROAMGATE_SIDECAR_BIN`   | Rust front | The Bun server to run as the core: an executable (the Bun `roamgate`), or a `.ts` file run with `bun`. Its arguments are the front's server flags. Unset: the front looks for `roamgate.bun` next to its own executable. |
+| `ROAMGATE_CORE_CHANNEL`  | Bun core   | As above. Set: the Bun server opens no port; it connects, says `hello` and serves what the front forwards. Its CLI is unchanged.                                                                                              |
+
+What the Rust front serves itself: `/health` and `/healthz`, the URL-token
+login, `/login`, `POST /api/login`, `POST /api/login/pin`, `/api/logout`
+(closing the browser sockets of that login with 4001 `Logged out`), the
+login icon, the auth gate, the web app's files and manifest (a `GET` or
+`HEAD` outside `/api/`, `/ws` and `/rendered/`, not cross-site), and the
+`/ws` transport (flow control, coalescing, compression, chunking, the
+acknowledgements, which never reach the core). Everything else is an `http`
+to the core with the request as the browser sent it (cookie included) and
+`ctx.client_ip`; the core runs its own routing on it, gate included, so a
+route keeps its checks whichever side answers.
+
+| `t`          | From  | Fields                                                                                    | Meaning                                                                                                                                                                                                                                                                  |
+| ------------ | ----- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ws_open`    | front | `id`, `socket_id`, `method`, `url`, `headers`, `ctx`                                      | A browser asks to upgrade: the core runs its routing on the request. Answered by `reply`: `result` `{accepted: true, transport: "ws" \| "raw"}` (the core upgraded it), or `{accepted: false, status, headers, body}` (the response the browser gets, body as text). |
+| `ws_message` | front | `socket_id`, `data` (text), `binary` (bool, `data` base64)                                | A message of an accepted socket (`/ws` acknowledgements excluded).                                                                                                                                                                                                       |
+| `ws_close`   | front | `socket_id`, `code`, `reason`                                                             | The browser socket closed; the core runs its close handling once.                                                                                                                                                                                                        |
+| `ws_send`    | core  | `socket_id`, `data` (text), `binary` (bool), `context` (optional), `key` (optional)       | A message to the browser. On a `ws` socket it goes through the front's flow with `context` and `key` as Bun's `sendWebSocketMessage` takes them; on a `raw` socket it is sent as it is.                                                                                  |
+| `ws_drop`    | core  | `socket_id`, `key`                                                                        | Forget a held message of that key (`dropCoalescedMessage`).                                                                                                                                                                                                               |
+| `ws_end`     | core  | `socket_id`, `code` (optional), `reason` (optional)                                       | The core closes the browser socket.                                                                                                                                                                                                                                      |
+
+`socket_id` is the front's number for the browser socket, as in `ctx`. A
+`ws_send` before the `reply` to `ws_open` is held by the front until the
+handshake is done. The core's virtual socket reports `readyState` 1 until
+`ws_close` or its own `ws_end`, and a buffered amount of 0: back pressure,
+the 8 and 64 MiB limits and the 30 s stall rule are the front's.
+
 ### Reverse targets
 
 The front answers these in stage 1; a family that needs more adds one here.
