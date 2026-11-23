@@ -5,6 +5,7 @@ import {
   commandForSession,
   type LaunchSpec,
   launchRegistry,
+  profilesOf,
   sessionProfiles,
 } from "./profiles/profiles";
 import { PROFILE_RPC_METHODS, returnAfterReset } from "./profiles/rpc";
@@ -1595,6 +1596,72 @@ const coreReverseTargets = {
   "work.workspaces": async (args: unknown) =>
     workServiceDeps().workspaces!(workConnectionOf(args)),
   "agents.addresses": async () => workServiceDeps().sessions!(),
+  // The agent_profiles family's (while the core owns it): what its
+  // agent_profile.* calls need of a connection, by Bun's own code for it.
+  "profiles.host": async (args: unknown) => {
+    const { op, pane_id, session_id, spec, text, message, fields } = (args ??
+      {}) as {
+      op?: unknown;
+      pane_id?: unknown;
+      session_id?: unknown;
+      spec?: unknown;
+      text?: unknown;
+      message?: unknown;
+      fields?: unknown;
+    };
+    if (op === "settings")
+      return { profiles: profilesOf(await readGuiSettings()) };
+    const runtime = coreRuntime(args as { connection_id?: unknown });
+    const host = runtime.profileHost();
+    if (op === "panes") return runtime.profilePanes();
+    if (op === "log") {
+      host.log?.(String(message), (fields ?? {}) as Record<string, unknown>);
+      return { ok: true };
+    }
+    if (typeof pane_id !== "string" || !pane_id)
+      throw new Error("profiles.host needs a pane_id");
+    switch (op) {
+      case "agent_get":
+        return await host.agentGet(pane_id).catch(() => null);
+      case "conversation_session":
+        return host.conversationSession(pane_id);
+      case "conversation_model":
+        return host.conversationModel?.(pane_id) ?? null;
+      case "restart_process":
+        return host.restartProcess(pane_id);
+      case "restart_terminal":
+        return host.restartTerminal(
+          pane_id,
+          typeof session_id === "string" ? session_id : undefined,
+        );
+      case "transcript_tail":
+        return await host.transcriptTail(pane_id).catch(() => null);
+      case "typed_launch":
+        return host.typedLaunch(pane_id, spec as LaunchSpec);
+      case "send_conversation":
+        await host.sendConversation(pane_id, String(text));
+        return { ok: true };
+      case "prompt_terminal":
+        await host.promptTerminal(pane_id, String(text));
+        return { ok: true };
+      case "mod_usage":
+        return host.modUsage?.(pane_id) ?? null;
+    }
+    throw new Error(`profiles.host: unknown op ${String(op)}`);
+  },
+  // Every session choice, as the core wrote them: Bun's store keeps them
+  // for its synchronous readers.
+  "profiles.sessions_changed": async (args: unknown) => {
+    const { sessions } = (args ?? {}) as { sessions?: unknown };
+    if (!sessions || typeof sessions !== "object")
+      throw new Error("profiles.sessions_changed needs sessions");
+    sessionProfiles().replaceAll(
+      sessions as Parameters<
+        ReturnType<typeof sessionProfiles>["replaceAll"]
+      >[0],
+    );
+    return { ok: true };
+  },
   "connections.list": async () =>
     connectionManager.list().map((status) => ({
       id: status.id,
@@ -5089,6 +5156,35 @@ onOwnershipChanged(() => {
   }
 });
 
+// Agent profiles: while the Rust core owns the family it is
+// session-profiles.json's one writer and runs the return after a limit's
+// reset. Bun's store keeps the choices in memory for its synchronous
+// readers (conversation mode's starts, /model, MR reviews), sends each
+// change of its own to the core, and takes the whole set the core tells
+// back after each write (`profiles.sessions_changed`); it reads the file
+// afresh when the family comes back.
+let profilesOnCore = false;
+onOwnershipChanged(() => {
+  const onCore = !!coreFront && !bunOwns("agent_profiles");
+  if (onCore === profilesOnCore) return;
+  profilesOnCore = onCore;
+  const log = logger.child("profiles");
+  sessionProfiles().follow(
+    onCore
+      ? (change) => {
+          void coreFront
+            ?.callInternal("agent_profiles", "store", change)
+            .catch((error) =>
+              log.warn("a session's profile change did not reach the core", {
+                error,
+              }),
+            );
+        }
+      : null,
+  );
+  log.info(onCore ? "handed to the Rust core" : "served by Bun again");
+});
+
 // The notifications family: while the Rust core owns it, it keeps the
 // feed's events and file and sends Web Push; Bun keeps the feed's sockets
 // (the Android app's), with the events the core sends back.
@@ -7463,6 +7559,8 @@ function main() {
   limitResumerStarted = true;
   limitResumer?.start();
   setInterval(() => {
+    // The core runs it while it owns the agent_profiles family.
+    if (!bunOwns("agent_profiles")) return;
     void readGuiSettings()
       .then((settings) =>
         returnAfterReset({

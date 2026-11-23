@@ -250,6 +250,8 @@ own reviews module uses (`mrReviewsHost`).
 | `agent_sessions.watch_remote` | `connection_id`, `watch_id`, `paths` | `{ok: true}`; runs the history watch's stat helper on the connection's host over `paths` (replacing that connection's), or stops helper `watch_id` when `paths` is empty. Its lines and its exit come back as `internal.agent_sessions.remote_stat` and `remote_exit` |
 | `agent_sessions.seen_written` | none | `{ok: true}`; the core wrote its last seen marks on giving the family back: the front reads agent-seen.json again |
 | `notifications.clear_pane` | `connection_id`, `pane_id` | `{ok: true}`; the user looked at the pane (`agent_seen.mark`): what its agent notified about is seen, through whichever side owns the notifications |
+| `profiles.host` | `op`, `connection_id` (optional: the default connection) and the op's arguments: `settings` (`{profiles}`, settings.json's section), `agent_get {pane_id}`, `conversation_session {pane_id}`, `conversation_model {pane_id}`, `restart_process {pane_id}`, `restart_terminal {pane_id, session_id?}`, `transcript_tail {pane_id}`, `typed_launch {pane_id, spec}`, `send_conversation {pane_id, text}`, `prompt_terminal {pane_id, text}`, `mod_usage {pane_id}`, `panes`, `log {message, fields}` | What profiles/rpc.ts's deps answer for that connection, by the connection runtime's own code (`profileHost`); `typed_launch` registers the token in Bun's launch registry, which the agent socket's `launch` takes; `panes`: `[{paneId, sessionId}]` |
+| `profiles.sessions_changed` | `sessions` (session-profiles.json's `sessions` as written) | `{ok: true}`; sent after each write of the core's store, in write order, before the answer of the call that wrote: Bun's store keeps them for its synchronous readers |
 
 An unknown target is an error reply with code `unknown_target`.
 
@@ -344,6 +346,7 @@ The front's internal calls by family:
 | `internal.agent_sessions.refresh` | `connection_id`, `pane_id` | A conversation lease changed: the pane's history may be another file now, its watcher resolves it again. Answers `{ok: true}`. |
 | `internal.agent_sessions.remote_stat` | `connection_id`, `watch_id`, `line` | A line of the remote history watch helper (`path<TAB>signature`). Answers `{ok}`. |
 | `internal.agent_sessions.remote_exit` | `connection_id`, `watch_id` | The remote history watch helper exited: the watcher starts it again. Answers `{ok}`. |
+| `internal.agent_profiles.store` | `op` (`set`, `choose_model` or `settle_model`), `session_id`, then `profile`, `back` (`{at, to}`), `model` (`set`) or `model`, `resolved` (`choose_model`) | A change Bun's store made (conversation mode's /model, a start that settled its model) while the core owns the family: applied to session-profiles.json; answers `{ok: true}` once `profiles.sessions_changed` told the result. Error `not_owner` while the core does not own the family. |
 
 Bun's own copy of a family stops its background work and writes while the
 core owns the family and starts again (reading its files afresh) when it
@@ -502,6 +505,21 @@ marks, then calls `internal.agent_sessions.seen_reload`; the core writes
 its own when it gives the family back, then calls
 `agent_sessions.seen_written`. Sockets a front's history watcher already
 watched keep that watcher until they close.
+
+### The agent_profiles family
+
+While the core owns the agent_profiles family it is session-profiles.json's
+one writer, answers `agent_profile.*` and runs the return to the default
+profile after a limit's reset (every minute). What those need of a
+connection (Herdr's agent, conversation mode, the transcript, the Claude
+mod, a launch typed into a pane) it asks with `profiles.host`; the launch
+registry stays Bun's, beside the agent socket that takes its tokens. Bun's
+store keeps every choice in memory for its synchronous readers (conversation
+mode's starts and /model, MR reviews' Claude panes), replaced whole by each
+`profiles.sessions_changed`, and sends each change of its own with
+`internal.agent_profiles.store`; it writes nothing meanwhile, and reads the
+file afresh when the family comes back. Model discovery (`profileModels`) is
+not the family's: it keeps no file.
 
 ## CLI pass-through
 

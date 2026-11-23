@@ -143,6 +143,27 @@ type SessionChoice = {
 const MAX_SESSIONS = 2000;
 
 /**
+ * A change to the session choices made while another process owns the
+ * file (the Rust core, while it owns the agent_profiles family): it is
+ * applied there, and the owner tells the whole set back.
+ */
+export type SessionProfilesWrite =
+  | {
+      op: "set";
+      session_id: string;
+      profile: string | null;
+      back?: { at: number; to: string };
+      model?: string | null;
+    }
+  | {
+      op: "choose_model";
+      session_id: string;
+      model: string | null;
+      resolved?: string | null;
+    }
+  | { op: "settle_model"; session_id: string };
+
+/**
  * Which profile each session runs with, when the user chose one (by
  * session id, every connection). No entry: the default profile.
  */
@@ -155,6 +176,8 @@ export function createSessionProfiles(
       : options.file;
   const now = options.now ?? Date.now;
   let sessions: Map<string, SessionChoice> | null = null;
+  /** Set while another process owns the file: what each change sends it. */
+  let owner: ((write: SessionProfilesWrite) => void) | null = null;
 
   function load(): Map<string, SessionChoice> {
     if (sessions) return sessions;
@@ -177,7 +200,11 @@ export function createSessionProfiles(
     return sessions;
   }
 
-  function save() {
+  function save(write: SessionProfilesWrite) {
+    if (owner) {
+      owner(write);
+      return;
+    }
     if (!file) return;
     const all = load();
     while (all.size > MAX_SESSIONS) all.delete(all.keys().next().value!);
@@ -210,7 +237,13 @@ export function createSessionProfiles(
           ...(back ? { return_at: back.at, return_to: back.to } : {}),
           ...(model ? { model } : {}),
         });
-      save();
+      save({
+        op: "set",
+        session_id: sessionId,
+        profile,
+        ...(back ? { back } : {}),
+        ...(model ? { model } : {}),
+      });
     },
     /**
      * The user's /model: the session starts with `model` until it answered
@@ -237,7 +270,12 @@ export function createSessionProfiles(
       }
       all.delete(sessionId);
       if (rest.profile !== null || rest.model) all.set(sessionId, rest);
-      save();
+      save({
+        op: "choose_model",
+        session_id: sessionId,
+        model,
+        ...(resolved ? { resolved } : {}),
+      });
     },
     /** The session answered on its profile: its own model choice holds now. */
     settleModel(sessionId: string) {
@@ -252,7 +290,27 @@ export function createSessionProfiles(
         delete rest.model_resolved;
         all.set(sessionId, rest);
       }
-      save();
+      save({ op: "settle_model", session_id: sessionId });
+    },
+    /**
+     * Another process owns the file from now on (`write` sends it each
+     * change, the store keeps the choices in memory), or the file is this
+     * store's again (null: it reads it afresh).
+     */
+    follow(write: ((change: SessionProfilesWrite) => void) | null) {
+      owner = write;
+      if (!write) sessions = null;
+    },
+    /** The owner's choices, all of them, as it wrote them. */
+    replaceAll(choices: Record<string, SessionChoice>) {
+      sessions = new Map();
+      for (const [id, choice] of Object.entries(choices ?? {}))
+        if (
+          choice &&
+          (typeof choice.profile === "string" ||
+            (choice.profile === null && typeof choice.model === "string"))
+        )
+          sessions.set(id, choice);
     },
     /** Sessions due back on their default profile. */
     due(): { sessionId: string; to: string }[] {

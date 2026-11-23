@@ -1352,6 +1352,8 @@ export function createLegacyConnectionRuntime(args: {
     conversation: conversation!,
     typedLaunch,
     profileRpc,
+    /** What the profile RPCs need of this connection (the core's too). */
+    profileHost: profileRpcDeps,
     profilePanes,
     /** The usage limit resumer's view of this connection. */
     limitConnection: limitConnection({
