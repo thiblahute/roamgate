@@ -129,6 +129,7 @@ pub mod fixture {
     }
 
     impl GitFixture {
+        #[allow(clippy::new_without_default)]
         pub fn new() -> GitFixture {
             let dir = tempfile::Builder::new()
                 .prefix("rg-git-")

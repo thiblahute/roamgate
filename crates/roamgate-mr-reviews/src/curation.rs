@@ -85,7 +85,7 @@ pub fn top_paths(files: &[String], max: usize) -> Vec<(String, usize)> {
             bump(format!("{}/", &file[..at]));
         }
     }
-    counts.sort_by(|a, b| b.1.cmp(&a.1));
+    counts.sort_by_key(|c| std::cmp::Reverse(c.1));
     counts.truncate(max);
     counts
 }
@@ -288,20 +288,26 @@ pub fn status(state: &str, at: Option<String>, message: Option<String>) -> Value
     Value::Object(obj! {"state" => state, "at" => at, "message" => message})
 }
 
+/// The clones of followed projects: (project key, path).
+pub type ClonesFn = Arc<dyn Fn() -> BoxFuture<'static, Vec<(String, String)>> + Send + Sync>;
+
+/// The user's history, cached: when read, committed paths, branch paths.
+type History = (f64, Vec<String>, Vec<String>);
+
 pub struct Curation {
     pub store: Arc<Mutex<MrStore>>,
     pub settings: Settings<CurationSettings>,
     pub connections: Arc<dyn Fn() -> Vec<Arc<dyn MrConnection>> + Send + Sync>,
     /// The user's name per forge host (lower case).
     pub users: Option<Arc<dyn Fn() -> HashMap<String, String> + Send + Sync>>,
-    pub clones: Option<Arc<dyn Fn() -> BoxFuture<'static, Vec<(String, String)>> + Send + Sync>>,
+    pub clones: Option<ClonesFn>,
     pub run: Arc<dyn RunModel>,
     pub model: String,
     pub now: Arc<dyn Fn() -> f64 + Send + Sync>,
     pub on_change: Option<Arc<dyn Fn() + Send + Sync>>,
     status: Mutex<Value>,
     last_run: Mutex<f64>,
-    history: Mutex<Option<(f64, Vec<String>, Vec<String>)>>,
+    history: Mutex<Option<History>>,
     running: tokio::sync::Mutex<()>,
 }
 

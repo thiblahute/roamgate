@@ -1033,11 +1033,11 @@ pub const MAX_UNSENT: usize = 200;
 pub const MAX_MERGE_PATTERNS: usize = 20;
 pub const MAX_MERGE_PATTERN: usize = 200;
 pub const MAX_MERGE_SCOPES: usize = 50;
-const NEXT_MAX: usize = 200;
-const LABELS_MAX: usize = 10;
-const LABEL_MAX: usize = 40;
-const LINK_MAX: usize = 1000;
-const DEPENDS_MAX: usize = 20;
+pub const NEXT_MAX: usize = 200;
+pub const LABELS_MAX: usize = 10;
+pub const LABEL_MAX: usize = 40;
+pub const LINK_MAX: usize = 1000;
+pub const DEPENDS_MAX: usize = 20;
 
 static_regex!(host_re, r"(?i)^[a-z0-9][a-z0-9.-]*(?::[0-9]+)?$");
 static_regex!(project_re, r"^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+$");
@@ -1179,7 +1179,8 @@ pub fn normalize_stored_merge(raw: &Value) -> Option<Map<String, Value>> {
     Some(out)
 }
 
-fn whose_of(value: Option<&Value>) -> Option<Value> {
+/// overrides.ts whoseOf.
+pub fn whose_of(value: Option<&Value>) -> Option<Value> {
     match value? {
         Value::String(text) if matches!(text.as_str(), "me" | "reviewer" | "external") => {
             Some(Value::String(text.clone()))
@@ -1195,7 +1196,8 @@ fn whose_of(value: Option<&Value>) -> Option<Value> {
     }
 }
 
-fn text_of(value: Option<&Value>, max: usize) -> Option<String> {
+/// overrides.ts textOf: spaces collapsed, trimmed, capped; None when empty.
+pub fn text_of(value: Option<&Value>, max: usize) -> Option<String> {
     let text = tidy(value?.as_str()?, max);
     (!text.is_empty()).then_some(text)
 }
@@ -1216,7 +1218,8 @@ pub fn labels_of(value: Option<&Value>) -> Option<Vec<String>> {
     (!labels.is_empty()).then_some(labels)
 }
 
-fn keys_of(value: Option<&Value>) -> Option<Vec<String>> {
+/// overrides.ts keysOf.
+pub fn keys_of(value: Option<&Value>) -> Option<Vec<String>> {
     let Some(Value::Array(items)) = value else {
         return None;
     };

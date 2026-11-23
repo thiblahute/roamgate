@@ -574,14 +574,10 @@ fn merge_bot(input: &MergeInput, facts: Option<&Value>) -> Option<Obj> {
         {
             let actor = actor.unwrap_or("");
             let event_at = js::date_parse(js::sv(event.get("at")));
-            let said = input
-                .notes
-                .iter()
-                .filter(|note| {
-                    bot_name(js::sv(note.get("author"))) == bot_name(actor)
-                        && (js::date_parse(js::sv(note.get("at"))) - event_at).abs() < 60.0 * MINUTE
-                })
-                .next_back();
+            let said = input.notes.iter().rfind(|note| {
+                bot_name(js::sv(note.get("author"))) == bot_name(actor)
+                    && (js::date_parse(js::sv(note.get("at"))) - event_at).abs() < 60.0 * MINUTE
+            });
             let reason = match said {
                 Some(note) => {
                     let body = js::sv(note.get("body"));

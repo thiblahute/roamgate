@@ -4,70 +4,13 @@
 //! (`mr_reviews.overrides`), normalised by `roamgate-base`'s settings
 //! sections; this is what changes them and how they age.
 
-use std::sync::LazyLock;
-
-use regex::Regex;
 use roamgate_agents::js::{self, Obj};
 use serde_json::{Value, json};
 
 pub const FIELDS: [&str; 6] = ["whose", "next", "dependsOn", "labels", "link", "stale"];
-pub const NEXT_MAX: usize = 200;
-pub const LABELS_MAX: usize = 10;
-pub const LABEL_MAX: usize = 40;
-pub const LINK_MAX: usize = 1000;
-pub const DEPENDS_MAX: usize = 20;
-
-static PERSON: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_.-]{1,80}$").expect("pattern"));
-static SPACES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("pattern"));
-
-fn whose_of(value: Option<&Value>) -> Option<Value> {
-    match value? {
-        Value::String(s) if s == "me" || s == "reviewer" || s == "external" => Some(json!(s)),
-        Value::Object(o) => {
-            let person = o.get("person")?.as_str()?;
-            let person = person.strip_prefix('@').unwrap_or(person);
-            PERSON.is_match(person).then(|| json!({"person": person}))
-        }
-        _ => None,
-    }
-}
-
-fn text_of(value: Option<&Value>, max: usize) -> Option<String> {
-    let text = value?.as_str()?;
-    let text = js::head16(js::trim(&SPACES.replace_all(text, " ")), max);
-    (!text.is_empty()).then_some(text)
-}
-
-/// Labels: trimmed, capped, unique case-insensitively.
-pub fn labels_of(value: Option<&Value>) -> Option<Vec<String>> {
-    let items = value?.as_array()?;
-    let mut seen: Vec<String> = Vec::new();
-    let mut out = Vec::new();
-    for each in items.iter().filter_map(Value::as_str) {
-        let label = js::head16(js::trim(&SPACES.replace_all(each, " ")), LABEL_MAX);
-        let key = label.to_lowercase();
-        if label.is_empty() || seen.contains(&key) {
-            continue;
-        }
-        seen.push(key);
-        out.push(label);
-    }
-    out.truncate(LABELS_MAX);
-    (!out.is_empty()).then_some(out)
-}
-
-fn keys_of(value: Option<&Value>) -> Option<Vec<String>> {
-    let items = value?.as_array()?;
-    let mut out: Vec<String> = Vec::new();
-    for each in items.iter().filter_map(Value::as_str) {
-        if !each.is_empty() && js::len16(each) <= 600 && !out.iter().any(|o| o == each) {
-            out.push(each.to_owned());
-        }
-    }
-    out.truncate(DEPENDS_MAX);
-    (!out.is_empty()).then_some(out)
-}
+pub use roamgate_base::settings::sections::{
+    DEPENDS_MAX, LABEL_MAX, LABELS_MAX, LINK_MAX, NEXT_MAX, keys_of, labels_of, text_of, whose_of,
+};
 
 /// A change of an override: fields set (a `set` object, as the RPC gives
 /// it), fields cleared (`None`: none; `Some(None)`: all).

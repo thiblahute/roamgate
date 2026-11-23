@@ -122,11 +122,10 @@ pub fn row_facts(entry: &Obj, notes: &[Value], user: &str) -> String {
     let me = user.to_lowercase();
     let other = notes
         .iter()
-        .filter(|n| {
+        .rfind(|n| {
             let author = js::sv(n.get("author"));
             !author.is_empty() && author.to_lowercase() != me
         })
-        .next_back()
         .map(|n| js::sv(n.get("at")).to_owned())
         .unwrap_or_default();
     let own = entry.get("own");

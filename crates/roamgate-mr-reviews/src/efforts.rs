@@ -321,7 +321,7 @@ pub fn top_dir(files: &[String]) -> String {
             None => counts.push((dir, 1)),
         }
     }
-    counts.sort_by(|a, b| b.1.cmp(&a.1));
+    counts.sort_by_key(|c| std::cmp::Reverse(c.1));
     counts
         .into_iter()
         .next()
@@ -813,6 +813,13 @@ pub fn cluster_ledger(commits: &[Value]) -> Vec<Obj> {
     out
 }
 
+/// Reads the user's requests on a target project (remote URL, target sha).
+pub type RequestsFn<'a> = Box<
+    dyn FnOnce(String, String) -> crate::connection::BoxFuture<'a, Result<Vec<RequestIds>, String>>
+        + Send
+        + 'a,
+>;
+
 /// A request's patch ids (for in review), read by the caller.
 pub struct RequestIds {
     pub key: String,
@@ -826,14 +833,7 @@ pub struct DeriveInput<'a> {
     pub store: &'a LedgerStore,
     pub check_target: bool,
     /// The user's requests on the target project: given its remote URL and the target sha.
-    pub requests: Box<
-        dyn FnOnce(
-                String,
-                String,
-            ) -> crate::connection::BoxFuture<'a, Result<Vec<RequestIds>, String>>
-            + Send
-            + 'a,
-    >,
+    pub requests: RequestsFn<'a>,
     /// Patch ids in each part (label, ids).
     pub parts: Vec<(String, HashSet<String>)>,
     /// Patch ids in a plan or part of another effort (D4): its name, in order.
