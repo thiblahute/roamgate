@@ -8,10 +8,14 @@
 //! |---|---|---|
 //! | [`shared`] | Order, search filter, merge bots and scheduled merges, keys and unread marks | shared/mrReviews*.ts |
 //! | [`settings`] | The settings in effect and as settings.json keeps them | mr-reviews/settings.ts |
+//! | [`fetchers`] | The forge reads the inbox asks | mr-reviews/fetchers.ts |
+//! | [`agent_search`] | The reviews agent's searches, and requests as the agent names them | mr-reviews/agent-search.ts |
 
+pub mod agent_search;
 pub mod connection;
 pub mod curation;
 pub mod efforts;
+pub mod fetchers;
 pub mod forge_ref;
 pub mod fuzzy;
 pub mod inference;
