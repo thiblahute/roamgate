@@ -1,0 +1,32 @@
+# roamgate bash completion
+_roamgate() {
+  local cur words
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  if [ "$COMP_CWORD" -eq 1 ]; then
+    COMPREPLY=($(compgen -W "service herdr setup voice doctor url config auth connections push activity reviews history archive update rollback plugin completion --host --port --password --tls-cert --tls-key --socket-path --client-socket-path --ssh-host --session --public-dir --log-level --notification-source --profile --profile-duration --profile-dir --open --help --version" -- "$cur"))
+    return
+  fi
+  case "${COMP_WORDS[1]}" in
+    service) words="install status restart reload uninstall logs --force --follow --lines --help" ;;
+    herdr) words="setup status --help" ;;
+    setup) words="voice --tier --speech --reread --tts --stock-voices --speaker --turn --text-turn --helper --verify --yes --json --help" ;;
+    voice) words="profile gaming --by --now --reset --json --help" ;;
+    doctor) words="--offline --json --help" ;;
+    url) words="--qr --address --json --help" ;;
+    config) words="show get set unset edit path --reveal --json --restart --help" ;;
+    auth) words="show rotate revoke-sessions --reveal --json --no-restart --help" ;;
+    connections) words="list test add remove set-default --json --ssh --control-socket --client-socket --label --auto-connect --default --restart --remote-control-socket --remote-client-socket --windows --herdr-path --session --help" ;;
+    push) words="test --json --help" ;;
+    activity) words="today day range events workspaces status --json --ndjson --after --from --to --connection --workspace --kind --limit --by --help" ;;
+    reviews) words="export import --out --apply --help" ;;
+    history) words="status commit --json --help" ;;
+    archive) words="sync ingest search session cat resume health status rebuild-text fetch-text rebuild-db --json --agent --host --project --since --until --dir --recent --history --regex --tool-output --help" ;;
+    update) words="--check --json --help" ;;
+    rollback) words="--help" ;;
+    plugin) words="start restart status url version uninstall panel --help" ;;
+    completion) words="bash zsh fish --help" ;;
+    *) words="" ;;
+  esac
+  COMPREPLY=($(compgen -W "$words" -- "$cur"))
+}
+complete -o default -F _roamgate roamgate

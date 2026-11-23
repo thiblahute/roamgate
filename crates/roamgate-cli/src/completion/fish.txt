@@ -1,0 +1,140 @@
+# roamgate fish completion
+complete -c roamgate -f
+complete -c roamgate -n __fish_use_subcommand -l host
+complete -c roamgate -n __fish_use_subcommand -l port
+complete -c roamgate -n __fish_use_subcommand -l password
+complete -c roamgate -n __fish_use_subcommand -l tls-cert
+complete -c roamgate -n __fish_use_subcommand -l tls-key
+complete -c roamgate -n __fish_use_subcommand -l socket-path
+complete -c roamgate -n __fish_use_subcommand -l client-socket-path
+complete -c roamgate -n __fish_use_subcommand -l ssh-host
+complete -c roamgate -n __fish_use_subcommand -l session
+complete -c roamgate -n __fish_use_subcommand -l public-dir
+complete -c roamgate -n __fish_use_subcommand -l log-level
+complete -c roamgate -n __fish_use_subcommand -l notification-source
+complete -c roamgate -n __fish_use_subcommand -l profile
+complete -c roamgate -n __fish_use_subcommand -l profile-duration
+complete -c roamgate -n __fish_use_subcommand -l profile-dir
+complete -c roamgate -n __fish_use_subcommand -l open
+complete -c roamgate -n __fish_use_subcommand -l help
+complete -c roamgate -n __fish_use_subcommand -l version
+complete -c roamgate -n __fish_use_subcommand -a service -d 'install and manage the Roamgate user service'
+complete -c roamgate -n '__fish_seen_subcommand_from service' -a 'install status restart reload uninstall logs'
+complete -c roamgate -n '__fish_seen_subcommand_from service' -l force
+complete -c roamgate -n '__fish_seen_subcommand_from service' -l follow
+complete -c roamgate -n '__fish_seen_subcommand_from service' -l lines
+complete -c roamgate -n '__fish_seen_subcommand_from service' -l help
+complete -c roamgate -n __fish_use_subcommand -a herdr -d 'install, start and check the local Herdr server'
+complete -c roamgate -n '__fish_seen_subcommand_from herdr' -a 'setup status'
+complete -c roamgate -n '__fish_seen_subcommand_from herdr' -l help
+complete -c roamgate -n __fish_use_subcommand -a setup -d 'set up voice chat: detect the hardware, download its models'
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -a 'voice'
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l tier
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l speech
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l reread
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l tts
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l stock-voices
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l speaker
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l turn
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l text-turn
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l helper
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l verify
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l yes
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from setup' -l help
+complete -c roamgate -n __fish_use_subcommand -a voice -d 'voice profiles: the low-GPU set while a game runs'
+complete -c roamgate -n '__fish_seen_subcommand_from voice' -a 'profile gaming'
+complete -c roamgate -n '__fish_seen_subcommand_from voice' -l by
+complete -c roamgate -n '__fish_seen_subcommand_from voice' -l now
+complete -c roamgate -n '__fish_seen_subcommand_from voice' -l reset
+complete -c roamgate -n '__fish_seen_subcommand_from voice' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from voice' -l help
+complete -c roamgate -n __fish_use_subcommand -a doctor -d 'diagnose the installation and suggest fixes'
+complete -c roamgate -n '__fish_seen_subcommand_from doctor' -l offline
+complete -c roamgate -n '__fish_seen_subcommand_from doctor' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from doctor' -l help
+complete -c roamgate -n __fish_use_subcommand -a url -d 'print login URLs, optionally as a QR code'
+complete -c roamgate -n '__fish_seen_subcommand_from url' -l qr
+complete -c roamgate -n '__fish_seen_subcommand_from url' -l address
+complete -c roamgate -n '__fish_seen_subcommand_from url' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from url' -l help
+complete -c roamgate -n __fish_use_subcommand -a config -d 'show or change the service configuration'
+complete -c roamgate -n '__fish_seen_subcommand_from config' -a 'show get set unset edit path'
+complete -c roamgate -n '__fish_seen_subcommand_from config' -l reveal
+complete -c roamgate -n '__fish_seen_subcommand_from config' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from config' -l restart
+complete -c roamgate -n '__fish_seen_subcommand_from config' -l help
+complete -c roamgate -n __fish_use_subcommand -a auth -d 'show or rotate login credentials and sign out browsers'
+complete -c roamgate -n '__fish_seen_subcommand_from auth' -a 'show rotate revoke-sessions'
+complete -c roamgate -n '__fish_seen_subcommand_from auth' -l reveal
+complete -c roamgate -n '__fish_seen_subcommand_from auth' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from auth' -l no-restart
+complete -c roamgate -n '__fish_seen_subcommand_from auth' -l help
+complete -c roamgate -n __fish_use_subcommand -a connections -d 'list, test and edit Herdr connection profiles'
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -a 'list test add remove set-default'
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l ssh
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l control-socket
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l client-socket
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l label
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l auto-connect
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l default
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l restart
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l remote-control-socket
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l remote-client-socket
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l windows
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l herdr-path
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l session
+complete -c roamgate -n '__fish_seen_subcommand_from connections' -l help
+complete -c roamgate -n __fish_use_subcommand -a push -d 'send a test Web Push notification to enrolled devices'
+complete -c roamgate -n '__fish_seen_subcommand_from push' -a 'test'
+complete -c roamgate -n '__fish_seen_subcommand_from push' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from push' -l help
+complete -c roamgate -n __fish_use_subcommand -a activity -d 'read the activity log: day summaries, events, status'
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -a 'today day range events workspaces status'
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -l ndjson
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -l after
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -l from
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -l to
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -l connection
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -l workspace
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -l kind
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -l limit
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -l by
+complete -c roamgate -n '__fish_seen_subcommand_from activity' -l help
+complete -c roamgate -n __fish_use_subcommand -a reviews -d 'export or import the Reviews order, overrides, views, efforts'
+complete -c roamgate -n '__fish_seen_subcommand_from reviews' -a 'export import'
+complete -c roamgate -n '__fish_seen_subcommand_from reviews' -l out
+complete -c roamgate -n '__fish_seen_subcommand_from reviews' -l apply
+complete -c roamgate -n '__fish_seen_subcommand_from reviews' -l help
+complete -c roamgate -n __fish_use_subcommand -a history -d 'show or commit the local history of what was authored'
+complete -c roamgate -n '__fish_seen_subcommand_from history' -a 'status commit'
+complete -c roamgate -n '__fish_seen_subcommand_from history' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from history' -l help
+complete -c roamgate -n __fish_use_subcommand -a archive -d 'archive and search Claude Code, Codex and Pi sessions'
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -a 'sync ingest search session cat resume health status rebuild-text fetch-text rebuild-db'
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l agent
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l host
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l project
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l since
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l until
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l dir
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l recent
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l history
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l regex
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l tool-output
+complete -c roamgate -n '__fish_seen_subcommand_from archive' -l help
+complete -c roamgate -n __fish_use_subcommand -a update -d 'update roamgate to the latest release'
+complete -c roamgate -n '__fish_seen_subcommand_from update' -l check
+complete -c roamgate -n '__fish_seen_subcommand_from update' -l json
+complete -c roamgate -n '__fish_seen_subcommand_from update' -l help
+complete -c roamgate -n __fish_use_subcommand -a rollback -d 'restore the executable replaced by the last update'
+complete -c roamgate -n '__fish_seen_subcommand_from rollback' -l help
+complete -c roamgate -n __fish_use_subcommand -a plugin -d 'actions and panel used by the Herdr plugin'
+complete -c roamgate -n '__fish_seen_subcommand_from plugin' -a 'start restart status url version uninstall panel'
+complete -c roamgate -n '__fish_seen_subcommand_from plugin' -l help
+complete -c roamgate -n __fish_use_subcommand -a completion -d 'print a bash, zsh or fish completion script'
+complete -c roamgate -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'
+complete -c roamgate -n '__fish_seen_subcommand_from completion' -l help

@@ -1,0 +1,34 @@
+#compdef roamgate
+# roamgate zsh completion
+_roamgate() {
+  if (( CURRENT == 2 )); then
+    compadd -- service herdr setup voice doctor url config auth connections push activity reviews history archive update rollback plugin completion --host --port --password --tls-cert --tls-key --socket-path --client-socket-path --ssh-host --session --public-dir --log-level --notification-source --profile --profile-duration --profile-dir --open --help --version
+    return
+  fi
+  case "$words[2]" in
+    service) compadd -- install status restart reload uninstall logs --force --follow --lines --help ;;
+    herdr) compadd -- setup status --help ;;
+    setup) compadd -- voice --tier --speech --reread --tts --stock-voices --speaker --turn --text-turn --helper --verify --yes --json --help ;;
+    voice) compadd -- profile gaming --by --now --reset --json --help ;;
+    doctor) compadd -- --offline --json --help ;;
+    url) compadd -- --qr --address --json --help ;;
+    config) compadd -- show get set unset edit path --reveal --json --restart --help ;;
+    auth) compadd -- show rotate revoke-sessions --reveal --json --no-restart --help ;;
+    connections) compadd -- list test add remove set-default --json --ssh --control-socket --client-socket --label --auto-connect --default --restart --remote-control-socket --remote-client-socket --windows --herdr-path --session --help ;;
+    push) compadd -- test --json --help ;;
+    activity) compadd -- today day range events workspaces status --json --ndjson --after --from --to --connection --workspace --kind --limit --by --help ;;
+    reviews) compadd -- export import --out --apply --help ;;
+    history) compadd -- status commit --json --help ;;
+    archive) compadd -- sync ingest search session cat resume health status rebuild-text fetch-text rebuild-db --json --agent --host --project --since --until --dir --recent --history --regex --tool-output --help ;;
+    update) compadd -- --check --json --help ;;
+    rollback) compadd -- --help ;;
+    plugin) compadd -- start restart status url version uninstall panel --help ;;
+    completion) compadd -- bash zsh fish --help ;;
+    *) _files ;;
+  esac
+}
+if [ "$funcstack[1]" = "_roamgate" ]; then
+  _roamgate "$@"
+else
+  compdef _roamgate roamgate
+fi

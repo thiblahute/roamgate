@@ -255,3 +255,6 @@ runs! {
     "plugin" => crate::plugin::run,
     "completion" => crate::completion::run,
 }
+
+#[cfg(test)]
+mod tests;
