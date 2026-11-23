@@ -13,10 +13,7 @@
           "type": "string"
         }
       },
-      "required": [
-        "name",
-        "description"
-      ],
+      "required": ["name", "description"],
       "additionalProperties": false,
       "description": "A command the user can type in a Claude session: `/name`."
     },
@@ -29,13 +26,7 @@
         },
         "kind": {
           "type": "string",
-          "enum": [
-            "command",
-            "agent",
-            "teammate",
-            "workflow",
-            "monitor"
-          ]
+          "enum": ["command", "agent", "teammate", "workflow", "monitor"]
         },
         "title": {
           "type": "string"
@@ -46,13 +37,7 @@
         },
         "status": {
           "type": "string",
-          "enum": [
-            "running",
-            "completed",
-            "failed",
-            "stopped",
-            "lost"
-          ],
+          "enum": ["running", "completed", "failed", "stopped", "lost"],
           "description": "Lost: no end notice, and nothing runs it any more: still running a day on (gone with its session), or a command whose output has gone silent with no process holding it open."
         },
         "name": {
@@ -99,12 +84,7 @@
           "description": "A command run in the foreground that has not answered yet: what the turn waits on now. Never a background task."
         }
       },
-      "required": [
-        "id",
-        "kind",
-        "title",
-        "status"
-      ],
+      "required": ["id", "kind", "title", "status"],
       "additionalProperties": false,
       "description": "What a Claude session ran on the side: background commands, monitors and subagents, with how each ended. Read from the transcript: the tool call that started it, its result (task or agent id, output file), and the task notification Claude Code adds when it ends."
     },
@@ -117,26 +97,14 @@
         },
         "kind": {
           "type": "string",
-          "enum": [
-            "command",
-            "agent",
-            "teammate",
-            "workflow",
-            "monitor"
-          ]
+          "enum": ["command", "agent", "teammate", "workflow", "monitor"]
         },
         "title": {
           "type": "string"
         },
         "status": {
           "type": "string",
-          "enum": [
-            "running",
-            "completed",
-            "failed",
-            "stopped",
-            "lost"
-          ],
+          "enum": ["running", "completed", "failed", "stopped", "lost"],
           "description": "Lost: no end notice, and nothing runs it any more: still running a day on (gone with its session), or a command whose output has gone silent with no process holding it open."
         },
         "name": {
@@ -158,12 +126,7 @@
           "description": "Started in a part of the conversation a rewind took back. Listed only while it still runs (a teammate also while idle): what it did is gone from the conversation, not the work it goes on doing."
         }
       },
-      "required": [
-        "id",
-        "kind",
-        "title",
-        "status"
-      ],
+      "required": ["id", "kind", "title", "status"],
       "additionalProperties": false,
       "description": "What the Workspaces list shows of a task: no output, no long summaries."
     },
@@ -180,10 +143,7 @@
           "type": "number"
         }
       },
-      "required": [
-        "url",
-        "title"
-      ],
+      "required": ["url", "title"],
       "additionalProperties": false,
       "description": "A page an agent published with Claude Code's Artifact tool."
     },
@@ -204,10 +164,7 @@
           "type": "number"
         }
       },
-      "required": [
-        "title",
-        "url"
-      ],
+      "required": ["title", "url"],
       "description": "An artifact as the session left it: its last publish."
     },
     "WorkflowAgentView": {
@@ -221,11 +178,7 @@
         },
         "state": {
           "type": "string",
-          "enum": [
-            "running",
-            "done",
-            "failed"
-          ]
+          "enum": ["running", "done", "failed"]
         },
         "resultPreview": {
           "type": "string"
@@ -242,11 +195,7 @@
           "description": "While it runs: when its conversation last changed."
         }
       },
-      "required": [
-        "agentId",
-        "label",
-        "state"
-      ],
+      "required": ["agentId", "label", "state"],
       "additionalProperties": false
     },
     "WorkflowView": {
@@ -267,10 +216,7 @@
                 }
               }
             },
-            "required": [
-              "title",
-              "agents"
-            ],
+            "required": ["title", "agents"],
             "additionalProperties": false
           }
         },
@@ -279,9 +225,7 @@
           "description": "Once it has ended: its record's result, shortened."
         }
       },
-      "required": [
-        "phases"
-      ],
+      "required": ["phases"],
       "additionalProperties": false
     }
   }

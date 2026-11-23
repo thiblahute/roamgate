@@ -3089,7 +3089,12 @@ paths:
       summary: The voice companion's memories (companion-memories/), the index's titles first, most recently changed first
       x-status: typed
       parameters:
-        - { name: x-roamgate-voice, in: header, required: true, schema: { const: "1" } }
+        - {
+            name: x-roamgate-voice,
+            in: header,
+            required: true,
+            schema: { const: "1" },
+          }
       responses:
         "200":
           description: The memories.
@@ -3110,7 +3115,11 @@ paths:
                         description: { type: string }
                         type: { type: string }
                         body: { type: string }
-                        updated: { type: number, description: "mtime, epoch milliseconds" }
+                        updated:
+                          {
+                            type: number,
+                            description: "mtime, epoch milliseconds",
+                          }
         "403": { description: "Voice requests need their header." }
         "405": { description: "Any other method." }
   "/api/voice/companion/memories/{file}":
@@ -3119,7 +3128,12 @@ paths:
       x-status: typed
       parameters:
         - { name: file, in: path, required: true, schema: { type: string } }
-        - { name: x-roamgate-voice, in: header, required: true, schema: { const: "1" } }
+        - {
+            name: x-roamgate-voice,
+            in: header,
+            required: true,
+            schema: { const: "1" },
+          }
       responses:
         "200":
           description: Deleted.

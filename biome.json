@@ -12,6 +12,7 @@
       "!contract/assets/**",
       "!contract/tools/catalog.json",
       "!contract/perf/baseline.json",
+      "!contract/vectors/tool-params.json",
       "!server/claude-mod/hooks/catalog.gen.ts"
     ]
   },

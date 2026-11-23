@@ -13,10 +13,7 @@
           "type": "number"
         }
       },
-      "required": [
-        "epoch",
-        "revision"
-      ],
+      "required": ["epoch", "revision"],
       "additionalProperties": false,
       "description": "What the chat shows of each stream of a `!` line from the transcript."
     },
@@ -28,20 +25,11 @@
         },
         "role": {
           "type": "string",
-          "enum": [
-            "user",
-            "assistant",
-            "tool"
-          ]
+          "enum": ["user", "assistant", "tool"]
         },
         "kind": {
           "type": "string",
-          "enum": [
-            "message",
-            "tool_call",
-            "tool_result",
-            "error"
-          ]
+          "enum": ["message", "tool_call", "tool_result", "error"]
         },
         "text": {
           "type": "string"
@@ -83,10 +71,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "to",
-            "text"
-          ],
+          "required": ["to", "text"],
           "additionalProperties": false
         },
         "agent_message_result": {
@@ -96,16 +81,10 @@
               "type": "boolean"
             },
             "name": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             }
           },
-          "required": [
-            "sent",
-            "name"
-          ],
+          "required": ["sent", "name"],
           "additionalProperties": false
         },
         "file_edit": {
@@ -148,10 +127,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "kind",
-            "label"
-          ],
+          "required": ["kind", "label"],
           "additionalProperties": false
         },
         "rewound": {
@@ -166,10 +142,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "text",
-              "sent_at"
-            ],
+            "required": ["text", "sent_at"],
             "additionalProperties": false
           }
         },
@@ -200,18 +173,10 @@
             },
             "status": {
               "type": "string",
-              "enum": [
-                "running",
-                "done",
-                "stopped",
-                "failed"
-              ]
+              "enum": ["running", "done", "stopped", "failed"]
             },
             "exit_code": {
-              "type": [
-                "number",
-                "null"
-              ]
+              "type": ["number", "null"]
             },
             "started_at": {
               "type": "string"
@@ -223,19 +188,11 @@
               "type": "string"
             }
           },
-          "required": [
-            "command"
-          ],
+          "required": ["command"],
           "additionalProperties": false
         }
       },
-      "required": [
-        "id",
-        "role",
-        "kind",
-        "text",
-        "sent_at"
-      ],
+      "required": ["id", "role", "kind", "text", "sent_at"],
       "additionalProperties": false
     },
     "HistoryUpdate": {
