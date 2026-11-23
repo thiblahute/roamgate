@@ -17,6 +17,8 @@
 //! | [`agent_status`] | per-pane agent status subscriptions (connections/agent-status-subscription.ts) |
 
 pub mod agent_status;
+pub mod host_ops;
+pub mod host_runtime;
 pub mod limit_resume;
 pub mod manager;
 pub mod network_watch;
