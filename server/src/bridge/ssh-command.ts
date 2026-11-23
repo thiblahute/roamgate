@@ -209,9 +209,15 @@ export function sshMasterCheckArgv(
   ];
 }
 
+/**
+ * The Herdr tunnel: stream-local forwards, and no remote command (`-N`)
+ * unless `remoteCommand` gives one (the Herdr relay, see herdr-relay.ts),
+ * which then runs for as long as the tunnel.
+ */
 export function sshTunnelArgv(
   destination: string,
   forwards: ReadonlyArray<{ local: string; remote: string }>,
+  remoteCommand?: string,
 ): string[] {
   const argv = [
     "ssh",
@@ -222,11 +228,12 @@ export function sshTunnelArgv(
     "StreamLocalBindUnlink=yes",
     "-o",
     "StreamLocalBindMask=0177",
-    "-N",
   ];
+  if (remoteCommand === undefined) argv.push("-N");
   for (const forward of forwards) {
     argv.push("-L", `${forward.local}:${forward.remote}`);
   }
   argv.push("--", validateSshDestination(destination));
+  if (remoteCommand !== undefined) argv.push(remoteCommand);
   return argv;
 }

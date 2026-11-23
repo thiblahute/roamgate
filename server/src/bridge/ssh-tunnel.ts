@@ -1,11 +1,16 @@
+import { randomBytes } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
 import { type Logger, silentLogger } from "../utils/logger";
 import { sshReadCommandArgv, sshTunnelArgv } from "./ssh-command";
 import { createSshMaster, type SshMaster } from "./ssh-master";
+import { HERDR_RELAY_READY, type HerdrRelay, herdrRelay } from "./herdr-relay";
 import { createWindowsSshTunnel } from "./ssh-windows";
 import { annotateSshArgv, trackSshProcess } from "./ssh-metrics";
 
 const SSH_STDERR_MAX_BYTES = 16 * 1024;
+// ssh's own exit status for a connection error; anything else is the remote
+// command's.
+const SSH_CONNECTION_FAILED = 255;
 
 export type SshTunnelFailureKind =
   | "authentication"
@@ -92,6 +97,40 @@ export function classifySshTunnelFailure(
   );
 }
 
+/**
+ * Resolves true once `stream` carries the relay's ready line, false when it
+ * ends without it; whatever follows is read and dropped.
+ */
+export async function readRelayReady(
+  stream: ReadableStream<Uint8Array> | null,
+): Promise<boolean> {
+  if (!stream) return false;
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return false;
+      text = (text + decoder.decode(value, { stream: true })).slice(-4096);
+      if (text.includes(HERDR_RELAY_READY)) {
+        void (async () => {
+          try {
+            while (!(await reader.read()).done) {
+              // Drained: the relay prints nothing after its ready line.
+            }
+          } catch {
+            // The process ended; nothing left to drain.
+          }
+        })();
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+}
+
 export async function readBoundedStderr(
   stream: ReadableStream<Uint8Array> | null,
 ): Promise<string> {
@@ -153,6 +192,12 @@ export type SshTunnelConfig = {
   remoteHerdrPath?: string;
   /** Control socket of the runtime's command master; unset disables it. */
   masterControlPath?: string;
+  /**
+   * Puts the Herdr relay (herdr-relay.ts) in front of the host's control
+   * socket, so Herdr answers calls at once instead of 100 ms late. A host
+   * where it does not start gets the direct forward instead.
+   */
+  herdrRelay?: boolean;
 };
 
 export type RunProcess = (
@@ -164,6 +209,8 @@ export type RunProcess = (
 type TunnelProcess = {
   exited: Promise<number>;
   stderr?: Promise<string>;
+  /** With the relay: true once it listens, false if its output ended first. */
+  relayReady?: Promise<boolean>;
   kill: (signal?: number) => void;
 };
 
@@ -198,7 +245,9 @@ export function createSshTunnelManager(args: {
     exists?: (path: string) => boolean;
     remove?: (path: string) => void;
     removeDirectory?: (path: string) => void;
-    spawn?: (argv: string[]) => TunnelProcess;
+    spawn?: (argv: string[], options?: { relay?: boolean }) => TunnelProcess;
+    /** Names the relay's socket on the host; random by default. */
+    relayToken?: () => string;
     schedulePoll?: (callback: () => void, delayMs: number) => ScheduledPoll;
     now?: () => number;
     socketWaitTimeoutMs?: number;
@@ -231,10 +280,12 @@ export function createSshTunnelManager(args: {
     ((path: string) => rmSync(path, { force: true, recursive: true }));
   const spawn =
     args.dependencies?.spawn ??
-    ((argv: string[]): TunnelProcess => {
+    ((argv: string[], options?: { relay?: boolean }): TunnelProcess => {
+      // The relay's stdin stays open, never written: it ends with the
+      // session. Its stdout carries the ready line.
       const proc = Bun.spawn(argv, {
-        stdin: "ignore",
-        stdout: "ignore",
+        stdin: options?.relay ? "pipe" : "ignore",
+        stdout: options?.relay ? "pipe" : "ignore",
         stderr: "pipe",
         env: { ...process.env, LC_ALL: "C" },
       });
@@ -243,9 +294,18 @@ export function createSshTunnelManager(args: {
       return {
         exited: proc.exited,
         stderr,
+        ...(options?.relay
+          ? {
+              relayReady: readRelayReady(
+                proc.stdout as ReadableStream<Uint8Array>,
+              ),
+            }
+          : {}),
         kill: (signal) => proc.kill(signal),
       };
     });
+  const relayToken =
+    args.dependencies?.relayToken ?? (() => randomBytes(8).toString("hex"));
   const schedulePoll =
     args.dependencies?.schedulePoll ??
     ((callback: () => void, delayMs: number) => {
@@ -259,6 +319,9 @@ export function createSshTunnelManager(args: {
   const processForceKillTimeoutMs =
     args.dependencies?.processForceKillTimeoutMs ?? 1000;
   let cachedRemoteHome: { host: string; home: string } | null = null;
+  // Set when the relay did not start on the host (no python3, say): its
+  // tunnels forward Herdr's socket directly from then on.
+  let relayUnavailable = !args.config.herdrRelay;
   let autoSshTunnel: TunnelProcess | null = null;
   let processStopTask: Promise<void> | null = null;
   let autoSshTunnelPaths: string[] = [];
@@ -469,13 +532,45 @@ export function createSshTunnelManager(args: {
     }
     if (forwards.length === 0) return;
 
+    const control = forwards.find(
+      (forward) => forward.label === "herdr socket",
+    );
+    let relay: HerdrRelay | null = null;
+    if (control && !relayUnavailable) {
+      try {
+        relay = herdrRelay({
+          home: await remoteHome(host),
+          herdrSocket: control.remote,
+          token: relayToken(),
+        });
+      } catch (error) {
+        logger.warn("Herdr relay unavailable, forwarding Herdr directly", {
+          connection: args.connectionId ?? "legacy-default",
+          error: formatError(error),
+        });
+      }
+      if (generation !== lifecycleGeneration) return;
+    }
+    if (relay) {
+      const target = relay.socket;
+      for (const forward of forwards) {
+        if (forward === control) {
+          forward.remote = target;
+          forward.label = "herdr socket (relay)";
+        }
+      }
+    }
+
     autoSshTunnelPaths = forwards.map((forward) => forward.local);
     for (const path of autoSshTunnelPaths) remove(path);
 
-    const argv = annotateSshArgv(sshTunnelArgv(host, forwards), {
-      tag: "tunnel",
-      connection: args.connectionId,
-    });
+    const argv = annotateSshArgv(
+      sshTunnelArgv(host, forwards, relay?.command),
+      {
+        tag: "tunnel",
+        connection: args.connectionId,
+      },
+    );
 
     logger.debug("starting SSH tunnel", {
       connection: args.connectionId ?? "legacy-default",
@@ -490,14 +585,35 @@ export function createSshTunnelManager(args: {
       });
     }
 
-    const proc = spawn(argv);
+    const proc = spawn(argv, relay ? { relay: true } : undefined);
     autoSshTunnel = proc;
     const socketWait = waitForLocalSockets(autoSshTunnelPaths, generation);
     activeSocketWait = socketWait;
-    let outcome: { ready: true } | { ready: false; code: number };
+    let relayTimer: ReturnType<typeof setTimeout> | null = null;
+    let outcome:
+      | { ready: true }
+      | { ready: false; code: number }
+      | { ready: false; relayTimedOut: true };
     try {
       outcome = await Promise.race([
-        socketWait.promise.then(() => ({ ready: true }) as const),
+        socketWait.promise.then(async () => {
+          if (!relay) return { ready: true } as const;
+          // The local sockets listen before the relay does on the host: a
+          // call made in between would fail.
+          const started = await Promise.race([
+            proc.relayReady ?? Promise.resolve(false),
+            new Promise<"timeout">((resolve) => {
+              relayTimer = setTimeout(
+                () => resolve("timeout"),
+                socketWaitTimeoutMs,
+              );
+            }),
+          ]);
+          if (started === true) return { ready: true } as const;
+          if (started === "timeout")
+            return { ready: false, relayTimedOut: true } as const;
+          return { ready: false, code: await proc.exited } as const;
+        }),
         proc.exited.then((code) => ({ ready: false, code }) as const),
       ]);
     } catch (error) {
@@ -510,13 +626,35 @@ export function createSshTunnelManager(args: {
       if (autoSshTunnel === proc) await stopTunnelProcess();
       throw error;
     } finally {
+      if (relayTimer) clearTimeout(relayTimer);
       socketWait.cancel();
       if (activeSocketWait === socketWait) activeSocketWait = null;
     }
     if (generation !== lifecycleGeneration) return;
+    if (
+      !outcome.ready &&
+      relay &&
+      ("relayTimedOut" in outcome || outcome.code !== SSH_CONNECTION_FAILED)
+    ) {
+      // ssh connected, but the relay did not start: no python3 on the host,
+      // a home it cannot write. The direct forward works there.
+      if (autoSshTunnel === proc) await stopTunnelProcess();
+      relayUnavailable = true;
+      const stderr = await proc.stderr?.catch(() => "");
+      logger.warn("Herdr relay did not start, forwarding Herdr directly", {
+        connection: args.connectionId ?? "legacy-default",
+        ...("code" in outcome ? { exitCode: outcome.code } : {}),
+        error: formatError(stderr || "timed out"),
+      });
+      if (generation !== lifecycleGeneration) return;
+      return startAutoSshTunnel();
+    }
     if (!outcome.ready) {
       if (autoSshTunnel === proc) autoSshTunnel = null;
-      throw await failureForProcess(proc, outcome.code);
+      throw await failureForProcess(
+        proc,
+        "code" in outcome ? outcome.code : -1,
+      );
     }
 
     void proc.exited
@@ -530,6 +668,14 @@ export function createSshTunnelManager(args: {
           return;
         }
         autoSshTunnel = null;
+        if (relay && code !== SSH_CONNECTION_FAILED) {
+          // The connection held but the relay ended: reconnect without it.
+          relayUnavailable = true;
+          logger.warn("Herdr relay exited, forwarding Herdr directly", {
+            connection: args.connectionId ?? "legacy-default",
+            exitCode: code,
+          });
+        }
         args.onUnexpectedExit?.(failure);
       })
       .catch((error) => {

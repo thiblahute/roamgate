@@ -89,6 +89,8 @@ export function createSshProfileRuntimeConfig(
         roamgateEnv("DISABLE_SSH_MASTER", dependencies.environment) === "1"
           ? undefined
           : masterControlPath,
+      herdrRelay:
+        roamgateEnv("DISABLE_HERDR_RELAY", dependencies.environment) !== "1",
     };
   } catch (error) {
     removeDirectory(directory);

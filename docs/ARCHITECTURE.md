@@ -347,6 +347,19 @@ push providers with a 10-second deadline, 4 concurrent requests, and a
 
 Unix SSH runtimes run one OpenSSH process forwarding both sockets into a private
 temporary directory. Readiness needs a control `ping` and render handshake.
+
+The control socket is reached through a relay the tunnel runs as its remote
+command (`python3`, inline, see `server/src/bridge/herdr-relay.ts`). Herdr
+reads a new control connection without blocking and sleeps 100 ms when the
+request is not there yet; through a plain `-L` forward it never is, since sshd
+connects when the channel opens and the request follows a round trip later.
+The relay listens on `~/.cache/roamgate/herdr-relay-<token>.sock`, reads the
+request line, then connects to Herdr and writes it, so calls answer in a few
+milliseconds instead of 100. It prints a ready line before the tunnel counts as
+ready and exits with the session. A host where it does not start (no
+`python3`, ssh connected but the command failed) gets the direct forward for
+the rest of the runtime; `ROAMGATE_DISABLE_HERDR_RELAY=1` always forwards
+directly.
 Transient failures retry six times with backoff up to 30 seconds;
 authentication, host-key, and protocol failures do not.
 

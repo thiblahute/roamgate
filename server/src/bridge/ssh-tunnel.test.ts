@@ -567,3 +567,149 @@ describe("SSH command master alongside the tunnel", () => {
     expect(calls).toEqual([]);
   });
 });
+
+describe("Herdr relay on the tunnel", () => {
+  type Spawned = {
+    argv: string[];
+    relay: boolean;
+    exited: ReturnType<typeof deferred<number>>;
+    ready: ReturnType<typeof deferred<boolean>>;
+  };
+
+  function relayManager(
+    overrides: { socketWaitTimeoutMs?: number; herdrRelay?: boolean } = {},
+  ) {
+    const spawned: Spawned[] = [];
+    const exits: unknown[] = [];
+    const manager = createSshTunnelManager({
+      config: { ...config(), herdrRelay: overrides.herdrRelay ?? true },
+      runProcess: async () => ({ stdout: "/home/test", stderr: "" }),
+      onUnexpectedExit: (error) => exits.push(error),
+      dependencies: {
+        exists: () => true,
+        remove: () => undefined,
+        relayToken: () => "t0ken",
+        socketWaitTimeoutMs: overrides.socketWaitTimeoutMs ?? 8000,
+        spawn: (argv, options) => {
+          const entry: Spawned = {
+            argv,
+            relay: options?.relay === true,
+            exited: deferred<number>(),
+            ready: deferred<boolean>(),
+          };
+          spawned.push(entry);
+          return {
+            exited: entry.exited.promise,
+            stderr: Promise.resolve(""),
+            ...(entry.relay ? { relayReady: entry.ready.promise } : {}),
+            kill: () => entry.exited.resolve(143),
+          };
+        },
+      },
+    });
+    return { manager, spawned, exits };
+  }
+
+  const relaySocket = "/home/test/.cache/roamgate/herdr-relay-t0ken.sock";
+
+  test("forwards the control socket to the relay and waits for it to listen", async () => {
+    const { manager, spawned } = relayManager();
+    let started = false;
+    const starting = manager.startAutoSshTunnel().then(() => {
+      started = true;
+    });
+    await waitUntil(() => spawned.length === 1);
+    const [first] = spawned;
+    expect(first.relay).toBe(true);
+    expect(first.argv).not.toContain("-N");
+    expect(first.argv).toContain(`/tmp/herdr-control.sock:${relaySocket}`);
+    // The render socket stays a direct forward.
+    expect(first.argv).toContain(
+      "/tmp/herdr-client.sock:/home/test/.config/herdr/herdr-client.sock",
+    );
+    const command = first.argv.at(-1)!;
+    expect(first.argv.at(-2)).toBe("test-host");
+    expect(command).toStartWith("exec python3 -c ");
+    expect(command).toContain("'/home/test/.config/herdr/herdr.sock'");
+    expect(command).toEndWith(`'${relaySocket}'`);
+
+    await Bun.sleep(5);
+    expect(started).toBe(false);
+    first.ready.resolve(true);
+    await starting;
+    expect(started).toBe(true);
+    await manager.cleanupAutoSshTunnel();
+  });
+
+  test("falls back to the direct forward when the relay does not start", async () => {
+    const { manager, spawned } = relayManager();
+    const starting = manager.startAutoSshTunnel();
+    await waitUntil(() => spawned.length === 1);
+    // No python3 on the host: the login shell's 127, output ended.
+    spawned[0].ready.resolve(false);
+    spawned[0].exited.resolve(127);
+    await starting;
+    expect(spawned).toHaveLength(2);
+    const [, direct] = spawned;
+    expect(direct.relay).toBe(false);
+    expect(direct.argv).toContain("-N");
+    expect(direct.argv.slice(-2)).toEqual(["--", "test-host"]);
+    expect(direct.argv).toContain(
+      "/tmp/herdr-control.sock:/home/test/.config/herdr/herdr.sock",
+    );
+
+    // Later tunnels of this runtime skip it.
+    direct.exited.resolve(255);
+    await manager.startAutoSshTunnel();
+    expect(spawned).toHaveLength(3);
+    expect(spawned[2].relay).toBe(false);
+    await manager.cleanupAutoSshTunnel();
+  });
+
+  test("falls back when the relay never says it listens", async () => {
+    const { manager, spawned } = relayManager({ socketWaitTimeoutMs: 20 });
+    await manager.startAutoSshTunnel();
+    expect(spawned).toHaveLength(2);
+    expect(spawned[1].relay).toBe(false);
+    await manager.cleanupAutoSshTunnel();
+  });
+
+  test("a connection failure keeps the relay for the next attempt", async () => {
+    const { manager, spawned } = relayManager();
+    const starting = manager.startAutoSshTunnel();
+    await waitUntil(() => spawned.length === 1);
+    spawned[0].exited.resolve(255);
+    await expect(starting).rejects.toBeInstanceOf(SshTunnelError);
+    expect(spawned).toHaveLength(1);
+
+    const again = manager.startAutoSshTunnel();
+    await waitUntil(() => spawned.length === 2);
+    expect(spawned[1].relay).toBe(true);
+    spawned[1].ready.resolve(true);
+    await again;
+    await manager.cleanupAutoSshTunnel();
+  });
+
+  test("a relay that exits later is left out of the reconnect", async () => {
+    const { manager, spawned, exits } = relayManager();
+    const starting = manager.startAutoSshTunnel();
+    await waitUntil(() => spawned.length === 1);
+    spawned[0].ready.resolve(true);
+    await starting;
+    spawned[0].exited.resolve(1);
+    await waitUntil(() => exits.length === 1);
+
+    await manager.startAutoSshTunnel();
+    expect(spawned[1].relay).toBe(false);
+    await manager.cleanupAutoSshTunnel();
+  });
+
+  test("forwards directly when the runtime does not ask for the relay", async () => {
+    const { manager, spawned } = relayManager({ herdrRelay: false });
+    await manager.startAutoSshTunnel();
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0].relay).toBe(false);
+    expect(spawned[0].argv).toContain("-N");
+    await manager.cleanupAutoSshTunnel();
+  });
+});

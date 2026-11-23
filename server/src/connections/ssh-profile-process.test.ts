@@ -391,6 +391,8 @@ process.on("SIGINT", () => void stop());
       HERDR_GUI_CONNECTIONS_PATH: registryPath,
       HERDR_GUI_FAKE_SSH_STATE_DIR: state,
       HERDR_GUI_FAKE_SSH_HOME: fakeHome,
+      // The stand-in ssh forwards sockets but runs no remote command.
+      ROAMGATE_DISABLE_HERDR_RELAY: "1",
       HERDR_SOCKET_PATH: undefined,
       HERDR_CLIENT_SOCKET_PATH: undefined,
       HERDR_SSH_HOST: "legacy-host",

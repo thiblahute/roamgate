@@ -94,6 +94,20 @@ describe("SSH profile runtime socket allocation", () => {
     expect(config.masterControlPath).toBeUndefined();
   });
 
+  test("puts the Herdr relay in front unless the operator disables it", () => {
+    if (process.platform === "win32") return;
+    const config = createSshProfileRuntimeConfig(profile(), {
+      environment: {},
+    });
+    directories.push(config.ownedRuntimeDirectory!);
+    expect(config.herdrRelay).toBe(true);
+    const disabled = createSshProfileRuntimeConfig(profile(), {
+      environment: { ROAMGATE_DISABLE_HERDR_RELAY: "1" },
+    });
+    directories.push(disabled.ownedRuntimeDirectory!);
+    expect(disabled.herdrRelay).toBe(false);
+  });
+
   test("maps empty profile socket paths to remote home inference", () => {
     if (process.platform === "win32") return;
     const config = createSshProfileRuntimeConfig({
