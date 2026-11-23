@@ -288,6 +288,23 @@ pub struct SshProbeEnvironment {
     pub runtime_config: Arc<SshRuntimeConfigDeps>,
 }
 
+impl SshProbeEnvironment {
+    /// The real one, for a probe outside a running server (`roamgate
+    /// connections test`, `roamgate doctor`): its own session slots, the
+    /// system's processes, a runtime directory under the environment's root.
+    pub fn real(environment: Arc<dyn roamgate_base::env::Env>) -> Self {
+        let sessions = SshSessions::new(Arc::new(SystemClock));
+        let runner = roamgate_exec::process::ProcessRunner::system();
+        Self {
+            run_process: crate::host_ops::HostOps::new(sessions.clone(), runner.clone())
+                .tunnel_run_process(),
+            sessions,
+            tunnel_deps: TunnelDeps::real(runner),
+            runtime_config: Arc::new(SshRuntimeConfigDeps::real(environment)),
+        }
+    }
+}
+
 /// Probes a profile: a local one directly, an SSH one through a tunnel
 /// started for the probe and cleaned up after it.
 pub async fn test_connection_profile(
