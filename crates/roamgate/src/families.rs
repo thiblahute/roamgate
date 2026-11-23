@@ -8,6 +8,7 @@
 use roamgate_sidecar::family::Families;
 
 pub mod activity;
+pub mod agent_profiles;
 pub mod agent_sessions;
 pub mod archive;
 pub mod assistant;
@@ -41,6 +42,7 @@ pub fn core_families() -> Families {
         mr_reviews::family(),
         voice::family(),
         agent_sessions::family(),
+        agent_profiles::family(),
     ]
     .into_iter()
     .flatten()

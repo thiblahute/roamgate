@@ -234,7 +234,12 @@ pub struct SessionProfilesOptions {
     pub now: Option<NowMs>,
     /// Told the sessions after each write (the core tells the front).
     pub observer: Option<SessionsObserver>,
+    /// Asked before each write of the file (the family's one writer).
+    pub can_write: Option<CanWrite>,
 }
+
+/// Whether the file may be written now; Err: why not.
+pub type CanWrite = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 
 /// Which profile each session runs with, when the user chose one (by
 /// session id, every connection); no entry: the default profile. A choice
@@ -245,6 +250,7 @@ pub struct SessionProfiles {
     data: DataContext,
     now: NowMs,
     observer: Option<SessionsObserver>,
+    can_write: Option<CanWrite>,
     sessions: Mutex<Option<IndexMap<String, Map<String, Value>>>>,
 }
 
@@ -262,17 +268,23 @@ impl SessionProfiles {
             data: options.data,
             now: options.now.unwrap_or_else(system_now),
             observer: options.observer,
+            can_write: options.can_write,
             sessions: Mutex::new(None),
         }
     }
 
     /// The server's store: `<data>/session-profiles.json`.
-    pub fn at_data_root(data: DataContext, observer: Option<SessionsObserver>) -> Self {
+    pub fn at_data_root(
+        data: DataContext,
+        observer: Option<SessionsObserver>,
+        can_write: Option<CanWrite>,
+    ) -> Self {
         Self::new(SessionProfilesOptions {
             file: Some(data.data_root().join("session-profiles.json")),
             data,
             now: None,
             observer,
+            can_write,
         })
     }
 
@@ -283,6 +295,7 @@ impl SessionProfiles {
             data: DataContext::from_env(&roamgate_base::env::ProcessEnv),
             now,
             observer: None,
+            can_write: None,
         })
     }
 
@@ -333,7 +346,8 @@ impl SessionProfiles {
             .iter()
             .map(|(id, choice)| (id.clone(), Value::Object(choice.clone())))
             .collect();
-        if let Some(file) = &self.file {
+        let writable = self.can_write.as_ref().is_none_or(|check| check().is_ok());
+        if let Some(file) = self.file.as_ref().filter(|_| writable) {
             let doc = json!({"version": 1, "sessions": Value::Object(object.clone())});
             if let Ok(text) = to_js_json(&doc, JsonFormat::Pretty) {
                 let _ = self.data.replace_data_file(file, text.as_bytes(), 0o600);

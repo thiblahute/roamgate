@@ -2371,6 +2371,7 @@ pub fn owner_family(scenario_family: &str) -> &str {
     match scenario_family {
         "herdr" => "herdr_setup",
         "connections" => "host",
+        "agent_profile" => "agent_profiles",
         other => other,
     }
 }

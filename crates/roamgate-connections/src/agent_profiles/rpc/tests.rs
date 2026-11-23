@@ -51,6 +51,7 @@ fn store_with(now: Option<NowMs>) -> Arc<SessionProfiles> {
         data: DataContext::from_env(&roamgate_base::env::ProcessEnv),
         now,
         observer: None,
+        can_write: None,
     }))
 }
 

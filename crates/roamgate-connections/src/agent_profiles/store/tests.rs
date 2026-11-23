@@ -46,6 +46,7 @@ fn store_at(file: Option<PathBuf>, now: Option<NowMs>) -> SessionProfiles {
         data: DataContext::from_env(&roamgate_base::env::ProcessEnv),
         now,
         observer: None,
+        can_write: None,
     })
 }
 
