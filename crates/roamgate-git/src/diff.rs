@@ -22,7 +22,9 @@ use crate::combined::{
     CombinedStaged, combined_diff_script, cut_patch, parse_combined_diff_output, skip_login_noise,
 };
 use crate::compare::{js_number, locale_compare_base, safe_size};
-use crate::diff_base::{Requested, parse_refs_output, refs_script, resolve_default_base, select_diff_base};
+use crate::diff_base::{
+    Requested, parse_refs_output, refs_script, resolve_default_base, select_diff_base,
+};
 use crate::exec::{GitContext, Ran};
 use crate::shell::shell_command;
 use crate::steps::LastStepStore;
@@ -292,8 +294,8 @@ pub fn parse_numstat(output: &str) -> BTreeMap<String, (u64, u64)> {
 
 /// `git check-attr -z` output: paths marked generated (true) or unmarked
 /// (false).
-pub fn parse_generated_attributes(output: &str) -> BTreeMap<String, bool> {
-    let mut generated = BTreeMap::new();
+pub fn parse_generated_attributes(output: &str) -> indexmap::IndexMap<String, bool> {
+    let mut generated = indexmap::IndexMap::new();
     let fields: Vec<&str> = output.split('\0').collect();
     let mut index = 0;
     while index + 2 < fields.len() {
@@ -418,7 +420,12 @@ fn parse_git_patch_output(ran: &Ran, automatic: bool) -> Result<Patch> {
 
 /// One patch, capped on the host: no full patch in the bridge's or the
 /// SSH connection's memory.
-pub async fn read_git_patch(cx: &GitContext, root: &str, command: &str, automatic: bool) -> Result<Patch> {
+pub async fn read_git_patch(
+    cx: &GitContext,
+    root: &str,
+    command: &str,
+    automatic: bool,
+) -> Result<Patch> {
     let script = git_patch_script(root, command, automatic);
     let ran = cx
         .run(
@@ -431,7 +438,11 @@ pub async fn read_git_patch(cx: &GitContext, root: &str, command: &str, automati
 
 /// Runs several self-contained scripts as one shell command (one process
 /// or SSH round trip) and gives each its exit code, output and error.
-pub async fn run_script_batch(cx: &GitContext, scripts: &[String], timeout: Duration) -> Result<Vec<Ran>> {
+pub async fn run_script_batch(
+    cx: &GitContext,
+    scripts: &[String],
+    timeout: Duration,
+) -> Result<Vec<Ran>> {
     if scripts.len() == 1 {
         let ran = cx
             .run(
@@ -448,7 +459,10 @@ pub async fn run_script_batch(cx: &GitContext, scripts: &[String], timeout: Dura
         .map(|(index, script)| {
             fill_template(
                 BATCH_BLOCK_SH,
-                &[("index", (index as i64).into()), ("script", script.as_str().into())],
+                &[
+                    ("index", (index as i64).into()),
+                    ("script", script.as_str().into()),
+                ],
             )
             .expect("batch-block.sh")
         })
@@ -538,7 +552,11 @@ pub async fn tree_exists(cx: &GitContext, root: &str, tree: &str) -> Result<bool
     )))
 }
 
-async fn collect_generated_paths(cx: &GitContext, root: &str, entries: &[DiffEntry]) -> BTreeMap<String, bool> {
+async fn collect_generated_paths(
+    cx: &GitContext,
+    root: &str,
+    entries: &[DiffEntry],
+) -> BTreeMap<String, bool> {
     let mut generated = BTreeMap::new();
     let mut seen = BTreeSet::new();
     let paths: Vec<&str> = entries
@@ -643,7 +661,8 @@ async fn collect_diff_file_sizes(
         }
         for line in ran.stdout.split('\n') {
             let parts: Vec<&str> = line.trim().split(' ').collect();
-            if let (Some(id), Some(&"blob"), Some(size)) = (parts.first(), parts.get(1), parts.get(2))
+            if let (Some(id), Some(&"blob"), Some(size)) =
+                (parts.first(), parts.get(1), parts.get(2))
                 && let Some(size) = safe_size(size)
                 && !id.is_empty()
             {
@@ -782,7 +801,11 @@ pub struct Comparison {
     pub branches: Vec<String>,
 }
 
-async fn resolve_comparison_base(cx: &GitContext, root: &str, requested: Option<&Value>) -> Result<Comparison> {
+async fn resolve_comparison_base(
+    cx: &GitContext,
+    root: &str,
+    requested: Option<&Value>,
+) -> Result<Comparison> {
     let ran = cx
         .run(
             shell_command(&refs_script(root), cx.host()).map_err(GitError::Message)?,
@@ -824,14 +847,19 @@ type SharedComparison = futures_util::future::Shared<
 static RECENT_BASES: LazyLock<Mutex<BTreeMap<String, (Instant, SharedComparison)>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
-async fn recent_comparison_base(cx: &GitContext, root: &str, requested: Option<&Value>) -> Result<Comparison> {
+async fn recent_comparison_base(
+    cx: &GitContext,
+    root: &str,
+    requested: Option<&Value>,
+) -> Result<Comparison> {
     use futures_util::FutureExt as _;
     let requested_key = match requested {
         None | Some(Value::Null) => String::new(),
         Some(Value::String(s)) => s.clone(),
         Some(other) => other.to_string(),
     };
-    let key = serde_json::to_string(&json!([cx.host().unwrap_or(""), root, requested_key])).unwrap();
+    let key =
+        serde_json::to_string(&json!([cx.host().unwrap_or(""), root, requested_key])).unwrap();
     let shared = {
         let mut kept = RECENT_BASES.lock().unwrap();
         let now = Instant::now();
@@ -840,9 +868,10 @@ async fn recent_comparison_base(cx: &GitContext, root: &str, requested: Option<&
             _ => {
                 kept.retain(|_, (at, _)| now.duration_since(*at) < COMPARISON_BASE_REUSE);
                 let (cx, root, requested) = (cx.clone(), root.to_owned(), requested.cloned());
-                let base = async move { resolve_comparison_base(&cx, &root, requested.as_ref()).await }
-                    .boxed()
-                    .shared();
+                let base =
+                    async move { resolve_comparison_base(&cx, &root, requested.as_ref()).await }
+                        .boxed()
+                        .shared();
                 kept.insert(key.clone(), (now, base.clone()));
                 base
             }
@@ -1054,7 +1083,10 @@ pub async fn read_diff_summary(args: SummaryArgs<'_>) -> Result<Value> {
     };
     let size_diffs: Vec<(&str, String)> = match (mode, &step) {
         ("working", _) => vec![
-            ("staged", "diff --cached --no-ext-diff --find-renames".into()),
+            (
+                "staged",
+                "diff --cached --no-ext-diff --find-renames".into(),
+            ),
             ("unstaged", "diff --no-ext-diff --find-renames".into()),
         ],
         ("branch-main", _) => vec![(
@@ -1301,7 +1333,10 @@ pub async fn read_diff_files(args: FilesArgs<'_>) -> Result<Value> {
     } else {
         None
     };
-    let markers: Vec<String> = entries.iter().map(|_| marker("ROAMGATE-COMBINED")).collect();
+    let markers: Vec<String> = entries
+        .iter()
+        .map(|_| marker("ROAMGATE-COMBINED"))
+        .collect();
     let scripts: Vec<Option<String>> = entries
         .iter()
         .enumerate()
@@ -1447,7 +1482,10 @@ pub async fn read_diff_files(args: FilesArgs<'_>) -> Result<Value> {
                     continue;
                 }
             }
-            files.push(with_error(head, failed(&Ran::new(patch.code, patch.stdout, patch.stderr))));
+            files.push(with_error(
+                head,
+                failed(&Ran::new(patch.code, patch.stdout, patch.stderr)),
+            ));
             continue;
         }
         head.insert("diff".into(), json!(patch.diff));
@@ -1590,7 +1628,11 @@ pub(crate) fn last_step_time(step: &str) -> Option<String> {
 
 /// The workspace's latest step kept under refs, after a restart lost the
 /// one in memory.
-pub async fn read_last_step_refs(cx: &GitContext, root: &str, workspace_id: &str) -> Result<Option<StepRange>> {
+pub async fn read_last_step_refs(
+    cx: &GitContext,
+    root: &str,
+    workspace_id: &str,
+) -> Result<Option<StepRange>> {
     let prefix = last_step_ref_prefix(workspace_id);
     let listed = cx
         .run(
@@ -1677,6 +1719,6 @@ pub async fn read_last_step_refs(cx: &GitContext, root: &str, workspace_id: &str
 pub type SharedStore = Arc<LastStepStore>;
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod files_tests;
+#[cfg(test)]
+mod tests;

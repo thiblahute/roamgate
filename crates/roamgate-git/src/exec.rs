@@ -329,6 +329,56 @@ pub(crate) mod testing {
         }
     }
 
+    /// The text a request runs: a local argv joined, or the SSH line.
+    pub fn text(request: &Request) -> String {
+        match &request.invocation {
+            Invocation::Local(argv) => argv.join(" "),
+            Invocation::Ssh { command, .. } => command.clone(),
+        }
+    }
+
+    type Hook = dyn Fn(Request) -> futures_util::future::BoxFuture<'static, Option<Result<Ran, RunError>>>
+        + Send
+        + Sync;
+
+    /// The real local runner behind a hook that sees each request first
+    /// and may wait (a gate) or answer in its place.
+    pub struct Hooked {
+        hook: Box<Hook>,
+    }
+
+    impl Hooked {
+        pub fn context(
+            hook: impl Fn(
+                Request,
+            )
+                -> futures_util::future::BoxFuture<'static, Option<Result<Ran, RunError>>>
+            + Send
+            + Sync
+            + 'static,
+        ) -> GitContext {
+            GitContext::local(Arc::new(Self {
+                hook: Box::new(hook),
+            }))
+        }
+    }
+
+    impl Runner for Hooked {
+        fn run(&self, request: Request) -> RunFuture<'_> {
+            Box::pin(async move {
+                if let Some(answer) = (self.hook)(request.clone()).await {
+                    return answer;
+                }
+                let Invocation::Local(argv) = &request.invocation else {
+                    return Err(RunError("not local".into()));
+                };
+                LocalRunner::system()
+                    .run_local(argv, request.input.as_deref(), request.timeout)
+                    .await
+            })
+        }
+    }
+
     type Transform = dyn Fn(&str) -> String + Send + Sync;
 
     /// The real local runner with the script (the last word) rewritten

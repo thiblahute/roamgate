@@ -30,13 +30,21 @@ fn repository() -> Repo {
     let root = dir.path().to_path_buf();
     git(&root, &["init", "-q", "-b", "main"]);
     for name in ["a", "b", "c", "d", "e"] {
-        fs::write(root.join(format!("{name}.txt")), format!("{name} one\n{name} two\n")).unwrap();
+        fs::write(
+            root.join(format!("{name}.txt")),
+            format!("{name} one\n{name} two\n"),
+        )
+        .unwrap();
     }
     git(&root, &["add", "-A"]);
     git(&root, &["commit", "-qm", "base"]);
     git(&root, &["checkout", "-qb", "feature"]);
     for name in ["a", "b", "c", "d", "e"] {
-        fs::write(root.join(format!("{name}.txt")), format!("{name} one\n{name} 2\n")).unwrap();
+        fs::write(
+            root.join(format!("{name}.txt")),
+            format!("{name} one\n{name} 2\n"),
+        )
+        .unwrap();
     }
     git(&root, &["commit", "-qam", "change"]);
     Repo { _dir: dir, root }
@@ -120,7 +128,8 @@ fn mkfifo(path: &Path) {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn gives_each_file_of_the_working_review_its_combined_diff_and_a_failing_file_its_own_error() {
+async fn gives_each_file_of_the_working_review_its_combined_diff_and_a_failing_file_its_own_error()
+{
     let repo = repository();
     fs::write(repo.root.join("a.txt"), "a one\na staged\n").unwrap();
     git(&repo.root, &["add", "a.txt"]);
@@ -232,7 +241,11 @@ async fn frames_each_script_s_output_error_output_and_exit_code_past_a_login_pro
 async fn a_batch_cut_short_gives_the_unanswered_scripts_the_failure() {
     let outputs = run_script_batch(
         &local(),
-        &["printf ok".into(), "kill -9 $$".into(), "printf never".into()],
+        &[
+            "printf ok".into(),
+            "kill -9 $$".into(),
+            "printf never".into(),
+        ],
         GIT_DIFF_TIMEOUT,
     )
     .await

@@ -52,7 +52,12 @@ fn with_git_config(key: &str, value: &str) -> GitContext {
     ])
 }
 
-async fn combined_with(cx: &GitContext, repo: &Repo, path: &str, extra: Value) -> crate::Result<Value> {
+async fn combined_with(
+    cx: &GitContext,
+    repo: &Repo,
+    path: &str,
+    extra: Value,
+) -> crate::Result<Value> {
     let mut params = json!({ "path": path, "kind": "combined" });
     if let (Some(params), Some(extra)) = (params.as_object_mut(), extra.as_object()) {
         params.extend(extra.clone());
@@ -68,7 +73,9 @@ async fn combined_with(cx: &GitContext, repo: &Repo, path: &str, extra: Value) -
 }
 
 async fn combined(repo: &Repo, path: &str) -> Value {
-    combined_with(&local(), repo, path, json!({})).await.unwrap()
+    combined_with(&local(), repo, path, json!({}))
+        .await
+        .unwrap()
 }
 
 fn diff_of(file: &Value) -> &str {
@@ -185,7 +192,10 @@ async fn a_new_file_added_to_the_index_then_edited_is_partly_staged() {
     fs::write(repo.root.join("new.txt"), "first\nsecond\n").unwrap();
     let file = combined(&repo, "new.txt").await;
     assert!(file.get("untracked").is_none());
-    let texts: Vec<_> = lines_of(diff_of(&file)).into_iter().map(|l| l.text).collect();
+    let texts: Vec<_> = lines_of(diff_of(&file))
+        .into_iter()
+        .map(|l| l.text)
+        .collect();
     assert_eq!(texts, ["first", "second"]);
     assert_eq!(file["staged"], json!({ "old": [], "new": [[1, 1]] }));
 }
@@ -199,7 +209,10 @@ async fn a_staged_rename_reads_as_a_rename_with_its_edits() {
         .await
         .unwrap();
     let parsed = &parse_unified_diff(diff_of(&file))[0];
-    assert_eq!((parsed.old_path.as_str(), parsed.path.as_str()), ("a.txt", "b.txt"));
+    assert_eq!(
+        (parsed.old_path.as_str(), parsed.path.as_str()),
+        ("a.txt", "b.txt")
+    );
     assert!(diff_of(&file).contains("rename from a.txt"));
     assert_eq!(
         changed(diff_of(&file)),
@@ -289,7 +302,8 @@ async fn glob_characters_in_a_name_are_taken_literally() {
 fn stagedlines_tells_a_removed_line_the_index_dropped_from_one_it_kept() {
     let combined =
         parse_unified_diff("diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,3 +1,1 @@\n-a\n-b\n c\n");
-    let cached = parse_unified_diff("diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,2 +1,1 @@\n-a\n b\n");
+    let cached =
+        parse_unified_diff("diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,2 +1,1 @@\n-a\n b\n");
     assert_eq!(
         staged_lines(combined.first(), cached.first(), None),
         CombinedStaged {
@@ -352,7 +366,9 @@ async fn diff_noprefix_keeps_a_real_top_level_a_directory() {
     git(&repo.root, &["commit", "-q", "-m", "a dir"]);
     fs::write(repo.root.join("a").join("x.txt"), "two\n").unwrap();
     let cx = with_git_config("diff.noprefix", "true");
-    let file = combined_with(&cx, &repo, "a/x.txt", json!({})).await.unwrap();
+    let file = combined_with(&cx, &repo, "a/x.txt", json!({}))
+        .await
+        .unwrap();
     let paths: Vec<_> = parse_unified_diff(diff_of(&file))
         .into_iter()
         .map(|f| f.path)
@@ -373,7 +389,11 @@ async fn non_ascii_names_show_as_they_are_in_the_combined_diff() {
     let mut paths = Vec::new();
     for path in [tracked, untracked] {
         let file = combined(&repo, path).await;
-        paths.extend(parse_unified_diff(diff_of(&file)).into_iter().map(|f| f.path));
+        paths.extend(
+            parse_unified_diff(diff_of(&file))
+                .into_iter()
+                .map(|f| f.path),
+        );
     }
     paths.sort();
     assert_eq!(paths, [tracked, untracked]);
@@ -388,7 +408,11 @@ async fn the_combined_read_refuses_links_out_of_the_checkout_and_fifos() {
         .tempdir()
         .unwrap();
     fs::write(outside.path().join("secret.txt"), "secret\n").unwrap();
-    std::os::unix::fs::symlink(outside.path().join("secret.txt"), repo.root.join("link.txt")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("secret.txt"),
+        repo.root.join("link.txt"),
+    )
+    .unwrap();
     std::os::unix::fs::symlink(outside.path(), repo.root.join("linked")).unwrap();
     assert!(
         std::process::Command::new("mkfifo")
@@ -398,14 +422,21 @@ async fn the_combined_read_refuses_links_out_of_the_checkout_and_fifos() {
             .success()
     );
     let cx = Wrapped::deadline(Duration::from_millis(3000));
-    let link = combined_with(&cx, &repo, "link.txt", json!({})).await.unwrap();
+    let link = combined_with(&cx, &repo, "link.txt", json!({}))
+        .await
+        .unwrap();
     assert!(diff_of(&link).contains("new file mode 120000"));
     assert!(!diff_of(&link).contains("secret\n"));
     let error = combined_with(&cx, &repo, "linked/secret.txt", json!({}))
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("outside the checkout"), "{error}");
-    let error = combined_with(&cx, &repo, "pipe", json!({})).await.unwrap_err();
+    assert!(
+        error.to_string().contains("outside the checkout"),
+        "{error}"
+    );
+    let error = combined_with(&cx, &repo, "pipe", json!({}))
+        .await
+        .unwrap_err();
     assert!(error.to_string().contains("not a regular file"), "{error}");
     fs::write(repo.root.join("a.txt"), "one\n2\nthree\n").unwrap();
     let file = combined_with(&cx, &repo, "a.txt", json!({})).await.unwrap();

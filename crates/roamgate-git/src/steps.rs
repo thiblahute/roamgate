@@ -211,7 +211,10 @@ impl LastStepStore {
     /// A step ends: the checkout's snapshot after it becomes the completed
     /// step (unless a newer one already completed). False when nothing
     /// completed.
-    pub async fn complete_workspace(self: &Arc<Self>, workspace_id: &str) -> Result<bool, GitError> {
+    pub async fn complete_workspace(
+        self: &Arc<Self>,
+        workspace_id: &str,
+    ) -> Result<bool, GitError> {
         if self.disposed() {
             return Err(GitError::message(DISPOSED));
         }
@@ -272,7 +275,13 @@ impl LastStepStore {
             };
             {
                 let mut state = store.state.lock().unwrap();
-                if state.completed_versions.get(&workspace).copied().unwrap_or(0) >= version {
+                if state
+                    .completed_versions
+                    .get(&workspace)
+                    .copied()
+                    .unwrap_or(0)
+                    >= version
+                {
                     return Ok(false);
                 }
                 state.completed_versions.insert(workspace.clone(), version);
@@ -293,15 +302,9 @@ impl LastStepStore {
                     .clone()
                     .map(|keeper| keeper(&captured.root))
                     .unwrap_or_default();
-                let _ = persist_last_step(
-                    &store.cx,
-                    &captured.root,
-                    &workspace,
-                    &step,
-                    &range,
-                    &keep,
-                )
-                .await;
+                let _ =
+                    persist_last_step(&store.cx, &captured.root, &workspace, &step, &range, &keep)
+                        .await;
             }
             store
                 .state
@@ -331,7 +334,11 @@ impl LastStepStore {
     }
 
     /// The completed step's trees, when it is of this checkout.
-    pub async fn resolve_completed(&self, workspace_id: &str, root: &str) -> Option<(String, String)> {
+    pub async fn resolve_completed(
+        &self,
+        workspace_id: &str,
+        root: &str,
+    ) -> Option<(String, String)> {
         if self.disposed() {
             return None;
         }
@@ -343,7 +350,11 @@ impl LastStepStore {
 
     /// The completed step as a review target needs it; after a restart,
     /// the latest one kept under refs (read once).
-    pub async fn completed_step(self: &Arc<Self>, workspace_id: &str, root: &str) -> Option<StepRange> {
+    pub async fn completed_step(
+        self: &Arc<Self>,
+        workspace_id: &str,
+        root: &str,
+    ) -> Option<StepRange> {
         if self.disposed() {
             return None;
         }
@@ -404,7 +415,12 @@ impl LastStepStore {
         Ok(id)
     }
 
-    pub fn resolve_snapshot(&self, workspace_id: &str, root: &str, id: &str) -> Option<(String, String)> {
+    pub fn resolve_snapshot(
+        &self,
+        workspace_id: &str,
+        root: &str,
+        id: &str,
+    ) -> Option<(String, String)> {
         let state = self.state.lock().unwrap();
         state
             .snapshots
@@ -440,6 +456,16 @@ impl LastStepStore {
             format!("{workspace_id}\n{root}"),
             async { None }.boxed().shared(),
         );
+    }
+
+    /// Sets a completed step as if one had ended (tests of the readers).
+    #[cfg(test)]
+    pub fn set_completed(&self, workspace_id: &str, root: &str, range: StepRange) {
+        self.state
+            .lock()
+            .unwrap()
+            .completed
+            .insert(workspace_id.to_owned(), (root.to_owned(), range));
     }
 
     /// Stops the store: in-flight captures drain, then its state goes. A

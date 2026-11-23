@@ -129,7 +129,11 @@ pub fn staged_lines(
     let to_index = new_to_old(unstaged);
     let mut old = Vec::new();
     let mut added = Vec::new();
-    for line in combined.iter().flat_map(|f| &f.hunks).flat_map(|h| &h.lines) {
+    for line in combined
+        .iter()
+        .flat_map(|f| &f.hunks)
+        .flat_map(|h| &h.lines)
+    {
         match (line.kind, line.old, line.new) {
             (LineKind::Removed, Some(line_old), _) if cached_removed.contains(&line_old) => {
                 old.push(line_old);
@@ -237,7 +241,11 @@ pub fn parse_combined_diff_output(
         patch.to_owned()
     };
     let mut result = CombinedDiffFile {
-        diff: if deferred { String::new() } else { diff.clone() },
+        diff: if deferred {
+            String::new()
+        } else {
+            diff.clone()
+        },
         patch_size,
         truncated,
         deferred,
@@ -285,7 +293,8 @@ fn is_size_line(line: &str) -> bool {
         return false;
     };
     let mut parts = body.split(' ');
-    let (Some(size), Some(a), Some(b), None) = (parts.next(), parts.next(), parts.next(), parts.next())
+    let (Some(size), Some(a), Some(b), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
     else {
         return false;
     };
