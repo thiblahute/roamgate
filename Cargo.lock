@@ -7133,9 +7133,13 @@ name = "roamgate-claude"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "fancy-regex 0.17.0",
+ "flate2",
  "futures-util",
+ "hex",
  "indexmap",
+ "rand 0.9.5",
  "regex",
  "roamgate-agents",
  "roamgate-base",
@@ -7144,9 +7148,11 @@ dependencies = [
  "roamgate-protocol",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "tokio",
  "tokio-util",
+ "tracing",
  "url",
 ]
 
