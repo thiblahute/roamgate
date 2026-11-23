@@ -114,7 +114,6 @@ roamgate-voice-server	server/src/voice/call-audio	S22
 roamgate-voice-server	server/src/voice/voice-dictation	S22
 roamgate-voice-server	server/src/voice/voice-front	S22
 roamgate-voice-server	server/src/voice/voice-memory	S22
-roamgate-voice-server	server/src/voice/voice-research	S22
 roamgate-voice-server	server/src/voice/voice-tools	S22
 roamgate-voice-server	server/src/http/voice.test	S22
 

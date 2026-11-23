@@ -11,6 +11,7 @@ pub mod errands;
 pub mod images;
 pub mod keyed;
 pub mod memory_files;
+pub mod research;
 pub mod router;
 pub mod taste;
 pub mod test_env;

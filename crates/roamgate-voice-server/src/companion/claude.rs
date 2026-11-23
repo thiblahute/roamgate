@@ -281,20 +281,27 @@ pub fn spawn_claude(
     system_prompt: &str,
     options: &SpawnOptions,
 ) -> ClaudeProcess {
+    let cwd = options
+        .launch
+        .as_ref()
+        .and_then(|l| l.cwd.clone())
+        .unwrap_or_else(std::env::temp_dir);
+    spawn_process(command, claude_args(model, system_prompt, options), cwd)
+}
+
+/// A local Claude Code process: `command` with `args`, in `cwd`, in a
+/// background session's environment; its stdin written line by line
+/// (closed once `input` is dropped), its stdout read line by line.
+pub fn spawn_process(command: &ClaudeCommand, args: Vec<String>, cwd: PathBuf) -> ClaudeProcess {
     use std::process::Stdio;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
     let (input, mut to_write) = mpsc::unbounded_channel::<String>();
     let (lines_tx, lines) = mpsc::unbounded_channel::<String>();
     let (kill_tx, kill_rx) = oneshot::channel::<()>();
-    let cwd = options
-        .launch
-        .as_ref()
-        .and_then(|l| l.cwd.clone())
-        .unwrap_or_else(std::env::temp_dir);
     let mut child = tokio::process::Command::new(&command.program);
     child
-        .args(claude_args(model, system_prompt, options))
+        .args(args)
         .current_dir(cwd)
         .env_clear()
         .envs(command.env_over(background_claude_env(std::env::vars())))
