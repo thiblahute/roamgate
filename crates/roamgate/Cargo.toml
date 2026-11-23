@@ -14,6 +14,7 @@ name = "roamgate"
 path = "src/main.rs"
 
 [dependencies]
+indexmap = "2"
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 base64 = "0.22"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
@@ -31,6 +32,7 @@ roamgate-herdr = { path = "../roamgate-herdr" }
 roamgate-mr-reviews = { path = "../roamgate-mr-reviews" }
 roamgate-http = { path = "../roamgate-http" }
 roamgate-notify = { path = "../roamgate-notify" }
+roamgate-review = { path = "../roamgate-review" }
 roamgate-sidecar = { path = "../roamgate-sidecar" }
 roamgate-voice-server = { path = "../roamgate-voice-server" }
 roamgate-work = { path = "../roamgate-work" }

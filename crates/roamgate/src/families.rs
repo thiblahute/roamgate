@@ -18,6 +18,7 @@ pub mod limit_resume;
 pub mod mr_cache;
 pub mod mr_reviews;
 pub mod notifications;
+pub mod review;
 pub mod settings;
 pub mod time_report;
 pub mod update;
@@ -45,6 +46,7 @@ pub fn core_families() -> Families {
         agent_sessions::family(),
         agent_profiles::family(),
         workspace::family(),
+        review::family(),
     ]
     .into_iter()
     .flatten()

@@ -870,6 +870,31 @@ export function createClaudeModHub(args: {
       const entry = toolSessions.get(key(connectionId, paneId));
       return !!entry && entry.rules && toolsFresh(entry);
     },
+    /**
+     * The panes whose Claude has the mod's tools now, and until when its
+     * word holds (epoch ms): what the Rust core's review service asks.
+     */
+    toolsState(): {
+      connection_id: string;
+      pane_id: string;
+      fresh_until: number;
+      work: boolean;
+      rules: boolean;
+    }[] {
+      return [...toolSessions]
+        .filter(([, each]) => toolsFresh(each))
+        .map(([at, each]) => {
+          const [connectionId = "", paneId = ""] = at.split("\n");
+          return {
+            connection_id: connectionId,
+            pane_id: paneId,
+            fresh_until:
+              each.seenAt + (each.headless ? toolsHeadlessMs : toolsLiveMs),
+            work: each.work,
+            rules: each.rules,
+          };
+        });
+    },
     /** Whether the pane's Claude has the mod's tools (it said so lately). */
     hasTools(connectionId: string, paneId: string): boolean {
       const entry = toolSessions.get(key(connectionId, paneId));

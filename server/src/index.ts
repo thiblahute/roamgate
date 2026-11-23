@@ -62,6 +62,10 @@ import { isHtmlPath } from "../../shared/filePreview";
 import {
   type AgentPermissionPrompt,
   EFFORT_SESSION_PREFIX,
+  type ReviewAnchor,
+  type ReviewPush,
+  type ReviewSession,
+  type ReviewTarget,
   WORK_SESSION_PREFIX,
 } from "../../shared/review";
 import { agentAddress } from "../../shared/agentMessage";
@@ -226,7 +230,7 @@ import {
   createSiteStorage,
   renderedStoragePath,
 } from "./http/rendered-storage";
-import { RENDERED_PREFIX } from "../../shared/renderedPage";
+import { parseStorageWrite, RENDERED_PREFIX } from "../../shared/renderedPage";
 import type { MrItem } from "../../shared/mrReviews";
 import { downloadLocalFile } from "./workspace/local-files";
 import { downloadRemoteFile } from "./workspace/remote-files";
@@ -336,7 +340,11 @@ import { AssistantUserError } from "./assistant/errors";
 import { UnsupportedPlatformError } from "./connections/unix-only";
 import { readOwners } from "./core-channel/owners";
 import { rpcLogLevel } from "./utils/rpc-logging";
-import { handleReviewRpc, isReviewMethod } from "./review/rpc";
+import {
+  handleReviewRpc,
+  isReviewMethod,
+  type ReviewRpcConnection,
+} from "./review/rpc";
 import { createMrReviews, type MrReviews } from "./mr-reviews/module";
 import {
   createInboxFetchers,
@@ -416,14 +424,22 @@ import {
 } from "./mr-cache/shared";
 import { SessionImageGoneError } from "./agent/session-images";
 import {
+  createDraftNote,
+  createDraftReply,
+  deleteDraftNote,
+  draftReply,
+  draftThread,
   type GlabContext,
   findBranchMergeRequest,
+  type MergeRequestInfo,
   readCheckout,
   readCommitDiff,
   readMergeRequest,
   readMergeRequestCommits,
   readMergeRequestDiff,
+  readMergeRequestThreads,
   readRawFile,
+  updateDraftNote,
 } from "./review/gitlab";
 import {
   createReviewAgentServer,
@@ -718,8 +734,23 @@ let webPush = createBunWebPush();
  */
 const notifications = createNotificationFeed({
   webPush: { notify: (...args) => webPush.notify(...args) },
-  answerPrompt: ({ connectionId, promptId }, answer) =>
-    getReviewService().prompts.answer({ connectionId, id: promptId, answer }),
+  answerPrompt: ({ connectionId, promptId }, answer) => {
+    // The core's prompts are answered there, without waiting.
+    if (coreFront && reviewsOnCore()) {
+      void coreFront
+        .callInternal("review", "call", {
+          method: "prompts.answer",
+          params: { connectionId, id: promptId, answer },
+        })
+        .catch(() => {});
+      return true;
+    }
+    return getReviewService().prompts.answer({
+      connectionId,
+      id: promptId,
+      answer,
+    });
+  },
   warn: (message) => logger.warn(message),
   logger: logger.child("notifications"),
 });
@@ -804,9 +835,11 @@ const voiceErrandDeps = {
   status: async (connectionId: string, paneId: string) => {
     const runtime = connectionManager.readyRuntime(connectionId);
     if (!runtime) return null;
-    const asked = getReviewService()
-      .prompts.list(connectionId)
-      .find((prompt) => prompt.paneId === paneId);
+    const asked = (
+      (await reviewServiceCall("prompts.list", {
+        connectionId,
+      })) as AgentPermissionPrompt[]
+    ).find((prompt) => prompt.paneId === paneId);
     const chat = runtime.conversation.lease(paneId)
       ? runtime.conversation.state(paneId)
       : null;
@@ -1271,6 +1304,7 @@ const coreReverseTargets = {
       text: params.text,
     });
   }),
+  ...reviewReverseTargets(),
   "herdr.call": async (args: unknown) => {
     const { method, params, timeout_ms, fresh } = (args ?? {}) as {
       method?: unknown;
@@ -1566,7 +1600,7 @@ const coreReverseTargets = {
     );
   },
   "review.addThread": async (args: unknown) =>
-    getReviewService().addThread((args ?? {}) as Record<string, unknown>),
+    reviewServiceCall("addThread", (args ?? {}) as Record<string, unknown>),
   // time_report in Rust: the activity log Bun owns until it moves too.
   "activity.dayInput": async (args: unknown) => {
     const { date } = (args ?? {}) as { date?: unknown };
@@ -2773,12 +2807,12 @@ async function assistantChatThreadReply(
   sessionId: string,
   params: { comment_id: string; text: string },
 ) {
-  const thread = getReviewService().replyInChat({
+  const thread = (await reviewServiceCall("replyInChat", {
     chat: rangerChatKey(sessionId),
     commentId: params.comment_id,
     text: params.text,
     author: RANGER_THREAD_AUTHOR,
-  });
+  })) as { id: string };
   return { text: `Answered in thread [${thread.id.slice(0, 8)}].` };
 }
 
@@ -3152,7 +3186,11 @@ let reviewStorageForHistory: ReviewSource | null = null;
 /** Local history (server/src/history): a git repo of what was authored. */
 const historyRuntime = new HistoryRuntime({
   areas: historyAreas(historyPaths(), () => {
-    if (!reviewStorageForHistory) getReviewService();
+    // While the core owns the reviews, the file read as it writes it.
+    if (!reviewStorageForHistory)
+      if (reviewsOnCore())
+        reviewStorageForHistory = openReviewStorage(reviewDirectory());
+      else getReviewService();
     return reviewStorageForHistory;
   }),
   place: async () => historyPlace(await readGuiSettings(), dataRoot()),
@@ -3190,7 +3228,7 @@ let workDeps: Omit<WorkServiceDeps, "store"> | null = null;
  */
 function workServiceDeps(): Omit<WorkServiceDeps, "store"> {
   if (workDeps) return workDeps;
-  const review = getReviewService();
+  const review = liveReviewService;
   const checkout = ownCheckout();
   workDeps = {
     publish: (push) => {
@@ -3634,6 +3672,359 @@ function reviewGlabContext(
   };
 }
 
+/** Whether the Rust core owns the reviews now (the review family). */
+function reviewsOnCore(): boolean {
+  return !!coreFront && !bunOwns("review");
+}
+
+type ReverseArgs = Record<string, unknown>;
+const argText = (value: unknown) => (typeof value === "string" ? value : "");
+
+/**
+ * The review family's reverse calls (contract/wire/core-channel.md): what
+ * the core's review service asks of Bun while it owns the reviews.
+ */
+function reviewReverseTargets() {
+  return {
+    // The core takes the reviews: Bun's service stops and lets go of
+    // reviews.sqlite before the core opens it.
+    "review.release": async () => {
+      const service = reviewService;
+      reviewService = null;
+      reviewStorageForHistory = null;
+      service?.close();
+      return {};
+    },
+    // A push of the core's service: what Bun does with it besides the
+    // browsers (which the core's push reaches itself).
+    "review.published": async (args: unknown) => {
+      const push = (args ?? {}) as ReverseArgs;
+      const sessionId = argText(push.sessionId);
+      if (push.type === "prompts") reviewPushEffects(push as ReviewPush);
+      if (push.type === "removed" && sessionId)
+        historyChanged("reviews", sessionId);
+      if (push.type === "session" && sessionId) {
+        historyChanged("reviews", sessionId);
+        const item = argText(push.workItem);
+        if (item) {
+          historyChanged("work", item);
+          workQuestionsSeen(
+            item,
+            (Array.isArray(push.threads) ? push.threads : []) as Parameters<
+              WorkService["questionsSeen"]
+            >[1],
+          );
+        }
+      }
+      return {};
+    },
+    "review.host": (args: unknown) =>
+      reviewHostCall((args ?? {}) as ReverseArgs),
+    "review.forge": (args: unknown) =>
+      reviewForgeCall((args ?? {}) as ReverseArgs),
+    "review.connection": (args: unknown) =>
+      reviewConnectionCall((args ?? {}) as ReverseArgs),
+    // The mod's install and status, Bun's until the core has the hub.
+    "review.claudeMod": async (args: unknown) => {
+      const { connection_id, action } = (args ?? {}) as ReverseArgs;
+      if (
+        typeof connection_id !== "string" ||
+        (action !== "status" && action !== "install" && action !== "uninstall")
+      )
+        throw new Error("review.claudeMod needs a connection_id and an action");
+      return claudeModIntegration(connection_id, action);
+    },
+  };
+}
+
+/** The review service's effects, for the core's (`review.host`). */
+async function reviewHostCall(args: ReverseArgs): Promise<unknown> {
+  const host = reviewServiceHost();
+  const session = args.session as ReviewSession;
+  const commit = typeof args.commit === "string" ? args.commit : undefined;
+  const connectionId = argText(args.connection_id);
+  const paneId = argText(args.pane_id);
+  switch (args.op) {
+    case "loadDiff":
+      return host.loadDiff(
+        session,
+        commit,
+        Array.isArray(args.paths)
+          ? { paths: args.paths as string[] }
+          : undefined,
+      );
+    case "loadSummary":
+      return host.loadSummary(session, commit);
+    case "loadFiles":
+      return host.loadFiles(
+        session,
+        args.ends as { base: string; head: string },
+        args.files as Parameters<typeof host.loadFiles>[2],
+      );
+    case "loadCommits":
+      return host.loadCommits(session);
+    case "loadPatchIds":
+      return host.loadPatchIds(session, args.shas as string[]);
+    case "loadState":
+      return host.loadState(session);
+    case "loadHeads":
+      return host.loadHeads(
+        connectionId,
+        args.entries as { root: string; ref: string }[],
+      );
+    case "loadFile":
+      return host.loadFile(session, argText(args.rev), argText(args.path));
+    case "promptAgent":
+      await host.promptAgent(connectionId, paneId, argText(args.text));
+      return {};
+    case "sessionPane":
+      return host.sessionPane(connectionId, argText(args.session_id));
+    case "paneSession":
+      return host.paneSession(connectionId, paneId);
+    case "agentCompactedSince":
+      return host.agentCompactedSince(
+        connectionId,
+        paneId,
+        argText(args.since),
+      );
+    case "noteCause":
+      // All an agent is sent by a review is the user's doing.
+      turnCauses.note(connectionId, paneId, { by: "user", via: "review" });
+      return {};
+  }
+  throw new Error(`unknown review host op ${String(args.op)}`);
+}
+
+/** The forge of merge requests' reviews, for the core's (`review.forge`). */
+async function reviewForgeCall(args: ReverseArgs): Promise<unknown> {
+  const host = reviewServiceHost();
+  const session = args.session as ReviewSession;
+  const mr = args.mr as MergeRequestInfo;
+  const context = () => host.gitlab.context(session);
+  switch (args.op) {
+    case "checkout":
+      return host.gitlab.checkout(session);
+    case "find":
+      return (
+        (await host.gitlab.find(
+          session,
+          args.checkout as Parameters<typeof host.gitlab.find>[1],
+        )) ?? null
+      );
+    case "readMergeRequest":
+      return readMergeRequest(context(), argText(args.url));
+    case "readThreads":
+      return readMergeRequestThreads(context(), mr, session.id);
+    case "createDraftNote":
+      return draftThread(
+        await createDraftNote(
+          context(),
+          mr,
+          args.anchor as ReviewAnchor,
+          argText(args.note),
+          (args.diff ?? undefined) as Parameters<typeof createDraftNote>[4],
+        ),
+        session.id,
+        mr,
+      );
+    case "updateDraftNote":
+      return draftThread(
+        await updateDraftNote(
+          context(),
+          mr,
+          Number(args.id),
+          argText(args.note),
+        ),
+        session.id,
+        mr,
+      );
+    case "deleteDraftNote":
+      await deleteDraftNote(context(), mr, Number(args.id));
+      return {};
+    case "createDraftReply":
+      return draftReply(
+        await createDraftReply(
+          context(),
+          mr,
+          argText(args.discussion),
+          argText(args.note),
+        ),
+      );
+  }
+  throw new Error(`unknown review forge op ${String(args.op)}`);
+}
+
+/** A browser connection's reads, for the core's review calls. */
+async function reviewConnectionCall(args: ReverseArgs): Promise<unknown> {
+  if (args.op === "id") return connectionManager.defaultId();
+  const connection = reviewRpcConnection(coreRuntime(args));
+  const unavailable = () => new ReviewError("pages cannot be shown here", 503);
+  switch (args.op) {
+    case "resolveRoot":
+      return connection.resolveRoot(argText(args.workspace_id));
+    case "readDefaultBase":
+      if (!connection.readDefaultBase) throw new Error("no default branch");
+      return connection.readDefaultBase(argText(args.root));
+    case "readRoot":
+      if (!connection.readRoot) throw new Error("no repository reads");
+      return connection.readRoot(argText(args.path));
+    case "scanRepos":
+      return connection.scanRepos
+        ? connection.scanRepos(
+            args.paths as string[],
+            args.agent_paths as string[],
+          )
+        : [];
+    case "renderedPage":
+      if (!connection.renderedPage) throw unavailable();
+      return connection.renderedPage(
+        { root: argText(args.root), target: args.target as ReviewTarget },
+        typeof args.page === "string" ? args.page : undefined,
+        args.scripts === true,
+      );
+    case "renderedSvg":
+      if (!connection.renderedSvg) throw unavailable();
+      return connection.renderedSvg(
+        argText(args.svg),
+        typeof args.color === "string" ? args.color : undefined,
+        args.scripts === true,
+      );
+    case "renderedStorage": {
+      const write = parseStorageWrite(args.write);
+      if (!connection.renderedStorage || !write)
+        throw new ReviewError("invalid storage write");
+      try {
+        return connection.renderedStorage(argText(args.token), write);
+      } catch (error) {
+        if (error instanceof Error && error.name === "QuotaExceededError")
+          throw Object.assign(new Error("the site's storage is full"), {
+            code: "quota",
+          });
+        throw error;
+      }
+    }
+    case "clearRenderedStorage":
+      if (!connection.clearRenderedStorage)
+        throw new ReviewError("invalid site");
+      connection.clearRenderedStorage(argText(args.site));
+      return {};
+  }
+  throw new Error(`unknown review connection op ${String(args.op)}`);
+}
+
+/**
+ * While the core owns the reviews: what it asks of Bun's agents without
+ * waiting (whether a host runs the review client, whether a pane's Claude
+ * has the mod's tools), sent whenever it changes.
+ */
+let reviewAgentsTimer: ReturnType<typeof setInterval> | null = null;
+let reviewAgentsSent = "";
+function sendReviewAgents(): void {
+  const front = coreFront;
+  if (!front || !reviewsOnCore()) return;
+  const host = reviewServiceHost();
+  const channels: Record<string, boolean> = {};
+  for (const status of connectionManager.list())
+    channels[status.id] = host.agentChannel(status.id);
+  const state = JSON.stringify({ channels, tools: claudeModHub.toolsState() });
+  if (state === reviewAgentsSent) return;
+  reviewAgentsSent = state;
+  front
+    .callInternal("review", "agents", JSON.parse(state))
+    .catch(() => (reviewAgentsSent = ""));
+}
+
+let reviewsWereOnCore = false;
+onOwnershipChanged(() => {
+  const onCore = reviewsOnCore();
+  if (onCore === reviewsWereOnCore) return;
+  reviewsWereOnCore = onCore;
+  const log = logger.child("review");
+  if (onCore) {
+    reviewAgentsSent = "";
+    sendReviewAgents();
+    reviewAgentsTimer = setInterval(sendReviewAgents, 1000);
+    (reviewAgentsTimer as { unref?: () => void }).unref?.();
+    log.info("handed to the Rust core");
+    return;
+  }
+  if (reviewAgentsTimer) clearInterval(reviewAgentsTimer);
+  reviewAgentsTimer = null;
+  // The core's service stops before Bun's opens reviews.sqlite again.
+  void coreFront?.callInternal("review", "close", {}).catch(() => {});
+  log.info("served by Bun again");
+});
+
+/** A browser connection's reads for the review calls (review/rpc.ts). */
+function reviewRpcConnection(
+  connection: LegacyConnectionRuntime,
+): ReviewRpcConnection {
+  return {
+    id: connection.identity.id,
+    resolveRoot: async (workspaceId) =>
+      (
+        await connection.files.resolveWorkspaceGitRoot({
+          workspace_id: workspaceId,
+        })
+      ).root,
+    readDefaultBase: (root) => connection.files.readDefaultBase(root),
+    readRoot: (path) => connection.files.readReviewRoot(path),
+    scanRepos: (paths, agentPaths) =>
+      connection.files.scanReviewRepos(paths, agentPaths),
+    renderedStorage: (token, write) =>
+      renderedPages.writeStorage(connection.identity.id, token, write),
+    clearRenderedStorage: (site) => renderedStorage.clear(site),
+    renderedSvg: (svg, color, scripts) => {
+      const mode = scripts ? "site" : "static";
+      return {
+        src: `${RENDERED_PREFIX}${renderedPages.mint({
+          connectionId: connection.identity.id,
+          mode,
+          source: { kind: "inline", body: renderedSvgPage(svg, color) },
+        })}/`,
+        mode,
+      };
+    },
+    renderedPage: async (place, page, scripts) => {
+      if (place.target.kind !== "rendered")
+        throw new ReviewError("not a rendered review");
+      const settings = await readGuiSettings();
+      let address: ReturnType<typeof renderedAddress>;
+      try {
+        address = renderedAddress({
+          target: place.target,
+          root: place.root,
+          sites: settings.rendered_sites ?? [],
+          page,
+          scripts,
+          // The root set in Settings wins over the one found.
+          rootOf: (site) => {
+            const explicit = settings.rendered_site_roots?.[site];
+            if (explicit) return { root: explicit, explicit: true };
+            const found = renderedPages.siteRoot(connection.identity.id, site);
+            return found ? { root: found, explicit: false } : undefined;
+          },
+        });
+      } catch (error) {
+        throw new ReviewError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      const token = renderedPages.mint({
+        connectionId: connection.identity.id,
+        mode: address.mode,
+        source: address.source,
+        ...(address.home ? { home: address.home } : {}),
+      });
+      return {
+        src: `${RENDERED_PREFIX}${token}/${address.rest}`,
+        mode: address.mode,
+        ...(address.site ? { site: address.site } : {}),
+      };
+    },
+  };
+}
+
 /** An image pasted into a review comment, to the signed-in browser. */
 async function serveReviewImage(url: URL): Promise<Response> {
   // An agent's image named by its path: it may change, so not kept.
@@ -3723,9 +4114,68 @@ const renderedPages = createRenderedPages({
   }),
 });
 
-let reviewService: ReviewService | null = null;
-function getReviewService(): ReviewService {
-  if (reviewService) return reviewService;
+/**
+ * What a review push does in Bun besides reaching the browsers: the
+ * notification feed's prompts and the Work board's questions. Also run
+ * for the pushes of the core's review service (`review.published`).
+ */
+function reviewPushEffects(push: ReviewPush): void {
+  if (push.type === "prompts") notifyPrompts(push.connectionId, push.prompts);
+  // A work item's review: the questions its owner asks on its
+  // description, counted on its card.
+  if (push.type === "session" && push.snapshot.session.target.kind === "work")
+    workQuestionsSeen(push.snapshot.session.target.item, push.snapshot.threads);
+}
+
+/** A work item's review threads seen: by the core while it serves Work. */
+function workQuestionsSeen(
+  item: string,
+  threads: Parameters<WorkService["questionsSeen"]>[1],
+): void {
+  if (coreServesWork())
+    void coreWorkCall("questions_seen", { item, threads }).catch(
+      () => undefined,
+    );
+  else workService?.questionsSeen(item, threads);
+}
+
+/** A review push to every browser, and what Bun does with it. */
+function publishReview(push: ReviewPush): void {
+  // Machine-wide like forwards: each browser keeps the reviews of the
+  // connections it shows and can raise a review opened on another one.
+  const payload = JSON.stringify({ review: push });
+  // A session's snapshot replaces the one before: a browser behind on a
+  // slow link gets only the newest instead of every one in turn.
+  const coalesceKey =
+    push.type === "session"
+      ? `review:${push.snapshot.session.id}`
+      : push.type === "prompts"
+        ? `review-prompts:${push.connectionId}`
+        : undefined;
+  if (payload.length > 1024 * 1024)
+    logger.debug("large review push", {
+      type: push.type,
+      ...(push.type === "session"
+        ? {
+            session: push.snapshot.session.id,
+            threads: push.snapshot.threads.length,
+          }
+        : push.type === "prompts"
+          ? { prompts: push.prompts.length }
+          : {}),
+      chars: payload.length,
+    });
+  for (const ws of clients) safeSend(ws, payload, "review", coalesceKey);
+  reviewPushEffects(push);
+}
+
+/**
+ * What the review service asks of the rest of the server: git reads of a
+ * checkout, agent panes and sessions, the Claude mod's word on a pane and
+ * the forge. Bun's service gets it, and so does the Rust core's while it
+ * owns the reviews (the `review.host` and `review.forge` reverse calls).
+ */
+function reviewServiceHost() {
   const runtimeOf = (connectionId: string) =>
     resolveReadyConnection(connectionManager, connectionId).runtime;
   /** A merge request's commit not in the checkout: the forge's diff, whole. */
@@ -3742,59 +4192,7 @@ function getReviewService(): ReviewService {
     );
     return readCommitDiff(context, mr, commit, listed?.parent ?? null);
   };
-  const storage = withHistoryHooks(
-    openReviewStorage(reviewDirectory()),
-    historyChanged,
-  );
-  reviewStorageForHistory = storage;
-  reviewService = createReviewService({
-    storage,
-    publish: (push) => {
-      // Machine-wide like forwards: each browser keeps the reviews of the
-      // connections it shows and can raise a review opened on another one.
-      const payload = JSON.stringify({ review: push });
-      // A session's snapshot replaces the one before: a browser behind on a
-      // slow link gets only the newest instead of every one in turn.
-      const coalesceKey =
-        push.type === "session"
-          ? `review:${push.snapshot.session.id}`
-          : push.type === "prompts"
-            ? `review-prompts:${push.connectionId}`
-            : undefined;
-      if (payload.length > 1024 * 1024)
-        logger.debug("large review push", {
-          type: push.type,
-          ...(push.type === "session"
-            ? {
-                session: push.snapshot.session.id,
-                threads: push.snapshot.threads.length,
-              }
-            : push.type === "prompts"
-              ? { prompts: push.prompts.length }
-              : {}),
-          chars: payload.length,
-        });
-      for (const ws of clients) safeSend(ws, payload, "review", coalesceKey);
-      if (push.type === "prompts")
-        notifyPrompts(push.connectionId, push.prompts);
-      // A work item's review: the questions its owner asks on its
-      // description, counted on its card.
-      if (
-        push.type === "session" &&
-        push.snapshot.session.target.kind === "work"
-      ) {
-        if (coreServesWork())
-          void coreWorkCall("questions_seen", {
-            item: push.snapshot.session.target.item,
-            threads: push.snapshot.threads,
-          }).catch(() => undefined);
-        else
-          workService?.questionsSeen(
-            push.snapshot.session.target.item,
-            push.snapshot.threads,
-          );
-      }
-    },
+  return {
     loadCommits: async (session) => {
       const runtime = runtimeOf(session.connectionId);
       // Comparing two versions of a branch: its commits were rewritten, so
@@ -4017,10 +4415,77 @@ function getReviewService(): ReviewService {
         );
       }
     },
+  } satisfies Partial<Parameters<typeof createReviewService>[0]>;
+}
+
+/** The kept steps of each checkout the core's service last said. */
+const coreKeptSteps = new Map<string, readonly string[]>();
+/**
+ * The steps of a checkout whose review has threads. While the core owns
+ * the reviews, what it said last, asked again for the next time.
+ */
+function keptLastSteps(root: string): readonly string[] {
+  if (!reviewsOnCore()) return getReviewService().keptSteps(root);
+  void coreFront
+    ?.callInternal("review", "call", { method: "keptSteps", params: { root } })
+    .then((steps) => {
+      if (Array.isArray(steps)) coreKeptSteps.set(root, steps as string[]);
+    })
+    .catch(() => {});
+  return coreKeptSteps.get(root) ?? [];
+}
+
+/**
+ * Bun's review service as its users hold it: each use reaches the one
+ * open now, so a use while the core owns the reviews fails instead of
+ * writing a closed copy.
+ */
+const liveReviewService = new Proxy({} as ReviewService, {
+  get: (_target, key) => Reflect.get(getReviewService(), key),
+});
+
+/**
+ * A use of the review service that waits: Bun's, or the core's while it
+ * owns the reviews (`internal.review.call`).
+ */
+async function reviewServiceCall(
+  method: string,
+  params: Record<string, unknown>,
+): Promise<unknown> {
+  if (coreFront && reviewsOnCore())
+    return coreFront.callInternal("review", "call", { method, params });
+  const service = getReviewService();
+  switch (method) {
+    case "addThread":
+      return service.addThread(params);
+    case "replyInChat":
+      return service.replyInChat(
+        params as Parameters<ReviewService["replyInChat"]>[0],
+      );
+    case "prompts.list":
+      return service.prompts.list(String(params.connectionId ?? ""));
+  }
+  throw new Error(`unknown review service method ${method}`);
+}
+
+let reviewService: ReviewService | null = null;
+/** Bun's review service: refused while the Rust core owns the reviews. */
+function getReviewService(): ReviewService {
+  if (reviewService) return reviewService;
+  if (reviewsOnCore())
+    throw new ReviewError("the reviews are served by the Rust core now", 503);
+  const storage = withHistoryHooks(
+    openReviewStorage(reviewDirectory()),
+    historyChanged,
+  );
+  reviewStorageForHistory = storage;
+  reviewService = createReviewService({
+    storage,
+    publish: publishReview,
+    ...reviewServiceHost(),
   });
   // A last step's snapshots stay while its review has threads.
-  const service = reviewService;
-  keepLastSteps((root) => service.keptSteps(root));
+  keepLastSteps(keptLastSteps);
   // Images of reviews discarded before the last restart.
   try {
     pruneReviewImages(
@@ -4112,7 +4577,7 @@ let reviewAgentInstalled = false;
 const reviewAgentHosts = new Set<string>();
 function getReviewAgent(): ReviewAgentServer {
   reviewAgent ??= createReviewAgentServer({
-    service: getReviewService(),
+    service: liveReviewService,
     ready: () => hostSettling,
     hasViewers: () => clients.size > 0,
     notify: notifyFromAgent,
@@ -6403,73 +6868,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     try {
       const result = await handleReviewRpc(
         getReviewService(),
-        {
-          id: connection.identity.id,
-          resolveRoot: async (workspaceId) =>
-            (
-              await connection.files.resolveWorkspaceGitRoot({
-                workspace_id: workspaceId,
-              })
-            ).root,
-          readDefaultBase: (root) => connection.files.readDefaultBase(root),
-          readRoot: (path) => connection.files.readReviewRoot(path),
-          scanRepos: (paths, agentPaths) =>
-            connection.files.scanReviewRepos(paths, agentPaths),
-          renderedStorage: (token, write) =>
-            renderedPages.writeStorage(connection.identity.id, token, write),
-          clearRenderedStorage: (site) => renderedStorage.clear(site),
-          renderedSvg: (svg, color, scripts) => {
-            const mode = scripts ? "site" : "static";
-            return {
-              src: `${RENDERED_PREFIX}${renderedPages.mint({
-                connectionId: connection.identity.id,
-                mode,
-                source: { kind: "inline", body: renderedSvgPage(svg, color) },
-              })}/`,
-              mode,
-            };
-          },
-          renderedPage: async (place, page, scripts) => {
-            if (place.target.kind !== "rendered")
-              throw new ReviewError("not a rendered review");
-            const settings = await readGuiSettings();
-            let address: ReturnType<typeof renderedAddress>;
-            try {
-              address = renderedAddress({
-                target: place.target,
-                root: place.root,
-                sites: settings.rendered_sites ?? [],
-                page,
-                scripts,
-                // The root set in Settings wins over the one found.
-                rootOf: (site) => {
-                  const explicit = settings.rendered_site_roots?.[site];
-                  if (explicit) return { root: explicit, explicit: true };
-                  const found = renderedPages.siteRoot(
-                    connection.identity.id,
-                    site,
-                  );
-                  return found ? { root: found, explicit: false } : undefined;
-                },
-              });
-            } catch (error) {
-              throw new ReviewError(
-                error instanceof Error ? error.message : String(error),
-              );
-            }
-            const token = renderedPages.mint({
-              connectionId: connection.identity.id,
-              mode: address.mode,
-              source: address.source,
-              ...(address.home ? { home: address.home } : {}),
-            });
-            return {
-              src: `${RENDERED_PREFIX}${token}/${address.rest}`,
-              mode: address.mode,
-              ...(address.site ? { site: address.site } : {}),
-            };
-          },
-        },
+        reviewRpcConnection(connection),
         method,
         params ?? {},
       );
@@ -7334,6 +7733,7 @@ async function handleFetch(
     return handleUpdateInstall(req);
   }
   if (url.pathname === "/api/review/image" && req.method === "GET") {
+    if (coreServesHere()) return forwardToCore();
     return serveReviewImage(url);
   }
   if (url.pathname === "/api/herdr/status" && req.method === "GET") {
