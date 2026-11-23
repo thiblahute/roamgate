@@ -381,6 +381,74 @@ async fn deletes_untracked_symlinks_that_point_at_directories() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn reads_local_fingerprints_in_process_as_the_stat_script_does() {
+    use std::os::unix::fs::symlink;
+    let repo = repo(true);
+    let root = &repo.root;
+    fs::write(root.join("-odd name \u{fc}.txt"), "temp\n").unwrap();
+    fs::create_dir(root.join("dir")).unwrap();
+    fs::write(root.join("dir/inner.txt"), "inner file\n").unwrap();
+    symlink("dir/inner.txt", root.join("file-link")).unwrap();
+    symlink("dir", root.join("dir-link")).unwrap();
+    symlink("missing", root.join("dangling")).unwrap();
+    let paths: Vec<String> = [
+        "tracked.txt",
+        "-odd name \u{fc}.txt",
+        "dir/inner.txt",
+        "file-link",
+        "dir-link",
+        "dangling",
+        "dir",
+        "absent.txt",
+    ]
+    .map(String::from)
+    .to_vec();
+    let runner = Scripted::new(|_: &Request| Ok(Ran::new(1, "", "spawned")));
+    let context = ActionContext {
+        git: GitContext::local(runner.clone()),
+        root: repo.context.root.clone(),
+    };
+    let local = collect_worktree_fingerprints(&context, &paths)
+        .await
+        .unwrap();
+    assert!(runner.calls().is_empty());
+    let script = fill_template(
+        UNTRACKED_STATS_SH,
+        &[
+            (
+                "paths",
+                paths
+                    .iter()
+                    .map(|p| shell_quote(p))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .into(),
+            ),
+            ("root", shell_quote(&repo.context.root).into()),
+        ],
+    )
+    .unwrap();
+    let output = std::process::Command::new("sh")
+        .args(["-c", &script])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let scripted = parse_fingerprint_listing(&String::from_utf8(output.stdout).unwrap());
+    let mut keys: Vec<&String> = scripted.keys().collect();
+    keys.sort();
+    let mut wanted = vec![
+        "-odd name \u{fc}.txt",
+        "dir/inner.txt",
+        "file-link",
+        "tracked.txt",
+    ];
+    wanted.sort();
+    assert_eq!(keys, wanted);
+    assert_eq!(local, scripted);
+}
+
 #[tokio::test]
 async fn fails_closed_on_destructive_actions_without_a_fingerprint() {
     let repo = repo(true);

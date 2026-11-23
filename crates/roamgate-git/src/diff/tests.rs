@@ -645,7 +645,7 @@ async fn defers_large_automatic_patches_before_transfer_while_explicit_requests_
 }
 
 #[tokio::test]
-async fn counts_untracked_files_with_one_command_per_batch() {
+async fn counts_untracked_files_with_one_command_per_batch_over_ssh() {
     let names = ["a.txt", "b.txt", "c.txt"];
     let runner = Scripted::new(move |request: &Request| {
         let command = text(request);
@@ -658,7 +658,7 @@ async fn counts_untracked_files_with_one_command_per_batch() {
         };
         Ok(Ran::new(0, stdout, ""))
     });
-    let cx = GitContext::local(runner.clone());
+    let cx = GitContext::new(Some("remote.example".into()), runner.clone());
     let result = summary(
         &cx,
         "/repo",
@@ -696,6 +696,89 @@ async fn counts_untracked_files_with_one_command_per_batch() {
             ("b.txt".to_owned(), json!(2)),
             ("c.txt".to_owned(), json!(3)),
         ]
+    );
+}
+
+#[test]
+fn spreads_a_few_local_untracked_files_over_the_commands_that_run_at_once() {
+    assert_eq!(untracked_batch_size(8, None), 2);
+    assert_eq!(untracked_batch_size(3, None), 1);
+    assert_eq!(untracked_batch_size(0, None), 1);
+    assert_eq!(
+        untracked_batch_size(GIT_UNTRACKED_NUMSTAT_MAX_FILES, None),
+        GIT_UNTRACKED_NUMSTAT_BATCH_SIZE
+    );
+    assert_eq!(
+        untracked_batch_size(8, Some("remote.example")),
+        GIT_UNTRACKED_NUMSTAT_BATCH_SIZE
+    );
+}
+
+#[tokio::test]
+async fn a_local_summary_runs_no_login_shell_and_no_per_file_stat_script() {
+    let repo = init_repository();
+    write(&repo.root, "tracked.txt", "one\n");
+    git(&repo.root, &["add", "tracked.txt"]);
+    git(&repo.root, &["commit", "-q", "-m", "base"]);
+    write(&repo.root, "tracked.txt", "one\ntwo\n");
+    for index in 0..8 {
+        write(&repo.root, &format!("new-{index}.txt"), "a\nb\n");
+    }
+    let runner = crate::exec::testing::Loopback::new();
+    let cx = GitContext::local(runner.clone());
+    let result = summary(
+        &cx,
+        repo.path(),
+        json!({}),
+        json!({"mode": "working"}),
+        None,
+    )
+    .await
+    .unwrap();
+    let calls = runner.calls();
+    assert!(!calls.is_empty());
+    let argvs: Vec<Vec<String>> = calls
+        .iter()
+        .map(|request| match &request.invocation {
+            Invocation::Local(argv) => argv.clone(),
+            Invocation::Ssh { .. } => panic!("local summary went over SSH"),
+        })
+        .collect();
+    if !cfg!(windows) {
+        assert!(
+            argvs
+                .iter()
+                .all(|argv| argv.get(1).map(String::as_str) != Some("-lc")),
+            "{argvs:?}"
+        );
+    }
+    assert!(argvs.iter().all(|argv| !argv.join(" ").contains("stat -c")));
+    let entries = result["entries"].as_array().unwrap();
+    let entry = |path: &str| {
+        entries
+            .iter()
+            .find(|e| e["path"] == path)
+            .unwrap_or_else(|| panic!("{path} in {entries:?}"))
+            .clone()
+    };
+    let tracked = entry("tracked.txt");
+    assert_eq!(tracked["kind"], "unstaged");
+    assert_eq!(tracked["additions"], 1);
+    assert_eq!(tracked["deletions"], 0);
+    assert_eq!(tracked["size"], 8);
+    for index in 0..8 {
+        let new = entry(&format!("new-{index}.txt"));
+        assert_eq!(new["kind"], "untracked");
+        assert_eq!(new["additions"], 2);
+        assert_eq!(new["deletions"], 0);
+        assert_eq!(new["size"], 4);
+    }
+    assert_eq!(
+        argvs
+            .iter()
+            .filter(|argv| argv.join(" ").contains("--no-index"))
+            .count(),
+        GIT_UNTRACKED_NUMSTAT_CONCURRENCY
     );
 }
 

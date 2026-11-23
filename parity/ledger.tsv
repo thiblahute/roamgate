@@ -4132,6 +4132,7 @@ server/src/workspace/git-diff.test.ts	defers large automatic patches before tran
 server/src/workspace/git-diff.test.ts	counts untracked files with one command per batch over SSH	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-diff.test.ts	spreads a few local untracked files over the commands that run at once	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-diff.test.ts	a local summary runs no login shell and no per-file stat script	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-diff.test.ts	counts untracked files with one command per batch	rust-unit:roamgate-git:diff::tests::counts_untracked_files_with_one_command_per_batch_over_ssh	git runner and parsers
 server/src/workspace/git-diff.test.ts	keeps a batch's counts when one of its files cannot be read	rust-unit:roamgate-git:diff::tests::keeps_a_batch_s_counts_when_one_of_its_files_cannot_be_read	git runner and parsers
 server/src/workspace/git-diff.test.ts	lists untracked files without line counts past the cap	rust-unit:roamgate-git:diff::tests::lists_untracked_files_without_line_counts_past_the_cap	git runner and parsers
 server/src/workspace/git-diff.test.ts	overlapping refreshes each return complete untracked counts	rust-unit:roamgate-git:diff::tests::overlapping_refreshes_each_return_complete_untracked_counts	git runner and parsers

@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use crate::compare::js_number;
 use crate::exec::{GitContext, Ran};
-use crate::shell::shell_command;
+use crate::shell::{git_only_command, shell_command};
 use crate::{GIT_DIFF_TIMEOUT, GitError, Result, first_text, sanitize_explorer_path, shell_quote};
 
 pub const GIT_FILE_ACTIONS: [&str; 4] =
@@ -158,8 +158,30 @@ pub fn parse_fingerprint_listing(output: &str) -> BTreeMap<String, Fingerprint> 
     fingerprints
 }
 
+/// A checkout's file as `untracked-stats.sh` reads it, without the shell: a
+/// regular file (or a link to one), its own size and whole-second mtime.
+fn local_fingerprint(root: &str, path: &str) -> Option<Fingerprint> {
+    let full = std::path::Path::new(root).join(path);
+    if !std::fs::metadata(&full).ok()?.is_file() {
+        return None;
+    }
+    let own = std::fs::symlink_metadata(&full).ok()?;
+    let modified = own.modified().ok()?;
+    let seconds = match modified.duration_since(std::time::UNIX_EPOCH) {
+        Ok(after) => after.as_secs() as f64,
+        Err(before) => -(before.duration().as_secs_f64().ceil()),
+    };
+    Some(Fingerprint {
+        size: own.len() as f64,
+        mtime_ms: seconds * 1000.0,
+    })
+}
+
 /// Stats worktree files in batches, one shell round trip each; missing
 /// files are absent. Paths go as `./path`, so a leading dash is a name.
+/// On this machine the files are read in process: the script forks a few
+/// processes per file, a second or more for a few dozen files on a busy
+/// host.
 pub async fn collect_worktree_fingerprints(
     context: &ActionContext,
     paths: &[String],
@@ -170,6 +192,14 @@ pub async fn collect_worktree_fingerprints(
         .filter(|p| !p.is_empty() && seen.insert(p.as_str()))
         .collect();
     let mut fingerprints = BTreeMap::new();
+    if context.git.host().is_none() {
+        for path in unique {
+            if let Some(fingerprint) = local_fingerprint(&context.root, path) {
+                fingerprints.insert(path.clone(), fingerprint);
+            }
+        }
+        return Ok(fingerprints);
+    }
     for batch in unique.chunks(FINGERPRINT_BATCH_SIZE) {
         let command = fill_template(
             UNTRACKED_STATS_SH,
@@ -187,7 +217,8 @@ pub async fn collect_worktree_fingerprints(
             ],
         )
         .expect("untracked-stats.sh");
-        let invocation = shell_command(&command, context.git.host()).map_err(GitError::Message)?;
+        let invocation =
+            git_only_command(&command, context.git.host()).map_err(GitError::Message)?;
         let ran = context.git.run(invocation, GIT_DIFF_TIMEOUT).await?;
         if ran.code != 0 {
             continue;

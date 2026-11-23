@@ -26,7 +26,7 @@ use crate::diff_base::{
     Requested, parse_refs_output, refs_script, resolve_default_base, select_diff_base,
 };
 use crate::exec::{GitContext, Ran};
-use crate::shell::shell_command;
+use crate::shell::{git_only_command, shell_command};
 use crate::steps::LastStepStore;
 use crate::{
     GIT_DIFF_MAX_BYTES, GIT_DIFF_TIMEOUT, GIT_PULL_TIMEOUT, GIT_UNTRACKED_NUMSTAT_BATCH_SIZE,
@@ -366,7 +366,7 @@ pub async fn run_git_shell_command(cx: &GitContext, root: &str, command: &str) -
     );
     Ok(cx
         .run(
-            shell_command(&full, cx.host()).map_err(GitError::Message)?,
+            git_only_command(&full, cx.host()).map_err(GitError::Message)?,
             GIT_DIFF_TIMEOUT,
         )
         .await?)
@@ -437,7 +437,7 @@ pub async fn read_git_patch(
     let script = git_patch_script(root, command, automatic);
     let ran = cx
         .run(
-            shell_command(&script, cx.host()).map_err(GitError::Message)?,
+            git_only_command(&script, cx.host()).map_err(GitError::Message)?,
             GIT_DIFF_TIMEOUT,
         )
         .await?;
@@ -454,7 +454,7 @@ pub async fn run_script_batch(
     if scripts.len() == 1 {
         let ran = cx
             .run(
-                shell_command(&scripts[0], cx.host()).map_err(GitError::Message)?,
+                git_only_command(&scripts[0], cx.host()).map_err(GitError::Message)?,
                 timeout,
             )
             .await?;
@@ -485,7 +485,7 @@ pub async fn run_script_batch(
     .expect("batch.sh");
     let ran = cx
         .run(
-            shell_command(&command, cx.host()).map_err(GitError::Message)?,
+            git_only_command(&command, cx.host()).map_err(GitError::Message)?,
             timeout,
         )
         .await?;
@@ -731,16 +731,10 @@ async fn collect_stats(
         }
         return stats;
     }
-    if let Ok(ran) = run_git_shell_command(cx, root, "diff --cached --numstat --find-renames").await
-        && (ran.code == 0 || ran.code == 1)
-    {
-        merge("staged", &ran.stdout, None);
-    }
-    if let Ok(ran) = run_git_shell_command(cx, root, "diff --numstat --find-renames").await
-        && (ran.code == 0 || ran.code == 1)
-    {
-        merge("unstaged", &ran.stdout, Some("conflicted"));
-    }
+    // The staged, unstaged and untracked counts are independent commands:
+    // run them at once, then merge in that order.
+    let staged_task = run_git_shell_command(cx, root, "diff --cached --numstat --find-renames");
+    let unstaged_task = run_git_shell_command(cx, root, "diff --numstat --find-renames");
     let untracked: Vec<&DiffEntry> = entries.iter().filter(|e| e.kind == "untracked").collect();
     // One command per batch, never one per file (a fresh SSH login each);
     // past the cap the files are listed without counts.
@@ -749,7 +743,8 @@ async fn collect_stats(
     } else {
         &untracked
     };
-    let batches: Vec<&[&DiffEntry]> = counted.chunks(GIT_UNTRACKED_NUMSTAT_BATCH_SIZE).collect();
+    let batch_size = untracked_batch_size(counted.len(), cx.host());
+    let batches: Vec<&[&DiffEntry]> = counted.chunks(batch_size).collect();
     let cursor = Mutex::new(0usize);
     let results = Mutex::new(Vec::new());
     let worker = || async {
@@ -778,7 +773,7 @@ async fn collect_stats(
                 ],
             )
             .expect("untracked-numstat.sh");
-            let Ok(invocation) = shell_command(&command, cx.host()) else {
+            let Ok(invocation) = git_only_command(&command, cx.host()) else {
                 continue;
             };
             let Ok(ran) = cx.run(invocation, GIT_DIFF_TIMEOUT).await else {
@@ -797,9 +792,33 @@ async fn collect_stats(
         }
     };
     let workers = GIT_UNTRACKED_NUMSTAT_CONCURRENCY.min(batches.len());
-    join_all((0..workers).map(|_| worker())).await;
+    let (staged, unstaged, _) = tokio::join!(
+        staged_task,
+        unstaged_task,
+        join_all((0..workers).map(|_| worker()))
+    );
+    if let Ok(ran) = staged
+        && (ran.code == 0 || ran.code == 1)
+    {
+        merge("staged", &ran.stdout, None);
+    }
+    if let Ok(ran) = unstaged
+        && (ran.code == 0 || ran.code == 1)
+    {
+        merge("unstaged", &ran.stdout, Some("conflicted"));
+    }
     stats.extend(results.into_inner().unwrap());
     stats
+}
+
+/// Untracked files per line-count command. Over SSH a command is a login,
+/// so a batch is as big as allowed; on this machine a command is a process,
+/// and the files are spread over the commands that run at once.
+pub fn untracked_batch_size(count: usize, host: Option<&str>) -> usize {
+    if host.is_some() {
+        return GIT_UNTRACKED_NUMSTAT_BATCH_SIZE;
+    }
+    GIT_UNTRACKED_NUMSTAT_BATCH_SIZE.min(count.div_ceil(GIT_UNTRACKED_NUMSTAT_CONCURRENCY).max(1))
 }
 
 /// A branch review's base and the branches offered.
@@ -816,7 +835,7 @@ async fn resolve_comparison_base(
 ) -> Result<Comparison> {
     let ran = cx
         .run(
-            shell_command(&refs_script(root), cx.host()).map_err(GitError::Message)?,
+            git_only_command(&refs_script(root), cx.host()).map_err(GitError::Message)?,
             GIT_DIFF_TIMEOUT,
         )
         .await?;
@@ -1650,7 +1669,7 @@ pub async fn read_last_step_refs(
     let prefix = last_step_ref_prefix(workspace_id);
     let listed = cx
         .run(
-            shell_command(
+            git_only_command(
                 &format!(
                     "cd {} && git for-each-ref --format='%(refname) %(objectname)' {}",
                     shell_quote(root),
@@ -1699,7 +1718,7 @@ pub async fn read_last_step_refs(
     if let Some(blob) = ends.get("skipped") {
         let ran = cx
             .run(
-                shell_command(
+                git_only_command(
                     &format!(
                         "cd {} && git cat-file blob {}",
                         shell_quote(root),
