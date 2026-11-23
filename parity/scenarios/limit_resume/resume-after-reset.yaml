@@ -83,6 +83,14 @@ steps:
   - herdr_calls: { method: agent.prompt, count: 0 }
   # The reset (an hour after the stop) plus the 60 s margin.
   - advance: 3655000
+  # The resume goes out once the transcript read at the reset answers:
+  # real I/O (the session resolver's `find`) that may end after the advance
+  # did, so the resume is waited for before time moves on.
+  - herdr_calls:
+      method: agent.prompt
+      count: 1
+      calls: [{ params: { target: p1, text: "${message}" }, valid: true }]
+    retry: 10000
   # The resume asks for a look 2 s later, which sees it resumed (the
   # minute's looks may have run before the resume went out).
   - advance: 2000
@@ -92,7 +100,3 @@ steps:
         event: roamgate.limit_pauses,
         data: { pauses: [{ pane_id: p1, state: resumed }] },
       }
-  - herdr_calls:
-      method: agent.prompt
-      count: 1
-      calls: [{ params: { target: p1, text: "${message}" }, valid: true }]
