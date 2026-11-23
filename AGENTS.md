@@ -70,8 +70,11 @@ work, consolidate or delete stale status documents and repair their links.
 
 ## Testing Guidelines
 
-Tests live beside their modules as `*.test.ts` and use `bun:test`. During local
-iteration, run a related file with `bun test <path>` or use `bun run test:quick`.
+Tests live beside their modules as `*.test.ts` and use `bun:test`. The cases of
+`shared/` logic and of the server's parsers and builders are JSON vectors in
+`contract/vectors` (format in its README), shared with the Rust side: change or
+add a vector there, not a test body. During local iteration, run a related
+file with `bun test <path>` or use `bun run test:quick`.
 Process-level tests need generated web assets; on a fresh checkout, run
 `bun run typecheck` once after installing dependencies to generate them.
 Automated tests do not launch browsers; validate affected UI and browser security

@@ -1,0 +1,1774 @@
+{
+  "description": "Background tasks resumed: end notices and their following runs, through the session handlers. Read by `bun test` in server/src/agent/session-tasks.resume.test.ts.",
+  "modules": {
+    "session-tasks": "server/src/agent/session-tasks.ts",
+    "agent-sessions": "server/src/agent/agent-sessions.ts"
+  },
+  "cases": [
+    {
+      "name": "runs again until its next end notice",
+      "group": ["a subagent resumed by a message"],
+      "calls": [
+        {
+          "fn": "session-tasks.parseSessionTasks",
+          "args": [
+            [
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T17:50:29.024Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "name": "Agent",
+                      "input": {
+                        "description": "Build MR review inbox module",
+                        "name": "mr-reviews",
+                        "run_in_background": true,
+                        "prompt": "Build Roamgate's upstream MR/PR review module."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T17:50:29.125Z",
+                "toolUseResult": {
+                  "isAsync": true,
+                  "status": "async_launched",
+                  "agentId": "a6f37b8a16c1041c3",
+                  "description": "Build MR review inbox module"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Async agent launched successfully.\nagentId: a6f37b8a16c1041c3 (internal ID)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:32:47.188Z",
+                "origin": {
+                  "kind": "task-notification",
+                  "producer": "session-task"
+                },
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>a6f37b8a16c1041c3</task-id>\n<tool-use-id>toolu_015weVgG4gJ4scu7NdJfJLFU</tool-use-id>\n<output-file>/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output</output-file>\n<status>completed</status>\n<summary>Agent \"Build MR review inbox module\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n</task-notification>"
+                }
+              }
+            ]
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "completed",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "Agent \"Build MR review inbox module\" finished",
+              "endedAt": "2026-11-04T19:32:47.188Z"
+            }
+          ]
+        },
+        {
+          "fn": "session-tasks.parseSessionTasks",
+          "args": [
+            [
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T17:50:29.024Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "name": "Agent",
+                      "input": {
+                        "description": "Build MR review inbox module",
+                        "name": "mr-reviews",
+                        "run_in_background": true,
+                        "prompt": "Build Roamgate's upstream MR/PR review module."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T17:50:29.125Z",
+                "toolUseResult": {
+                  "isAsync": true,
+                  "status": "async_launched",
+                  "agentId": "a6f37b8a16c1041c3",
+                  "description": "Build MR review inbox module"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Async agent launched successfully.\nagentId: a6f37b8a16c1041c3 (internal ID)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:32:47.188Z",
+                "origin": {
+                  "kind": "task-notification",
+                  "producer": "session-task"
+                },
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>a6f37b8a16c1041c3</task-id>\n<tool-use-id>toolu_015weVgG4gJ4scu7NdJfJLFU</tool-use-id>\n<output-file>/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output</output-file>\n<status>completed</status>\n<summary>Agent \"Build MR review inbox module\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n</task-notification>"
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T19:58:57.067Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_01LucLxJQKbk66xVQmrtBKQx",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "a6f37b8a16c1041c3",
+                        "summary": "GitHub PR review bug",
+                        "message": "..."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:59:01.204Z",
+                "toolUseResult": {
+                  "success": true,
+                  "message": "Resuming agent a6f37b8",
+                  "resumedAgentId": "a6f37b8a16c1041c3",
+                  "pin": {
+                    "id": "a6f37b8a16c1041c3",
+                    "name": "a6f37b8a16c1041c3",
+                    "ref": "ab4d9c"
+                  },
+                  "revivedAgentId": "a6f37b8a16c1041c3"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_01LucLxJQKbk66xVQmrtBKQx",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Resuming agent a6f37b8\",\"resumedAgentId\":\"a6f37b8a16c1041c3\",\"pin\":{\"id\":\"a6f37b8a16c1041c3\",\"name\":\"a6f37b8a16c1041c3\",\"ref\":\"ab4d9c\"}}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "running",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "Agent \"Build MR review inbox module\" finished",
+              "resumedAt": "2026-11-04T19:59:01.204Z"
+            }
+          ]
+        },
+        {
+          "fn": "session-tasks.parseSessionTasks",
+          "args": [
+            [
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T17:50:29.024Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "name": "Agent",
+                      "input": {
+                        "description": "Build MR review inbox module",
+                        "name": "mr-reviews",
+                        "run_in_background": true,
+                        "prompt": "Build Roamgate's upstream MR/PR review module."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T17:50:29.125Z",
+                "toolUseResult": {
+                  "isAsync": true,
+                  "status": "async_launched",
+                  "agentId": "a6f37b8a16c1041c3",
+                  "description": "Build MR review inbox module"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Async agent launched successfully.\nagentId: a6f37b8a16c1041c3 (internal ID)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:32:47.188Z",
+                "origin": {
+                  "kind": "task-notification",
+                  "producer": "session-task"
+                },
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>a6f37b8a16c1041c3</task-id>\n<tool-use-id>toolu_015weVgG4gJ4scu7NdJfJLFU</tool-use-id>\n<output-file>/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output</output-file>\n<status>completed</status>\n<summary>Agent \"Build MR review inbox module\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n</task-notification>"
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T19:58:57.067Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_01LucLxJQKbk66xVQmrtBKQx",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "a6f37b8a16c1041c3",
+                        "summary": "GitHub PR review bug",
+                        "message": "..."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:59:01.204Z",
+                "toolUseResult": {
+                  "success": true,
+                  "message": "Resuming agent a6f37b8",
+                  "resumedAgentId": "a6f37b8a16c1041c3",
+                  "pin": {
+                    "id": "a6f37b8a16c1041c3",
+                    "name": "a6f37b8a16c1041c3",
+                    "ref": "ab4d9c"
+                  },
+                  "revivedAgentId": "a6f37b8a16c1041c3"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_01LucLxJQKbk66xVQmrtBKQx",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Resuming agent a6f37b8\",\"resumedAgentId\":\"a6f37b8a16c1041c3\",\"pin\":{\"id\":\"a6f37b8a16c1041c3\",\"name\":\"a6f37b8a16c1041c3\",\"ref\":\"ab4d9c\"}}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T20:40:00.000Z",
+                "origin": {
+                  "kind": "task-notification",
+                  "producer": "session-task"
+                },
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>a6f37b8a16c1041c3</task-id>\n<tool-use-id>toolu_01LucLxJQKbk66xVQmrtBKQx</tool-use-id>\n<output-file>/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output</output-file>\n<status>completed</status>\n<summary>Agent \"Build MR review inbox module\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n</task-notification>"
+                }
+              }
+            ]
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "completed",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "Agent \"Build MR review inbox module\" finished",
+              "resumedAt": "2026-11-04T19:59:01.204Z",
+              "endedAt": "2026-11-04T20:40:00.000Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "by its name, or with only the result's text",
+      "group": ["a subagent resumed by a message"],
+      "calls": [
+        {
+          "fn": "session-tasks.parseSessionTasks",
+          "args": [
+            [
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T17:50:29.024Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "name": "Agent",
+                      "input": {
+                        "description": "Build MR review inbox module",
+                        "name": "mr-reviews",
+                        "run_in_background": true,
+                        "prompt": "Build Roamgate's upstream MR/PR review module."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T17:50:29.125Z",
+                "toolUseResult": {
+                  "isAsync": true,
+                  "status": "async_launched",
+                  "agentId": "a6f37b8a16c1041c3",
+                  "description": "Build MR review inbox module"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Async agent launched successfully.\nagentId: a6f37b8a16c1041c3 (internal ID)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:32:47.188Z",
+                "origin": {
+                  "kind": "task-notification",
+                  "producer": "session-task"
+                },
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>a6f37b8a16c1041c3</task-id>\n<tool-use-id>toolu_015weVgG4gJ4scu7NdJfJLFU</tool-use-id>\n<output-file>/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output</output-file>\n<status>completed</status>\n<summary>Agent \"Build MR review inbox module\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n</task-notification>"
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T19:58:57.067Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "m1",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "mr-reviews",
+                        "summary": "GitHub PR review bug",
+                        "message": "..."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:59:01.204Z",
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "m1",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Resuming agent a6f37b8\",\"resumedAgentId\":\"a6f37b8a16c1041c3\",\"pin\":{\"id\":\"a6f37b8a16c1041c3\",\"name\":\"a6f37b8a16c1041c3\",\"ref\":\"ab4d9c\"}}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "running",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "Agent \"Build MR review inbox module\" finished",
+              "resumedAt": "2026-11-04T19:59:01.204Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a message queued to one that runs changes nothing",
+      "group": ["a subagent resumed by a message"],
+      "calls": [
+        {
+          "fn": "session-tasks.parseSessionTasks",
+          "args": [
+            [
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T17:50:29.024Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "name": "Agent",
+                      "input": {
+                        "description": "Build MR review inbox module",
+                        "name": "mr-reviews",
+                        "run_in_background": true,
+                        "prompt": "Build Roamgate's upstream MR/PR review module."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T17:50:29.125Z",
+                "toolUseResult": {
+                  "isAsync": true,
+                  "status": "async_launched",
+                  "agentId": "a6f37b8a16c1041c3",
+                  "description": "Build MR review inbox module"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Async agent launched successfully.\nagentId: a6f37b8a16c1041c3 (internal ID)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:32:47.188Z",
+                "origin": {
+                  "kind": "task-notification",
+                  "producer": "session-task"
+                },
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>a6f37b8a16c1041c3</task-id>\n<tool-use-id>toolu_015weVgG4gJ4scu7NdJfJLFU</tool-use-id>\n<output-file>/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output</output-file>\n<status>completed</status>\n<summary>Agent \"Build MR review inbox module\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n</task-notification>"
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T19:58:57.067Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_01LucLxJQKbk66xVQmrtBKQx",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "a6f37b8a16c1041c3",
+                        "summary": "GitHub PR review bug",
+                        "message": "..."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:59:01.204Z",
+                "toolUseResult": {
+                  "success": true,
+                  "message": "Resuming agent a6f37b8",
+                  "resumedAgentId": "a6f37b8a16c1041c3",
+                  "pin": {
+                    "id": "a6f37b8a16c1041c3",
+                    "name": "a6f37b8a16c1041c3",
+                    "ref": "ab4d9c"
+                  },
+                  "revivedAgentId": "a6f37b8a16c1041c3"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_01LucLxJQKbk66xVQmrtBKQx",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Resuming agent a6f37b8\",\"resumedAgentId\":\"a6f37b8a16c1041c3\",\"pin\":{\"id\":\"a6f37b8a16c1041c3\",\"name\":\"a6f37b8a16c1041c3\",\"ref\":\"ab4d9c\"}}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T19:59:30.150Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "m2",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "a6f37b8a16c1041c3",
+                        "summary": "GitHub PR review bug",
+                        "message": "..."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:59:34.378Z",
+                "toolUseResult": {
+                  "success": true,
+                  "message": "Message queued for delivery to a6f37b8a16c1041c3 at its next tool round. If it finishes first, it is resumed with the message and notifies again, so wait for that notification before resending.",
+                  "pin": {
+                    "id": "a6f37b8a16c1041c3",
+                    "name": "a6f37b8a16c1041c3",
+                    "ref": "ab4d9c"
+                  }
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "m2",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Message queued for delivery to a6f37b8a16c1041c3 at its next tool round. If it finishes first, it is resumed with the message and notifies again, so wait for that notification before resending.\",\"pin\":{\"id\":\"a6f37b8a16c1041c3\",\"name\":\"a6f37b8a16c1041c3\",\"ref\":\"ab4d9c\"}}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T20:00:21.630Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "m3",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "mr-reviews",
+                        "summary": "GitHub PR review bug",
+                        "message": "..."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T20:00:25.652Z",
+                "toolUseResult": {
+                  "success": true,
+                  "message": "Message queued for delivery to a6f37b8a16c1041c3 at its next tool round. If it finishes first, it is resumed with the message and notifies again, so wait for that notification before resending.",
+                  "pin": {
+                    "id": "a6f37b8a16c1041c3",
+                    "name": "a6f37b8a16c1041c3",
+                    "ref": "ab4d9c"
+                  }
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "m3",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Message queued for delivery to a6f37b8a16c1041c3 at its next tool round. If it finishes first, it is resumed with the message and notifies again, so wait for that notification before resending.\",\"pin\":{\"id\":\"a6f37b8a16c1041c3\",\"name\":\"a6f37b8a16c1041c3\",\"ref\":\"ab4d9c\"}}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "running",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "Agent \"Build MR review inbox module\" finished",
+              "resumedAt": "2026-11-04T19:59:01.204Z"
+            }
+          ]
+        },
+        {
+          "fn": "session-tasks.parseSessionTasks",
+          "args": [
+            [
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T17:50:29.024Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "name": "Agent",
+                      "input": {
+                        "description": "Build MR review inbox module",
+                        "name": "mr-reviews",
+                        "run_in_background": true,
+                        "prompt": "Build Roamgate's upstream MR/PR review module."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T17:50:29.125Z",
+                "toolUseResult": {
+                  "isAsync": true,
+                  "status": "async_launched",
+                  "agentId": "a6f37b8a16c1041c3",
+                  "description": "Build MR review inbox module"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Async agent launched successfully.\nagentId: a6f37b8a16c1041c3 (internal ID)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:32:47.188Z",
+                "origin": {
+                  "kind": "task-notification",
+                  "producer": "session-task"
+                },
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>a6f37b8a16c1041c3</task-id>\n<tool-use-id>toolu_015weVgG4gJ4scu7NdJfJLFU</tool-use-id>\n<output-file>/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output</output-file>\n<status>completed</status>\n<summary>Agent \"Build MR review inbox module\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n</task-notification>"
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T19:59:30.150Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "m4",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "mr-reviews",
+                        "summary": "GitHub PR review bug",
+                        "message": "..."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:59:34.378Z",
+                "toolUseResult": {
+                  "success": true,
+                  "message": "Message queued for delivery to a6f37b8a16c1041c3 at its next tool round. If it finishes first, it is resumed with the message and notifies again, so wait for that notification before resending.",
+                  "pin": {
+                    "id": "a6f37b8a16c1041c3",
+                    "name": "a6f37b8a16c1041c3",
+                    "ref": "ab4d9c"
+                  }
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "m4",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Message queued for delivery to a6f37b8a16c1041c3 at its next tool round. If it finishes first, it is resumed with the message and notifies again, so wait for that notification before resending.\",\"pin\":{\"id\":\"a6f37b8a16c1041c3\",\"name\":\"a6f37b8a16c1041c3\",\"ref\":\"ab4d9c\"}}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "completed",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "Agent \"Build MR review inbox module\" finished",
+              "endedAt": "2026-11-04T19:32:47.188Z"
+            }
+          ]
+        },
+        {
+          "fn": "session-tasks.parseSessionTasks",
+          "args": [
+            [
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T17:50:29.024Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "name": "Agent",
+                      "input": {
+                        "description": "Build MR review inbox module",
+                        "name": "mr-reviews",
+                        "run_in_background": true,
+                        "prompt": "Build Roamgate's upstream MR/PR review module."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T17:50:29.125Z",
+                "toolUseResult": {
+                  "isAsync": true,
+                  "status": "async_launched",
+                  "agentId": "a6f37b8a16c1041c3",
+                  "description": "Build MR review inbox module"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Async agent launched successfully.\nagentId: a6f37b8a16c1041c3 (internal ID)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:32:47.188Z",
+                "origin": {
+                  "kind": "task-notification",
+                  "producer": "session-task"
+                },
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>a6f37b8a16c1041c3</task-id>\n<tool-use-id>toolu_015weVgG4gJ4scu7NdJfJLFU</tool-use-id>\n<output-file>/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output</output-file>\n<status>completed</status>\n<summary>Agent \"Build MR review inbox module\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n</task-notification>"
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T19:59:30.150Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "m5",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "a6f37b8a16c1041c3",
+                        "summary": "GitHub PR review bug",
+                        "message": "..."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:59:31.000Z",
+                "toolUseResult": {
+                  "success": true,
+                  "message": "Resuming agent a6f37b8",
+                  "resumedAgentId": "a6f37b8a16c1041c3",
+                  "pin": {
+                    "id": "a6f37b8a16c1041c3",
+                    "name": "a6f37b8a16c1041c3",
+                    "ref": "ab4d9c"
+                  },
+                  "revivedAgentId": "a6f37b8a16c1041c3"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "m5",
+                      "type": "tool_result",
+                      "content": "No such agent",
+                      "is_error": true
+                    }
+                  ]
+                }
+              }
+            ]
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "completed",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "Agent \"Build MR review inbox module\" finished",
+              "endedAt": "2026-11-04T19:32:47.188Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a day after its resume with no notice, it is lost",
+      "group": ["a subagent resumed by a message"],
+      "calls": [
+        {
+          "fn": "session-tasks.parseSessionTasks",
+          "args": [
+            [
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T17:50:29.024Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "name": "Agent",
+                      "input": {
+                        "description": "Build MR review inbox module",
+                        "name": "mr-reviews",
+                        "run_in_background": true,
+                        "prompt": "Build Roamgate's upstream MR/PR review module."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T17:50:29.125Z",
+                "toolUseResult": {
+                  "isAsync": true,
+                  "status": "async_launched",
+                  "agentId": "a6f37b8a16c1041c3",
+                  "description": "Build MR review inbox module"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Async agent launched successfully.\nagentId: a6f37b8a16c1041c3 (internal ID)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:32:47.188Z",
+                "origin": {
+                  "kind": "task-notification",
+                  "producer": "session-task"
+                },
+                "message": {
+                  "role": "user",
+                  "content": "<task-notification>\n<task-id>a6f37b8a16c1041c3</task-id>\n<tool-use-id>toolu_015weVgG4gJ4scu7NdJfJLFU</tool-use-id>\n<output-file>/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output</output-file>\n<status>completed</status>\n<summary>Agent \"Build MR review inbox module\" finished</summary>\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\n</task-notification>"
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-04T19:58:57.067Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "toolu_01LucLxJQKbk66xVQmrtBKQx",
+                      "name": "SendMessage",
+                      "input": {
+                        "to": "a6f37b8a16c1041c3",
+                        "summary": "GitHub PR review bug",
+                        "message": "..."
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "2026-11-04T19:59:01.204Z",
+                "toolUseResult": {
+                  "success": true,
+                  "message": "Resuming agent a6f37b8",
+                  "resumedAgentId": "a6f37b8a16c1041c3",
+                  "pin": {
+                    "id": "a6f37b8a16c1041c3",
+                    "name": "a6f37b8a16c1041c3",
+                    "ref": "ab4d9c"
+                  },
+                  "revivedAgentId": "a6f37b8a16c1041c3"
+                },
+                "message": {
+                  "role": "user",
+                  "content": [
+                    {
+                      "tool_use_id": "toolu_01LucLxJQKbk66xVQmrtBKQx",
+                      "type": "tool_result",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"success\":true,\"message\":\"Resuming agent a6f37b8\",\"resumedAgentId\":\"a6f37b8a16c1041c3\",\"pin\":{\"id\":\"a6f37b8a16c1041c3\",\"name\":\"a6f37b8a16c1041c3\",\"ref\":\"ab4d9c\"}}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-11-05T20:00:00.000Z",
+                "message": { "role": "assistant", "content": [] }
+              }
+            ]
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "lost",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "No end notice a day later: it probably ended with its session.",
+              "resumedAt": "2026-11-04T19:59:01.204Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "one that grew after its end notice runs again",
+      "group": ["what its own conversation says"],
+      "calls": [
+        {
+          "fn": "session-tasks.subagentsToWatch",
+          "args": [
+            [
+              {
+                "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                "kind": "teammate",
+                "title": "Build MR review inbox module",
+                "name": "mr-reviews",
+                "status": "completed",
+                "startedAt": "2026-11-04T17:50:29.024Z",
+                "agentId": "a6f37b8a16c1041c3",
+                "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+                "summary": "Agent \"Build MR review inbox module\" finished",
+                "endedAt": "2026-11-04T19:32:47.188Z"
+              }
+            ],
+            1793823960000
+          ],
+          "result": ["a6f37b8a16c1041c3"]
+        },
+        {
+          "fn": "session-tasks.withSubagentActivity",
+          "args": [
+            [
+              {
+                "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                "kind": "teammate",
+                "title": "Build MR review inbox module",
+                "name": "mr-reviews",
+                "status": "completed",
+                "startedAt": "2026-11-04T17:50:29.024Z",
+                "agentId": "a6f37b8a16c1041c3",
+                "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+                "summary": "Agent \"Build MR review inbox module\" finished",
+                "endedAt": "2026-11-04T19:32:47.188Z"
+              }
+            ],
+            { "$map": [["a6f37b8a16c1041c3", { "mtimeMs": 1793823553000 }]] },
+            1793823960000
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "running",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "Agent \"Build MR review inbox module\" finished",
+              "resumedAt": "2026-11-04T19:32:47.188Z"
+            }
+          ]
+        },
+        {
+          "fn": "session-tasks.withSubagentActivity",
+          "args": [
+            [
+              {
+                "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                "kind": "teammate",
+                "title": "Build MR review inbox module",
+                "name": "mr-reviews",
+                "status": "completed",
+                "startedAt": "2026-11-04T17:50:29.024Z",
+                "agentId": "a6f37b8a16c1041c3",
+                "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+                "summary": "Agent \"Build MR review inbox module\" finished",
+                "endedAt": "2026-11-04T19:32:47.188Z"
+              }
+            ],
+            { "$map": [["a6f37b8a16c1041c3", { "mtimeMs": 1793820767100 }]] },
+            1793823960000
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "completed",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "Agent \"Build MR review inbox module\" finished",
+              "endedAt": "2026-11-04T19:32:47.188Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a resumed one silent for a while is taken as done",
+      "group": ["what its own conversation says"],
+      "calls": [
+        { "value": "session-tasks.SUBAGENT_STALE_MS", "result": 1800000 },
+        {
+          "fn": "session-tasks.subagentsToWatch",
+          "args": [
+            [
+              {
+                "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                "kind": "teammate",
+                "title": "Build MR review inbox module",
+                "name": "mr-reviews",
+                "status": "running",
+                "startedAt": "2026-11-04T17:50:29.024Z",
+                "agentId": "a6f37b8a16c1041c3",
+                "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+                "summary": "Agent \"Build MR review inbox module\" finished",
+                "resumedAt": "2026-11-04T19:59:01.204Z"
+              }
+            ],
+            1793823553000
+          ],
+          "result": ["a6f37b8a16c1041c3"]
+        },
+        {
+          "fn": "session-tasks.withSubagentActivity",
+          "args": [
+            [
+              {
+                "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                "kind": "teammate",
+                "title": "Build MR review inbox module",
+                "name": "mr-reviews",
+                "status": "running",
+                "startedAt": "2026-11-04T17:50:29.024Z",
+                "agentId": "a6f37b8a16c1041c3",
+                "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+                "summary": "Agent \"Build MR review inbox module\" finished",
+                "resumedAt": "2026-11-04T19:59:01.204Z"
+              }
+            ],
+            { "$map": [["a6f37b8a16c1041c3", { "mtimeMs": 1793823553000 }]] },
+            1793825352999
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "running",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "Agent \"Build MR review inbox module\" finished",
+              "resumedAt": "2026-11-04T19:59:01.204Z"
+            }
+          ]
+        },
+        {
+          "fn": "session-tasks.withSubagentActivity",
+          "args": [
+            [
+              {
+                "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                "kind": "teammate",
+                "title": "Build MR review inbox module",
+                "name": "mr-reviews",
+                "status": "running",
+                "startedAt": "2026-11-04T17:50:29.024Z",
+                "agentId": "a6f37b8a16c1041c3",
+                "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+                "summary": "Agent \"Build MR review inbox module\" finished",
+                "resumedAt": "2026-11-04T19:59:01.204Z"
+              }
+            ],
+            { "$map": [["a6f37b8a16c1041c3", { "mtimeMs": 1793823553000 }]] },
+            1793825353000
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "completed",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "No activity for 30 minutes after it was resumed: taken as done.",
+              "resumedAt": "2026-11-04T19:59:01.204Z",
+              "endedAt": "2026-11-04T20:19:13.000Z"
+            }
+          ]
+        },
+        {
+          "fn": "session-tasks.withSubagentActivity",
+          "args": [
+            [
+              {
+                "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                "kind": "teammate",
+                "title": "Build MR review inbox module",
+                "name": "mr-reviews",
+                "status": "completed",
+                "startedAt": "2026-11-04T17:50:29.024Z",
+                "agentId": "a6f37b8a16c1041c3",
+                "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+                "summary": "Agent \"Build MR review inbox module\" finished",
+                "endedAt": "2026-11-04T19:32:47.188Z"
+              }
+            ],
+            { "$map": [["a6f37b8a16c1041c3", { "mtimeMs": 1793823553000 }]] },
+            1793825353000
+          ],
+          "result": [
+            {
+              "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+              "kind": "teammate",
+              "title": "Build MR review inbox module",
+              "name": "mr-reviews",
+              "status": "completed",
+              "startedAt": "2026-11-04T17:50:29.024Z",
+              "agentId": "a6f37b8a16c1041c3",
+              "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+              "summary": "Agent \"Build MR review inbox module\" finished",
+              "endedAt": "2026-11-04T19:32:47.188Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "only subagents that may say more are looked at",
+      "group": ["what its own conversation says"],
+      "calls": [
+        {
+          "fn": "session-tasks.subagentsToWatch",
+          "args": [
+            [
+              {
+                "id": "a1",
+                "kind": "agent",
+                "title": "t",
+                "status": "running",
+                "agentId": "a1"
+              },
+              {
+                "id": "a2",
+                "kind": "agent",
+                "title": "t",
+                "status": "completed",
+                "agentId": "a2",
+                "endedAt": "2026-11-04T20:00:00.000Z"
+              },
+              {
+                "id": "a3",
+                "kind": "agent",
+                "title": "t",
+                "status": "completed",
+                "agentId": "a3",
+                "endedAt": "2026-11-02T20:00:00.000Z"
+              },
+              {
+                "id": "../a4",
+                "kind": "agent",
+                "title": "t",
+                "status": "completed",
+                "agentId": "../a4",
+                "endedAt": "2026-11-04T20:00:00.000Z"
+              },
+              {
+                "id": "a5",
+                "kind": "agent",
+                "title": "t",
+                "status": "running",
+                "agentId": "a5",
+                "resumedAt": "2026-11-04T20:10:00.000Z"
+              },
+              {
+                "id": "a6",
+                "kind": "command",
+                "title": "t",
+                "status": "completed",
+                "agentId": "a6",
+                "endedAt": "2026-11-04T20:00:00.000Z"
+              }
+            ],
+            1793823960000
+          ],
+          "result": ["a5", "a2"]
+        }
+      ]
+    },
+    {
+      "name": "follow the subagent's conversation file",
+      "group": ["the session's tasks, as the Tasks sheet reads them"],
+      "calls": [
+        {
+          "fn": "agent-sessions.createAgentSessionHandlers",
+          "args": [
+            {
+              "files": {
+                "remote": false,
+                "statFile": {
+                  "$fn": {
+                    "calls": [
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": [
+                          "/tmp/rg-resume/362be254/subagents/agent-a6f37b8a16c1041c3.jsonl"
+                        ],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254/subagents/agent-a6f37b8a16c1041c3.jsonl",
+                          "mtimeMs": 1793820767100,
+                          "size": 1,
+                          "identity": "/tmp/rg-resume/362be254/subagents/agent-a6f37b8a16c1041c3.jsonl",
+                          "changeToken": "1793820767100"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": [
+                          "/tmp/rg-resume/362be254/subagents/agent-a6f37b8a16c1041c3.jsonl"
+                        ],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254/subagents/agent-a6f37b8a16c1041c3.jsonl",
+                          "mtimeMs": 1793822400000,
+                          "size": 1,
+                          "identity": "/tmp/rg-resume/362be254/subagents/agent-a6f37b8a16c1041c3.jsonl",
+                          "changeToken": "1793822400000"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 1433,
+                          "identity": "/tmp/rg-resume/362be254.jsonl",
+                          "changeToken": "1000"
+                        }
+                      },
+                      {
+                        "args": [
+                          "/tmp/rg-resume/362be254/subagents/agent-a6f37b8a16c1041c3.jsonl"
+                        ],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-resume/362be254/subagents/agent-a6f37b8a16c1041c3.jsonl",
+                          "mtimeMs": 1793822400000,
+                          "size": 1,
+                          "identity": "/tmp/rg-resume/362be254/subagents/agent-a6f37b8a16c1041c3.jsonl",
+                          "changeToken": "1793822400000"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "readText": {
+                  "$fn": {
+                    "calls": [
+                      {
+                        "args": ["/tmp/rg-resume/362be254.jsonl"],
+                        "async": true,
+                        "result": {
+                          "$text": [
+                            "{\"type\":\"assistant\",\"timestamp\":\"2026-11-04T17:50:29.024Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_015weVgG4gJ4scu7NdJfJLFU\",\"name\":\"Agent\",\"input\":{\"description\":\"Build MR review inbox module\",\"name\":\"mr-reviews\",\"run_in_background\":true,\"prompt\":\"Build Roamgate's upstream MR/PR review module.\"}}]}}\n{\"type\":\"user\",\"timestamp\":\"2026-11-04T17:50:29.125Z\",\"toolUseResult\":{\"isAsync\":true,\"status\":\"async_launched\",\"agentId\":\"a6f37b8a16c1041c3\",\"description\":\"Build MR review inbox module\"},\"message\":{\"role\":\"user\",\"content\":[{\"tool_use_id\":\"toolu_015weVgG4gJ4scu7NdJfJLFU\",\"type\":\"tool_result\",\"content\":[{\"type\":\"text\",\"text\":\"Async agent launched successfully.\\nagentId: a6f37b8a16c1041c3 (internal ID)\"}]}]}}\n{\"type\":\"user\",\"timestamp\":\"2026-11-04T19:32:47.188Z\",\"origin\":{\"kind\":\"task-notification\",\"producer\":\"session-task\"},\"message\":{\"role\":\"user\",\"content\":\"<task-notification>\\n<task-id>a6f37b8a16c1041c3</task-id>\\n<tool-use-id>toolu_015weVgG4gJ4scu7NdJfJLFU</tool-use-id>\\n<output-file>/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output</output-file>\\n<status>completed</status>\\n<summary>Agent \\\"Build MR review inbox module\\\" finished</summary>\\n<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>\\n</task-notification>\"}}\n"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                "readPrefix": { "$fn": { "calls": [] } },
+                "readTail": { "$fn": { "calls": [] } },
+                "readDownloadBody": { "$fn": { "calls": [] } },
+                "findPiSessionForCwd": { "$fn": { "calls": [] } },
+                "findPiSessionById": { "$fn": { "calls": [] } },
+                "findClaudeSessionById": { "$fn": { "calls": [] } },
+                "findClaudeSuccessor": { "$fn": { "calls": [] } },
+                "findCodexSessionById": { "$fn": { "calls": [] } }
+              },
+              "herdrCall": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": ["agent.get", { "target": "p" }],
+                      "async": true,
+                      "result": {
+                        "agent": {
+                          "agent": "claude",
+                          "agent_session": {
+                            "kind": "path",
+                            "value": "/tmp/rg-resume/362be254.jsonl"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "args": ["agent.get", { "target": "p" }],
+                      "async": true,
+                      "result": {
+                        "agent": {
+                          "agent": "claude",
+                          "agent_session": {
+                            "kind": "path",
+                            "value": "/tmp/rg-resume/362be254.jsonl"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "args": ["agent.get", { "target": "p" }],
+                      "async": true,
+                      "result": {
+                        "agent": {
+                          "agent": "claude",
+                          "agent_session": {
+                            "kind": "path",
+                            "value": "/tmp/rg-resume/362be254.jsonl"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "args": ["agent.get", { "target": "p" }],
+                      "async": true,
+                      "result": {
+                        "agent": {
+                          "agent": "claude",
+                          "agent_session": {
+                            "kind": "path",
+                            "value": "/tmp/rg-resume/362be254.jsonl"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "result": { "$handle": 1 }
+        },
+        {
+          "on": 1,
+          "method": "readTasks",
+          "args": [{ "pane_id": "p", "agent": "claude" }],
+          "now": 1793822400000,
+          "async": true,
+          "result": {
+            "tasks": [
+              {
+                "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                "kind": "teammate",
+                "title": "Build MR review inbox module",
+                "name": "mr-reviews",
+                "status": "completed",
+                "startedAt": "2026-11-04T17:50:29.024Z",
+                "agentId": "a6f37b8a16c1041c3",
+                "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+                "summary": "Agent \"Build MR review inbox module\" finished",
+                "endedAt": "2026-11-04T19:32:47.188Z"
+              }
+            ],
+            "running_now": [],
+            "session": "362be254"
+          }
+        },
+        {
+          "on": 1,
+          "method": "readTasks",
+          "args": [{ "pane_id": "p", "agent": "claude" }],
+          "now": 1793822400000,
+          "async": true,
+          "result": {
+            "tasks": [
+              {
+                "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                "kind": "teammate",
+                "title": "Build MR review inbox module",
+                "name": "mr-reviews",
+                "status": "completed",
+                "startedAt": "2026-11-04T17:50:29.024Z",
+                "agentId": "a6f37b8a16c1041c3",
+                "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+                "summary": "Agent \"Build MR review inbox module\" finished",
+                "endedAt": "2026-11-04T19:32:47.188Z"
+              }
+            ],
+            "running_now": [],
+            "session": "362be254"
+          }
+        },
+        {
+          "on": 1,
+          "method": "readTasks",
+          "args": [{ "pane_id": "p", "agent": "claude" }],
+          "now": 1793822406000,
+          "async": true,
+          "result": {
+            "tasks": [
+              {
+                "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                "kind": "teammate",
+                "title": "Build MR review inbox module",
+                "name": "mr-reviews",
+                "status": "running",
+                "startedAt": "2026-11-04T17:50:29.024Z",
+                "agentId": "a6f37b8a16c1041c3",
+                "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+                "summary": "Agent \"Build MR review inbox module\" finished",
+                "resumedAt": "2026-11-04T19:32:47.188Z"
+              }
+            ],
+            "running_now": [],
+            "session": "362be254"
+          }
+        },
+        {
+          "on": 1,
+          "method": "readTasks",
+          "args": [{ "pane_id": "p", "agent": "claude" }],
+          "now": 1793824200000,
+          "async": true,
+          "result": {
+            "tasks": [
+              {
+                "id": "toolu_015weVgG4gJ4scu7NdJfJLFU",
+                "kind": "teammate",
+                "title": "Build MR review inbox module",
+                "name": "mr-reviews",
+                "status": "completed",
+                "startedAt": "2026-11-04T17:50:29.024Z",
+                "agentId": "a6f37b8a16c1041c3",
+                "outputFile": "/private/tmp/claude-501/x/tasks/a6f37b8a16c1041c3.output",
+                "summary": "Agent \"Build MR review inbox module\" finished",
+                "endedAt": "2026-11-04T19:32:47.188Z"
+              }
+            ],
+            "running_now": [],
+            "session": "362be254"
+          }
+        }
+      ]
+    }
+  ]
+}

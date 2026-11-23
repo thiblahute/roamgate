@@ -1,0 +1,2137 @@
+{
+  "description": "Muse sessions: token usage in summaries and ATIF. Read by `bun test` in server/src/agent/muse-session.test.ts.",
+  "modules": {
+    "token-usage": "server/src/agent/token-usage.ts",
+    "session-trajectory": "server/src/agent/session-trajectory.ts"
+  },
+  "cases": [
+    {
+      "name": "keeps explicit zero usage consistent in summaries and ATIF",
+      "group": ["Muse Code session inspection"],
+      "calls": [
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "echo",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 0,
+                      "output_tokens": 0,
+                      "cached_tokens": 0,
+                      "reasoning_tokens": 0
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "input_tokens": 0,
+            "cached_input_tokens": 0,
+            "output_tokens": 0,
+            "reasoning_output_tokens": 0,
+            "prompt_tokens": 0,
+            "total_tokens": 0
+          }
+        },
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "muse",
+            { "path": "/session.jsonl", "mtimeMs": 1788220800000 },
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "echo",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 0,
+                      "output_tokens": 0,
+                      "cached_tokens": 0,
+                      "reasoning_tokens": 0
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "74747474-7474-4747-8747-747474747474",
+            "trajectory_id": "74747474-7474-4747-8747-747474747474",
+            "agent": { "name": "muse-code", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "Token usage",
+                "metrics": {
+                  "prompt_tokens": 0,
+                  "completion_tokens": 0,
+                  "cached_tokens": 0,
+                  "extra": {
+                    "reasoning_output_tokens": 0,
+                    "total_tokens": 0,
+                    "raw_input_tokens": 0
+                  }
+                },
+                "step_id": 1
+              }
+            ],
+            "final_metrics": {
+              "total_prompt_tokens": 0,
+              "total_completion_tokens": 0,
+              "total_cached_tokens": 0,
+              "total_steps": 1,
+              "extra": {
+                "reasoning_output_tokens": 0,
+                "total_tokens": 0,
+                "raw_input_tokens": 0
+              }
+            },
+            "extra": {
+              "source_path": "/session.jsonl",
+              "source_records": 2,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "counts provider-aware prompts once and keeps unknown cached totals unknown",
+      "group": ["Muse Code session inspection"],
+      "calls": [
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "meta",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "input_tokens": 20,
+            "cached_input_tokens": 4,
+            "output_tokens": 5,
+            "reasoning_output_tokens": 2,
+            "prompt_tokens": 20,
+            "total_tokens": 25
+          }
+        },
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "muse",
+            { "path": "/session.jsonl", "mtimeMs": 1788220800000 },
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "meta",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "74747474-7474-4747-8747-747474747474",
+            "trajectory_id": "74747474-7474-4747-8747-747474747474",
+            "agent": { "name": "muse-code", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "Token usage",
+                "metrics": {
+                  "prompt_tokens": 20,
+                  "completion_tokens": 5,
+                  "cached_tokens": 4,
+                  "extra": {
+                    "reasoning_output_tokens": 2,
+                    "total_tokens": 25,
+                    "raw_input_tokens": 20
+                  }
+                },
+                "step_id": 1
+              }
+            ],
+            "final_metrics": {
+              "total_prompt_tokens": 20,
+              "total_completion_tokens": 5,
+              "total_cached_tokens": 4,
+              "total_steps": 1,
+              "extra": {
+                "reasoning_output_tokens": 2,
+                "total_tokens": 25,
+                "raw_input_tokens": 20
+              }
+            },
+            "extra": {
+              "source_path": "/session.jsonl",
+              "source_records": 2,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        },
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "openai",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "input_tokens": 20,
+            "cached_input_tokens": 4,
+            "output_tokens": 5,
+            "reasoning_output_tokens": 2,
+            "prompt_tokens": 20,
+            "total_tokens": 25
+          }
+        },
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "muse",
+            { "path": "/session.jsonl", "mtimeMs": 1788220800000 },
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "openai",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "74747474-7474-4747-8747-747474747474",
+            "trajectory_id": "74747474-7474-4747-8747-747474747474",
+            "agent": { "name": "muse-code", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "Token usage",
+                "metrics": {
+                  "prompt_tokens": 20,
+                  "completion_tokens": 5,
+                  "cached_tokens": 4,
+                  "extra": {
+                    "reasoning_output_tokens": 2,
+                    "total_tokens": 25,
+                    "raw_input_tokens": 20
+                  }
+                },
+                "step_id": 1
+              }
+            ],
+            "final_metrics": {
+              "total_prompt_tokens": 20,
+              "total_completion_tokens": 5,
+              "total_cached_tokens": 4,
+              "total_steps": 1,
+              "extra": {
+                "reasoning_output_tokens": 2,
+                "total_tokens": 25,
+                "raw_input_tokens": 20
+              }
+            },
+            "extra": {
+              "source_path": "/session.jsonl",
+              "source_records": 2,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        },
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "anthropic",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "input_tokens": 20,
+            "cached_input_tokens": 4,
+            "output_tokens": 5,
+            "reasoning_output_tokens": 2,
+            "prompt_tokens": 24,
+            "total_tokens": 29
+          }
+        },
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "muse",
+            { "path": "/session.jsonl", "mtimeMs": 1788220800000 },
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "anthropic",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "74747474-7474-4747-8747-747474747474",
+            "trajectory_id": "74747474-7474-4747-8747-747474747474",
+            "agent": { "name": "muse-code", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "Token usage",
+                "metrics": {
+                  "prompt_tokens": 24,
+                  "completion_tokens": 5,
+                  "cached_tokens": 4,
+                  "extra": {
+                    "reasoning_output_tokens": 2,
+                    "total_tokens": 29,
+                    "raw_input_tokens": 20
+                  }
+                },
+                "step_id": 1
+              }
+            ],
+            "final_metrics": {
+              "total_prompt_tokens": 24,
+              "total_completion_tokens": 5,
+              "total_cached_tokens": 4,
+              "total_steps": 1,
+              "extra": {
+                "reasoning_output_tokens": 2,
+                "total_tokens": 29,
+                "raw_input_tokens": 20
+              }
+            },
+            "extra": {
+              "source_path": "/session.jsonl",
+              "source_records": 2,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        },
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "unknown",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "input_tokens": 20,
+            "cached_input_tokens": 4,
+            "output_tokens": 5,
+            "reasoning_output_tokens": 2,
+            "prompt_tokens": null,
+            "total_tokens": null
+          }
+        },
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "muse",
+            { "path": "/session.jsonl", "mtimeMs": 1788220800000 },
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "unknown",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "74747474-7474-4747-8747-747474747474",
+            "trajectory_id": "74747474-7474-4747-8747-747474747474",
+            "agent": { "name": "muse-code", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "Token usage",
+                "metrics": {
+                  "completion_tokens": 5,
+                  "cached_tokens": 4,
+                  "extra": {
+                    "reasoning_output_tokens": 2,
+                    "raw_input_tokens": 20
+                  }
+                },
+                "step_id": 1
+              }
+            ],
+            "final_metrics": {
+              "total_completion_tokens": 5,
+              "total_cached_tokens": 4,
+              "total_steps": 1,
+              "extra": { "reasoning_output_tokens": 2, "raw_input_tokens": 20 }
+            },
+            "extra": {
+              "source_path": "/session.jsonl",
+              "source_records": 2,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        },
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "meta",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "anthropic",
+                    "run_stream": { "kind": "run", "id": "other" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "other",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "input_tokens": 40,
+            "cached_input_tokens": 8,
+            "output_tokens": 10,
+            "reasoning_output_tokens": 4,
+            "prompt_tokens": 44,
+            "total_tokens": 54
+          }
+        },
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "meta",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "anthropic",
+                    "run_stream": { "kind": "run", "id": "other" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "other",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "unknown-run",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "input_tokens": 60,
+            "cached_input_tokens": 12,
+            "output_tokens": 15,
+            "reasoning_output_tokens": 6,
+            "prompt_tokens": null,
+            "total_tokens": null
+          }
+        },
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "muse",
+            { "path": "/session.jsonl", "mtimeMs": 1788220800000 },
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "meta",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "anthropic",
+                    "run_stream": { "kind": "run", "id": "other" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "other",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "unknown-run",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "cache_write_tokens": 3,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "74747474-7474-4747-8747-747474747474",
+            "trajectory_id": "74747474-7474-4747-8747-747474747474",
+            "agent": { "name": "muse-code", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "Token usage",
+                "metrics": {
+                  "prompt_tokens": 20,
+                  "completion_tokens": 5,
+                  "cached_tokens": 4,
+                  "extra": {
+                    "reasoning_output_tokens": 2,
+                    "total_tokens": 25,
+                    "raw_input_tokens": 20
+                  }
+                },
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "Token usage",
+                "metrics": {
+                  "prompt_tokens": 24,
+                  "completion_tokens": 5,
+                  "cached_tokens": 4,
+                  "extra": {
+                    "reasoning_output_tokens": 2,
+                    "total_tokens": 29,
+                    "raw_input_tokens": 20
+                  }
+                },
+                "step_id": 2
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "Token usage",
+                "metrics": {
+                  "completion_tokens": 5,
+                  "cached_tokens": 4,
+                  "extra": {
+                    "reasoning_output_tokens": 2,
+                    "raw_input_tokens": 20
+                  }
+                },
+                "step_id": 3
+              }
+            ],
+            "final_metrics": {
+              "total_completion_tokens": 15,
+              "total_cached_tokens": 12,
+              "total_steps": 3,
+              "extra": { "reasoning_output_tokens": 6, "raw_input_tokens": 60 }
+            },
+            "extra": {
+              "source_path": "/session.jsonl",
+              "source_records": 5,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "keeps repeated prompts, legacy starts, malformed records and absent usage safe",
+      "group": ["Muse Code session inspection"],
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "muse",
+            { "path": "/session.jsonl", "mtimeMs": 1788220800000 },
+            [
+              {
+                "retained_frame": "session_permission_transaction",
+                "children": []
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session.metadata",
+                "payload": {
+                  "kind": "metadata",
+                  "record": {
+                    "workspace_root": "/work",
+                    "model_id": "meta/muse-glimmer-30b",
+                    "build": { "semver": "1.3.0" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "meta",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.user_intent.accepted",
+                "payload": {
+                  "intent_id": "intent-1",
+                  "model_messages": [
+                    {
+                      "content": [{ "kind": "text", "text": "Read README.md" }]
+                    }
+                  ],
+                  "refill_blocks": [
+                    { "kind": "text", "text": "Read README.md" }
+                  ]
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": { "kind": "started", "prompt": "Read README.md" }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.user_intent.materialized",
+                "payload": {
+                  "intent_id": "intent-1",
+                  "outcome": {
+                    "kind": "top_level_turn_started",
+                    "run_id": "run-1"
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "assistant_message_delta",
+                    "text": "duplicate chunk"
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "reasoning_committed",
+                    "text": "Inspect the file"
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "assistant_tool_calls_committed",
+                    "tool_calls": [
+                      {
+                        "call_id": "call-1",
+                        "name": "read_file",
+                        "args": "{\"path\":\"README.md\"}"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "tool_result_batch_committed",
+                    "results": [
+                      { "tool_call_id": "call-1", "text": "# README" }
+                    ]
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "model": "meta/muse-glimmer-30b",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "task",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": { "input_tokens": 900 }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "assistant_message_committed",
+                    "text": "Read the README."
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "different-run",
+                  "event": { "kind": "started", "prompt": "Read README.md" }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "assistant_tool_calls_committed",
+                    "tool_calls": [
+                      null,
+                      { "id": "call-2", "name": "shell", "args": "not JSON" }
+                    ]
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "tool_result_batch_committed",
+                    "results": [
+                      null,
+                      {
+                        "tool_call_id": "call-2",
+                        "text": "failed",
+                        "is_error": true
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 2,
+                      "output_tokens": 1,
+                      "cache_read_tokens": 1
+                    }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": { "kind": "run", "event": null }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.user_intent.accepted",
+                "payload": { "model_messages": [null] }
+              },
+              { "payload_type": "runtime.session", "payload": null },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1e100,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "assistant_message_committed",
+                    "text": "fallback time"
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "74747474-7474-4747-8747-747474747474",
+            "trajectory_id": "74747474-7474-4747-8747-747474747474",
+            "agent": {
+              "name": "muse-code",
+              "version": "1.3.0",
+              "model_name": "meta/muse-glimmer-30b"
+            },
+            "steps": [
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "user",
+                "message": "Read README.md",
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "agent",
+                "message": "Reasoning",
+                "reasoning_content": "Inspect the file",
+                "step_id": 2
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "agent",
+                "message": "Tool call: read_file",
+                "tool_calls": [
+                  {
+                    "tool_call_id": "call-1",
+                    "function_name": "read_file",
+                    "arguments": { "path": "README.md" }
+                  }
+                ],
+                "step_id": 3
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "# README",
+                "observation": {
+                  "results": [
+                    {
+                      "source_call_id": "call-1",
+                      "content": "# README",
+                      "extra": {}
+                    }
+                  ]
+                },
+                "step_id": 4
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "Token usage",
+                "metrics": {
+                  "prompt_tokens": 20,
+                  "completion_tokens": 5,
+                  "cached_tokens": 4,
+                  "extra": {
+                    "reasoning_output_tokens": 2,
+                    "total_tokens": 25,
+                    "raw_input_tokens": 20
+                  }
+                },
+                "step_id": 5
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "agent",
+                "message": "Read the README.",
+                "step_id": 6
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "user",
+                "message": "Read README.md",
+                "step_id": 7
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "agent",
+                "message": "Tool call: shell",
+                "tool_calls": [
+                  {
+                    "tool_call_id": "call-2",
+                    "function_name": "shell",
+                    "arguments": { "value": "not JSON" }
+                  }
+                ],
+                "step_id": 8
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "failed",
+                "observation": {
+                  "results": [
+                    {
+                      "source_call_id": "call-2",
+                      "content": "failed",
+                      "extra": { "is_error": true }
+                    }
+                  ]
+                },
+                "step_id": 9
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.123Z",
+                "source": "system",
+                "message": "Token usage",
+                "metrics": {
+                  "prompt_tokens": 2,
+                  "completion_tokens": 1,
+                  "cached_tokens": 1,
+                  "extra": { "total_tokens": 3, "raw_input_tokens": 2 }
+                },
+                "step_id": 10
+              },
+              {
+                "timestamp": "2026-09-01T00:00:00.020Z",
+                "source": "agent",
+                "message": "fallback time",
+                "step_id": 11
+              }
+            ],
+            "final_metrics": {
+              "total_prompt_tokens": 22,
+              "total_completion_tokens": 6,
+              "total_cached_tokens": 5,
+              "total_steps": 11,
+              "extra": {
+                "reasoning_output_tokens": 2,
+                "total_tokens": 28,
+                "raw_input_tokens": 22
+              }
+            },
+            "extra": {
+              "source_path": "/session.jsonl",
+              "source_records": 21,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        },
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              {
+                "retained_frame": "session_permission_transaction",
+                "children": []
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session.metadata",
+                "payload": {
+                  "kind": "metadata",
+                  "record": {
+                    "workspace_root": "/work",
+                    "model_id": "meta/muse-glimmer-30b",
+                    "build": { "semver": "1.3.0" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "run.model.configured",
+                "payload": {
+                  "kind": "run_model",
+                  "record": {
+                    "provider_id": "meta",
+                    "run_stream": { "kind": "run", "id": "run-1" }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.user_intent.accepted",
+                "payload": {
+                  "intent_id": "intent-1",
+                  "model_messages": [
+                    {
+                      "content": [{ "kind": "text", "text": "Read README.md" }]
+                    }
+                  ],
+                  "refill_blocks": [
+                    { "kind": "text", "text": "Read README.md" }
+                  ]
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": { "kind": "started", "prompt": "Read README.md" }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.user_intent.materialized",
+                "payload": {
+                  "intent_id": "intent-1",
+                  "outcome": {
+                    "kind": "top_level_turn_started",
+                    "run_id": "run-1"
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "assistant_message_delta",
+                    "text": "duplicate chunk"
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "reasoning_committed",
+                    "text": "Inspect the file"
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "assistant_tool_calls_committed",
+                    "tool_calls": [
+                      {
+                        "call_id": "call-1",
+                        "name": "read_file",
+                        "args": "{\"path\":\"README.md\"}"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "tool_result_batch_committed",
+                    "results": [
+                      { "tool_call_id": "call-1", "text": "# README" }
+                    ]
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "model": "meta/muse-glimmer-30b",
+                    "usage": {
+                      "input_tokens": 20,
+                      "output_tokens": 5,
+                      "cached_tokens": 4,
+                      "cache_read_tokens": 4,
+                      "reasoning_tokens": 2
+                    }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "task",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": { "input_tokens": 900 }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "assistant_message_committed",
+                    "text": "Read the README."
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "different-run",
+                  "event": { "kind": "started", "prompt": "Read README.md" }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "assistant_tool_calls_committed",
+                    "tool_calls": [
+                      null,
+                      { "id": "call-2", "name": "shell", "args": "not JSON" }
+                    ]
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "tool_result_batch_committed",
+                    "results": [
+                      null,
+                      {
+                        "tool_call_id": "call-2",
+                        "text": "failed",
+                        "is_error": true
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "model_completed",
+                    "usage": {
+                      "input_tokens": 2,
+                      "output_tokens": 1,
+                      "cache_read_tokens": 1
+                    }
+                  }
+                }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": { "kind": "run", "event": null }
+              },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.user_intent.accepted",
+                "payload": { "model_messages": [null] }
+              },
+              { "payload_type": "runtime.session", "payload": null },
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1e100,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": {
+                    "kind": "assistant_message_committed",
+                    "text": "fallback time"
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "input_tokens": 22,
+            "cached_input_tokens": 5,
+            "output_tokens": 6,
+            "reasoning_output_tokens": 2,
+            "prompt_tokens": 22,
+            "total_tokens": 28
+          }
+        },
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              {
+                "schema_version": 1,
+                "stream": {
+                  "kind": "session",
+                  "id": "74747474-7474-4747-8747-747474747474"
+                },
+                "recorded_at": 1788220800123456,
+                "record_type": "event",
+                "durability": "durable",
+                "payload_type": "runtime.session",
+                "payload": {
+                  "kind": "run",
+                  "run_id": "run-1",
+                  "event": { "kind": "model_completed" }
+                }
+              }
+            ]
+          ],
+          "result": null
+        }
+      ]
+    }
+  ]
+}

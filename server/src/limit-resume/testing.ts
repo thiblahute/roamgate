@@ -1,6 +1,6 @@
 /**
  * Claude Code transcript records shaped as Claude Code 2.1 writes them,
- * for the usage limit tests (shared and server).
+ * for the limit-resume tests.
  */
 
 export const SESSION = "362be254-14eb-4390-a96c-25032526572a";

@@ -1,0 +1,96 @@
+{
+  "description": "Paths typed into a terminal: POSIX and PowerShell quoting. Read by `bun test` in server/src/http/terminal-path-text.test.ts.",
+  "modules": { "terminal-path-text": "server/src/http/terminal-path-text.ts" },
+  "cases": [
+    {
+      "name": "keeps plain POSIX paths bare",
+      "group": ["terminal path text"],
+      "calls": [
+        {
+          "fn": "terminal-path-text.terminalPathText",
+          "args": ["/tmp/img-1-abc.png", "linux"],
+          "result": "/tmp/img-1-abc.png"
+        }
+      ]
+    },
+    {
+      "name": "single-quotes POSIX paths with spaces or shell characters",
+      "group": ["terminal path text"],
+      "calls": [
+        {
+          "fn": "terminal-path-text.terminalPathText",
+          "args": ["/var/folders/My Temp/$x/img.png", "darwin"],
+          "result": "'/var/folders/My Temp/$x/img.png'"
+        },
+        {
+          "fn": "terminal-path-text.terminalPathText",
+          "args": ["/tmp/o'brien/img.png", "linux"],
+          "result": "'/tmp/o'\\''brien/img.png'"
+        }
+      ]
+    },
+    {
+      "name": "uses forward slashes for Windows paths",
+      "group": ["terminal path text"],
+      "calls": [
+        {
+          "fn": "terminal-path-text.terminalPathText",
+          "args": [
+            "C:\\Users\\me\\AppData\\Local\\Temp\\roamgate-images-a1\\img.png",
+            "win32"
+          ],
+          "result": "C:/Users/me/AppData/Local/Temp/roamgate-images-a1/img.png"
+        }
+      ]
+    },
+    {
+      "name": "quotes commas instead of treating them as PowerShell argument separators",
+      "group": ["terminal path text"],
+      "calls": [
+        {
+          "fn": "terminal-path-text.terminalPathText",
+          "args": ["C:\\Users\\John,Doe\\Temp\\img.png", "win32"],
+          "result": "'C:/Users/John,Doe/Temp/img.png'"
+        },
+        {
+          "fn": "terminal-path-text.terminalPathText",
+          "args": ["/tmp/John,Doe/img.png", "linux"],
+          "result": "'/tmp/John,Doe/img.png'"
+        }
+      ]
+    },
+    {
+      "name": "single-quotes Windows paths with spaces",
+      "group": ["terminal path text"],
+      "calls": [
+        {
+          "fn": "terminal-path-text.terminalPathText",
+          "args": ["C:\\Users\\John Doe\\Temp\\img.png", "win32"],
+          "result": "'C:/Users/John Doe/Temp/img.png'"
+        }
+      ]
+    },
+    {
+      "name": "double-quotes Windows paths with apostrophes",
+      "group": ["terminal path text"],
+      "calls": [
+        {
+          "fn": "terminal-path-text.terminalPathText",
+          "args": ["C:\\Users\\O'Brien\\Temp\\img.png", "win32"],
+          "result": "\"C:/Users/O'Brien/Temp/img.png\""
+        }
+      ]
+    },
+    {
+      "name": "falls back to PowerShell quoting when both quote styles expand",
+      "group": ["terminal path text"],
+      "calls": [
+        {
+          "fn": "terminal-path-text.terminalPathText",
+          "args": ["C:\\Users\\O'B$n\\img.png", "win32"],
+          "result": "'C:/Users/O''B$n/img.png'"
+        }
+      ]
+    }
+  ]
+}

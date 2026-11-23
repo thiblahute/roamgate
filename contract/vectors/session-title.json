@@ -1,0 +1,54 @@
+{
+  "description": "Session titles: parsing them from a transcript. Read by `bun test` in server/src/agent/session-title.test.ts.",
+  "modules": { "session-title": "server/src/agent/session-title.ts" },
+  "cases": [
+    {
+      "name": "the latest generated title, unless the user named the session",
+      "group": ["parseSessionTitle"],
+      "calls": [
+        {
+          "fn": "session-title.parseSessionTitle",
+          "args": [[]],
+          "result": null
+        },
+        {
+          "fn": "session-title.parseSessionTitle",
+          "args": [
+            [
+              { "type": "ai-title", "aiTitle": "Network slowness" },
+              { "type": "user", "message": {} },
+              { "type": "ai-title", "aiTitle": "Voice chat cleaner" }
+            ]
+          ],
+          "result": "Voice chat cleaner"
+        },
+        {
+          "fn": "session-title.parseSessionTitle",
+          "args": [
+            [
+              { "type": "custom-title", "customTitle": "roamgate" },
+              { "type": "ai-title", "aiTitle": "Voice chat cleaner" }
+            ]
+          ],
+          "result": "roamgate"
+        }
+      ]
+    },
+    {
+      "name": "an emptied name gives way to the generated title",
+      "group": ["parseSessionTitle"],
+      "calls": [
+        {
+          "fn": "session-title.parseSessionTitle",
+          "args": [
+            [
+              { "type": "ai-title", "aiTitle": "Voice chat cleaner" },
+              { "type": "custom-title", "customTitle": " " }
+            ]
+          ],
+          "result": "Voice chat cleaner"
+        }
+      ]
+    }
+  ]
+}

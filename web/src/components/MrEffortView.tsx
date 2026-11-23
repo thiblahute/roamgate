@@ -13,7 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { MrEffortColumn } from "../../../shared/mrEffortBoard";
+import type { MrEffortColumn } from "../mrEffortBoard";
 import type { ReviewThread } from "../../../shared/review";
 import {
   MR_DISPOSITIONS,

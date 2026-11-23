@@ -1,0 +1,55 @@
+{
+  "description": "Slash commands a session ran: parsing them from its transcript. Read by `bun test` in server/src/agent/session-commands.test.ts.",
+  "modules": { "session-commands": "server/src/agent/session-commands.ts" },
+  "cases": [
+    {
+      "name": "a session's skills and commands, with what they do",
+      "calls": [
+        {
+          "fn": "session-commands.parseSessionCommands",
+          "args": [
+            [
+              {
+                "type": "attachment",
+                "attachment": {
+                  "type": "skill_listing",
+                  "names": ["glab", "commit", "codex:rescue"],
+                  "content": "- glab (gitlab): GitLab operations via glab CLI.\n- commit: FIRST Check the staged changes\n- codex:rescue: Delegate to Codex"
+                }
+              },
+              { "type": "user", "message": { "content": "hello" } },
+              {
+                "type": "attachment",
+                "attachment": {
+                  "type": "skill_listing",
+                  "names": ["review"],
+                  "content": "- review: Review a pull request"
+                }
+              },
+              {
+                "type": "attachment",
+                "attachment": {
+                  "type": "skill_listing",
+                  "names": ["bad name; rm"],
+                  "content": "- bad name; rm: no"
+                }
+              }
+            ]
+          ],
+          "result": [
+            { "name": "codex:rescue", "description": "Delegate to Codex" },
+            {
+              "name": "commit",
+              "description": "FIRST Check the staged changes"
+            },
+            {
+              "name": "glab",
+              "description": "GitLab operations via glab CLI."
+            },
+            { "name": "review", "description": "Review a pull request" }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,213 @@
+{
+  "description": "Token usage: summing a transcript's usage records. Read by `bun test` in server/src/agent/token-usage.test.ts.",
+  "modules": { "token-usage": "server/src/agent/token-usage.ts" },
+  "cases": [
+    {
+      "name": "normalizes OpenAI-style token usage",
+      "group": ["agent session token usage"],
+      "calls": [
+        {
+          "fn": "token-usage.tokenUsageFrom",
+          "args": [
+            {
+              "prompt_tokens": 10,
+              "completion_tokens": 5,
+              "cached_input_tokens": 3,
+              "reasoning_output_tokens": 2,
+              "total_tokens": 17
+            }
+          ],
+          "result": {
+            "input_tokens": 10,
+            "cached_input_tokens": 3,
+            "output_tokens": 5,
+            "reasoning_output_tokens": 2,
+            "total_tokens": 17
+          }
+        }
+      ]
+    },
+    {
+      "name": "normalizes Kimi-style token usage",
+      "group": ["agent session token usage"],
+      "calls": [
+        {
+          "fn": "token-usage.tokenUsageFrom",
+          "args": [
+            {
+              "inputOther": 10,
+              "inputCacheCreation": 4,
+              "inputCacheRead": 6,
+              "output": 8
+            }
+          ],
+          "result": {
+            "input_tokens": 14,
+            "cached_input_tokens": 6,
+            "output_tokens": 8
+          }
+        }
+      ]
+    },
+    {
+      "name": "normalizes Pi-style token usage",
+      "group": ["agent session token usage"],
+      "calls": [
+        {
+          "fn": "token-usage.tokenUsageFrom",
+          "args": [
+            {
+              "input": 10,
+              "output": 8,
+              "cacheRead": 6,
+              "cacheWrite": 4,
+              "reasoning": 3,
+              "totalTokens": 28
+            }
+          ],
+          "result": {
+            "input_tokens": 14,
+            "cached_input_tokens": 6,
+            "output_tokens": 8,
+            "reasoning_output_tokens": 3,
+            "total_tokens": 28
+          }
+        }
+      ]
+    },
+    {
+      "name": "prefers cumulative token count records over summed usage",
+      "group": ["agent session token usage"],
+      "calls": [
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              { "usage": { "input_tokens": 1, "output_tokens": 1 } },
+              {
+                "type": "event_msg",
+                "payload": {
+                  "type": "token_count",
+                  "info": {
+                    "total_token_usage": {
+                      "input_tokens": 100,
+                      "output_tokens": 20,
+                      "cached_input_tokens": 30
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "input_tokens": 100,
+            "cached_input_tokens": 30,
+            "output_tokens": 20
+          }
+        }
+      ]
+    },
+    {
+      "name": "preserves reported zeros while distinguishing absent counters",
+      "group": ["agent session token usage"],
+      "calls": [
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              {
+                "usage": {
+                  "input_tokens": 0,
+                  "output_tokens": 0,
+                  "cached_input_tokens": 0,
+                  "reasoning_output_tokens": 0,
+                  "total_tokens": 0
+                }
+              },
+              {
+                "usage": {
+                  "input_tokens": 0,
+                  "output_tokens": 0,
+                  "cached_input_tokens": 0,
+                  "reasoning_output_tokens": 0,
+                  "total_tokens": 0
+                }
+              }
+            ]
+          ],
+          "result": {
+            "input_tokens": 0,
+            "cached_input_tokens": 0,
+            "output_tokens": 0,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 0
+          }
+        },
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [[{ "usage": { "output_tokens": 0 } }]],
+          "result": { "output_tokens": 0 }
+        },
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [
+            [
+              {
+                "usage": {
+                  "input_tokens": 0,
+                  "output_tokens": 0,
+                  "cached_input_tokens": 0,
+                  "reasoning_output_tokens": 0,
+                  "total_tokens": 0
+                }
+              },
+              {
+                "usage": {
+                  "input_tokens": 2,
+                  "output_tokens": 1,
+                  "total_tokens": 3
+                }
+              }
+            ]
+          ],
+          "result": {
+            "input_tokens": 2,
+            "cached_input_tokens": 0,
+            "output_tokens": 1,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 3
+          }
+        },
+        {
+          "fn": "token-usage.summarizeTokenUsage",
+          "args": [[{ "usage": {} }]],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "maps token usage into ATIF metrics",
+      "group": ["agent session token usage"],
+      "calls": [
+        {
+          "fn": "token-usage.tokenUsageToMetrics",
+          "args": [
+            {
+              "input_tokens": 10,
+              "cached_input_tokens": 2,
+              "output_tokens": 3,
+              "reasoning_output_tokens": 4,
+              "total_tokens": 15
+            }
+          ],
+          "result": {
+            "prompt_tokens": 10,
+            "completion_tokens": 3,
+            "cached_tokens": 2,
+            "extra": { "reasoning_output_tokens": 4, "total_tokens": 15 }
+          }
+        }
+      ]
+    }
+  ]
+}

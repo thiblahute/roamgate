@@ -1,0 +1,325 @@
+{
+  "description": "State deltas: the diff between two states and applying it. Read by `bun test` in shared/stateDelta.test.ts.",
+  "modules": { "stateDelta": "shared/stateDelta.ts" },
+  "cases": [
+    {
+      "name": "a state's changes carry only the changed fields and list items",
+      "calls": [
+        {
+          "fn": "stateDelta.diffState",
+          "args": [
+            {
+              "revision": 1,
+              "running": false,
+              "error": "x",
+              "messages": [
+                {
+                  "id": "m1",
+                  "text": {
+                    "$text": [
+                      "a long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long message"
+                    ]
+                  }
+                },
+                { "id": "m2", "text": "b" }
+              ]
+            },
+            {
+              "revision": 2,
+              "running": true,
+              "messages": [
+                {
+                  "id": "m1",
+                  "text": {
+                    "$text": [
+                      "a long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long message"
+                    ]
+                  }
+                },
+                { "id": "m2", "text": "b, more" },
+                { "id": "m3", "text": "c" }
+              ]
+            }
+          ],
+          "result": {
+            "set": { "revision": 2, "running": true },
+            "unset": ["error"],
+            "lists": {
+              "messages": {
+                "by": "id",
+                "order": ["m1", "m2", "m3"],
+                "upsert": [{ "id": "m3", "text": "c" }],
+                "patch": {
+                  "m2": {
+                    "set": { "text": "b, more" },
+                    "unset": [],
+                    "lists": {}
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "fn": "stateDelta.applyStateDelta",
+          "args": [
+            {
+              "revision": 1,
+              "running": false,
+              "error": "x",
+              "messages": [
+                {
+                  "id": "m1",
+                  "text": {
+                    "$text": [
+                      "a long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long message"
+                    ]
+                  }
+                },
+                { "id": "m2", "text": "b" }
+              ]
+            },
+            {
+              "set": { "revision": 2, "running": true },
+              "unset": ["error"],
+              "lists": {
+                "messages": {
+                  "by": "id",
+                  "order": ["m1", "m2", "m3"],
+                  "upsert": [{ "id": "m3", "text": "c" }],
+                  "patch": {
+                    "m2": {
+                      "set": { "text": "b, more" },
+                      "unset": [],
+                      "lists": {}
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "result": {
+            "revision": 2,
+            "running": true,
+            "messages": [
+              {
+                "id": "m1",
+                "text": {
+                  "$text": [
+                    "a long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long message"
+                  ]
+                }
+              },
+              { "id": "m2", "text": "b, more" },
+              { "id": "m3", "text": "c" }
+            ]
+          }
+        },
+        {
+          "fn": "stateDelta.diffState",
+          "args": [
+            {
+              "revision": 2,
+              "running": true,
+              "messages": [
+                {
+                  "id": "m1",
+                  "text": {
+                    "$text": [
+                      "a long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long message"
+                    ]
+                  }
+                },
+                { "id": "m2", "text": "b, more" },
+                { "id": "m3", "text": "c" }
+              ]
+            },
+            {
+              "revision": 2,
+              "running": true,
+              "messages": [
+                {
+                  "id": "m1",
+                  "text": {
+                    "$text": [
+                      "a long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long messagea long message"
+                    ]
+                  }
+                },
+                { "id": "m2", "text": "b, more" },
+                { "id": "m3", "text": "c" }
+              ]
+            }
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "changes to a list the base lacks an item of do not apply",
+      "calls": [
+        {
+          "fn": "stateDelta.diffState",
+          "args": [
+            { "messages": [{ "id": "m1" }] },
+            { "messages": [{ "id": "m1" }, { "id": "m2" }] }
+          ],
+          "result": {
+            "set": {},
+            "unset": [],
+            "lists": {
+              "messages": {
+                "by": "id",
+                "order": ["m1", "m2"],
+                "upsert": [{ "id": "m2" }]
+              }
+            }
+          }
+        },
+        {
+          "fn": "stateDelta.applyStateDelta",
+          "args": [
+            { "messages": [] },
+            {
+              "set": {},
+              "unset": [],
+              "lists": {
+                "messages": {
+                  "by": "id",
+                  "order": ["m1", "m2"],
+                  "upsert": [{ "id": "m2" }]
+                }
+              }
+            }
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "nested lists keyed by another id field change item by item",
+      "calls": [
+        {
+          "fn": "stateDelta.diffState",
+          "args": [
+            {
+              "connections": [
+                {
+                  "connection_id": "desktop",
+                  "agents": [
+                    { "pane_id": "p1", "status": "idle" },
+                    { "pane_id": "p2", "status": "idle" }
+                  ]
+                },
+                { "connection_id": "mac", "agents": [] }
+              ]
+            },
+            {
+              "connections": [
+                {
+                  "connection_id": "desktop",
+                  "agents": [
+                    { "pane_id": "p1", "status": "working" },
+                    { "pane_id": "p2", "status": "idle" }
+                  ]
+                },
+                { "connection_id": "mac", "agents": [] }
+              ]
+            }
+          ],
+          "result": {
+            "set": {},
+            "unset": [],
+            "lists": {
+              "connections": {
+                "by": "connection_id",
+                "order": ["desktop", "mac"],
+                "upsert": [],
+                "patch": {
+                  "desktop": {
+                    "set": {},
+                    "unset": [],
+                    "lists": {
+                      "agents": {
+                        "by": "pane_id",
+                        "order": ["p1", "p2"],
+                        "upsert": [],
+                        "patch": {
+                          "p1": {
+                            "set": { "status": "working" },
+                            "unset": [],
+                            "lists": {}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "fn": "stateDelta.applyStateDelta",
+          "args": [
+            {
+              "connections": [
+                {
+                  "connection_id": "desktop",
+                  "agents": [
+                    { "pane_id": "p1", "status": "idle" },
+                    { "pane_id": "p2", "status": "idle" }
+                  ]
+                },
+                { "connection_id": "mac", "agents": [] }
+              ]
+            },
+            {
+              "set": {},
+              "unset": [],
+              "lists": {
+                "connections": {
+                  "by": "connection_id",
+                  "order": ["desktop", "mac"],
+                  "upsert": [],
+                  "patch": {
+                    "desktop": {
+                      "set": {},
+                      "unset": [],
+                      "lists": {
+                        "agents": {
+                          "by": "pane_id",
+                          "order": ["p1", "p2"],
+                          "upsert": [],
+                          "patch": {
+                            "p1": {
+                              "set": { "status": "working" },
+                              "unset": [],
+                              "lists": {}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "result": {
+            "connections": [
+              {
+                "connection_id": "desktop",
+                "agents": [
+                  { "pane_id": "p1", "status": "working" },
+                  { "pane_id": "p2", "status": "idle" }
+                ]
+              },
+              { "connection_id": "mac", "agents": [] }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,227 @@
+{
+  "description": "Artifacts a session published: parsing them from its transcript. Read by `bun test` in server/src/agent/session-artifacts.test.ts.",
+  "modules": { "session-artifacts": "server/src/agent/session-artifacts.ts" },
+  "cases": [
+    {
+      "name": "a new artifact is named after its title",
+      "calls": [
+        {
+          "fn": "session-artifacts.publishedArtifact",
+          "args": [
+            {
+              "type_url": "https://claude.ai/artifact/T",
+              "title": "Power bills"
+            },
+            "Created a new Artifact at https://claude.ai/artifact/CYq8 (version 1-a) from the Artifact type https://claude.ai/artifact/T"
+          ],
+          "result": {
+            "url": "https://claude.ai/artifact/CYq8",
+            "title": "Power bills"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an update carries its version, named after the file",
+      "calls": [
+        {
+          "fn": "session-artifacts.publishedArtifact",
+          "args": [
+            { "file_path": "/tmp/scratch/review-notes.html", "url": "x" },
+            "Published /tmp/scratch/review-notes.html at https://claude.ai/code/artifact/a-1 (Version 3, version id 17-50)"
+          ],
+          "result": {
+            "url": "https://claude.ai/code/artifact/a-1",
+            "title": "review-notes",
+            "version": 3
+          }
+        }
+      ]
+    },
+    {
+      "name": "an index page is named after its folder",
+      "calls": [
+        {
+          "fn": "session-artifacts.publishedArtifact",
+          "args": [
+            { "file_path": "/tmp/scratchpad/preview/index.html" },
+            "Published /tmp/scratchpad/preview/index.html at https://claude.ai/artifact/P"
+          ],
+          "result": {
+            "url": "https://claude.ai/artifact/P",
+            "title": "preview"
+          }
+        }
+      ]
+    },
+    {
+      "name": "other actions, uploads and refusals publish nothing",
+      "calls": [
+        {
+          "fn": "session-artifacts.publishedArtifact",
+          "args": [
+            { "action": "read", "url": "https://claude.ai/artifact/A" },
+            "Published x at https://claude.ai/artifact/A"
+          ],
+          "result": { "$undefined": true }
+        },
+        {
+          "fn": "session-artifacts.publishedArtifact",
+          "args": [
+            { "asset": true, "url": "https://claude.ai/artifact/A" },
+            "Published x at https://claude.ai/artifact/A"
+          ],
+          "result": { "$undefined": true }
+        },
+        {
+          "fn": "session-artifacts.publishedArtifact",
+          "args": [
+            { "file_path": "/a.html" },
+            "Publish refused: nothing was published"
+          ],
+          "result": { "$undefined": true }
+        }
+      ]
+    },
+    {
+      "name": "a session lists each artifact once, at its latest publish",
+      "calls": [
+        {
+          "fn": "session-artifacts.parseSessionArtifacts",
+          "args": [
+            [
+              {
+                "type": "assistant",
+                "message": {
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "1",
+                      "name": "Artifact",
+                      "input": { "title": "Report" }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "t1",
+                "message": {
+                  "content": [
+                    {
+                      "type": "tool_result",
+                      "tool_use_id": "1",
+                      "content": "Created a new Artifact at https://claude.ai/artifact/A (version 1)"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "assistant",
+                "message": {
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "2",
+                      "name": "Artifact",
+                      "input": { "file_path": "/s/notes.html" }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "t2",
+                "message": {
+                  "content": [
+                    {
+                      "type": "tool_result",
+                      "tool_use_id": "2",
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "Published /s/notes.html at https://claude.ai/artifact/B"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "assistant",
+                "message": {
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "3",
+                      "name": "Artifact",
+                      "input": {
+                        "file_path": "/s/report.html",
+                        "url": "https://claude.ai/artifact/A"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "t3",
+                "message": {
+                  "content": [
+                    {
+                      "type": "tool_result",
+                      "tool_use_id": "3",
+                      "content": "Published /s/report.html at https://claude.ai/artifact/A (Version 2, id x)"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "assistant",
+                "message": {
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "4",
+                      "name": "Artifact",
+                      "input": {
+                        "action": "read",
+                        "url": "https://claude.ai/artifact/B"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "user",
+                "timestamp": "t4",
+                "message": {
+                  "content": [
+                    {
+                      "type": "tool_result",
+                      "tool_use_id": "4",
+                      "content": "Published x at https://claude.ai/artifact/B"
+                    }
+                  ]
+                }
+              }
+            ]
+          ],
+          "result": [
+            {
+              "url": "https://claude.ai/artifact/A",
+              "title": "report",
+              "version": 2,
+              "published_at": "t3"
+            },
+            {
+              "url": "https://claude.ai/artifact/B",
+              "title": "notes",
+              "published_at": "t2"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

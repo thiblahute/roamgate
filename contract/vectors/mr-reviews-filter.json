@@ -1,0 +1,3069 @@
+{
+  "description": "The merge request inbox's filter: parsing, matching and completions. Read by `bun test` in shared/mrReviewsFilter.test.ts.",
+  "modules": { "mrReviewsFilter": "shared/mrReviewsFilter.ts" },
+  "cases": [
+    {
+      "name": "tokens and words, negation, several values of one key",
+      "calls": [
+        {
+          "fn": "mrReviewsFilter.parseMrFilter",
+          "args": ["project:media/* -label:\"needs work\" pool -draft"],
+          "result": {
+            "tokens": [
+              { "key": "project", "value": "media/*", "not": false },
+              { "key": "label", "value": "needs work", "not": true }
+            ],
+            "words": [
+              { "text": "pool", "not": false },
+              { "text": "draft", "not": true }
+            ]
+          }
+        },
+        {
+          "fn": "mrReviewsFilter.parseMrFilter",
+          "args": ["http://x"],
+          "result": {
+            "tokens": [],
+            "words": [{ "text": "http://x", "not": false }]
+          }
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "project:media/*"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "project:media/*"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "project:media/*"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "project:media/*"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "project:media/"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "project:media/"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "project:media/"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "project:media/"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "project:media/engine project:other/tool"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "project:media/engine project:other/tool"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "project:media/engine project:other/tool"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "project:media/engine project:other/tool"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "label:audio"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "label:audio"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "label:audio"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "label:audio"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "label:infra"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "label:infra"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "label:infra"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "label:infra"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "-label:infra"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "-label:infra"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "-label:infra"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "-label:infra"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "lane:needs-you"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "lane:needs-you"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "lane:needs-you"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "lane:needs-you"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "lane:your-move"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "lane:your-move"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "lane:your-move"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "lane:your-move"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "waiting:me"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "waiting:me"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "waiting:me"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "waiting:me"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "pipeline:failed"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "pipeline:failed"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "pipeline:failed"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "pipeline:failed"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "draft:yes"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "draft:yes"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "draft:yes"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "draft:yes"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "state:draft"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "state:draft"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "state:draft"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "state:draft"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "author:bob"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "author:bob"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "author:bob"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "author:bob"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "is:review"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "is:review"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "is:review"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "is:review"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "is:mine pool 3"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "is:mine pool 3"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "is:mine pool 3"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "is:mine pool 3"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "-is:mine"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "-is:mine"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "-is:mine"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "-is:mine"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "labels": ["audio"]
+            },
+            "!2"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/plugins",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "labels": ["infra"],
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "!2"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "other/tool",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "failed",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "your_move"
+            },
+            "!2"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 4,
+              "key": "gitlab:h/media/engine#4",
+              "url": "https://h/media/engine/-/merge_requests/4",
+              "title": "Fix the buffer pool 4",
+              "author": "bob",
+              "draft": true,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-4",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["review_requested"],
+              "section": "mine",
+              "unread": null,
+              "isNew": false
+            },
+            "!2"
+          ],
+          "result": false
+        }
+      ]
+    },
+    {
+      "name": "waiting: an override's whose-move, unless outdated",
+      "calls": [
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "whose": { "person": "bob" },
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "waiting:bob"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "whose": { "person": "bob" },
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              },
+              "overrideOutdated": true
+            },
+            "waiting:bob"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "whose": "external",
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "waiting:bob"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "whose": { "person": "bob" },
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "waiting:external"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "whose": { "person": "bob" },
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              },
+              "overrideOutdated": true
+            },
+            "waiting:external"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "whose": "external",
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "waiting:external"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "whose": { "person": "bob" },
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "waiting:reviewer"
+          ],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 2,
+              "key": "gitlab:h/media/engine#2",
+              "url": "https://h/media/engine/-/merge_requests/2",
+              "title": "Fix the buffer pool 2",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-2",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "whose": { "person": "bob" },
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              },
+              "overrideOutdated": true
+            },
+            "waiting:reviewer"
+          ],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 3,
+              "key": "gitlab:h/media/engine#3",
+              "url": "https://h/media/engine/-/merge_requests/3",
+              "title": "Fix the buffer pool 3",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-3",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "waiting",
+              "override": {
+                "whose": "external",
+                "at": "t",
+                "by": "user",
+                "marker": "m"
+              }
+            },
+            "waiting:reviewer"
+          ],
+          "result": false
+        }
+      ]
+    },
+    {
+      "name": "own-work filters and completions",
+      "calls": [
+        {
+          "fn": "mrReviewsFilter.mrFilterIsOwn",
+          "args": ["is:mine"],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterIsOwn",
+          "args": ["lane:stale"],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterIsOwn",
+          "args": ["project:x"],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterCompletions",
+          "args": [
+            "pr",
+            [
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/engine",
+                "number": 1,
+                "key": "gitlab:h/media/engine#1",
+                "url": "https://h/media/engine/-/merge_requests/1",
+                "title": "Fix the buffer pool 1",
+                "author": "me",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-1",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting",
+                "labels": ["needs work"]
+              },
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/plugins",
+                "number": 2,
+                "key": "gitlab:h/media/engine#2",
+                "url": "https://h/media/engine/-/merge_requests/2",
+                "title": "Fix the buffer pool 2",
+                "author": "alice",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-2",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting"
+              }
+            ]
+          ],
+          "result": [{ "label": "project:", "insert": "project:" }]
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterCompletions",
+          "args": [
+            "-lab",
+            [
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/engine",
+                "number": 1,
+                "key": "gitlab:h/media/engine#1",
+                "url": "https://h/media/engine/-/merge_requests/1",
+                "title": "Fix the buffer pool 1",
+                "author": "me",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-1",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting",
+                "labels": ["needs work"]
+              },
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/plugins",
+                "number": 2,
+                "key": "gitlab:h/media/engine#2",
+                "url": "https://h/media/engine/-/merge_requests/2",
+                "title": "Fix the buffer pool 2",
+                "author": "alice",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-2",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting"
+              }
+            ]
+          ],
+          "result": [{ "label": "-label:", "insert": "-label:" }]
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterCompletions",
+          "args": [
+            "fix project:media/",
+            [
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/engine",
+                "number": 1,
+                "key": "gitlab:h/media/engine#1",
+                "url": "https://h/media/engine/-/merge_requests/1",
+                "title": "Fix the buffer pool 1",
+                "author": "me",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-1",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting",
+                "labels": ["needs work"]
+              },
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/plugins",
+                "number": 2,
+                "key": "gitlab:h/media/engine#2",
+                "url": "https://h/media/engine/-/merge_requests/2",
+                "title": "Fix the buffer pool 2",
+                "author": "alice",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-2",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting"
+              }
+            ]
+          ],
+          "result": [
+            { "label": "project:media/*", "insert": "fix project:media/* " },
+            {
+              "label": "project:media/engine",
+              "insert": "fix project:media/engine "
+            },
+            {
+              "label": "project:media/plugins",
+              "insert": "fix project:media/plugins "
+            }
+          ]
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterCompletions",
+          "args": [
+            "label:n",
+            [
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/engine",
+                "number": 1,
+                "key": "gitlab:h/media/engine#1",
+                "url": "https://h/media/engine/-/merge_requests/1",
+                "title": "Fix the buffer pool 1",
+                "author": "me",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-1",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting",
+                "labels": ["needs work"]
+              },
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/plugins",
+                "number": 2,
+                "key": "gitlab:h/media/engine#2",
+                "url": "https://h/media/engine/-/merge_requests/2",
+                "title": "Fix the buffer pool 2",
+                "author": "alice",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-2",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting"
+              }
+            ]
+          ],
+          "result": [
+            {
+              "label": "label:\"needs work\"",
+              "insert": "label:\"needs work\" "
+            }
+          ]
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterCompletions",
+          "args": [
+            "lane:",
+            [
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/engine",
+                "number": 1,
+                "key": "gitlab:h/media/engine#1",
+                "url": "https://h/media/engine/-/merge_requests/1",
+                "title": "Fix the buffer pool 1",
+                "author": "me",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-1",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting",
+                "labels": ["needs work"]
+              },
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/plugins",
+                "number": 2,
+                "key": "gitlab:h/media/engine#2",
+                "url": "https://h/media/engine/-/merge_requests/2",
+                "title": "Fix the buffer pool 2",
+                "author": "alice",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-2",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting"
+              }
+            ]
+          ],
+          "result": [
+            { "label": "lane:blocked", "insert": "lane:blocked " },
+            { "label": "lane:done", "insert": "lane:done " },
+            { "label": "lane:merging", "insert": "lane:merging " },
+            { "label": "lane:needs-you", "insert": "lane:needs-you " },
+            { "label": "lane:not-sent", "insert": "lane:not-sent " },
+            { "label": "lane:stale", "insert": "lane:stale " },
+            { "label": "lane:waiting", "insert": "lane:waiting " }
+          ]
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterCompletions",
+          "args": [
+            "pool",
+            [
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/engine",
+                "number": 1,
+                "key": "gitlab:h/media/engine#1",
+                "url": "https://h/media/engine/-/merge_requests/1",
+                "title": "Fix the buffer pool 1",
+                "author": "me",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-1",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting",
+                "labels": ["needs work"]
+              },
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/plugins",
+                "number": 2,
+                "key": "gitlab:h/media/engine#2",
+                "url": "https://h/media/engine/-/merge_requests/2",
+                "title": "Fix the buffer pool 2",
+                "author": "alice",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-2",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "waiting"
+              }
+            ]
+          ],
+          "result": []
+        }
+      ]
+    },
+    {
+      "name": "merge keys: completions, and they keep one's own work",
+      "calls": [
+        {
+          "fn": "mrReviewsFilter.mrFilterCompletions",
+          "args": [
+            "bot:",
+            [
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/engine",
+                "number": 1,
+                "key": "gitlab:h/media/engine#1",
+                "url": "https://h/media/engine/-/merge_requests/1",
+                "title": "Fix the buffer pool 1",
+                "author": "me",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-1",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "merging",
+                "merge": {
+                  "bot": {
+                    "name": "marge-bot",
+                    "via": "assignee",
+                    "queued": true
+                  }
+                }
+              }
+            ]
+          ],
+          "result": [
+            { "label": "bot:any", "insert": "bot:any " },
+            { "label": "bot:failed", "insert": "bot:failed " },
+            { "label": "bot:marge-bot", "insert": "bot:marge-bot " },
+            { "label": "bot:none", "insert": "bot:none " },
+            { "label": "bot:queued", "insert": "bot:queued " }
+          ]
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterCompletions",
+          "args": [
+            "merge-a",
+            [
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/engine",
+                "number": 1,
+                "key": "gitlab:h/media/engine#1",
+                "url": "https://h/media/engine/-/merge_requests/1",
+                "title": "Fix the buffer pool 1",
+                "author": "me",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-1",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "merging",
+                "merge": {
+                  "bot": {
+                    "name": "marge-bot",
+                    "via": "assignee",
+                    "queued": true
+                  }
+                }
+              }
+            ]
+          ],
+          "result": [{ "label": "merge-after:", "insert": "merge-after:" }]
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterCompletions",
+          "args": [
+            "state:m",
+            [
+              {
+                "provider": "gitlab",
+                "host": "h",
+                "project": "media/engine",
+                "number": 1,
+                "key": "gitlab:h/media/engine#1",
+                "url": "https://h/media/engine/-/merge_requests/1",
+                "title": "Fix the buffer pool 1",
+                "author": "me",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-15T00:00:00Z",
+                "headSha": "a",
+                "sourceBranch": "topic-1",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 0,
+                "reasons": ["authored"],
+                "section": "authored",
+                "unread": null,
+                "isNew": false,
+                "lane": "merging",
+                "merge": {
+                  "bot": {
+                    "name": "marge-bot",
+                    "via": "assignee",
+                    "queued": true
+                  }
+                }
+              }
+            ]
+          ],
+          "result": [
+            { "label": "state:merged", "insert": "state:merged " },
+            { "label": "state:merging", "insert": "state:merging " }
+          ]
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterIsOwn",
+          "args": ["bot:any"],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterIsOwn",
+          "args": ["state:merging"],
+          "result": true
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterIsOwn",
+          "args": ["-merge-after:yes"],
+          "result": false
+        },
+        {
+          "fn": "mrReviewsFilter.mrFilterMatches",
+          "args": [
+            {
+              "provider": "gitlab",
+              "host": "h",
+              "project": "media/engine",
+              "number": 1,
+              "key": "gitlab:h/media/engine#1",
+              "url": "https://h/media/engine/-/merge_requests/1",
+              "title": "Fix the buffer pool 1",
+              "author": "me",
+              "draft": false,
+              "state": "open",
+              "updatedAt": "2026-11-15T00:00:00Z",
+              "headSha": "a",
+              "sourceBranch": "topic-1",
+              "targetBranch": "main",
+              "pipeline": "success",
+              "notes": 0,
+              "reasons": ["authored"],
+              "section": "authored",
+              "unread": null,
+              "isNew": false,
+              "lane": "merging",
+              "merge": {
+                "bot": {
+                  "name": "marge-bot",
+                  "via": "assignee",
+                  "queued": true
+                }
+              }
+            },
+            "-merge-after:yes bot:queued"
+          ],
+          "result": true
+        }
+      ]
+    }
+  ]
+}

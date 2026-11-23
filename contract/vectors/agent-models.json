@@ -1,0 +1,601 @@
+{
+  "description": "Agent model catalogs: model ids, aliases, efforts and their labels. Read by `bun test` in shared/agentModels.test.ts.",
+  "modules": { "agentModels": "shared/agentModels.ts" },
+  "cases": [
+    {
+      "name": "alone opens the picker, with a name switches",
+      "group": ["/model typed"],
+      "calls": [
+        {
+          "fn": "agentModels.parseModelCommand",
+          "args": ["/model"],
+          "result": { "model": null }
+        },
+        {
+          "fn": "agentModels.parseModelCommand",
+          "args": ["  /model  "],
+          "result": { "model": null }
+        },
+        {
+          "fn": "agentModels.parseModelCommand",
+          "args": ["/model sonnet"],
+          "result": { "model": "sonnet" }
+        },
+        {
+          "fn": "agentModels.parseModelCommand",
+          "args": [" /model  opus[1m] "],
+          "result": { "model": "opus[1m]" }
+        }
+      ]
+    },
+    {
+      "name": "anything else is not the command",
+      "group": ["/model typed"],
+      "calls": [
+        {
+          "fn": "agentModels.parseModelCommand",
+          "args": ["/models"],
+          "result": null
+        },
+        {
+          "fn": "agentModels.parseModelCommand",
+          "args": ["/model opus plan"],
+          "result": null
+        },
+        {
+          "fn": "agentModels.parseModelCommand",
+          "args": ["use /model sonnet"],
+          "result": null
+        },
+        {
+          "fn": "agentModels.parseModelCommand",
+          "args": ["/compact"],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "a model name is what Claude Code takes, nothing a flag or a shell would read",
+      "group": ["/model typed"],
+      "calls": [
+        { "fn": "agentModels.isModelName", "args": ["sonnet"], "result": true },
+        {
+          "fn": "agentModels.isModelName",
+          "args": ["default"],
+          "result": true
+        },
+        {
+          "fn": "agentModels.isModelName",
+          "args": ["claude-opus-5-5"],
+          "result": true
+        },
+        {
+          "fn": "agentModels.isModelName",
+          "args": ["opus[1m]"],
+          "result": true
+        },
+        {
+          "fn": "agentModels.isModelName",
+          "args": ["gpt-6-luna"],
+          "result": true
+        },
+        {
+          "fn": "agentModels.isModelName",
+          "args": ["zai-org/GLM-5.1@fast"],
+          "result": true
+        },
+        {
+          "fn": "agentModels.isModelName",
+          "args": ["us.anthropic.claude-sonnet:0"],
+          "result": true
+        },
+        { "fn": "agentModels.isModelName", "args": [""], "result": false },
+        {
+          "fn": "agentModels.isModelName",
+          "args": ["--model"],
+          "result": false
+        },
+        { "fn": "agentModels.isModelName", "args": ["-x"], "result": false },
+        {
+          "fn": "agentModels.isModelName",
+          "args": ["so net"],
+          "result": false
+        },
+        { "fn": "agentModels.isModelName", "args": ["a;b"], "result": false },
+        { "fn": "agentModels.isModelName", "args": ["a$(b)"], "result": false },
+        {
+          "fn": "agentModels.isModelName",
+          "args": [
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          ],
+          "result": false
+        }
+      ]
+    },
+    {
+      "name": "one model whatever the case, a context tag or a release date",
+      "group": ["model names"],
+      "calls": [
+        {
+          "fn": "agentModels.sameModel",
+          "args": ["claude-opus-5-5", "Claude-Opus-5-5"],
+          "result": true
+        },
+        {
+          "fn": "agentModels.sameModel",
+          "args": ["claude-fable-5-1[1m]", "claude-fable-5-1"],
+          "result": true
+        },
+        {
+          "fn": "agentModels.sameModel",
+          "args": ["claude-haiku-4-5-20251001", "claude-haiku-4-5"],
+          "result": true
+        },
+        {
+          "fn": "agentModels.sameModel",
+          "args": ["claude-haiku-4-5", "claude-haiku-4-5-20251001"],
+          "result": true
+        }
+      ]
+    },
+    {
+      "name": "another version is another model",
+      "group": ["model names"],
+      "calls": [
+        {
+          "fn": "agentModels.sameModel",
+          "args": ["claude-opus-5", "claude-opus-5-5"],
+          "result": false
+        },
+        {
+          "fn": "agentModels.sameModel",
+          "args": ["opus", "claude-opus-5-5"],
+          "result": false
+        },
+        { "fn": "agentModels.sameModel", "args": ["", ""], "result": false }
+      ]
+    },
+    {
+      "name": "the agent's rows first, then the profile's models no row covers",
+      "group": ["the picker's list"],
+      "calls": [
+        {
+          "fn": "agentModels.mergeModels",
+          "args": [
+            [
+              {
+                "value": "default",
+                "label": "Default (recommended)",
+                "resolved": "gpt-6-luna[1m]"
+              },
+              {
+                "value": "opus",
+                "label": "gpt-6-luna",
+                "resolved": "gpt-6-luna"
+              },
+              {
+                "value": "claude-fable-5-1[1m]",
+                "label": "Fable",
+                "resolved": "claude-fable-5-1"
+              }
+            ],
+            ["gpt-6-luna", "gpt-6-sol", "claude-fable-5-1", "a b"]
+          ],
+          "result": [
+            {
+              "value": "default",
+              "label": "Default (recommended)",
+              "resolved": "gpt-6-luna[1m]"
+            },
+            {
+              "value": "opus",
+              "label": "gpt-6-luna",
+              "resolved": "gpt-6-luna"
+            },
+            {
+              "value": "claude-fable-5-1[1m]",
+              "label": "Fable",
+              "resolved": "claude-fable-5-1"
+            },
+            { "value": "gpt-6-sol", "label": "gpt-6-sol" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "without the agent's rows: a default, then the profile's",
+      "group": ["the picker's list"],
+      "calls": [
+        {
+          "fn": "agentModels.mergeModels",
+          "args": [null, ["opus", "sonnet"]],
+          "result": [
+            {
+              "value": "default",
+              "label": "Default",
+              "description": "The profile's own model"
+            },
+            { "value": "opus", "label": "opus" },
+            { "value": "sonnet", "label": "sonnet" }
+          ]
+        },
+        {
+          "fn": "agentModels.mergeModels",
+          "args": [[], []],
+          "result": [
+            {
+              "value": "default",
+              "label": "Default",
+              "description": "The profile's own model"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the row it runs: the one picked, else its model's first row",
+      "group": ["the picker's list"],
+      "calls": [
+        {
+          "fn": "agentModels.currentModelValue",
+          "args": [
+            [
+              {
+                "value": "default",
+                "label": "Default (recommended)",
+                "resolved": "gpt-6-luna[1m]"
+              },
+              {
+                "value": "opus",
+                "label": "gpt-6-luna",
+                "resolved": "gpt-6-luna"
+              },
+              {
+                "value": "claude-fable-5-1[1m]",
+                "label": "Fable",
+                "resolved": "claude-fable-5-1"
+              }
+            ],
+            "gpt-6-luna",
+            "opus"
+          ],
+          "result": "opus"
+        },
+        {
+          "fn": "agentModels.currentModelValue",
+          "args": [
+            [
+              {
+                "value": "default",
+                "label": "Default (recommended)",
+                "resolved": "gpt-6-luna[1m]"
+              },
+              {
+                "value": "opus",
+                "label": "gpt-6-luna",
+                "resolved": "gpt-6-luna"
+              },
+              {
+                "value": "claude-fable-5-1[1m]",
+                "label": "Fable",
+                "resolved": "claude-fable-5-1"
+              }
+            ],
+            "gpt-6-luna",
+            null
+          ],
+          "result": "opus"
+        },
+        {
+          "fn": "agentModels.currentModelValue",
+          "args": [
+            [
+              {
+                "value": "default",
+                "label": "Default (recommended)",
+                "resolved": "gpt-6-luna[1m]"
+              },
+              {
+                "value": "opus",
+                "label": "gpt-6-luna",
+                "resolved": "gpt-6-luna"
+              },
+              {
+                "value": "claude-fable-5-1[1m]",
+                "label": "Fable",
+                "resolved": "claude-fable-5-1"
+              }
+            ],
+            "gpt-6-luna[1m]",
+            null
+          ],
+          "result": "default"
+        },
+        {
+          "fn": "agentModels.currentModelValue",
+          "args": [
+            [
+              {
+                "value": "default",
+                "label": "Default (recommended)",
+                "resolved": "gpt-6-luna[1m]"
+              },
+              {
+                "value": "opus",
+                "label": "gpt-6-luna",
+                "resolved": "gpt-6-luna"
+              },
+              {
+                "value": "claude-fable-5-1[1m]",
+                "label": "Fable",
+                "resolved": "claude-fable-5-1"
+              }
+            ],
+            "GPT-6-Luna",
+            null
+          ],
+          "result": "opus"
+        },
+        {
+          "fn": "agentModels.currentModelValue",
+          "args": [
+            [
+              {
+                "value": "default",
+                "label": "Default (recommended)",
+                "resolved": "gpt-6-luna[1m]"
+              },
+              {
+                "value": "opus",
+                "label": "gpt-6-luna",
+                "resolved": "gpt-6-luna"
+              },
+              {
+                "value": "claude-fable-5-1[1m]",
+                "label": "Fable",
+                "resolved": "claude-fable-5-1"
+              }
+            ],
+            "claude-fable-5-1",
+            null
+          ],
+          "result": "claude-fable-5-1[1m]"
+        },
+        {
+          "fn": "agentModels.currentModelValue",
+          "args": [
+            [
+              {
+                "value": "default",
+                "label": "Default (recommended)",
+                "resolved": "gpt-6-luna[1m]"
+              },
+              {
+                "value": "opus",
+                "label": "gpt-6-luna",
+                "resolved": "gpt-6-luna"
+              },
+              {
+                "value": "claude-fable-5-1[1m]",
+                "label": "Fable",
+                "resolved": "claude-fable-5-1"
+              }
+            ],
+            "kimi",
+            "glm"
+          ],
+          "result": null
+        },
+        {
+          "fn": "agentModels.currentModelValue",
+          "args": [
+            [
+              {
+                "value": "default",
+                "label": "Default (recommended)",
+                "resolved": "gpt-6-luna[1m]"
+              },
+              {
+                "value": "opus",
+                "label": "gpt-6-luna",
+                "resolved": "gpt-6-luna"
+              },
+              {
+                "value": "claude-fable-5-1[1m]",
+                "label": "Fable",
+                "resolved": "claude-fable-5-1"
+              }
+            ],
+            null,
+            null
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "the name asked, with the model it is when another",
+      "group": ["what the chat says"],
+      "calls": [
+        {
+          "fn": "agentModels.modelSwitchText",
+          "args": ["sonnet", "claude-sonnet-5-5"],
+          "result": "Model set to sonnet (claude-sonnet-5-5)"
+        },
+        {
+          "fn": "agentModels.modelSwitchText",
+          "args": ["gpt-6-sol", "gpt-6-sol"],
+          "result": "Model set to gpt-6-sol"
+        },
+        {
+          "fn": "agentModels.modelSwitchText",
+          "args": ["haiku", null, { "nextTurn": true }],
+          "result": "Model set to haiku from the next turn"
+        }
+      ]
+    },
+    {
+      "name": "a refusal, a long one cut",
+      "group": ["what the chat says"],
+      "calls": [
+        {
+          "fn": "agentModels.modelRefusalText",
+          "args": ["x", "Model 'x' not found"],
+          "result": "Could not switch the model to x: Model 'x' not found"
+        },
+        {
+          "fn": "agentModels.modelRefusalText",
+          "args": [
+            "x",
+            { "$text": ["Unknown model. Supported:", [" m,", 400], " "] }
+          ],
+          "result": "Could not switch the model to x: Unknown model. Supported: m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m, m,..."
+        }
+      ]
+    },
+    {
+      "name": "Claude's models by family and version, however spelled",
+      "group": ["a model's short name"],
+      "calls": [
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["claude-opus-5-5"],
+          "result": "Opus 5.5"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["claude-sonnet-5-5"],
+          "result": "Sonnet 5.5"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["claude-haiku-4-5-20251001"],
+          "result": "Haiku 4.5"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["claude-opus-4-20250514"],
+          "result": "Opus 4"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["claude-3-5-haiku-20241022"],
+          "result": "Haiku 3.5"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["claude-opus-5-5[1m]"],
+          "result": "Opus 5.5 1M"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["us.anthropic.claude-sonnet-4-5-20250929-v1:0"],
+          "result": "Sonnet 4.5"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["claude-opus-4-1@20250805"],
+          "result": "Opus 4.1"
+        }
+      ]
+    },
+    {
+      "name": "aliases, and other backends' models as their words",
+      "group": ["a model's short name"],
+      "calls": [
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["opus"],
+          "result": "Opus"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["sonnet[1m]"],
+          "result": "Sonnet 1M"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["default"],
+          "result": "Default"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["glm-5p3"],
+          "result": "GLM 5p3"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["kimi-k3p1-pro"],
+          "result": "Kimi k3p1 pro"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["gpt-5.6-sol"],
+          "result": "GPT 5.6 sol"
+        }
+      ]
+    },
+    {
+      "name": "a gateway's provider stays in front, the segment before the model",
+      "group": ["a model's short name"],
+      "calls": [
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["igalia/glm-5p3"],
+          "result": "igalia · GLM 5p3"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["openrouter/anthropic/claude-sonnet-4-5"],
+          "result": "anthropic · Sonnet 4.5"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["anthropic/claude-sonnet-4-5"],
+          "result": "anthropic · Sonnet 4.5"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["unsloth/Qwen3.6-35B"],
+          "result": "unsloth · Qwen3.6 35B"
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["igalia/glm-5p3[1m]"],
+          "result": "igalia · GLM 5p3 1M"
+        },
+        {
+          "fn": "agentModels.shortModelParts",
+          "args": ["igalia/glm-5p3"],
+          "result": { "provider": "igalia", "name": "GLM 5p3" }
+        }
+      ]
+    },
+    {
+      "name": "no prefix without a slash, nor around a lone one",
+      "group": ["a model's short name"],
+      "calls": [
+        {
+          "fn": "agentModels.shortModelParts",
+          "args": ["claude-opus-5-5"],
+          "result": { "provider": null, "name": "Opus 5.5" }
+        },
+        {
+          "fn": "agentModels.shortModelName",
+          "args": ["us.anthropic.claude-sonnet-4-5-20250929-v1:0"],
+          "result": "Sonnet 4.5"
+        },
+        {
+          "fn": "agentModels.shortModelParts",
+          "args": ["/glm-5p3"],
+          "result": { "provider": null, "name": "GLM 5p3" }
+        },
+        {
+          "fn": "agentModels.shortModelParts",
+          "args": ["a/b/"],
+          "result": { "provider": null, "name": "A/b/" }
+        }
+      ]
+    }
+  ]
+}

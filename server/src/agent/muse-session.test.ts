@@ -17,9 +17,10 @@ import {
   resolveAgentSession,
 } from "./session-resolver";
 import { readSessionProjection } from "./session-projection-cache";
-import { projectAgentTrajectory } from "./session-trajectory";
 import { normalizeAgentName } from "./session-utils";
-import { summarizeTokenUsage } from "./token-usage";
+import { runVectors } from "../../../contract/vectors/vectors";
+import * as tokenUsage from "./token-usage";
+import * as sessionTrajectory from "./session-trajectory";
 
 const roots: string[] = [];
 const originalDataHome = process.env.XDG_DATA_HOME;
@@ -461,167 +462,10 @@ describe("Muse Code session inspection", () => {
       expect(delta.removed).toEqual([]);
     },
   );
+});
 
-  test("keeps explicit zero usage consistent in summaries and ATIF", () => {
-    const records = [
-      configured("echo"),
-      run({
-        kind: "model_completed",
-        usage: {
-          input_tokens: 0,
-          output_tokens: 0,
-          cached_tokens: 0,
-          reasoning_tokens: 0,
-        },
-      }),
-    ];
-    expect(summarizeTokenUsage(records)).toEqual({
-      input_tokens: 0,
-      output_tokens: 0,
-      cached_input_tokens: 0,
-      reasoning_output_tokens: 0,
-      prompt_tokens: 0,
-      total_tokens: 0,
-    });
-    const trajectory = projectAgentTrajectory(
-      "muse",
-      { path: "/session.jsonl", mtimeMs: timestamp },
-      records,
-    );
-    expect(trajectory.steps[0].metrics).toMatchObject({
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      cached_tokens: 0,
-      extra: { total_tokens: 0 },
-    });
-    expect(trajectory.final_metrics).toMatchObject({
-      total_prompt_tokens: 0,
-      total_completion_tokens: 0,
-      total_cached_tokens: 0,
-      extra: { total_tokens: 0 },
-    });
-  });
-
-  test("counts provider-aware prompts once and keeps unknown cached totals unknown", () => {
-    // Muse 1.3 offline MSP view/page confirms 20/25 for Meta/OpenAI and
-    // 24/29 for Anthropic with these raw input/output/cache counters.
-    const completion = (runId: string) =>
-      run(
-        {
-          kind: "model_completed",
-          usage: {
-            input_tokens: 20,
-            output_tokens: 5,
-            cached_tokens: 4,
-            cache_read_tokens: 4,
-            cache_write_tokens: 3,
-            reasoning_tokens: 2,
-          },
-        },
-        runId,
-      );
-    const file = { path: "/session.jsonl", mtimeMs: timestamp };
-    for (const [provider, prompt, total] of [
-      ["meta", 20, 25],
-      ["openai", 20, 25],
-      ["anthropic", 24, 29],
-      ["unknown", null, null],
-    ] as const) {
-      const records = [configured(provider), completion("run-1")];
-      expect(summarizeTokenUsage(records)).toMatchObject({
-        input_tokens: 20,
-        prompt_tokens: prompt,
-        total_tokens: total,
-        cached_input_tokens: 4,
-      });
-      const trajectory = projectAgentTrajectory("muse", file, records);
-      expect(trajectory.steps[0].metrics?.prompt_tokens).toBe(
-        prompt ?? undefined,
-      );
-      expect(trajectory.final_metrics?.total_prompt_tokens).toBe(
-        prompt ?? undefined,
-      );
-      expect(trajectory.final_metrics?.extra?.total_tokens).toBe(
-        total ?? undefined,
-      );
-      expect(trajectory.final_metrics?.extra?.raw_input_tokens).toBe(20);
-    }
-    const mixed = [
-      configured("meta"),
-      configured("anthropic", "other"),
-      completion("run-1"),
-      completion("other"),
-    ];
-    expect(summarizeTokenUsage(mixed)).toMatchObject({
-      prompt_tokens: 44,
-      total_tokens: 54,
-    });
-    // Missing per-run routing must not inherit another run's cache convention.
-    mixed.push(completion("unknown-run"));
-    expect(summarizeTokenUsage(mixed)).toMatchObject({
-      prompt_tokens: null,
-      total_tokens: null,
-      input_tokens: 60,
-    });
-    const unknown = projectAgentTrajectory("muse", file, mixed);
-    expect(unknown.final_metrics?.total_prompt_tokens).toBeUndefined();
-    expect(unknown.final_metrics?.extra?.total_tokens).toBeUndefined();
-  });
-
-  test("keeps repeated prompts, legacy starts, malformed records and absent usage safe", () => {
-    const records = [
-      ...conversation("/work"),
-      run({ kind: "started", prompt: "Read README.md" }, "different-run"),
-      run({
-        kind: "assistant_tool_calls_committed",
-        tool_calls: [null, { id: "call-2", name: "shell", args: "not JSON" }],
-      }),
-      run({
-        kind: "tool_result_batch_committed",
-        results: [
-          null,
-          { tool_call_id: "call-2", text: "failed", is_error: true },
-        ],
-      }),
-      run({
-        kind: "model_completed",
-        usage: { input_tokens: 2, output_tokens: 1, cache_read_tokens: 1 },
-      }),
-      record("runtime.session", { kind: "run", event: null }),
-      record("runtime.user_intent.accepted", { model_messages: [null] }),
-      { payload_type: "runtime.session", payload: null },
-      {
-        ...run({ kind: "assistant_message_committed", text: "fallback time" }),
-        recorded_at: 1e100,
-      },
-    ];
-    const trajectory = projectAgentTrajectory(
-      "muse",
-      { path: "/session.jsonl", mtimeMs: timestamp },
-      records,
-    );
-    expect(
-      trajectory.steps.filter((step) => step.source === "user"),
-    ).toHaveLength(2);
-    expect(
-      trajectory.steps.find(
-        (step) => step.tool_calls?.[0].tool_call_id === "call-2",
-      )?.tool_calls?.[0].arguments,
-    ).toEqual({ value: "not JSON" });
-    expect(
-      trajectory.steps.find(
-        (step) => step.observation?.results[0].source_call_id === "call-2",
-      )?.observation?.results[0].extra?.is_error,
-    ).toBe(true);
-    expect(summarizeTokenUsage(records)).toMatchObject({
-      input_tokens: 22,
-      output_tokens: 6,
-      cached_input_tokens: 5,
-      total_tokens: 28,
-    });
-    expect(summarizeTokenUsage([run({ kind: "model_completed" })])).toBeNull();
-    expect(trajectory.steps.at(-1)?.timestamp).toBe(
-      new Date(timestamp + records.length - 1).toISOString(),
-    );
-  });
+// The cases are contract/vectors/muse-session.json, the Rust side's too.
+runVectors("muse-session", {
+  "token-usage": tokenUsage,
+  "session-trajectory": sessionTrajectory,
 });

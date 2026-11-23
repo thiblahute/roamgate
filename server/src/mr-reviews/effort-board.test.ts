@@ -1,7 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { mrEffortColumn } from "../../../shared/mrEffortBoard";
 import type {
   MrEffort,
   MrInboxEntry,
@@ -183,24 +182,6 @@ test("a part's branch links to its request by name, by patch ids, else is its br
     patchIds: new Map(),
   });
   expect(elsewhere.unscanned).toBeUndefined();
-
-  // Their columns: the request's lane, Not proposed yet, Planned, Done.
-  const column = (id: string) =>
-    mrEffortColumn(plans.find((each) => each.id === id)!, linked[id]);
-  expect(column("named")).toBe("your_move");
-  expect(column("byIds")).toBe("merging");
-  expect(column("row")).toBe("not_sent");
-  expect(column("none")).toBe("not_sent");
-  expect(column("unscanned")).toBe("blocked");
-  expect(column("merged")).toBe("done");
-  expect(mrEffortColumn(plan("p", null), undefined)).toBe("planned");
-  expect(
-    mrEffortColumn(plan("p", null, { state: "proposed" }), undefined),
-  ).toBe("planned");
-  expect(mrEffortColumn(plan("p", null), undefined, true)).toBe("done");
-  expect(mrEffortColumn(plan("q", {}), entry(7, { lane: "stale" }))).toBe(
-    "stale",
-  );
 });
 
 const root = mkdtempSync(join(realpathSync("/tmp"), "mr-effort-board-"));

@@ -1,0 +1,74 @@
+{
+  "description": "Compactions: what a transcript says since the last one. Read by `bun test` in server/src/agent/session-compaction.test.ts.",
+  "modules": { "session-compaction": "server/src/agent/session-compaction.ts" },
+  "cases": [
+    {
+      "name": "a compaction after the time is found in Claude's, Codex's and Pi's transcripts",
+      "calls": [
+        {
+          "fn": "session-compaction.compactedSince",
+          "args": [
+            "{\"type\":\"user\",\"timestamp\":\"2026-11-22T09:59:00.000Z\"}\n{\"type\":\"user\",\"isCompactSummary\":true,\"timestamp\":\"2026-11-22T10:05:00.000Z\"}\n{\"type\":\"assistant\",\"timestamp\":\"2026-11-22T10:06:00.000Z\"}",
+            "2026-11-22T10:00:00.000Z"
+          ],
+          "result": true
+        },
+        {
+          "fn": "session-compaction.compactedSince",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"timestamp\":\"2026-11-22T10:01:00.000Z\"}",
+            "2026-11-22T10:00:00.000Z"
+          ],
+          "result": true
+        },
+        {
+          "fn": "session-compaction.compactedSince",
+          "args": [
+            "{\"type\":\"compacted\",\"timestamp\":\"2026-11-22T10:02:00.000Z\",\"payload\":{}}",
+            "2026-11-22T10:00:00.000Z"
+          ],
+          "result": true
+        },
+        {
+          "fn": "session-compaction.compactedSince",
+          "args": [
+            "{\"type\":\"compaction\",\"timestamp\":\"2026-11-22T10:03:00Z\"}",
+            "2026-11-22T10:00:00.000Z"
+          ],
+          "result": true
+        }
+      ]
+    },
+    {
+      "name": "one before the time, none at all, or a cut first line is not",
+      "calls": [
+        {
+          "fn": "session-compaction.compactedSince",
+          "args": [
+            "{\"type\":\"user\",\"isCompactSummary\":true,\"timestamp\":\"2026-11-22T09:00:00.000Z\"}\n{\"type\":\"assistant\",\"timestamp\":\"2026-11-22T10:30:00.000Z\"}",
+            "2026-11-22T10:00:00.000Z"
+          ],
+          "result": false
+        },
+        {
+          "fn": "session-compaction.compactedSince",
+          "args": [
+            "{\"type\":\"user\",\"timestamp\":\"2026-11-22T10:00:00.000Z\"}",
+            "2026-11-22T10:00:00.000Z"
+          ],
+          "result": false
+        },
+        {
+          "fn": "session-compaction.compactedSince",
+          "args": ["pactSummary\":true}\n", "2026-11-22T10:00:00.000Z"],
+          "result": false
+        },
+        {
+          "fn": "session-compaction.compactedSince",
+          "args": ["", "2026-11-22T10:00:00.000Z"],
+          "result": false
+        }
+      ]
+    }
+  ]
+}

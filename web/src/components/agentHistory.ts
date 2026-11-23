@@ -2,8 +2,8 @@ import type {
   HistoryCursor,
   HistoryEntry,
   HistoryUpdate,
-} from "../../../server/src/agent/session-history";
-import { historyWindowEntries } from "../../../server/src/agent/session-history-window";
+} from "../../../shared/agentHistory";
+import { historyWindowEntries } from "../../../shared/agentHistory";
 export type { HistoryCursor, HistoryEntry, HistoryUpdate };
 
 export type AgentHistory = {

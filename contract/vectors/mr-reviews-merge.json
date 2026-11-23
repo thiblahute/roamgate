@@ -1,0 +1,1694 @@
+{
+  "description": "The merge request inbox: merging hosts' answers into one list. Read by `bun test` in shared/mrReviewsMerge.test.ts.",
+  "modules": { "mrReviewsMerge": "shared/mrReviewsMerge.ts" },
+  "cases": [
+    {
+      "name": "reads the usual ways labels write a delay",
+      "group": ["merge delays"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["2 days"],
+          "result": 172800000
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["1 week"],
+          "result": 604800000
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["3d"],
+          "result": 259200000
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["12h"],
+          "result": 43200000
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["one week"],
+          "result": 604800000
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["1 week 2 days"],
+          "result": 777600000
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["2d12h"],
+          "result": 216000000
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["30 min"],
+          "result": 1800000
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["1.5 days"],
+          "result": 129600000
+        }
+      ]
+    },
+    {
+      "name": "refuses what is not a delay",
+      "group": ["merge delays"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": [""],
+          "result": null
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["soon"],
+          "result": null
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["2 fortnights"],
+          "result": null
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["0 days"],
+          "result": null
+        },
+        {
+          "fn": "mrReviewsMerge.parseMergeDelay",
+          "args": ["400 days"],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "says a delay as a row does",
+      "group": ["merge delays"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.formatMergeDelay",
+          "args": [172800000],
+          "result": "2 days"
+        },
+        {
+          "fn": "mrReviewsMerge.formatMergeDelay",
+          "args": [604800000],
+          "result": "1 week"
+        },
+        {
+          "fn": "mrReviewsMerge.formatMergeDelay",
+          "args": [129600000],
+          "result": "36 hours"
+        },
+        {
+          "fn": "mrReviewsMerge.formatMergeDelay",
+          "args": [88200000],
+          "result": "1 day 1 hour"
+        },
+        {
+          "fn": "mrReviewsMerge.formatMergeDelay",
+          "args": [90000],
+          "result": "2 minutes"
+        }
+      ]
+    },
+    {
+      "name": "the default patterns recognize the common spellings",
+      "group": ["merge-after labels"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mergeAfterLabel",
+          "args": [
+            ["Merge after: 2 days"],
+            [
+              "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+              "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+            ]
+          ],
+          "result": { "label": "Merge after: 2 days", "delayMs": 172800000 }
+        },
+        {
+          "fn": "mrReviewsMerge.mergeAfterLabel",
+          "args": [
+            ["merge-after: 1 week"],
+            [
+              "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+              "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+            ]
+          ],
+          "result": { "label": "merge-after: 1 week", "delayMs": 604800000 }
+        },
+        {
+          "fn": "mrReviewsMerge.mergeAfterLabel",
+          "args": [
+            ["merge after 3d"],
+            [
+              "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+              "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+            ]
+          ],
+          "result": { "label": "merge after 3d", "delayMs": 259200000 }
+        },
+        {
+          "fn": "mrReviewsMerge.mergeAfterLabel",
+          "args": [
+            ["merge-after::1w"],
+            [
+              "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+              "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+            ]
+          ],
+          "result": { "label": "merge-after::1w", "delayMs": 604800000 }
+        },
+        {
+          "fn": "mrReviewsMerge.mergeAfterLabel",
+          "args": [
+            ["Merge_after=12h"],
+            [
+              "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+              "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+            ]
+          ],
+          "result": { "label": "Merge_after=12h", "delayMs": 43200000 }
+        },
+        {
+          "fn": "mrReviewsMerge.mergeAfterLabel",
+          "args": [
+            ["merge in 2 days"],
+            [
+              "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+              "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+            ]
+          ],
+          "result": { "label": "merge in 2 days", "delayMs": 172800000 }
+        },
+        {
+          "fn": "mrReviewsMerge.mergeAfterLabel",
+          "args": [
+            ["bug", "Merge after review"],
+            [
+              "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+              "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+            ]
+          ],
+          "result": null
+        },
+        {
+          "fn": "mrReviewsMerge.mergeAfterLabel",
+          "args": [
+            ["mergeable"],
+            [
+              "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+              "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+            ]
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "a project's own pattern: the delay group, else the first group",
+      "group": ["merge-after labels"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mergeAfterLabel",
+          "args": [["land::5d"], ["^land::(?<delay>.+)$"]],
+          "result": { "label": "land::5d", "delayMs": 432000000 }
+        },
+        {
+          "fn": "mrReviewsMerge.mergeAfterLabel",
+          "args": [["wait 2 days"], ["^wait (.+)$"]],
+          "result": { "label": "wait 2 days", "delayMs": 172800000 }
+        },
+        {
+          "fn": "mrReviewsMerge.mergeAfterLabel",
+          "args": [["cooldown 1w"], ["^cooldown"]],
+          "result": { "label": "cooldown 1w", "delayMs": 604800000 }
+        }
+      ]
+    },
+    {
+      "name": "queue labels",
+      "group": ["merge-after labels"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.queueLabel",
+          "args": [
+            ["merge-queue"],
+            [
+              "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+            ]
+          ],
+          "result": "merge-queue"
+        },
+        {
+          "fn": "mrReviewsMerge.queueLabel",
+          "args": [
+            ["Queued for merge"],
+            [
+              "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+            ]
+          ],
+          "result": "Queued for merge"
+        },
+        {
+          "fn": "mrReviewsMerge.queueLabel",
+          "args": [
+            ["queue"],
+            [
+              "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+            ]
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "the most specific scope wins, list by list",
+      "group": ["rules per scope"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeRulesFor",
+          "args": [
+            {
+              "bots": ["robot"],
+              "scopes": {
+                "gitlab.example.org": { "bots": ["marge-bot"] },
+                "gitlab.example.org/media/*": {
+                  "afterLabels": ["^soak (?<delay>.+)$"]
+                },
+                "gitlab.example.org/media/engine": { "bots": [] }
+              }
+            },
+            { "host": "github.com", "project": "a/b" }
+          ],
+          "result": {
+            "afterLabels": [
+              "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+              "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+            ],
+            "bots": ["robot"],
+            "botFailures": [
+              "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+              "^Sorry,? I can'?t (?<reason>.*)",
+              "^(?<reason>I'm broken on the inside.*)",
+              "(?<reason>refused to merge.*)",
+              "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+              "^(?<reason>merge conflict.*)",
+              "(?<reason>removed from the (merge )?queue.*)"
+            ],
+            "queueLabels": [
+              "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+            ]
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeRulesFor",
+          "args": [
+            {
+              "bots": ["robot"],
+              "scopes": {
+                "gitlab.example.org": { "bots": ["marge-bot"] },
+                "gitlab.example.org/media/*": {
+                  "afterLabels": ["^soak (?<delay>.+)$"]
+                },
+                "gitlab.example.org/media/engine": { "bots": [] }
+              }
+            },
+            { "host": "gitlab.example.org", "project": "media/plugins" }
+          ],
+          "result": {
+            "afterLabels": ["^soak (?<delay>.+)$"],
+            "bots": ["marge-bot"],
+            "botFailures": [
+              "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+              "^Sorry,? I can'?t (?<reason>.*)",
+              "^(?<reason>I'm broken on the inside.*)",
+              "(?<reason>refused to merge.*)",
+              "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+              "^(?<reason>merge conflict.*)",
+              "(?<reason>removed from the (merge )?queue.*)"
+            ],
+            "queueLabels": [
+              "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+            ]
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeRulesFor",
+          "args": [
+            {
+              "bots": ["robot"],
+              "scopes": {
+                "gitlab.example.org": { "bots": ["marge-bot"] },
+                "gitlab.example.org/media/*": {
+                  "afterLabels": ["^soak (?<delay>.+)$"]
+                },
+                "gitlab.example.org/media/engine": { "bots": [] }
+              }
+            },
+            { "host": "GitLab.example.org", "project": "Media/Engine" }
+          ],
+          "result": {
+            "afterLabels": ["^soak (?<delay>.+)$"],
+            "bots": [],
+            "botFailures": [
+              "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+              "^Sorry,? I can'?t (?<reason>.*)",
+              "^(?<reason>I'm broken on the inside.*)",
+              "(?<reason>refused to merge.*)",
+              "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+              "^(?<reason>merge conflict.*)",
+              "(?<reason>removed from the (merge )?queue.*)"
+            ],
+            "queueLabels": [
+              "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "scope keys and patterns are checked",
+      "group": ["rules per scope"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeScope",
+          "args": ["https://GitLab.example.org/group/*"],
+          "result": "gitlab.example.org/group/*"
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeScope",
+          "args": ["not a scope"],
+          "result": null
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergePattern",
+          "args": ["^merge ("],
+          "result": null
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergePattern",
+          "args": [" ^ok$ "],
+          "result": "^ok$"
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergePattern",
+          "args": [
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "bot names compare without @ and [bot]",
+      "group": ["rules per scope"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrBotName",
+          "args": ["@Marge-Bot"],
+          "result": "marge-bot"
+        },
+        {
+          "fn": "mrReviewsMerge.mrBotName",
+          "args": ["mergify[bot]"],
+          "result": "mergify"
+        }
+      ]
+    },
+    {
+      "name": "Marge-bot's family of messages",
+      "group": ["bot failures"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.botFailureReason",
+          "args": [
+            "I couldn't merge this branch: CI failed!",
+            [
+              "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+              "^Sorry,? I can'?t (?<reason>.*)",
+              "^(?<reason>I'm broken on the inside.*)",
+              "(?<reason>refused to merge.*)",
+              "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+              "^(?<reason>merge conflict.*)",
+              "(?<reason>removed from the (merge )?queue.*)"
+            ]
+          ],
+          "result": "CI failed!"
+        },
+        {
+          "fn": "mrReviewsMerge.botFailureReason",
+          "args": [
+            "I couldn't merge this branch: Insufficient approvals (have: [], missing: 1)",
+            [
+              "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+              "^Sorry,? I can'?t (?<reason>.*)",
+              "^(?<reason>I'm broken on the inside.*)",
+              "(?<reason>refused to merge.*)",
+              "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+              "^(?<reason>merge conflict.*)",
+              "(?<reason>removed from the (merge )?queue.*)"
+            ]
+          ],
+          "result": "Insufficient approvals (have: [], missing: 1)"
+        },
+        {
+          "fn": "mrReviewsMerge.botFailureReason",
+          "args": [
+            "Sorry, I can't merge requests marked as Draft!",
+            [
+              "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+              "^Sorry,? I can'?t (?<reason>.*)",
+              "^(?<reason>I'm broken on the inside.*)",
+              "(?<reason>refused to merge.*)",
+              "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+              "^(?<reason>merge conflict.*)",
+              "(?<reason>removed from the (merge )?queue.*)"
+            ]
+          ],
+          "result": "merge requests marked as Draft!"
+        },
+        {
+          "fn": "mrReviewsMerge.botFailureReason",
+          "args": [
+            "I'm broken on the inside, please somebody fix me... :cry:",
+            [
+              "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+              "^Sorry,? I can'?t (?<reason>.*)",
+              "^(?<reason>I'm broken on the inside.*)",
+              "(?<reason>refused to merge.*)",
+              "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+              "^(?<reason>merge conflict.*)",
+              "(?<reason>removed from the (merge )?queue.*)"
+            ]
+          ],
+          "result": "I'm broken on the inside, please somebody fix me... :cry:"
+        },
+        {
+          "fn": "mrReviewsMerge.botFailureReason",
+          "args": [
+            ":broken_heart: Test failed",
+            [
+              "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+              "^Sorry,? I can'?t (?<reason>.*)",
+              "^(?<reason>I'm broken on the inside.*)",
+              "(?<reason>refused to merge.*)",
+              "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+              "^(?<reason>merge conflict.*)",
+              "(?<reason>removed from the (merge )?queue.*)"
+            ]
+          ],
+          "result": "Test failed"
+        },
+        {
+          "fn": "mrReviewsMerge.botFailureReason",
+          "args": [
+            "Ok, merging it now",
+            [
+              "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+              "^Sorry,? I can'?t (?<reason>.*)",
+              "^(?<reason>I'm broken on the inside.*)",
+              "(?<reason>refused to merge.*)",
+              "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+              "^(?<reason>merge conflict.*)",
+              "(?<reason>removed from the (merge )?queue.*)"
+            ]
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "counts from the label's add time, else the approval, else the update",
+      "group": ["a row's merge state"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "labels": ["Merge after: 2 days"],
+              "facts": {
+                "assignees": [],
+                "reviewers": [],
+                "events": [],
+                "labelsAddedAt": {
+                  "Merge after: 2 days": "2026-11-15T12:00:00.000Z"
+                },
+                "approvedAt": "2026-11-11T12:00:00.000Z"
+              }
+            }
+          ],
+          "result": {
+            "after": {
+              "label": "Merge after: 2 days",
+              "delayMs": 172800000,
+              "delay": "2 days",
+              "from": "label",
+              "since": "2026-11-15T12:00:00.000Z",
+              "at": "2026-11-17T12:00:00.000Z",
+              "ready": false
+            }
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "labels": ["Merge after: 2 days"],
+              "facts": {
+                "assignees": [],
+                "reviewers": [],
+                "events": [],
+                "approvedAt": "2026-11-11T12:00:00.000Z"
+              }
+            }
+          ],
+          "result": {
+            "after": {
+              "label": "Merge after: 2 days",
+              "delayMs": 172800000,
+              "delay": "2 days",
+              "from": "approval",
+              "since": "2026-11-11T12:00:00.000Z",
+              "at": "2026-11-13T12:00:00.000Z",
+              "ready": true
+            }
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "labels": ["Merge after: 2 days"]
+            }
+          ],
+          "result": {
+            "after": {
+              "label": "Merge after: 2 days",
+              "delayMs": 172800000,
+              "delay": "2 days",
+              "from": "update",
+              "since": "2026-11-13T12:00:00.000Z",
+              "at": "2026-11-15T12:00:00.000Z",
+              "ready": true
+            }
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeFact",
+          "args": [
+            {
+              "after": {
+                "label": "Merge after: 2 days",
+                "delayMs": 172800000,
+                "delay": "2 days",
+                "from": "label",
+                "since": "2026-11-15T12:00:00.000Z",
+                "at": "2026-11-17T12:00:00.000Z",
+                "ready": false
+              }
+            }
+          ],
+          "result": "scheduled"
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeFact",
+          "args": [
+            {
+              "after": {
+                "label": "Merge after: 2 days",
+                "delayMs": 172800000,
+                "delay": "2 days",
+                "from": "update",
+                "since": "2026-11-13T12:00:00.000Z",
+                "at": "2026-11-15T12:00:00.000Z",
+                "ready": true
+              }
+            }
+          ],
+          "result": "ready"
+        }
+      ]
+    },
+    {
+      "name": "nothing for a closed request or one without either",
+      "group": ["a row's merge state"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "merged",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "labels": ["merge after 1d"]
+            }
+          ],
+          "result": { "$undefined": true }
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "labels": ["bug"]
+            }
+          ],
+          "result": { "$undefined": true }
+        }
+      ]
+    },
+    {
+      "name": "a bot assigned, or a reviewer, is merging it",
+      "group": ["a row's merge state"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "facts": {
+                "assignees": ["alice", "marge-bot"],
+                "reviewers": [],
+                "events": []
+              }
+            }
+          ],
+          "result": {
+            "bot": { "name": "marge-bot", "via": "assignee", "queued": true }
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrBotLabel",
+          "args": [{ "name": "marge-bot", "via": "assignee", "queued": true }],
+          "result": "queued to merge by marge-bot"
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "facts": {
+                "assignees": [],
+                "reviewers": ["Mergify[bot]"],
+                "events": []
+              }
+            }
+          ],
+          "result": {
+            "bot": { "name": "Mergify[bot]", "via": "reviewer", "queued": true }
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeFact",
+          "args": [
+            {
+              "bot": { "name": "marge-bot", "via": "assignee", "queued": true }
+            }
+          ],
+          "result": "queued"
+        }
+      ]
+    },
+    {
+      "name": "the forge's merge queue, auto-merge, or a queue label",
+      "group": ["a row's merge state"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "facts": {
+                "assignees": [],
+                "reviewers": [],
+                "events": [],
+                "queue": { "position": 2, "at": "2026-11-16T11:00:00.000Z" }
+              }
+            }
+          ],
+          "result": {
+            "bot": {
+              "name": "merge queue",
+              "via": "queue",
+              "queued": true,
+              "position": 2
+            }
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrBotLabel",
+          "args": [
+            {
+              "name": "merge queue",
+              "via": "queue",
+              "queued": true,
+              "position": 2
+            }
+          ],
+          "result": "#2 in the merge queue"
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "facts": {
+                "assignees": [],
+                "reviewers": [],
+                "events": [],
+                "autoMerge": { "by": "alice" }
+              }
+            }
+          ],
+          "result": {
+            "bot": {
+              "name": "auto-merge",
+              "via": "auto_merge",
+              "queued": true,
+              "by": "alice"
+            }
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrBotLabel",
+          "args": [
+            {
+              "name": "auto-merge",
+              "via": "auto_merge",
+              "queued": true,
+              "by": "alice"
+            }
+          ],
+          "result": "auto-merge set by alice"
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "labels": ["merge-queue"]
+            }
+          ],
+          "result": {
+            "bot": { "name": "merge-queue", "via": "label", "queued": true }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a failure note after the bot was assigned, and the bot leaving",
+      "group": ["a row's merge state"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "facts": {
+                "assignees": [],
+                "reviewers": [],
+                "events": [
+                  {
+                    "kind": "assigned",
+                    "at": "2026-11-16T10:00:00.000Z",
+                    "actor": "me",
+                    "who": ["marge-bot"]
+                  },
+                  {
+                    "kind": "unassigned",
+                    "at": "2026-11-16T11:00:00.000Z",
+                    "actor": "marge-bot",
+                    "who": ["marge-bot"]
+                  }
+                ]
+              },
+              "notes": [
+                {
+                  "author": "marge-bot",
+                  "at": "2026-11-16T10:59:00.000Z",
+                  "body": "I couldn't merge this branch: CI failed!"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "bot": {
+              "name": "marge-bot",
+              "via": "assignee",
+              "queued": false,
+              "failed": {
+                "reason": "CI failed!",
+                "at": "2026-11-16T11:00:00.000Z"
+              }
+            }
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeFact",
+          "args": [
+            {
+              "bot": {
+                "name": "marge-bot",
+                "via": "assignee",
+                "queued": false,
+                "failed": {
+                  "reason": "CI failed!",
+                  "at": "2026-11-16T11:00:00.000Z"
+                }
+              }
+            }
+          ],
+          "result": "failed:2026-11-16T11:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "name": "the bot unassigning itself without a note still says so",
+      "group": ["a row's merge state"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "facts": {
+                "assignees": [],
+                "reviewers": [],
+                "events": [
+                  {
+                    "kind": "unassigned",
+                    "at": "2026-11-16T11:00:00.000Z",
+                    "actor": "marge-bot",
+                    "who": ["marge-bot"]
+                  }
+                ]
+              }
+            }
+          ],
+          "result": {
+            "bot": {
+              "name": "marge-bot",
+              "via": "assignee",
+              "queued": false,
+              "failed": {
+                "reason": "marge-bot unassigned itself",
+                "at": "2026-11-16T11:00:00.000Z"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "assigned again after a failure: a new attempt",
+      "group": ["a row's merge state"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "facts": {
+                "assignees": ["marge-bot"],
+                "reviewers": [],
+                "events": [
+                  {
+                    "kind": "assigned",
+                    "at": "2026-11-16T11:50:00.000Z",
+                    "actor": "me",
+                    "who": ["marge-bot"]
+                  }
+                ]
+              },
+              "notes": [
+                {
+                  "author": "marge-bot",
+                  "at": "2026-11-16T11:00:00.000Z",
+                  "body": "I couldn't merge this branch: CI failed!"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "bot": { "name": "marge-bot", "via": "assignee", "queued": true }
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "facts": {
+                "assignees": ["marge-bot"],
+                "reviewers": [],
+                "events": []
+              },
+              "notes": [
+                {
+                  "author": "marge-bot",
+                  "at": "2026-11-16T11:00:00.000Z",
+                  "body": "I couldn't merge this branch: CI failed!"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "bot": { "name": "marge-bot", "via": "assignee", "queued": true }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a note of someone else that looks like a failure is not one",
+      "group": ["a row's merge state"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "notes": [
+                {
+                  "author": "alice",
+                  "at": "2026-11-16T11:00:00.000Z",
+                  "body": "I couldn't merge this branch: CI failed!"
+                }
+              ]
+            }
+          ],
+          "result": { "$undefined": true }
+        }
+      ]
+    },
+    {
+      "name": "GitHub: removed from the queue, auto-merge turned off by someone else",
+      "group": ["a row's merge state"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "facts": {
+                "assignees": [],
+                "reviewers": [],
+                "events": [
+                  { "kind": "queued", "at": "2026-11-16T10:00:00.000Z" },
+                  {
+                    "kind": "dequeued",
+                    "at": "2026-11-16T11:00:00.000Z",
+                    "actor": "github-merge-queue",
+                    "reason": "failed checks"
+                  }
+                ]
+              }
+            }
+          ],
+          "result": {
+            "bot": {
+              "name": "merge queue",
+              "via": "queue",
+              "queued": false,
+              "failed": {
+                "reason": "removed from the merge queue: failed checks",
+                "at": "2026-11-16T11:00:00.000Z"
+              }
+            }
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "facts": {
+                "assignees": [],
+                "reviewers": [],
+                "events": [
+                  { "kind": "auto_merge_on", "at": "2026-11-16T10:00:00.000Z" },
+                  {
+                    "kind": "auto_merge_off",
+                    "at": "2026-11-16T11:00:00.000Z",
+                    "actor": "me",
+                    "reason": "manually"
+                  }
+                ]
+              }
+            }
+          ],
+          "result": { "$undefined": true }
+        }
+      ]
+    },
+    {
+      "name": "a scheduled merge with a bot: both said",
+      "group": ["a row's merge state"],
+      "calls": [
+        {
+          "fn": "mrReviewsMerge.mrMergeInfo",
+          "args": [
+            {
+              "state": "open",
+              "updatedAt": "2026-11-13T12:00:00.000Z",
+              "rules": {
+                "afterLabels": [
+                  "^merge[-_ ]?after\\b[\\s:=]*(?<delay>.+)$",
+                  "^merge[-_ ]?in\\b[\\s:=]*(?<delay>.+)$"
+                ],
+                "bots": [
+                  "marge-bot",
+                  "marge",
+                  "bors",
+                  "bors-ng",
+                  "mergify",
+                  "kodiak",
+                  "kodiakhq",
+                  "mergebot",
+                  "merge-bot",
+                  "github-merge-queue"
+                ],
+                "botFailures": [
+                  "^I couldn'?t merge this branch:?\\s*(?<reason>.*)",
+                  "^Sorry,? I can'?t (?<reason>.*)",
+                  "^(?<reason>I'm broken on the inside.*)",
+                  "(?<reason>refused to merge.*)",
+                  "^:?(broken_heart|x):?\\s*(?<reason>(build|tests?) failed.*)",
+                  "^(?<reason>merge conflict.*)",
+                  "(?<reason>removed from the (merge )?queue.*)"
+                ],
+                "queueLabels": [
+                  "^(merge[-_ ]?queue|queued[-_ ]?(for|to)[-_ ]?merge|ready[-_ ]?to[-_ ]?merge[-_ ]?bot)$"
+                ]
+              },
+              "user": "me",
+              "now": 1794830400000,
+              "labels": ["merge after 7 days"],
+              "facts": {
+                "assignees": ["marge-bot"],
+                "reviewers": [],
+                "events": []
+              }
+            }
+          ],
+          "result": {
+            "after": {
+              "label": "merge after 7 days",
+              "delayMs": 604800000,
+              "delay": "1 week",
+              "from": "update",
+              "since": "2026-11-13T12:00:00.000Z",
+              "at": "2026-11-20T12:00:00.000Z",
+              "ready": false
+            },
+            "bot": { "name": "marge-bot", "via": "assignee", "queued": true }
+          }
+        },
+        {
+          "fn": "mrReviewsMerge.mrMergeFact",
+          "args": [
+            {
+              "after": {
+                "label": "merge after 7 days",
+                "delayMs": 604800000,
+                "delay": "1 week",
+                "from": "update",
+                "since": "2026-11-13T12:00:00.000Z",
+                "at": "2026-11-20T12:00:00.000Z",
+                "ready": false
+              },
+              "bot": { "name": "marge-bot", "via": "assignee", "queued": true }
+            }
+          ],
+          "result": "queued"
+        }
+      ]
+    }
+  ]
+}

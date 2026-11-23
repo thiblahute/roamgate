@@ -1,0 +1,50 @@
+{
+  "description": "Grok Build sessions: the user's queries and reasoning summaries. Read by `bun test` in server/src/agent/grok-session.test.ts.",
+  "modules": { "grok-session": "server/src/agent/grok-session.ts" },
+  "cases": [
+    {
+      "name": "extracts only real user queries and reasoning summaries",
+      "group": ["Grok Build sessions"],
+      "calls": [
+        {
+          "fn": "grok-session.grokUserMessageText",
+          "args": [
+            {
+              "type": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "<user_info>ignored</user_info>\n<user_query>Ship it</user_query>"
+                }
+              ]
+            }
+          ],
+          "result": "Ship it"
+        },
+        {
+          "fn": "grok-session.grokUserMessageText",
+          "args": [
+            {
+              "type": "user",
+              "synthetic_reason": "system_reminder",
+              "content": [{ "type": "text", "text": "ignore me" }]
+            }
+          ],
+          "result": ""
+        },
+        {
+          "fn": "grok-session.grokReasoningText",
+          "args": [
+            {
+              "type": "reasoning",
+              "summary": [
+                { "type": "summary_text", "text": "Inspect the repository" }
+              ]
+            }
+          ],
+          "result": "Inspect the repository"
+        }
+      ]
+    }
+  ]
+}

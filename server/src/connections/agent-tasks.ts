@@ -1,23 +1,11 @@
-import type { AgentTask } from "../agent/session-tasks";
+import type { AgentTask, AgentTaskSummary } from "../../../shared/agentSession";
 import type { ConnectionManager, ConnectionRuntime } from "./manager";
 
 /** A Workspaces list asks for many agents at once; bound the batch. */
 export const AGENT_TASKS_BATCH_MAX = 64;
 const READ_TIMEOUT_MS = 5000;
 
-/** What the Workspaces list shows of a task: no output, no long summaries. */
-export type AgentTaskSummary = Pick<
-  AgentTask,
-  | "id"
-  | "kind"
-  | "title"
-  | "status"
-  | "name"
-  | "startedAt"
-  | "resumedAt"
-  | "endedAt"
-  | "rewound"
->;
+export type { AgentTaskSummary } from "../../../shared/agentSession";
 
 function summary(task: AgentTask): AgentTaskSummary {
   return {

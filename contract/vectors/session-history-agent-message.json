@@ -1,0 +1,231 @@
+{
+  "description": "History entries of a message sent to another agent session. Read by `bun test` in server/src/agent/session-history.agent-message.test.ts.",
+  "modules": { "session-history": "server/src/agent/session-history.ts" },
+  "cases": [
+    {
+      "name": "a message sent to another agent session is kept on its call and result, payload redacted or not",
+      "calls": [
+        {
+          "fn": "session-history.historyEntriesFromTrajectory",
+          "args": [
+            { "path": "/tmp/h.jsonl", "mtimeMs": 1000 },
+            {
+              "schema_version": "ATIF-v1.7",
+              "agent": { "name": "claude", "version": "2" },
+              "steps": [
+                {
+                  "step_id": 1,
+                  "source": "agent",
+                  "message": "Asking",
+                  "tool_calls": [
+                    {
+                      "tool_call_id": "t1",
+                      "function_name": "Bash",
+                      "arguments": {
+                        "command": "roamgate-review message desktop/w5:p1 -- \"Is the build green?\""
+                      }
+                    },
+                    {
+                      "tool_call_id": "t2",
+                      "function_name": "Bash",
+                      "arguments": {
+                        "command": "roamgate-review message local/w1:p1 -- hi"
+                      }
+                    }
+                  ],
+                  "observation": {
+                    "results": [
+                      {
+                        "source_call_id": "t1",
+                        "content": "{\"sent\":true,\"to\":{\"name\":\"Merge checks\"}}"
+                      },
+                      {
+                        "source_call_id": "t2",
+                        "content": "{\"error\": \"too many messages\"}",
+                        "extra": { "is_error": true }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ],
+          "result": [
+            {
+              "kind": "tool_call",
+              "role": "tool",
+              "tool_name": "Bash",
+              "source_call_id": "t1",
+              "text": "{\n  \"command\": \"roamgate-review message desktop/w5:p1 -- \\\"Is the build green?\\\"\"\n}",
+              "summary": "roamgate-review message desktop/w5:p1 -- \"Is the build green?\"",
+              "sent_at": "1970-01-01T00:00:01.000Z",
+              "agent_message": {
+                "to": "desktop/w5:p1",
+                "text": "Is the build green?"
+              },
+              "id": "86a1278ee42ad75053b52805:0"
+            },
+            {
+              "kind": "tool_call",
+              "role": "tool",
+              "tool_name": "Bash",
+              "source_call_id": "t2",
+              "text": "{\n  \"command\": \"roamgate-review message local/w1:p1 -- hi\"\n}",
+              "summary": "roamgate-review message local/w1:p1 -- hi",
+              "sent_at": "1970-01-01T00:00:01.000Z",
+              "agent_message": { "to": "local/w1:p1", "text": "hi" },
+              "id": "faec07df6c146fadeebff4a5:0"
+            },
+            {
+              "kind": "tool_result",
+              "role": "tool",
+              "tool_name": "Bash",
+              "source_call_id": "t1",
+              "text": "{\"sent\":true,\"to\":{\"name\":\"Merge checks\"}}",
+              "is_error": false,
+              "sent_at": "1970-01-01T00:00:01.000Z",
+              "agent_message_result": { "sent": true, "name": "Merge checks" },
+              "id": "ad208ca8861e0ad0f8ade4b6:0"
+            },
+            {
+              "kind": "tool_result",
+              "role": "tool",
+              "tool_name": "Bash",
+              "source_call_id": "t2",
+              "text": "{\"error\": \"too many messages\"}",
+              "is_error": true,
+              "sent_at": "1970-01-01T00:00:01.000Z",
+              "agent_message_result": { "sent": false, "name": null },
+              "id": "dcf8825bcc573a7af26a51e7:0"
+            }
+          ]
+        },
+        {
+          "fn": "session-history.redactHistoryUpdate",
+          "args": [
+            {
+              "mode": "snapshot",
+              "cursor": { "epoch": "e", "revision": 1 },
+              "entries": [
+                {
+                  "kind": "tool_call",
+                  "role": "tool",
+                  "tool_name": "Bash",
+                  "source_call_id": "t1",
+                  "text": "{\n  \"command\": \"roamgate-review message desktop/w5:p1 -- \\\"Is the build green?\\\"\"\n}",
+                  "summary": "roamgate-review message desktop/w5:p1 -- \"Is the build green?\"",
+                  "sent_at": "1970-01-01T00:00:01.000Z",
+                  "agent_message": {
+                    "to": "desktop/w5:p1",
+                    "text": "Is the build green?"
+                  },
+                  "id": "86a1278ee42ad75053b52805:0"
+                },
+                {
+                  "kind": "tool_call",
+                  "role": "tool",
+                  "tool_name": "Bash",
+                  "source_call_id": "t2",
+                  "text": "{\n  \"command\": \"roamgate-review message local/w1:p1 -- hi\"\n}",
+                  "summary": "roamgate-review message local/w1:p1 -- hi",
+                  "sent_at": "1970-01-01T00:00:01.000Z",
+                  "agent_message": { "to": "local/w1:p1", "text": "hi" },
+                  "id": "faec07df6c146fadeebff4a5:0"
+                },
+                {
+                  "kind": "tool_result",
+                  "role": "tool",
+                  "tool_name": "Bash",
+                  "source_call_id": "t1",
+                  "text": "{\"sent\":true,\"to\":{\"name\":\"Merge checks\"}}",
+                  "is_error": false,
+                  "sent_at": "1970-01-01T00:00:01.000Z",
+                  "agent_message_result": {
+                    "sent": true,
+                    "name": "Merge checks"
+                  },
+                  "id": "ad208ca8861e0ad0f8ade4b6:0"
+                },
+                {
+                  "kind": "tool_result",
+                  "role": "tool",
+                  "tool_name": "Bash",
+                  "source_call_id": "t2",
+                  "text": "{\"error\": \"too many messages\"}",
+                  "is_error": true,
+                  "sent_at": "1970-01-01T00:00:01.000Z",
+                  "agent_message_result": { "sent": false, "name": null },
+                  "id": "dcf8825bcc573a7af26a51e7:0"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "mode": "snapshot",
+            "cursor": { "epoch": "e", "revision": 1 },
+            "entries": [
+              {
+                "kind": "tool_call",
+                "role": "tool",
+                "tool_name": "Bash",
+                "source_call_id": "t1",
+                "text": "",
+                "summary": "roamgate-review message desktop/w5:p1 -- \"Is the build green?\"",
+                "sent_at": "1970-01-01T00:00:01.000Z",
+                "agent_message": {
+                  "to": "desktop/w5:p1",
+                  "text": "Is the build green?"
+                },
+                "id": "86a1278ee42ad75053b52805:0",
+                "text_bytes": 83,
+                "text_hash": "bcb6e697cb5a568f"
+              },
+              {
+                "kind": "tool_call",
+                "role": "tool",
+                "tool_name": "Bash",
+                "source_call_id": "t2",
+                "text": "",
+                "summary": "roamgate-review message local/w1:p1 -- hi",
+                "sent_at": "1970-01-01T00:00:01.000Z",
+                "agent_message": { "to": "local/w1:p1", "text": "hi" },
+                "id": "faec07df6c146fadeebff4a5:0",
+                "text_bytes": 60,
+                "text_hash": "d458f4d3b473f0ab"
+              },
+              {
+                "kind": "tool_result",
+                "role": "tool",
+                "tool_name": "Bash",
+                "source_call_id": "t1",
+                "text": "",
+                "is_error": false,
+                "sent_at": "1970-01-01T00:00:01.000Z",
+                "agent_message_result": {
+                  "sent": true,
+                  "name": "Merge checks"
+                },
+                "id": "ad208ca8861e0ad0f8ade4b6:0",
+                "text_bytes": 42,
+                "text_hash": "fdd414f05140be4b"
+              },
+              {
+                "kind": "tool_result",
+                "role": "tool",
+                "tool_name": "Bash",
+                "source_call_id": "t2",
+                "text": "",
+                "is_error": true,
+                "sent_at": "1970-01-01T00:00:01.000Z",
+                "agent_message_result": { "sent": false, "name": null },
+                "id": "dcf8825bcc573a7af26a51e7:0",
+                "text_bytes": 30,
+                "text_hash": "9bb719c2bb6a2875"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

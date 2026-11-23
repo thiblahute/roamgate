@@ -1,0 +1,415 @@
+{
+  "description": "Usage limit stops: reading them from transcripts and the resume settings. Read by `bun test` in shared/limitResume.test.ts.",
+  "modules": { "limitResume": "shared/limitResume.ts" },
+  "cases": [
+    {
+      "name": "reads the 5-hour stop from its structured fields",
+      "group": ["usageLimitStop"],
+      "calls": [
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "{\"type\":\"user\",\"isSidechain\":false,\"uuid\":\"abc5e334-fc21-46e5-ba5a-35b562ad9c4f\",\"timestamp\":\"2026-11-07T11:02:18.555Z\",\"message\":{\"role\":\"user\",\"content\":\"Fix the tests\"},\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 1:40am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false}},\"quotaLimits\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n{\"type\":\"last-prompt\",\"lastPrompt\":\"Fix the tests\",\"leafUuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"type\":\"cost-state\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"totalCostUSD\":12.5}\n{\"type\":\"tools-used\",\"tools\":[\"Bash\",\"Edit\"]}\n{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"timestamp\":\"2026-11-07T04:34:00.000Z\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"content\":\"x\"}\n{\"type\":\"queue-operation\",\"operation\":\"dequeue\",\"timestamp\":\"2026-11-07T04:34:00.000Z\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"type\":\"file-history-snapshot\",\"messageId\":\"m1\",\"snapshot\":{}}\n{\"type\":\"system\",\"subtype\":\"local_command\",\"content\":\"/usage\"}\n"
+              ]
+            }
+          ],
+          "result": {
+            "resets_at": 1794026400000,
+            "kind": "five_hour",
+            "stopped_at": 1794026004450,
+            "uuid": "243ce981-fba6-4e6d-8765-6373ac6cf6aa",
+            "message": "You've hit your 5-hour limit · resets 1:40am (America/Santiago)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reads a weekly stop the same way",
+      "group": ["usageLimitStop"],
+      "calls": [
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your weekly limit · resets Nov 9, 8am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":1794222000,\"rateLimitType\":\"seven_day\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false}},\"quotaLimits\":{\"status\":\"rejected\",\"resetsAt\":1794222000,\"rateLimitType\":\"seven_day\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n"
+              ]
+            }
+          ],
+          "result": {
+            "resets_at": 1794222000000,
+            "kind": "seven_day",
+            "stopped_at": 1794026004450,
+            "uuid": "243ce981-fba6-4e6d-8765-6373ac6cf6aa",
+            "message": "You've hit your weekly limit · resets Nov 9, 8am (America/Santiago)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "uses the fields, not the words",
+      "group": ["usageLimitStop"],
+      "calls": [
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your limit · resets 9pm\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false}},\"quotaLimits\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n"
+              ]
+            }
+          ],
+          "result": {
+            "resets_at": 1794026400000,
+            "kind": "five_hour",
+            "stopped_at": 1794026004450,
+            "uuid": "243ce981-fba6-4e6d-8765-6373ac6cf6aa",
+            "message": "You've hit your limit · resets 9pm"
+          }
+        },
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            "{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 1:40am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "falls back on quotaLimits when the error params lack the info",
+      "group": ["usageLimitStop"],
+      "calls": [
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 1:40am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{},\"quotaLimits\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n"
+              ]
+            }
+          ],
+          "result": {
+            "resets_at": 1794026400000,
+            "kind": "five_hour",
+            "stopped_at": 1794026004450,
+            "uuid": "243ce981-fba6-4e6d-8765-6373ac6cf6aa",
+            "message": "You've hit your 5-hour limit · resets 1:40am (America/Santiago)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "another API error, or an allowed rate limit, is no stop",
+      "group": ["usageLimitStop"],
+      "calls": [
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 1:40am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"overloaded\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false}},\"quotaLimits\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"server_error\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n"
+              ]
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 1:40am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"allowed\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false}},\"quotaLimits\":{\"status\":\"allowed\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n"
+              ]
+            }
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "the user typing after the stop resumed it",
+      "group": ["usageLimitStop"],
+      "calls": [
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 1:40am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false}},\"quotaLimits\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n{\"type\":\"last-prompt\",\"lastPrompt\":\"Fix the tests\",\"leafUuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"type\":\"cost-state\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"totalCostUSD\":12.5}\n{\"type\":\"tools-used\",\"tools\":[\"Bash\",\"Edit\"]}\n{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"timestamp\":\"2026-11-07T04:34:00.000Z\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"content\":\"x\"}\n{\"type\":\"queue-operation\",\"operation\":\"dequeue\",\"timestamp\":\"2026-11-07T04:34:00.000Z\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"type\":\"file-history-snapshot\",\"messageId\":\"m1\",\"snapshot\":{}}\n{\"type\":\"system\",\"subtype\":\"local_command\",\"content\":\"/usage\"}\n{\"type\":\"user\",\"isSidechain\":false,\"uuid\":\"bde97350-befb-4ba3-8e72-494c9bed0ee1\",\"timestamp\":\"2026-11-07T11:02:18.555Z\",\"message\":{\"role\":\"user\",\"content\":\"Keep going\"},\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n"
+              ]
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 1:40am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false}},\"quotaLimits\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n{\"type\":\"user\",\"isSidechain\":false,\"uuid\":\"e75877cb-76ec-4e94-900b-805e95afaf7a\",\"timestamp\":\"2026-11-07T11:02:18.555Z\",\"message\":{\"role\":\"user\",\"content\":\"Keep going\"},\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"type\":\"assistant\",\"isSidechain\":false,\"uuid\":\"62c663b4-d94a-4d43-b8db-b5e842eb47f7\",\"timestamp\":\"2026-11-07T11:03:00.000Z\",\"message\":{\"model\":\"claude-opus-5-5\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done.\"}]},\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n"
+              ]
+            }
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "a resume the limit stopped again is paused by the newest stop",
+      "group": ["usageLimitStop"],
+      "calls": [
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"a\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 1:40am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false}},\"quotaLimits\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n{\"type\":\"user\",\"isSidechain\":false,\"uuid\":\"07a34f35-dac4-4e10-9917-db1f42772b02\",\"timestamp\":\"2026-11-07T11:02:18.555Z\",\"message\":{\"role\":\"user\",\"content\":\"Keep going\"},\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"b\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 1:40am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":1794044400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false}},\"quotaLimits\":{\"status\":\"rejected\",\"resetsAt\":1794044400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n"
+              ]
+            }
+          ],
+          "result": {
+            "resets_at": 1794044400000,
+            "kind": "five_hour",
+            "stopped_at": 1794026004450,
+            "uuid": "b",
+            "message": "You've hit your 5-hour limit · resets 1:40am (America/Santiago)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "meta records, subagents and local commands do not count as turns",
+      "group": ["usageLimitStop"],
+      "calls": [
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 1:40am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false}},\"quotaLimits\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n{\"type\":\"user\",\"isSidechain\":false,\"uuid\":\"a7d1a291-3509-4389-9bd6-65a3f7cb193f\",\"timestamp\":\"2026-11-07T11:02:18.555Z\",\"message\":{\"role\":\"user\",\"content\":\"<local-command-caveat>Caveat</local-command-caveat>\"},\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"isMeta\":true}\n{\"type\":\"user\",\"isSidechain\":false,\"uuid\":\"74d9c072-b8b8-4c72-93b9-df8c4887fc5a\",\"timestamp\":\"2026-11-07T11:02:18.555Z\",\"message\":{\"role\":\"user\",\"content\":\"<command-name>/usage</command-name>\"},\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"type\":\"user\",\"isSidechain\":false,\"uuid\":\"b8fef85b-fdad-4748-b0d0-65ec58f3cfa5\",\"timestamp\":\"2026-11-07T11:02:18.555Z\",\"message\":{\"role\":\"user\",\"content\":\"<local-command-stdout>Current session: 100% used</local-command-stdout>\"},\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"type\":\"assistant\",\"isSidechain\":true,\"uuid\":\"65bdebd9-bf32-4f93-a78a-0ce61766c4d0\",\"timestamp\":\"2026-11-07T11:03:00.000Z\",\"message\":{\"model\":\"claude-opus-5-5\",\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"subagent\"}]},\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n"
+              ]
+            }
+          ],
+          "result": {
+            "resets_at": 1794026400000,
+            "kind": "five_hour",
+            "stopped_at": 1794026004450,
+            "uuid": "243ce981-fba6-4e6d-8765-6373ac6cf6aa",
+            "message": "You've hit your 5-hour limit · resets 1:40am (America/Santiago)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a tail cut inside a record skips the broken line",
+      "group": ["usageLimitStop"],
+      "calls": [
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": [
+            {
+              "$text": [
+                "ive\":true}\n{\"type\":\"user\",\"isSidechain\":false,\"uuid\":\"17f1ce7f-37ed-4fee-962d-c9e1ffe3392d\",\"timestamp\":\"2026-11-07T11:02:18.555Z\",\"message\":{\"role\":\"user\",\"content\":\"x\"},\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"parentUuid\":\"ebd6e871-44b7-4192-b508-388cb5222b94\",\"isSidechain\":false,\"type\":\"assistant\",\"uuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"timestamp\":\"2026-11-07T04:33:24.450Z\",\"message\":{\"id\":\"fc3f9486-1ac4-48ff-86c5-833bc50c39ba\",\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0},\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 1:40am (America/Santiago)\"}]},\"requestId\":\"req_011CgnwfEpKbGfKMi1Qn7XrV\",\"apiError\":\"usage_limit_reached\",\"apiErrorParams\":{\"rate_limit_info\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false}},\"quotaLimits\":{\"status\":\"rejected\",\"resetsAt\":1794026400,\"rateLimitType\":\"five_hour\",\"overageStatus\":\"rejected\",\"overageDisabledReason\":\"org_level_disabled\",\"isUsingOverage\":false,\"unifiedRateLimitFallbackAvailable\":false},\"error\":\"rate_limit\",\"isApiErrorMessage\":true,\"apiErrorStatus\":429,\"userType\":\"external\",\"entrypoint\":\"sdk-cli\",\"cwd\":\"/Users/thiblahute/devel/misc/roamgate\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"version\":\"2.1.319\"}\n{\"type\":\"last-prompt\",\"lastPrompt\":\"Fix the tests\",\"leafUuid\":\"243ce981-fba6-4e6d-8765-6373ac6cf6aa\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"type\":\"cost-state\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"totalCostUSD\":12.5}\n{\"type\":\"tools-used\",\"tools\":[\"Bash\",\"Edit\"]}\n{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"timestamp\":\"2026-11-07T04:34:00.000Z\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\",\"content\":\"x\"}\n{\"type\":\"queue-operation\",\"operation\":\"dequeue\",\"timestamp\":\"2026-11-07T04:34:00.000Z\",\"sessionId\":\"362be254-14eb-4390-a96c-25032526572a\"}\n{\"type\":\"file-history-snapshot\",\"messageId\":\"m1\",\"snapshot\":{}}\n{\"type\":\"system\",\"subtype\":\"local_command\",\"content\":\"/usage\"}\n"
+              ]
+            }
+          ],
+          "result": {
+            "resets_at": 1794026400000,
+            "kind": "five_hour",
+            "stopped_at": 1794026004450,
+            "uuid": "243ce981-fba6-4e6d-8765-6373ac6cf6aa",
+            "message": "You've hit your 5-hour limit · resets 1:40am (America/Santiago)"
+          }
+        },
+        {
+          "fn": "limitResume.usageLimitStop",
+          "args": ["\"text\":\"...a long request blob\"}"],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "reads conversation mode's stream-json spelling too",
+      "group": ["usageLimitStop"],
+      "calls": [
+        {
+          "fn": "limitResume.usageLimitStopOf",
+          "args": [
+            {
+              "type": "assistant",
+              "session_id": "362be254-14eb-4390-a96c-25032526572a",
+              "uuid": "22360b0f-7506-4a29-a797-1fe649b67bed",
+              "timestamp": "2026-11-06T16:01:54.559Z",
+              "error": "rate_limit",
+              "is_api_error_message": true,
+              "api_error_status": 429,
+              "api_error": "usage_limit_reached",
+              "api_error_params": {
+                "rate_limit_info": {
+                  "status": "rejected",
+                  "resetsAt": 1793989800,
+                  "rateLimitType": "five_hour"
+                }
+              },
+              "message": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "You've hit your 5-hour limit · resets 3:30pm (America/Santiago)"
+                  }
+                ]
+              }
+            }
+          ],
+          "result": {
+            "resets_at": 1793989800000,
+            "kind": "five_hour",
+            "stopped_at": 1793980914559,
+            "uuid": "22360b0f-7506-4a29-a797-1fe649b67bed",
+            "message": "You've hit your 5-hour limit · resets 3:30pm (America/Santiago)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "defaults: on, a minute after the reset, the message",
+      "group": ["settings"],
+      "calls": [
+        {
+          "value": "limitResume.DEFAULT_LIMIT_RESUME",
+          "result": {
+            "enabled": true,
+            "message": "The usage limit has reset. Continue where you stopped, and restart any background agents or workflows that failed because of the limit (resume workflows from their run id).",
+            "margin_seconds": 60
+          }
+        },
+        {
+          "fn": "limitResume.limitResumeSettingsOf",
+          "args": [],
+          "result": {
+            "enabled": true,
+            "message": "The usage limit has reset. Continue where you stopped, and restart any background agents or workflows that failed because of the limit (resume workflows from their run id).",
+            "margin_seconds": 60
+          }
+        }
+      ]
+    },
+    {
+      "name": "validates each key",
+      "group": ["settings"],
+      "calls": [
+        {
+          "fn": "limitResume.limitResumeSettingsError",
+          "args": [{ "enabled": false }],
+          "result": null
+        },
+        {
+          "fn": "limitResume.limitResumeSettingsError",
+          "args": [{ "enabled": "no" }],
+          "result": "limit_resume.enabled must be true or false"
+        },
+        {
+          "fn": "limitResume.limitResumeSettingsError",
+          "args": [{ "message": "  " }],
+          "result": "limit_resume.message must be some text"
+        },
+        {
+          "fn": "limitResume.limitResumeSettingsError",
+          "args": [{ "margin_seconds": -1 }],
+          "result": "limit_resume.margin_seconds must be a whole number of seconds from 0 to 3600"
+        },
+        {
+          "fn": "limitResume.limitResumeSettingsError",
+          "args": [{ "margin_seconds": 1.5 }],
+          "result": "limit_resume.margin_seconds must be a whole number of seconds from 0 to 3600"
+        },
+        {
+          "fn": "limitResume.limitResumeSettingsError",
+          "args": [{ "other": 1 }],
+          "result": "limit_resume takes enabled, message and margin_seconds, not other"
+        }
+      ]
+    },
+    {
+      "name": "keeps the valid stored keys only",
+      "group": ["settings"],
+      "calls": [
+        {
+          "fn": "limitResume.normalizeLimitResumeSettings",
+          "args": [
+            {
+              "enabled": false,
+              "message": " Go on. ",
+              "margin_seconds": "soon"
+            }
+          ],
+          "result": { "enabled": false, "message": "Go on." }
+        },
+        {
+          "fn": "limitResume.normalizeLimitResumeSettings",
+          "args": [null],
+          "result": { "$undefined": true }
+        }
+      ]
+    },
+    {
+      "name": "limit kinds read as the user knows them",
+      "calls": [
+        {
+          "fn": "limitResume.limitKindLabel",
+          "args": ["five_hour"],
+          "result": "5-hour"
+        },
+        {
+          "fn": "limitResume.limitKindLabel",
+          "args": ["seven_day"],
+          "result": "weekly"
+        },
+        {
+          "fn": "limitResume.limitKindLabel",
+          "args": ["seven_day_opus"],
+          "result": "weekly Opus"
+        },
+        {
+          "fn": "limitResume.limitKindLabel",
+          "args": ["monthly_thing"],
+          "result": "monthly thing"
+        }
+      ]
+    },
+    {
+      "name": "parseLimitPauses keeps well-formed pauses",
+      "calls": [
+        {
+          "fn": "limitResume.parseLimitPauses",
+          "args": [
+            {
+              "pauses": [
+                {
+                  "connection_id": "local",
+                  "pane_id": "w1:p1",
+                  "session_id": "s",
+                  "resets_at": 1,
+                  "state": "scheduled"
+                },
+                { "pane_id": 3 }
+              ]
+            }
+          ],
+          "result": [
+            {
+              "connection_id": "local",
+              "pane_id": "w1:p1",
+              "session_id": "s",
+              "resets_at": 1,
+              "state": "scheduled"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

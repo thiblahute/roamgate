@@ -1,0 +1,111 @@
+{
+  "description": "Bash mode: `!` commands and their output as Claude Code records them. Read by `bun test` in shared/bashMode.test.ts.",
+  "modules": { "bashMode": "shared/bashMode.ts" },
+  "cases": [
+    {
+      "name": "a `!` first, past any spaces, makes a shell line, as in the terminal",
+      "calls": [
+        { "fn": "bashMode.shellLine", "args": ["!ls"], "result": "ls" },
+        {
+          "fn": "bashMode.shellLine",
+          "args": ["  ! git push origin HEAD"],
+          "result": " git push origin HEAD"
+        },
+        {
+          "fn": "bashMode.shellLine",
+          "args": ["!FOO=1 make && echo $FOO\nls"],
+          "result": "FOO=1 make && echo $FOO\nls"
+        },
+        { "fn": "bashMode.shellLine", "args": ["Hello!"], "result": null },
+        {
+          "fn": "bashMode.shellLine",
+          "args": ["Run !ls for me"],
+          "result": null
+        },
+        { "fn": "bashMode.shellLine", "args": ["!"], "result": null },
+        { "fn": "bashMode.shellLine", "args": ["!   "], "result": null },
+        { "fn": "bashMode.shellLine", "args": [""], "result": null }
+      ]
+    },
+    {
+      "name": "Claude reads a run in Claude Code's own format: the output escaped, the command not",
+      "calls": [
+        {
+          "fn": "bashMode.bashModeTexts",
+          "args": [
+            {
+              "command": " cd x && git push",
+              "stdout": "a -> b\n",
+              "stderr": "<warn> & co"
+            }
+          ],
+          "result": [
+            "<bash-input> cd x && git push</bash-input>",
+            "<bash-stdout>a -&gt; b\n</bash-stdout><bash-stderr>&lt;warn&gt; &amp; co</bash-stderr>"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "output past the cap is cut as Claude Code cuts it",
+      "calls": [
+        {
+          "fn": "bashMode.truncateBashOutput",
+          "args": ["short"],
+          "result": { "text": "short", "truncated": false }
+        },
+        {
+          "fn": "bashMode.truncateBashOutput",
+          "args": ["abc\ndef\nghi", 5],
+          "result": {
+            "text": "abc\nd\n\n... [2 lines truncated] ...",
+            "truncated": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "runs read back from a transcript: the terminal's two records, and one message",
+      "calls": [
+        {
+          "fn": "bashMode.splitBashMode",
+          "args": ["<bash-input> glab auth login</bash-input>"],
+          "result": { "parts": [{ "command": " glab auth login" }], "rest": "" }
+        },
+        {
+          "fn": "bashMode.splitBashMode",
+          "args": [
+            "<bash-stdout></bash-stdout><bash-stderr>ERROR: a -&gt; b\n</bash-stderr>"
+          ],
+          "result": {
+            "parts": [{ "stdout": "", "stderr": "ERROR: a -> b\n" }],
+            "rest": ""
+          }
+        },
+        {
+          "fn": "bashMode.bashModeTexts",
+          "args": [{ "command": "echo hi", "stdout": "hi\n", "stderr": "" }],
+          "result": [
+            "<bash-input>echo hi</bash-input>",
+            "<bash-stdout>hi\n</bash-stdout><bash-stderr></bash-stderr>"
+          ]
+        },
+        {
+          "fn": "bashMode.splitBashMode",
+          "args": [
+            "<bash-input>echo hi</bash-input>\n<bash-stdout>hi\n</bash-stdout><bash-stderr></bash-stderr>\nwhat did my last command print?"
+          ],
+          "result": {
+            "parts": [{ "command": "echo hi", "stdout": "hi\n", "stderr": "" }],
+            "rest": "what did my last command print?"
+          }
+        },
+        {
+          "fn": "bashMode.splitBashMode",
+          "args": ["Tell me about <bash-input>"],
+          "result": null
+        }
+      ]
+    }
+  ]
+}

@@ -2,7 +2,7 @@
  * Where the tasks sheet was left, per connection, pane and session, so that
  * closing and reopening it comes back there. Kept in the page only.
  */
-import type { WorkflowView } from "../../server/src/agent/session-tasks";
+import type { WorkflowView } from "../../shared/agentSession";
 
 /** An output's or a conversation's scroll: at its end, or where it was. */
 export type ContentScroll = { top: number; atEnd: boolean };

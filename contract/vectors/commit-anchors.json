@@ -1,0 +1,700 @@
+{
+  "description": "Review threads on commits: following a rewritten commit. Read by `bun test` in server/src/review/commit-anchors.test.ts.",
+  "modules": { "commit-anchors": "server/src/review/commit-anchors.ts" },
+  "cases": [
+    {
+      "name": "a commit no longer among the review's is told from one still there",
+      "calls": [
+        {
+          "fn": "commit-anchors.rewrittenOut",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            [
+              {
+                "sha": "1111",
+                "parent": "1111-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "a",
+                "body": ""
+              },
+              {
+                "sha": "acd7920f82aa",
+                "parent": "acd7920f82aa-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "b",
+                "body": ""
+              }
+            ]
+          ],
+          "result": false
+        },
+        {
+          "fn": "commit-anchors.rewrittenOut",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            [
+              {
+                "sha": "1111",
+                "parent": "1111-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "a",
+                "body": ""
+              }
+            ]
+          ],
+          "result": true
+        },
+        {
+          "fn": "commit-anchors.rewrittenOut",
+          "args": [
+            { "path": "x" },
+            [
+              {
+                "sha": "1111",
+                "parent": "1111-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "a",
+                "body": ""
+              }
+            ]
+          ],
+          "result": false
+        },
+        {
+          "fn": "commit-anchors.rewrittenOut",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            []
+          ],
+          "result": false
+        }
+      ]
+    },
+    {
+      "name": "what a rewritten commit became: its patch id first, then its subject",
+      "calls": [
+        {
+          "fn": "commit-anchors.rewrittenCommit",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            [
+              {
+                "sha": "1111",
+                "parent": "1111-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: a C API for caps",
+                "body": ""
+              },
+              {
+                "sha": "beef",
+                "parent": "beef-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: futures and elements in C",
+                "body": ""
+              },
+              {
+                "sha": "f00d",
+                "parent": "f00d-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: Add futures, elements written in C, and the pipeline",
+                "body": ""
+              }
+            ],
+            { "acd7920f82full": "P", "beef": "P" }
+          ],
+          "result": {
+            "sha": "beef",
+            "parent": "beef-parent",
+            "author": "Test",
+            "date": "2026-11-18T20:00:00Z",
+            "subject": "gst-c: futures and elements in C",
+            "body": ""
+          }
+        },
+        {
+          "fn": "commit-anchors.rewrittenCommit",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            [
+              {
+                "sha": "1111",
+                "parent": "1111-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: a C API for caps",
+                "body": ""
+              },
+              {
+                "sha": "beef",
+                "parent": "beef-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: futures and elements in C",
+                "body": ""
+              },
+              {
+                "sha": "f00d",
+                "parent": "f00d-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: Add futures, elements written in C, and the pipeline",
+                "body": ""
+              }
+            ],
+            {}
+          ],
+          "result": {
+            "sha": "f00d",
+            "parent": "f00d-parent",
+            "author": "Test",
+            "date": "2026-11-18T20:00:00Z",
+            "subject": "gst-c: Add futures, elements written in C, and the pipeline",
+            "body": ""
+          }
+        },
+        {
+          "fn": "commit-anchors.rewrittenCommit",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            [
+              {
+                "sha": "1111",
+                "parent": "1111-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: a C API for caps",
+                "body": ""
+              },
+              {
+                "sha": "beef",
+                "parent": "beef-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: futures and elements in C",
+                "body": ""
+              },
+              {
+                "sha": "f00d",
+                "parent": "f00d-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: Add futures, elements written in C, and the pipeline",
+                "body": ""
+              }
+            ],
+            {},
+            false
+          ],
+          "result": null
+        },
+        {
+          "fn": "commit-anchors.rewrittenCommit",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "fixup! gst-c: a C API for caps.",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            [
+              {
+                "sha": "1111",
+                "parent": "1111-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: a C API for caps",
+                "body": ""
+              },
+              {
+                "sha": "beef",
+                "parent": "beef-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: futures and elements in C",
+                "body": ""
+              },
+              {
+                "sha": "f00d",
+                "parent": "f00d-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: Add futures, elements written in C, and the pipeline",
+                "body": ""
+              }
+            ],
+            {}
+          ],
+          "result": {
+            "sha": "1111",
+            "parent": "1111-parent",
+            "author": "Test",
+            "date": "2026-11-18T20:00:00Z",
+            "subject": "gst-c: a C API for caps",
+            "body": ""
+          }
+        },
+        {
+          "fn": "commit-anchors.rewrittenCommit",
+          "args": [
+            { "path": "x", "line": 1 },
+            [
+              {
+                "sha": "1111",
+                "parent": "1111-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: a C API for caps",
+                "body": ""
+              },
+              {
+                "sha": "beef",
+                "parent": "beef-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: futures and elements in C",
+                "body": ""
+              },
+              {
+                "sha": "f00d",
+                "parent": "f00d-parent",
+                "author": "Test",
+                "date": "2026-11-18T20:00:00Z",
+                "subject": "gst-c: Add futures, elements written in C, and the pipeline",
+                "body": ""
+              }
+            ],
+            {}
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "the anchored line is found by its text, the lines after it first, else the nearest",
+      "calls": [
+        {
+          "fn": "commit-anchors.lineInFile",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            {
+              "path": "play.c",
+              "oldPath": "play.c",
+              "hunks": [
+                {
+                  "header": "@@ -0,0 +1,3 @@",
+                  "lines": [
+                    {
+                      "kind": "+",
+                      "old": null,
+                      "new": 1,
+                      "text": "static void"
+                    },
+                    {
+                      "kind": "+",
+                      "old": null,
+                      "new": 2,
+                      "text": "die (const char *what, GstError *err)"
+                    },
+                    { "kind": "+", "old": null, "new": 3, "text": "{" }
+                  ]
+                }
+              ]
+            }
+          ],
+          "result": { "side": "new", "line": 2 }
+        },
+        {
+          "fn": "commit-anchors.lineInFile",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 3,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"quote\":\"die (const char *what, GstError *err)\\n{ /* fatal */\"}",
+              "endLine": 4
+            },
+            {
+              "path": "play.c",
+              "oldPath": "play.c",
+              "hunks": [
+                {
+                  "header": "@@ -0,0 +1,9 @@",
+                  "lines": [
+                    {
+                      "kind": "+",
+                      "old": null,
+                      "new": 1,
+                      "text": "die (const char *what, GstError *err)"
+                    },
+                    { "kind": "+", "old": null, "new": 2, "text": "{" },
+                    { "kind": "+", "old": null, "new": 3, "text": "x" },
+                    { "kind": "+", "old": null, "new": 4, "text": "x" },
+                    { "kind": "+", "old": null, "new": 5, "text": "x" },
+                    { "kind": "+", "old": null, "new": 6, "text": "x" },
+                    { "kind": "+", "old": null, "new": 7, "text": "x" },
+                    {
+                      "kind": "+",
+                      "old": null,
+                      "new": 8,
+                      "text": "die (const char *what, GstError *err)"
+                    },
+                    {
+                      "kind": "+",
+                      "old": null,
+                      "new": 9,
+                      "text": "{ /* fatal */"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "result": { "side": "new", "line": 8 }
+        },
+        {
+          "fn": "commit-anchors.lineInFile",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 3,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "endLine": 4
+            },
+            {
+              "path": "play.c",
+              "oldPath": "play.c",
+              "hunks": [
+                {
+                  "header": "@@ -0,0 +1,9 @@",
+                  "lines": [
+                    {
+                      "kind": "+",
+                      "old": null,
+                      "new": 1,
+                      "text": "die (const char *what, GstError *err)"
+                    },
+                    { "kind": "+", "old": null, "new": 2, "text": "{" },
+                    { "kind": "+", "old": null, "new": 3, "text": "x" },
+                    { "kind": "+", "old": null, "new": 4, "text": "x" },
+                    { "kind": "+", "old": null, "new": 5, "text": "x" },
+                    { "kind": "+", "old": null, "new": 6, "text": "x" },
+                    { "kind": "+", "old": null, "new": 7, "text": "x" },
+                    {
+                      "kind": "+",
+                      "old": null,
+                      "new": 8,
+                      "text": "die (const char *what, GstError *err)"
+                    },
+                    {
+                      "kind": "+",
+                      "old": null,
+                      "new": 9,
+                      "text": "{ /* fatal */"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "result": { "side": "new", "line": 1 }
+        },
+        {
+          "fn": "commit-anchors.lineInFile",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            {
+              "path": "play.c",
+              "oldPath": "play.c",
+              "hunks": [
+                {
+                  "header": "@@ -0,0 +1,1 @@",
+                  "lines": [
+                    { "kind": "+", "old": null, "new": 1, "text": "gone" }
+                  ]
+                }
+              ]
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "commit-anchors.lineInFile",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            }
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "a moved anchor and its note name the new commit and line, or the whole change",
+      "calls": [
+        {
+          "fn": "commit-anchors.movedAnchor",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            {
+              "sha": "f00d",
+              "parent": "f00d-parent",
+              "author": "Test",
+              "date": "2026-11-18T20:00:00Z",
+              "subject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "body": ""
+            },
+            { "side": "new", "line": 150 }
+          ],
+          "result": {
+            "path": "play.c",
+            "commit": "f00d",
+            "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+            "commitParent": "f00d-parent",
+            "line": 150,
+            "side": "new",
+            "text": "die (const char *what, GstError *err)",
+            "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":150,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"f00d\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"f00d-parent\"}}"
+          }
+        },
+        {
+          "fn": "commit-anchors.movedAnchor",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}",
+              "endLine": 146
+            },
+            {
+              "sha": "f00d",
+              "parent": "f00d-parent",
+              "author": "Test",
+              "date": "2026-11-18T20:00:00Z",
+              "subject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "body": ""
+            },
+            { "side": "new", "line": 10 }
+          ],
+          "result": {
+            "path": "play.c",
+            "commit": "f00d",
+            "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+            "commitParent": "f00d-parent",
+            "line": 10,
+            "side": "new",
+            "text": "die (const char *what, GstError *err)",
+            "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":10,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"f00d\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"f00d-parent\"},\"endLine\":12}",
+            "endLine": 12
+          }
+        },
+        {
+          "fn": "commit-anchors.movedAnchor",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            null,
+            { "side": "new", "line": 7 }
+          ],
+          "result": {
+            "path": "play.c",
+            "line": 7,
+            "side": "new",
+            "text": "die (const char *what, GstError *err)",
+            "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":7,\"quote\":\"die (const char *what, GstError *err)\"}"
+          }
+        },
+        {
+          "fn": "commit-anchors.movedAnchor",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "acd7920f82",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "4e035085a2",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"acd7920f82\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"4e035085a2\"}}"
+            },
+            {
+              "sha": "f00d",
+              "parent": "f00d-parent",
+              "author": "Test",
+              "date": "2026-11-18T20:00:00Z",
+              "subject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "body": ""
+            },
+            null,
+            true
+          ],
+          "result": {
+            "path": "play.c",
+            "commit": "f00d",
+            "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+            "commitParent": "f00d-parent",
+            "line": 144,
+            "side": "new",
+            "text": "die (const char *what, GstError *err)",
+            "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"f00d\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"f00d-parent\"}}",
+            "outdated": true
+          }
+        },
+        {
+          "fn": "commit-anchors.movedAnchor",
+          "args": [
+            {
+              "path": "play.c",
+              "commit": "f00d",
+              "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "commitParent": "f00d-parent",
+              "line": 144,
+              "side": "new",
+              "text": "die (const char *what, GstError *err)",
+              "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":144,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"f00d\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"f00d-parent\"}}",
+              "outdated": true
+            },
+            {
+              "sha": "f00d",
+              "parent": "f00d-parent",
+              "author": "Test",
+              "date": "2026-11-18T20:00:00Z",
+              "subject": "gst-c: Add futures, elements written in C, and the pipeline",
+              "body": ""
+            },
+            { "side": "new", "line": 1 }
+          ],
+          "result": {
+            "path": "play.c",
+            "commit": "f00d",
+            "commitSubject": "gst-c: Add futures, elements written in C, and the pipeline",
+            "commitParent": "f00d-parent",
+            "line": 1,
+            "side": "new",
+            "text": "die (const char *what, GstError *err)",
+            "feedback": "{\"source\":\"diff\",\"path\":\"play.c\",\"kind\":\"branch\",\"side\":\"new\",\"line\":1,\"quote\":\"die (const char *what, GstError *err)\",\"commit\":{\"sha\":\"f00d\",\"subject\":\"gst-c: Add futures, elements written in C, and the pipeline\",\"parent\":\"f00d-parent\"}}"
+          }
+        }
+      ]
+    }
+  ]
+}

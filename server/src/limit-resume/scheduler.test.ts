@@ -13,7 +13,7 @@ import {
   jsonl,
   stopRecord,
   userRecord,
-} from "../../../shared/limitResumeTesting";
+} from "./testing";
 import { settle } from "../conversation/testing";
 import {
   createLimitResumer,

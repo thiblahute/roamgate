@@ -14,7 +14,7 @@ import {
   historyUpdate,
   type HistoryEntry,
 } from "./session-history";
-import { historyWindowEntries } from "./session-history-window";
+import { historyWindowEntries } from "../../../shared/agentHistory";
 import {
   createSlicer,
   createSlimIndex,

@@ -2,7 +2,7 @@
  * The Workspaces list's arrangement model that needs no DOM: what a parent
  * row sums up, which side tasks show under an agent, and where a drop lands.
  */
-import type { AgentTaskSummary } from "../../server/src/connections/agent-tasks";
+import type { AgentTaskSummary } from "../../shared/agentSession";
 import { agentPresence } from "./agentBackground";
 
 export type { AgentTaskSummary };

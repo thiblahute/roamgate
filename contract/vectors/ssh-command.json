@@ -1,0 +1,174 @@
+{
+  "description": "SSH command lines: destinations, policy options and stream-local forwards. Read by `bun test` in server/src/bridge/ssh-command.test.ts.",
+  "modules": { "ssh-command": "server/src/bridge/ssh-command.ts" },
+  "cases": [
+    {
+      "name": "accepts only bounded aliases and user@host destinations",
+      "group": ["secure SSH command construction"],
+      "calls": [
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": ["dev-box.example"],
+          "result": "dev-box.example"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": ["operator@dev-box"],
+          "result": "operator@dev-box"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": ["-oProxyCommand=touch /tmp/pwned"],
+          "throws": "ssh_destination must be an OpenSSH alias or user@host"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": ["host name"],
+          "throws": "ssh_destination must be an OpenSSH alias or user@host"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": ["ssh://host"],
+          "throws": "ssh_destination must be an OpenSSH alias or user@host"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": ["host:2222"],
+          "throws": "ssh_destination must be an OpenSSH alias or user@host"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": ["user@@host"],
+          "throws": "ssh_destination must be an OpenSSH alias or user@host"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": ["@host"],
+          "throws": "ssh_destination must be an OpenSSH alias or user@host"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": ["user@host/path"],
+          "throws": "ssh_destination must be an OpenSSH alias or user@host"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": ["user@host=bad"],
+          "throws": "ssh_destination must be an OpenSSH alias or user@host"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": ["user@host,bad"],
+          "throws": "ssh_destination must be an OpenSSH alias or user@host"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": [""],
+          "throws": "ssh_destination must be an OpenSSH alias or user@host"
+        },
+        {
+          "fn": "ssh-command.validateSshDestination",
+          "args": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "throws": "ssh_destination must be an OpenSSH alias or user@host"
+        }
+      ]
+    },
+    {
+      "name": "places fixed policy and sentinel before destination and command",
+      "group": ["secure SSH command construction"],
+      "calls": [
+        {
+          "fn": "ssh-command.sshCommandArgv",
+          "args": ["operator@dev-box", "printf ok"],
+          "result": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "PermitLocalCommand=no",
+            "-o",
+            "RequestTTY=no",
+            "-o",
+            "ControlMaster=no",
+            "-o",
+            "ControlPath=none",
+            "-o",
+            "ControlPersist=no",
+            "-o",
+            "ConnectTimeout=8",
+            "-o",
+            "ConnectionAttempts=1",
+            "-o",
+            "ServerAliveInterval=10",
+            "-o",
+            "ServerAliveCountMax=3",
+            "--",
+            "operator@dev-box",
+            "printf ok"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "builds explicit stream-local forwards without profile options",
+      "group": ["secure SSH command construction"],
+      "calls": [
+        {
+          "fn": "ssh-command.sshTunnelArgv",
+          "args": [
+            "dev-box",
+            [
+              {
+                "local": "/tmp/a/control.sock",
+                "remote": "/remote/control.sock"
+              },
+              { "local": "/tmp/a/render.sock", "remote": "/remote/render.sock" }
+            ]
+          ],
+          "result": [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            "PermitLocalCommand=no",
+            "-o",
+            "RequestTTY=no",
+            "-o",
+            "ControlMaster=no",
+            "-o",
+            "ControlPath=none",
+            "-o",
+            "ControlPersist=no",
+            "-o",
+            "ConnectTimeout=8",
+            "-o",
+            "ConnectionAttempts=1",
+            "-o",
+            "ServerAliveInterval=10",
+            "-o",
+            "ServerAliveCountMax=3",
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-o",
+            "StreamLocalBindUnlink=yes",
+            "-o",
+            "StreamLocalBindMask=0177",
+            "-N",
+            "-L",
+            "/tmp/a/control.sock:/remote/control.sock",
+            "-L",
+            "/tmp/a/render.sock:/remote/render.sock",
+            "--",
+            "dev-box"
+          ]
+        }
+      ]
+    }
+  ]
+}

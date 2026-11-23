@@ -6,149 +6,18 @@ import {
   DEFAULT_MR_REVIEWS_SETTINGS,
   type MrReviewsSettings,
 } from "../../../shared/mrReviews";
-import {
-  ComplexityError,
-  complexityRefusal,
-  createComplexityGuard,
-  estimateComplexity,
-  GITLAB_MAX_COMPLEXITY,
-} from "./complexity";
+import { estimateComplexity } from "./complexity";
 import { createMrInbox } from "./inbox";
 import {
   createOwnForge,
   type FakeRequest,
   fakeRequests,
 } from "./own-forge.fixture";
-import {
-  gitlabInboxQuery,
-  gitlabOwnListQuery,
-  inboxParts,
-  mergeAnswers,
-  ownDetailsQuery,
-} from "./queries";
+import { gitlabOwnListQuery, ownDetailsQuery } from "./queries";
 import { openMrStore } from "./store";
-
-const REFUSED =
-  "GitLab: glab: Query has complexity of 272, which exceeds max complexity of 250";
-
-describe("query complexity", () => {
-  test("the estimate counts fields, resolvers and the items they load", () => {
-    expect(estimateComplexity("query { a b c }")).toBe(3);
-    expect(estimateComplexity("query { a { b c } }")).toBe(3);
-    // A resolver: its selection, 1, 1 for the sort, 1% per item loaded.
-    expect(
-      estimateComplexity("query { list(sort: X, first: 50) { nodes { a } } }"),
-    ).toBe(Math.ceil((2 + 1 + 1) * 1.5));
-    // Asked by id: no per-item part.
-    expect(
-      estimateComplexity('query { list(iids: ["1"], first: 50) { a } }'),
-    ).toBe(2);
-    // Strings with parentheses and fragments.
-    expect(
-      estimateComplexity(
-        'query { x: p(path: "a(b)") { ... on T { a b } __typename } }',
-      ),
-    ).toBe(Math.ceil((2 + 1) * 2));
-    expect(estimateComplexity("")).toBe(0);
-  });
-
-  test("the to-review query with three followed projects goes over GitLab's default", () => {
-    const followed = ["a/one", "a/two", "a/three"];
-    expect(estimateComplexity(gitlabInboxQuery(followed))).toBeGreaterThan(
-      GITLAB_MAX_COMPLEXITY,
-    );
-    // Each part fits on its own.
-    for (const part of inboxParts(followed))
-      expect(
-        estimateComplexity(gitlabInboxQuery(followed, [part])),
-      ).toBeLessThan(GITLAB_MAX_COMPLEXITY);
-  });
-
-  test("a refusal is read from an error or an answer", () => {
-    expect(complexityRefusal(new Error(REFUSED))).toEqual({
-      complexity: 272,
-      max: 250,
-    });
-    expect(
-      complexityRefusal({
-        errors: [
-          {
-            message:
-              "Query has complexity of 301, which exceeds max complexity of 200",
-          },
-        ],
-      }),
-    ).toEqual({ complexity: 301, max: 200 });
-    expect(complexityRefusal(new Error("GitLab: 502 Bad Gateway"))).toBeNull();
-    expect(complexityRefusal({ data: {} })).toBeNull();
-  });
-
-  test("batches stay under the budget; a refusal splits, learns and is not seen", async () => {
-    const guard = createComplexityGuard();
-    const build = (part: number[]) =>
-      `query { ${part.map((n) => `f${n}: p { a b c d e f g h i }`).join(" ")} }`;
-    const units = Array.from({ length: 30 }, (_, n) => n);
-    // 10 per unit: 25 fit in 250.
-    expect(
-      guard.pack("h", "gitlab", units, build).map((b) => b.length),
-    ).toEqual([25, 5]);
-    expect(guard.pack("h", "gitlab", units, build, 10)).toHaveLength(3);
-    // GitHub has no such limit until it says so.
-    expect(guard.pack("g", "github", units, build)).toHaveLength(1);
-
-    // The forge counts twice the estimate, with a limit of 100.
-    const asked: number[][] = [];
-    const answers = await guard.run(
-      "h",
-      "gitlab",
-      units,
-      build,
-      async (query, part) => {
-        const real = estimateComplexity(query) * 2;
-        if (real > 100)
-          throw new Error(
-            `GitLab: glab: Query has complexity of ${real}, which exceeds max complexity of 100`,
-          );
-        asked.push(part);
-        return { data: part };
-      },
-    );
-    expect(answers.flatMap((answer) => answer.data)).toEqual(units);
-    expect(
-      asked.every((part) => estimateComplexity(build(part)) * 2 <= 100),
-    ).toBe(true);
-    expect(guard.limit("h")?.max).toBe(100);
-    // Learned: the next run is cut right at once.
-    for (const part of guard.pack("h", "gitlab", units, build))
-      expect(estimateComplexity(build(part)) * 2).toBeLessThanOrEqual(100);
-
-    // One unit refused on its own: the error says so.
-    await expect(
-      guard.run("h", "gitlab", [1], build, async () => {
-        throw new Error(REFUSED);
-      }),
-    ).rejects.toBeInstanceOf(ComplexityError);
-    // Other errors pass through.
-    await expect(
-      guard.run("h", "gitlab", [1], build, async () => {
-        throw new Error("GitLab: 502");
-      }),
-    ).rejects.toThrow("502");
-  });
-
-  test("answers asked in parts merge into one", () => {
-    expect(
-      mergeAnswers([
-        { data: { currentUser: { username: "me", op: 1 } } },
-        { data: { currentUser: { mg: 2 }, f0: { x: 1 } } },
-        { errors: [{ message: "gone" }] },
-      ]),
-    ).toEqual({
-      data: { currentUser: { username: "me", op: 1, mg: 2 }, f0: { x: 1 } },
-      errors: [{ message: "gone" }],
-    });
-  });
-});
+import { runVectors } from "../../../contract/vectors/vectors";
+import * as complexity from "./complexity";
+import * as queries from "./queries";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -328,3 +197,6 @@ describe("the inbox under a GitLab complexity limit", () => {
     expect(authored.every((entry) => entry.own)).toBe(true);
   });
 });
+
+// The cases are contract/vectors/mr-complexity.json, the Rust side's too.
+runVectors("mr-complexity", { complexity, queries });

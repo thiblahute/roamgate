@@ -1,0 +1,241 @@
+{
+  "description": "The remote file protocol: parsing the helper's replies. Read by `bun test` in server/src/workspace/remote-files.test.ts.",
+  "modules": { "remote-files": "server/src/workspace/remote-files.ts" },
+  "cases": [
+    {
+      "name": "parses remote directory listings",
+      "group": ["remote file protocol parsers"],
+      "calls": [
+        {
+          "fn": "remote-files.parseRemoteFileList",
+          "args": [
+            "ROOT\tL3JlcG8=\nENTRY\tfile\t12\t2\tYi50eHQ=\nENTRY\tdirectory\t0\t1\tc3Jj\nTRUNCATED",
+            "packages/app"
+          ],
+          "result": {
+            "root": "/repo",
+            "path": "packages/app",
+            "entries": [
+              {
+                "name": "src",
+                "path": "packages/app/src",
+                "type": "directory",
+                "size": 0,
+                "mtime_ms": 1000,
+                "hidden": false
+              },
+              {
+                "name": "b.txt",
+                "path": "packages/app/b.txt",
+                "type": "file",
+                "size": 12,
+                "mtime_ms": 2000,
+                "hidden": false
+              }
+            ],
+            "truncated": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "parses text and image previews",
+      "group": ["remote file protocol parsers"],
+      "calls": [
+        {
+          "fn": "remote-files.parseRemoteFilePreview",
+          "args": ["META\tL3JlcG8=\t5\t9\tUkVBRE1FLm1k\naGVsbG8=", "README.md"],
+          "result": {
+            "root": "/repo",
+            "path": "README.md",
+            "size": 5,
+            "mtime_ms": 9000,
+            "truncated": false,
+            "text": "hello",
+            "binary": false
+          }
+        },
+        {
+          "fn": "remote-files.parseRemoteFilePreview",
+          "args": ["META\tL3JlcG8=\t3\t1\taW1hZ2UucG5n\ncG5n", "image.png"],
+          "result": {
+            "root": "/repo",
+            "path": "image.png",
+            "size": 3,
+            "mtime_ms": 1000,
+            "truncated": false,
+            "text": null,
+            "binary": true,
+            "mime_type": "image/png",
+            "image_data_url": "data:image/png;base64,cG5n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "never labels a short image payload as complete",
+      "group": ["remote file protocol parsers"],
+      "calls": [
+        {
+          "fn": "remote-files.parseRemoteFilePreview",
+          "args": [
+            {
+              "$text": [
+                "META\tL3JlcG8=\t614400\t1\taW1hZ2UuYXBuZw==\n",
+                ["A", 699052]
+              ]
+            },
+            "image.apng"
+          ],
+          "result": {
+            "root": "/repo",
+            "path": "image.apng",
+            "size": 614400,
+            "mtime_ms": 1000,
+            "truncated": true,
+            "text": null,
+            "binary": true,
+            "mime_type": "image/apng"
+          }
+        }
+      ]
+    },
+    {
+      "name": "parses directory previews without content",
+      "group": ["remote file protocol parsers"],
+      "calls": [
+        {
+          "fn": "remote-files.parseRemoteFilePreview",
+          "args": [
+            "META\tL3JlcG8=\t0\t9\tcGFja2FnZXMvYXBw\tdirectory",
+            "packages/app"
+          ],
+          "result": {
+            "root": "/repo",
+            "path": "packages/app",
+            "type": "directory",
+            "size": 0,
+            "mtime_ms": 9000,
+            "truncated": false,
+            "text": null,
+            "binary": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "parses resolved remote files",
+      "group": ["remote file protocol parsers"],
+      "calls": [
+        {
+          "fn": "remote-files.parseRemoteFileResolutions",
+          "args": ["FILE\tYS9iL2MucG5n\nFILE\tL3RtcC9pbWFnZS5wbmc="],
+          "result": ["a/b/c.png", "/tmp/image.png"]
+        }
+      ]
+    },
+    {
+      "name": "parses download, upload, and delete responses",
+      "group": ["remote file protocol parsers"],
+      "calls": [
+        {
+          "fn": "remote-files.parseRemoteFileDownload",
+          "args": [
+            "META\t4\tZGlyL2EudHh0\tYS50eHQ=\tdGV4dC9wbGFpbg==\nZGF0YQ==",
+            "dir/a.txt"
+          ],
+          "result": {
+            "filename": "a.txt",
+            "path": "dir/a.txt",
+            "size": 4,
+            "body": { "$buffer": "64617461" },
+            "contentType": "text/plain"
+          }
+        },
+        {
+          "fn": "remote-files.parseRemoteFileUpload",
+          "args": ["META\tZGlyL2EudHh0\t4\t1"],
+          "result": { "path": "dir/a.txt", "size": 4, "overwritten": true }
+        },
+        {
+          "fn": "remote-files.parseRemoteFileDelete",
+          "args": ["META\tZGly\tdirectory"],
+          "result": { "path": "dir", "type": "directory" }
+        }
+      ]
+    },
+    {
+      "name": "rejects malformed remote protocol responses",
+      "group": ["remote file protocol parsers"],
+      "calls": [
+        {
+          "fn": "remote-files.parseRemoteFilePreview",
+          "args": ["oops", "x"],
+          "throws": "oops"
+        },
+        {
+          "fn": "remote-files.parseRemoteFileDownload",
+          "args": ["oops", "x"],
+          "throws": "oops"
+        },
+        {
+          "fn": "remote-files.parseRemoteFileUpload",
+          "args": ["oops"],
+          "throws": "oops"
+        },
+        {
+          "fn": "remote-files.parseRemoteFileDelete",
+          "args": ["oops"],
+          "throws": "oops"
+        }
+      ]
+    },
+    {
+      "name": "remote image previews reject oversized files",
+      "calls": [
+        {
+          "fn": "remote-files.parseRemoteFilePreview",
+          "args": [
+            {
+              "$text": [
+                "META\tL3JlcG8=\t5242881\t1\tbGFyZ2UuYXBuZw==\n",
+                ["A", 699052]
+              ]
+            },
+            "large.apng"
+          ],
+          "result": {
+            "root": "/repo",
+            "path": "large.apng",
+            "size": 5242881,
+            "mtime_ms": 1000,
+            "truncated": true,
+            "text": null,
+            "binary": true,
+            "mime_type": "image/apng"
+          }
+        }
+      ]
+    },
+    {
+      "name": "parses a remote stat, and refuses anything else",
+      "calls": [
+        {
+          "fn": "remote-files.parseRemoteFileStat",
+          "args": ["STAT\t12\t1700000000\tfile\n"],
+          "result": { "type": "file", "size": 12, "mtime_ms": 1700000000000 }
+        },
+        {
+          "fn": "remote-files.parseRemoteFileStat",
+          "args": ["motd\nSTAT\t4096\t5\tdirectory\n"],
+          "result": { "type": "directory", "size": 0, "mtime_ms": 5000 }
+        },
+        {
+          "fn": "remote-files.parseRemoteFileStat",
+          "args": ["nope"],
+          "throws": "nope"
+        }
+      ]
+    }
+  ]
+}

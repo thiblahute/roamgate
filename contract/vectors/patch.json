@@ -1,0 +1,216 @@
+{
+  "description": "Unified diff parsing. Read by `bun test` in server/src/review/patch.test.ts.",
+  "modules": { "patch": "server/src/review/patch.ts" },
+  "cases": [
+    {
+      "name": "parses git diffs with renames, additions and numbered lines",
+      "calls": [
+        {
+          "fn": "patch.parseUnifiedDiff",
+          "args": [
+            "diff --git a/src/old.c b/src/new.c\nsimilarity index 90%\nrename from src/old.c\nrename to src/new.c\n--- a/src/old.c\n+++ b/src/new.c\n@@ -10,3 +10,4 @@ int main(void)\n a\n-b\n+c\n+d\n e\ndiff --git a/added.txt b/added.txt\nnew file mode 100644\n--- /dev/null\n+++ b/added.txt\n@@ -0,0 +1 @@\n+hello\n\\ No newline at end of file\n"
+          ],
+          "result": [
+            {
+              "path": "src/new.c",
+              "oldPath": "src/old.c",
+              "hunks": [
+                {
+                  "header": "@@ -10,3 +10,4 @@ int main(void)",
+                  "lines": [
+                    { "kind": " ", "old": 10, "new": 10, "text": "a" },
+                    { "kind": "-", "old": 11, "new": null, "text": "b" },
+                    { "kind": "+", "old": null, "new": 11, "text": "c" },
+                    { "kind": "+", "old": null, "new": 12, "text": "d" },
+                    { "kind": " ", "old": 12, "new": 13, "text": "e" }
+                  ]
+                }
+              ]
+            },
+            {
+              "path": "added.txt",
+              "oldPath": "added.txt",
+              "hunks": [
+                {
+                  "header": "@@ -0,0 +1 @@",
+                  "lines": [
+                    { "kind": "+", "old": null, "new": 1, "text": "hello" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a mailed patch: '--- ' after a finished hunk starts the next file",
+      "calls": [
+        {
+          "fn": "patch.parseUnifiedDiff",
+          "args": [
+            "--- a/one.c\n+++ b/one.c\n@@ -1,2 +1,2 @@\n-x\n+y\n z\n--- a/two.c\n+++ b/two.c\n@@ -5 +5 @@\n--- removed line that starts with dashes\n+new\n-- \n2.47.0"
+          ],
+          "result": [
+            {
+              "path": "one.c",
+              "oldPath": "one.c",
+              "hunks": [
+                {
+                  "header": "@@ -1,2 +1,2 @@",
+                  "lines": [
+                    { "kind": "-", "old": 1, "new": null, "text": "x" },
+                    { "kind": "+", "old": null, "new": 1, "text": "y" },
+                    { "kind": " ", "old": 2, "new": 2, "text": "z" }
+                  ]
+                }
+              ]
+            },
+            {
+              "path": "two.c",
+              "oldPath": "two.c",
+              "hunks": [
+                {
+                  "header": "@@ -5 +5 @@",
+                  "lines": [
+                    {
+                      "kind": "-",
+                      "old": 5,
+                      "new": null,
+                      "text": "-- removed line that starts with dashes"
+                    },
+                    { "kind": "+", "old": null, "new": 5, "text": "new" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "binary files and deletions",
+      "calls": [
+        {
+          "fn": "patch.parseUnifiedDiff",
+          "args": [
+            "diff --git a/img.png b/img.png\nBinary files a/img.png and b/img.png differ\ndiff --git a/gone.c b/gone.c\ndeleted file mode 100644\n--- a/gone.c\n+++ /dev/null\n@@ -1 +0,0 @@\n-bye"
+          ],
+          "result": [
+            {
+              "path": "img.png",
+              "oldPath": "img.png",
+              "hunks": [],
+              "binary": true
+            },
+            {
+              "path": "gone.c",
+              "oldPath": "gone.c",
+              "hunks": [
+                {
+                  "header": "@@ -1 +0,0 @@",
+                  "lines": [
+                    { "kind": "-", "old": 1, "new": null, "text": "bye" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "git's quoted names with UTF-8 bytes read as the real name",
+      "calls": [
+        {
+          "fn": "patch.parseUnifiedDiff",
+          "args": [
+            "diff --git \"a/caf\\303\\251.txt\" \"b/caf\\303\\251.txt\"\nindex 1111111..2222222 100644\n--- \"a/caf\\303\\251.txt\"\n+++ \"b/caf\\303\\251.txt\"\n@@ -1 +1 @@\n-a\n+b"
+          ],
+          "result": [
+            {
+              "path": "café.txt",
+              "oldPath": "café.txt",
+              "hunks": [
+                {
+                  "header": "@@ -1 +1 @@",
+                  "lines": [
+                    { "kind": "-", "old": 1, "new": null, "text": "a" },
+                    { "kind": "+", "old": null, "new": 1, "text": "b" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a quoted header without --- and +++ lines loses its prefix",
+      "calls": [
+        {
+          "fn": "patch.parseUnifiedDiff",
+          "args": [
+            "diff --git \"a/t\\tab\" \"b/t\\tab\"\nold mode 100644\nnew mode 100755"
+          ],
+          "result": [{ "path": "t\tab", "oldPath": "t\tab", "hunks": [] }]
+        }
+      ]
+    },
+    {
+      "name": "a header with one quoted side and one plain side",
+      "calls": [
+        {
+          "fn": "patch.parseUnifiedDiff",
+          "args": [
+            "diff --git a/plain \"b/caf\\303\\251\"\nold mode 100644\nnew mode 100755"
+          ],
+          "result": [{ "path": "café", "oldPath": "plain", "hunks": [] }]
+        }
+      ]
+    },
+    {
+      "name": "a pure rename of names with spaces takes its paths from rename lines",
+      "calls": [
+        {
+          "fn": "patch.parseUnifiedDiff",
+          "args": [
+            "diff --git a/x b/y b/z\nsimilarity index 100%\nrename from x b/y\nrename to z\ndiff --git a/x b/y b/z\nsimilarity index 100%\nrename from x\nrename to y b/z"
+          ],
+          "result": [
+            { "path": "z", "oldPath": "x b/y", "hunks": [] },
+            { "path": "y b/z", "oldPath": "x", "hunks": [] }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an empty line inside a hunk is a blank context line",
+      "calls": [
+        {
+          "fn": "patch.parseUnifiedDiff",
+          "args": [
+            "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,3 +1,3 @@\n a\n\n-b\n+B"
+          ],
+          "result": [
+            {
+              "path": "f",
+              "oldPath": "f",
+              "hunks": [
+                {
+                  "header": "@@ -1,3 +1,3 @@",
+                  "lines": [
+                    { "kind": " ", "old": 1, "new": 1, "text": "a" },
+                    { "kind": " ", "old": 2, "new": 2, "text": "" },
+                    { "kind": "-", "old": 3, "new": null, "text": "b" },
+                    { "kind": "+", "old": null, "new": 3, "text": "B" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

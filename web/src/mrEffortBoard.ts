@@ -1,4 +1,4 @@
-import type { MrInboxEntry, MrPlan } from "./mrReviews";
+import type { MrInboxEntry, MrPlan } from "../../shared/mrReviews";
 
 /**
  * An effort's Board: one card per planned request, in the column of where

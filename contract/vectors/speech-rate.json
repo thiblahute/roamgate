@@ -1,0 +1,74 @@
+{
+  "description": "Speech rates: valid rates, steps and labels. Read by `bun test` in shared/speechRate.test.ts.",
+  "modules": { "speechRate": "shared/speechRate.ts" },
+  "cases": [
+    {
+      "name": "accepts finite rates from 0.5 to 2 only",
+      "group": ["speech rate"],
+      "calls": [
+        { "value": "speechRate.DEFAULT_SPEECH_RATE", "result": 1.2 },
+        { "fn": "speechRate.isSpeechRate", "args": [1.2], "result": true },
+        { "fn": "speechRate.isSpeechRate", "args": [0.5], "result": true },
+        { "fn": "speechRate.isSpeechRate", "args": [2], "result": true },
+        { "fn": "speechRate.isSpeechRate", "args": [0.4], "result": false },
+        { "fn": "speechRate.isSpeechRate", "args": [2.5], "result": false },
+        {
+          "fn": "speechRate.isSpeechRate",
+          "args": [{ "$num": "NaN" }],
+          "result": false
+        },
+        { "fn": "speechRate.isSpeechRate", "args": ["1.2"], "result": false },
+        { "fn": "speechRate.speechRateOr", "args": [], "result": 1.2 },
+        { "fn": "speechRate.speechRateOr", "args": [9], "result": 1.2 },
+        { "fn": "speechRate.speechRateOr", "args": [1.1], "result": 1.1 }
+      ]
+    },
+    {
+      "name": "steps up through the presets, then back to 1",
+      "group": ["speech rate"],
+      "calls": [
+        { "fn": "speechRate.nextSpeechRate", "args": [1], "result": 1.1 },
+        { "fn": "speechRate.nextSpeechRate", "args": [1.2], "result": 1.3 },
+        { "fn": "speechRate.nextSpeechRate", "args": [1.5], "result": 1 },
+        { "fn": "speechRate.nextSpeechRate", "args": [1.25], "result": 1.3 },
+        { "fn": "speechRate.nextSpeechRate", "args": [1.8], "result": 1 }
+      ]
+    },
+    {
+      "name": "plays what was made at its own pace faster, the rest as made",
+      "group": ["speech rate"],
+      "calls": [
+        { "fn": "speechRate.playbackRateFor", "args": [1.2, 1], "result": 1.2 },
+        { "fn": "speechRate.playbackRateFor", "args": [1.2, 1.2], "result": 1 },
+        {
+          "fn": "speechRate.playbackRateFor",
+          "args": [1.5, 1.2],
+          "result": 1.25
+        },
+        { "fn": "speechRate.playbackRateFor", "args": [1.3, 0], "result": 1.3 },
+        {
+          "fn": "speechRate.playbackRateFor",
+          "args": [{ "$num": "NaN" }, 1],
+          "result": 1.2
+        }
+      ]
+    },
+    {
+      "name": "shows as a multiplier",
+      "group": ["speech rate"],
+      "calls": [
+        { "fn": "speechRate.formatSpeechRate", "args": [1], "result": "1x" },
+        {
+          "fn": "speechRate.formatSpeechRate",
+          "args": [1.2],
+          "result": "1.2x"
+        },
+        {
+          "fn": "speechRate.formatSpeechRate",
+          "args": [1.25],
+          "result": "1.25x"
+        }
+      ]
+    }
+  ]
+}

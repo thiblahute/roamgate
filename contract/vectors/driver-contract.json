@@ -1,0 +1,3654 @@
+{
+  "description": "The conversation drivers' contract: stream-json lines to driver events, prompts, answers, start commands and terminal readiness. Read by `bun test` in server/src/conversation/drivers/contract.test.ts.",
+  "modules": { "drivers": "server/src/conversation/drivers/index.ts" },
+  "cases": [
+    {
+      "name": "is registered under its agent and Herdr's name",
+      "group": ["claude driver contract"],
+      "calls": [
+        {
+          "fn": "drivers.conversationDrivers",
+          "args": [],
+          "result": [
+            {
+              "protocol": { "$handle": 1 },
+              "terminal": { "$handle": 2 },
+              "memory": { "$handle": 3 }
+            }
+          ]
+        },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        {
+          "fn": "drivers.conversationDriver",
+          "args": ["claude"],
+          "result": {
+            "protocol": { "$handle": 1 },
+            "terminal": { "$handle": 2 },
+            "memory": { "$handle": 3 }
+          }
+        },
+        { "on": 2, "get": "herdrAgent", "result": "claude" },
+        {
+          "fn": "drivers.driverForHerdrAgent",
+          "args": ["claude"],
+          "result": {
+            "protocol": { "$handle": 1 },
+            "terminal": { "$handle": 2 },
+            "memory": { "$handle": 3 }
+          }
+        },
+        { "on": 2, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "displayName", "result": "Claude" },
+        { "on": 1, "get": "rewind", "result": { "$handle": 4 } },
+        {
+          "on": 1,
+          "get": "capabilities",
+          "result": {
+            "steer": true,
+            "questions": true,
+            "alwaysAllow": true,
+            "rewind": { "conversation": true, "code": true },
+            "promptSuggestions": true,
+            "shellLines": "prelude",
+            "backgroundTasks": true,
+            "images": "base64",
+            "slashCommands": "claude",
+            "models": true,
+            "mcp": true,
+            "backgroundTools": true
+          }
+        },
+        { "on": 1, "get": "models", "result": { "$handle": 5 } },
+        {
+          "on": 1,
+          "get": "capabilities",
+          "result": {
+            "steer": true,
+            "questions": true,
+            "alwaysAllow": true,
+            "rewind": { "conversation": true, "code": true },
+            "promptSuggestions": true,
+            "shellLines": "prelude",
+            "backgroundTasks": true,
+            "images": "base64",
+            "slashCommands": "claude",
+            "models": true,
+            "mcp": true,
+            "backgroundTools": true
+          }
+        },
+        { "on": 1, "get": "mcp", "result": { "$handle": 6 } },
+        {
+          "on": 1,
+          "get": "capabilities",
+          "result": {
+            "steer": true,
+            "questions": true,
+            "alwaysAllow": true,
+            "rewind": { "conversation": true, "code": true },
+            "promptSuggestions": true,
+            "shellLines": "prelude",
+            "backgroundTasks": true,
+            "images": "base64",
+            "slashCommands": "claude",
+            "models": true,
+            "mcp": true,
+            "backgroundTools": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "a turn decodes to the session, its reply and its result",
+      "group": ["claude driver contract"],
+      "calls": [
+        {
+          "fn": "drivers.conversationDrivers",
+          "args": [],
+          "result": [
+            {
+              "protocol": { "$handle": 1 },
+              "terminal": { "$handle": 2 },
+              "memory": { "$handle": 3 }
+            }
+          ]
+        },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 7 }
+        },
+        {
+          "on": 7,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 7,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 7,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 7,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 7,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 7,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 7,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 7,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 7,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        { "on": 7, "method": "line", "args": ["not json"], "result": [] }
+      ]
+    },
+    {
+      "name": "its state saved mid-turn reads on as one codec would",
+      "group": ["claude driver contract"],
+      "calls": [
+        {
+          "fn": "drivers.conversationDrivers",
+          "args": [],
+          "result": [
+            {
+              "protocol": { "$handle": 1 },
+              "terminal": { "$handle": 2 },
+              "memory": { "$handle": 3 }
+            }
+          ]
+        },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 8 }
+        },
+        {
+          "on": 8,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 8,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 8,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 8,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 8,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 8,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 8,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 8,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 8,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 9 }
+        },
+        {
+          "on": 9,
+          "method": "save",
+          "args": [],
+          "result": { "message_id": "", "started": [], "blocks_seen": [] }
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 10 }
+        },
+        {
+          "on": 10,
+          "method": "restore",
+          "args": [{ "message_id": "", "started": [], "blocks_seen": [] }],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 10,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 10,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 10,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 10,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 10,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 10,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 10,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 10,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 10,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 11 }
+        },
+        {
+          "on": 11,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 11,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 11,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 11,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 11,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 11,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 11,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 11,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 11,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 12 }
+        },
+        {
+          "on": 12,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 12,
+          "method": "save",
+          "args": [],
+          "result": { "message_id": "", "started": [], "blocks_seen": [] }
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 13 }
+        },
+        {
+          "on": 13,
+          "method": "restore",
+          "args": [{ "message_id": "", "started": [], "blocks_seen": [] }],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 13,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 13,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 13,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 13,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 13,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 13,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 13,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 13,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 14 }
+        },
+        {
+          "on": 14,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 14,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 14,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 14,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 14,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 14,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 14,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 14,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 14,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 15 }
+        },
+        {
+          "on": 15,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 15,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 15,
+          "method": "save",
+          "args": [],
+          "result": { "message_id": "", "started": [], "blocks_seen": [] }
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 16 }
+        },
+        {
+          "on": 16,
+          "method": "restore",
+          "args": [{ "message_id": "", "started": [], "blocks_seen": [] }],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 16,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 16,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 16,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 16,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 16,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 16,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 16,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 17 }
+        },
+        {
+          "on": 17,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 17,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 17,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 17,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 17,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 17,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 17,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 17,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 17,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 18 }
+        },
+        {
+          "on": 18,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 18,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 18,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 18,
+          "method": "save",
+          "args": [],
+          "result": { "message_id": "msg_1", "started": [], "blocks_seen": [] }
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 19 }
+        },
+        {
+          "on": 19,
+          "method": "restore",
+          "args": [{ "message_id": "msg_1", "started": [], "blocks_seen": [] }],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 19,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 19,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 19,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 19,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 19,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 19,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 20 }
+        },
+        {
+          "on": 20,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 20,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 20,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 20,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 20,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 20,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 20,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 20,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 20,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 21 }
+        },
+        {
+          "on": 21,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 21,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 21,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 21,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 21,
+          "method": "save",
+          "args": [],
+          "result": {
+            "message_id": "msg_1",
+            "started": [["msg_1", [{ "index": 0, "type": "text" }]]],
+            "blocks_seen": []
+          }
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 22 }
+        },
+        {
+          "on": 22,
+          "method": "restore",
+          "args": [
+            {
+              "message_id": "msg_1",
+              "started": [["msg_1", [{ "index": 0, "type": "text" }]]],
+              "blocks_seen": []
+            }
+          ],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 22,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 22,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 22,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 22,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 22,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 23 }
+        },
+        {
+          "on": 23,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 23,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 23,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 23,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 23,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 23,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 23,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 23,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 23,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 24 }
+        },
+        {
+          "on": 24,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 24,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 24,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 24,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 24,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 24,
+          "method": "save",
+          "args": [],
+          "result": {
+            "message_id": "msg_1",
+            "started": [["msg_1", [{ "index": 0, "type": "text" }]]],
+            "blocks_seen": []
+          }
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 25 }
+        },
+        {
+          "on": 25,
+          "method": "restore",
+          "args": [
+            {
+              "message_id": "msg_1",
+              "started": [["msg_1", [{ "index": 0, "type": "text" }]]],
+              "blocks_seen": []
+            }
+          ],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 25,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 25,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 25,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 25,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 26 }
+        },
+        {
+          "on": 26,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 26,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 26,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 26,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 26,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 26,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 26,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 26,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 26,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 27 }
+        },
+        {
+          "on": 27,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 27,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 27,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 27,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 27,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 27,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 27,
+          "method": "save",
+          "args": [],
+          "result": {
+            "message_id": "msg_1",
+            "started": [["msg_1", [{ "index": 0, "type": "text" }]]],
+            "blocks_seen": []
+          }
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 28 }
+        },
+        {
+          "on": 28,
+          "method": "restore",
+          "args": [
+            {
+              "message_id": "msg_1",
+              "started": [["msg_1", [{ "index": 0, "type": "text" }]]],
+              "blocks_seen": []
+            }
+          ],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 28,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 28,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 28,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 29 }
+        },
+        {
+          "on": 29,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 29,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 29,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 29,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 29,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 29,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 29,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 29,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 29,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 30 }
+        },
+        {
+          "on": 30,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 30,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 30,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 30,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 30,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 30,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 30,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 30,
+          "method": "save",
+          "args": [],
+          "result": {
+            "message_id": "msg_1",
+            "started": [["msg_1", [{ "index": 0, "type": "text" }]]],
+            "blocks_seen": []
+          }
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 31 }
+        },
+        {
+          "on": 31,
+          "method": "restore",
+          "args": [
+            {
+              "message_id": "msg_1",
+              "started": [["msg_1", [{ "index": 0, "type": "text" }]]],
+              "blocks_seen": []
+            }
+          ],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 31,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 31,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 32 }
+        },
+        {
+          "on": 32,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 32,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 32,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 32,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 32,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 32,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 32,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 32,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 32,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 33 }
+        },
+        {
+          "on": 33,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 33,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 33,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 33,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 33,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 33,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 33,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 33,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 33,
+          "method": "save",
+          "args": [],
+          "result": {
+            "message_id": "msg_1",
+            "started": [["msg_1", []]],
+            "blocks_seen": [["msg_1", 1]]
+          }
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 34 }
+        },
+        {
+          "on": 34,
+          "method": "restore",
+          "args": [
+            {
+              "message_id": "msg_1",
+              "started": [["msg_1", []]],
+              "blocks_seen": [["msg_1", 1]]
+            }
+          ],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 34,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 35 }
+        },
+        {
+          "on": 35,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 35,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 35,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 35,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 35,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 35,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 35,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 35,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 35,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 36 }
+        },
+        {
+          "on": 36,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"cwd\":\"/w\"}"
+          ],
+          "result": [{ "kind": "init", "session_id": "s1", "cwd": "/w" }]
+        },
+        {
+          "on": 36,
+          "method": "line",
+          "args": [
+            "{\"type\":\"system\",\"subtype\":\"status\",\"status\":\"requesting\"}"
+          ],
+          "result": [{ "kind": "status", "status": "requesting" }]
+        },
+        {
+          "on": 36,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": []
+        },
+        {
+          "on": 36,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "block_start",
+              "message_id": "msg_1",
+              "index": 0,
+              "block": "text"
+            }
+          ]
+        },
+        {
+          "on": 36,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hel\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            {
+              "kind": "delta",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hel"
+            }
+          ]
+        },
+        {
+          "on": 36,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"lo\"}},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "delta", "message_id": "msg_1", "index": 0, "text": "lo" }
+          ]
+        },
+        {
+          "on": 36,
+          "method": "line",
+          "args": [
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0},\"session_id\":\"s1\",\"parent_tool_use_id\":null,\"uuid\":\"u\"}"
+          ],
+          "result": [
+            { "kind": "block_stop", "message_id": "msg_1", "index": 0 }
+          ]
+        },
+        {
+          "on": 36,
+          "method": "line",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"id\":\"msg_1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello\"}]},\"parent_tool_use_id\":null}"
+          ],
+          "result": [
+            {
+              "kind": "assistant_text",
+              "message_id": "msg_1",
+              "index": 0,
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "on": 36,
+          "method": "line",
+          "args": [
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello\",\"session_id\":\"s1\",\"duration_ms\":900}"
+          ],
+          "result": [
+            {
+              "kind": "result",
+              "subtype": "success",
+              "is_error": false,
+              "text": "Hello",
+              "interrupted": false,
+              "session_id": "s1",
+              "duration_ms": 900
+            }
+          ]
+        },
+        {
+          "on": 36,
+          "method": "save",
+          "args": [],
+          "result": {
+            "message_id": "msg_1",
+            "started": [["msg_1", []]],
+            "blocks_seen": [["msg_1", 1]]
+          }
+        },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 37 }
+        },
+        {
+          "on": 37,
+          "method": "restore",
+          "args": [
+            {
+              "message_id": "msg_1",
+              "started": [["msg_1", []]],
+              "blocks_seen": [["msg_1", 1]]
+            }
+          ],
+          "result": { "$undefined": true }
+        }
+      ]
+    },
+    {
+      "name": "a message is written as a user line, and read back if dropped",
+      "group": ["claude driver contract"],
+      "calls": [
+        {
+          "fn": "drivers.conversationDrivers",
+          "args": [],
+          "result": [
+            {
+              "protocol": { "$handle": 1 },
+              "terminal": { "$handle": 2 },
+              "memory": { "$handle": 3 }
+            }
+          ]
+        },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 38 }
+        },
+        {
+          "on": 38,
+          "method": "message",
+          "args": [
+            {
+              "text": "hello there",
+              "images": [],
+              "uuid": "m-1",
+              "prelude": [],
+              "steer": false
+            }
+          ],
+          "result": [
+            "{\"type\":\"user\",\"uuid\":\"m-1\",\"message\":{\"role\":\"user\",\"content\":\"hello there\"}}"
+          ]
+        },
+        {
+          "on": 1,
+          "method": "inputKind",
+          "args": [
+            "{\"type\":\"user\",\"uuid\":\"m-1\",\"message\":{\"role\":\"user\",\"content\":\"hello there\"}}"
+          ],
+          "result": { "kind": "user" }
+        },
+        {
+          "on": 1,
+          "method": "parseWrittenMessage",
+          "args": [
+            "{\"type\":\"user\",\"uuid\":\"m-1\",\"message\":{\"role\":\"user\",\"content\":\"hello there\"}}"
+          ],
+          "result": { "uuid": "m-1", "text": "hello there" }
+        },
+        {
+          "on": 38,
+          "method": "message",
+          "args": [
+            {
+              "text": "hello there",
+              "images": [],
+              "uuid": "m-1",
+              "prelude": ["$ ls\nfile"],
+              "steer": false
+            }
+          ],
+          "result": [
+            "{\"type\":\"user\",\"uuid\":\"m-1\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"$ ls\\nfile\"},{\"type\":\"text\",\"text\":\"hello there\"}]}}"
+          ]
+        },
+        {
+          "on": 1,
+          "method": "inputKind",
+          "args": [
+            "{\"type\":\"user\",\"uuid\":\"m-1\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"$ ls\\nfile\"},{\"type\":\"text\",\"text\":\"hello there\"}]}}"
+          ],
+          "result": { "kind": "user" }
+        },
+        {
+          "on": 1,
+          "method": "parseWrittenMessage",
+          "args": [
+            "{\"type\":\"user\",\"uuid\":\"m-1\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"$ ls\\nfile\"},{\"type\":\"text\",\"text\":\"hello there\"}]}}"
+          ],
+          "result": { "uuid": "m-1", "text": "$ ls\nfile\n\nhello there" }
+        },
+        {
+          "on": 1,
+          "method": "parseWrittenMessage",
+          "args": ["not json"],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "a message carries its images as the driver takes them",
+      "group": ["claude driver contract"],
+      "calls": [
+        {
+          "fn": "drivers.conversationDrivers",
+          "args": [],
+          "result": [
+            {
+              "protocol": { "$handle": 1 },
+              "terminal": { "$handle": 2 },
+              "memory": { "$handle": 3 }
+            }
+          ]
+        },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 39 }
+        },
+        {
+          "on": 1,
+          "get": "capabilities",
+          "result": {
+            "steer": true,
+            "questions": true,
+            "alwaysAllow": true,
+            "rewind": { "conversation": true, "code": true },
+            "promptSuggestions": true,
+            "shellLines": "prelude",
+            "backgroundTasks": true,
+            "images": "base64",
+            "slashCommands": "claude",
+            "models": true,
+            "mcp": true,
+            "backgroundTools": true
+          }
+        },
+        {
+          "on": 39,
+          "method": "message",
+          "args": [
+            {
+              "text": "",
+              "images": [
+                {
+                  "path": "/u/a.png",
+                  "media_type": "image/png",
+                  "data": "QUJD"
+                }
+              ],
+              "uuid": "m-2",
+              "prelude": [],
+              "steer": false
+            }
+          ],
+          "result": [
+            "{\"type\":\"user\",\"uuid\":\"m-2\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"QUJD\"}}]}}"
+          ]
+        },
+        {
+          "on": 1,
+          "get": "capabilities",
+          "result": {
+            "steer": true,
+            "questions": true,
+            "alwaysAllow": true,
+            "rewind": { "conversation": true, "code": true },
+            "promptSuggestions": true,
+            "shellLines": "prelude",
+            "backgroundTasks": true,
+            "images": "base64",
+            "slashCommands": "claude",
+            "models": true,
+            "mcp": true,
+            "backgroundTools": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "an interrupt is confirmed by a response with its id",
+      "group": ["claude driver contract"],
+      "calls": [
+        {
+          "fn": "drivers.conversationDrivers",
+          "args": [],
+          "result": [
+            {
+              "protocol": { "$handle": 1 },
+              "terminal": { "$handle": 2 },
+              "memory": { "$handle": 3 }
+            }
+          ]
+        },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 40 }
+        },
+        {
+          "on": 40,
+          "method": "interrupt",
+          "args": ["i-1"],
+          "result": [
+            "{\"type\":\"control_request\",\"request_id\":\"i-1\",\"request\":{\"subtype\":\"interrupt\"}}"
+          ]
+        },
+        {
+          "on": 1,
+          "method": "inputKind",
+          "args": [
+            "{\"type\":\"control_request\",\"request_id\":\"i-1\",\"request\":{\"subtype\":\"interrupt\"}}"
+          ],
+          "result": { "kind": "control_request" }
+        },
+        {
+          "on": 40,
+          "method": "line",
+          "args": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"i-1\"}}"
+          ],
+          "result": [{ "kind": "control_response", "request_id": "i-1" }]
+        }
+      ]
+    },
+    {
+      "name": "prompts are asked, answered, and noted as answers",
+      "group": ["claude driver contract"],
+      "calls": [
+        {
+          "fn": "drivers.conversationDrivers",
+          "args": [],
+          "result": [
+            {
+              "protocol": { "$handle": 1 },
+              "terminal": { "$handle": 2 },
+              "memory": { "$handle": 3 }
+            }
+          ]
+        },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 41 }
+        },
+        {
+          "on": 41,
+          "method": "line",
+          "args": [
+            "{\"type\":\"control_request\",\"request_id\":\"p1\",\"request\":{\"subtype\":\"can_use_tool\",\"tool_name\":\"Bash\",\"input\":{\"command\":\"ls\"},\"tool_use_id\":\"toolu_1\",\"permission_suggestions\":[{\"type\":\"addRules\"}]}}"
+          ],
+          "result": [
+            {
+              "kind": "permission_request",
+              "request_id": "p1",
+              "tool_name": "Bash",
+              "input": { "command": "ls" },
+              "tool_use_id": "toolu_1",
+              "suggestions": [{ "type": "addRules" }],
+              "requires_user_interaction": false
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "promptOf",
+          "args": [
+            {
+              "kind": "permission_request",
+              "request_id": "p1",
+              "tool_name": "Bash",
+              "input": { "command": "ls" },
+              "tool_use_id": "toolu_1",
+              "suggestions": [{ "type": "addRules" }],
+              "requires_user_interaction": false
+            }
+          ],
+          "result": {
+            "tool": "Bash",
+            "input": { "command": "ls" },
+            "canAlways": true
+          }
+        },
+        {
+          "on": 1,
+          "get": "capabilities",
+          "result": {
+            "steer": true,
+            "questions": true,
+            "alwaysAllow": true,
+            "rewind": { "conversation": true, "code": true },
+            "promptSuggestions": true,
+            "shellLines": "prelude",
+            "backgroundTasks": true,
+            "images": "base64",
+            "slashCommands": "claude",
+            "models": true,
+            "mcp": true,
+            "backgroundTools": true
+          }
+        },
+        {
+          "on": 41,
+          "method": "line",
+          "args": [
+            "{\"type\":\"control_request\",\"request_id\":\"q1\",\"request\":{\"subtype\":\"can_use_tool\",\"tool_name\":\"AskUserQuestion\",\"input\":{\"questions\":[{\"question\":\"Which one?\",\"header\":\"Pick\",\"options\":[{\"label\":\"A\"},{\"label\":\"B\"}],\"multiSelect\":false}]},\"tool_use_id\":\"toolu_q\"}}"
+          ],
+          "result": [
+            {
+              "kind": "permission_request",
+              "request_id": "q1",
+              "tool_name": "AskUserQuestion",
+              "input": {
+                "questions": [
+                  {
+                    "question": "Which one?",
+                    "header": "Pick",
+                    "options": [{ "label": "A" }, { "label": "B" }],
+                    "multiSelect": false
+                  }
+                ]
+              },
+              "tool_use_id": "toolu_q",
+              "suggestions": [],
+              "requires_user_interaction": false
+            }
+          ]
+        },
+        {
+          "on": 1,
+          "method": "promptOf",
+          "args": [
+            {
+              "kind": "permission_request",
+              "request_id": "q1",
+              "tool_name": "AskUserQuestion",
+              "input": {
+                "questions": [
+                  {
+                    "question": "Which one?",
+                    "header": "Pick",
+                    "options": [{ "label": "A" }, { "label": "B" }],
+                    "multiSelect": false
+                  }
+                ]
+              },
+              "tool_use_id": "toolu_q",
+              "suggestions": [],
+              "requires_user_interaction": false
+            }
+          ],
+          "result": {
+            "tool": "AskUserQuestion",
+            "input": { "question": "Which one?" },
+            "canAlways": false,
+            "questions": [
+              {
+                "question": "Which one?",
+                "header": "Pick",
+                "options": [{ "label": "A" }, { "label": "B" }],
+                "multiSelect": false
+              }
+            ]
+          }
+        },
+        {
+          "on": 1,
+          "get": "capabilities",
+          "result": {
+            "steer": true,
+            "questions": true,
+            "alwaysAllow": true,
+            "rewind": { "conversation": true, "code": true },
+            "promptSuggestions": true,
+            "shellLines": "prelude",
+            "backgroundTasks": true,
+            "images": "base64",
+            "slashCommands": "claude",
+            "models": true,
+            "mcp": true,
+            "backgroundTools": true
+          }
+        },
+        {
+          "on": 41,
+          "method": "answer",
+          "args": [
+            {
+              "kind": "permission_request",
+              "request_id": "p1",
+              "tool_name": "Bash",
+              "input": { "command": "ls" },
+              "tool_use_id": "toolu_1",
+              "suggestions": [{ "type": "addRules" }],
+              "requires_user_interaction": false
+            },
+            "allow"
+          ],
+          "result": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"p1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"ls\"}}}}"
+          ]
+        },
+        {
+          "on": 1,
+          "method": "inputKind",
+          "args": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"p1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"ls\"}}}}"
+          ],
+          "result": { "kind": "control_response", "request_id": "p1" }
+        },
+        { "on": 1, "get": "answerKind", "result": "control_response" },
+        {
+          "on": 41,
+          "method": "answer",
+          "args": [
+            {
+              "kind": "permission_request",
+              "request_id": "p1",
+              "tool_name": "Bash",
+              "input": { "command": "ls" },
+              "tool_use_id": "toolu_1",
+              "suggestions": [{ "type": "addRules" }],
+              "requires_user_interaction": false
+            },
+            "always"
+          ],
+          "result": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"p1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"ls\"},\"updatedPermissions\":[{\"type\":\"addRules\"}]}}}"
+          ]
+        },
+        {
+          "on": 1,
+          "method": "inputKind",
+          "args": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"p1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"ls\"},\"updatedPermissions\":[{\"type\":\"addRules\"}]}}}"
+          ],
+          "result": { "kind": "control_response", "request_id": "p1" }
+        },
+        { "on": 1, "get": "answerKind", "result": "control_response" },
+        {
+          "on": 41,
+          "method": "answer",
+          "args": [
+            {
+              "kind": "permission_request",
+              "request_id": "p1",
+              "tool_name": "Bash",
+              "input": { "command": "ls" },
+              "tool_use_id": "toolu_1",
+              "suggestions": [{ "type": "addRules" }],
+              "requires_user_interaction": false
+            },
+            "deny"
+          ],
+          "result": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"p1\",\"response\":{\"behavior\":\"deny\",\"message\":\"The user said no from Roamgate\",\"interrupt\":false}}}"
+          ]
+        },
+        {
+          "on": 1,
+          "method": "inputKind",
+          "args": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"p1\",\"response\":{\"behavior\":\"deny\",\"message\":\"The user said no from Roamgate\",\"interrupt\":false}}}"
+          ],
+          "result": { "kind": "control_response", "request_id": "p1" }
+        },
+        { "on": 1, "get": "answerKind", "result": "control_response" },
+        {
+          "on": 41,
+          "method": "answer",
+          "args": [
+            {
+              "kind": "permission_request",
+              "request_id": "p1",
+              "tool_name": "Bash",
+              "input": { "command": "ls" },
+              "tool_use_id": "toolu_1",
+              "suggestions": [{ "type": "addRules" }],
+              "requires_user_interaction": false
+            },
+            "dismiss"
+          ],
+          "result": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"p1\",\"response\":{\"behavior\":\"deny\",\"message\":\"The user dismissed this request without answering.\",\"interrupt\":false}}}"
+          ]
+        },
+        {
+          "on": 1,
+          "method": "inputKind",
+          "args": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"p1\",\"response\":{\"behavior\":\"deny\",\"message\":\"The user dismissed this request without answering.\",\"interrupt\":false}}}"
+          ],
+          "result": { "kind": "control_response", "request_id": "p1" }
+        },
+        { "on": 1, "get": "answerKind", "result": "control_response" },
+        {
+          "on": 41,
+          "method": "answer",
+          "args": [
+            {
+              "kind": "permission_request",
+              "request_id": "p1",
+              "tool_name": "Bash",
+              "input": { "command": "ls" },
+              "tool_use_id": "toolu_1",
+              "suggestions": [{ "type": "addRules" }],
+              "requires_user_interaction": false
+            },
+            null
+          ],
+          "result": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"p1\",\"response\":{\"behavior\":\"deny\",\"message\":\"Nobody answered in Roamgate in time\",\"interrupt\":false}}}"
+          ]
+        },
+        {
+          "on": 1,
+          "method": "inputKind",
+          "args": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"p1\",\"response\":{\"behavior\":\"deny\",\"message\":\"Nobody answered in Roamgate in time\",\"interrupt\":false}}}"
+          ],
+          "result": { "kind": "control_response", "request_id": "p1" }
+        },
+        { "on": 1, "get": "answerKind", "result": "control_response" },
+        {
+          "on": 41,
+          "method": "answer",
+          "args": [
+            {
+              "kind": "permission_request",
+              "request_id": "q1",
+              "tool_name": "AskUserQuestion",
+              "input": {
+                "questions": [
+                  {
+                    "question": "Which one?",
+                    "header": "Pick",
+                    "options": [{ "label": "A" }, { "label": "B" }],
+                    "multiSelect": false
+                  }
+                ]
+              },
+              "tool_use_id": "toolu_q",
+              "suggestions": [],
+              "requires_user_interaction": false
+            },
+            { "answers": { "Which one?": "A" } }
+          ],
+          "result": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"q1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"questions\":[{\"question\":\"Which one?\",\"header\":\"Pick\",\"options\":[{\"label\":\"A\"},{\"label\":\"B\"}],\"multiSelect\":false}],\"answers\":{\"Which one?\":\"A\"}}}}}"
+          ]
+        },
+        {
+          "on": 1,
+          "method": "inputKind",
+          "args": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"q1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"questions\":[{\"question\":\"Which one?\",\"header\":\"Pick\",\"options\":[{\"label\":\"A\"},{\"label\":\"B\"}],\"multiSelect\":false}],\"answers\":{\"Which one?\":\"A\"}}}}}"
+          ],
+          "result": { "kind": "control_response", "request_id": "q1" }
+        },
+        { "on": 1, "get": "answerKind", "result": "control_response" }
+      ]
+    },
+    {
+      "name": "its own requests are answered by a response with their id",
+      "group": ["claude driver contract"],
+      "calls": [
+        {
+          "fn": "drivers.conversationDrivers",
+          "args": [],
+          "result": [
+            {
+              "protocol": { "$handle": 1 },
+              "terminal": { "$handle": 2 },
+              "memory": { "$handle": 3 }
+            }
+          ]
+        },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        {
+          "on": 1,
+          "method": "createCodec",
+          "args": [],
+          "result": { "$handle": 42 }
+        },
+        {
+          "on": 42,
+          "method": "request",
+          "args": [
+            "rewind_conversation",
+            { "target_message_uuid": "m1" },
+            "r-1"
+          ],
+          "result": [
+            "{\"type\":\"control_request\",\"request_id\":\"r-1\",\"request\":{\"subtype\":\"rewind_conversation\",\"target_message_uuid\":\"m1\"}}"
+          ]
+        },
+        {
+          "on": 42,
+          "method": "line",
+          "args": [
+            "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"r-1\",\"response\":{\"rewound\":true}}}"
+          ],
+          "result": [
+            {
+              "kind": "control_response",
+              "request_id": "r-1",
+              "response": { "rewound": true }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "its start command runs headless, without Herdr's pane env",
+      "group": ["claude driver contract"],
+      "calls": [
+        {
+          "fn": "drivers.conversationDrivers",
+          "args": [],
+          "result": [
+            {
+              "protocol": { "$handle": 1 },
+              "terminal": { "$handle": 2 },
+              "memory": { "$handle": 3 }
+            }
+          ]
+        },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        {
+          "on": 1,
+          "method": "startCommand",
+          "args": [
+            {
+              "sessionId": "11111111-2222-3333-4444-555555555555",
+              "cwd": "/work",
+              "flags": []
+            }
+          ],
+          "result": {
+            "argv": [
+              "claude",
+              "-p",
+              "--resume",
+              "11111111-2222-3333-4444-555555555555",
+              "--input-format",
+              "stream-json",
+              "--output-format",
+              "stream-json",
+              "--include-partial-messages",
+              "--verbose",
+              "--replay-user-messages",
+              "--permission-prompt-tool",
+              "stdio",
+              "--prompt-suggestions",
+              "true"
+            ],
+            "cwd": "/work",
+            "drop": [
+              "CLAUDECODE",
+              "CLAUDE_PID",
+              "CLAUDE_EFFORT",
+              "CLAUDE_PLUGIN_DATA",
+              "ANTHROPIC_API_KEY",
+              "HERDR_ENV",
+              "HERDR_PANE_ID",
+              "HERDR_SOCKET_PATH"
+            ],
+            "drop_prefixes": ["CLAUDE_CODE_"],
+            "copy": {
+              "HERDR_PANE_ID": "ROAMGATE_PANE_ID",
+              "HERDR_SOCKET_PATH": "ROAMGATE_HERDR_SOCKET_PATH"
+            },
+            "set": {
+              "ROAMGATE_HEADLESS": "1",
+              "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING": "1"
+            },
+            "api_key": { "policy": "claude_config" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "the terminal tells its TUI from the headless process",
+      "group": ["claude driver contract"],
+      "calls": [
+        {
+          "fn": "drivers.conversationDrivers",
+          "args": [],
+          "result": [
+            {
+              "protocol": { "$handle": 1 },
+              "terminal": { "$handle": 2 },
+              "memory": { "$handle": 3 }
+            }
+          ]
+        },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        {
+          "on": 1,
+          "method": "startCommand",
+          "args": [
+            {
+              "sessionId": "11111111-2222-3333-4444-555555555555",
+              "cwd": "/work"
+            }
+          ],
+          "result": {
+            "argv": [
+              "claude",
+              "-p",
+              "--resume",
+              "11111111-2222-3333-4444-555555555555",
+              "--input-format",
+              "stream-json",
+              "--output-format",
+              "stream-json",
+              "--include-partial-messages",
+              "--verbose",
+              "--replay-user-messages",
+              "--permission-prompt-tool",
+              "stdio",
+              "--prompt-suggestions",
+              "true"
+            ],
+            "cwd": "/work",
+            "drop": [
+              "CLAUDECODE",
+              "CLAUDE_PID",
+              "CLAUDE_EFFORT",
+              "CLAUDE_PLUGIN_DATA",
+              "ANTHROPIC_API_KEY",
+              "HERDR_ENV",
+              "HERDR_PANE_ID",
+              "HERDR_SOCKET_PATH"
+            ],
+            "drop_prefixes": ["CLAUDE_CODE_"],
+            "copy": {
+              "HERDR_PANE_ID": "ROAMGATE_PANE_ID",
+              "HERDR_SOCKET_PATH": "ROAMGATE_HERDR_SOCKET_PATH"
+            },
+            "set": {
+              "ROAMGATE_HEADLESS": "1",
+              "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING": "1"
+            },
+            "api_key": { "policy": "claude_config" }
+          }
+        },
+        {
+          "on": 2,
+          "method": "resumeArgv",
+          "args": ["11111111-2222-3333-4444-555555555555", []],
+          "result": [
+            "claude",
+            "--resume",
+            "11111111-2222-3333-4444-555555555555"
+          ]
+        },
+        {
+          "on": 2,
+          "method": "isAgentProcess",
+          "args": [
+            {
+              "pid": 1,
+              "argv": [
+                "claude",
+                "--resume",
+                "11111111-2222-3333-4444-555555555555"
+              ]
+            }
+          ],
+          "result": true
+        },
+        {
+          "on": 2,
+          "method": "isAgentProcess",
+          "args": [
+            {
+              "pid": 2,
+              "argv": [
+                "claude",
+                "-p",
+                "--resume",
+                "11111111-2222-3333-4444-555555555555",
+                "--input-format",
+                "stream-json",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--verbose",
+                "--replay-user-messages",
+                "--permission-prompt-tool",
+                "stdio",
+                "--prompt-suggestions",
+                "true"
+              ]
+            }
+          ],
+          "result": false
+        },
+        {
+          "on": 2,
+          "method": "headlessProbe",
+          "args": [
+            "  101 claude -p --resume 11111111-2222-3333-4444-555555555555 --input-format stream-json --output-format stream-json --include-partial-messages --verbose --replay-user-messages --permission-prompt-tool stdio --prompt-suggestions true\n  102 claude --resume 11111111-2222-3333-4444-555555555555",
+            ["11111111-2222-3333-4444-555555555555"]
+          ],
+          "result": true
+        },
+        {
+          "on": 2,
+          "method": "headlessProbe",
+          "args": [
+            "  102 claude --resume 11111111-2222-3333-4444-555555555555",
+            ["11111111-2222-3333-4444-555555555555"]
+          ],
+          "result": false
+        },
+        {
+          "on": 2,
+          "method": "headlessProbe",
+          "args": [
+            "  101 claude -p --resume 11111111-2222-3333-4444-555555555555 --input-format stream-json --output-format stream-json --include-partial-messages --verbose --replay-user-messages --permission-prompt-tool stdio --prompt-suggestions true\n  102 claude --resume 11111111-2222-3333-4444-555555555555",
+            ["other-session"]
+          ],
+          "result": false
+        },
+        {
+          "on": 2,
+          "method": "interactiveWriter",
+          "args": [
+            "  101 claude -p --resume 11111111-2222-3333-4444-555555555555 --input-format stream-json --output-format stream-json --include-partial-messages --verbose --replay-user-messages --permission-prompt-tool stdio --prompt-suggestions true\n  102 claude --resume 11111111-2222-3333-4444-555555555555",
+            ["11111111-2222-3333-4444-555555555555"]
+          ],
+          "result": 102
+        },
+        {
+          "on": 2,
+          "method": "interactiveWriter",
+          "args": [
+            "  101 claude -p --resume 11111111-2222-3333-4444-555555555555 --input-format stream-json --output-format stream-json --include-partial-messages --verbose --replay-user-messages --permission-prompt-tool stdio --prompt-suggestions true\n  102 claude --resume 11111111-2222-3333-4444-555555555555",
+            ["11111111-2222-3333-4444-555555555555"],
+            [102]
+          ],
+          "result": null
+        },
+        { "on": 2, "get": "exitCommand", "result": "/exit" }
+      ]
+    },
+    {
+      "name": "an idle TUI is ready; a screen without its prompt box is not",
+      "group": ["claude driver contract"],
+      "calls": [
+        {
+          "fn": "drivers.conversationDrivers",
+          "args": [],
+          "result": [
+            {
+              "protocol": { "$handle": 1 },
+              "terminal": { "$handle": 2 },
+              "memory": { "$handle": 3 }
+            }
+          ]
+        },
+        { "on": 1, "get": "agent", "result": "claude" },
+        { "on": 1, "get": "agent", "result": "claude" },
+        {
+          "on": 2,
+          "method": "readiness",
+          "args": [
+            "  some answer\n────────────────────────\n❯ \n────────────────────────\n  -- INSERT -- ⏵⏵ auto mode on"
+          ],
+          "result": {
+            "background": null,
+            "backgroundKnown": false,
+            "refusal": null
+          }
+        },
+        {
+          "on": 2,
+          "method": "readiness",
+          "args": [""],
+          "result": {
+            "background": null,
+            "backgroundKnown": false,
+            "refusal": "Claude's prompt box is not on screen"
+          }
+        }
+      ]
+    }
+  ]
+}

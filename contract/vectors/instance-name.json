@@ -1,0 +1,111 @@
+{
+  "description": "Instance names: cleaning and defaults. Read by `bun test` in shared/instanceName.test.ts.",
+  "modules": { "instanceName": "shared/instanceName.ts" },
+  "cases": [
+    {
+      "name": "names default cleanly and normalize a short instance suffix",
+      "calls": [
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": [" \t\n"],
+          "result": ""
+        },
+        {
+          "fn": "instanceName.instanceDisplayName",
+          "args": [""],
+          "result": "Roamgate"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": [" Home \n Office "],
+          "result": "Home Office"
+        },
+        {
+          "fn": "instanceName.instanceDisplayName",
+          "args": ["Home Office"],
+          "result": "Roamgate · Home Office"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": ["家里 🏠"],
+          "result": "家里 🏠"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": ["<Work> \"A\" & B"],
+          "result": "<Work> \"A\" & B"
+        }
+      ]
+    },
+    {
+      "name": "validates types, invisible controls and Unicode character length",
+      "calls": [
+        { "value": "instanceName.MAX_TITLE_SUFFIX_LENGTH", "result": 32 },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": [null],
+          "throws": "Title suffix must be text"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": [],
+          "throws": "Title suffix must be text"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": [7],
+          "throws": "Title suffix must be text"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": [{}],
+          "throws": "Title suffix must be text"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": [[]],
+          "throws": "Title suffix must be text"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": ["Home\u0000"],
+          "throws": "Title suffix must not contain control characters"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": ["Home"],
+          "throws": "Title suffix must not contain control characters"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": ["Home"],
+          "throws": "Title suffix must not contain control characters"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": ["Home‮"],
+          "throws": "Title suffix must not contain control characters"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": ["Home⁦"],
+          "throws": "Title suffix must not contain control characters"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": [
+            "🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠"
+          ],
+          "result": "🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠"
+        },
+        {
+          "fn": "instanceName.normalizeTitleSuffix",
+          "args": [
+            "🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠🏠"
+          ],
+          "throws": "Title suffix must be 32 characters or fewer"
+        }
+      ]
+    }
+  ]
+}

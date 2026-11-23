@@ -6,7 +6,7 @@
  * sheet and the Workspaces list already read. Presentation only: what Herdr
  * reports, and what Roamgate tells it, stay as they are.
  */
-import type { AgentTask } from "../../server/src/agent/session-tasks";
+import type { AgentTask } from "../../shared/agentSession";
 import { formatDuration } from "./agentTasksView";
 
 /** The part of a task this needs: the Workspaces list's summaries are enough. */

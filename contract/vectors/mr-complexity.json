@@ -1,0 +1,1529 @@
+{
+  "description": "GitLab query complexity: estimates, refusals and batching under a budget. Read by `bun test` in server/src/mr-reviews/complexity.test.ts.",
+  "modules": {
+    "complexity": "server/src/mr-reviews/complexity.ts",
+    "queries": "server/src/mr-reviews/queries.ts"
+  },
+  "cases": [
+    {
+      "name": "the estimate counts fields, resolvers and the items they load",
+      "group": ["query complexity"],
+      "calls": [
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": ["query { a b c }"],
+          "result": 3
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": ["query { a { b c } }"],
+          "result": 3
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": ["query { list(sort: X, first: 50) { nodes { a } } }"],
+          "result": 6
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": ["query { list(iids: [\"1\"], first: 50) { a } }"],
+          "result": 2
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { x: p(path: \"a(b)\") { ... on T { a b } __typename } }"
+          ],
+          "result": 6
+        },
+        { "fn": "complexity.estimateComplexity", "args": [""], "result": 0 }
+      ]
+    },
+    {
+      "name": "the to-review query with three followed projects goes over GitLab's default",
+      "group": ["query complexity"],
+      "calls": [
+        { "value": "complexity.GITLAB_MAX_COMPLEXITY", "result": 250 },
+        {
+          "fn": "queries.gitlabInboxQuery",
+          "args": [["a/one", "a/two", "a/three"]],
+          "result": {
+            "$text": [
+              "query { currentUser { username rr: reviewRequestedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } as: assignedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } todos(state: pending, action: [mentioned, directly_addressed], type: [MERGEREQUEST], first: 50) { nodes { action target { ... on MergeRequest { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } } } } f0: project(fullPath: \"a/one\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } f1: project(fullPath: \"a/two\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } f2: project(fullPath: \"a/three\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } }"
+            ]
+          }
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            {
+              "$text": [
+                "query { currentUser { username rr: reviewRequestedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } as: assignedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } todos(state: pending, action: [mentioned, directly_addressed], type: [MERGEREQUEST], first: 50) { nodes { action target { ... on MergeRequest { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } } } } f0: project(fullPath: \"a/one\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } f1: project(fullPath: \"a/two\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } f2: project(fullPath: \"a/three\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } }"
+              ]
+            }
+          ],
+          "result": 342
+        },
+        {
+          "fn": "queries.inboxParts",
+          "args": [["a/one", "a/two", "a/three"]],
+          "result": ["mine", 0, 1, 2]
+        },
+        {
+          "fn": "queries.gitlabInboxQuery",
+          "args": [["a/one", "a/two", "a/three"], ["mine"]],
+          "result": "query { currentUser { username rr: reviewRequestedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } as: assignedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } todos(state: pending, action: [mentioned, directly_addressed], type: [MERGEREQUEST], first: 50) { nodes { action target { ... on MergeRequest { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } } } }  }"
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { currentUser { username rr: reviewRequestedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } as: assignedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } todos(state: pending, action: [mentioned, directly_addressed], type: [MERGEREQUEST], first: 50) { nodes { action target { ... on MergeRequest { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } } } }  }"
+          ],
+          "result": 112
+        },
+        {
+          "fn": "queries.gitlabInboxQuery",
+          "args": [["a/one", "a/two", "a/three"], [0]],
+          "result": "query { f0: project(fullPath: \"a/one\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } }"
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f0: project(fullPath: \"a/one\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } }"
+          ],
+          "result": 77
+        },
+        {
+          "fn": "queries.gitlabInboxQuery",
+          "args": [["a/one", "a/two", "a/three"], [1]],
+          "result": "query { f1: project(fullPath: \"a/two\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } }"
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f1: project(fullPath: \"a/two\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } }"
+          ],
+          "result": 77
+        },
+        {
+          "fn": "queries.gitlabInboxQuery",
+          "args": [["a/one", "a/two", "a/three"], [2]],
+          "result": "query { f2: project(fullPath: \"a/three\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } }"
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f2: project(fullPath: \"a/three\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } }"
+          ],
+          "result": 77
+        }
+      ]
+    },
+    {
+      "name": "a refusal is read from an error or an answer",
+      "group": ["query complexity"],
+      "calls": [
+        {
+          "fn": "complexity.complexityRefusal",
+          "args": [
+            {
+              "$error": {
+                "name": "Error",
+                "message": "GitLab: glab: Query has complexity of 272, which exceeds max complexity of 250"
+              }
+            }
+          ],
+          "result": { "complexity": 272, "max": 250 }
+        },
+        {
+          "fn": "complexity.complexityRefusal",
+          "args": [
+            {
+              "errors": [
+                {
+                  "message": "Query has complexity of 301, which exceeds max complexity of 200"
+                }
+              ]
+            }
+          ],
+          "result": { "complexity": 301, "max": 200 }
+        },
+        {
+          "fn": "complexity.complexityRefusal",
+          "args": [
+            {
+              "$error": {
+                "name": "Error",
+                "message": "GitLab: 502 Bad Gateway"
+              }
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "complexity.complexityRefusal",
+          "args": [{ "data": {} }],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "batches stay under the budget; a refusal splits, learns and is not seen",
+      "group": ["query complexity"],
+      "calls": [
+        {
+          "fn": "complexity.createComplexityGuard",
+          "args": [],
+          "result": { "$handle": 1 }
+        },
+        {
+          "on": 1,
+          "method": "pack",
+          "args": [
+            "h",
+            "gitlab",
+            [
+              0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+              19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
+            ],
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": [[0, 1]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24, 25
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[25, 26]],
+                    "result": "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[25, 26, 27]],
+                    "result": "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[25, 26, 27, 28]],
+                    "result": "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[25, 26, 27, 28, 29]],
+                    "result": "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } f29: p { a b c d e f g h i } }"
+                  }
+                ]
+              }
+            }
+          ],
+          "result": [
+            [
+              0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+              19, 20, 21, 22, 23, 24
+            ],
+            [25, 26, 27, 28, 29]
+          ]
+        },
+        {
+          "on": 1,
+          "method": "pack",
+          "args": [
+            "h",
+            "gitlab",
+            [
+              0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+              19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
+            ],
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": [[0, 1]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[10, 11]],
+                    "result": "query { f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[10, 11, 12]],
+                    "result": "query { f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[10, 11, 12, 13]],
+                    "result": "query { f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[10, 11, 12, 13, 14]],
+                    "result": "query { f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[10, 11, 12, 13, 14, 15]],
+                    "result": "query { f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[10, 11, 12, 13, 14, 15, 16]],
+                    "result": "query { f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[10, 11, 12, 13, 14, 15, 16, 17]],
+                    "result": "query { f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[10, 11, 12, 13, 14, 15, 16, 17, 18]],
+                    "result": "query { f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[10, 11, 12, 13, 14, 15, 16, 17, 18, 19]],
+                    "result": "query { f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23, 24]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23, 24, 25]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23, 24, 25, 26]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23, 24, 25, 26, 27]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23, 24, 25, 26, 27, 28]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23, 24, 25, 26, 27, 28, 29]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } f29: p { a b c d e f g h i } }"
+                  }
+                ]
+              }
+            },
+            10
+          ],
+          "result": [
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            [10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+            [20, 21, 22, 23, 24, 25, 26, 27, 28, 29]
+          ]
+        },
+        {
+          "on": 1,
+          "method": "pack",
+          "args": [
+            "g",
+            "github",
+            [
+              0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+              19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
+            ],
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": [[0, 1]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24, 25
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } f29: p { a b c d e f g h i } }"
+                  }
+                ]
+              }
+            }
+          ],
+          "result": [
+            [
+              0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+              19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
+            ]
+          ]
+        },
+        {
+          "on": 1,
+          "method": "run",
+          "args": [
+            "h",
+            "gitlab",
+            [
+              0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+              19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
+            ],
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": [[0, 1]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24, 25
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[25, 26]],
+                    "result": "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[25, 26, 27]],
+                    "result": "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[25, 26, 27, 28]],
+                    "result": "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[25, 26, 27, 28, 29]],
+                    "result": "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } f29: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24
+                      ]
+                    ],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[4, 5]],
+                    "result": "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[4, 5, 6]],
+                    "result": "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[4, 5, 6, 7]],
+                    "result": "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[4, 5, 6, 7, 8]],
+                    "result": "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[8, 9]],
+                    "result": "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[8, 9, 10]],
+                    "result": "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[8, 9, 10, 11]],
+                    "result": "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[8, 9, 10, 11, 12]],
+                    "result": "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[12, 13]],
+                    "result": "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[12, 13, 14]],
+                    "result": "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[12, 13, 14, 15]],
+                    "result": "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[12, 13, 14, 15, 16]],
+                    "result": "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[16, 17]],
+                    "result": "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[16, 17, 18]],
+                    "result": "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[16, 17, 18, 19]],
+                    "result": "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[16, 17, 18, 19, 20]],
+                    "result": "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23, 24]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[4, 5, 6, 7]],
+                    "result": "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[8, 9, 10, 11]],
+                    "result": "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[12, 13, 14, 15]],
+                    "result": "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[16, 17, 18, 19]],
+                    "result": "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[24]],
+                    "result": "query { f24: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[25, 26, 27, 28, 29]],
+                    "result": "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } f29: p { a b c d e f g h i } }"
+                  }
+                ]
+              }
+            },
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": [
+                      "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } }",
+                      [
+                        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                        16, 17, 18, 19, 20, 21, 22, 23, 24
+                      ]
+                    ],
+                    "async": true,
+                    "throws": "GitLab: glab: Query has complexity of 500, which exceeds max complexity of 100"
+                  },
+                  {
+                    "args": [
+                      "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } }",
+                      [0, 1, 2, 3]
+                    ],
+                    "async": true,
+                    "result": { "data": [0, 1, 2, 3] }
+                  },
+                  {
+                    "args": [
+                      "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } }",
+                      [4, 5, 6, 7]
+                    ],
+                    "async": true,
+                    "result": { "data": [4, 5, 6, 7] }
+                  },
+                  {
+                    "args": [
+                      "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } }",
+                      [8, 9, 10, 11]
+                    ],
+                    "async": true,
+                    "result": { "data": [8, 9, 10, 11] }
+                  },
+                  {
+                    "args": [
+                      "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } }",
+                      [12, 13, 14, 15]
+                    ],
+                    "async": true,
+                    "result": { "data": [12, 13, 14, 15] }
+                  },
+                  {
+                    "args": [
+                      "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } }",
+                      [16, 17, 18, 19]
+                    ],
+                    "async": true,
+                    "result": { "data": [16, 17, 18, 19] }
+                  },
+                  {
+                    "args": [
+                      "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } }",
+                      [20, 21, 22, 23]
+                    ],
+                    "async": true,
+                    "result": { "data": [20, 21, 22, 23] }
+                  },
+                  {
+                    "args": ["query { f24: p { a b c d e f g h i } }", [24]],
+                    "async": true,
+                    "result": { "data": [24] }
+                  },
+                  {
+                    "args": [
+                      "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } f29: p { a b c d e f g h i } }",
+                      [25, 26, 27, 28, 29]
+                    ],
+                    "async": true,
+                    "result": { "data": [25, 26, 27, 28, 29] }
+                  }
+                ]
+              }
+            }
+          ],
+          "async": true,
+          "result": [
+            { "data": [0, 1, 2, 3] },
+            { "data": [4, 5, 6, 7] },
+            { "data": [8, 9, 10, 11] },
+            { "data": [12, 13, 14, 15] },
+            { "data": [16, 17, 18, 19] },
+            { "data": [20, 21, 22, 23] },
+            { "data": [24] },
+            { "data": [25, 26, 27, 28, 29] }
+          ]
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": ["query { f24: p { a b c d e f g h i } }"],
+          "result": 10
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } f29: p { a b c d e f g h i } }"
+          ],
+          "result": 50
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": ["query { f24: p { a b c d e f g h i } }"],
+          "result": 10
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } f29: p { a b c d e f g h i } }"
+          ],
+          "result": 50
+        },
+        {
+          "on": 1,
+          "method": "limit",
+          "args": ["h"],
+          "result": { "max": 100, "scale": 0.475 }
+        },
+        {
+          "on": 1,
+          "method": "pack",
+          "args": [
+            "h",
+            "gitlab",
+            [
+              0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+              19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
+            ],
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": [[0, 1]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[0, 1, 2, 3, 4]],
+                    "result": "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } f4: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[4, 5]],
+                    "result": "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[4, 5, 6]],
+                    "result": "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[4, 5, 6, 7]],
+                    "result": "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[4, 5, 6, 7, 8]],
+                    "result": "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } f8: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[8, 9]],
+                    "result": "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[8, 9, 10]],
+                    "result": "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[8, 9, 10, 11]],
+                    "result": "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[8, 9, 10, 11, 12]],
+                    "result": "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } f12: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[12, 13]],
+                    "result": "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[12, 13, 14]],
+                    "result": "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[12, 13, 14, 15]],
+                    "result": "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[12, 13, 14, 15, 16]],
+                    "result": "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } f16: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[16, 17]],
+                    "result": "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[16, 17, 18]],
+                    "result": "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[16, 17, 18, 19]],
+                    "result": "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[16, 17, 18, 19, 20]],
+                    "result": "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } f20: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[20, 21, 22, 23, 24]],
+                    "result": "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } f24: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[24, 25]],
+                    "result": "query { f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[24, 25, 26]],
+                    "result": "query { f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[24, 25, 26, 27]],
+                    "result": "query { f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[24, 25, 26, 27, 28]],
+                    "result": "query { f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } f28: p { a b c d e f g h i } }"
+                  },
+                  {
+                    "args": [[28, 29]],
+                    "result": "query { f28: p { a b c d e f g h i } f29: p { a b c d e f g h i } }"
+                  }
+                ]
+              }
+            }
+          ],
+          "result": [
+            [0, 1, 2, 3],
+            [4, 5, 6, 7],
+            [8, 9, 10, 11],
+            [12, 13, 14, 15],
+            [16, 17, 18, 19],
+            [20, 21, 22, 23],
+            [24, 25, 26, 27],
+            [28, 29]
+          ]
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f0: p { a b c d e f g h i } f1: p { a b c d e f g h i } f2: p { a b c d e f g h i } f3: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f4: p { a b c d e f g h i } f5: p { a b c d e f g h i } f6: p { a b c d e f g h i } f7: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f8: p { a b c d e f g h i } f9: p { a b c d e f g h i } f10: p { a b c d e f g h i } f11: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f12: p { a b c d e f g h i } f13: p { a b c d e f g h i } f14: p { a b c d e f g h i } f15: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f16: p { a b c d e f g h i } f17: p { a b c d e f g h i } f18: p { a b c d e f g h i } f19: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f20: p { a b c d e f g h i } f21: p { a b c d e f g h i } f22: p { a b c d e f g h i } f23: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f24: p { a b c d e f g h i } f25: p { a b c d e f g h i } f26: p { a b c d e f g h i } f27: p { a b c d e f g h i } }"
+          ],
+          "result": 40
+        },
+        {
+          "fn": "complexity.estimateComplexity",
+          "args": [
+            "query { f28: p { a b c d e f g h i } f29: p { a b c d e f g h i } }"
+          ],
+          "result": 20
+        },
+        {
+          "on": 1,
+          "method": "run",
+          "args": [
+            "h",
+            "gitlab",
+            [1],
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": [[1]],
+                    "result": "query { f1: p { a b c d e f g h i } }"
+                  }
+                ]
+              }
+            },
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": ["query { f1: p { a b c d e f g h i } }", [1]],
+                    "async": true,
+                    "throws": "GitLab: glab: Query has complexity of 272, which exceeds max complexity of 250"
+                  }
+                ]
+              }
+            }
+          ],
+          "async": true,
+          "throws": "Query has complexity of 272, which exceeds max complexity of 250"
+        },
+        {
+          "on": 1,
+          "method": "run",
+          "args": [
+            "h",
+            "gitlab",
+            [1],
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": [[1]],
+                    "result": "query { f1: p { a b c d e f g h i } }"
+                  }
+                ]
+              }
+            },
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": ["query { f1: p { a b c d e f g h i } }", [1]],
+                    "async": true,
+                    "throws": "GitLab: 502"
+                  }
+                ]
+              }
+            }
+          ],
+          "async": true,
+          "throws": "GitLab: 502"
+        }
+      ]
+    },
+    {
+      "name": "answers asked in parts merge into one",
+      "group": ["query complexity"],
+      "calls": [
+        {
+          "fn": "queries.mergeAnswers",
+          "args": [
+            [
+              { "data": { "currentUser": { "username": "me", "op": 1 } } },
+              { "data": { "currentUser": { "mg": 2 }, "f0": { "x": 1 } } },
+              { "errors": [{ "message": "gone" }] }
+            ]
+          ],
+          "result": {
+            "data": {
+              "currentUser": { "username": "me", "op": 1, "mg": 2 },
+              "f0": { "x": 1 }
+            },
+            "errors": [{ "message": "gone" }]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { SessionArtifact } from "../../server/src/agent/session-artifacts";
+import type { SessionArtifact } from "../../shared/agentSession";
 import type { Pane } from "./types";
 import {
   useConnectionClient,

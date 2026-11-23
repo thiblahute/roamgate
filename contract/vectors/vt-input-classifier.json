@@ -1,0 +1,2512 @@
+{
+  "description": "Terminal input classification: keys, pastes, mouse and focus reports. Read by `bun test` in server/src/bridge/vt-input-classifier.test.ts.",
+  "modules": {
+    "vt-input-classifier": "server/src/bridge/vt-input-classifier.ts",
+    "bincode": "server/src/bridge/bincode.ts"
+  },
+  "cases": [
+    {
+      "name": "printable text becomes one TextCommit",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 1 }
+        },
+        {
+          "on": 1,
+          "method": "feed",
+          "args": [{ "$buffer": "68656c6c6f20e4b896e7958c" }],
+          "result": [{ "type": "text", "text": "hello 世界" }]
+        }
+      ]
+    },
+    {
+      "name": "enter, backspace, tab, escape keys",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "value": "vt-input-classifier.KEY",
+          "result": {
+            "Backspace": 0,
+            "Enter": 1,
+            "Left": 2,
+            "Right": 3,
+            "Up": 4,
+            "Down": 5,
+            "Home": 6,
+            "End": 7,
+            "PageUp": 8,
+            "PageDown": 9,
+            "Tab": 10,
+            "BackTab": 11,
+            "Delete": 12,
+            "Insert": 13,
+            "Esc": 14,
+            "Char": 15,
+            "F": 16,
+            "Null": 17
+          }
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 2 }
+        },
+        {
+          "on": 2,
+          "method": "feed",
+          "args": [{ "$buffer": "0d" }],
+          "result": [{ "type": "key", "code": 1, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 3 }
+        },
+        {
+          "on": 3,
+          "method": "feed",
+          "args": [{ "$buffer": "7f" }],
+          "result": [{ "type": "key", "code": 0, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 4 }
+        },
+        {
+          "on": 4,
+          "method": "feed",
+          "args": [{ "$buffer": "09" }],
+          "result": [{ "type": "key", "code": 10, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 5 }
+        },
+        {
+          "on": 5,
+          "method": "feed",
+          "args": [{ "$buffer": "1b" }],
+          "result": []
+        },
+        {
+          "on": 5,
+          "method": "flush",
+          "args": [],
+          "result": [{ "type": "key", "code": 14, "modifiers": 0 }]
+        }
+      ]
+    },
+    {
+      "name": "preserves Ctrl+J and modified Enter variants",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        { "value": "vt-input-classifier.MOD_ALT", "result": 4 },
+        { "value": "vt-input-classifier.MOD_CONTROL", "result": 2 },
+        { "value": "vt-input-classifier.MOD_SHIFT", "result": 1 },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 6 }
+        },
+        {
+          "on": 6,
+          "method": "feed",
+          "args": [{ "$buffer": "0a" }],
+          "result": [{ "type": "key", "code": 15, "char": 106, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 7 }
+        },
+        {
+          "on": 7,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b31333b3275" }],
+          "result": [{ "type": "key", "code": 1, "modifiers": 1 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 8 }
+        },
+        {
+          "on": 8,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b31333b3375" }],
+          "result": [{ "type": "key", "code": 1, "modifiers": 4 }]
+        }
+      ]
+    },
+    {
+      "name": "preserves Ctrl+/ separately from the ambiguous legacy Ctrl+_ byte",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 9 }
+        },
+        {
+          "on": 9,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b34373b3575" }],
+          "result": [{ "type": "key", "code": 15, "char": 47, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 10 }
+        },
+        {
+          "on": 10,
+          "method": "feed",
+          "args": [{ "$buffer": "1f" }],
+          "result": [{ "type": "key", "code": 15, "char": 95, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 11 }
+        },
+        {
+          "on": 11,
+          "method": "feed",
+          "args": [{ "$buffer": "1b" }],
+          "result": []
+        },
+        {
+          "on": 11,
+          "method": "feed",
+          "args": [{ "$buffer": "5b34373b3575" }],
+          "result": [{ "type": "key", "code": 15, "char": 47, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 12 }
+        },
+        {
+          "on": 12,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b" }],
+          "result": []
+        },
+        {
+          "on": 12,
+          "method": "feed",
+          "args": [{ "$buffer": "34373b3575" }],
+          "result": [{ "type": "key", "code": 15, "char": 47, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 13 }
+        },
+        {
+          "on": 13,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b34" }],
+          "result": []
+        },
+        {
+          "on": 13,
+          "method": "feed",
+          "args": [{ "$buffer": "373b3575" }],
+          "result": [{ "type": "key", "code": 15, "char": 47, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 14 }
+        },
+        {
+          "on": 14,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3437" }],
+          "result": []
+        },
+        {
+          "on": 14,
+          "method": "feed",
+          "args": [{ "$buffer": "3b3575" }],
+          "result": [{ "type": "key", "code": 15, "char": 47, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 15 }
+        },
+        {
+          "on": 15,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b34373b" }],
+          "result": []
+        },
+        {
+          "on": 15,
+          "method": "feed",
+          "args": [{ "$buffer": "3575" }],
+          "result": [{ "type": "key", "code": 15, "char": 47, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 16 }
+        },
+        {
+          "on": 16,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b34373b35" }],
+          "result": []
+        },
+        {
+          "on": 16,
+          "method": "feed",
+          "args": [{ "$buffer": "75" }],
+          "result": [{ "type": "key", "code": 15, "char": 47, "modifiers": 2 }]
+        }
+      ]
+    },
+    {
+      "name": "does not interpret unsupported or malformed CSI-u sequences",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 17 }
+        },
+        {
+          "on": 17,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b35373335383b3575" }],
+          "result": []
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 18 }
+        },
+        {
+          "on": 18,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b303b3575" }],
+          "result": []
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 19 }
+        },
+        {
+          "on": 19,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3132383b3575" }],
+          "result": []
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 20 }
+        },
+        {
+          "on": 20,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b34373b3075" }],
+          "result": []
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 21 }
+        },
+        {
+          "on": 21,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b34373b313775" }],
+          "result": []
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 22 }
+        },
+        {
+          "on": 22,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b34373b353b3175" }],
+          "result": []
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 23 }
+        },
+        {
+          "on": 23,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b34373b353a3275" }],
+          "result": []
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 24 }
+        },
+        {
+          "on": 24,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b34373a34383b3575" }],
+          "result": []
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 25 }
+        },
+        {
+          "on": 25,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3230307e1b5b34373b35751b5b3230317e" }],
+          "result": [{ "type": "paste", "text": "\u001b[47;5u" }]
+        }
+      ]
+    },
+    {
+      "name": "ctrl+letter maps to Char with CONTROL",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 26 }
+        },
+        {
+          "on": 26,
+          "method": "feed",
+          "args": [{ "$buffer": "03" }],
+          "result": [{ "type": "key", "code": 15, "char": 99, "modifiers": 2 }]
+        }
+      ]
+    },
+    {
+      "name": "arrows and modified arrows",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 27 }
+        },
+        {
+          "on": 27,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b41" }],
+          "result": [{ "type": "key", "code": 4, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 28 }
+        },
+        {
+          "on": 28,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3544" }],
+          "result": [{ "type": "key", "code": 2, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 29 }
+        },
+        {
+          "on": 29,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3243" }],
+          "result": [{ "type": "key", "code": 3, "modifiers": 1 }]
+        }
+      ]
+    },
+    {
+      "name": "preserves every modified CSI key family emitted by xterm",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 30 }
+        },
+        {
+          "on": 30,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3241" }],
+          "result": [{ "type": "key", "code": 4, "modifiers": 1 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 31 }
+        },
+        {
+          "on": 31,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3241" }],
+          "result": [{ "type": "key", "code": 4, "modifiers": 1 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 32 }
+        },
+        {
+          "on": 32,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3348" }],
+          "result": [{ "type": "key", "code": 6, "modifiers": 4 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 33 }
+        },
+        {
+          "on": 33,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3348" }],
+          "result": [{ "type": "key", "code": 6, "modifiers": 4 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 34 }
+        },
+        {
+          "on": 34,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3546" }],
+          "result": [{ "type": "key", "code": 7, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 35 }
+        },
+        {
+          "on": 35,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3546" }],
+          "result": [{ "type": "key", "code": 7, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 36 }
+        },
+        {
+          "on": 36,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b333b327e" }],
+          "result": [{ "type": "key", "code": 12, "modifiers": 1 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 37 }
+        },
+        {
+          "on": 37,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b333b327e" }],
+          "result": [{ "type": "key", "code": 12, "modifiers": 1 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 38 }
+        },
+        {
+          "on": 38,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b353b357e" }],
+          "result": [{ "type": "key", "code": 8, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 39 }
+        },
+        {
+          "on": 39,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b353b357e" }],
+          "result": [{ "type": "key", "code": 8, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 40 }
+        },
+        {
+          "on": 40,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3250" }],
+          "result": [{ "type": "key", "code": 16, "fn": 1, "modifiers": 1 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 41 }
+        },
+        {
+          "on": 41,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3250" }],
+          "result": [{ "type": "key", "code": 16, "fn": 1, "modifiers": 1 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 42 }
+        },
+        {
+          "on": 42,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3353" }],
+          "result": [{ "type": "key", "code": 16, "fn": 4, "modifiers": 4 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 43 }
+        },
+        {
+          "on": 43,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b313b3353" }],
+          "result": [{ "type": "key", "code": 16, "fn": 4, "modifiers": 4 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 44 }
+        },
+        {
+          "on": 44,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b31353b327e" }],
+          "result": [{ "type": "key", "code": 16, "fn": 5, "modifiers": 1 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 45 }
+        },
+        {
+          "on": 45,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b31353b327e" }],
+          "result": [{ "type": "key", "code": 16, "fn": 5, "modifiers": 1 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 46 }
+        },
+        {
+          "on": 46,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b32343b337e" }],
+          "result": [{ "type": "key", "code": 16, "fn": 12, "modifiers": 4 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 47 }
+        },
+        {
+          "on": 47,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b32343b337e" }],
+          "result": [{ "type": "key", "code": 16, "fn": 12, "modifiers": 4 }]
+        }
+      ]
+    },
+    {
+      "name": "tilde keys: delete, home, end, page up/down",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 48 }
+        },
+        {
+          "on": 48,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b337e" }],
+          "result": [{ "type": "key", "code": 12, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 49 }
+        },
+        {
+          "on": 49,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b317e" }],
+          "result": [{ "type": "key", "code": 6, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 50 }
+        },
+        {
+          "on": 50,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b347e" }],
+          "result": [{ "type": "key", "code": 7, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 51 }
+        },
+        {
+          "on": 51,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b357e" }],
+          "result": [{ "type": "key", "code": 8, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 52 }
+        },
+        {
+          "on": 52,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b367e" }],
+          "result": [{ "type": "key", "code": 9, "modifiers": 0 }]
+        }
+      ]
+    },
+    {
+      "name": "function keys via SS3 and tilde",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 53 }
+        },
+        {
+          "on": 53,
+          "method": "feed",
+          "args": [{ "$buffer": "1b4f50" }],
+          "result": [{ "type": "key", "code": 16, "fn": 1, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 54 }
+        },
+        {
+          "on": 54,
+          "method": "feed",
+          "args": [{ "$buffer": "1b4f51" }],
+          "result": [{ "type": "key", "code": 16, "fn": 2, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 55 }
+        },
+        {
+          "on": 55,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b31357e" }],
+          "result": [{ "type": "key", "code": 16, "fn": 5, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 56 }
+        },
+        {
+          "on": 56,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b32347e" }],
+          "result": [{ "type": "key", "code": 16, "fn": 12, "modifiers": 0 }]
+        }
+      ]
+    },
+    {
+      "name": "alt+char",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 57 }
+        },
+        {
+          "on": 57,
+          "method": "feed",
+          "args": [{ "$buffer": "1b78" }],
+          "result": [{ "type": "key", "code": 15, "char": 120, "modifiers": 4 }]
+        }
+      ]
+    },
+    {
+      "name": "alt-prefixed control bytes remain one modified key",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 58 }
+        },
+        {
+          "on": 58,
+          "method": "feed",
+          "args": [{ "$buffer": "1b7f" }],
+          "result": [{ "type": "key", "code": 0, "modifiers": 4 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 59 }
+        },
+        {
+          "on": 59,
+          "method": "feed",
+          "args": [{ "$buffer": "1b03" }],
+          "result": [{ "type": "key", "code": 15, "char": 99, "modifiers": 6 }]
+        }
+      ]
+    },
+    {
+      "name": "bracketed paste becomes one Paste event",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 60 }
+        },
+        {
+          "on": 60,
+          "method": "feed",
+          "args": [
+            { "$buffer": "1b5b3230307e7061737465640d0a746578741b5b3230317e" }
+          ],
+          "result": [{ "type": "paste", "text": "pasted\r\ntext" }]
+        }
+      ]
+    },
+    {
+      "name": "mixed text and keys keep order",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 61 }
+        },
+        {
+          "on": 61,
+          "method": "feed",
+          "args": [{ "$buffer": "61621b5b416364" }],
+          "result": [
+            { "type": "text", "text": "ab" },
+            { "type": "key", "code": 4, "modifiers": 0 },
+            { "type": "text", "text": "cd" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "split sequences wait for completion",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 62 }
+        },
+        {
+          "on": 62,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b" }],
+          "result": []
+        },
+        {
+          "on": 62,
+          "method": "feed",
+          "args": [{ "$buffer": "337e" }],
+          "result": [{ "type": "key", "code": 12, "modifiers": 0 }]
+        }
+      ]
+    },
+    {
+      "name": "split UTF-8 chars wait for completion",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 63 }
+        },
+        {
+          "on": 63,
+          "method": "feed",
+          "args": [{ "$buffer": "e4" }],
+          "result": []
+        },
+        {
+          "on": 63,
+          "method": "feed",
+          "args": [{ "$buffer": "b896" }],
+          "result": [{ "type": "text", "text": "世" }]
+        }
+      ]
+    },
+    {
+      "name": "double ESC yields Esc then reprocesses",
+      "group": ["VtInputClassifier"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 64 }
+        },
+        {
+          "on": 64,
+          "method": "feed",
+          "args": [{ "$buffer": "1b1b5b41" }],
+          "result": [
+            { "type": "key", "code": 14, "modifiers": 0 },
+            { "type": "key", "code": 4, "modifiers": 0 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "click, release, drag, motion and all wheel directions use pane-local cells",
+      "group": ["SGR cell mouse input"],
+      "calls": [
+        {
+          "value": "vt-input-classifier.MOUSE_KIND",
+          "result": {
+            "Down": 0,
+            "Up": 1,
+            "Drag": 2,
+            "Moved": 3,
+            "ScrollUp": 4,
+            "ScrollDown": 5,
+            "ScrollLeft": 6,
+            "ScrollRight": 7
+          }
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 65 }
+        },
+        {
+          "on": 65,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b383b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 0,
+              "button": 0,
+              "column": 7,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 66 }
+        },
+        {
+          "on": 66,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b383b336d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 1,
+              "button": 0,
+              "column": 7,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 67 }
+        },
+        {
+          "on": 67,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c313b383b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 0,
+              "button": 2,
+              "column": 7,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 68 }
+        },
+        {
+          "on": 68,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c323b383b336d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 1,
+              "button": 1,
+              "column": 7,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 69 }
+        },
+        {
+          "on": 69,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b383b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 7,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 70 }
+        },
+        {
+          "on": 70,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33343b383b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 1,
+              "column": 7,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 71 }
+        },
+        {
+          "on": 71,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33353b383b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 3,
+              "column": 7,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 72 }
+        },
+        {
+          "on": 72,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c36343b383b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 4,
+              "column": 7,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 73 }
+        },
+        {
+          "on": 73,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c36353b383b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 5,
+              "column": 7,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 74 }
+        },
+        {
+          "on": 74,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c36363b383b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 6,
+              "column": 7,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 75 }
+        },
+        {
+          "on": 75,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c36373b383b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 7,
+              "column": 7,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 76 }
+        },
+        {
+          "on": 76,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c32383b313b314d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 0,
+              "button": 0,
+              "column": 0,
+              "row": 0,
+              "modifiers": 7,
+              "lines": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "every split point buffers the report without leaking text; paste stays paste",
+      "group": ["SGR cell mouse input"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 77 }
+        },
+        {
+          "on": 77,
+          "method": "feed",
+          "args": [{ "$buffer": "1b" }],
+          "result": []
+        },
+        {
+          "on": 77,
+          "method": "feed",
+          "args": [{ "$buffer": "5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 78 }
+        },
+        {
+          "on": 78,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 79 }
+        },
+        {
+          "on": 79,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b" }],
+          "result": []
+        },
+        { "on": 79, "method": "flush", "args": [], "result": [] },
+        {
+          "on": 79,
+          "method": "feed",
+          "args": [{ "$buffer": "3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 80 }
+        },
+        {
+          "on": 80,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 81 }
+        },
+        {
+          "on": 81,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c" }],
+          "result": []
+        },
+        { "on": 81, "method": "flush", "args": [], "result": [] },
+        {
+          "on": 81,
+          "method": "feed",
+          "args": [{ "$buffer": "33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 82 }
+        },
+        {
+          "on": 82,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 83 }
+        },
+        {
+          "on": 83,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33" }],
+          "result": []
+        },
+        { "on": 83, "method": "flush", "args": [], "result": [] },
+        {
+          "on": 83,
+          "method": "feed",
+          "args": [{ "$buffer": "323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 84 }
+        },
+        {
+          "on": 84,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 85 }
+        },
+        {
+          "on": 85,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c3332" }],
+          "result": []
+        },
+        { "on": 85, "method": "flush", "args": [], "result": [] },
+        {
+          "on": 85,
+          "method": "feed",
+          "args": [{ "$buffer": "3b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 86 }
+        },
+        {
+          "on": 86,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 87 }
+        },
+        {
+          "on": 87,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b" }],
+          "result": []
+        },
+        { "on": 87, "method": "flush", "args": [], "result": [] },
+        {
+          "on": 87,
+          "method": "feed",
+          "args": [{ "$buffer": "3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 88 }
+        },
+        {
+          "on": 88,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 89 }
+        },
+        {
+          "on": 89,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b32" }],
+          "result": []
+        },
+        { "on": 89, "method": "flush", "args": [], "result": [] },
+        {
+          "on": 89,
+          "method": "feed",
+          "args": [{ "$buffer": "35363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 90 }
+        },
+        {
+          "on": 90,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 91 }
+        },
+        {
+          "on": 91,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235" }],
+          "result": []
+        },
+        { "on": 91, "method": "flush", "args": [], "result": [] },
+        {
+          "on": 91,
+          "method": "feed",
+          "args": [{ "$buffer": "363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 92 }
+        },
+        {
+          "on": 92,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 93 }
+        },
+        {
+          "on": 93,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b323536" }],
+          "result": []
+        },
+        { "on": 93, "method": "flush", "args": [], "result": [] },
+        {
+          "on": 93,
+          "method": "feed",
+          "args": [{ "$buffer": "3b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 94 }
+        },
+        {
+          "on": 94,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 95 }
+        },
+        {
+          "on": 95,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b" }],
+          "result": []
+        },
+        { "on": 95, "method": "flush", "args": [], "result": [] },
+        {
+          "on": 95,
+          "method": "feed",
+          "args": [{ "$buffer": "31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 96 }
+        },
+        {
+          "on": 96,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 97 }
+        },
+        {
+          "on": 97,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31" }],
+          "result": []
+        },
+        { "on": 97, "method": "flush", "args": [], "result": [] },
+        {
+          "on": 97,
+          "method": "feed",
+          "args": [{ "$buffer": "324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 98 }
+        },
+        {
+          "on": 98,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 99 }
+        },
+        {
+          "on": 99,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b3132" }],
+          "result": []
+        },
+        { "on": 99, "method": "flush", "args": [], "result": [] },
+        {
+          "on": 99,
+          "method": "feed",
+          "args": [{ "$buffer": "4d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 100 }
+        },
+        {
+          "on": 100,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b3235363b31324d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 101 }
+        },
+        {
+          "on": 101,
+          "method": "feed",
+          "args": [{ "$buffer": "611b5b3c33323b3235363b31324d62" }],
+          "result": [
+            { "type": "text", "text": "a" },
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 0,
+              "column": 255,
+              "row": 11,
+              "modifiers": 0,
+              "lines": 1
+            },
+            { "type": "text", "text": "b" }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 102 }
+        },
+        {
+          "on": 102,
+          "method": "feed",
+          "args": [
+            { "$buffer": "1b5b3230307e1b5b3c33323b3235363b31324d1b5b3230317e" }
+          ],
+          "result": [{ "type": "paste", "text": "\u001b[<32;256;12M" }]
+        }
+      ]
+    },
+    {
+      "name": "rejects malformed fields, unsupported buttons, impossible kinds and out-of-range cells",
+      "group": ["SGR cell mouse input"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 103 }
+        },
+        {
+          "on": 103,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b303b314d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 104 }
+        },
+        {
+          "on": 104,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c2d313b313b314d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 105 }
+        },
+        {
+          "on": 105,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b2d313b314d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 106 }
+        },
+        {
+          "on": 106,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b20313b314d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 107 }
+        },
+        {
+          "on": 107,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b313b304d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 108 }
+        },
+        {
+          "on": 108,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b36353533373b314d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 109 }
+        },
+        {
+          "on": 109,
+          "method": "feed",
+          "args": [
+            {
+              "$buffer": "1b5b3c303b313b3939393939393939393939393939393939393939394d6f6b"
+            }
+          ],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 110 }
+        },
+        {
+          "on": 110,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c3132383b313b314d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 111 }
+        },
+        {
+          "on": 111,
+          "method": "feed",
+          "args": [
+            {
+              "$buffer": "1b5b3c3939393939393939393939393939393939393b313b314d6f6b"
+            }
+          ],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 112 }
+        },
+        {
+          "on": 112,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c333b313b314d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 113 }
+        },
+        {
+          "on": 113,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c333b313b316d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 114 }
+        },
+        {
+          "on": 114,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c36343b313b316d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 115 }
+        },
+        {
+          "on": 115,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c39363b313b314d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 116 }
+        },
+        {
+          "on": 116,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33323b313b316d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 117 }
+        },
+        {
+          "on": 117,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b3b314d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 118 }
+        },
+        {
+          "on": 118,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b313b313b324d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 119 }
+        },
+        {
+          "on": 119,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303a313b313b314d6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 120 }
+        },
+        {
+          "on": 120,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b313b317e6f6b" }],
+          "result": [{ "type": "text", "text": "ok" }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 121 }
+        },
+        {
+          "on": 121,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b313b1b5b41" }],
+          "result": [{ "type": "key", "code": 4, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 122 }
+        },
+        {
+          "on": 122,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b41" }],
+          "result": [{ "type": "key", "code": 4, "modifiers": 0 }]
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 123 }
+        },
+        {
+          "on": 123,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b36353533363b36353533364d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 0,
+              "button": 0,
+              "column": 65535,
+              "row": 65535,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "encodes the frozen generation-1 mouse fields including absent geometry",
+      "group": ["SGR cell mouse input"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 124 }
+        },
+        {
+          "on": 124,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c303b323b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 0,
+              "button": 0,
+              "column": 1,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.encodePaneInput",
+          "args": [
+            "w1:p1",
+            [
+              {
+                "type": "mouse",
+                "kind": 0,
+                "button": 0,
+                "column": 1,
+                "row": 2,
+                "modifiers": 0,
+                "lines": 1
+              }
+            ]
+          ],
+          "result": { "$buffer": "0d0577313a703101020000000102000001" }
+        },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 125 }
+        },
+        {
+          "on": 125,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c313b3235363b336d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 1,
+              "button": 2,
+              "column": 255,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.encodePaneInput",
+          "args": [
+            "other-pane",
+            [
+              {
+                "type": "mouse",
+                "kind": 1,
+                "button": 2,
+                "column": 255,
+                "row": 2,
+                "modifiers": 0,
+                "lines": 1
+              }
+            ]
+          ],
+          "result": {
+            "$buffer": "0d0a6f746865722d70616e650102010200fbff0002000001"
+          }
+        },
+        {
+          "fn": "bincode.BinReader",
+          "new": true,
+          "args": [
+            { "$buffer": "0d0a6f746865722d70616e650102010200fbff0002000001" }
+          ],
+          "result": { "$handle": 126 }
+        },
+        { "on": 126, "method": "variant", "args": [], "result": 13 },
+        { "on": 126, "method": "string", "args": [], "result": "other-pane" },
+        { "on": 126, "method": "varint", "args": [], "result": 1 },
+        { "on": 126, "method": "variant", "args": [], "result": 2 },
+        { "on": 126, "method": "variant", "args": [], "result": 1 },
+        { "on": 126, "method": "variant", "args": [], "result": 2 },
+        { "on": 126, "method": "variant", "args": [], "result": 0 },
+        { "on": 126, "method": "varint", "args": [], "result": 255 },
+        { "on": 126, "method": "varint", "args": [], "result": 2 },
+        { "on": 126, "method": "bool", "args": [], "result": false },
+        { "on": 126, "method": "u8", "args": [], "result": 0 },
+        { "on": 126, "method": "varint", "args": [], "result": 1 },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 127 }
+        },
+        {
+          "on": 127,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c33343b323b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 2,
+              "button": 1,
+              "column": 1,
+              "row": 2,
+              "modifiers": 0,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.encodePaneInput",
+          "args": [
+            "other-pane",
+            [
+              {
+                "type": "mouse",
+                "kind": 2,
+                "button": 1,
+                "column": 1,
+                "row": 2,
+                "modifiers": 0,
+                "lines": 1
+              }
+            ]
+          ],
+          "result": {
+            "$buffer": "0d0a6f746865722d70616e6501020201000102000001"
+          }
+        },
+        {
+          "fn": "bincode.BinReader",
+          "new": true,
+          "args": [
+            { "$buffer": "0d0a6f746865722d70616e6501020201000102000001" }
+          ],
+          "result": { "$handle": 128 }
+        },
+        { "on": 128, "method": "variant", "args": [], "result": 13 },
+        { "on": 128, "method": "string", "args": [], "result": "other-pane" },
+        { "on": 128, "method": "varint", "args": [], "result": 1 },
+        { "on": 128, "method": "variant", "args": [], "result": 2 },
+        { "on": 128, "method": "variant", "args": [], "result": 2 },
+        { "on": 128, "method": "variant", "args": [], "result": 1 },
+        { "on": 128, "method": "variant", "args": [], "result": 0 },
+        { "on": 128, "method": "varint", "args": [], "result": 1 },
+        { "on": 128, "method": "varint", "args": [], "result": 2 },
+        { "on": 128, "method": "bool", "args": [], "result": false },
+        { "on": 128, "method": "u8", "args": [], "result": 0 },
+        { "on": 128, "method": "varint", "args": [], "result": 1 },
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 129 }
+        },
+        {
+          "on": 129,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b3c38303b323b334d" }],
+          "result": [
+            {
+              "type": "mouse",
+              "kind": 4,
+              "column": 1,
+              "row": 2,
+              "modifiers": 2,
+              "lines": 1
+            }
+          ]
+        },
+        {
+          "fn": "vt-input-classifier.encodePaneInput",
+          "args": [
+            "other-pane",
+            [
+              {
+                "type": "mouse",
+                "kind": 4,
+                "column": 1,
+                "row": 2,
+                "modifiers": 2,
+                "lines": 1
+              }
+            ]
+          ],
+          "result": { "$buffer": "0d0a6f746865722d70616e65010204000102000201" }
+        },
+        {
+          "fn": "bincode.BinReader",
+          "new": true,
+          "args": [{ "$buffer": "0d0a6f746865722d70616e65010204000102000201" }],
+          "result": { "$handle": 130 }
+        },
+        { "on": 130, "method": "variant", "args": [], "result": 13 },
+        { "on": 130, "method": "string", "args": [], "result": "other-pane" },
+        { "on": 130, "method": "varint", "args": [], "result": 1 },
+        { "on": 130, "method": "variant", "args": [], "result": 2 },
+        { "on": 130, "method": "variant", "args": [], "result": 4 },
+        { "on": 130, "method": "variant", "args": [], "result": 0 },
+        { "on": 130, "method": "varint", "args": [], "result": 1 },
+        { "on": 130, "method": "varint", "args": [], "result": 2 },
+        { "on": 130, "method": "bool", "args": [], "result": false },
+        { "on": 130, "method": "u8", "args": [], "result": 2 },
+        { "on": 130, "method": "varint", "args": [], "result": 1 }
+      ]
+    },
+    {
+      "name": "encodes Ctrl+/ as a semantic slash press, not Ctrl+_",
+      "group": ["encodePaneInput"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.VtInputClassifier",
+          "new": true,
+          "args": [],
+          "result": { "$handle": 131 }
+        },
+        {
+          "on": 131,
+          "method": "feed",
+          "args": [{ "$buffer": "1b5b34373b3575" }],
+          "result": [{ "type": "key", "code": 15, "char": 47, "modifiers": 2 }]
+        },
+        {
+          "fn": "vt-input-classifier.encodePaneInput",
+          "args": [
+            "w1:p1",
+            [{ "type": "key", "code": 15, "char": 47, "modifiers": 2 }]
+          ],
+          "result": { "$buffer": "0d0577313a703101000f2f0200010000000000" }
+        },
+        {
+          "fn": "bincode.BinReader",
+          "new": true,
+          "args": [{ "$buffer": "0d0577313a703101000f2f0200010000000000" }],
+          "result": { "$handle": 132 }
+        },
+        { "on": 132, "method": "variant", "args": [], "result": 13 },
+        { "on": 132, "method": "string", "args": [], "result": "w1:p1" },
+        { "on": 132, "method": "varint", "args": [], "result": 1 },
+        { "on": 132, "method": "variant", "args": [], "result": 0 },
+        { "on": 132, "method": "variant", "args": [], "result": 15 },
+        { "on": 132, "method": "varint", "args": [], "result": 47 },
+        { "on": 132, "method": "u8", "args": [], "result": 2 },
+        { "on": 132, "method": "variant", "args": [], "result": 0 },
+        { "on": 132, "method": "varint", "args": [], "result": 1 },
+        { "on": 132, "method": "bool", "args": [], "result": false },
+        { "on": 132, "method": "bool", "args": [], "result": false },
+        { "on": 132, "method": "bool", "args": [], "result": false },
+        { "on": 132, "method": "bool", "args": [], "result": false },
+        { "on": 132, "method": "bool", "args": [], "result": false }
+      ]
+    },
+    {
+      "name": "encodes the ClientShellPaneInput frame",
+      "group": ["encodePaneInput"],
+      "calls": [
+        {
+          "fn": "vt-input-classifier.encodePaneInput",
+          "args": [
+            "w1:p1",
+            [
+              { "type": "text", "text": "hi" },
+              { "type": "key", "code": 1, "modifiers": 0 },
+              { "type": "paste", "text": "p" },
+              { "type": "key", "code": 15, "char": 99, "modifiers": 2 },
+              { "type": "key", "code": 16, "fn": 5, "modifiers": 1 }
+            ]
+          ],
+          "result": {
+            "$buffer": "0d0577313a7031050102686900010000010000000000030170000f6302000100000000000010050100010000000000"
+          }
+        },
+        {
+          "fn": "bincode.BinReader",
+          "new": true,
+          "args": [
+            {
+              "$buffer": "0d0577313a7031050102686900010000010000000000030170000f6302000100000000000010050100010000000000"
+            }
+          ],
+          "result": { "$handle": 133 }
+        },
+        { "on": 133, "method": "variant", "args": [], "result": 13 },
+        { "on": 133, "method": "string", "args": [], "result": "w1:p1" },
+        { "on": 133, "method": "varint", "args": [], "result": 5 },
+        { "on": 133, "method": "variant", "args": [], "result": 1 },
+        { "on": 133, "method": "string", "args": [], "result": "hi" },
+        { "on": 133, "method": "variant", "args": [], "result": 0 },
+        { "on": 133, "method": "variant", "args": [], "result": 1 },
+        { "on": 133, "method": "u8", "args": [], "result": 0 },
+        { "on": 133, "method": "variant", "args": [], "result": 0 },
+        { "on": 133, "method": "varint", "args": [], "result": 1 },
+        { "on": 133, "method": "bool", "args": [], "result": false },
+        { "on": 133, "method": "bool", "args": [], "result": false },
+        { "on": 133, "method": "bool", "args": [], "result": false },
+        { "on": 133, "method": "bool", "args": [], "result": false },
+        { "on": 133, "method": "bool", "args": [], "result": false },
+        { "on": 133, "method": "variant", "args": [], "result": 3 },
+        { "on": 133, "method": "string", "args": [], "result": "p" },
+        { "on": 133, "method": "variant", "args": [], "result": 0 },
+        { "on": 133, "method": "variant", "args": [], "result": 15 },
+        { "on": 133, "method": "varint", "args": [], "result": 99 },
+        { "on": 133, "method": "u8", "args": [], "result": 2 },
+        { "on": 133, "method": "variant", "args": [], "result": 0 },
+        { "on": 133, "method": "varint", "args": [], "result": 1 },
+        { "on": 133, "method": "bool", "args": [], "result": false },
+        { "on": 133, "method": "bool", "args": [], "result": false },
+        { "on": 133, "method": "bool", "args": [], "result": false },
+        { "on": 133, "method": "bool", "args": [], "result": false },
+        { "on": 133, "method": "bool", "args": [], "result": false },
+        { "on": 133, "method": "variant", "args": [], "result": 0 },
+        { "on": 133, "method": "variant", "args": [], "result": 16 },
+        { "on": 133, "method": "varint", "args": [], "result": 5 },
+        { "on": 133, "method": "u8", "args": [], "result": 1 }
+      ]
+    }
+  ]
+}

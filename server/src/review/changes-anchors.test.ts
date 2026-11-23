@@ -4,8 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleReviewRpc } from "./rpc";
 import { reviewServiceForTest } from "./testkit";
-import { combinedAnchor } from "./changes-anchors";
-import { parseUnifiedDiff } from "./patch";
 import { readReviewPatch } from "../workspace/review-patch";
 import { runProcessWithCodeTimeout, shQuote } from "../utils/process-utils";
 import type { ReviewSnapshot, ReviewThread } from "../../../shared/review";
@@ -15,6 +13,9 @@ import {
   feedbackThreadId,
   writeFeedback,
 } from "../../../web/src/workspaceFeedback";
+import { runVectors } from "../../../contract/vectors/vectors";
+import * as patch from "./patch";
+import * as changesAnchors from "./changes-anchors";
 
 /*
  * Threads written on Changes' staged and unstaged entries, moved
@@ -322,85 +323,6 @@ test("a review read publishes it again once its threads moved", async () => {
   expect(pushes).toEqual(["6"]);
 });
 
-test("combinedAnchor: a comment on the file keeps no line, a range keeps its length", () => {
-  const [file] = parseUnifiedDiff(
-    "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,3 +1,4 @@\n+top\n a\n-b\n+B\n c\n",
-  );
-  const thread = (anchor: ReviewThread["anchor"]): ReviewThread => ({
-    id: "t",
-    sessionId: "s",
-    kind: "discussion",
-    anchor,
-    comments: [],
-    resolved: false,
-    createdAt: "",
-    updatedAt: "",
-  });
-  const onFile = combinedAnchor(
-    thread({
-      path: "f",
-      feedback: JSON.stringify({ source: "diff", kind: "staged", path: "f" }),
-    }),
-    undefined,
-  );
-  expect(onFile?.line).toBeUndefined();
-  expect(JSON.parse(onFile!.feedback!).kind).toBe("combined");
-  // An unstaged entry's old side (the index) from a to b, lines 1 to 2:
-  // HEAD numbers them alike here, the end follows the start.
-  const range = combinedAnchor(
-    thread({
-      path: "f",
-      line: 1,
-      endLine: 2,
-      side: "old",
-      text: "a",
-      feedback: JSON.stringify({
-        source: "diff",
-        kind: "unstaged",
-        path: "f",
-        side: "old",
-        line: 1,
-        endLine: 2,
-        endSide: "old",
-      }),
-    }),
-    file,
-  );
-  expect([range?.side, range?.line, range?.endLine]).toEqual(["old", 1, 2]);
-  // A staged entry's new side (the index) on B, line 2 there: the working
-  // tree's line 3.
-  const moved = combinedAnchor(
-    thread({
-      path: "f",
-      line: 2,
-      side: "new",
-      text: "B",
-      feedback: JSON.stringify({
-        source: "diff",
-        kind: "staged",
-        path: "f",
-        side: "new",
-        line: 2,
-      }),
-    }),
-    file,
-  );
-  expect([moved?.side, moved?.line]).toEqual(["new", 3]);
-  // Already combined: nothing to do.
-  expect(
-    combinedAnchor(
-      thread({
-        path: "f",
-        line: 3,
-        side: "new",
-        text: "B",
-        feedback: JSON.stringify({ source: "diff", kind: "combined" }),
-      }),
-      file,
-    ),
-  ).toBeNull();
-});
-
 test("a checkout not readable yet (a connection not ready, at startup) is asked again later", async () => {
   const root = checkout();
   let ready = false;
@@ -453,3 +375,6 @@ test("a checkout not readable yet (a connection not ready, at startup) is asked 
   await service.migrateEntryAnchors({ sessionId: opened.session.id });
   expect(line()).toBe(6);
 });
+
+// The cases are contract/vectors/changes-anchors.json, the Rust side's too.
+runVectors("changes-anchors", { patch, "changes-anchors": changesAnchors });

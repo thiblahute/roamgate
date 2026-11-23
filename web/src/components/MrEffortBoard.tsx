@@ -5,7 +5,7 @@ import {
   MR_EFFORT_COLUMNS,
   type MrEffortColumn,
   mrEffortColumn,
-} from "../../../shared/mrEffortBoard";
+} from "../mrEffortBoard";
 import type {
   MrInboxEntry,
   MrPlan,

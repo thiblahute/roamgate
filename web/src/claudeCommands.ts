@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AgentCommand } from "../../server/src/agent/session-commands";
+import type { AgentCommand } from "../../shared/agentSession";
 import type { Pane } from "./types";
 import {
   useConnectionClient,

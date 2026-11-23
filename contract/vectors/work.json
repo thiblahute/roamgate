@@ -1,0 +1,2631 @@
+{
+  "description": "The Work board: items, tags, links and their labels. Read by `bun test` in shared/work.test.ts.",
+  "modules": { "work": "shared/work.ts" },
+  "cases": [
+    {
+      "name": "a provisional title: the first line with words, 80 characters at most",
+      "calls": [
+        {
+          "fn": "work.provisionalWorkTitle",
+          "args": ["Fix the header\nmore"],
+          "result": "Fix the header"
+        },
+        {
+          "fn": "work.provisionalWorkTitle",
+          "args": ["\n![shot](<work-image:1>)\n# - Fix it"],
+          "result": "Fix it"
+        },
+        {
+          "fn": "work.provisionalWorkTitle",
+          "args": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "result": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…"
+        },
+        {
+          "fn": "work.provisionalWorkTitle",
+          "args": ["![only](<work-image:1>)"],
+          "result": "New item"
+        }
+      ]
+    },
+    {
+      "name": "the search names tags as #tag or tag:tag, all of them kept; the rest are words",
+      "calls": [
+        {
+          "fn": "work.parseWorkQuery",
+          "args": ["#Voice tag:phone header # "],
+          "result": {
+            "words": ["header"],
+            "tags": ["voice", "phone"],
+            "owners": []
+          }
+        },
+        {
+          "fn": "work.parseWorkQuery",
+          "args": ["header #vo"],
+          "result": {
+            "words": ["header"],
+            "tags": [],
+            "owners": [],
+            "partial": "vo"
+          }
+        },
+        {
+          "fn": "work.filterWorkItems",
+          "args": [
+            [
+              {
+                "id": "1",
+                "project": "roamgate",
+                "title": "Header scrolls",
+                "state": "open",
+                "tags": ["voice", "phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "2",
+                "project": "roamgate",
+                "title": "Header voice",
+                "state": "open",
+                "tags": ["phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "3",
+                "project": "roamgate",
+                "title": "Other",
+                "state": "open",
+                "tags": ["voice"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              }
+            ],
+            { "query": "#phone " }
+          ],
+          "result": [
+            {
+              "id": "1",
+              "project": "roamgate",
+              "title": "Header scrolls",
+              "state": "open",
+              "tags": ["voice", "phone"],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user"
+            },
+            {
+              "id": "2",
+              "project": "roamgate",
+              "title": "Header voice",
+              "state": "open",
+              "tags": ["phone"],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user"
+            }
+          ]
+        },
+        {
+          "fn": "work.filterWorkItems",
+          "args": [
+            [
+              {
+                "id": "1",
+                "project": "roamgate",
+                "title": "Header scrolls",
+                "state": "open",
+                "tags": ["voice", "phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "2",
+                "project": "roamgate",
+                "title": "Header voice",
+                "state": "open",
+                "tags": ["phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "3",
+                "project": "roamgate",
+                "title": "Other",
+                "state": "open",
+                "tags": ["voice"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              }
+            ],
+            { "query": "#pho" }
+          ],
+          "result": [
+            {
+              "id": "1",
+              "project": "roamgate",
+              "title": "Header scrolls",
+              "state": "open",
+              "tags": ["voice", "phone"],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user"
+            },
+            {
+              "id": "2",
+              "project": "roamgate",
+              "title": "Header voice",
+              "state": "open",
+              "tags": ["phone"],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user"
+            }
+          ]
+        },
+        {
+          "fn": "work.filterWorkItems",
+          "args": [
+            [
+              {
+                "id": "1",
+                "project": "roamgate",
+                "title": "Header scrolls",
+                "state": "open",
+                "tags": ["voice", "phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "2",
+                "project": "roamgate",
+                "title": "Header voice",
+                "state": "open",
+                "tags": ["phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "3",
+                "project": "roamgate",
+                "title": "Other",
+                "state": "open",
+                "tags": ["voice"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              }
+            ],
+            { "query": "#pho " }
+          ],
+          "result": []
+        },
+        {
+          "fn": "work.filterWorkItems",
+          "args": [
+            [
+              {
+                "id": "1",
+                "project": "roamgate",
+                "title": "Header scrolls",
+                "state": "open",
+                "tags": ["voice", "phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "2",
+                "project": "roamgate",
+                "title": "Header voice",
+                "state": "open",
+                "tags": ["phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "3",
+                "project": "roamgate",
+                "title": "Other",
+                "state": "open",
+                "tags": ["voice"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              }
+            ],
+            { "query": "#phone #voice" }
+          ],
+          "result": [
+            {
+              "id": "1",
+              "project": "roamgate",
+              "title": "Header scrolls",
+              "state": "open",
+              "tags": ["voice", "phone"],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user"
+            }
+          ]
+        },
+        {
+          "fn": "work.filterWorkItems",
+          "args": [
+            [
+              {
+                "id": "1",
+                "project": "roamgate",
+                "title": "Header scrolls",
+                "state": "open",
+                "tags": ["voice", "phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "2",
+                "project": "roamgate",
+                "title": "Header voice",
+                "state": "open",
+                "tags": ["phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "3",
+                "project": "roamgate",
+                "title": "Other",
+                "state": "open",
+                "tags": ["voice"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              }
+            ],
+            { "query": "voice" }
+          ],
+          "result": [
+            {
+              "id": "1",
+              "project": "roamgate",
+              "title": "Header scrolls",
+              "state": "open",
+              "tags": ["voice", "phone"],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user"
+            },
+            {
+              "id": "2",
+              "project": "roamgate",
+              "title": "Header voice",
+              "state": "open",
+              "tags": ["phone"],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user"
+            },
+            {
+              "id": "3",
+              "project": "roamgate",
+              "title": "Other",
+              "state": "open",
+              "tags": ["voice"],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user"
+            }
+          ]
+        },
+        {
+          "fn": "work.filterWorkItems",
+          "args": [
+            [
+              {
+                "id": "1",
+                "project": "roamgate",
+                "title": "Header scrolls",
+                "state": "open",
+                "tags": ["voice", "phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "2",
+                "project": "roamgate",
+                "title": "Header voice",
+                "state": "open",
+                "tags": ["phone"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "3",
+                "project": "roamgate",
+                "title": "Other",
+                "state": "open",
+                "tags": ["voice"],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              }
+            ],
+            { "query": "#voice header" }
+          ],
+          "result": [
+            {
+              "id": "1",
+              "project": "roamgate",
+              "title": "Header scrolls",
+              "state": "open",
+              "tags": ["voice", "phone"],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "owner:ADDRESS keeps the items that session owns, its subagents' too",
+      "calls": [
+        {
+          "fn": "work.parseWorkQuery",
+          "args": ["owner:desktop/w36:p2 header"],
+          "result": {
+            "words": ["header"],
+            "tags": [],
+            "owners": ["desktop/w36:p2"]
+          }
+        },
+        {
+          "fn": "work.filterWorkItems",
+          "args": [
+            [
+              {
+                "id": "1",
+                "project": "roamgate",
+                "title": "Header",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user",
+                "owner": { "session": "desktop/w36:p2" }
+              },
+              {
+                "id": "2",
+                "project": "roamgate",
+                "title": "Footer",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user",
+                "owner": { "session": "desktop/w36:p2", "task": "a1b2" }
+              },
+              {
+                "id": "3",
+                "project": "roamgate",
+                "title": "Header",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user",
+                "owner": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "4",
+                "project": "roamgate",
+                "title": "Header",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              }
+            ],
+            { "query": "owner:desktop/w36:p2 " }
+          ],
+          "result": [
+            {
+              "id": "1",
+              "project": "roamgate",
+              "title": "Header",
+              "state": "open",
+              "tags": [],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user",
+              "owner": { "session": "desktop/w36:p2" }
+            },
+            {
+              "id": "2",
+              "project": "roamgate",
+              "title": "Footer",
+              "state": "open",
+              "tags": [],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user",
+              "owner": { "session": "desktop/w36:p2", "task": "a1b2" }
+            }
+          ]
+        },
+        {
+          "fn": "work.filterWorkItems",
+          "args": [
+            [
+              {
+                "id": "1",
+                "project": "roamgate",
+                "title": "Header",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user",
+                "owner": { "session": "desktop/w36:p2" }
+              },
+              {
+                "id": "2",
+                "project": "roamgate",
+                "title": "Footer",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user",
+                "owner": { "session": "desktop/w36:p2", "task": "a1b2" }
+              },
+              {
+                "id": "3",
+                "project": "roamgate",
+                "title": "Header",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user",
+                "owner": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "4",
+                "project": "roamgate",
+                "title": "Header",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              }
+            ],
+            { "query": "owner:desktop/w36:p2 header" }
+          ],
+          "result": [
+            {
+              "id": "1",
+              "project": "roamgate",
+              "title": "Header",
+              "state": "open",
+              "tags": [],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user",
+              "owner": { "session": "desktop/w36:p2" }
+            }
+          ]
+        },
+        {
+          "fn": "work.filterWorkItems",
+          "args": [
+            [
+              {
+                "id": "1",
+                "project": "roamgate",
+                "title": "Header",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user",
+                "owner": { "session": "desktop/w36:p2" }
+              },
+              {
+                "id": "2",
+                "project": "roamgate",
+                "title": "Footer",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user",
+                "owner": { "session": "desktop/w36:p2", "task": "a1b2" }
+              },
+              {
+                "id": "3",
+                "project": "roamgate",
+                "title": "Header",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user",
+                "owner": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "4",
+                "project": "roamgate",
+                "title": "Header",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              }
+            ],
+            { "query": "owner:w36 " }
+          ],
+          "result": []
+        }
+      ]
+    },
+    {
+      "name": "a chat link: a message chip, and the message it came from",
+      "calls": [
+        {
+          "fn": "work.summarizeWorkLinks",
+          "args": [
+            [
+              {
+                "kind": "chat",
+                "session": "desktop/w36:p2",
+                "chat": "c0ffee",
+                "entry": "msg-7"
+              }
+            ]
+          ],
+          "result": [
+            {
+              "kind": "chat",
+              "label": "message",
+              "count": 1,
+              "title": "a message in desktop/w36:p2's chat"
+            }
+          ]
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [
+            {
+              "kind": "chat",
+              "session": "desktop/w36:p2",
+              "chat": "c0ffee",
+              "entry": "msg-7"
+            },
+            {
+              "session": {
+                "$fn": {
+                  "calls": [
+                    { "args": ["desktop/w36:p2"], "result": "Fix the header" }
+                  ]
+                }
+              }
+            }
+          ],
+          "result": {
+            "label": "The message it came from",
+            "detail": "Agent chat of Fix the header (desktop/w36:p2)"
+          }
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [{ "kind": "chat", "session": "desktop/w36:p2" }],
+          "result": {
+            "label": "The chat it came from",
+            "detail": "Agent chat (desktop/w36:p2)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a file link: a chip with the file's name, the detail its whole path",
+      "calls": [
+        {
+          "fn": "work.workFileLinkPath",
+          "args": [
+            {
+              "kind": "file",
+              "path": "plans/agent-prompts.md",
+              "root": "/home/me/roamgate.worktrees/"
+            }
+          ],
+          "result": "/home/me/roamgate.worktrees/plans/agent-prompts.md"
+        },
+        {
+          "fn": "work.summarizeWorkLinks",
+          "args": [
+            [
+              {
+                "kind": "file",
+                "path": "plans/agent-prompts.md",
+                "root": "/home/me/roamgate.worktrees/"
+              }
+            ]
+          ],
+          "result": [
+            {
+              "kind": "file",
+              "label": "agent-prompts.md",
+              "count": 1,
+              "title": "/home/me/roamgate.worktrees/plans/agent-prompts.md"
+            }
+          ]
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [
+            {
+              "kind": "file",
+              "path": "plans/agent-prompts.md",
+              "root": "/home/me/roamgate.worktrees/",
+              "line": 12
+            }
+          ],
+          "result": {
+            "label": "agent-prompts.md",
+            "detail": "File /home/me/roamgate.worktrees/plans/agent-prompts.md, line 12"
+          }
+        },
+        {
+          "fn": "work.workFileLinkName",
+          "args": [
+            { "kind": "file", "path": "/srv/docs/rfc.md", "label": "The RFC" }
+          ],
+          "result": "The RFC"
+        },
+        {
+          "fn": "work.workFileLinkPath",
+          "args": [
+            { "kind": "file", "path": "/srv/docs/rfc.md", "label": "The RFC" }
+          ],
+          "result": "/srv/docs/rfc.md"
+        },
+        {
+          "fn": "work.summarizeWorkLinks",
+          "args": [
+            [
+              {
+                "kind": "file",
+                "path": "plans/agent-prompts.md",
+                "root": "/home/me/roamgate.worktrees/"
+              },
+              { "kind": "file", "path": "/srv/docs/rfc.md", "label": "The RFC" }
+            ]
+          ],
+          "result": [
+            {
+              "kind": "file",
+              "label": "2 files",
+              "count": 2,
+              "title": "/home/me/roamgate.worktrees/plans/agent-prompts.md\n/srv/docs/rfc.md"
+            }
+          ]
+        },
+        {
+          "fn": "work.workFileLinkPath",
+          "args": [{ "kind": "file", "path": "docs/a.md" }],
+          "result": "docs/a.md"
+        }
+      ]
+    },
+    {
+      "name": "the search's last #word completes to the tags, those it begins first",
+      "calls": [
+        {
+          "fn": "work.workTagCompletions",
+          "args": [
+            "header #vo",
+            ["voice", "reviews", "phone", "work-board", "android-voice"]
+          ],
+          "result": [
+            { "tag": "voice", "insert": "header #voice " },
+            { "tag": "android-voice", "insert": "header #android-voice " }
+          ]
+        },
+        {
+          "fn": "work.workTagCompletions",
+          "args": [
+            "tag:ph",
+            ["voice", "reviews", "phone", "work-board", "android-voice"]
+          ],
+          "result": [{ "tag": "phone", "insert": "#phone " }]
+        },
+        {
+          "fn": "work.workTagCompletions",
+          "args": [
+            "#voice #",
+            ["voice", "reviews", "phone", "work-board", "android-voice"]
+          ],
+          "result": [
+            { "tag": "reviews", "insert": "#voice #reviews " },
+            { "tag": "phone", "insert": "#voice #phone " },
+            { "tag": "work-board", "insert": "#voice #work-board " },
+            { "tag": "android-voice", "insert": "#voice #android-voice " }
+          ]
+        },
+        {
+          "fn": "work.workTagCompletions",
+          "args": [
+            "#voice ",
+            ["voice", "reviews", "phone", "work-board", "android-voice"]
+          ],
+          "result": []
+        },
+        {
+          "fn": "work.workTagCompletions",
+          "args": [
+            "voice",
+            ["voice", "reviews", "phone", "work-board", "android-voice"]
+          ],
+          "result": []
+        }
+      ]
+    },
+    {
+      "name": "a card's tag adds #tag to the search once",
+      "calls": [
+        {
+          "fn": "work.workQueryWithTag",
+          "args": ["", "voice"],
+          "result": "#voice "
+        },
+        {
+          "fn": "work.workQueryWithTag",
+          "args": ["header", "voice"],
+          "result": "header #voice "
+        },
+        {
+          "fn": "work.workQueryWithTag",
+          "args": ["#voice header", "voice"],
+          "result": "#voice header"
+        }
+      ]
+    },
+    {
+      "name": "a card's links: a chip per kind with its count, no raw ids",
+      "calls": [
+        {
+          "fn": "work.summarizeWorkLinks",
+          "args": [
+            [
+              {
+                "kind": "review",
+                "id": "d22a2f86aaaaaaaa",
+                "thread": "cf35a5acbbbbbbbb"
+              },
+              { "kind": "effort", "id": "emwqgkha97zmf" },
+              {
+                "kind": "branch",
+                "name": "webrtc-signaller-tls-verify",
+                "root": "/src/gst"
+              },
+              {
+                "kind": "branch",
+                "name": "webrtcsrc-no-decodebin3-panic",
+                "root": "/src/gst"
+              },
+              {
+                "kind": "commit",
+                "sha": "f9b1e8695000000000",
+                "subject": "webrtc: Verify the signalling server's certificate",
+                "root": "/src/gst-plugins-rs/"
+              },
+              {
+                "kind": "commit",
+                "sha": "62d3530630000000",
+                "subject": "webrtcsrc: Post an error"
+              }
+            ]
+          ],
+          "result": [
+            {
+              "kind": "effort",
+              "label": "effort",
+              "count": 1,
+              "title": "an effort"
+            },
+            {
+              "kind": "thread",
+              "label": "thread",
+              "count": 1,
+              "title": "a review thread"
+            },
+            {
+              "kind": "branch",
+              "label": "2 branches",
+              "count": 2,
+              "title": "webrtc-signaller-tls-verify\nwebrtcsrc-no-decodebin3-panic"
+            },
+            {
+              "kind": "commit",
+              "label": "2 commits",
+              "count": 2,
+              "title": "webrtc: Verify the signalling server's certificate\nwebrtcsrc: Post an error"
+            }
+          ]
+        },
+        {
+          "fn": "work.summarizeWorkLinks",
+          "args": [
+            [
+              {
+                "kind": "pr",
+                "url": "https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/123"
+              }
+            ]
+          ],
+          "result": [
+            { "kind": "pr", "label": "PR !123", "count": 1, "title": "!123" }
+          ]
+        },
+        {
+          "fn": "work.summarizeWorkLinks",
+          "args": [
+            [
+              {
+                "kind": "pr",
+                "url": "https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/123"
+              },
+              { "kind": "pr", "url": "https://github.com/o/r/pull/7" }
+            ]
+          ],
+          "result": [
+            { "kind": "pr", "label": "2 PRs", "count": 2, "title": "!123\n#7" }
+          ]
+        },
+        { "fn": "work.summarizeWorkLinks", "args": [[]], "result": [] }
+      ]
+    },
+    {
+      "name": "a request's number as its forge writes it",
+      "calls": [
+        {
+          "fn": "work.workPrRef",
+          "args": ["https://gitlab.com/a/b/-/merge_requests/42"],
+          "result": "!42"
+        },
+        {
+          "fn": "work.workPrRef",
+          "args": ["https://github.com/a/b/pull/9"],
+          "result": "#9"
+        },
+        {
+          "fn": "work.workPrRef",
+          "args": ["https://example.com/x"],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "the detail's links: labels one reads, named from what the page knows",
+      "calls": [
+        {
+          "fn": "work.readableWorkLink",
+          "args": [
+            {
+              "kind": "review",
+              "id": "d22a2f86aaaaaaaa",
+              "thread": "cf35a5acbbbbbbbb"
+            },
+            {
+              "effort": { "$fn": { "calls": [] } },
+              "review": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": ["d22a2f86aaaaaaaa", "cf35a5acbbbbbbbb"],
+                      "result": {
+                        "title": "Work board",
+                        "thread": "Upstream these two"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "result": {
+            "label": "\"Upstream these two\"",
+            "detail": "Thread in Work board"
+          }
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [
+            { "kind": "effort", "id": "emwqgkha97zmf" },
+            {
+              "effort": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": ["emwqgkha97zmf"],
+                      "result": "gst-plugins-rs webrtc fixes"
+                    }
+                  ]
+                }
+              },
+              "review": { "$fn": { "calls": [] } }
+            }
+          ],
+          "result": {
+            "label": "gst-plugins-rs webrtc fixes",
+            "detail": "Upstreaming effort"
+          }
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [
+            {
+              "kind": "branch",
+              "name": "webrtc-signaller-tls-verify",
+              "root": "/src/gst"
+            },
+            {
+              "effort": { "$fn": { "calls": [] } },
+              "review": { "$fn": { "calls": [] } }
+            }
+          ],
+          "result": {
+            "label": "webrtc-signaller-tls-verify",
+            "detail": "Branch in gst"
+          }
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [
+            {
+              "kind": "branch",
+              "name": "webrtcsrc-no-decodebin3-panic",
+              "root": "/src/gst"
+            },
+            {
+              "effort": { "$fn": { "calls": [] } },
+              "review": { "$fn": { "calls": [] } }
+            }
+          ],
+          "result": {
+            "label": "webrtcsrc-no-decodebin3-panic",
+            "detail": "Branch in gst"
+          }
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [
+            {
+              "kind": "commit",
+              "sha": "f9b1e8695000000000",
+              "subject": "webrtc: Verify the signalling server's certificate",
+              "root": "/src/gst-plugins-rs/"
+            },
+            {
+              "effort": { "$fn": { "calls": [] } },
+              "review": { "$fn": { "calls": [] } }
+            }
+          ],
+          "result": {
+            "label": "webrtc: Verify the signalling server's certificate",
+            "detail": "Commit f9b1e86950 in gst-plugins-rs"
+          }
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [
+            {
+              "kind": "commit",
+              "sha": "62d3530630000000",
+              "subject": "webrtcsrc: Post an error"
+            },
+            {
+              "effort": { "$fn": { "calls": [] } },
+              "review": { "$fn": { "calls": [] } }
+            }
+          ],
+          "result": {
+            "label": "webrtcsrc: Post an error",
+            "detail": "Commit 62d3530630"
+          }
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [
+            {
+              "kind": "review",
+              "id": "d22a2f86aaaaaaaa",
+              "thread": "cf35a5acbbbbbbbb"
+            }
+          ],
+          "result": {
+            "label": "The review thread",
+            "detail": "Thread in a review"
+          }
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [{ "kind": "effort", "id": "emwqgkha97zmf" }],
+          "result": {
+            "label": "An upstreaming effort",
+            "detail": "Upstreaming effort"
+          }
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [
+            { "kind": "pr", "url": "https://github.com/o/r/pull/7" },
+            {
+              "pr": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": ["https://github.com/o/r/pull/7"],
+                      "result": "Fix the caps"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "result": {
+            "label": "Fix the caps",
+            "detail": "Pull request #7 on github.com"
+          }
+        },
+        {
+          "fn": "work.readableWorkLink",
+          "args": [
+            { "kind": "pr", "url": "https://gitlab.com/a/-/merge_requests/3" }
+          ],
+          "result": {
+            "label": "Request !3",
+            "detail": "Merge request on gitlab.com"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a card says what the user has to do only in For you and Verify",
+      "calls": [
+        { "fn": "work.workStateAsks", "args": ["you"], "result": true },
+        { "fn": "work.workStateAsks", "args": ["verify"], "result": true },
+        { "fn": "work.workStateAsks", "args": ["doing"], "result": false },
+        {
+          "fn": "work.workAskOf",
+          "args": [
+            { "state": "you", "ask": " Choose: A or B ", "answers": ["A", "B"] }
+          ],
+          "result": { "ask": "Choose: A or B", "answers": ["A", "B"] }
+        },
+        {
+          "fn": "work.workAskOf",
+          "args": [{ "state": "verify", "ask": " Choose: A or B " }],
+          "result": { "ask": "Choose: A or B", "answers": [] }
+        },
+        {
+          "fn": "work.workAskOf",
+          "args": [
+            {
+              "state": "doing",
+              "ask": " Choose: A or B ",
+              "answers": ["A", "B"]
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "work.workAskOf",
+          "args": [
+            {
+              "state": "you",
+              "ask": " Choose: A or B ",
+              "answers": [
+                "A",
+                "Something else (I will write it)",
+                "Other",
+                "Otherwise B"
+              ]
+            }
+          ],
+          "result": { "ask": "Choose: A or B", "answers": ["A", "Otherwise B"] }
+        },
+        {
+          "fn": "work.workAskOf",
+          "args": [{ "state": "you", "ask": "  " }],
+          "result": null
+        },
+        { "fn": "work.workAskOf", "args": [{ "state": "you" }], "result": null }
+      ]
+    },
+    {
+      "name": "answers: one line each, short, no empty nor repeated ones, 6 at most",
+      "calls": [
+        {
+          "fn": "work.normalizeWorkAnswers",
+          "args": [[" Yes ", "yes", "", "No\nway"]],
+          "result": ["Yes", "No way"]
+        },
+        {
+          "fn": "work.normalizeWorkAnswers",
+          "args": [
+            [
+              "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            ]
+          ],
+          "result": [
+            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+          ]
+        },
+        {
+          "fn": "work.normalizeWorkAnswers",
+          "args": [["1", "2", "3", "4", "5", "6", "7", "8"]],
+          "result": ["1", "2", "3", "4", "5", "6"]
+        }
+      ]
+    },
+    {
+      "name": "a project's family: itself and its subprojects at any depth",
+      "calls": [
+        {
+          "fn": "work.workProjectFamily",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "gstreamer"
+          ],
+          "result": ["gstreamer", "gst2", "gst2-docs"]
+        },
+        {
+          "fn": "work.workProjectFamily",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "gst2"
+          ],
+          "result": ["gst2", "gst2-docs"]
+        },
+        {
+          "fn": "work.workProjectFamily",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "nope"
+          ],
+          "result": ["nope"]
+        },
+        {
+          "fn": "work.workTopProject",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "gst2-docs"
+          ],
+          "result": "gstreamer"
+        },
+        {
+          "fn": "work.workTopProject",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "roamgate"
+          ],
+          "result": "roamgate"
+        },
+        {
+          "fn": "work.workProjectFamily",
+          "args": [
+            [
+              {
+                "id": "a",
+                "name": "a",
+                "roots": [],
+                "done": { "kind": "deployed" },
+                "parent": "b"
+              },
+              {
+                "id": "b",
+                "name": "b",
+                "roots": [],
+                "done": { "kind": "deployed" },
+                "parent": "a"
+              }
+            ],
+            "a"
+          ],
+          "result": ["a", "b"]
+        },
+        {
+          "fn": "work.workTopProject",
+          "args": [
+            [
+              {
+                "id": "a",
+                "name": "a",
+                "roots": [],
+                "done": { "kind": "deployed" },
+                "parent": "b"
+              },
+              {
+                "id": "b",
+                "name": "b",
+                "roots": [],
+                "done": { "kind": "deployed" },
+                "parent": "a"
+              }
+            ],
+            "a"
+          ],
+          "result": "a"
+        },
+        {
+          "fn": "work.workProjectTree",
+          "args": [
+            [
+              {
+                "id": "a",
+                "name": "a",
+                "roots": [],
+                "done": { "kind": "deployed" },
+                "parent": "b"
+              },
+              {
+                "id": "b",
+                "name": "b",
+                "roots": [],
+                "done": { "kind": "deployed" },
+                "parent": "a"
+              }
+            ]
+          ],
+          "result": [
+            {
+              "project": {
+                "id": "a",
+                "name": "a",
+                "roots": [],
+                "done": { "kind": "deployed" },
+                "parent": "b"
+              },
+              "depth": 0
+            },
+            {
+              "project": {
+                "id": "b",
+                "name": "b",
+                "roots": [],
+                "done": { "kind": "deployed" },
+                "parent": "a"
+              },
+              "depth": 1
+            }
+          ]
+        },
+        {
+          "fn": "work.workProjectTree",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ]
+          ],
+          "result": [
+            {
+              "project": {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              "depth": 0
+            },
+            {
+              "project": {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              "depth": 1
+            },
+            {
+              "project": {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              },
+              "depth": 2
+            },
+            {
+              "project": {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              "depth": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a path's project: the closest root",
+      "calls": [
+        {
+          "fn": "work.workProjectForPaths",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "desktop",
+            ["/g/2.0/gst2-video"]
+          ],
+          "result": {
+            "id": "gst2",
+            "name": "gst2",
+            "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+            "done": { "kind": "deployed" },
+            "parent": "gstreamer",
+            "coordinator": { "session": "desktop/w32:p1" }
+          }
+        },
+        {
+          "fn": "work.workProjectForPaths",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "desktop",
+            ["/g/2.0/docs/x"]
+          ],
+          "result": {
+            "id": "gst2-docs",
+            "name": "gst2-docs",
+            "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+            "done": { "kind": "deployed" },
+            "parent": "gst2"
+          }
+        },
+        {
+          "fn": "work.workProjectForPaths",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "desktop",
+            ["/g/upstreaming/ocio"]
+          ],
+          "result": {
+            "id": "gstreamer",
+            "name": "gstreamer",
+            "roots": [
+              { "connectionId": "desktop", "path": "/g/gstreamer" },
+              { "connectionId": "desktop", "path": "/g" }
+            ],
+            "done": { "kind": "deployed" }
+          }
+        },
+        {
+          "fn": "work.workProjectForPaths",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "desktop",
+            ["/g2"]
+          ],
+          "result": null
+        },
+        {
+          "fn": "work.workProjectForPaths",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "mac",
+            ["/g/2.0"]
+          ],
+          "result": null
+        },
+        {
+          "fn": "work.workProjectForPaths",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "desktop",
+            [null, "/x", "/r/w", "/g"]
+          ],
+          "result": {
+            "id": "roamgate",
+            "name": "roamgate",
+            "roots": [{ "connectionId": "desktop", "path": "/r" }],
+            "done": { "kind": "deployed" },
+            "coordinator": { "session": "desktop/w35:p1" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a workspace's tag: its name as a slug",
+      "calls": [
+        {
+          "fn": "work.workWorkspaceTag",
+          "args": ["gst2-video"],
+          "result": "ws:gst2-video"
+        },
+        {
+          "fn": "work.workWorkspaceTag",
+          "args": ["Reviews · OpenColorIO"],
+          "result": "ws:reviews-opencolorio"
+        },
+        {
+          "fn": "work.workWorkspaceTag",
+          "args": ["!7031 ges: timeline: synchronize flushing"],
+          "result": "ws:7031-ges-timeline-synchronize-flushin"
+        },
+        { "fn": "work.workWorkspaceTag", "args": ["été"], "result": "ws:ete" },
+        { "fn": "work.workWorkspaceTag", "args": ["!!"], "result": null },
+        {
+          "fn": "work.workTagLabel",
+          "args": ["ws:gst2-video"],
+          "result": "gst2-video"
+        },
+        { "fn": "work.workTagLabel", "args": ["voice"], "result": "voice" },
+        {
+          "fn": "work.parseWorkQuery",
+          "args": ["#ws:gst2-video "],
+          "result": { "words": [], "tags": ["ws:gst2-video"], "owners": [] }
+        }
+      ]
+    },
+    {
+      "name": "a workspace's place: coordinator, project, the tag its items get",
+      "calls": [
+        {
+          "fn": "work.workPlaceScope",
+          "args": [
+            {
+              "connectionId": "desktop",
+              "label": "w",
+              "paths": ["/elsewhere"],
+              "paneIds": ["w32:p1"]
+            },
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ]
+          ],
+          "result": {
+            "project": {
+              "id": "gst2",
+              "name": "gst2",
+              "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+              "done": { "kind": "deployed" },
+              "parent": "gstreamer",
+              "coordinator": { "session": "desktop/w32:p1" }
+            },
+            "tag": "ws:w",
+            "coordinator": true
+          }
+        },
+        {
+          "fn": "work.workPlaceScope",
+          "args": [
+            {
+              "connectionId": "desktop",
+              "label": "gst2-video",
+              "paths": ["/g/2.0/gst2-video"],
+              "paneIds": ["w36:p1"]
+            },
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ]
+          ],
+          "result": {
+            "project": {
+              "id": "gst2",
+              "name": "gst2",
+              "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+              "done": { "kind": "deployed" },
+              "parent": "gstreamer",
+              "coordinator": { "session": "desktop/w32:p1" }
+            },
+            "tag": "ws:gst2-video",
+            "coordinator": false
+          }
+        },
+        {
+          "fn": "work.workPlaceScope",
+          "args": [
+            {
+              "connectionId": "desktop",
+              "label": "w",
+              "paths": ["/nowhere"],
+              "paneIds": ["x"]
+            },
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ]
+          ],
+          "result": null
+        },
+        {
+          "fn": "work.workPlaceTagFor",
+          "args": [
+            {
+              "connectionId": "desktop",
+              "label": "gst2-video",
+              "paths": ["/g/2.0/gst2-video"],
+              "paneIds": ["w36:p1"]
+            },
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "gst2"
+          ],
+          "result": "ws:gst2-video"
+        },
+        {
+          "fn": "work.workPlaceTagFor",
+          "args": [
+            {
+              "connectionId": "desktop",
+              "label": "gst2-video",
+              "paths": ["/g/2.0/gst2-video"],
+              "paneIds": ["w36:p1"]
+            },
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "gstreamer"
+          ],
+          "result": "ws:gst2-video"
+        },
+        {
+          "fn": "work.workPlaceTagFor",
+          "args": [
+            {
+              "connectionId": "desktop",
+              "label": "gst2-video",
+              "paths": ["/g/2.0/gst2-video"],
+              "paneIds": ["w36:p1"]
+            },
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "roamgate"
+          ],
+          "result": null
+        },
+        {
+          "fn": "work.workPlaceTagFor",
+          "args": [
+            {
+              "connectionId": "desktop",
+              "label": "gst2",
+              "paths": [],
+              "paneIds": ["w32:p1"]
+            },
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "gst2"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "a filter by a project's tree",
+      "calls": [
+        {
+          "fn": "work.workProjectFamily",
+          "args": [
+            [
+              {
+                "id": "gst2",
+                "name": "gst2",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0" }],
+                "done": { "kind": "deployed" },
+                "parent": "gstreamer",
+                "coordinator": { "session": "desktop/w32:p1" }
+              },
+              {
+                "id": "gstreamer",
+                "name": "gstreamer",
+                "roots": [
+                  { "connectionId": "desktop", "path": "/g/gstreamer" },
+                  { "connectionId": "desktop", "path": "/g" }
+                ],
+                "done": { "kind": "deployed" }
+              },
+              {
+                "id": "roamgate",
+                "name": "roamgate",
+                "roots": [{ "connectionId": "desktop", "path": "/r" }],
+                "done": { "kind": "deployed" },
+                "coordinator": { "session": "desktop/w35:p1" }
+              },
+              {
+                "id": "gst2-docs",
+                "name": "gst2-docs",
+                "roots": [{ "connectionId": "desktop", "path": "/g/2.0/docs" }],
+                "done": { "kind": "deployed" },
+                "parent": "gst2"
+              }
+            ],
+            "gstreamer"
+          ],
+          "result": ["gstreamer", "gst2", "gst2-docs"]
+        },
+        {
+          "fn": "work.filterWorkItems",
+          "args": [
+            [
+              {
+                "id": "a",
+                "project": "gst2",
+                "title": "A",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "b",
+                "project": "gstreamer",
+                "title": "B",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              },
+              {
+                "id": "c",
+                "project": "roamgate",
+                "title": "C",
+                "state": "open",
+                "tags": [],
+                "links": [],
+                "createdAt": "2026-11-21T10:00:00.000Z",
+                "updatedAt": "2026-11-21T10:00:00.000Z",
+                "by": "user"
+              }
+            ],
+            { "projects": ["gstreamer", "gst2", "gst2-docs"] }
+          ],
+          "result": [
+            {
+              "id": "a",
+              "project": "gst2",
+              "title": "A",
+              "state": "open",
+              "tags": [],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user"
+            },
+            {
+              "id": "b",
+              "project": "gstreamer",
+              "title": "B",
+              "state": "open",
+              "tags": [],
+              "links": [],
+              "createdAt": "2026-11-21T10:00:00.000Z",
+              "updatedAt": "2026-11-21T10:00:00.000Z",
+              "by": "user"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a link's checkouts, in order: its own root (on the connection of the project's root holding it), the project's roots, the branch rule's",
+      "calls": [
+        {
+          "fn": "work.workLinkRoots",
+          "args": [
+            { "kind": "commit", "sha": "abcd1234", "root": "/g/2.0/gstreamer" },
+            {
+              "roots": [
+                { "connectionId": "desktop", "path": "/g/2.0/" },
+                { "connectionId": "mac", "path": "/Users/me/2.0" }
+              ],
+              "done": {
+                "kind": "branch",
+                "root": "/g/2.0/gstreamer",
+                "branch": "main",
+                "connectionId": "desktop"
+              }
+            }
+          ],
+          "result": [
+            { "connectionId": "desktop", "path": "/g/2.0/gstreamer" },
+            { "connectionId": "desktop", "path": "/g/2.0" },
+            { "connectionId": "mac", "path": "/Users/me/2.0" }
+          ]
+        },
+        {
+          "fn": "work.workLinkRoots",
+          "args": [
+            { "kind": "deploy", "sha": "abcd1234" },
+            {
+              "roots": [
+                { "connectionId": "desktop", "path": "/g/2.0/" },
+                { "connectionId": "mac", "path": "/Users/me/2.0" }
+              ],
+              "done": {
+                "kind": "branch",
+                "root": "/g/2.0/gstreamer",
+                "branch": "main",
+                "connectionId": "desktop"
+              }
+            }
+          ],
+          "result": [
+            { "connectionId": "desktop", "path": "/g/2.0" },
+            { "connectionId": "mac", "path": "/Users/me/2.0" },
+            { "connectionId": "desktop", "path": "/g/2.0/gstreamer" }
+          ]
+        },
+        {
+          "fn": "work.workLinkRoots",
+          "args": [
+            { "kind": "branch", "name": "x", "root": "/elsewhere" },
+            null
+          ],
+          "result": [{ "path": "/elsewhere" }]
+        }
+      ]
+    },
+    {
+      "name": "done when: doing and open items go done when their commit lands; verify and for you only record it",
+      "calls": [
+        {
+          "fn": "work.workLandingMakesDone",
+          "args": ["doing"],
+          "result": true
+        },
+        { "fn": "work.workLandingMakesDone", "args": ["open"], "result": true },
+        {
+          "fn": "work.workLandingMakesDone",
+          "args": ["verify"],
+          "result": false
+        },
+        { "fn": "work.workLandingMakesDone", "args": ["you"], "result": false },
+        {
+          "fn": "work.workDoneWhen",
+          "args": [
+            {
+              "state": "doing",
+              "links": [{ "kind": "commit", "sha": "abcd1234" }]
+            },
+            { "done": { "kind": "deployed" } }
+          ],
+          "result": "its commit reaches this Roamgate's deployed build"
+        },
+        {
+          "fn": "work.workDoneWhen",
+          "args": [
+            {
+              "state": "verify",
+              "links": [{ "kind": "commit", "sha": "abcd1234" }]
+            },
+            { "done": { "kind": "deployed" } }
+          ],
+          "result": "when the user verifies it and marks it done: its landing (its commit reaching this Roamgate's deployed build) is only recorded, the item stays in Verify"
+        },
+        {
+          "fn": "work.workDoneWhen",
+          "args": [
+            {
+              "state": "verify",
+              "links": [
+                { "kind": "commit", "sha": "abcd1234" },
+                { "kind": "deploy", "sha": "abcd1234" }
+              ]
+            },
+            { "done": { "kind": "deployed" } }
+          ],
+          "result": "when the user verifies it and marks it done: it landed already, and stays in Verify until then"
+        },
+        {
+          "fn": "work.workDoneWhen",
+          "args": [
+            {
+              "state": "you",
+              "links": [{ "kind": "commit", "sha": "abcd1234" }]
+            },
+            { "done": { "kind": "deployed" } }
+          ],
+          "result": "when the user answers and marks it done: its landing (its commit reaching this Roamgate's deployed build) is only recorded, the item stays For you"
+        }
+      ]
+    },
+    {
+      "name": "an item's open questions: the agent's unresolved threads on parts of its description",
+      "calls": [
+        {
+          "fn": "work.workOpenQuestions",
+          "args": [[], { "createdAt": "2026-11-22T10:00:00.000Z" }],
+          "result": 0
+        },
+        {
+          "fn": "work.workOpenQuestions",
+          "args": [
+            [
+              {
+                "id": "d",
+                "anchor": { "work": { "item": "1", "description": true } },
+                "createdAt": "2026-11-22T10:00:00.000Z",
+                "resolved": false,
+                "comments": [{ "id": "c1", "author": "Claude" }]
+              },
+              {
+                "id": "q1",
+                "anchor": {
+                  "work": { "item": "1" },
+                  "message": {
+                    "thread": "d",
+                    "comment": "c1",
+                    "quote": "Retention"
+                  }
+                },
+                "createdAt": "2026-11-22T10:00:00.000Z",
+                "resolved": false,
+                "comments": [{ "id": "q1c", "author": "Claude" }]
+              },
+              {
+                "id": "q2",
+                "anchor": {
+                  "work": { "item": "1" },
+                  "message": {
+                    "thread": "d",
+                    "comment": "c1",
+                    "quote": "Scope"
+                  }
+                },
+                "createdAt": "2026-11-22T10:00:00.000Z",
+                "resolved": false,
+                "comments": [{ "id": "q2c", "author": "Claude" }]
+              },
+              {
+                "id": "q3",
+                "anchor": {
+                  "work": { "item": "1" },
+                  "message": {
+                    "thread": "d",
+                    "comment": "c1",
+                    "quote": "Approach"
+                  }
+                },
+                "createdAt": "2026-11-22T10:00:00.000Z",
+                "resolved": true,
+                "comments": [{ "id": "q3c", "author": "Claude" }]
+              },
+              {
+                "id": "u1",
+                "anchor": {
+                  "work": { "item": "1" },
+                  "message": {
+                    "thread": "d",
+                    "comment": "c1",
+                    "quote": "Retention"
+                  }
+                },
+                "createdAt": "2026-11-22T10:00:00.000Z",
+                "resolved": false,
+                "comments": [{ "id": "u1c", "author": "you" }]
+              },
+              {
+                "id": "w1",
+                "anchor": {
+                  "work": { "item": "1" },
+                  "message": { "thread": "d", "comment": "c1" }
+                },
+                "createdAt": "2026-11-22T10:00:00.000Z",
+                "resolved": false,
+                "comments": [{ "id": "w1c", "author": "Claude" }]
+              },
+              {
+                "id": "o1",
+                "anchor": {
+                  "message": {
+                    "thread": "x",
+                    "comment": "c9",
+                    "quote": "Retention"
+                  }
+                },
+                "createdAt": "2026-11-22T10:00:00.000Z",
+                "resolved": false,
+                "comments": [{ "id": "o1c", "author": "Claude" }]
+              }
+            ],
+            { "createdAt": "2026-11-22T10:00:00.000Z" }
+          ],
+          "result": 2
+        }
+      ]
+    },
+    {
+      "name": "a description with a heading reads as a document",
+      "calls": [
+        {
+          "fn": "work.workDescriptionIsDocument",
+          "args": ["# Data history\n\nwords"],
+          "result": true
+        },
+        {
+          "fn": "work.workDescriptionIsDocument",
+          "args": ["intro\n\n## Decisions"],
+          "result": true
+        },
+        {
+          "fn": "work.workDescriptionIsDocument",
+          "args": ["Fix the #12 bug\nplease"],
+          "result": false
+        },
+        {
+          "fn": "work.workDescriptionIsDocument",
+          "args": ["#nospace"],
+          "result": false
+        }
+      ]
+    }
+  ]
+}

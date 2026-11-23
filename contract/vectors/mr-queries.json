@@ -1,0 +1,1346 @@
+{
+  "description": "Forge GraphQL query text for the merge request inbox. Read by `bun test` in server/src/mr-reviews/queries.test.ts.",
+  "modules": { "queries": "server/src/mr-reviews/queries.ts" },
+  "cases": [
+    {
+      "name": "the query asks each list and each followed project",
+      "group": ["GitLab inbox"],
+      "calls": [
+        {
+          "fn": "queries.gitlabInboxQuery",
+          "args": [["group/app", "we\"ird/x"]],
+          "result": {
+            "$text": [
+              "query { currentUser { username rr: reviewRequestedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } as: assignedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } todos(state: pending, action: [mentioned, directly_addressed], type: [MERGEREQUEST], first: 50) { nodes { action target { ... on MergeRequest { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } } } } f0: project(fullPath: \"group/app\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } f1: project(fullPath: \"we\\\"ird/x\") { fullPath mergeRequests(state: opened, sort: UPDATED_DESC, first: 40) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } diffStats { path } } } } }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "merges the lists with their reasons, keeps followed apart",
+      "group": ["GitLab inbox"],
+      "calls": [
+        {
+          "fn": "queries.parseGitlabInbox",
+          "args": [
+            "gitlab.example.org",
+            ["group/app", "gone/x"],
+            {
+              "data": {
+                "currentUser": {
+                  "username": "me",
+                  "rr": {
+                    "nodes": [
+                      {
+                        "iid": "1",
+                        "title": "MR 1",
+                        "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/1",
+                        "draft": false,
+                        "state": "opened",
+                        "updatedAt": "2026-11-03T14:40:45Z",
+                        "userNotesCount": 3,
+                        "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                        "sourceBranch": "topic",
+                        "targetBranch": "main",
+                        "project": { "fullPath": "group/app" },
+                        "author": { "username": "alice" },
+                        "headPipeline": { "status": "FAILED" },
+                        "diffRefs": {
+                          "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+                        }
+                      }
+                    ]
+                  },
+                  "as": {
+                    "nodes": [
+                      {
+                        "iid": "1",
+                        "title": "MR 1",
+                        "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/1",
+                        "draft": false,
+                        "state": "opened",
+                        "updatedAt": "2026-11-03T14:40:45Z",
+                        "userNotesCount": 3,
+                        "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                        "sourceBranch": "topic",
+                        "targetBranch": "main",
+                        "project": { "fullPath": "group/app" },
+                        "author": { "username": "alice" },
+                        "headPipeline": { "status": "FAILED" },
+                        "diffRefs": {
+                          "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+                        }
+                      },
+                      {
+                        "iid": "2",
+                        "title": "MR 2",
+                        "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/2",
+                        "draft": false,
+                        "state": "opened",
+                        "updatedAt": "2026-11-03T14:40:45Z",
+                        "userNotesCount": 3,
+                        "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                        "sourceBranch": "topic",
+                        "targetBranch": "main",
+                        "project": { "fullPath": "group/app" },
+                        "author": { "username": "alice" },
+                        "headPipeline": { "status": "FAILED" },
+                        "diffRefs": {
+                          "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+                        }
+                      }
+                    ]
+                  },
+                  "todos": {
+                    "nodes": [
+                      {
+                        "action": "mentioned",
+                        "target": {
+                          "iid": "3",
+                          "title": "MR 3",
+                          "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/3",
+                          "draft": false,
+                          "state": "opened",
+                          "updatedAt": "2026-11-03T14:40:45Z",
+                          "userNotesCount": 3,
+                          "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                          "sourceBranch": "topic",
+                          "targetBranch": "main",
+                          "project": { "fullPath": "group/app" },
+                          "author": { "username": "alice" },
+                          "headPipeline": { "status": "FAILED" },
+                          "diffRefs": {
+                            "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+                          }
+                        }
+                      },
+                      {
+                        "action": "mentioned",
+                        "target": {
+                          "iid": "4",
+                          "title": "MR 4",
+                          "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/4",
+                          "draft": false,
+                          "state": "merged",
+                          "updatedAt": "2026-11-03T14:40:45Z",
+                          "userNotesCount": 3,
+                          "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                          "sourceBranch": "topic",
+                          "targetBranch": "main",
+                          "project": { "fullPath": "group/app" },
+                          "author": { "username": "alice" },
+                          "headPipeline": { "status": "FAILED" },
+                          "diffRefs": {
+                            "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "f0": {
+                  "mergeRequests": {
+                    "nodes": [
+                      {
+                        "iid": "1",
+                        "title": "MR 1",
+                        "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/1",
+                        "draft": false,
+                        "state": "opened",
+                        "updatedAt": "2026-11-03T14:40:45Z",
+                        "userNotesCount": 3,
+                        "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                        "sourceBranch": "topic",
+                        "targetBranch": "main",
+                        "project": { "fullPath": "group/app" },
+                        "author": { "username": "alice" },
+                        "headPipeline": { "status": "FAILED" },
+                        "diffRefs": {
+                          "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+                        }
+                      },
+                      {
+                        "iid": "9",
+                        "title": "MR 9",
+                        "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/9",
+                        "draft": false,
+                        "state": "opened",
+                        "updatedAt": "2026-11-03T14:40:45Z",
+                        "userNotesCount": 3,
+                        "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                        "sourceBranch": "topic",
+                        "targetBranch": "main",
+                        "project": { "fullPath": "group/app" },
+                        "author": { "username": "alice" },
+                        "headPipeline": { "status": "FAILED" },
+                        "diffRefs": {
+                          "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+                        },
+                        "diffStats": [{ "path": "a.c" }]
+                      }
+                    ]
+                  }
+                },
+                "f1": null
+              }
+            }
+          ],
+          "result": {
+            "user": "me",
+            "mine": [
+              {
+                "provider": "gitlab",
+                "host": "gitlab.example.org",
+                "project": "group/app",
+                "number": 1,
+                "key": "gitlab:gitlab.example.org/group/app#1",
+                "url": "https://gitlab.example.org/group/app/-/merge_requests/1",
+                "title": "MR 1",
+                "author": "alice",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-03T14:40:45Z",
+                "headSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331",
+                "sourceBranch": "topic",
+                "targetBranch": "main",
+                "pipeline": "failed",
+                "notes": 3,
+                "reasons": ["review_requested", "assigned"]
+              },
+              {
+                "provider": "gitlab",
+                "host": "gitlab.example.org",
+                "project": "group/app",
+                "number": 2,
+                "key": "gitlab:gitlab.example.org/group/app#2",
+                "url": "https://gitlab.example.org/group/app/-/merge_requests/2",
+                "title": "MR 2",
+                "author": "alice",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-03T14:40:45Z",
+                "headSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331",
+                "sourceBranch": "topic",
+                "targetBranch": "main",
+                "pipeline": "failed",
+                "notes": 3,
+                "reasons": ["assigned"]
+              },
+              {
+                "provider": "gitlab",
+                "host": "gitlab.example.org",
+                "project": "group/app",
+                "number": 3,
+                "key": "gitlab:gitlab.example.org/group/app#3",
+                "url": "https://gitlab.example.org/group/app/-/merge_requests/3",
+                "title": "MR 3",
+                "author": "alice",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-03T14:40:45Z",
+                "headSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331",
+                "sourceBranch": "topic",
+                "targetBranch": "main",
+                "pipeline": "failed",
+                "notes": 3,
+                "reasons": ["mentioned"]
+              }
+            ],
+            "followed": [
+              {
+                "provider": "gitlab",
+                "host": "gitlab.example.org",
+                "project": "group/app",
+                "number": 1,
+                "key": "gitlab:gitlab.example.org/group/app#1",
+                "url": "https://gitlab.example.org/group/app/-/merge_requests/1",
+                "title": "MR 1",
+                "author": "alice",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-03T14:40:45Z",
+                "headSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331",
+                "sourceBranch": "topic",
+                "targetBranch": "main",
+                "pipeline": "failed",
+                "notes": 3,
+                "reasons": []
+              },
+              {
+                "provider": "gitlab",
+                "host": "gitlab.example.org",
+                "project": "group/app",
+                "number": 9,
+                "key": "gitlab:gitlab.example.org/group/app#9",
+                "url": "https://gitlab.example.org/group/app/-/merge_requests/9",
+                "title": "MR 9",
+                "author": "alice",
+                "draft": false,
+                "state": "open",
+                "updatedAt": "2026-11-03T14:40:45Z",
+                "headSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331",
+                "sourceBranch": "topic",
+                "targetBranch": "main",
+                "pipeline": "failed",
+                "notes": 3,
+                "reasons": [],
+                "files": ["a.c"]
+              }
+            ],
+            "missing": ["gone/x"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "a URL on another host or request is not trusted",
+      "group": ["GitLab inbox"],
+      "calls": [
+        {
+          "fn": "queries.parseGitlabInbox",
+          "args": [
+            "gitlab.example.org",
+            [],
+            {
+              "data": {
+                "currentUser": {
+                  "username": "me",
+                  "rr": {
+                    "nodes": [
+                      {
+                        "iid": "1",
+                        "title": "MR 1",
+                        "webUrl": "https://evil.example/group/app/-/merge_requests/1",
+                        "draft": false,
+                        "state": "opened",
+                        "updatedAt": "2026-11-03T14:40:45Z",
+                        "userNotesCount": 3,
+                        "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                        "sourceBranch": "topic",
+                        "targetBranch": "main",
+                        "project": { "fullPath": "group/app" },
+                        "author": { "username": "alice" },
+                        "headPipeline": { "status": "FAILED" },
+                        "diffRefs": {
+                          "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "result": { "user": "me", "mine": [], "followed": [], "missing": [] }
+        }
+      ]
+    },
+    {
+      "name": "no user: not signed in; errors: said",
+      "group": ["GitLab inbox"],
+      "calls": [
+        {
+          "fn": "queries.parseGitlabInbox",
+          "args": ["h.org", [], { "data": { "currentUser": null } }],
+          "throws": "GitLab: not signed in"
+        },
+        {
+          "fn": "queries.parseGitlabInbox",
+          "args": ["h.org", [], { "errors": [{ "message": "boom" }] }],
+          "throws": "GitLab: boom"
+        }
+      ]
+    },
+    {
+      "name": "the query searches each list and each followed repository",
+      "group": ["GitHub inbox"],
+      "calls": [
+        {
+          "fn": "queries.githubInboxQuery",
+          "args": [["o/r", "bad"]],
+          "result": {
+            "$text": [
+              "query { viewer { login } rr: search(type: ISSUE, query: \"is:open is:pr archived:false review-requested:@me\", first: 50) { nodes { ... on PullRequest { number title url isDraft state updatedAt headRefOid baseRefOid headRefName baseRefName repository { nameWithOwner } author { login } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } labels(first: 10) { nodes { name } } } } } as: search(type: ISSUE, query: \"is:open is:pr archived:false assignee:@me\", first: 50) { nodes { ... on PullRequest { number title url isDraft state updatedAt headRefOid baseRefOid headRefName baseRefName repository { nameWithOwner } author { login } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } labels(first: 10) { nodes { name } } } } } mn: search(type: ISSUE, query: \"is:open is:pr archived:false mentions:@me\", first: 50) { nodes { ... on PullRequest { number title url isDraft state updatedAt headRefOid baseRefOid headRefName baseRefName repository { nameWithOwner } author { login } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } labels(first: 10) { nodes { name } } } } } f0: repository(owner: \"o\", name: \"r\") { nameWithOwner pullRequests(states: OPEN, first: 40, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { number title url isDraft state updatedAt headRefOid baseRefOid headRefName baseRefName repository { nameWithOwner } author { login } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } labels(first: 10) { nodes { name } } files(first: 40) { nodes { path } } } } } }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "parses lists, pending drafts and followed files",
+      "group": ["GitHub inbox"],
+      "calls": [
+        {
+          "fn": "queries.parseGithubInbox",
+          "args": [
+            "github.com",
+            ["o/r"],
+            {
+              "data": {
+                "viewer": { "login": "me" },
+                "rr": {
+                  "nodes": [
+                    {
+                      "number": 5,
+                      "title": "PR 5",
+                      "url": "https://github.com/o/r/pull/5",
+                      "isDraft": true,
+                      "state": "OPEN",
+                      "updatedAt": "2026-11-02T10:00:00Z",
+                      "headRefOid": "aaaaaaa1111111",
+                      "baseRefOid": "bbbbbbb2222222",
+                      "headRefName": "topic",
+                      "baseRefName": "main",
+                      "repository": { "nameWithOwner": "o/r" },
+                      "author": { "login": "bob" },
+                      "comments": { "totalCount": 2 },
+                      "reviewThreads": { "totalCount": 1 },
+                      "commits": {
+                        "nodes": [
+                          {
+                            "commit": {
+                              "statusCheckRollup": { "state": "SUCCESS" }
+                            }
+                          }
+                        ]
+                      },
+                      "reviews": {
+                        "nodes": [{ "comments": { "totalCount": 4 } }]
+                      }
+                    }
+                  ]
+                },
+                "as": { "nodes": [] },
+                "mn": {
+                  "nodes": [
+                    {
+                      "number": 5,
+                      "title": "PR 5",
+                      "url": "https://github.com/o/r/pull/5",
+                      "isDraft": true,
+                      "state": "OPEN",
+                      "updatedAt": "2026-11-02T10:00:00Z",
+                      "headRefOid": "aaaaaaa1111111",
+                      "baseRefOid": "bbbbbbb2222222",
+                      "headRefName": "topic",
+                      "baseRefName": "main",
+                      "repository": { "nameWithOwner": "o/r" },
+                      "author": { "login": "bob" },
+                      "comments": { "totalCount": 2 },
+                      "reviewThreads": { "totalCount": 1 },
+                      "commits": {
+                        "nodes": [
+                          {
+                            "commit": {
+                              "statusCheckRollup": { "state": "SUCCESS" }
+                            }
+                          }
+                        ]
+                      },
+                      "reviews": {
+                        "nodes": [{ "comments": { "totalCount": 4 } }]
+                      }
+                    },
+                    {}
+                  ]
+                },
+                "f0": {
+                  "pullRequests": {
+                    "nodes": [
+                      {
+                        "number": 7,
+                        "title": "PR 7",
+                        "url": "https://github.com/o/r/pull/7",
+                        "isDraft": true,
+                        "state": "OPEN",
+                        "updatedAt": "2026-11-02T10:00:00Z",
+                        "headRefOid": "aaaaaaa1111111",
+                        "baseRefOid": "bbbbbbb2222222",
+                        "headRefName": "topic",
+                        "baseRefName": "main",
+                        "repository": { "nameWithOwner": "o/r" },
+                        "author": { "login": "bob" },
+                        "comments": { "totalCount": 2 },
+                        "reviewThreads": { "totalCount": 1 },
+                        "commits": {
+                          "nodes": [
+                            {
+                              "commit": {
+                                "statusCheckRollup": { "state": "SUCCESS" }
+                              }
+                            }
+                          ]
+                        },
+                        "reviews": {
+                          "nodes": [{ "comments": { "totalCount": 4 } }]
+                        },
+                        "files": { "nodes": [{ "path": "x.rs" }] }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "result": {
+            "user": "me",
+            "mine": [
+              {
+                "provider": "github",
+                "host": "github.com",
+                "project": "o/r",
+                "number": 5,
+                "key": "github:github.com/o/r#5",
+                "url": "https://github.com/o/r/pull/5",
+                "title": "PR 5",
+                "author": "bob",
+                "draft": true,
+                "state": "open",
+                "updatedAt": "2026-11-02T10:00:00Z",
+                "headSha": "aaaaaaa1111111",
+                "baseSha": "bbbbbbb2222222",
+                "sourceBranch": "topic",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 3,
+                "reasons": ["review_requested", "mentioned"],
+                "drafts": 4
+              }
+            ],
+            "followed": [
+              {
+                "provider": "github",
+                "host": "github.com",
+                "project": "o/r",
+                "number": 7,
+                "key": "github:github.com/o/r#7",
+                "url": "https://github.com/o/r/pull/7",
+                "title": "PR 7",
+                "author": "bob",
+                "draft": true,
+                "state": "open",
+                "updatedAt": "2026-11-02T10:00:00Z",
+                "headSha": "aaaaaaa1111111",
+                "baseSha": "bbbbbbb2222222",
+                "sourceBranch": "topic",
+                "targetBranch": "main",
+                "pipeline": "success",
+                "notes": 3,
+                "reasons": [],
+                "drafts": 4,
+                "files": ["x.rs"]
+              }
+            ],
+            "missing": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "the forges' labels are read with the lists",
+      "calls": [
+        {
+          "fn": "queries.gitlabInboxQuery",
+          "args": [[]],
+          "result": "query { currentUser { username rr: reviewRequestedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } as: assignedMergeRequests(state: opened, sort: UPDATED_DESC, first: 50) { nodes { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } todos(state: pending, action: [mentioned, directly_addressed], type: [MERGEREQUEST], first: 50) { nodes { action target { ... on MergeRequest { iid title webUrl draft state updatedAt userNotesCount diffHeadSha sourceBranch targetBranch project { fullPath } author { username } headPipeline { status } diffRefs { baseSha } labels { nodes { title } } } } } } }  }"
+        },
+        {
+          "fn": "queries.gitlabOwnListQuery",
+          "args": [],
+          "result": "query { currentUser { username op: authoredMergeRequests(state: opened, sort: CREATED_DESC, first: 100) { pageInfo { hasNextPage endCursor } nodes { iid title webUrl draft state updatedAt diffHeadSha sourceBranch targetBranch project { fullPath } author { username } labels { nodes { title } } } } mg: authoredMergeRequests(state: merged, sort: UPDATED_DESC, first: 10) { nodes { iid title webUrl draft state updatedAt diffHeadSha sourceBranch targetBranch project { fullPath } author { username } labels { nodes { title } } } } cl: authoredMergeRequests(state: closed, sort: UPDATED_DESC, first: 10) { nodes { iid title webUrl draft state updatedAt diffHeadSha sourceBranch targetBranch project { fullPath } author { username } labels { nodes { title } } } } } }"
+        },
+        {
+          "fn": "queries.githubInboxQuery",
+          "args": [[]],
+          "result": {
+            "$text": [
+              "query { viewer { login } rr: search(type: ISSUE, query: \"is:open is:pr archived:false review-requested:@me\", first: 50) { nodes { ... on PullRequest { number title url isDraft state updatedAt headRefOid baseRefOid headRefName baseRefName repository { nameWithOwner } author { login } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } labels(first: 10) { nodes { name } } } } } as: search(type: ISSUE, query: \"is:open is:pr archived:false assignee:@me\", first: 50) { nodes { ... on PullRequest { number title url isDraft state updatedAt headRefOid baseRefOid headRefName baseRefName repository { nameWithOwner } author { login } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } labels(first: 10) { nodes { name } } } } } mn: search(type: ISSUE, query: \"is:open is:pr archived:false mentions:@me\", first: 50) { nodes { ... on PullRequest { number title url isDraft state updatedAt headRefOid baseRefOid headRefName baseRefName repository { nameWithOwner } author { login } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } labels(first: 10) { nodes { name } } } } }  }"
+            ]
+          }
+        },
+        {
+          "fn": "queries.githubOwnListQuery",
+          "args": [],
+          "result": "query { viewer { login } op: search(type: ISSUE, query: \"is:pr is:open author:@me archived:false sort:created-desc\", first: 100) { pageInfo { hasNextPage endCursor } nodes { ... on PullRequest { number title url isDraft state updatedAt headRefOid headRefName baseRefName repository { nameWithOwner } author { login } labels(first: 10) { nodes { name } } } } } st: search(type: ISSUE, query: \"is:pr is:closed author:@me archived:false sort:updated-desc\", first: 10) { nodes { ... on PullRequest { number title url isDraft state updatedAt headRefOid headRefName baseRefName repository { nameWithOwner } author { login } labels(first: 10) { nodes { name } } } } } }"
+        },
+        {
+          "fn": "queries.gitlabItem",
+          "args": [
+            "gitlab.example.org",
+            {
+              "iid": "1",
+              "title": "MR 1",
+              "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/1",
+              "draft": false,
+              "state": "opened",
+              "updatedAt": "2026-11-03T14:40:45Z",
+              "userNotesCount": 3,
+              "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+              "sourceBranch": "topic",
+              "targetBranch": "main",
+              "project": { "fullPath": "group/app" },
+              "author": { "username": "alice" },
+              "headPipeline": { "status": "FAILED" },
+              "diffRefs": {
+                "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+              },
+              "labels": { "nodes": [{ "title": "audio" }, { "title": "" }, {}] }
+            }
+          ],
+          "result": {
+            "provider": "gitlab",
+            "host": "gitlab.example.org",
+            "project": "group/app",
+            "number": 1,
+            "key": "gitlab:gitlab.example.org/group/app#1",
+            "url": "https://gitlab.example.org/group/app/-/merge_requests/1",
+            "title": "MR 1",
+            "author": "alice",
+            "draft": false,
+            "state": "open",
+            "updatedAt": "2026-11-03T14:40:45Z",
+            "headSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+            "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331",
+            "sourceBranch": "topic",
+            "targetBranch": "main",
+            "pipeline": "failed",
+            "notes": 3,
+            "reasons": [],
+            "labels": ["audio"]
+          }
+        },
+        {
+          "fn": "queries.gitlabItem",
+          "args": [
+            "gitlab.example.org",
+            {
+              "iid": "2",
+              "title": "MR 2",
+              "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/2",
+              "draft": false,
+              "state": "opened",
+              "updatedAt": "2026-11-03T14:40:45Z",
+              "userNotesCount": 3,
+              "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+              "sourceBranch": "topic",
+              "targetBranch": "main",
+              "project": { "fullPath": "group/app" },
+              "author": { "username": "alice" },
+              "headPipeline": { "status": "FAILED" },
+              "diffRefs": {
+                "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+              }
+            }
+          ],
+          "result": {
+            "provider": "gitlab",
+            "host": "gitlab.example.org",
+            "project": "group/app",
+            "number": 2,
+            "key": "gitlab:gitlab.example.org/group/app#2",
+            "url": "https://gitlab.example.org/group/app/-/merge_requests/2",
+            "title": "MR 2",
+            "author": "alice",
+            "draft": false,
+            "state": "open",
+            "updatedAt": "2026-11-03T14:40:45Z",
+            "headSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+            "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331",
+            "sourceBranch": "topic",
+            "targetBranch": "main",
+            "pipeline": "failed",
+            "notes": 3,
+            "reasons": []
+          }
+        },
+        {
+          "fn": "queries.githubItem",
+          "args": [
+            "github.com",
+            {
+              "number": 3,
+              "title": "t",
+              "url": "https://github.com/o/r/pull/3",
+              "state": "OPEN",
+              "updatedAt": "x",
+              "repository": { "nameWithOwner": "o/r" },
+              "labels": { "nodes": [{ "name": "bug" }] }
+            }
+          ],
+          "result": {
+            "provider": "github",
+            "host": "github.com",
+            "project": "o/r",
+            "number": 3,
+            "key": "github:github.com/o/r#3",
+            "url": "https://github.com/o/r/pull/3",
+            "title": "t",
+            "author": "",
+            "draft": false,
+            "state": "open",
+            "updatedAt": "x",
+            "headSha": "",
+            "sourceBranch": "",
+            "targetBranch": "",
+            "pipeline": null,
+            "notes": 0,
+            "reasons": [],
+            "drafts": 0,
+            "labels": ["bug"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "own details carry the description and the last notes, oldest first, no system notes",
+      "calls": [
+        {
+          "fn": "queries.ownDetailsQuery",
+          "args": ["gitlab", [{ "project": "g/p", "number": 1 }]],
+          "result": "query { p0: project(fullPath: \"g/p\") { mergeRequests(iids: [\"1\"], first: 1) { nodes { iid webUrl updatedAt diffHeadSha userNotesCount project { fullPath } headPipeline { status } diffRefs { baseSha } conflicts shouldBeRebased approved detailedMergeStatus approvedBy { nodes { username } } resolvableDiscussionsCount resolvedDiscussionsCount description discussions(last: 10) { nodes { resolvable resolved notes(last: 1) { nodes { author { username } createdAt body system } } } } assignees { nodes { username } } reviewers { nodes { username } } autoMergeEnabled mergeUser { username } } } } }"
+        },
+        {
+          "fn": "queries.ownDetailsQuery",
+          "args": ["gitlab", [{ "project": "g/p", "number": 1 }], "basic"],
+          "result": "query { p0: project(fullPath: \"g/p\") { mergeRequests(iids: [\"1\"], first: 1) { nodes { iid webUrl updatedAt diffHeadSha userNotesCount project { fullPath } headPipeline { status } diffRefs { baseSha } conflicts shouldBeRebased } } } }"
+        },
+        {
+          "fn": "queries.ownDetailsQuery",
+          "args": ["github", [{ "project": "o/r", "number": 1 }]],
+          "result": {
+            "$text": [
+              "query { p0: repository(owner: \"o\", name: \"r\") { n1: pullRequest(number: 1) { number url updatedAt headRefOid baseRefOid repository { nameWithOwner } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } mergeable reviewDecision latestOpinionatedReviews(first: 20) { nodes { state submittedAt author { login } } } openThreads: reviewThreads(first: 100) { nodes { isResolved } } body lastComments: comments(last: 5) { nodes { author { login } createdAt body } } lastThreads: reviewThreads(last: 20) { nodes { isResolved comments(last: 1) { nodes { author { login } createdAt body } } } } assignees(first: 10) { nodes { login } } reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } } autoMergeRequest { enabledAt enabledBy { login } } mergeQueueEntry { position enqueuedAt } mergeTimeline: timelineItems(last: 30, itemTypes: [LABELED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT, ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, AUTO_MERGE_ENABLED_EVENT, AUTO_MERGE_DISABLED_EVENT]) { nodes { __typename ... on LabeledEvent { createdAt actor { login } label { name } } ... on AssignedEvent { createdAt actor { login } assignee { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on UnassignedEvent { createdAt actor { login } assignee { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on ReviewRequestRemovedEvent { createdAt actor { login } requestedReviewer { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on AddedToMergeQueueEvent { createdAt actor { login } } ... on RemovedFromMergeQueueEvent { createdAt actor { login } reason } ... on AutoMergeEnabledEvent { createdAt actor { login } } ... on AutoMergeDisabledEvent { createdAt actor { login } reason } } } } } }"
+            ]
+          }
+        },
+        {
+          "fn": "queries.parseOwnDetails",
+          "args": [
+            "gitlab",
+            "gitlab.example.org",
+            {
+              "data": {
+                "p0": {
+                  "mergeRequests": {
+                    "nodes": [
+                      {
+                        "iid": "4",
+                        "title": "MR 4",
+                        "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/4",
+                        "draft": false,
+                        "state": "opened",
+                        "updatedAt": "2026-11-03T14:40:45Z",
+                        "userNotesCount": 3,
+                        "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                        "sourceBranch": "topic",
+                        "targetBranch": "main",
+                        "project": { "fullPath": "group/app" },
+                        "author": { "username": "alice" },
+                        "headPipeline": { "status": "FAILED" },
+                        "diffRefs": {
+                          "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+                        },
+                        "description": "Needs !3 first",
+                        "discussions": {
+                          "nodes": [
+                            {
+                              "resolvable": true,
+                              "resolved": false,
+                              "notes": {
+                                "nodes": [
+                                  {
+                                    "author": { "username": "bob" },
+                                    "createdAt": "2026-11-02T00:00:00Z",
+                                    "body": "Why  this\nlock?"
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "resolvable": false,
+                              "resolved": false,
+                              "notes": {
+                                "nodes": [
+                                  {
+                                    "author": { "username": "me" },
+                                    "createdAt": "2026-11-01T00:00:00Z",
+                                    "body": "Ready"
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "resolvable": false,
+                              "resolved": false,
+                              "notes": {
+                                "nodes": [
+                                  {
+                                    "author": { "username": "bot" },
+                                    "createdAt": "2026-11-03T00:00:00Z",
+                                    "body": "added 1 commit",
+                                    "system": true
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "result": {
+            "$map": [
+              [
+                "gitlab:gitlab.example.org/group/app#4",
+                {
+                  "updatedAt": "2026-11-03T14:40:45Z",
+                  "headSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                  "pipeline": "failed",
+                  "notes": 3,
+                  "description": "Needs !3 first",
+                  "lastNotes": [
+                    {
+                      "author": "me",
+                      "at": "2026-11-01T00:00:00Z",
+                      "body": "Ready",
+                      "resolvable": false,
+                      "resolved": false
+                    },
+                    {
+                      "author": "bob",
+                      "at": "2026-11-02T00:00:00Z",
+                      "body": "Why this lock?",
+                      "resolvable": true,
+                      "resolved": false
+                    }
+                  ],
+                  "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331",
+                  "own": {
+                    "approvedBy": [],
+                    "approved": null,
+                    "changesRequested": [],
+                    "unresolved": null,
+                    "conflicts": false,
+                    "needsRebase": false
+                  },
+                  "settling": false
+                }
+              ]
+            ]
+          }
+        },
+        {
+          "fn": "queries.ownNotes",
+          "args": [
+            "github",
+            {
+              "lastComments": {
+                "nodes": [
+                  {
+                    "author": { "login": "ann" },
+                    "createdAt": "2",
+                    "body": "LGTM"
+                  }
+                ]
+              },
+              "lastThreads": {
+                "nodes": [
+                  {
+                    "isResolved": true,
+                    "comments": {
+                      "nodes": [
+                        {
+                          "author": { "login": "bob" },
+                          "createdAt": "1",
+                          "body": "ok"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "result": [
+            {
+              "author": "bob",
+              "at": "1",
+              "body": "ok",
+              "resolvable": true,
+              "resolved": true
+            },
+            {
+              "author": "ann",
+              "at": "2",
+              "body": "LGTM",
+              "resolvable": false,
+              "resolved": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "each level asks its fields: full adds who is assigned and auto-merge",
+      "group": ["merge facts in the details (section 15)"],
+      "calls": [
+        {
+          "fn": "queries.ownDetailsQuery",
+          "args": ["gitlab", [{ "project": "group/app", "number": 4 }], "full"],
+          "result": "query { p0: project(fullPath: \"group/app\") { mergeRequests(iids: [\"4\"], first: 1) { nodes { iid webUrl updatedAt diffHeadSha userNotesCount project { fullPath } headPipeline { status } diffRefs { baseSha } conflicts shouldBeRebased approved detailedMergeStatus approvedBy { nodes { username } } resolvableDiscussionsCount resolvedDiscussionsCount description discussions(last: 10) { nodes { resolvable resolved notes(last: 1) { nodes { author { username } createdAt body system } } } } assignees { nodes { username } } reviewers { nodes { username } } autoMergeEnabled mergeUser { username } } } } }"
+        },
+        {
+          "fn": "queries.ownDetailsQuery",
+          "args": [
+            "gitlab",
+            [{ "project": "group/app", "number": 4 }],
+            "nomerge"
+          ],
+          "result": "query { p0: project(fullPath: \"group/app\") { mergeRequests(iids: [\"4\"], first: 1) { nodes { iid webUrl updatedAt diffHeadSha userNotesCount project { fullPath } headPipeline { status } diffRefs { baseSha } conflicts shouldBeRebased approved detailedMergeStatus approvedBy { nodes { username } } resolvableDiscussionsCount resolvedDiscussionsCount description discussions(last: 10) { nodes { resolvable resolved notes(last: 1) { nodes { author { username } createdAt body system } } } } } } } }"
+        },
+        {
+          "fn": "queries.ownDetailsQuery",
+          "args": [
+            "gitlab",
+            [{ "project": "group/app", "number": 4 }],
+            "nomerge"
+          ],
+          "result": "query { p0: project(fullPath: \"group/app\") { mergeRequests(iids: [\"4\"], first: 1) { nodes { iid webUrl updatedAt diffHeadSha userNotesCount project { fullPath } headPipeline { status } diffRefs { baseSha } conflicts shouldBeRebased approved detailedMergeStatus approvedBy { nodes { username } } resolvableDiscussionsCount resolvedDiscussionsCount description discussions(last: 10) { nodes { resolvable resolved notes(last: 1) { nodes { author { username } createdAt body system } } } } } } } }"
+        },
+        {
+          "fn": "queries.ownDetailsQuery",
+          "args": ["github", [{ "project": "acme/app", "number": 4 }], "full"],
+          "result": {
+            "$text": [
+              "query { p0: repository(owner: \"acme\", name: \"app\") { n4: pullRequest(number: 4) { number url updatedAt headRefOid baseRefOid repository { nameWithOwner } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } mergeable reviewDecision latestOpinionatedReviews(first: 20) { nodes { state submittedAt author { login } } } openThreads: reviewThreads(first: 100) { nodes { isResolved } } body lastComments: comments(last: 5) { nodes { author { login } createdAt body } } lastThreads: reviewThreads(last: 20) { nodes { isResolved comments(last: 1) { nodes { author { login } createdAt body } } } } assignees(first: 10) { nodes { login } } reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } } autoMergeRequest { enabledAt enabledBy { login } } mergeQueueEntry { position enqueuedAt } mergeTimeline: timelineItems(last: 30, itemTypes: [LABELED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT, ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, AUTO_MERGE_ENABLED_EVENT, AUTO_MERGE_DISABLED_EVENT]) { nodes { __typename ... on LabeledEvent { createdAt actor { login } label { name } } ... on AssignedEvent { createdAt actor { login } assignee { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on UnassignedEvent { createdAt actor { login } assignee { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on ReviewRequestRemovedEvent { createdAt actor { login } requestedReviewer { ... on User { login } ... on Bot { login } ... on Mannequin { login } } } ... on AddedToMergeQueueEvent { createdAt actor { login } } ... on RemovedFromMergeQueueEvent { createdAt actor { login } reason } ... on AutoMergeEnabledEvent { createdAt actor { login } } ... on AutoMergeDisabledEvent { createdAt actor { login } reason } } } } } }"
+            ]
+          }
+        },
+        {
+          "fn": "queries.ownDetailsQuery",
+          "args": [
+            "github",
+            [{ "project": "acme/app", "number": 4 }],
+            "nomerge"
+          ],
+          "result": "query { p0: repository(owner: \"acme\", name: \"app\") { n4: pullRequest(number: 4) { number url updatedAt headRefOid baseRefOid repository { nameWithOwner } comments { totalCount } reviewThreads { totalCount } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } } mergeable reviewDecision latestOpinionatedReviews(first: 20) { nodes { state submittedAt author { login } } } openThreads: reviewThreads(first: 100) { nodes { isResolved } } body lastComments: comments(last: 5) { nodes { author { login } createdAt body } } lastThreads: reviewThreads(last: 20) { nodes { isResolved comments(last: 1) { nodes { author { login } createdAt body } } } } } } }"
+        },
+        {
+          "fn": "queries.lesserOwnFields",
+          "args": ["gitlab", "full"],
+          "result": "nomerge"
+        },
+        {
+          "fn": "queries.lesserOwnFields",
+          "args": ["gitlab", "nomerge"],
+          "result": "basic"
+        },
+        {
+          "fn": "queries.lesserOwnFields",
+          "args": ["github", "nomerge"],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "GitLab system notes as events",
+      "group": ["merge facts in the details (section 15)"],
+      "calls": [
+        {
+          "fn": "queries.gitlabSystemEvents",
+          "args": ["assigned to @marge-bot", "t1", "me"],
+          "result": [
+            {
+              "at": "t1",
+              "actor": "me",
+              "kind": "assigned",
+              "who": ["marge-bot"]
+            }
+          ]
+        },
+        {
+          "fn": "queries.gitlabSystemEvents",
+          "args": [
+            "assigned to @alice and unassigned @marge-bot",
+            "t2",
+            "marge-bot"
+          ],
+          "result": [
+            {
+              "at": "t2",
+              "actor": "marge-bot",
+              "kind": "assigned",
+              "who": ["alice"]
+            },
+            {
+              "at": "t2",
+              "actor": "marge-bot",
+              "kind": "unassigned",
+              "who": ["marge-bot"]
+            }
+          ]
+        },
+        {
+          "fn": "queries.gitlabSystemEvents",
+          "args": ["requested review from @marge-bot", "t", "me"],
+          "result": [
+            {
+              "at": "t",
+              "actor": "me",
+              "kind": "review_requested",
+              "who": ["marge-bot"]
+            }
+          ]
+        },
+        {
+          "fn": "queries.gitlabSystemEvents",
+          "args": ["approved this merge request", "t", "bob"],
+          "result": [{ "at": "t", "actor": "bob", "kind": "approved" }]
+        },
+        {
+          "fn": "queries.gitlabSystemEvents",
+          "args": [
+            "aborted the automatic merge because the source branch was updated",
+            "t",
+            "me"
+          ],
+          "result": [
+            {
+              "at": "t",
+              "actor": "me",
+              "kind": "auto_merge_off",
+              "reason": "the source branch was updated"
+            }
+          ]
+        },
+        {
+          "fn": "queries.gitlabSystemEvents",
+          "args": ["added 1 commit", "t", "me"],
+          "result": []
+        }
+      ]
+    },
+    {
+      "name": "GitLab details: assignees, auto-merge, events and the approval time",
+      "group": ["merge facts in the details (section 15)"],
+      "calls": [
+        {
+          "fn": "queries.parseOwnDetails",
+          "args": [
+            "gitlab",
+            "gitlab.example.org",
+            {
+              "data": {
+                "p0": {
+                  "mergeRequests": {
+                    "nodes": [
+                      {
+                        "iid": "4",
+                        "title": "MR 4",
+                        "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/4",
+                        "draft": false,
+                        "state": "opened",
+                        "updatedAt": "2026-11-03T14:40:45Z",
+                        "userNotesCount": 3,
+                        "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                        "sourceBranch": "topic",
+                        "targetBranch": "main",
+                        "project": { "fullPath": "group/app" },
+                        "author": { "username": "alice" },
+                        "headPipeline": { "status": "FAILED" },
+                        "diffRefs": {
+                          "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+                        },
+                        "approvedBy": { "nodes": [{ "username": "bob" }] },
+                        "assignees": { "nodes": [{ "username": "marge-bot" }] },
+                        "reviewers": { "nodes": [{ "username": "bob" }] },
+                        "autoMergeEnabled": true,
+                        "mergeUser": { "username": "me" },
+                        "discussions": {
+                          "nodes": [
+                            {
+                              "notes": {
+                                "nodes": [
+                                  {
+                                    "author": { "username": "bob" },
+                                    "createdAt": "2026-11-10T10:00:00Z",
+                                    "body": "approved this merge request",
+                                    "system": true
+                                  }
+                                ]
+                              }
+                            },
+                            {
+                              "notes": {
+                                "nodes": [
+                                  {
+                                    "author": { "username": "me" },
+                                    "createdAt": "2026-11-11T10:00:00Z",
+                                    "body": "assigned to @marge-bot",
+                                    "system": true
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "result": {
+            "$map": [
+              [
+                "gitlab:gitlab.example.org/group/app#4",
+                {
+                  "updatedAt": "2026-11-03T14:40:45Z",
+                  "headSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                  "pipeline": "failed",
+                  "notes": 3,
+                  "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331",
+                  "merge": {
+                    "assignees": ["marge-bot"],
+                    "reviewers": ["bob"],
+                    "autoMerge": { "by": "me" },
+                    "approvedAt": "2026-11-10T10:00:00Z",
+                    "events": [
+                      {
+                        "at": "2026-11-10T10:00:00Z",
+                        "actor": "bob",
+                        "kind": "approved"
+                      },
+                      {
+                        "at": "2026-11-11T10:00:00Z",
+                        "actor": "me",
+                        "kind": "assigned",
+                        "who": ["marge-bot"]
+                      }
+                    ]
+                  },
+                  "own": {
+                    "approvedBy": ["bob"],
+                    "approved": null,
+                    "changesRequested": [],
+                    "unresolved": null,
+                    "conflicts": false,
+                    "needsRebase": false
+                  },
+                  "settling": false
+                }
+              ]
+            ]
+          }
+        },
+        {
+          "fn": "queries.parseOwnDetails",
+          "args": [
+            "gitlab",
+            "gitlab.example.org",
+            {
+              "data": {
+                "p0": {
+                  "mergeRequests": {
+                    "nodes": [
+                      {
+                        "iid": "5",
+                        "title": "MR 5",
+                        "webUrl": "https://gitlab.example.org/group/app/-/merge_requests/5",
+                        "draft": false,
+                        "state": "opened",
+                        "updatedAt": "2026-11-03T14:40:45Z",
+                        "userNotesCount": 3,
+                        "diffHeadSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                        "sourceBranch": "topic",
+                        "targetBranch": "main",
+                        "project": { "fullPath": "group/app" },
+                        "author": { "username": "alice" },
+                        "headPipeline": { "status": "FAILED" },
+                        "diffRefs": {
+                          "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "result": {
+            "$map": [
+              [
+                "gitlab:gitlab.example.org/group/app#5",
+                {
+                  "updatedAt": "2026-11-03T14:40:45Z",
+                  "headSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                  "pipeline": "failed",
+                  "notes": 3,
+                  "baseSha": "15a26fd798fea4d636bf2f55d751dd0935f7e331",
+                  "own": {
+                    "approvedBy": [],
+                    "approved": null,
+                    "changesRequested": [],
+                    "unresolved": null,
+                    "conflicts": false,
+                    "needsRebase": false
+                  },
+                  "settling": false
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GitHub details: the merge queue, auto-merge, the timeline and label times",
+      "group": ["merge facts in the details (section 15)"],
+      "calls": [
+        {
+          "fn": "queries.parseOwnDetails",
+          "args": [
+            "github",
+            "github.com",
+            {
+              "data": {
+                "p0": {
+                  "n7": {
+                    "number": 7,
+                    "url": "https://github.com/acme/app/pull/7",
+                    "updatedAt": "2026-11-12T10:00:00Z",
+                    "headRefOid": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                    "repository": { "nameWithOwner": "acme/app" },
+                    "latestOpinionatedReviews": {
+                      "nodes": [
+                        {
+                          "state": "APPROVED",
+                          "submittedAt": "2026-11-09T08:00:00Z",
+                          "author": { "login": "bob" }
+                        }
+                      ]
+                    },
+                    "assignees": { "nodes": [] },
+                    "reviewRequests": {
+                      "nodes": [{ "requestedReviewer": { "login": "mergify" } }]
+                    },
+                    "autoMergeRequest": {
+                      "enabledAt": "2026-11-12T09:00:00Z",
+                      "enabledBy": { "login": "me" }
+                    },
+                    "mergeQueueEntry": {
+                      "position": 3,
+                      "enqueuedAt": "2026-11-12T09:30:00Z"
+                    },
+                    "mergeTimeline": {
+                      "nodes": [
+                        {
+                          "__typename": "LabeledEvent",
+                          "createdAt": "2026-11-11T08:00:00Z",
+                          "actor": { "login": "me" },
+                          "label": { "name": "merge after 2 days" }
+                        },
+                        {
+                          "__typename": "RemovedFromMergeQueueEvent",
+                          "createdAt": "2026-11-11T09:00:00Z",
+                          "actor": { "login": "github-merge-queue" },
+                          "reason": "FAILED_CHECKS"
+                        },
+                        { "__typename": "SomethingElse", "createdAt": "x" }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "result": {
+            "$map": [
+              [
+                "github:github.com/acme/app#7",
+                {
+                  "updatedAt": "2026-11-12T10:00:00Z",
+                  "headSha": "34b4a605c093ccf7a7e40d51e7e2edc4d752384b",
+                  "pipeline": null,
+                  "notes": 0,
+                  "drafts": 0,
+                  "merge": {
+                    "assignees": [],
+                    "reviewers": ["mergify"],
+                    "autoMerge": { "by": "me", "at": "2026-11-12T09:00:00Z" },
+                    "queue": { "position": 3, "at": "2026-11-12T09:30:00Z" },
+                    "approvedAt": "2026-11-09T08:00:00Z",
+                    "events": [
+                      {
+                        "at": "2026-11-11T09:00:00Z",
+                        "actor": "github-merge-queue",
+                        "kind": "dequeued",
+                        "reason": "failed checks"
+                      }
+                    ],
+                    "labelsAddedAt": {
+                      "merge after 2 days": "2026-11-11T08:00:00Z"
+                    }
+                  },
+                  "own": {
+                    "approvedBy": ["bob"],
+                    "approved": null,
+                    "changesRequested": [],
+                    "unresolved": null,
+                    "conflicts": false,
+                    "needsRebase": false
+                  },
+                  "settling": false
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "GitLab label events: the last add of each label still on",
+      "group": ["merge facts in the details (section 15)"],
+      "calls": [
+        {
+          "fn": "queries.parseLabelEvents",
+          "args": [
+            [
+              { "action": "add", "label": { "name": "a" }, "created_at": "t1" },
+              { "action": "add", "label": { "name": "b" }, "created_at": "t2" },
+              {
+                "action": "remove",
+                "label": { "name": "a" },
+                "created_at": "t3"
+              },
+              { "action": "add", "label": { "name": "a" }, "created_at": "t4" },
+              { "action": "add", "label": { "name": "c" }, "created_at": "t5" },
+              {
+                "action": "remove",
+                "label": { "name": "c" },
+                "created_at": "t6"
+              }
+            ]
+          ],
+          "result": { "b": "t2", "a": "t4" }
+        },
+        {
+          "fn": "queries.parseLabelEvents",
+          "args": [{ "message": "403" }],
+          "result": {}
+        }
+      ]
+    }
+  ]
+}

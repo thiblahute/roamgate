@@ -8,7 +8,7 @@ import type {
   AgentTask,
   WorkflowAgentView,
   WorkflowView,
-} from "../../server/src/agent/session-tasks";
+} from "../../shared/agentSession";
 
 export type { WorkflowAgentView };
 

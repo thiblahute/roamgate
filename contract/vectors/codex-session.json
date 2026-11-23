@@ -1,0 +1,501 @@
+{
+  "description": "Codex sessions: resolving a session id and the remote lookup script. Read by `bun test` in server/src/agent/codex-session.test.ts.",
+  "modules": {
+    "session-resolver": "server/src/agent/session-resolver.ts",
+    "session-file-access": "server/src/agent/session-file-access.ts"
+  },
+  "cases": [
+    {
+      "name": "remote IDs never search or stat local paths",
+      "group": ["Codex transcript lookup"],
+      "calls": [
+        {
+          "fn": "session-resolver.createAgentSessionResolverContext",
+          "args": [],
+          "result": {
+            "pathCache": { "$map": [] },
+            "museMetadata": { "$map": [] },
+            "successorChecked": { "$map": [] }
+          }
+        },
+        {
+          "fn": "session-resolver.resolveAgentSession",
+          "args": [
+            { "pane_id": "p1" },
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": ["agent.get", { "target": "p1" }],
+                    "async": true,
+                    "result": {
+                      "agent": {
+                        "agent": "codex",
+                        "agent_session": {
+                          "kind": "id",
+                          "value": "00000000-0000-4000-8000-000000000001"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "remote": true,
+              "statFile": { "$fn": { "calls": [] } },
+              "readText": { "$fn": { "calls": [] } },
+              "readPrefix": { "$fn": { "calls": [] } },
+              "readRange": { "$fn": { "calls": [] } },
+              "readDownloadBody": { "$fn": { "calls": [] } },
+              "readTail": { "$fn": { "calls": [] } },
+              "findPiSessionById": { "$fn": { "calls": [] } },
+              "findPiSessionForCwd": { "$fn": { "calls": [] } },
+              "findClaudeSessionById": { "$fn": { "calls": [] } },
+              "findClaudeSuccessor": { "$fn": { "calls": [] } },
+              "findCodexSessionById": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": ["00000000-0000-4000-8000-000000000001"],
+                      "async": true,
+                      "result": {
+                        "path": "/remote/rollout.jsonl",
+                        "mtimeMs": 1000
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "pathCache": { "$map": [] },
+              "museMetadata": { "$map": [] },
+              "successorChecked": { "$map": [] }
+            }
+          ],
+          "async": true,
+          "result": {
+            "version": 1,
+            "agent": "codex",
+            "pane_id": "p1",
+            "workspace_id": "",
+            "tab_id": "",
+            "status": "ok",
+            "detail": "",
+            "updated_at": "1970-01-01T00:00:01.000Z",
+            "path": "/remote/rollout.jsonl",
+            "session": {
+              "source": "",
+              "agent": "",
+              "kind": "id",
+              "value": "00000000-0000-4000-8000-000000000001"
+            },
+            "file": { "path": "/remote/rollout.jsonl", "mtimeMs": 1000 }
+          },
+          "args_after": [
+            { "pane_id": "p1" },
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": ["agent.get", { "target": "p1" }],
+                    "async": true,
+                    "result": {
+                      "agent": {
+                        "agent": "codex",
+                        "agent_session": {
+                          "kind": "id",
+                          "value": "00000000-0000-4000-8000-000000000001"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "remote": true,
+              "statFile": { "$fn": { "calls": [] } },
+              "readText": { "$fn": { "calls": [] } },
+              "readPrefix": { "$fn": { "calls": [] } },
+              "readRange": { "$fn": { "calls": [] } },
+              "readDownloadBody": { "$fn": { "calls": [] } },
+              "readTail": { "$fn": { "calls": [] } },
+              "findPiSessionById": { "$fn": { "calls": [] } },
+              "findPiSessionForCwd": { "$fn": { "calls": [] } },
+              "findClaudeSessionById": { "$fn": { "calls": [] } },
+              "findClaudeSuccessor": { "$fn": { "calls": [] } },
+              "findCodexSessionById": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": ["00000000-0000-4000-8000-000000000001"],
+                      "async": true,
+                      "result": {
+                        "path": "/remote/rollout.jsonl",
+                        "mtimeMs": 1000
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "pathCache": {
+                "$map": [
+                  [
+                    "codex:remote:00000000-0000-4000-8000-000000000001",
+                    "/remote/rollout.jsonl"
+                  ]
+                ]
+              },
+              "museMetadata": { "$map": [] },
+              "successorChecked": { "$map": [] }
+            }
+          ]
+        },
+        {
+          "fn": "session-resolver.resolveAgentSession",
+          "args": [
+            { "pane_id": "p1" },
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": ["agent.get", { "target": "p1" }],
+                    "async": true,
+                    "result": {
+                      "agent": {
+                        "agent": "codex",
+                        "agent_session": {
+                          "kind": "id",
+                          "value": "00000000-0000-4000-8000-000000000001"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "remote": true,
+              "statFile": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": ["/remote/rollout.jsonl"],
+                      "async": true,
+                      "result": {
+                        "path": "/remote/rollout.jsonl",
+                        "mtimeMs": 1000
+                      }
+                    }
+                  ]
+                }
+              },
+              "readText": { "$fn": { "calls": [] } },
+              "readPrefix": { "$fn": { "calls": [] } },
+              "readRange": { "$fn": { "calls": [] } },
+              "readDownloadBody": { "$fn": { "calls": [] } },
+              "readTail": { "$fn": { "calls": [] } },
+              "findPiSessionById": { "$fn": { "calls": [] } },
+              "findPiSessionForCwd": { "$fn": { "calls": [] } },
+              "findClaudeSessionById": { "$fn": { "calls": [] } },
+              "findClaudeSuccessor": { "$fn": { "calls": [] } },
+              "findCodexSessionById": { "$fn": { "calls": [] } }
+            },
+            {
+              "pathCache": {
+                "$map": [
+                  [
+                    "codex:remote:00000000-0000-4000-8000-000000000001",
+                    "/remote/rollout.jsonl"
+                  ]
+                ]
+              },
+              "museMetadata": { "$map": [] },
+              "successorChecked": { "$map": [] }
+            }
+          ],
+          "async": true,
+          "result": {
+            "version": 1,
+            "agent": "codex",
+            "pane_id": "p1",
+            "workspace_id": "",
+            "tab_id": "",
+            "status": "ok",
+            "detail": "",
+            "updated_at": "1970-01-01T00:00:01.000Z",
+            "path": "/remote/rollout.jsonl",
+            "session": {
+              "source": "",
+              "agent": "",
+              "kind": "id",
+              "value": "00000000-0000-4000-8000-000000000001"
+            },
+            "file": { "path": "/remote/rollout.jsonl", "mtimeMs": 1000 }
+          }
+        }
+      ]
+    },
+    {
+      "name": "executes the SSH lookup script with quoted paths and rejects invalid IDs before SSH",
+      "group": ["Codex transcript lookup"],
+      "calls": [
+        {
+          "fn": "session-file-access.createAgentSessionFileAccess",
+          "args": [
+            {
+              "sshHost": "fixture",
+              "shQuote": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": [
+                        "\nimport os, sys\nfrom pathlib import Path\nroot = Path(os.path.expanduser(os.environ.get(\"CODEX_HOME\") or \"~/.codex\"))\nmatches = []\nfor directory in (\"sessions\", \"archived_sessions\"):\n    matches.extend((root / directory).glob(\"**/*-\" + sys.argv[1] + \".jsonl\"))\nmatches = [path for path in matches if path.is_file()]\nif len(matches) > 1:\n    sys.exit(\"Multiple transcripts match this Codex session ID.\")\nif matches:\n    print(matches[0].resolve())\n"
+                      ],
+                      "result": "'\nimport os, sys\nfrom pathlib import Path\nroot = Path(os.path.expanduser(os.environ.get(\"CODEX_HOME\") or \"~/.codex\"))\nmatches = []\nfor directory in (\"sessions\", \"archived_sessions\"):\n    matches.extend((root / directory).glob(\"**/*-\" + sys.argv[1] + \".jsonl\"))\nmatches = [path for path in matches if path.is_file()]\nif len(matches) > 1:\n    sys.exit(\"Multiple transcripts match this Codex session ID.\")\nif matches:\n    print(matches[0].resolve())\n'"
+                    },
+                    {
+                      "args": ["00000000-0000-4000-8000-000000000001"],
+                      "result": "'00000000-0000-4000-8000-000000000001'"
+                    },
+                    {
+                      "args": [
+                        "python3 -c '\nimport os, sys\nfrom pathlib import Path\nroot = Path(os.path.expanduser(os.environ.get(\"CODEX_HOME\") or \"~/.codex\"))\nmatches = []\nfor directory in (\"sessions\", \"archived_sessions\"):\n    matches.extend((root / directory).glob(\"**/*-\" + sys.argv[1] + \".jsonl\"))\nmatches = [path for path in matches if path.is_file()]\nif len(matches) > 1:\n    sys.exit(\"Multiple transcripts match this Codex session ID.\")\nif matches:\n    print(matches[0].resolve())\n' '00000000-0000-4000-8000-000000000001'"
+                      ],
+                      "result": "'python3 -c '\\''\nimport os, sys\nfrom pathlib import Path\nroot = Path(os.path.expanduser(os.environ.get(\"CODEX_HOME\") or \"~/.codex\"))\nmatches = []\nfor directory in (\"sessions\", \"archived_sessions\"):\n    matches.extend((root / directory).glob(\"**/*-\" + sys.argv[1] + \".jsonl\"))\nmatches = [path for path in matches if path.is_file()]\nif len(matches) > 1:\n    sys.exit(\"Multiple transcripts match this Codex session ID.\")\nif matches:\n    print(matches[0].resolve())\n'\\'' '\\''00000000-0000-4000-8000-000000000001'\\'''"
+                    },
+                    {
+                      "args": [
+                        "for path in \"$@\"; do\n  if [ ! -f \"$path\" ]; then echo -; continue; fi\n  size=\"$(stat -c %s \"$path\" 2>/dev/null || stat -f %z \"$path\" 2>/dev/null)\" &&\n  mtime=\"$(stat -c %Y \"$path\" 2>/dev/null || stat -f %m \"$path\" 2>/dev/null)\" &&\n  identity=\"$(stat -c '%d:%i' \"$path\" 2>/dev/null || stat -f '%d:%i' \"$path\" 2>/dev/null)\" &&\n  change=\"$(stat -c '%y:%z' \"$path\" 2>/dev/null || stat -f '%Fm:%Fc' \"$path\" 2>/dev/null)\" &&\n  path64=\"$(printf '%s' \"$path\" | base64 | tr -d '\\n')\" ||\n  { echo '!'; continue; }\n  printf '+%s\\t%s\\t%s\\t%s\\t%s\\n' \"$size\" \"$mtime\" \"$path64\" \"$identity\" \"$change\"\ndone"
+                      ],
+                      "result": "'for path in \"$@\"; do\n  if [ ! -f \"$path\" ]; then echo -; continue; fi\n  size=\"$(stat -c %s \"$path\" 2>/dev/null || stat -f %z \"$path\" 2>/dev/null)\" &&\n  mtime=\"$(stat -c %Y \"$path\" 2>/dev/null || stat -f %m \"$path\" 2>/dev/null)\" &&\n  identity=\"$(stat -c '\\''%d:%i'\\'' \"$path\" 2>/dev/null || stat -f '\\''%d:%i'\\'' \"$path\" 2>/dev/null)\" &&\n  change=\"$(stat -c '\\''%y:%z'\\'' \"$path\" 2>/dev/null || stat -f '\\''%Fm:%Fc'\\'' \"$path\" 2>/dev/null)\" &&\n  path64=\"$(printf '\\''%s'\\'' \"$path\" | base64 | tr -d '\\''\\n'\\'')\" ||\n  { echo '\\''!'\\''; continue; }\n  printf '\\''+%s\\t%s\\t%s\\t%s\\t%s\\n'\\'' \"$size\" \"$mtime\" \"$path64\" \"$identity\" \"$change\"\ndone'"
+                    },
+                    {
+                      "args": [
+                        "/tmp/codex session's-XkxW3w/sessions/2026/10/20/rollout-2026-10-20T20-19-45-00000000-0000-4000-8000-000000000001.jsonl"
+                      ],
+                      "result": "'/tmp/codex session'\\''s-XkxW3w/sessions/2026/10/20/rollout-2026-10-20T20-19-45-00000000-0000-4000-8000-000000000001.jsonl'"
+                    },
+                    {
+                      "args": [
+                        "\nimport os, sys\nfrom pathlib import Path\nroot = Path(os.path.expanduser(os.environ.get(\"CODEX_HOME\") or \"~/.codex\"))\nmatches = []\nfor directory in (\"sessions\", \"archived_sessions\"):\n    matches.extend((root / directory).glob(\"**/*-\" + sys.argv[1] + \".jsonl\"))\nmatches = [path for path in matches if path.is_file()]\nif len(matches) > 1:\n    sys.exit(\"Multiple transcripts match this Codex session ID.\")\nif matches:\n    print(matches[0].resolve())\n"
+                      ],
+                      "result": "'\nimport os, sys\nfrom pathlib import Path\nroot = Path(os.path.expanduser(os.environ.get(\"CODEX_HOME\") or \"~/.codex\"))\nmatches = []\nfor directory in (\"sessions\", \"archived_sessions\"):\n    matches.extend((root / directory).glob(\"**/*-\" + sys.argv[1] + \".jsonl\"))\nmatches = [path for path in matches if path.is_file()]\nif len(matches) > 1:\n    sys.exit(\"Multiple transcripts match this Codex session ID.\")\nif matches:\n    print(matches[0].resolve())\n'"
+                    },
+                    {
+                      "args": ["00000000-0000-4000-8000-000000000001"],
+                      "result": "'00000000-0000-4000-8000-000000000001'"
+                    },
+                    {
+                      "args": [
+                        "python3 -c '\nimport os, sys\nfrom pathlib import Path\nroot = Path(os.path.expanduser(os.environ.get(\"CODEX_HOME\") or \"~/.codex\"))\nmatches = []\nfor directory in (\"sessions\", \"archived_sessions\"):\n    matches.extend((root / directory).glob(\"**/*-\" + sys.argv[1] + \".jsonl\"))\nmatches = [path for path in matches if path.is_file()]\nif len(matches) > 1:\n    sys.exit(\"Multiple transcripts match this Codex session ID.\")\nif matches:\n    print(matches[0].resolve())\n' '00000000-0000-4000-8000-000000000001'"
+                      ],
+                      "result": "'python3 -c '\\''\nimport os, sys\nfrom pathlib import Path\nroot = Path(os.path.expanduser(os.environ.get(\"CODEX_HOME\") or \"~/.codex\"))\nmatches = []\nfor directory in (\"sessions\", \"archived_sessions\"):\n    matches.extend((root / directory).glob(\"**/*-\" + sys.argv[1] + \".jsonl\"))\nmatches = [path for path in matches if path.is_file()]\nif len(matches) > 1:\n    sys.exit(\"Multiple transcripts match this Codex session ID.\")\nif matches:\n    print(matches[0].resolve())\n'\\'' '\\''00000000-0000-4000-8000-000000000001'\\'''"
+                    }
+                  ]
+                }
+              },
+              "runBinaryProcessWithTimeout": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": [
+                        [
+                          "ssh",
+                          "-o",
+                          "BatchMode=yes",
+                          "-o",
+                          "StrictHostKeyChecking=yes",
+                          "-o",
+                          "PermitLocalCommand=no",
+                          "-o",
+                          "RequestTTY=no",
+                          "-o",
+                          "ControlMaster=no",
+                          "-o",
+                          "ControlPath=none",
+                          "-o",
+                          "ControlPersist=no",
+                          "-o",
+                          "ConnectTimeout=8",
+                          "-o",
+                          "ConnectionAttempts=1",
+                          "-o",
+                          "ServerAliveInterval=10",
+                          "-o",
+                          "ServerAliveCountMax=3",
+                          "--",
+                          "fixture",
+                          "bash -lc 'python3 -c '\\''\nimport os, sys\nfrom pathlib import Path\nroot = Path(os.path.expanduser(os.environ.get(\"CODEX_HOME\") or \"~/.codex\"))\nmatches = []\nfor directory in (\"sessions\", \"archived_sessions\"):\n    matches.extend((root / directory).glob(\"**/*-\" + sys.argv[1] + \".jsonl\"))\nmatches = [path for path in matches if path.is_file()]\nif len(matches) > 1:\n    sys.exit(\"Multiple transcripts match this Codex session ID.\")\nif matches:\n    print(matches[0].resolve())\n'\\'' '\\''00000000-0000-4000-8000-000000000001'\\'''"
+                        ],
+                        15000
+                      ],
+                      "async": true,
+                      "result": {
+                        "code": 0,
+                        "stdout": {
+                          "$buffer": "2f746d702f636f6465782073657373696f6e27732d586b785733772f73657373696f6e732f323032362f31302f32302f726f6c6c6f75742d323032362d31302d32305432302d31392d34352d30303030303030302d303030302d343030302d383030302d3030303030303030303030312e6a736f6e6c0a"
+                        },
+                        "stderr": ""
+                      }
+                    },
+                    {
+                      "args": [
+                        [
+                          "ssh",
+                          "-o",
+                          "BatchMode=yes",
+                          "-o",
+                          "StrictHostKeyChecking=yes",
+                          "-o",
+                          "PermitLocalCommand=no",
+                          "-o",
+                          "RequestTTY=no",
+                          "-o",
+                          "ControlMaster=no",
+                          "-o",
+                          "ControlPath=none",
+                          "-o",
+                          "ControlPersist=no",
+                          "-o",
+                          "ConnectTimeout=8",
+                          "-o",
+                          "ConnectionAttempts=1",
+                          "-o",
+                          "ServerAliveInterval=10",
+                          "-o",
+                          "ServerAliveCountMax=3",
+                          "--",
+                          "fixture",
+                          "bash -c 'for path in \"$@\"; do\n  if [ ! -f \"$path\" ]; then echo -; continue; fi\n  size=\"$(stat -c %s \"$path\" 2>/dev/null || stat -f %z \"$path\" 2>/dev/null)\" &&\n  mtime=\"$(stat -c %Y \"$path\" 2>/dev/null || stat -f %m \"$path\" 2>/dev/null)\" &&\n  identity=\"$(stat -c '\\''%d:%i'\\'' \"$path\" 2>/dev/null || stat -f '\\''%d:%i'\\'' \"$path\" 2>/dev/null)\" &&\n  change=\"$(stat -c '\\''%y:%z'\\'' \"$path\" 2>/dev/null || stat -f '\\''%Fm:%Fc'\\'' \"$path\" 2>/dev/null)\" &&\n  path64=\"$(printf '\\''%s'\\'' \"$path\" | base64 | tr -d '\\''\\n'\\'')\" ||\n  { echo '\\''!'\\''; continue; }\n  printf '\\''+%s\\t%s\\t%s\\t%s\\t%s\\n'\\'' \"$size\" \"$mtime\" \"$path64\" \"$identity\" \"$change\"\ndone' stat '/tmp/codex session'\\''s-XkxW3w/sessions/2026/10/20/rollout-2026-10-20T20-19-45-00000000-0000-4000-8000-000000000001.jsonl'"
+                        ],
+                        15000
+                      ],
+                      "async": true,
+                      "result": {
+                        "code": 0,
+                        "stdout": {
+                          "$buffer": "2b39340931373935333939393130094c3352746343396a6232526c6543427a5a584e7a615739754a334d7457477434567a4e334c334e6c63334e706232357a4c7a49774d6a59764d5441764d6a4176636d397362473931644330794d4449324c5445774c544977564449774c5445354c5451314c5441774d4441774d4441774c5441774d4441744e4441774d4330344d4441774c5441774d4441774d4441774d4441774d5335716332397562413d3d0935393a313431303539323709323032362d31312d32322032333a31313a35302e393335363338323433202d303330303a323032362d31312d32322032333a31313a35302e393335363338323433202d303330300a"
+                        },
+                        "stderr": ""
+                      }
+                    },
+                    {
+                      "args": [
+                        [
+                          "ssh",
+                          "-o",
+                          "BatchMode=yes",
+                          "-o",
+                          "StrictHostKeyChecking=yes",
+                          "-o",
+                          "PermitLocalCommand=no",
+                          "-o",
+                          "RequestTTY=no",
+                          "-o",
+                          "ControlMaster=no",
+                          "-o",
+                          "ControlPath=none",
+                          "-o",
+                          "ControlPersist=no",
+                          "-o",
+                          "ConnectTimeout=8",
+                          "-o",
+                          "ConnectionAttempts=1",
+                          "-o",
+                          "ServerAliveInterval=10",
+                          "-o",
+                          "ServerAliveCountMax=3",
+                          "--",
+                          "fixture",
+                          "bash -lc 'python3 -c '\\''\nimport os, sys\nfrom pathlib import Path\nroot = Path(os.path.expanduser(os.environ.get(\"CODEX_HOME\") or \"~/.codex\"))\nmatches = []\nfor directory in (\"sessions\", \"archived_sessions\"):\n    matches.extend((root / directory).glob(\"**/*-\" + sys.argv[1] + \".jsonl\"))\nmatches = [path for path in matches if path.is_file()]\nif len(matches) > 1:\n    sys.exit(\"Multiple transcripts match this Codex session ID.\")\nif matches:\n    print(matches[0].resolve())\n'\\'' '\\''00000000-0000-4000-8000-000000000001'\\'''"
+                        ],
+                        15000
+                      ],
+                      "async": true,
+                      "result": {
+                        "code": 0,
+                        "stdout": { "$buffer": "" },
+                        "stderr": ""
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "result": { "$handle": 1 }
+        },
+        {
+          "on": 1,
+          "method": "findCodexSessionById",
+          "args": ["00000000-0000-4000-8000-000000000001"],
+          "async": true,
+          "result": {
+            "path": "/tmp/codex session's-XkxW3w/sessions/2026/10/20/rollout-2026-10-20T20-19-45-00000000-0000-4000-8000-000000000001.jsonl",
+            "size": 94,
+            "mtimeMs": 1795399910000,
+            "identity": "59:14105927",
+            "changeToken": "2026-11-22 23:11:50.935638243 -0300:2026-11-22 23:11:50.935638243 -0300"
+          }
+        },
+        {
+          "on": 1,
+          "method": "findCodexSessionById",
+          "args": ["$(whoami)"],
+          "async": true,
+          "throws": "Enter a complete Codex session ID."
+        },
+        {
+          "on": 1,
+          "method": "findCodexSessionById",
+          "args": ["00000000-0000-4000-8000-000000000001"],
+          "async": true,
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "missing association explains the pane-scoped Codex launch",
+      "group": ["Codex transcript lookup"],
+      "calls": [
+        {
+          "fn": "session-resolver.resolveAgentSession",
+          "args": [
+            { "pane_id": "p1" },
+            {
+              "$fn": {
+                "calls": [
+                  {
+                    "args": ["agent.get", { "target": "p1" }],
+                    "async": true,
+                    "result": { "agent": { "agent": "codex" } }
+                  }
+                ]
+              }
+            }
+          ],
+          "async": true,
+          "result": {
+            "version": 1,
+            "agent": "codex",
+            "pane_id": "p1",
+            "workspace_id": "",
+            "tab_id": "",
+            "status": "missing_session",
+            "detail": "Herdr has not received this pane's Codex session. Install the Codex integration on the agent's machine and run Codex with --no-daemon so session hooks use this pane's environment. Existing shared-server sessions must be resumed with --no-daemon.",
+            "command": "herdr integration install codex",
+            "updated_at": "1970-01-01T00:00:00.000Z",
+            "path": "",
+            "session": null,
+            "file": null
+          }
+        }
+      ]
+    }
+  ]
+}

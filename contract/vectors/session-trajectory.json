@@ -1,0 +1,2427 @@
+{
+  "description": "Transcripts of the agent formats (Codex, Pi, OMP, Kimi, Grok, Antigravity) to ATIF trajectories. Read by `bun test` in server/src/agent/session-trajectory.test.ts.",
+  "modules": {
+    "session-trajectory": "server/src/agent/session-trajectory.ts",
+    "session-history": "server/src/agent/session-history.ts"
+  },
+  "cases": [
+    {
+      "name": "projects OMP Pi-format sessions with header identity and version semantics",
+      "group": ["agent session trajectory projection"],
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "omp",
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            [
+              {
+                "type": "session",
+                "version": 3,
+                "id": "header-session-id",
+                "timestamp": "2026-07-07T00:00:00.000Z",
+                "cwd": "/tmp/project"
+              },
+              {
+                "type": "message",
+                "id": "user-1",
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "message": { "role": "user", "content": "hello" }
+              },
+              {
+                "type": "message",
+                "id": "assistant-1",
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [{ "type": "text", "text": "Hi there" }],
+                  "model": "test-model"
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "header-session-id",
+            "trajectory_id": "header-session-id",
+            "agent": {
+              "name": "omp",
+              "version": "unknown",
+              "model_name": "test-model"
+            },
+            "steps": [
+              {
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "source": "user",
+                "message": "hello",
+                "extra": { "record_type": "message" },
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "source": "agent",
+                "message": "Hi there",
+                "extra": { "record_type": "message", "model": "test-model" },
+                "step_id": 2
+              }
+            ],
+            "final_metrics": { "total_steps": 2 },
+            "extra": {
+              "source_path": "/tmp/session.jsonl",
+              "source_records": 3,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "preserves OMP user skill prompts with the original draft",
+      "group": ["agent session trajectory projection"],
+      "ledger": "preserves OMP user skill prompts with %s",
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "omp",
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            [
+              {
+                "type": "custom_message",
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "customType": "skill-prompt",
+                "attribution": "user",
+                "display": true,
+                "content": "<skill>Expanded instructions are not the user's draft</skill>",
+                "details": {
+                  "name": "review",
+                  "args": "expanded args",
+                  "prompt": "/skill:review this change\nplease"
+                }
+              },
+              {
+                "type": "custom_message",
+                "customType": "skill-prompt",
+                "attribution": "agent",
+                "display": true,
+                "content": "Automatically loaded skill instructions",
+                "details": { "name": "autoload" }
+              },
+              {
+                "type": "custom_message",
+                "customType": "other-extension",
+                "attribution": "user",
+                "content": "Extension context",
+                "details": { "name": "other" }
+              },
+              {
+                "type": "message",
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [{ "type": "text", "text": "Reviewed." }]
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "session",
+            "trajectory_id": "session",
+            "agent": { "name": "omp", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "source": "user",
+                "message": "/skill:review this change\nplease",
+                "extra": { "record_type": "custom_message" },
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "source": "agent",
+                "message": "Reviewed.",
+                "extra": { "record_type": "message" },
+                "step_id": 2
+              }
+            ],
+            "final_metrics": { "total_steps": 2 },
+            "extra": {
+              "source_path": "/tmp/session.jsonl",
+              "source_records": 4,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        },
+        {
+          "fn": "session-history.historyEntriesFromTrajectory",
+          "args": [
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            {
+              "schema_version": "ATIF-v1.7",
+              "session_id": "session",
+              "trajectory_id": "session",
+              "agent": { "name": "omp", "version": "unknown" },
+              "steps": [
+                {
+                  "timestamp": "2026-07-07T00:00:01.000Z",
+                  "source": "user",
+                  "message": "/skill:review this change\nplease",
+                  "extra": { "record_type": "custom_message" },
+                  "step_id": 1
+                },
+                {
+                  "timestamp": "2026-07-07T00:00:02.000Z",
+                  "source": "agent",
+                  "message": "Reviewed.",
+                  "extra": { "record_type": "message" },
+                  "step_id": 2
+                }
+              ],
+              "final_metrics": { "total_steps": 2 },
+              "extra": {
+                "source_path": "/tmp/session.jsonl",
+                "source_records": 4,
+                "projection": "roamgate-lightweight"
+              }
+            }
+          ],
+          "result": [
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "/skill:review this change\nplease",
+              "sent_at": "2026-07-07T00:00:01.000Z",
+              "id": "f6f188d63e77c130c3c753fa:0"
+            },
+            {
+              "kind": "message",
+              "role": "assistant",
+              "text": "Reviewed.",
+              "sent_at": "2026-07-07T00:00:02.000Z",
+              "id": "fca48344495cf1d4e39b728e:0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "preserves OMP user skill prompts with legacy arguments",
+      "group": ["agent session trajectory projection"],
+      "ledger": "preserves OMP user skill prompts with %s",
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "omp",
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            [
+              {
+                "type": "custom_message",
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "customType": "skill-prompt",
+                "attribution": "user",
+                "display": true,
+                "content": "<skill>Expanded instructions are not the user's draft</skill>",
+                "details": { "name": "review", "args": "this change\nplease" }
+              },
+              {
+                "type": "custom_message",
+                "customType": "skill-prompt",
+                "attribution": "agent",
+                "display": true,
+                "content": "Automatically loaded skill instructions",
+                "details": { "name": "autoload" }
+              },
+              {
+                "type": "custom_message",
+                "customType": "other-extension",
+                "attribution": "user",
+                "content": "Extension context",
+                "details": { "name": "other" }
+              },
+              {
+                "type": "message",
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [{ "type": "text", "text": "Reviewed." }]
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "session",
+            "trajectory_id": "session",
+            "agent": { "name": "omp", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "source": "user",
+                "message": "/skill:review this change\nplease",
+                "extra": { "record_type": "custom_message" },
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "source": "agent",
+                "message": "Reviewed.",
+                "extra": { "record_type": "message" },
+                "step_id": 2
+              }
+            ],
+            "final_metrics": { "total_steps": 2 },
+            "extra": {
+              "source_path": "/tmp/session.jsonl",
+              "source_records": 4,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        },
+        {
+          "fn": "session-history.historyEntriesFromTrajectory",
+          "args": [
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            {
+              "schema_version": "ATIF-v1.7",
+              "session_id": "session",
+              "trajectory_id": "session",
+              "agent": { "name": "omp", "version": "unknown" },
+              "steps": [
+                {
+                  "timestamp": "2026-07-07T00:00:01.000Z",
+                  "source": "user",
+                  "message": "/skill:review this change\nplease",
+                  "extra": { "record_type": "custom_message" },
+                  "step_id": 1
+                },
+                {
+                  "timestamp": "2026-07-07T00:00:02.000Z",
+                  "source": "agent",
+                  "message": "Reviewed.",
+                  "extra": { "record_type": "message" },
+                  "step_id": 2
+                }
+              ],
+              "final_metrics": { "total_steps": 2 },
+              "extra": {
+                "source_path": "/tmp/session.jsonl",
+                "source_records": 4,
+                "projection": "roamgate-lightweight"
+              }
+            }
+          ],
+          "result": [
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "/skill:review this change\nplease",
+              "sent_at": "2026-07-07T00:00:01.000Z",
+              "id": "f6f188d63e77c130c3c753fa:0"
+            },
+            {
+              "kind": "message",
+              "role": "assistant",
+              "text": "Reviewed.",
+              "sent_at": "2026-07-07T00:00:02.000Z",
+              "id": "fca48344495cf1d4e39b728e:0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "preserves OMP user skill prompts with no arguments",
+      "group": ["agent session trajectory projection"],
+      "ledger": "preserves OMP user skill prompts with %s",
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "omp",
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            [
+              {
+                "type": "custom_message",
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "customType": "skill-prompt",
+                "attribution": "user",
+                "display": true,
+                "content": "<skill>Expanded instructions are not the user's draft</skill>",
+                "details": { "name": "review" }
+              },
+              {
+                "type": "custom_message",
+                "customType": "skill-prompt",
+                "attribution": "agent",
+                "display": true,
+                "content": "Automatically loaded skill instructions",
+                "details": { "name": "autoload" }
+              },
+              {
+                "type": "custom_message",
+                "customType": "other-extension",
+                "attribution": "user",
+                "content": "Extension context",
+                "details": { "name": "other" }
+              },
+              {
+                "type": "message",
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [{ "type": "text", "text": "Reviewed." }]
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "session",
+            "trajectory_id": "session",
+            "agent": { "name": "omp", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "source": "user",
+                "message": "/skill:review",
+                "extra": { "record_type": "custom_message" },
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "source": "agent",
+                "message": "Reviewed.",
+                "extra": { "record_type": "message" },
+                "step_id": 2
+              }
+            ],
+            "final_metrics": { "total_steps": 2 },
+            "extra": {
+              "source_path": "/tmp/session.jsonl",
+              "source_records": 4,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        },
+        {
+          "fn": "session-history.historyEntriesFromTrajectory",
+          "args": [
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            {
+              "schema_version": "ATIF-v1.7",
+              "session_id": "session",
+              "trajectory_id": "session",
+              "agent": { "name": "omp", "version": "unknown" },
+              "steps": [
+                {
+                  "timestamp": "2026-07-07T00:00:01.000Z",
+                  "source": "user",
+                  "message": "/skill:review",
+                  "extra": { "record_type": "custom_message" },
+                  "step_id": 1
+                },
+                {
+                  "timestamp": "2026-07-07T00:00:02.000Z",
+                  "source": "agent",
+                  "message": "Reviewed.",
+                  "extra": { "record_type": "message" },
+                  "step_id": 2
+                }
+              ],
+              "final_metrics": { "total_steps": 2 },
+              "extra": {
+                "source_path": "/tmp/session.jsonl",
+                "source_records": 4,
+                "projection": "roamgate-lightweight"
+              }
+            }
+          ],
+          "result": [
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "/skill:review",
+              "sent_at": "2026-07-07T00:00:01.000Z",
+              "id": "ac55cd9b09edfab53c75fc19:0"
+            },
+            {
+              "kind": "message",
+              "role": "assistant",
+              "text": "Reviewed.",
+              "sent_at": "2026-07-07T00:00:02.000Z",
+              "id": "fca48344495cf1d4e39b728e:0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "projects Codex sessions without duplicating user messages",
+      "group": ["agent session trajectory projection"],
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "codex",
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            [
+              {
+                "type": "event_msg",
+                "timestamp": "2026-07-07T00:00:00.000Z",
+                "payload": { "type": "user_message", "message": "duplicate" }
+              },
+              {
+                "type": "event_msg",
+                "timestamp": "2026-07-07T00:00:00.500Z",
+                "payload": {
+                  "type": "agent_message",
+                  "message": "duplicate response"
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [{ "type": "input_text", "text": "hello" }]
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "payload": {
+                  "type": "function_call",
+                  "call_id": "call-1",
+                  "name": "read_file",
+                  "arguments": "{\"path\":\"README.md\"}"
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-07-07T00:00:03.000Z",
+                "payload": {
+                  "type": "function_call_output",
+                  "call_id": "call-1",
+                  "output": "done"
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-07-07T00:00:03.500Z",
+                "payload": {
+                  "type": "message",
+                  "role": "assistant",
+                  "content": [{ "type": "output_text", "text": "Done" }]
+                }
+              },
+              {
+                "type": "event_msg",
+                "timestamp": "2026-07-07T00:00:04.000Z",
+                "payload": {
+                  "type": "token_count",
+                  "info": {
+                    "total_token_usage": {
+                      "input_tokens": 10,
+                      "output_tokens": 2,
+                      "cached_input_tokens": 3
+                    }
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "session",
+            "trajectory_id": "session",
+            "agent": { "name": "codex", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "source": "user",
+                "message": "hello",
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "source": "agent",
+                "message": "Tool call: read_file",
+                "tool_calls": [
+                  {
+                    "tool_call_id": "call-1",
+                    "function_name": "read_file",
+                    "arguments": { "path": "README.md" },
+                    "extra": { "record_type": "function_call" }
+                  }
+                ],
+                "step_id": 2
+              },
+              {
+                "timestamp": "2026-07-07T00:00:03.000Z",
+                "source": "system",
+                "message": "done",
+                "observation": {
+                  "results": [
+                    {
+                      "source_call_id": "call-1",
+                      "content": "done",
+                      "extra": {}
+                    }
+                  ]
+                },
+                "extra": { "record_type": "function_call_output" },
+                "step_id": 3
+              },
+              {
+                "timestamp": "2026-07-07T00:00:03.500Z",
+                "source": "agent",
+                "message": "Done",
+                "step_id": 4
+              },
+              {
+                "timestamp": "2026-07-07T00:00:04.000Z",
+                "source": "system",
+                "message": "Token usage",
+                "metrics": {
+                  "prompt_tokens": 10,
+                  "completion_tokens": 2,
+                  "cached_tokens": 3
+                },
+                "extra": { "record_type": "token_count" },
+                "step_id": 5
+              }
+            ],
+            "final_metrics": {
+              "total_prompt_tokens": 10,
+              "total_completion_tokens": 2,
+              "total_cached_tokens": 3,
+              "total_steps": 5
+            },
+            "extra": {
+              "source_path": "/tmp/session.jsonl",
+              "source_records": 7,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "drops Codex's unreadable reasoning and keeps a summary as thinking",
+      "group": ["agent session trajectory projection"],
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "codex",
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            [
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:39:00.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "output_text",
+                      "text": "The upgrade is committed."
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:39:01.000Z",
+                "payload": {
+                  "type": "reasoning",
+                  "summary": [],
+                  "content": null,
+                  "encrypted_content": "gAAAAABp8Oek"
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:39:02.000Z",
+                "payload": {
+                  "type": "reasoning",
+                  "summary": [],
+                  "content": null,
+                  "encrypted_content": "gAAAAABp8Oek"
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:39:03.000Z",
+                "payload": {
+                  "type": "custom_tool_call",
+                  "call_id": "call-1",
+                  "name": "exec",
+                  "input": "text(await tools.exec_command({cmd:\"df -h\"}));\n"
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:39:04.000Z",
+                "payload": {
+                  "type": "custom_tool_call_output",
+                  "call_id": "call-1",
+                  "output": "ok"
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:39:05.000Z",
+                "payload": {
+                  "type": "reasoning",
+                  "summary": [],
+                  "content": null,
+                  "encrypted_content": "gAAAAABp8Oek"
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:39:06.000Z",
+                "payload": {
+                  "type": "reasoning",
+                  "summary": [
+                    { "type": "summary_text", "text": "**Checking backups**" }
+                  ],
+                  "content": null,
+                  "encrypted_content": "gAAAAABpkdl2"
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:39:07.000Z",
+                "payload": {
+                  "type": "reasoning",
+                  "summary": [],
+                  "content": null,
+                  "encrypted_content": "gAAAAABp8Oek"
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:39:08.000Z",
+                "payload": {
+                  "type": "reasoning",
+                  "summary": [
+                    { "type": "summary_text", "text": "**Planning cleanup**" }
+                  ],
+                  "content": null,
+                  "encrypted_content": "gAAAAABpkdl2"
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:39:09.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "assistant",
+                  "content": [
+                    { "type": "output_text", "text": "Backups are fine." }
+                  ]
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "session",
+            "trajectory_id": "session",
+            "agent": { "name": "codex", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-11-20T07:39:00.000Z",
+                "source": "agent",
+                "message": "The upgrade is committed.",
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-11-20T07:39:03.000Z",
+                "source": "agent",
+                "message": "Tool call: exec",
+                "tool_calls": [
+                  {
+                    "tool_call_id": "call-1",
+                    "function_name": "exec",
+                    "arguments": {
+                      "value": "text(await tools.exec_command({cmd:\"df -h\"}));\n"
+                    },
+                    "extra": { "record_type": "custom_tool_call" }
+                  }
+                ],
+                "step_id": 2
+              },
+              {
+                "timestamp": "2026-11-20T07:39:04.000Z",
+                "source": "system",
+                "message": "ok",
+                "observation": {
+                  "results": [
+                    { "source_call_id": "call-1", "content": "ok", "extra": {} }
+                  ]
+                },
+                "extra": { "record_type": "custom_tool_call_output" },
+                "step_id": 3
+              },
+              {
+                "timestamp": "2026-11-20T07:39:06.000Z",
+                "source": "agent",
+                "message": "Reasoning",
+                "reasoning_content": "**Checking backups**\n\n**Planning cleanup**",
+                "extra": { "record_type": "reasoning" },
+                "step_id": 4
+              },
+              {
+                "timestamp": "2026-11-20T07:39:09.000Z",
+                "source": "agent",
+                "message": "Backups are fine.",
+                "step_id": 5
+              }
+            ],
+            "final_metrics": { "total_steps": 5 },
+            "extra": {
+              "source_path": "/tmp/session.jsonl",
+              "source_records": 10,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        },
+        {
+          "fn": "session-history.historyEntriesFromTrajectory",
+          "args": [
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            {
+              "schema_version": "ATIF-v1.7",
+              "session_id": "session",
+              "trajectory_id": "session",
+              "agent": { "name": "codex", "version": "unknown" },
+              "steps": [
+                {
+                  "timestamp": "2026-11-20T07:39:00.000Z",
+                  "source": "agent",
+                  "message": "The upgrade is committed.",
+                  "step_id": 1
+                },
+                {
+                  "timestamp": "2026-11-20T07:39:03.000Z",
+                  "source": "agent",
+                  "message": "Tool call: exec",
+                  "tool_calls": [
+                    {
+                      "tool_call_id": "call-1",
+                      "function_name": "exec",
+                      "arguments": {
+                        "value": "text(await tools.exec_command({cmd:\"df -h\"}));\n"
+                      },
+                      "extra": { "record_type": "custom_tool_call" }
+                    }
+                  ],
+                  "step_id": 2
+                },
+                {
+                  "timestamp": "2026-11-20T07:39:04.000Z",
+                  "source": "system",
+                  "message": "ok",
+                  "observation": {
+                    "results": [
+                      {
+                        "source_call_id": "call-1",
+                        "content": "ok",
+                        "extra": {}
+                      }
+                    ]
+                  },
+                  "extra": { "record_type": "custom_tool_call_output" },
+                  "step_id": 3
+                },
+                {
+                  "timestamp": "2026-11-20T07:39:06.000Z",
+                  "source": "agent",
+                  "message": "Reasoning",
+                  "reasoning_content": "**Checking backups**\n\n**Planning cleanup**",
+                  "extra": { "record_type": "reasoning" },
+                  "step_id": 4
+                },
+                {
+                  "timestamp": "2026-11-20T07:39:09.000Z",
+                  "source": "agent",
+                  "message": "Backups are fine.",
+                  "step_id": 5
+                }
+              ],
+              "final_metrics": { "total_steps": 5 },
+              "extra": {
+                "source_path": "/tmp/session.jsonl",
+                "source_records": 10,
+                "projection": "roamgate-lightweight"
+              }
+            }
+          ],
+          "result": [
+            {
+              "kind": "message",
+              "role": "assistant",
+              "text": "The upgrade is committed.",
+              "sent_at": "2026-11-20T07:39:00.000Z",
+              "id": "687ec93a239424e02ff33a80:0"
+            },
+            {
+              "kind": "tool_call",
+              "role": "tool",
+              "tool_name": "exec",
+              "source_call_id": "call-1",
+              "text": "{\n  \"value\": \"text(await tools.exec_command({cmd:\\\"df -h\\\"}));\\n\"\n}",
+              "summary": "df -h",
+              "sent_at": "2026-11-20T07:39:03.000Z",
+              "id": "5992750cdb9c91219248bd0a:0"
+            },
+            {
+              "kind": "tool_result",
+              "role": "tool",
+              "tool_name": "exec",
+              "source_call_id": "call-1",
+              "text": "ok",
+              "is_error": false,
+              "sent_at": "2026-11-20T07:39:04.000Z",
+              "id": "8eac7025f7d1d9d4db4ec06e:0"
+            },
+            {
+              "kind": "message",
+              "role": "assistant",
+              "text": "Backups are fine.",
+              "sent_at": "2026-11-20T07:39:09.000Z",
+              "id": "fdd632d9356b2de1ef0f7ba6:0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "keeps what Codex writes in a user message out of the user's words",
+      "group": ["agent session trajectory projection"],
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "codex",
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            [
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:00.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "# AGENTS.md instructions for /srv/app\n\n<INSTRUCTIONS>\nBe terse.\n</INSTRUCTIONS>"
+                    },
+                    {
+                      "type": "input_text",
+                      "text": "<environment_context>\n  <cwd>/srv/app</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-11-19</current_date>\n  <timezone>America/Santiago</timezone>\n  <filesystem><workspace_roots><root>/srv/app</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\"><entry access=\"read\"><special>:root</special></entry></file_system></permission_profile></filesystem>\n</environment_context>"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:01.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [{ "type": "input_text", "text": "Hi" }]
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:02.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<turn_aborted>\nThe user interrupted the previous turn on purpose.\n</turn_aborted>"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:03.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<environment_context>\n  <cwd>/srv/app</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-11-19</current_date>\n  <timezone>America/Santiago</timezone>\n  <filesystem><workspace_roots><root>/srv/app</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\"><entry access=\"read\"><special>:root</special></entry></file_system></permission_profile></filesystem>\n</environment_context>"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:04.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<user_instructions>\nAlways test.\n</user_instructions>\nAnd the words after it"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:05.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<user_shell_command>\n<command>\necho $TAG\n</command>\n<result>\nExit code: 0\nDuration: 0.03 seconds\nOutput:\nv1\n\n</result>\n</user_shell_command>"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:06.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<subagent_notification>\n{\"agent_path\":\"019e-a\",\"status\":{\"completed\":\"Found the cause.\"}}\n</subagent_notification>"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:07.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<subagent_notification>\n{\"agent_path\":\"019e-a\",\"status\":\"shutdown\"}\n</subagent_notification>"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:08.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<recommended_plugins>\n- Airtable\n</recommended_plugins>"
+                    },
+                    {
+                      "type": "input_text",
+                      "text": "<environment_context>\n  <cwd>/srv/app</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-11-20</current_date>\n  <timezone>America/Santiago</timezone>\n  <filesystem><workspace_roots><root>/srv/app</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\"><entry access=\"read\"><special>:root</special></entry></file_system></permission_profile></filesystem>\n</environment_context>"
+                    }
+                  ],
+                  "internal_chat_message_metadata_passthrough": {
+                    "content_item_kinds": [
+                      "plugins.recommendations",
+                      "environments.environment_context"
+                    ],
+                    "content_item_metadata": [
+                      { "provenance": { "type": "harness" } },
+                      { "provenance": { "type": "harness", "hook": false } }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:09.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<unknown_harness_note>x</unknown_harness_note>"
+                    }
+                  ],
+                  "internal_chat_message_metadata_passthrough": {
+                    "content_item_kinds": ["harness.unknown"]
+                  }
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:10.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    { "type": "input_text", "text": "Sure, go ahead" }
+                  ],
+                  "internal_chat_message_metadata_passthrough": {
+                    "content_item_kinds": ["user.text"],
+                    "content_item_metadata": [
+                      { "provenance": { "type": "user" } }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:11.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<environment_context> is what Codex writes"
+                    }
+                  ],
+                  "internal_chat_message_metadata_passthrough": {
+                    "content_item_kinds": ["user.text"]
+                  }
+                }
+              },
+              {
+                "type": "response_item",
+                "timestamp": "2026-11-20T07:27:12.000Z",
+                "payload": {
+                  "type": "message",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<image name=[Image #1] path=\"/tmp/a.png\">"
+                    },
+                    { "type": "input_text", "text": "</image>" },
+                    { "type": "input_text", "text": "[Image #1] look" }
+                  ],
+                  "internal_chat_message_metadata_passthrough": {
+                    "content_item_kinds": [
+                      "user.text",
+                      "user.text",
+                      "user.text"
+                    ]
+                  }
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "session",
+            "trajectory_id": "session",
+            "agent": { "name": "codex", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-11-20T07:27:00.000Z",
+                "source": "user",
+                "message": "- cwd: `/srv/app`\n- workspace: `/srv/app`\n- date: 2026-11-19\n- timezone: America/Santiago\n- shell: zsh",
+                "extra": {
+                  "injected": {
+                    "kind": "context",
+                    "label": "Environment: cwd /srv/app, date 2026-11-19"
+                  }
+                },
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-11-20T07:27:01.000Z",
+                "source": "user",
+                "message": "Hi",
+                "step_id": 2
+              },
+              {
+                "timestamp": "2026-11-20T07:27:04.000Z",
+                "source": "user",
+                "message": "And the words after it",
+                "step_id": 3
+              },
+              {
+                "timestamp": "2026-11-20T07:27:05.000Z",
+                "source": "user",
+                "message": "```\n$ echo $TAG\nv1\n```",
+                "extra": {
+                  "injected": {
+                    "kind": "context",
+                    "label": "You ran: echo $TAG"
+                  }
+                },
+                "step_id": 4
+              },
+              {
+                "timestamp": "2026-11-20T07:27:06.000Z",
+                "source": "user",
+                "message": "Found the cause.",
+                "extra": {
+                  "injected": {
+                    "kind": "report",
+                    "label": "Report from a subagent"
+                  }
+                },
+                "step_id": 5
+              },
+              {
+                "timestamp": "2026-11-20T07:27:08.000Z",
+                "source": "user",
+                "message": "- cwd: `/srv/app`\n- workspace: `/srv/app`\n- date: 2026-11-20\n- timezone: America/Santiago\n- shell: zsh",
+                "extra": {
+                  "injected": {
+                    "kind": "context",
+                    "label": "Environment: cwd /srv/app, date 2026-11-20"
+                  }
+                },
+                "step_id": 6
+              },
+              {
+                "timestamp": "2026-11-20T07:27:10.000Z",
+                "source": "user",
+                "message": "Sure, go ahead",
+                "step_id": 7
+              },
+              {
+                "timestamp": "2026-11-20T07:27:11.000Z",
+                "source": "user",
+                "message": "<environment_context> is what Codex writes",
+                "step_id": 8
+              },
+              {
+                "timestamp": "2026-11-20T07:27:12.000Z",
+                "source": "user",
+                "message": "[Image #1] look",
+                "step_id": 9
+              }
+            ],
+            "final_metrics": { "total_steps": 9 },
+            "extra": {
+              "source_path": "/tmp/session.jsonl",
+              "source_records": 13,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        },
+        {
+          "fn": "session-history.historyEntriesFromTrajectory",
+          "args": [
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            {
+              "schema_version": "ATIF-v1.7",
+              "session_id": "session",
+              "trajectory_id": "session",
+              "agent": { "name": "codex", "version": "unknown" },
+              "steps": [
+                {
+                  "timestamp": "2026-11-20T07:27:00.000Z",
+                  "source": "user",
+                  "message": "- cwd: `/srv/app`\n- workspace: `/srv/app`\n- date: 2026-11-19\n- timezone: America/Santiago\n- shell: zsh",
+                  "extra": {
+                    "injected": {
+                      "kind": "context",
+                      "label": "Environment: cwd /srv/app, date 2026-11-19"
+                    }
+                  },
+                  "step_id": 1
+                },
+                {
+                  "timestamp": "2026-11-20T07:27:01.000Z",
+                  "source": "user",
+                  "message": "Hi",
+                  "step_id": 2
+                },
+                {
+                  "timestamp": "2026-11-20T07:27:04.000Z",
+                  "source": "user",
+                  "message": "And the words after it",
+                  "step_id": 3
+                },
+                {
+                  "timestamp": "2026-11-20T07:27:05.000Z",
+                  "source": "user",
+                  "message": "```\n$ echo $TAG\nv1\n```",
+                  "extra": {
+                    "injected": {
+                      "kind": "context",
+                      "label": "You ran: echo $TAG"
+                    }
+                  },
+                  "step_id": 4
+                },
+                {
+                  "timestamp": "2026-11-20T07:27:06.000Z",
+                  "source": "user",
+                  "message": "Found the cause.",
+                  "extra": {
+                    "injected": {
+                      "kind": "report",
+                      "label": "Report from a subagent"
+                    }
+                  },
+                  "step_id": 5
+                },
+                {
+                  "timestamp": "2026-11-20T07:27:08.000Z",
+                  "source": "user",
+                  "message": "- cwd: `/srv/app`\n- workspace: `/srv/app`\n- date: 2026-11-20\n- timezone: America/Santiago\n- shell: zsh",
+                  "extra": {
+                    "injected": {
+                      "kind": "context",
+                      "label": "Environment: cwd /srv/app, date 2026-11-20"
+                    }
+                  },
+                  "step_id": 6
+                },
+                {
+                  "timestamp": "2026-11-20T07:27:10.000Z",
+                  "source": "user",
+                  "message": "Sure, go ahead",
+                  "step_id": 7
+                },
+                {
+                  "timestamp": "2026-11-20T07:27:11.000Z",
+                  "source": "user",
+                  "message": "<environment_context> is what Codex writes",
+                  "step_id": 8
+                },
+                {
+                  "timestamp": "2026-11-20T07:27:12.000Z",
+                  "source": "user",
+                  "message": "[Image #1] look",
+                  "step_id": 9
+                }
+              ],
+              "final_metrics": { "total_steps": 9 },
+              "extra": {
+                "source_path": "/tmp/session.jsonl",
+                "source_records": 13,
+                "projection": "roamgate-lightweight"
+              }
+            }
+          ],
+          "result": [
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "- cwd: `/srv/app`\n- workspace: `/srv/app`\n- date: 2026-11-19\n- timezone: America/Santiago\n- shell: zsh",
+              "sent_at": "2026-11-20T07:27:00.000Z",
+              "injected": {
+                "kind": "context",
+                "label": "Environment: cwd /srv/app, date 2026-11-19"
+              },
+              "id": "f5ce189a94ac9228772fc599:0"
+            },
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "Hi",
+              "sent_at": "2026-11-20T07:27:01.000Z",
+              "id": "552b53aa08cb8b6394ad776d:0"
+            },
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "And the words after it",
+              "sent_at": "2026-11-20T07:27:04.000Z",
+              "id": "f5a8c18c795bcc970347b7b0:0"
+            },
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "```\n$ echo $TAG\nv1\n```",
+              "sent_at": "2026-11-20T07:27:05.000Z",
+              "injected": { "kind": "context", "label": "You ran: echo $TAG" },
+              "id": "de941b5cc175aa93f67f4fba:0"
+            },
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "Found the cause.",
+              "sent_at": "2026-11-20T07:27:06.000Z",
+              "injected": {
+                "kind": "report",
+                "label": "Report from a subagent"
+              },
+              "id": "cd698623d969acda0a0ab7bc:0"
+            },
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "- cwd: `/srv/app`\n- workspace: `/srv/app`\n- date: 2026-11-20\n- timezone: America/Santiago\n- shell: zsh",
+              "sent_at": "2026-11-20T07:27:08.000Z",
+              "injected": {
+                "kind": "context",
+                "label": "Environment: cwd /srv/app, date 2026-11-20"
+              },
+              "id": "1d3fcf6924ee1907b1624536:0"
+            },
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "Sure, go ahead",
+              "sent_at": "2026-11-20T07:27:10.000Z",
+              "id": "23ff9bdb62cc5053fa602bc8:0"
+            },
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "<environment_context> is what Codex writes",
+              "sent_at": "2026-11-20T07:27:11.000Z",
+              "id": "5740aadeffd8d091ccb9f92b:0"
+            },
+            {
+              "kind": "message",
+              "role": "user",
+              "text": "[Image #1] look",
+              "sent_at": "2026-11-20T07:27:12.000Z",
+              "id": "9b0f53023162eff5ef1cc9e4:0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "projects assistant messages from older Codex event-only sessions",
+      "group": ["agent session trajectory projection"],
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "codex",
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            [
+              {
+                "type": "event_msg",
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "payload": { "type": "user_message", "message": "hello" }
+              },
+              {
+                "type": "event_msg",
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "payload": { "type": "agent_message", "message": "Hi there" }
+              },
+              {
+                "type": "event_msg",
+                "timestamp": "2026-07-07T00:00:03.000Z",
+                "payload": { "type": "agent_reasoning", "text": "internal" }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "session",
+            "trajectory_id": "session",
+            "agent": { "name": "codex", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "source": "user",
+                "message": "hello",
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "source": "agent",
+                "message": "Hi there",
+                "step_id": 2
+              }
+            ],
+            "final_metrics": { "total_steps": 2 },
+            "extra": {
+              "source_path": "/tmp/session.jsonl",
+              "source_records": 3,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "projects Kimi loop events without standalone token messages",
+      "group": ["agent session trajectory projection"],
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "kimi",
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            [
+              { "type": "metadata", "created_at": 1783382400000 },
+              {
+                "type": "context.append_message",
+                "message": { "role": "user", "content": "hi" }
+              },
+              {
+                "type": "context.append_message",
+                "message": {
+                  "role": "assistant",
+                  "content": "duplicate assistant output"
+                }
+              },
+              {
+                "type": "context.append_loop_event",
+                "time": 1783382401000,
+                "event": {
+                  "type": "content.part",
+                  "turnId": "turn-1",
+                  "step": 1,
+                  "part": { "type": "think", "think": "Check the repository" }
+                }
+              },
+              {
+                "type": "context.append_loop_event",
+                "time": 1783382402000,
+                "event": {
+                  "type": "content.part",
+                  "turnId": "turn-1",
+                  "step": 1,
+                  "part": { "type": "text", "text": "Done" }
+                }
+              },
+              {
+                "type": "context.append_loop_event",
+                "time": 1783382403000,
+                "event": {
+                  "type": "step.end",
+                  "turnId": "turn-1",
+                  "step": 1,
+                  "usage": {
+                    "inputOther": 4,
+                    "inputCacheCreation": 1,
+                    "inputCacheRead": 2,
+                    "output": 3
+                  }
+                }
+              },
+              {
+                "type": "usage.record",
+                "usage": {
+                  "inputOther": 4,
+                  "inputCacheCreation": 1,
+                  "inputCacheRead": 2,
+                  "output": 3
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "session",
+            "trajectory_id": "session",
+            "agent": { "name": "kimi-code", "version": "kimi-code" },
+            "steps": [
+              {
+                "timestamp": "2026-07-07T00:00:00.001Z",
+                "source": "user",
+                "message": "hi",
+                "extra": { "record_type": "context.append_message" },
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "source": "agent",
+                "message": "Reasoning",
+                "reasoning_content": "Check the repository",
+                "extra": {
+                  "record_type": "context.append_loop_event",
+                  "event_type": "content.part"
+                },
+                "step_id": 2
+              },
+              {
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "source": "agent",
+                "message": "Done",
+                "extra": {
+                  "record_type": "context.append_loop_event",
+                  "event_type": "content.part"
+                },
+                "metrics": {
+                  "prompt_tokens": 5,
+                  "completion_tokens": 3,
+                  "cached_tokens": 2
+                },
+                "step_id": 3
+              }
+            ],
+            "final_metrics": {
+              "total_prompt_tokens": 5,
+              "total_completion_tokens": 3,
+              "total_cached_tokens": 2,
+              "total_steps": 3
+            },
+            "extra": {
+              "source_path": "/tmp/session.jsonl",
+              "source_records": 7,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "projects Pi messages, tools, reasoning, and token usage into ATIF",
+      "group": ["agent session trajectory projection"],
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "pi",
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            [
+              {
+                "type": "session",
+                "version": 3,
+                "id": "pi-session-1",
+                "timestamp": "2026-07-07T00:00:00.000Z",
+                "cwd": "/tmp/project"
+              },
+              {
+                "type": "model_change",
+                "id": "model-1",
+                "timestamp": "2026-07-07T00:00:00.100Z",
+                "provider": "anthropic",
+                "modelId": "claude-sonnet-4"
+              },
+              {
+                "type": "message",
+                "id": "user-1",
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "message": {
+                  "role": "user",
+                  "content": [{ "type": "text", "text": "inspect the repo" }]
+                }
+              },
+              {
+                "type": "message",
+                "id": "retry-1",
+                "timestamp": "2026-07-07T00:00:01.500Z",
+                "message": {
+                  "role": "assistant",
+                  "content": [],
+                  "stopReason": "error",
+                  "usage": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "totalTokens": 0
+                  }
+                }
+              },
+              {
+                "type": "message",
+                "id": "assistant-1",
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "message": {
+                  "role": "assistant",
+                  "provider": "anthropic",
+                  "model": "claude-sonnet-4",
+                  "stopReason": "toolUse",
+                  "usage": {
+                    "input": 10,
+                    "output": 8,
+                    "cacheRead": 6,
+                    "cacheWrite": 4,
+                    "reasoning": 3,
+                    "totalTokens": 28
+                  },
+                  "content": [
+                    {
+                      "type": "thinking",
+                      "thinking": "Find the relevant file"
+                    },
+                    {
+                      "type": "toolCall",
+                      "id": "call-1",
+                      "name": "read",
+                      "arguments": { "path": "README.md" }
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "message",
+                "id": "result-1",
+                "timestamp": "2026-07-07T00:00:03.000Z",
+                "message": {
+                  "role": "toolResult",
+                  "toolCallId": "call-1",
+                  "toolName": "read",
+                  "isError": false,
+                  "content": [{ "type": "text", "text": "# Project" }]
+                }
+              },
+              {
+                "type": "message",
+                "id": "assistant-2",
+                "timestamp": "2026-07-07T00:00:04.000Z",
+                "message": {
+                  "role": "assistant",
+                  "provider": "anthropic",
+                  "model": "claude-sonnet-4",
+                  "stopReason": "stop",
+                  "usage": {
+                    "input": 2,
+                    "output": 1,
+                    "cacheRead": 3,
+                    "cacheWrite": 0,
+                    "totalTokens": 6
+                  },
+                  "content": [{ "type": "text", "text": "Done" }]
+                }
+              },
+              {
+                "type": "message",
+                "id": "assistant-error",
+                "timestamp": "2026-07-07T00:00:05.000Z",
+                "message": {
+                  "role": "assistant",
+                  "provider": "anthropic",
+                  "model": "claude-sonnet-4",
+                  "stopReason": "error",
+                  "errorMessage": "429 rate limit exceeded",
+                  "usage": {
+                    "input": 0,
+                    "output": 0,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "totalTokens": 0
+                  },
+                  "content": []
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "pi-session-1",
+            "trajectory_id": "pi-session-1",
+            "agent": {
+              "name": "pi",
+              "version": "unknown",
+              "model_name": "claude-sonnet-4"
+            },
+            "steps": [
+              {
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "source": "user",
+                "message": "inspect the repo",
+                "extra": { "record_type": "message" },
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "source": "agent",
+                "message": "Tool call: read",
+                "reasoning_content": "Find the relevant file",
+                "tool_calls": [
+                  {
+                    "tool_call_id": "call-1",
+                    "function_name": "read",
+                    "arguments": { "path": "README.md" }
+                  }
+                ],
+                "metrics": {
+                  "prompt_tokens": 20,
+                  "completion_tokens": 8,
+                  "cached_tokens": 6,
+                  "extra": { "reasoning_output_tokens": 3, "total_tokens": 28 }
+                },
+                "extra": {
+                  "record_type": "message",
+                  "provider": "anthropic",
+                  "model": "claude-sonnet-4",
+                  "stop_reason": "toolUse"
+                },
+                "step_id": 2
+              },
+              {
+                "timestamp": "2026-07-07T00:00:03.000Z",
+                "source": "system",
+                "message": "# Project",
+                "observation": {
+                  "results": [
+                    {
+                      "source_call_id": "call-1",
+                      "content": "# Project",
+                      "extra": { "tool_name": "read" }
+                    }
+                  ]
+                },
+                "extra": { "record_type": "message" },
+                "step_id": 3
+              },
+              {
+                "timestamp": "2026-07-07T00:00:04.000Z",
+                "source": "agent",
+                "message": "Done",
+                "metrics": {
+                  "prompt_tokens": 5,
+                  "completion_tokens": 1,
+                  "cached_tokens": 3,
+                  "extra": { "total_tokens": 6 }
+                },
+                "extra": {
+                  "record_type": "message",
+                  "provider": "anthropic",
+                  "model": "claude-sonnet-4",
+                  "stop_reason": "stop"
+                },
+                "step_id": 4
+              },
+              {
+                "timestamp": "2026-07-07T00:00:05.000Z",
+                "source": "agent",
+                "message": "Error: 429 rate limit exceeded",
+                "metrics": {
+                  "prompt_tokens": 0,
+                  "completion_tokens": 0,
+                  "cached_tokens": 0,
+                  "extra": { "total_tokens": 0 }
+                },
+                "extra": {
+                  "record_type": "message",
+                  "provider": "anthropic",
+                  "model": "claude-sonnet-4",
+                  "stop_reason": "error",
+                  "error_message": "429 rate limit exceeded"
+                },
+                "step_id": 5
+              }
+            ],
+            "final_metrics": {
+              "total_prompt_tokens": 25,
+              "total_completion_tokens": 9,
+              "total_cached_tokens": 9,
+              "total_steps": 5,
+              "extra": { "reasoning_output_tokens": 3, "total_tokens": 34 }
+            },
+            "extra": {
+              "source_path": "/tmp/session.jsonl",
+              "source_records": 8,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "projects OMP bash and Python execution messages with output and status",
+      "group": ["agent session trajectory projection"],
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "omp",
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            [
+              {
+                "type": "message",
+                "id": "bash-1",
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "message": {
+                  "role": "bashExecution",
+                  "command": "false",
+                  "output": "failed",
+                  "exitCode": 1,
+                  "cancelled": false
+                }
+              },
+              {
+                "type": "message",
+                "id": "python-1",
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "message": {
+                  "role": "pythonExecution",
+                  "code": "print('hello')",
+                  "output": "hello",
+                  "exitCode": 0,
+                  "cancelled": false
+                }
+              },
+              {
+                "type": "message",
+                "id": "python-2",
+                "timestamp": "2026-07-07T00:00:03.000Z",
+                "message": {
+                  "role": "pythonExecution",
+                  "code": "raise SystemExit()",
+                  "output": "",
+                  "exitCode": 0,
+                  "cancelled": true
+                }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "session",
+            "trajectory_id": "session",
+            "agent": { "name": "omp", "version": "unknown" },
+            "steps": [
+              {
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "source": "system",
+                "message": "Ran `false`\n\nOutput:\nfailed\n\nCommand exited with code 1",
+                "observation": {
+                  "results": [
+                    {
+                      "content": "Ran `false`\n\nOutput:\nfailed\n\nCommand exited with code 1",
+                      "extra": {
+                        "tool_name": "bash",
+                        "command": "false",
+                        "exit_code": 1,
+                        "is_error": true
+                      }
+                    }
+                  ]
+                },
+                "extra": { "record_type": "message", "role": "bashExecution" },
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "source": "system",
+                "message": "Ran Python:\n```python\nprint('hello')\n```\n\nOutput:\nhello",
+                "observation": {
+                  "results": [
+                    {
+                      "content": "Ran Python:\n```python\nprint('hello')\n```\n\nOutput:\nhello",
+                      "extra": {
+                        "tool_name": "python",
+                        "code": "print('hello')",
+                        "exit_code": 0
+                      }
+                    }
+                  ]
+                },
+                "extra": {
+                  "record_type": "message",
+                  "role": "pythonExecution"
+                },
+                "step_id": 2
+              },
+              {
+                "timestamp": "2026-07-07T00:00:03.000Z",
+                "source": "system",
+                "message": "Ran Python:\n```python\nraise SystemExit()\n```\n\n(no output)\n\nExecution cancelled",
+                "observation": {
+                  "results": [
+                    {
+                      "content": "Ran Python:\n```python\nraise SystemExit()\n```\n\n(no output)\n\nExecution cancelled",
+                      "extra": {
+                        "tool_name": "python",
+                        "code": "raise SystemExit()",
+                        "exit_code": 0,
+                        "cancelled": true,
+                        "is_error": true
+                      }
+                    }
+                  ]
+                },
+                "extra": {
+                  "record_type": "message",
+                  "role": "pythonExecution"
+                },
+                "step_id": 3
+              }
+            ],
+            "final_metrics": { "total_steps": 3 },
+            "extra": {
+              "source_path": "/tmp/session.jsonl",
+              "source_records": 3,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        },
+        {
+          "fn": "session-history.historyEntriesFromTrajectory",
+          "args": [
+            {
+              "path": "/tmp/session.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100
+            },
+            {
+              "schema_version": "ATIF-v1.7",
+              "session_id": "session",
+              "trajectory_id": "session",
+              "agent": { "name": "omp", "version": "unknown" },
+              "steps": [
+                {
+                  "timestamp": "2026-07-07T00:00:01.000Z",
+                  "source": "system",
+                  "message": "Ran `false`\n\nOutput:\nfailed\n\nCommand exited with code 1",
+                  "observation": {
+                    "results": [
+                      {
+                        "content": "Ran `false`\n\nOutput:\nfailed\n\nCommand exited with code 1",
+                        "extra": {
+                          "tool_name": "bash",
+                          "command": "false",
+                          "exit_code": 1,
+                          "is_error": true
+                        }
+                      }
+                    ]
+                  },
+                  "extra": {
+                    "record_type": "message",
+                    "role": "bashExecution"
+                  },
+                  "step_id": 1
+                },
+                {
+                  "timestamp": "2026-07-07T00:00:02.000Z",
+                  "source": "system",
+                  "message": "Ran Python:\n```python\nprint('hello')\n```\n\nOutput:\nhello",
+                  "observation": {
+                    "results": [
+                      {
+                        "content": "Ran Python:\n```python\nprint('hello')\n```\n\nOutput:\nhello",
+                        "extra": {
+                          "tool_name": "python",
+                          "code": "print('hello')",
+                          "exit_code": 0
+                        }
+                      }
+                    ]
+                  },
+                  "extra": {
+                    "record_type": "message",
+                    "role": "pythonExecution"
+                  },
+                  "step_id": 2
+                },
+                {
+                  "timestamp": "2026-07-07T00:00:03.000Z",
+                  "source": "system",
+                  "message": "Ran Python:\n```python\nraise SystemExit()\n```\n\n(no output)\n\nExecution cancelled",
+                  "observation": {
+                    "results": [
+                      {
+                        "content": "Ran Python:\n```python\nraise SystemExit()\n```\n\n(no output)\n\nExecution cancelled",
+                        "extra": {
+                          "tool_name": "python",
+                          "code": "raise SystemExit()",
+                          "exit_code": 0,
+                          "cancelled": true,
+                          "is_error": true
+                        }
+                      }
+                    ]
+                  },
+                  "extra": {
+                    "record_type": "message",
+                    "role": "pythonExecution"
+                  },
+                  "step_id": 3
+                }
+              ],
+              "final_metrics": { "total_steps": 3 },
+              "extra": {
+                "source_path": "/tmp/session.jsonl",
+                "source_records": 3,
+                "projection": "roamgate-lightweight"
+              }
+            }
+          ],
+          "result": [
+            {
+              "kind": "tool_result",
+              "role": "tool",
+              "tool_name": "bash",
+              "text": "Ran `false`\n\nOutput:\nfailed\n\nCommand exited with code 1",
+              "is_error": true,
+              "sent_at": "2026-07-07T00:00:01.000Z",
+              "id": "eb3f5743bdcaaf4f3a598af5:0"
+            },
+            {
+              "kind": "tool_result",
+              "role": "tool",
+              "tool_name": "python",
+              "text": "Ran Python:\n```python\nprint('hello')\n```\n\nOutput:\nhello",
+              "is_error": false,
+              "sent_at": "2026-07-07T00:00:02.000Z",
+              "id": "b230c4dc77d9f39db961e14a:0"
+            },
+            {
+              "kind": "tool_result",
+              "role": "tool",
+              "tool_name": "python",
+              "text": "Ran Python:\n```python\nraise SystemExit()\n```\n\n(no output)\n\nExecution cancelled",
+              "is_error": true,
+              "sent_at": "2026-07-07T00:00:03.000Z",
+              "id": "9f30c2c1983eb4a9b9750337:0"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "projects Grok Build chat history into ATIF",
+      "group": ["agent session trajectory projection"],
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "grok",
+            {
+              "path": "/tmp/chat_history.jsonl",
+              "mtimeMs": 1783382400000,
+              "size": 100,
+              "sessionId": "grok-session-1",
+              "createdAtMs": 1783382400000,
+              "modelName": "grok-4.5"
+            },
+            [
+              {
+                "type": "user",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<user_info>ignored</user_info>\n<user_query>hello</user_query>"
+                  }
+                ]
+              },
+              {
+                "type": "user",
+                "synthetic_reason": "system_reminder",
+                "content": [{ "type": "text", "text": "duplicate context" }]
+              },
+              {
+                "type": "reasoning",
+                "summary": [
+                  { "type": "summary_text", "text": "Inspect files" }
+                ],
+                "status": "completed"
+              },
+              {
+                "type": "assistant",
+                "content": "I will inspect it.",
+                "tool_calls": [
+                  {
+                    "id": "call-1",
+                    "name": "read_file",
+                    "arguments": "{\"target_file\":\"README.md\"}"
+                  }
+                ]
+              },
+              {
+                "type": "tool_result",
+                "tool_call_id": "call-1",
+                "content": "# Project"
+              },
+              { "type": "assistant", "content": "Done" }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "grok-session-1",
+            "trajectory_id": "grok-session-1",
+            "agent": {
+              "name": "grok-build",
+              "version": "unknown",
+              "model_name": "grok-4.5"
+            },
+            "steps": [
+              {
+                "timestamp": "2026-07-07T00:00:00.000Z",
+                "source": "user",
+                "message": "hello",
+                "extra": { "record_type": "user" },
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-07-07T00:00:00.002Z",
+                "source": "agent",
+                "message": "Reasoning",
+                "reasoning_content": "Inspect files",
+                "extra": { "record_type": "reasoning", "status": "completed" },
+                "step_id": 2
+              },
+              {
+                "timestamp": "2026-07-07T00:00:00.003Z",
+                "source": "agent",
+                "message": "I will inspect it.",
+                "tool_calls": [
+                  {
+                    "tool_call_id": "call-1",
+                    "function_name": "read_file",
+                    "arguments": { "target_file": "README.md" }
+                  }
+                ],
+                "extra": { "record_type": "assistant", "model": "grok-4.5" },
+                "step_id": 3
+              },
+              {
+                "timestamp": "2026-07-07T00:00:00.004Z",
+                "source": "system",
+                "message": "# Project",
+                "observation": {
+                  "results": [
+                    {
+                      "source_call_id": "call-1",
+                      "content": "# Project",
+                      "extra": {}
+                    }
+                  ]
+                },
+                "extra": { "record_type": "tool_result" },
+                "step_id": 4
+              },
+              {
+                "timestamp": "2026-07-07T00:00:00.005Z",
+                "source": "agent",
+                "message": "Done",
+                "extra": { "record_type": "assistant", "model": "grok-4.5" },
+                "step_id": 5
+              }
+            ],
+            "final_metrics": { "total_steps": 5 },
+            "extra": {
+              "source_path": "/tmp/chat_history.jsonl",
+              "source_records": 6,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "projects Antigravity sessions into normalized ATIF trajectory",
+      "group": ["agent session trajectory projection"],
+      "calls": [
+        {
+          "fn": "session-trajectory.projectAgentTrajectory",
+          "args": [
+            "agy",
+            {
+              "path": "/tmp/conversations/test-uuid.db",
+              "mtimeMs": 1783382400000,
+              "sessionId": "test-uuid",
+              "modelName": "gemini-3.8-flash"
+            },
+            [
+              {
+                "type": "user",
+                "timestamp": "2026-07-07T00:00:00.000Z",
+                "content": "Hello Antigravity"
+              },
+              {
+                "type": "reasoning",
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "summary": "Thinking about the prompt"
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "content": "I will check the file",
+                "reasoning": "Checking workspace",
+                "tool_calls": [
+                  {
+                    "id": "call_1",
+                    "name": "view_file",
+                    "arguments": { "AbsolutePath": "/dev/pult/README.md" }
+                  }
+                ],
+                "usage": {
+                  "input_tokens": 120,
+                  "output_tokens": 45,
+                  "cached_input_tokens": 30
+                }
+              },
+              {
+                "type": "tool_result",
+                "timestamp": "2026-07-07T00:00:03.000Z",
+                "tool_call_id": "call_1",
+                "tool_name": "view_file",
+                "content": "# Pult"
+              },
+              {
+                "type": "assistant",
+                "timestamp": "2026-07-07T00:00:04.000Z",
+                "content": "Done checking!",
+                "usage": { "input_tokens": 150, "output_tokens": 25 }
+              }
+            ]
+          ],
+          "result": {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "test-uuid",
+            "trajectory_id": "test-uuid",
+            "agent": {
+              "name": "antigravity-cli",
+              "version": "antigravity-cli",
+              "model_name": "gemini-3.8-flash"
+            },
+            "steps": [
+              {
+                "timestamp": "2026-07-07T00:00:00.000Z",
+                "source": "user",
+                "message": "Hello Antigravity",
+                "extra": { "record_type": "user" },
+                "step_id": 1
+              },
+              {
+                "timestamp": "2026-07-07T00:00:01.000Z",
+                "source": "agent",
+                "message": "Reasoning",
+                "reasoning_content": "Thinking about the prompt",
+                "extra": {
+                  "record_type": "reasoning",
+                  "model": "gemini-3.8-flash"
+                },
+                "step_id": 2
+              },
+              {
+                "timestamp": "2026-07-07T00:00:02.000Z",
+                "source": "agent",
+                "message": "I will check the file",
+                "reasoning_content": "Checking workspace",
+                "tool_calls": [
+                  {
+                    "tool_call_id": "call_1",
+                    "function_name": "view_file",
+                    "arguments": { "AbsolutePath": "/dev/pult/README.md" }
+                  }
+                ],
+                "metrics": {
+                  "prompt_tokens": 120,
+                  "completion_tokens": 45,
+                  "cached_tokens": 30
+                },
+                "extra": {
+                  "record_type": "assistant",
+                  "model": "gemini-3.8-flash"
+                },
+                "step_id": 3
+              },
+              {
+                "timestamp": "2026-07-07T00:00:03.000Z",
+                "source": "system",
+                "message": "# Pult",
+                "observation": {
+                  "results": [
+                    {
+                      "source_call_id": "call_1",
+                      "content": "# Pult",
+                      "extra": { "tool_name": "view_file", "is_error": false }
+                    }
+                  ]
+                },
+                "extra": { "record_type": "tool_result" },
+                "step_id": 4
+              },
+              {
+                "timestamp": "2026-07-07T00:00:04.000Z",
+                "source": "agent",
+                "message": "Done checking!",
+                "metrics": { "prompt_tokens": 150, "completion_tokens": 25 },
+                "extra": {
+                  "record_type": "assistant",
+                  "model": "gemini-3.8-flash"
+                },
+                "step_id": 5
+              }
+            ],
+            "final_metrics": {
+              "total_prompt_tokens": 270,
+              "total_completion_tokens": 70,
+              "total_cached_tokens": 30,
+              "total_steps": 5
+            },
+            "extra": {
+              "source_path": "/tmp/conversations/test-uuid.db",
+              "source_records": 5,
+              "projection": "roamgate-lightweight"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

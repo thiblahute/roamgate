@@ -1,0 +1,869 @@
+{
+  "description": "Agent profiles: normalising, validating and resolving profiles and their launch settings. Read by `bun test` in shared/agentProfiles.test.ts.",
+  "modules": { "agentProfiles": "shared/agentProfiles.ts" },
+  "cases": [
+    {
+      "name": "the built-in Claude is offered first and is plain",
+      "group": ["profiles"],
+      "calls": [
+        {
+          "fn": "agentProfiles.allProfiles",
+          "args": [
+            [
+              {
+                "name": "Igalia GLM",
+                "agent": "claude",
+                "env": {
+                  "ANTHROPIC_BASE_URL": "https://ai.example",
+                  "ANTHROPIC_AUTH_TOKEN": {
+                    "file": "~/.config/roamgate/secrets/token"
+                  },
+                  "ANTHROPIC_MODEL": "glm-5p3"
+                }
+              }
+            ]
+          ],
+          "result": [
+            { "name": "Claude", "agent": "claude" },
+            {
+              "name": "Igalia GLM",
+              "agent": "claude",
+              "env": {
+                "ANTHROPIC_BASE_URL": "https://ai.example",
+                "ANTHROPIC_AUTH_TOKEN": {
+                  "file": "~/.config/roamgate/secrets/token"
+                },
+                "ANTHROPIC_MODEL": "glm-5p3"
+              }
+            }
+          ]
+        },
+        {
+          "fn": "agentProfiles.isPlainProfile",
+          "args": [{ "name": "Claude", "agent": "claude" }],
+          "result": true
+        },
+        {
+          "fn": "agentProfiles.isPlainProfile",
+          "args": [
+            {
+              "name": "Igalia GLM",
+              "agent": "claude",
+              "env": {
+                "ANTHROPIC_BASE_URL": "https://ai.example",
+                "ANTHROPIC_AUTH_TOKEN": {
+                  "file": "~/.config/roamgate/secrets/token"
+                },
+                "ANTHROPIC_MODEL": "glm-5p3"
+              }
+            }
+          ],
+          "result": false
+        },
+        {
+          "fn": "agentProfiles.profileNamed",
+          "args": [
+            [
+              {
+                "name": "Igalia GLM",
+                "agent": "claude",
+                "env": {
+                  "ANTHROPIC_BASE_URL": "https://ai.example",
+                  "ANTHROPIC_AUTH_TOKEN": {
+                    "file": "~/.config/roamgate/secrets/token"
+                  },
+                  "ANTHROPIC_MODEL": "glm-5p3"
+                }
+              }
+            ],
+            "igalia glm"
+          ],
+          "result": {
+            "name": "Igalia GLM",
+            "agent": "claude",
+            "env": {
+              "ANTHROPIC_BASE_URL": "https://ai.example",
+              "ANTHROPIC_AUTH_TOKEN": {
+                "file": "~/.config/roamgate/secrets/token"
+              },
+              "ANTHROPIC_MODEL": "glm-5p3"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "a user profile named Claude replaces the built-in",
+      "group": ["profiles"],
+      "calls": [
+        {
+          "fn": "agentProfiles.allProfiles",
+          "args": [
+            [{ "name": "Claude", "agent": "claude", "env": { "A": "1" } }]
+          ],
+          "result": [
+            { "name": "Claude", "agent": "claude", "env": { "A": "1" } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "invalid profiles are refused with a reason",
+      "group": ["profiles"],
+      "calls": [
+        {
+          "fn": "agentProfiles.profileError",
+          "args": [{ "name": "", "agent": "claude" }],
+          "result": "A profile name is 1 to 40 characters on one line"
+        },
+        {
+          "fn": "agentProfiles.profileError",
+          "args": [{ "name": "X", "agent": "gpt" }],
+          "result": "X: the agent must be one of claude"
+        },
+        {
+          "fn": "agentProfiles.profileError",
+          "args": [
+            { "name": "X", "agent": "claude", "env": { "BAD NAME": "1" } }
+          ],
+          "result": "X: BAD NAME is not a variable name"
+        },
+        {
+          "fn": "agentProfiles.profileError",
+          "args": [
+            { "name": "X", "agent": "claude", "env": { "A": { "path": "x" } } }
+          ],
+          "result": "X: A must be text or {\"file\": \"<path>\"}"
+        },
+        {
+          "fn": "agentProfiles.profilesSettingsError",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Igalia GLM",
+                  "agent": "claude",
+                  "env": {
+                    "ANTHROPIC_BASE_URL": "https://ai.example",
+                    "ANTHROPIC_AUTH_TOKEN": {
+                      "file": "~/.config/roamgate/secrets/token"
+                    },
+                    "ANTHROPIC_MODEL": "glm-5p3"
+                  }
+                },
+                {
+                  "name": "Igalia GLM",
+                  "agent": "claude",
+                  "env": {
+                    "ANTHROPIC_BASE_URL": "https://ai.example",
+                    "ANTHROPIC_AUTH_TOKEN": {
+                      "file": "~/.config/roamgate/secrets/token"
+                    },
+                    "ANTHROPIC_MODEL": "glm-5p3"
+                  }
+                }
+              ],
+              "default": "Claude"
+            }
+          ],
+          "result": "Two profiles are named Igalia GLM"
+        },
+        {
+          "fn": "agentProfiles.profilesSettingsError",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Igalia GLM",
+                  "agent": "claude",
+                  "env": {
+                    "ANTHROPIC_BASE_URL": "https://ai.example",
+                    "ANTHROPIC_AUTH_TOKEN": {
+                      "file": "~/.config/roamgate/secrets/token"
+                    },
+                    "ANTHROPIC_MODEL": "glm-5p3"
+                  }
+                }
+              ],
+              "default": "Nope"
+            }
+          ],
+          "result": "No profile is named Nope"
+        },
+        {
+          "fn": "agentProfiles.profilesSettingsError",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Igalia GLM",
+                  "agent": "claude",
+                  "env": {
+                    "ANTHROPIC_BASE_URL": "https://ai.example",
+                    "ANTHROPIC_AUTH_TOKEN": {
+                      "file": "~/.config/roamgate/secrets/token"
+                    },
+                    "ANTHROPIC_MODEL": "glm-5p3"
+                  }
+                }
+              ],
+              "default": "Igalia GLM"
+            }
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "normalizing drops what is invalid and resets an unknown default",
+      "group": ["profiles"],
+      "calls": [
+        {
+          "fn": "agentProfiles.normalizeProfilesSettings",
+          "args": [
+            {
+              "list": [
+                {
+                  "name": "Igalia GLM",
+                  "agent": "claude",
+                  "env": {
+                    "ANTHROPIC_BASE_URL": "https://ai.example",
+                    "ANTHROPIC_AUTH_TOKEN": {
+                      "file": "~/.config/roamgate/secrets/token"
+                    },
+                    "ANTHROPIC_MODEL": "glm-5p3"
+                  }
+                },
+                { "name": "" }
+              ],
+              "default": "gone",
+              "return_after_reset": true
+            }
+          ],
+          "result": {
+            "list": [
+              {
+                "name": "Igalia GLM",
+                "agent": "claude",
+                "env": {
+                  "ANTHROPIC_BASE_URL": "https://ai.example",
+                  "ANTHROPIC_AUTH_TOKEN": {
+                    "file": "~/.config/roamgate/secrets/token"
+                  },
+                  "ANTHROPIC_MODEL": "glm-5p3"
+                }
+              }
+            ],
+            "default": "Claude",
+            "return_after_reset": true
+          }
+        },
+        {
+          "fn": "agentProfiles.normalizeProfilesSettings",
+          "args": [],
+          "result": {
+            "list": [],
+            "default": "Claude",
+            "return_after_reset": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "a profile with its own token removes the pane's key and providers",
+      "group": ["profiles"],
+      "calls": [
+        {
+          "fn": "agentProfiles.profileUnset",
+          "args": [
+            {
+              "name": "Igalia GLM",
+              "agent": "claude",
+              "env": {
+                "ANTHROPIC_BASE_URL": "https://ai.example",
+                "ANTHROPIC_AUTH_TOKEN": {
+                  "file": "~/.config/roamgate/secrets/token"
+                },
+                "ANTHROPIC_MODEL": "glm-5p3"
+              }
+            }
+          ],
+          "result": [
+            "ANTHROPIC_API_KEY",
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "CLAUDE_CODE_USE_BEDROCK",
+            "CLAUDE_CODE_USE_VERTEX"
+          ]
+        },
+        {
+          "fn": "agentProfiles.profileUnset",
+          "args": [{ "name": "x", "agent": "claude", "unset": ["FOO"] }],
+          "result": ["FOO"]
+        }
+      ]
+    },
+    {
+      "name": "a browser sees a secret file's path, never a value",
+      "group": ["profiles"],
+      "calls": [
+        {
+          "fn": "agentProfiles.profileView",
+          "args": [
+            {
+              "name": "Igalia GLM",
+              "agent": "claude",
+              "env": {
+                "ANTHROPIC_BASE_URL": "https://ai.example",
+                "ANTHROPIC_AUTH_TOKEN": {
+                  "file": "~/.config/roamgate/secrets/token"
+                },
+                "ANTHROPIC_MODEL": "glm-5p3"
+              }
+            }
+          ],
+          "result": {
+            "name": "Igalia GLM",
+            "agent": "claude",
+            "builtin": false,
+            "env": [
+              { "name": "ANTHROPIC_BASE_URL", "value": "https://ai.example" },
+              {
+                "name": "ANTHROPIC_AUTH_TOKEN",
+                "file": "~/.config/roamgate/secrets/token"
+              },
+              { "name": "ANTHROPIC_MODEL", "value": "glm-5p3" }
+            ],
+            "unset": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "the chip names the model",
+      "group": ["profiles"],
+      "calls": [
+        {
+          "fn": "agentProfiles.profileModelLabel",
+          "args": [
+            {
+              "name": "Igalia GLM",
+              "agent": "claude",
+              "env": {
+                "ANTHROPIC_BASE_URL": "https://ai.example",
+                "ANTHROPIC_AUTH_TOKEN": {
+                  "file": "~/.config/roamgate/secrets/token"
+                },
+                "ANTHROPIC_MODEL": "glm-5p3"
+              }
+            }
+          ],
+          "result": "GLM 5p3"
+        },
+        {
+          "fn": "agentProfiles.profileModelLabel",
+          "args": [
+            {
+              "name": "Kimi",
+              "agent": "claude",
+              "env": { "ANTHROPIC_MODEL": "kimi-k3p1-pro" }
+            }
+          ],
+          "result": "Kimi k3p1 pro"
+        },
+        {
+          "fn": "agentProfiles.profileModelLabel",
+          "args": [
+            {
+              "name": "Igalia",
+              "agent": "claude",
+              "env": { "ANTHROPIC_MODEL": "igalia/glm-5p3" }
+            }
+          ],
+          "result": "igalia · GLM 5p3"
+        },
+        {
+          "fn": "agentProfiles.profileModelLabel",
+          "args": [{ "name": "Claude", "agent": "claude" }],
+          "result": "Claude"
+        }
+      ]
+    },
+    {
+      "name": "Claude Code's limit message, with its reset time in its zone",
+      "group": ["usage limits"],
+      "calls": [
+        {
+          "fn": "agentProfiles.parseUsageLimit",
+          "args": [
+            "You've hit your 5-hour limit · resets 5:20pm (America/Santiago)",
+            1793901600000
+          ],
+          "result": {
+            "kind": "5-hour",
+            "resets": "5:20pm (America/Santiago)",
+            "resets_at": 1793910000000,
+            "zone": "America/Santiago",
+            "message": "You've hit your 5-hour limit · resets 5:20pm (America/Santiago)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a reset time already past today is tomorrow's",
+      "group": ["usage limits"],
+      "calls": [
+        {
+          "fn": "agentProfiles.parseResetTime",
+          "args": ["9am (America/Santiago)", 1793901600000],
+          "result": 1793966400000
+        }
+      ]
+    },
+    {
+      "name": "a weekly limit names its day",
+      "group": ["usage limits"],
+      "calls": [
+        {
+          "fn": "agentProfiles.parseUsageLimit",
+          "args": [
+            "You've hit your weekly limit · resets Nov 9 at 8am (America/Santiago)",
+            1793901600000
+          ],
+          "result": {
+            "kind": "weekly",
+            "resets": "Nov 9 at 8am (America/Santiago)",
+            "resets_at": 1794222000000,
+            "zone": "America/Santiago",
+            "message": "You've hit your weekly limit · resets Nov 9 at 8am (America/Santiago)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "older and API forms",
+      "group": ["usage limits"],
+      "calls": [
+        {
+          "fn": "agentProfiles.parseUsageLimit",
+          "args": ["Claude AI usage limit reached|1762380000", 1793901600000],
+          "result": {
+            "kind": "usage",
+            "resets": null,
+            "resets_at": 1762380000000,
+            "message": "Claude AI usage limit reached"
+          }
+        },
+        {
+          "fn": "agentProfiles.parseUsageLimit",
+          "args": [
+            "API Error: 429 {\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\"}}",
+            1793901600000
+          ],
+          "result": {
+            "kind": "rate",
+            "resets": null,
+            "resets_at": null,
+            "message": "API Error: 429 {\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\"}}"
+          }
+        },
+        {
+          "fn": "agentProfiles.parseUsageLimit",
+          "args": ["All good, no limit here", 1793901600000],
+          "result": null
+        },
+        {
+          "fn": "agentProfiles.parseUsageLimit",
+          "args": [
+            "You've hit your session limit · resets soon",
+            1793901600000
+          ],
+          "result": {
+            "kind": "session",
+            "resets": "soon",
+            "resets_at": null,
+            "message": "You've hit your session limit · resets soon"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a limit is over once its reset time has passed, read from when it was hit",
+      "group": ["usage limits"],
+      "calls": [
+        {
+          "fn": "agentProfiles.latestUsageLimit",
+          "args": [
+            "{\"type\":\"assistant\",\"isApiErrorMessage\":true,\"timestamp\":\"2026-11-05T17:00:00.000Z\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"You've hit your session limit · resets 5:20pm (America/Santiago)\"}]}}",
+            1793901600000
+          ],
+          "result": {
+            "kind": "session",
+            "resets": "5:20pm (America/Santiago)",
+            "resets_at": 1793910000000,
+            "zone": "America/Santiago",
+            "message": "You've hit your session limit · resets 5:20pm (America/Santiago)",
+            "at": 1793898000000
+          }
+        },
+        {
+          "fn": "agentProfiles.latestUsageLimit",
+          "args": [
+            "{\"type\":\"assistant\",\"isApiErrorMessage\":true,\"timestamp\":\"2026-11-05T17:00:00.000Z\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"You've hit your session limit · resets 5:20pm (America/Santiago)\"}]}}",
+            1793910060000
+          ],
+          "result": null
+        },
+        {
+          "fn": "agentProfiles.latestUsageLimit",
+          "args": [
+            "{\"type\":\"assistant\",\"isApiErrorMessage\":true,\"timestamp\":\"2026-11-04T17:00:00.000Z\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"You've hit your session limit · resets 5:20pm (America/Santiago)\"}]}}",
+            1793901600000
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "a transcript's newest assistant record decides",
+      "group": ["usage limits"],
+      "calls": [
+        {
+          "fn": "agentProfiles.latestUsageLimit",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Done.\"}]}}\n{\"type\":\"assistant\",\"isApiErrorMessage\":true,\"error\":\"rate_limit\",\"message\":{\"model\":\"<synthetic>\",\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 5:20pm (America/Santiago)\"}]}}\n{\"type\":\"user\",\"message\":{\"content\":\"hi\"}}",
+            1793901600000
+          ],
+          "result": {
+            "kind": "5-hour",
+            "resets": "5:20pm (America/Santiago)",
+            "resets_at": 1793910000000,
+            "zone": "America/Santiago",
+            "message": "You've hit your 5-hour limit · resets 5:20pm (America/Santiago)"
+          }
+        },
+        {
+          "fn": "agentProfiles.latestUsageLimit",
+          "args": [
+            "{\"type\":\"assistant\",\"isApiErrorMessage\":true,\"error\":\"rate_limit\",\"message\":{\"model\":\"<synthetic>\",\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 5:20pm (America/Santiago)\"}]}}\n{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Done.\"}]}}",
+            1793901600000
+          ],
+          "result": null
+        },
+        {
+          "fn": "agentProfiles.latestUsageLimit",
+          "args": [
+            "pe\":\"x\"}\n{\"type\":\"assistant\",\"isApiErrorMessage\":true,\"error\":\"rate_limit\",\"message\":{\"model\":\"<synthetic>\",\"content\":[{\"type\":\"text\",\"text\":\"You've hit your 5-hour limit · resets 5:20pm (America/Santiago)\"}]}}\n",
+            1793901600000
+          ],
+          "result": {
+            "kind": "5-hour",
+            "resets": "5:20pm (America/Santiago)",
+            "resets_at": 1793910000000,
+            "zone": "America/Santiago",
+            "message": "You've hit your 5-hour limit · resets 5:20pm (America/Santiago)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "the last answer's model; notices and API errors are no answers",
+      "group": ["the model a session moved to another profile starts with"],
+      "calls": [
+        {
+          "fn": "agentProfiles.latestSessionModel",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-5-5\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}\n{\"type\":\"assistant\",\"isApiErrorMessage\":true,\"message\":{\"model\":\"kimi-k3p1-pro\",\"content\":[]}}\n{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\",\"content\":[{\"type\":\"text\",\"text\":\"There's an issue with the selected model\"}]}}\n{cut"
+          ],
+          "result": "claude-opus-5-5"
+        },
+        {
+          "fn": "agentProfiles.latestSessionModel",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\",\"content\":[{\"type\":\"text\",\"text\":\"There's an issue with the selected model\"}]}}"
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "Anthropic's endpoint has Claude models, a gateway its slots'",
+      "group": ["the model a session moved to another profile starts with"],
+      "calls": [
+        {
+          "fn": "agentProfiles.profileServesModel",
+          "args": [{ "name": "Claude", "agent": "claude" }, "claude-opus-5-5"],
+          "result": true
+        },
+        {
+          "fn": "agentProfiles.profileServesModel",
+          "args": [{ "name": "Claude", "agent": "claude" }, "kimi-k3p1-pro"],
+          "result": false
+        },
+        {
+          "fn": "agentProfiles.profileServesModel",
+          "args": [
+            {
+              "name": "Kimi",
+              "agent": "claude",
+              "env": {
+                "ANTHROPIC_BASE_URL": "https://ai.example.com",
+                "ANTHROPIC_MODEL": "kimi-k3p1-pro",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5p3-flash"
+              }
+            },
+            "glm-5p3-flash"
+          ],
+          "result": true
+        },
+        {
+          "fn": "agentProfiles.profileServesModel",
+          "args": [
+            {
+              "name": "Kimi",
+              "agent": "claude",
+              "env": {
+                "ANTHROPIC_BASE_URL": "https://ai.example.com",
+                "ANTHROPIC_MODEL": "kimi-k3p1-pro",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5p3-flash"
+              }
+            },
+            "claude-opus-5-5"
+          ],
+          "result": false
+        }
+      ]
+    },
+    {
+      "name": "back on Claude after Kimi: the Claude model it had",
+      "group": ["the model a session moved to another profile starts with"],
+      "calls": [
+        {
+          "fn": "agentProfiles.switchModel",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-5-5\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}\n{\"type\":\"assistant\",\"message\":{\"model\":\"kimi-k3p1-pro\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}\n{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\",\"content\":[{\"type\":\"text\",\"text\":\"There's an issue with the selected model\"}]}}",
+            { "name": "Claude", "agent": "claude" }
+          ],
+          "result": "claude-opus-5-5"
+        },
+        {
+          "fn": "agentProfiles.switchModel",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-5-5\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}\n{\"type\":\"assistant\",\"message\":{\"model\":\"kimi-k3p1-pro\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}\n{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\",\"content\":[{\"type\":\"text\",\"text\":\"There's an issue with the selected model\"}]}}",
+            {
+              "name": "Kimi",
+              "agent": "claude",
+              "env": {
+                "ANTHROPIC_BASE_URL": "https://ai.example.com",
+                "ANTHROPIC_MODEL": "kimi-k3p1-pro",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5p3-flash"
+              }
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "agentProfiles.switchModel",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"kimi-k3p1-pro\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}",
+            { "name": "Claude", "agent": "claude" }
+          ],
+          "result": "opus"
+        }
+      ]
+    },
+    {
+      "name": "onto a gateway: its own model; nothing known: nothing",
+      "group": ["the model a session moved to another profile starts with"],
+      "calls": [
+        {
+          "fn": "agentProfiles.switchModel",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-5-5\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}",
+            {
+              "name": "Kimi",
+              "agent": "claude",
+              "env": {
+                "ANTHROPIC_BASE_URL": "https://ai.example.com",
+                "ANTHROPIC_MODEL": "kimi-k3p1-pro",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5p3-flash"
+              }
+            }
+          ],
+          "result": "kimi-k3p1-pro"
+        },
+        {
+          "fn": "agentProfiles.switchModel",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-5-5\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}",
+            { "name": "Claude", "agent": "claude" }
+          ],
+          "result": null
+        },
+        {
+          "fn": "agentProfiles.switchModel",
+          "args": [null, { "name": "Claude", "agent": "claude" }],
+          "result": null
+        },
+        {
+          "fn": "agentProfiles.switchModel",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\",\"content\":[{\"type\":\"text\",\"text\":\"There's an issue with the selected model\"}]}}",
+            { "name": "Claude", "agent": "claude" }
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "the last answer, with when it came",
+      "group": ["a chosen model the session answered with"],
+      "calls": [
+        {
+          "fn": "agentProfiles.latestSessionAnswer",
+          "args": [
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-11-06T09:00:00.000Z\",\"message\":{\"model\":\"claude-opus-5-5\",\"content\":[]}}\n{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\",\"content\":[]}}"
+          ],
+          "result": { "model": "claude-opus-5-5", "at": 1793955600000 }
+        },
+        {
+          "fn": "agentProfiles.latestSessionAnswer",
+          "args": ["{\"type\":\"assistant\",\"message\":{\"model\":\"m\"}}"],
+          "result": { "model": "m", "at": null }
+        }
+      ]
+    },
+    {
+      "name": "an answer from before the choice, on another model, is not one",
+      "group": ["a chosen model the session answered with"],
+      "calls": [
+        {
+          "fn": "agentProfiles.chosenModelAnswered",
+          "args": [
+            { "model": "claude-opus-5-5", "at": 1793955600000 },
+            {
+              "model": "haiku",
+              "resolved": "claude-haiku-5-5",
+              "at": "2026-11-06T10:00:00.000Z"
+            },
+            { "name": "Claude", "agent": "claude" }
+          ],
+          "result": false
+        },
+        {
+          "fn": "agentProfiles.chosenModelAnswered",
+          "args": [
+            { "model": "claude-opus-5-5", "at": null },
+            {
+              "model": "haiku",
+              "resolved": "claude-haiku-5-5",
+              "at": "2026-11-06T10:00:00.000Z"
+            },
+            { "name": "Claude", "agent": "claude" }
+          ],
+          "result": false
+        }
+      ]
+    },
+    {
+      "name": "answered with it: by its name, or the model the agent said it is",
+      "group": ["a chosen model the session answered with"],
+      "calls": [
+        {
+          "fn": "agentProfiles.chosenModelAnswered",
+          "args": [
+            { "model": "claude-haiku-5-5", "at": 1793955600000 },
+            {
+              "model": "haiku",
+              "resolved": "claude-haiku-5-5",
+              "at": "2026-11-06T10:00:00.000Z"
+            },
+            { "name": "Claude", "agent": "claude" }
+          ],
+          "result": true
+        },
+        {
+          "fn": "agentProfiles.chosenModelAnswered",
+          "args": [
+            { "model": "gpt-6-sol", "at": null },
+            { "model": "gpt-6-sol", "at": "2026-11-06T10:00:00.000Z" },
+            {
+              "name": "OpenAI Luna",
+              "agent": "claude",
+              "env": {
+                "ANTHROPIC_BASE_URL": "http://127.0.0.1:18765",
+                "ANTHROPIC_MODEL": "gpt-6-luna"
+              }
+            }
+          ],
+          "result": true
+        }
+      ]
+    },
+    {
+      "name": "a later answer on another model the profile serves: the session moved on",
+      "group": ["a chosen model the session answered with"],
+      "calls": [
+        {
+          "fn": "agentProfiles.chosenModelAnswered",
+          "args": [
+            { "model": "claude-sonnet-5-5", "at": 1793962800000 },
+            {
+              "model": "haiku",
+              "resolved": "claude-haiku-5-5",
+              "at": "2026-11-06T10:00:00.000Z"
+            },
+            { "name": "Claude", "agent": "claude" }
+          ],
+          "result": true
+        },
+        {
+          "fn": "agentProfiles.chosenModelAnswered",
+          "args": [
+            { "model": "kimi-k3p1-pro", "at": 1793962800000 },
+            {
+              "model": "haiku",
+              "resolved": "claude-haiku-5-5",
+              "at": "2026-11-06T10:00:00.000Z"
+            },
+            { "name": "Claude", "agent": "claude" }
+          ],
+          "result": false
+        }
+      ]
+    },
+    {
+      "name": "Claude, Pi and Codex transcripts, the newest record first",
+      "group": ["the model a transcript names"],
+      "calls": [
+        {
+          "fn": "agentProfiles.latestTranscriptModel",
+          "args": [
+            "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-5-5\"}}\n{\"type\":\"assistant\",\"message\":{\"model\":\"claude-haiku-5-5\"}}\n{\"type\":\"assistant\",\"isApiErrorMessage\":true,\"message\":{\"model\":\"claude-sonnet-5-5\"}}\n{\"type\":\"assistant\",\"message\":{\"model\":\"<synthetic>\"}}"
+          ],
+          "result": "claude-haiku-5-5"
+        },
+        {
+          "fn": "agentProfiles.latestTranscriptModel",
+          "args": [
+            "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\"}}\n{\"type\":\"model_change\",\"modelId\":\"glm-5p3\"}"
+          ],
+          "result": "glm-5p3"
+        },
+        {
+          "fn": "agentProfiles.latestTranscriptModel",
+          "args": [
+            "{\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-5.6-sol\"}}"
+          ],
+          "result": "gpt-5.6-sol"
+        },
+        {
+          "fn": "agentProfiles.latestTranscriptModel",
+          "args": [
+            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hi\"}}"
+          ],
+          "result": null
+        }
+      ]
+    }
+  ]
+}

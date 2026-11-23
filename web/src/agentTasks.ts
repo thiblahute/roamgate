@@ -1,8 +1,5 @@
 import { useEffect, useState } from "react";
-import type {
-  AgentTask,
-  WorkflowView,
-} from "../../server/src/agent/session-tasks";
+import type { AgentTask, WorkflowView } from "../../shared/agentSession";
 import { formatDuration } from "./agentTasksView";
 import type { Pane } from "./types";
 import { useConnectionClient } from "./useConnectionClient";

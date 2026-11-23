@@ -1,0 +1,188 @@
+{
+  "description": "Anchors of the combined diff (combinedAnchor). Read by `bun test` in server/src/review/changes-anchors.test.ts.",
+  "modules": {
+    "patch": "server/src/review/patch.ts",
+    "changes-anchors": "server/src/review/changes-anchors.ts"
+  },
+  "cases": [
+    {
+      "name": "combinedAnchor: a comment on the file keeps no line, a range keeps its length",
+      "calls": [
+        {
+          "fn": "patch.parseUnifiedDiff",
+          "args": [
+            "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -1,3 +1,4 @@\n+top\n a\n-b\n+B\n c\n"
+          ],
+          "result": [
+            {
+              "path": "f",
+              "oldPath": "f",
+              "hunks": [
+                {
+                  "header": "@@ -1,3 +1,4 @@",
+                  "lines": [
+                    { "kind": "+", "old": null, "new": 1, "text": "top" },
+                    { "kind": " ", "old": 1, "new": 2, "text": "a" },
+                    { "kind": "-", "old": 2, "new": null, "text": "b" },
+                    { "kind": "+", "old": null, "new": 3, "text": "B" },
+                    { "kind": " ", "old": 3, "new": 4, "text": "c" }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "fn": "changes-anchors.combinedAnchor",
+          "args": [
+            {
+              "id": "t",
+              "sessionId": "s",
+              "kind": "discussion",
+              "anchor": {
+                "path": "f",
+                "feedback": "{\"source\":\"diff\",\"kind\":\"staged\",\"path\":\"f\"}"
+              },
+              "comments": [],
+              "resolved": false,
+              "createdAt": "",
+              "updatedAt": ""
+            }
+          ],
+          "result": {
+            "path": "f",
+            "feedback": "{\"source\":\"diff\",\"kind\":\"combined\",\"path\":\"f\"}"
+          }
+        },
+        {
+          "fn": "changes-anchors.combinedAnchor",
+          "args": [
+            {
+              "id": "t",
+              "sessionId": "s",
+              "kind": "discussion",
+              "anchor": {
+                "path": "f",
+                "line": 1,
+                "endLine": 2,
+                "side": "old",
+                "text": "a",
+                "feedback": "{\"source\":\"diff\",\"kind\":\"unstaged\",\"path\":\"f\",\"side\":\"old\",\"line\":1,\"endLine\":2,\"endSide\":\"old\"}"
+              },
+              "comments": [],
+              "resolved": false,
+              "createdAt": "",
+              "updatedAt": ""
+            },
+            {
+              "path": "f",
+              "oldPath": "f",
+              "hunks": [
+                {
+                  "header": "@@ -1,3 +1,4 @@",
+                  "lines": [
+                    { "kind": "+", "old": null, "new": 1, "text": "top" },
+                    { "kind": " ", "old": 1, "new": 2, "text": "a" },
+                    { "kind": "-", "old": 2, "new": null, "text": "b" },
+                    { "kind": "+", "old": null, "new": 3, "text": "B" },
+                    { "kind": " ", "old": 3, "new": 4, "text": "c" }
+                  ]
+                }
+              ]
+            }
+          ],
+          "result": {
+            "path": "f",
+            "line": 1,
+            "endLine": 2,
+            "side": "old",
+            "text": "a",
+            "feedback": "{\"source\":\"diff\",\"kind\":\"combined\",\"path\":\"f\",\"side\":\"old\",\"line\":1,\"endLine\":2,\"endSide\":\"old\"}"
+          }
+        },
+        {
+          "fn": "changes-anchors.combinedAnchor",
+          "args": [
+            {
+              "id": "t",
+              "sessionId": "s",
+              "kind": "discussion",
+              "anchor": {
+                "path": "f",
+                "line": 2,
+                "side": "new",
+                "text": "B",
+                "feedback": "{\"source\":\"diff\",\"kind\":\"staged\",\"path\":\"f\",\"side\":\"new\",\"line\":2}"
+              },
+              "comments": [],
+              "resolved": false,
+              "createdAt": "",
+              "updatedAt": ""
+            },
+            {
+              "path": "f",
+              "oldPath": "f",
+              "hunks": [
+                {
+                  "header": "@@ -1,3 +1,4 @@",
+                  "lines": [
+                    { "kind": "+", "old": null, "new": 1, "text": "top" },
+                    { "kind": " ", "old": 1, "new": 2, "text": "a" },
+                    { "kind": "-", "old": 2, "new": null, "text": "b" },
+                    { "kind": "+", "old": null, "new": 3, "text": "B" },
+                    { "kind": " ", "old": 3, "new": 4, "text": "c" }
+                  ]
+                }
+              ]
+            }
+          ],
+          "result": {
+            "path": "f",
+            "line": 3,
+            "side": "new",
+            "text": "B",
+            "feedback": "{\"source\":\"diff\",\"kind\":\"combined\",\"path\":\"f\",\"side\":\"new\",\"line\":3}"
+          }
+        },
+        {
+          "fn": "changes-anchors.combinedAnchor",
+          "args": [
+            {
+              "id": "t",
+              "sessionId": "s",
+              "kind": "discussion",
+              "anchor": {
+                "path": "f",
+                "line": 3,
+                "side": "new",
+                "text": "B",
+                "feedback": "{\"source\":\"diff\",\"kind\":\"combined\"}"
+              },
+              "comments": [],
+              "resolved": false,
+              "createdAt": "",
+              "updatedAt": ""
+            },
+            {
+              "path": "f",
+              "oldPath": "f",
+              "hunks": [
+                {
+                  "header": "@@ -1,3 +1,4 @@",
+                  "lines": [
+                    { "kind": "+", "old": null, "new": 1, "text": "top" },
+                    { "kind": " ", "old": 1, "new": 2, "text": "a" },
+                    { "kind": "-", "old": 2, "new": null, "text": "b" },
+                    { "kind": "+", "old": null, "new": 3, "text": "B" },
+                    { "kind": " ", "old": 3, "new": 4, "text": "c" }
+                  ]
+                }
+              ]
+            }
+          ],
+          "result": null
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,834 @@
+{
+  "description": "Ranger task schedules: validation and the next run time. Read by `bun test` in server/src/assistant/task-schedule.test.ts.",
+  "modules": { "task-schedule": "server/src/assistant/task-schedule.ts" },
+  "cases": [
+    {
+      "name": "accepts exact shapes and normalizes UTC precision",
+      "group": ["task schedule validation"],
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "2028-02-29T12:34:56Z" }],
+          "result": { "type": "once", "at": "2028-02-29T12:34:56.000Z" }
+        },
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "2026-01-01T00:00:00.1Z" }],
+          "result": { "type": "once", "at": "2026-01-01T00:00:00.100Z" }
+        },
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "interval", "minutes": 1 }],
+          "result": { "type": "interval", "minutes": 1 }
+        },
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "interval", "minutes": 525600 }],
+          "result": { "type": "interval", "minutes": 525600 }
+        },
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "daily", "time": "00:00", "timezone": "UTC" }],
+          "result": { "type": "daily", "time": "00:00", "timezone": "UTC" }
+        },
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [
+            { "type": "daily", "time": "00:00", "timezone": "Asia/Shanghai" }
+          ],
+          "result": {
+            "type": "daily",
+            "time": "00:00",
+            "timezone": "Asia/Shanghai"
+          }
+        },
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [
+            { "type": "daily", "time": "00:00", "timezone": "America/New_York" }
+          ],
+          "result": {
+            "type": "daily",
+            "time": "00:00",
+            "timezone": "America/New_York"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: null,\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [null],
+          "throws": "Invalid task schedule"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: [],\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [[]],
+          "throws": "Invalid task schedule"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {},\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{}],
+          "throws": "Invalid task schedule fields"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"weekly\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "weekly" }],
+          "throws": "Invalid task schedule fields"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"interval\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "interval" }],
+          "throws": "Invalid task schedule fields"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"interval\",\n    minutes: \"1\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "interval", "minutes": "1" }],
+          "throws": "Task interval must be 1 to 525600 whole minutes"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"interval\",\n    minutes: 0,\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "interval", "minutes": 0 }],
+          "throws": "Task interval must be 1 to 525600 whole minutes"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"interval\",\n    minutes: -1,\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "interval", "minutes": -1 }],
+          "throws": "Task interval must be 1 to 525600 whole minutes"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"interval\",\n    minutes: 1.5,\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "interval", "minutes": 1.5 }],
+          "throws": "Task interval must be 1 to 525600 whole minutes"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"interval\",\n    minutes: 525601,\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "interval", "minutes": 525601 }],
+          "throws": "Task interval must be 1 to 525600 whole minutes"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"interval\",\n    minutes: NaN,\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "interval", "minutes": { "$num": "NaN" } }],
+          "throws": "Task interval must be 1 to 525600 whole minutes"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"interval\",\n    minutes: Infinity,\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "interval", "minutes": { "$num": "Infinity" } }],
+          "throws": "Task interval must be 1 to 525600 whole minutes"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"interval\",\n    minutes: 1,\n    extra: true,\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "interval", "minutes": 1, "extra": true }],
+          "throws": "Invalid task schedule fields"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"once\",\n    at: \"2026-01-01T00:00:00Z\",\n    extra: true,\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [
+            { "type": "once", "at": "2026-01-01T00:00:00Z", "extra": true }
+          ],
+          "throws": "Invalid task schedule fields"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"once\",\n    at: \"2026-02-29T00:00:00Z\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "2026-02-29T00:00:00Z" }],
+          "throws": "Task time must be a valid UTC ISO timestamp"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"once\",\n    at: \"2028-02-30T00:00:00Z\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "2028-02-30T00:00:00Z" }],
+          "throws": "Task time must be a valid UTC ISO timestamp"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"once\",\n    at: \"2026-04-31T00:00:00Z\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "2026-04-31T00:00:00Z" }],
+          "throws": "Task time must be a valid UTC ISO timestamp"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"once\",\n    at: \"2026-01-01T24:00:00Z\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "2026-01-01T24:00:00Z" }],
+          "throws": "Task time must be a valid UTC ISO timestamp"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"once\",\n    at: \"2026-01-01T00:60:00Z\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "2026-01-01T00:60:00Z" }],
+          "throws": "Task time must be a valid UTC ISO timestamp"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"once\",\n    at: \"2026-01-01T00:00:60Z\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "2026-01-01T00:00:60Z" }],
+          "throws": "Task time must be a valid UTC ISO timestamp"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"once\",\n    at: \"2026-01-01T00:00:00+00:00\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "2026-01-01T00:00:00+00:00" }],
+          "throws": "Task time must be a valid UTC ISO timestamp"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"once\",\n    at: \"2026-01-01T00:00:00\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "2026-01-01T00:00:00" }],
+          "throws": "Task time must be a valid UTC ISO timestamp"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"once\",\n    at: \"2026-01-01\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "2026-01-01" }],
+          "throws": "Task time must be a valid UTC ISO timestamp"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"once\",\n    at: \"not a date\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "once", "at": "not a date" }],
+          "throws": "Task time must be a valid UTC ISO timestamp"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"daily\",\n    time: \"24:00\",\n    timezone: \"UTC\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "daily", "time": "24:00", "timezone": "UTC" }],
+          "throws": "Daily tasks require HH:mm and an IANA timezone"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"daily\",\n    time: \"09:60\",\n    timezone: \"UTC\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "daily", "time": "09:60", "timezone": "UTC" }],
+          "throws": "Daily tasks require HH:mm and an IANA timezone"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"daily\",\n    time: \"9:00\",\n    timezone: \"UTC\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "daily", "time": "9:00", "timezone": "UTC" }],
+          "throws": "Daily tasks require HH:mm and an IANA timezone"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"daily\",\n    time: \"00:00:00\",\n    timezone: \"UTC\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "daily", "time": "00:00:00", "timezone": "UTC" }],
+          "throws": "Daily tasks require HH:mm and an IANA timezone"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"daily\",\n    time: \" 00:00\",\n    timezone: \"UTC\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "daily", "time": " 00:00", "timezone": "UTC" }],
+          "throws": "Daily tasks require HH:mm and an IANA timezone"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"daily\",\n    time: \"09:00\",\n    timezone: \"\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "daily", "time": "09:00", "timezone": "" }],
+          "throws": "Daily tasks require HH:mm and an IANA timezone"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"daily\",\n    time: \"09:00\",\n    timezone: \"Mars/Olympus\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [
+            { "type": "daily", "time": "09:00", "timezone": "Mars/Olympus" }
+          ],
+          "throws": "Invalid task timezone"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"daily\",\n    time: \"09:00\",\n    timezone: \"+08:00\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "daily", "time": "09:00", "timezone": "+08:00" }],
+          "throws": "Daily tasks require HH:mm and an IANA timezone"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"daily\",\n    time: \"09:00\",\n    timezone: \"-0500\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [{ "type": "daily", "time": "09:00", "timezone": "-0500" }],
+          "throws": "Daily tasks require HH:mm and an IANA timezone"
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid or extra schedule fields: {\n  value: {\n    type: \"daily\",\n    time: \"09:00\",\n    timezone: \"UTC\",\n    at: \"ignored\",\n  },\n}",
+      "group": ["task schedule validation"],
+      "ledger": "rejects invalid or extra schedule fields: %j",
+      "calls": [
+        {
+          "fn": "task-schedule.validateTaskSchedule",
+          "args": [
+            {
+              "type": "daily",
+              "time": "09:00",
+              "timezone": "UTC",
+              "at": "ignored"
+            }
+          ],
+          "throws": "Invalid task schedule fields"
+        }
+      ]
+    },
+    {
+      "name": "once runs strictly after the reference time and interval preserves milliseconds",
+      "group": ["next task time"],
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "once", "at": "2026-01-01T12:00:00.000Z" },
+            1767268799999
+          ],
+          "result": 1767268800000
+        },
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "once", "at": "2026-01-01T12:00:00.000Z" },
+            1767268800000
+          ],
+          "result": null
+        },
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "once", "at": "2026-01-01T12:00:00.000Z" },
+            1767268800001
+          ],
+          "result": null
+        },
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [{ "type": "interval", "minutes": 90 }, 1767268800123],
+          "result": 1767274200123
+        }
+      ]
+    },
+    {
+      "name": "UTC 00:00 after 2026-01-31T23:59:59.999Z",
+      "group": ["next task time"],
+      "ledger": "%s %s after %s",
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "daily", "timezone": "UTC", "time": "00:00" },
+            1769903999999
+          ],
+          "result": 1769904000000
+        }
+      ]
+    },
+    {
+      "name": "UTC 00:00 after 2026-12-31T23:59:59.999Z",
+      "group": ["next task time"],
+      "ledger": "%s %s after %s",
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "daily", "timezone": "UTC", "time": "00:00" },
+            1798761599999
+          ],
+          "result": 1798761600000
+        }
+      ]
+    },
+    {
+      "name": "UTC 00:00 after 2028-02-28T23:59:59.999Z",
+      "group": ["next task time"],
+      "ledger": "%s %s after %s",
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "daily", "timezone": "UTC", "time": "00:00" },
+            1835395199999
+          ],
+          "result": 1835395200000
+        }
+      ]
+    },
+    {
+      "name": "UTC 00:00 after 2028-02-29T00:00:00.000Z",
+      "group": ["next task time"],
+      "ledger": "%s %s after %s",
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "daily", "timezone": "UTC", "time": "00:00" },
+            1835395200000
+          ],
+          "result": 1835481600000
+        }
+      ]
+    },
+    {
+      "name": "UTC 00:00 after 2100-02-28T23:59:59.999Z",
+      "group": ["next task time"],
+      "ledger": "%s %s after %s",
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "daily", "timezone": "UTC", "time": "00:00" },
+            4107542399999
+          ],
+          "result": 4107542400000
+        }
+      ]
+    },
+    {
+      "name": "Asia/Shanghai 09:00 after 2026-10-04T00:59:59.999Z",
+      "group": ["next task time"],
+      "ledger": "%s %s after %s",
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "daily", "timezone": "Asia/Shanghai", "time": "09:00" },
+            1791075599999
+          ],
+          "result": 1791075600000
+        }
+      ]
+    },
+    {
+      "name": "Asia/Shanghai 09:00 after 2026-10-04T01:00:00.000Z",
+      "group": ["next task time"],
+      "ledger": "%s %s after %s",
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "daily", "timezone": "Asia/Shanghai", "time": "09:00" },
+            1791075600000
+          ],
+          "result": 1791162000000
+        }
+      ]
+    },
+    {
+      "name": "Asia/Shanghai 00:00 after 2026-12-31T15:59:59.999Z",
+      "group": ["next task time"],
+      "ledger": "%s %s after %s",
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "daily", "timezone": "Asia/Shanghai", "time": "00:00" },
+            1798732799999
+          ],
+          "result": 1798732800000
+        }
+      ]
+    },
+    {
+      "name": "America/New_York 09:00 after 2026-01-15T00:00:00.000Z",
+      "group": ["next task time"],
+      "ledger": "%s %s after %s",
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            {
+              "type": "daily",
+              "timezone": "America/New_York",
+              "time": "09:00"
+            },
+            1768435200000
+          ],
+          "result": 1768485600000
+        }
+      ]
+    },
+    {
+      "name": "America/New_York 09:00 after 2026-07-15T00:00:00.000Z",
+      "group": ["next task time"],
+      "ledger": "%s %s after %s",
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            {
+              "type": "daily",
+              "timezone": "America/New_York",
+              "time": "09:00"
+            },
+            1784073600000
+          ],
+          "result": 1784120400000
+        }
+      ]
+    },
+    {
+      "name": "Asia/Kathmandu 09:00 after 2026-01-01T00:00:00.000Z",
+      "group": ["next task time"],
+      "ledger": "%s %s after %s",
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "daily", "timezone": "Asia/Kathmandu", "time": "09:00" },
+            1767225600000
+          ],
+          "result": 1767237300000
+        }
+      ]
+    },
+    {
+      "name": "skips a nonexistent New York spring-forward wall time",
+      "group": ["next task time"],
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            {
+              "type": "daily",
+              "timezone": "America/New_York",
+              "time": "02:30"
+            },
+            1772928000000
+          ],
+          "result": 1773037800000
+        }
+      ]
+    },
+    {
+      "name": "a New York repeated wall time fires only at its first occurrence",
+      "group": ["next task time"],
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            {
+              "type": "daily",
+              "timezone": "America/New_York",
+              "time": "01:30"
+            },
+            1793505600000
+          ],
+          "result": 1793511000000
+        },
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            {
+              "type": "daily",
+              "timezone": "America/New_York",
+              "time": "01:30"
+            },
+            1793511000000
+          ],
+          "result": 1793601000000
+        },
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            {
+              "type": "daily",
+              "timezone": "America/New_York",
+              "time": "01:30"
+            },
+            1793511900000
+          ],
+          "result": 1793601000000
+        },
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            {
+              "type": "daily",
+              "timezone": "America/New_York",
+              "time": "01:30"
+            },
+            1793513700000
+          ],
+          "result": 1793601000000
+        }
+      ]
+    },
+    {
+      "name": "handles half-hour DST transitions and a skipped calendar date",
+      "group": ["next task time"],
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            {
+              "type": "daily",
+              "timezone": "Australia/Lord_Howe",
+              "time": "02:15"
+            },
+            1791032400000
+          ],
+          "result": 1791126900000
+        },
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            {
+              "type": "daily",
+              "timezone": "Australia/Lord_Howe",
+              "time": "01:45"
+            },
+            1775313900000
+          ],
+          "result": 1775402100000
+        },
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "daily", "timezone": "Pacific/Apia", "time": "09:00" },
+            1325185200000
+          ],
+          "result": 1325271600000
+        }
+      ]
+    },
+    {
+      "name": "calendar calculations do not remap years below 100 to the twentieth century",
+      "group": ["next task time"],
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "daily", "timezone": "UTC", "time": "00:00" },
+            -59011459200001
+          ],
+          "result": -59011459200000
+        }
+      ]
+    },
+    {
+      "name": "rejects invalid reference instants",
+      "group": ["next task time"],
+      "calls": [
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [{ "type": "interval", "minutes": 1 }, { "$num": "NaN" }],
+          "throws": "Invalid task schedule reference time"
+        },
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [
+            { "type": "interval", "minutes": 1 },
+            { "$num": "Infinity" }
+          ],
+          "throws": "Invalid task schedule reference time"
+        },
+        {
+          "fn": "task-schedule.nextTaskTime",
+          "args": [{ "type": "interval", "minutes": 1 }, 8640000000000001],
+          "throws": "Invalid task schedule reference time"
+        }
+      ]
+    }
+  ]
+}

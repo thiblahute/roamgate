@@ -1,13 +1,9 @@
-/** A page an agent published with Claude Code's Artifact tool. */
-export type PublishedArtifact = {
-  url: string;
-  title: string;
-  // The version number when an existing artifact was updated.
-  version?: number;
-};
+import type {
+  PublishedArtifact,
+  SessionArtifact,
+} from "../../../shared/agentSession";
 
-/** An artifact as the session left it: its last publish. */
-export type SessionArtifact = PublishedArtifact & { published_at?: string };
+export type { PublishedArtifact, SessionArtifact };
 
 const ARTIFACT_URL = String.raw`(https://claude\.ai/(?:code/)?artifact/[\w-]+)`;
 const CREATED = new RegExp(

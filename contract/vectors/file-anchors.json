@@ -1,0 +1,1402 @@
+{
+  "description": "Review threads on files: anchors following their lines as a file changes. Read by `bun test` in shared/fileAnchors.test.ts.",
+  "modules": { "fileAnchors": "shared/fileAnchors.ts" },
+  "cases": [
+    {
+      "name": "a thread stays on its lines while they read as written",
+      "group": ["placeInFile"],
+      "calls": [
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 5,
+              "endLine": 7,
+              "side": "new",
+              "text": "      2026-11-20 00:xx, no answer yet)",
+              "render": {
+                "quote": "Firefox: old Roamgate notifications pile up since first use. What is\nwanted: clear them when they no longer apply? (asked\n2026-11-20 00:xx, no answer yet)"
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Firefox: old Roamgate notifications pile up since first use. What is\\nwanted: clear them when they no longer apply? (asked\\n2026-11-20 00:xx, no answer yet)\",\"line\":5,\"endLine\":7}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Firefox: old Roamgate notifications pile up since first use. What is",
+              "      wanted: clear them when they no longer apply? (asked",
+              "      2026-11-20 00:xx, no answer yet)",
+              "- [ ] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older."
+            ]
+          ],
+          "result": {
+            "line": 5,
+            "endLine": 7,
+            "text": "      2026-11-20 00:xx, no answer yet)",
+            "quote": "Firefox: old Roamgate notifications pile up since first use. What is\nwanted: clear them when they no longer apply? (asked\n2026-11-20 00:xx, no answer yet)",
+            "how": "kept"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 8,
+              "endLine": 9,
+              "side": "new",
+              "text": "      2026-11-19, needs one real headset call to confirm.",
+              "render": {
+                "quote": "Headset (boom mic) muting after each turn: fixed twice on\n2026-11-19, needs one real headset call to confirm."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Headset (boom mic) muting after each turn: fixed twice on\\n2026-11-19, needs one real headset call to confirm.\",\"line\":8,\"endLine\":9}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Firefox: old Roamgate notifications pile up since first use. What is",
+              "      wanted: clear them when they no longer apply? (asked",
+              "      2026-11-20 00:xx, no answer yet)",
+              "- [ ] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older."
+            ]
+          ],
+          "result": {
+            "line": 8,
+            "endLine": 9,
+            "text": "      2026-11-19, needs one real headset call to confirm.",
+            "quote": "Headset (boom mic) muting after each turn: fixed twice on\n2026-11-19, needs one real headset call to confirm.",
+            "how": "kept"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 10,
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\",\"line\":10}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Firefox: old Roamgate notifications pile up since first use. What is",
+              "      wanted: clear them when they no longer apply? (asked",
+              "      2026-11-20 00:xx, no answer yet)",
+              "- [ ] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older."
+            ]
+          ],
+          "result": {
+            "line": 10,
+            "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+            "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+            "how": "kept"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 11,
+              "side": "new",
+              "text": "- [ ] Learn my music tastes: nothing built yet.",
+              "render": {
+                "quote": "Learn my music tastes: nothing built yet."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Learn my music tastes: nothing built yet.\",\"line\":11}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Firefox: old Roamgate notifications pile up since first use. What is",
+              "      wanted: clear them when they no longer apply? (asked",
+              "      2026-11-20 00:xx, no answer yet)",
+              "- [ ] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older."
+            ]
+          ],
+          "result": {
+            "line": 11,
+            "text": "- [ ] Learn my music tastes: nothing built yet.",
+            "quote": "Learn my music tastes: nothing built yet.",
+            "how": "kept"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an item moved as it was is found by its last line's text, its lines with it",
+      "group": ["placeInFile"],
+      "calls": [
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 8,
+              "endLine": 9,
+              "side": "new",
+              "text": "      2026-11-19, needs one real headset call to confirm.",
+              "render": {
+                "quote": "Headset (boom mic) muting after each turn: fixed twice on\n2026-11-19, needs one real headset call to confirm."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Headset (boom mic) muting after each turn: fixed twice on\\n2026-11-19, needs one real headset call to confirm.\",\"line\":8,\"endLine\":9}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older.",
+              "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            ]
+          ],
+          "result": {
+            "line": 10,
+            "endLine": 11,
+            "text": "      2026-11-19, needs one real headset call to confirm.",
+            "quote": "Headset (boom mic) muting after each turn: fixed twice on\n2026-11-19, needs one real headset call to confirm.",
+            "how": "text"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 11,
+              "side": "new",
+              "text": "- [ ] Learn my music tastes: nothing built yet.",
+              "render": {
+                "quote": "Learn my music tastes: nothing built yet."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Learn my music tastes: nothing built yet.\",\"line\":11}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older.",
+              "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            ]
+          ],
+          "result": {
+            "line": 5,
+            "text": "- [ ] Learn my music tastes: nothing built yet.",
+            "quote": "Learn my music tastes: nothing built yet.",
+            "how": "text"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an item reworded and moved is found by its first words, its quote now as it reads",
+      "group": ["placeInFile"],
+      "calls": [
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 5,
+              "endLine": 7,
+              "side": "new",
+              "text": "      2026-11-20 00:xx, no answer yet)",
+              "render": {
+                "quote": "Firefox: old Roamgate notifications pile up since first use. What is\nwanted: clear them when they no longer apply? (asked\n2026-11-20 00:xx, no answer yet)"
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Firefox: old Roamgate notifications pile up since first use. What is\\nwanted: clear them when they no longer apply? (asked\\n2026-11-20 00:xx, no answer yet)\",\"line\":5,\"endLine\":7}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older.",
+              "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            ]
+          ],
+          "result": {
+            "line": 12,
+            "text": "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20).",
+            "quote": "Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20).",
+            "how": "words"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a deleted item is found nowhere: never on what its lines hold now",
+      "group": ["placeInFile"],
+      "calls": [
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 10,
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\",\"line\":10}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older.",
+              "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            ]
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "an item too changed is not found: most of its first words must read on",
+      "group": ["placeInFile"],
+      "calls": [
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "a.md",
+              "line": 1,
+              "side": "new",
+              "text": "- [ ] Files source view: `c` comments on the cursor line (asked 2026-11-20).",
+              "render": { "quote": "Files source view: c comments on" }
+            },
+            [
+              "- [ ] Files source view: `c` comments on the cursor line (asked 2026-11-20).",
+              "- [ ] Files source view: threads inline under their lines (asked 2026-11-20)."
+            ]
+          ],
+          "result": {
+            "line": 1,
+            "text": "- [ ] Files source view: `c` comments on the cursor line (asked 2026-11-20).",
+            "quote": "Files source view: c comments on",
+            "how": "kept"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "a.md",
+              "line": 1,
+              "side": "new",
+              "text": "- [ ] Files source view: `c` comments on the cursor line (asked 2026-11-20).",
+              "render": { "quote": "Files source view: c comments on" }
+            },
+            [
+              "- [ ] Files source view: threads inline under their lines (asked 2026-11-20)."
+            ]
+          ],
+          "result": null
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "a.md",
+              "line": 1,
+              "side": "new",
+              "text": "- [ ] Files source view: `c` comments on the cursor line (asked 2026-11-20).",
+              "render": { "quote": "Files source view: c comments on" }
+            },
+            ["- [ ] Files source view: `c` now comments on the cursor's line."]
+          ],
+          "result": {
+            "line": 1,
+            "text": "- [ ] Files source view: `c` now comments on the cursor's line.",
+            "quote": "Files source view: c now comments on the cursor's line.",
+            "how": "words"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a short quote must read whole, a reworded first line keeps the lines after it",
+      "group": ["placeInFile"],
+      "calls": [
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 2,
+              "side": "new",
+              "text": "",
+              "render": { "quote": "Rejected" },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Rejected\",\"line\":2}"
+            },
+            [
+              "- Rejected",
+              "- Accepted",
+              "- The parser, rewritten: reads each line twice, which",
+              "  is slow on large files, and keeps the old numbering",
+              "  for its errors.",
+              "- Another item."
+            ]
+          ],
+          "result": {
+            "line": 1,
+            "text": "- Rejected",
+            "quote": "Rejected",
+            "how": "words"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 2,
+              "side": "new",
+              "text": "",
+              "render": { "quote": "Rejecting" },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Rejecting\",\"line\":2}"
+            },
+            [
+              "- Rejected",
+              "- Accepted",
+              "- The parser, rewritten: reads each line twice, which",
+              "  is slow on large files, and keeps the old numbering",
+              "  for its errors.",
+              "- Another item."
+            ]
+          ],
+          "result": null
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "a.md",
+              "line": 20,
+              "endLine": 22,
+              "side": "new",
+              "text": "  for its errors.",
+              "render": {
+                "quote": "The parser: reads each line twice, which\nis slow on large files, and keeps the old numbering\nfor its errors."
+              }
+            },
+            [
+              "- Rejected",
+              "- Accepted",
+              "- The parser, rewritten: reads each line twice, which",
+              "  is slow on large files, and keeps the old numbering",
+              "  for its errors.",
+              "- Another item."
+            ]
+          ],
+          "result": {
+            "line": 3,
+            "endLine": 5,
+            "text": "  for its errors.",
+            "quote": "The parser, rewritten: reads each line twice, which\nis slow on large files, and keeps the old numbering\nfor its errors.",
+            "how": "words"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a thread on a heading follows the heading, never a sentence saying its word",
+      "group": ["placeInFile"],
+      "calls": [
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 7,
+              "side": "new",
+              "text": "## Done",
+              "render": { "quote": "Done" }
+            },
+            [
+              "# TODO",
+              "",
+              "A resolved thread is done and moves to the Done section.",
+              "",
+              "## Reviews and Files",
+              "",
+              "## Done",
+              "",
+              "Resolved threads sit here."
+            ]
+          ],
+          "result": {
+            "line": 7,
+            "text": "## Done",
+            "quote": "Done",
+            "how": "kept"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 7,
+              "side": "new",
+              "text": "## Done",
+              "render": { "quote": "Done" }
+            },
+            [
+              "# TODO",
+              "",
+              "A resolved thread is done and moves to the Done section.",
+              "",
+              "## Done",
+              "",
+              "## Reviews and Files",
+              "",
+              "Resolved threads sit here."
+            ]
+          ],
+          "result": {
+            "line": 5,
+            "text": "## Done",
+            "quote": "Done",
+            "how": "text"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 5,
+              "side": "new",
+              "text": "## Reviews and Files",
+              "render": { "quote": "Reviews and Files" }
+            },
+            [
+              "# TODO",
+              "",
+              "A resolved thread is done and moves to the Done section.",
+              "",
+              "## Done",
+              "",
+              "## Reviews and Files",
+              "",
+              "Resolved threads sit here."
+            ]
+          ],
+          "result": {
+            "line": 7,
+            "text": "## Reviews and Files",
+            "quote": "Reviews and Files",
+            "how": "text"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 7,
+              "side": "new",
+              "text": "## Done",
+              "render": { "quote": "Done" }
+            },
+            [
+              "# TODO",
+              "",
+              "A resolved thread is done and moves to the Done section.",
+              "",
+              "## Reviews and Files",
+              "",
+              "## Finished",
+              "",
+              "Resolved threads sit here."
+            ]
+          ],
+          "result": null
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 5,
+              "side": "new",
+              "text": "## Reviews and Files",
+              "render": { "quote": "Reviews and Files" }
+            },
+            [
+              "# TODO",
+              "",
+              "A resolved thread is done and moves to the Done section.",
+              "",
+              "## Reviews, and the Files preview",
+              "",
+              "## Finished",
+              "",
+              "Resolved threads sit here."
+            ]
+          ],
+          "result": {
+            "line": 5,
+            "text": "## Reviews, and the Files preview",
+            "quote": "Reviews, and the Files preview",
+            "how": "words"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 5,
+              "side": "new",
+              "text": "## Reviews and Files",
+              "render": { "quote": "Reviews and Files" }
+            },
+            [
+              "# TODO",
+              "",
+              "A resolved thread is done and moves to the Done section.",
+              "",
+              "## Reviews and comments",
+              "",
+              "## Finished",
+              "",
+              "Resolved threads sit here."
+            ]
+          ],
+          "result": null
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 5,
+              "side": "new",
+              "text": "## Reviews and Files",
+              "render": { "quote": "For you" }
+            },
+            ["Nothing for you here yet.", "", "## For you"]
+          ],
+          "result": {
+            "line": 3,
+            "text": "## For you",
+            "quote": "For you",
+            "how": "words"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 5,
+              "side": "new",
+              "text": "## Reviews and Files",
+              "render": { "quote": "For you" }
+            },
+            ["Nothing for you here yet."]
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "a last line read on another item does not keep the thread there",
+      "group": ["placeInFile"],
+      "calls": [
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "a.md",
+              "line": 1,
+              "endLine": 2,
+              "side": "new",
+              "text": "      (asked 2026-11-20).",
+              "render": {
+                "quote": "Review on desktop: too much context shown, gg does not scroll\n(asked 2026-11-20)."
+              }
+            },
+            [
+              "- [ ] Review search on desktop: N does nothing, n must wrap",
+              "      (asked 2026-11-20).",
+              "- [ ] Review on desktop: too much context shown, gg does not scroll",
+              "      (asked 2026-11-20)."
+            ]
+          ],
+          "result": {
+            "line": 3,
+            "endLine": 4,
+            "text": "      (asked 2026-11-20).",
+            "quote": "Review on desktop: too much context shown, gg does not scroll\n(asked 2026-11-20).",
+            "how": "text"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "a.md",
+              "line": 1,
+              "endLine": 2,
+              "side": "new",
+              "text": "      (asked 2026-11-20).",
+              "render": {
+                "quote": "Review on desktop: too much context shown, gg does not scroll\n(asked 2026-11-20)."
+              }
+            },
+            [
+              "- [ ] Review search on desktop: N does nothing, n must wrap",
+              "      (asked 2026-11-20)."
+            ]
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "a thread with no line text (an agent's) is kept where its words are, and given it",
+      "group": ["placeInFile"],
+      "calls": [
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 8,
+              "endLine": 9,
+              "side": "new",
+              "render": { "quote": "Headset (boom mic) muting after each turn" }
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Firefox: old Roamgate notifications pile up since first use. What is",
+              "      wanted: clear them when they no longer apply? (asked",
+              "      2026-11-20 00:xx, no answer yet)",
+              "- [ ] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older."
+            ]
+          ],
+          "result": {
+            "line": 8,
+            "endLine": 9,
+            "text": "      2026-11-19, needs one real headset call to confirm.",
+            "quote": "Headset (boom mic) muting after each turn",
+            "how": "kept"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 8,
+              "endLine": 9,
+              "side": "new",
+              "render": { "quote": "Headset (boom mic) muting after each turn" }
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older.",
+              "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            ]
+          ],
+          "result": {
+            "line": 10,
+            "text": "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+            "quote": "Headset (boom mic) muting after each turn",
+            "how": "words"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            { "path": "todo.md", "line": 3, "side": "new" },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older.",
+              "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            ]
+          ],
+          "result": { "line": 3, "text": "## Waiting", "how": "kept" }
+        }
+      ]
+    },
+    {
+      "name": "a thread off its lines is placed again once its words are back",
+      "group": ["placeInFile"],
+      "calls": [
+        {
+          "fn": "fileAnchors.anchorDetached",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 10,
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\",\"line\":10}"
+            }
+          ],
+          "result": {
+            "path": "todo.md",
+            "side": "new",
+            "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+            "render": {
+              "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+            },
+            "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\"}"
+          }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\"}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older.",
+              "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            ]
+          ],
+          "result": null
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\"}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Firefox: old Roamgate notifications pile up since first use. What is",
+              "      wanted: clear them when they no longer apply? (asked",
+              "      2026-11-20 00:xx, no answer yet)",
+              "- [ ] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older."
+            ]
+          ],
+          "result": {
+            "line": 10,
+            "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+            "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+            "how": "text"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a graphic's region, a removed line and a message part are not looked for",
+      "group": ["placeInFile"],
+      "calls": [
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "d.md",
+              "line": 3,
+              "side": "new",
+              "text": "```mermaid",
+              "render": {
+                "graphic": "diagram 1",
+                "region": { "x": 0, "y": 0, "w": 0, "h": 0 }
+              }
+            },
+            ["", "", "```mermaid", "```"]
+          ],
+          "result": { "line": 3, "text": "```mermaid", "how": "kept" }
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "d.md",
+              "line": 3,
+              "side": "new",
+              "text": "```mermaid",
+              "render": {
+                "graphic": "diagram 1",
+                "region": { "x": 0, "y": 0, "w": 0, "h": 0 }
+              }
+            },
+            ["x", "y"]
+          ],
+          "result": null
+        },
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 10,
+              "side": "old",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\",\"line\":10}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Firefox: old Roamgate notifications pile up since first use. What is",
+              "      wanted: clear them when they no longer apply? (asked",
+              "      2026-11-20 00:xx, no answer yet)",
+              "- [ ] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older."
+            ]
+          ],
+          "result": null
+        },
+        {
+          "fn": "fileAnchors.anchoredInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 10,
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\",\"line\":10}",
+              "message": { "thread": "t", "comment": "c", "quote": "q" }
+            }
+          ],
+          "result": false
+        },
+        {
+          "fn": "fileAnchors.anchoredInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 10,
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\",\"line\":10}"
+            }
+          ],
+          "result": true
+        },
+        {
+          "fn": "fileAnchors.anchoredInFile",
+          "args": [{ "path": "a.md" }],
+          "result": false
+        }
+      ]
+    },
+    {
+      "name": "a moved anchor says its lines, text and words, its note too",
+      "group": ["anchors written back"],
+      "calls": [
+        {
+          "fn": "fileAnchors.placeInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 5,
+              "endLine": 7,
+              "side": "new",
+              "text": "      2026-11-20 00:xx, no answer yet)",
+              "render": {
+                "quote": "Firefox: old Roamgate notifications pile up since first use. What is\nwanted: clear them when they no longer apply? (asked\n2026-11-20 00:xx, no answer yet)"
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Firefox: old Roamgate notifications pile up since first use. What is\\nwanted: clear them when they no longer apply? (asked\\n2026-11-20 00:xx, no answer yet)\",\"line\":5,\"endLine\":7}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older.",
+              "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            ]
+          ],
+          "result": {
+            "line": 12,
+            "text": "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20).",
+            "quote": "Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20).",
+            "how": "words"
+          }
+        },
+        {
+          "fn": "fileAnchors.anchorAt",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 5,
+              "endLine": 7,
+              "side": "new",
+              "text": "      2026-11-20 00:xx, no answer yet)",
+              "render": {
+                "quote": "Firefox: old Roamgate notifications pile up since first use. What is\nwanted: clear them when they no longer apply? (asked\n2026-11-20 00:xx, no answer yet)"
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Firefox: old Roamgate notifications pile up since first use. What is\\nwanted: clear them when they no longer apply? (asked\\n2026-11-20 00:xx, no answer yet)\",\"line\":5,\"endLine\":7}"
+            },
+            {
+              "line": 12,
+              "text": "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20).",
+              "quote": "Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20).",
+              "how": "words"
+            }
+          ],
+          "result": {
+            "path": "todo.md",
+            "line": 12,
+            "side": "new",
+            "text": "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20).",
+            "render": {
+              "quote": "Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            },
+            "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20).\",\"line\":12}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a detached anchor keeps its words and text, off any line, its note too",
+      "group": ["anchors written back"],
+      "calls": [
+        {
+          "fn": "fileAnchors.anchorDetached",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 10,
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\",\"line\":10}"
+            }
+          ],
+          "result": {
+            "path": "todo.md",
+            "side": "new",
+            "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+            "render": {
+              "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+            },
+            "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "anchorInFile changes nothing kept, moves or detaches the rest",
+      "group": ["anchors written back"],
+      "calls": [
+        {
+          "fn": "fileAnchors.anchorInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 8,
+              "endLine": 9,
+              "side": "new",
+              "text": "      2026-11-19, needs one real headset call to confirm.",
+              "render": {
+                "quote": "Headset (boom mic) muting after each turn: fixed twice on\n2026-11-19, needs one real headset call to confirm."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Headset (boom mic) muting after each turn: fixed twice on\\n2026-11-19, needs one real headset call to confirm.\",\"line\":8,\"endLine\":9}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Firefox: old Roamgate notifications pile up since first use. What is",
+              "      wanted: clear them when they no longer apply? (asked",
+              "      2026-11-20 00:xx, no answer yet)",
+              "- [ ] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older."
+            ]
+          ],
+          "result": null
+        },
+        {
+          "fn": "fileAnchors.anchorInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 8,
+              "endLine": 9,
+              "side": "new",
+              "text": "      2026-11-19, needs one real headset call to confirm.",
+              "render": {
+                "quote": "Headset (boom mic) muting after each turn: fixed twice on\n2026-11-19, needs one real headset call to confirm."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Headset (boom mic) muting after each turn: fixed twice on\\n2026-11-19, needs one real headset call to confirm.\",\"line\":8,\"endLine\":9}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older.",
+              "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            ]
+          ],
+          "result": {
+            "path": "todo.md",
+            "line": 10,
+            "endLine": 11,
+            "side": "new",
+            "text": "      2026-11-19, needs one real headset call to confirm.",
+            "render": {
+              "quote": "Headset (boom mic) muting after each turn: fixed twice on\n2026-11-19, needs one real headset call to confirm."
+            },
+            "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Headset (boom mic) muting after each turn: fixed twice on\\n2026-11-19, needs one real headset call to confirm.\",\"line\":10,\"endLine\":11}"
+          }
+        },
+        {
+          "fn": "fileAnchors.anchorInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 10,
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\",\"line\":10}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older.",
+              "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            ]
+          ],
+          "result": {
+            "path": "todo.md",
+            "side": "new",
+            "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+            "render": {
+              "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+            },
+            "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\"}"
+          }
+        },
+        {
+          "fn": "fileAnchors.anchorDetached",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 10,
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\",\"line\":10}"
+            }
+          ],
+          "result": {
+            "path": "todo.md",
+            "side": "new",
+            "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+            "render": {
+              "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+            },
+            "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\"}"
+          }
+        },
+        {
+          "fn": "fileAnchors.anchorDetached",
+          "args": [
+            {
+              "path": "todo.md",
+              "line": 10,
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\",\"line\":10}"
+            }
+          ],
+          "result": {
+            "path": "todo.md",
+            "side": "new",
+            "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+            "render": {
+              "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+            },
+            "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\"}"
+          }
+        },
+        {
+          "fn": "fileAnchors.anchorInFile",
+          "args": [
+            {
+              "path": "todo.md",
+              "side": "new",
+              "text": "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "render": {
+                "quote": "Call 1 on 2026-11-19 stopped listening at 23:31 after another voice."
+              },
+              "feedback": "{\"source\":\"file\",\"anchor\":\"quote\",\"path\":\"/repo/todo.md\",\"quote\":\"Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.\"}"
+            },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older.",
+              "- [x] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [x] Firefox: old Roamgate notifications piling up (the user says it is fixed, 2026-11-20)."
+            ]
+          ],
+          "result": null
+        },
+        {
+          "fn": "fileAnchors.anchorInFile",
+          "args": [
+            { "path": "todo.md", "line": 1, "side": "new" },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Firefox: old Roamgate notifications pile up since first use. What is",
+              "      wanted: clear them when they no longer apply? (asked",
+              "      2026-11-20 00:xx, no answer yet)",
+              "- [ ] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older."
+            ]
+          ],
+          "result": {
+            "path": "todo.md",
+            "line": 1,
+            "side": "new",
+            "text": "# TODO"
+          }
+        },
+        {
+          "fn": "fileAnchors.anchorInFile",
+          "args": [
+            { "path": "todo.md" },
+            [
+              "# TODO",
+              "",
+              "## Waiting",
+              "",
+              "- [ ] Firefox: old Roamgate notifications pile up since first use. What is",
+              "      wanted: clear them when they no longer apply? (asked",
+              "      2026-11-20 00:xx, no answer yet)",
+              "- [ ] Headset (boom mic) muting after each turn: fixed twice on",
+              "      2026-11-19, needs one real headset call to confirm.",
+              "- [ ] Call 1 on 2026-11-19 stopped listening at 23:31 after another voice.",
+              "- [ ] Learn my music tastes: nothing built yet.",
+              "",
+              "## Done",
+              "",
+              "- [x] Something older."
+            ]
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "renderedWords reads source lines as the preview shows them, near enough",
+      "calls": [
+        {
+          "fn": "fileAnchors.renderedWords",
+          "args": [
+            [
+              "- [x] **Firefox**: old `notifications` _pile up_ ([bug](http://x)).",
+              "      with a second line \\*kept\\*",
+              "",
+              "> quoted ~~gone~~ words",
+              "## A heading"
+            ]
+          ],
+          "result": "Firefox: old notifications pile up (bug).\nwith a second line *kept*\nquoted gone words\nA heading"
+        }
+      ]
+    }
+  ]
+}

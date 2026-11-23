@@ -2,13 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  findGrokSessionById,
-  findGrokSessionForCwd,
-  grokReasoningText,
-  grokUserMessageText,
-} from "./grok-session";
+import { findGrokSessionById, findGrokSessionForCwd } from "./grok-session";
 import { resolveAgentSession } from "./session-resolver";
+import { runVectors } from "../../../contract/vectors/vectors";
+import * as grokSession from "./grok-session";
 
 const tempRoots: string[] = [];
 const originalGrokHome = process.env.GROK_HOME;
@@ -108,31 +105,7 @@ describe("Grok Build sessions", () => {
     expect(resolved.status).toBe("ok");
     expect(resolved.session?.value).toBe("foreground-session");
   });
-
-  test("extracts only real user queries and reasoning summaries", () => {
-    expect(
-      grokUserMessageText({
-        type: "user",
-        content: [
-          {
-            type: "text",
-            text: "<user_info>ignored</user_info>\n<user_query>Ship it</user_query>",
-          },
-        ],
-      }),
-    ).toBe("Ship it");
-    expect(
-      grokUserMessageText({
-        type: "user",
-        synthetic_reason: "system_reminder",
-        content: [{ type: "text", text: "ignore me" }],
-      }),
-    ).toBe("");
-    expect(
-      grokReasoningText({
-        type: "reasoning",
-        summary: [{ type: "summary_text", text: "Inspect the repository" }],
-      }),
-    ).toBe("Inspect the repository");
-  });
 });
+
+// The cases are contract/vectors/grok-session.json, the Rust side's too.
+runVectors("grok-session", { "grok-session": grokSession });

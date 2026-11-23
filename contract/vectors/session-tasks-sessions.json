@@ -1,0 +1,554 @@
+{
+  "description": "Background tasks of several sessions through the session handlers. Read by `bun test` in server/src/agent/session-tasks.sessions.test.ts.",
+  "modules": { "agent-sessions": "server/src/agent/agent-sessions.ts" },
+  "cases": [
+    {
+      "name": "two sessions' tasks never mix",
+      "calls": [
+        {
+          "fn": "agent-sessions.createAgentSessionHandlers",
+          "args": [
+            {
+              "files": {
+                "remote": false,
+                "statFile": {
+                  "$fn": {
+                    "calls": [
+                      {
+                        "args": ["/tmp/rg-two/aaaa.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/aaaa.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 483,
+                          "identity": "/tmp/rg-two/aaaa.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/aaaa.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/aaaa.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 483,
+                          "identity": "/tmp/rg-two/aaaa.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/aaaa.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/aaaa.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 483,
+                          "identity": "/tmp/rg-two/aaaa.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/aaaa.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/aaaa.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 483,
+                          "identity": "/tmp/rg-two/aaaa.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/aaaa.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/aaaa.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 483,
+                          "identity": "/tmp/rg-two/aaaa.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/aaaa.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/aaaa.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 483,
+                          "identity": "/tmp/rg-two/aaaa.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/aaaa.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/aaaa.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 483,
+                          "identity": "/tmp/rg-two/aaaa.jsonl",
+                          "changeToken": "1"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "readText": {
+                  "$fn": {
+                    "calls": [
+                      {
+                        "args": ["/tmp/rg-two/aaaa.jsonl"],
+                        "async": true,
+                        "result": "{\"type\":\"assistant\",\"timestamp\":\"2026-11-19T10:00:00.000Z\",\"message\":{\"role\":\"assistant\",\"id\":\"ma1\",\"content\":[{\"type\":\"tool_use\",\"id\":\"a1\",\"name\":\"Bash\",\"input\":{\"command\":\"gh run list -R someone/else\",\"description\":\"Wait for CI elsewhere\",\"run_in_background\":true}}]}}\n{\"type\":\"user\",\"timestamp\":\"2026-11-19T10:00:01.000Z\",\"toolUseResult\":{\"backgroundTaskId\":\"ba1\"},\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"a1\",\"content\":\"Running in background\"}]}}\n"
+                      },
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": "{\"type\":\"assistant\",\"timestamp\":\"2026-11-19T11:00:00.000Z\",\"message\":{\"role\":\"assistant\",\"id\":\"mb1\",\"content\":[{\"type\":\"tool_use\",\"id\":\"b1\",\"name\":\"Bash\",\"input\":{\"command\":\"cargo build\",\"description\":\"Build in the background\",\"run_in_background\":true}}]}}\n{\"type\":\"user\",\"timestamp\":\"2026-11-19T11:00:01.000Z\",\"toolUseResult\":{\"backgroundTaskId\":\"bb1\"},\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"b1\",\"content\":\"Running in background\"}]}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-11-19T11:05:00.000Z\",\"message\":{\"role\":\"assistant\",\"id\":\"mb2\",\"content\":[{\"type\":\"tool_use\",\"id\":\"b2\",\"name\":\"Bash\",\"input\":{\"command\":\"cargo tauri android build\",\"description\":\"Build the Android app\"}}]}}\n"
+                      }
+                    ]
+                  }
+                },
+                "readPrefix": { "$fn": { "calls": [] } },
+                "readTail": { "$fn": { "calls": [] } },
+                "readDownloadBody": { "$fn": { "calls": [] } },
+                "findPiSessionForCwd": { "$fn": { "calls": [] } },
+                "findPiSessionById": { "$fn": { "calls": [] } },
+                "findClaudeSessionById": { "$fn": { "calls": [] } },
+                "findClaudeSuccessor": { "$fn": { "calls": [] } },
+                "findCodexSessionById": { "$fn": { "calls": [] } }
+              },
+              "herdrCall": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": ["agent.get", { "target": "p1" }],
+                      "async": true,
+                      "result": {
+                        "agent": {
+                          "agent": "claude",
+                          "agent_session": {
+                            "kind": "path",
+                            "value": "/tmp/rg-two/aaaa.jsonl"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "args": ["agent.get", { "target": "p2" }],
+                      "async": true,
+                      "result": {
+                        "agent": {
+                          "agent": "claude",
+                          "agent_session": {
+                            "kind": "path",
+                            "value": "/tmp/rg-two/bbbb.jsonl"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "args": ["agent.get", { "target": "p1" }],
+                      "async": true,
+                      "result": {
+                        "agent": {
+                          "agent": "claude",
+                          "agent_session": {
+                            "kind": "path",
+                            "value": "/tmp/rg-two/aaaa.jsonl"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "now": 1795086360000,
+          "result": { "$handle": 1 }
+        },
+        {
+          "on": 1,
+          "method": "readTasks",
+          "args": [{ "pane_id": "p1", "agent": "claude" }],
+          "now": 1795086360000,
+          "async": true,
+          "result": {
+            "tasks": [
+              {
+                "id": "a1",
+                "kind": "command",
+                "title": "Wait for CI elsewhere",
+                "detail": "gh run list -R someone/else",
+                "status": "running",
+                "startedAt": "2026-11-19T10:00:00.000Z",
+                "taskId": "ba1"
+              }
+            ],
+            "running_now": [],
+            "session": "aaaa"
+          }
+        },
+        {
+          "on": 1,
+          "method": "readTasks",
+          "args": [{ "pane_id": "p2", "agent": "claude" }],
+          "now": 1795086360000,
+          "async": true,
+          "result": {
+            "tasks": [
+              {
+                "id": "b1",
+                "kind": "command",
+                "title": "Build in the background",
+                "detail": "cargo build",
+                "status": "running",
+                "startedAt": "2026-11-19T11:00:00.000Z",
+                "taskId": "bb1"
+              }
+            ],
+            "running_now": [
+              {
+                "id": "b2",
+                "kind": "command",
+                "title": "Build the Android app",
+                "detail": "cargo tauri android build",
+                "status": "running",
+                "startedAt": "2026-11-19T11:05:00.000Z",
+                "foreground": true
+              }
+            ],
+            "session": "bbbb"
+          }
+        },
+        {
+          "on": 1,
+          "method": "readTasks",
+          "args": [{ "pane_id": "p1", "agent": "claude" }],
+          "now": 1795086360000,
+          "async": true,
+          "result": {
+            "tasks": [
+              {
+                "id": "a1",
+                "kind": "command",
+                "title": "Wait for CI elsewhere",
+                "detail": "gh run list -R someone/else",
+                "status": "running",
+                "startedAt": "2026-11-19T10:00:00.000Z",
+                "taskId": "ba1"
+              }
+            ],
+            "running_now": [],
+            "session": "aaaa"
+          }
+        }
+      ]
+    },
+    {
+      "name": "the foreground command a session runs shows, apart from its tasks",
+      "calls": [
+        {
+          "fn": "agent-sessions.createAgentSessionHandlers",
+          "args": [
+            {
+              "files": {
+                "remote": false,
+                "statFile": {
+                  "$fn": {
+                    "calls": [
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "readText": {
+                  "$fn": {
+                    "calls": [
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": "{\"type\":\"assistant\",\"timestamp\":\"2026-11-19T11:00:00.000Z\",\"message\":{\"role\":\"assistant\",\"id\":\"mb1\",\"content\":[{\"type\":\"tool_use\",\"id\":\"b1\",\"name\":\"Bash\",\"input\":{\"command\":\"cargo build\",\"description\":\"Build in the background\",\"run_in_background\":true}}]}}\n{\"type\":\"user\",\"timestamp\":\"2026-11-19T11:00:01.000Z\",\"toolUseResult\":{\"backgroundTaskId\":\"bb1\"},\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"b1\",\"content\":\"Running in background\"}]}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-11-19T11:05:00.000Z\",\"message\":{\"role\":\"assistant\",\"id\":\"mb2\",\"content\":[{\"type\":\"tool_use\",\"id\":\"b2\",\"name\":\"Bash\",\"input\":{\"command\":\"cargo tauri android build\",\"description\":\"Build the Android app\"}}]}}\n"
+                      }
+                    ]
+                  }
+                },
+                "readPrefix": { "$fn": { "calls": [] } },
+                "readTail": { "$fn": { "calls": [] } },
+                "readDownloadBody": { "$fn": { "calls": [] } },
+                "findPiSessionForCwd": { "$fn": { "calls": [] } },
+                "findPiSessionById": { "$fn": { "calls": [] } },
+                "findClaudeSessionById": { "$fn": { "calls": [] } },
+                "findClaudeSuccessor": { "$fn": { "calls": [] } },
+                "findCodexSessionById": { "$fn": { "calls": [] } }
+              },
+              "herdrCall": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": ["agent.get", { "target": "p2" }],
+                      "async": true,
+                      "result": {
+                        "agent": {
+                          "agent": "claude",
+                          "agent_session": {
+                            "kind": "path",
+                            "value": "/tmp/rg-two/bbbb.jsonl"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "now": 1795086360000,
+          "result": { "$handle": 2 }
+        },
+        {
+          "on": 2,
+          "method": "readTasks",
+          "args": [{ "pane_id": "p2", "agent": "claude" }],
+          "now": 1795086360000,
+          "async": true,
+          "result": {
+            "tasks": [
+              {
+                "id": "b1",
+                "kind": "command",
+                "title": "Build in the background",
+                "detail": "cargo build",
+                "status": "running",
+                "startedAt": "2026-11-19T11:00:00.000Z",
+                "taskId": "bb1"
+              }
+            ],
+            "running_now": [
+              {
+                "id": "b2",
+                "kind": "command",
+                "title": "Build the Android app",
+                "detail": "cargo tauri android build",
+                "status": "running",
+                "startedAt": "2026-11-19T11:05:00.000Z",
+                "foreground": true
+              }
+            ],
+            "session": "bbbb"
+          }
+        },
+        {
+          "fn": "agent-sessions.createAgentSessionHandlers",
+          "args": [
+            {
+              "files": {
+                "remote": false,
+                "statFile": {
+                  "$fn": {
+                    "calls": [
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      },
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": {
+                          "path": "/tmp/rg-two/bbbb.jsonl",
+                          "mtimeMs": 1000,
+                          "size": 713,
+                          "identity": "/tmp/rg-two/bbbb.jsonl",
+                          "changeToken": "1"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "readText": {
+                  "$fn": {
+                    "calls": [
+                      {
+                        "args": ["/tmp/rg-two/bbbb.jsonl"],
+                        "async": true,
+                        "result": "{\"type\":\"assistant\",\"timestamp\":\"2026-11-19T11:00:00.000Z\",\"message\":{\"role\":\"assistant\",\"id\":\"mb1\",\"content\":[{\"type\":\"tool_use\",\"id\":\"b1\",\"name\":\"Bash\",\"input\":{\"command\":\"cargo build\",\"description\":\"Build in the background\",\"run_in_background\":true}}]}}\n{\"type\":\"user\",\"timestamp\":\"2026-11-19T11:00:01.000Z\",\"toolUseResult\":{\"backgroundTaskId\":\"bb1\"},\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"b1\",\"content\":\"Running in background\"}]}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-11-19T11:05:00.000Z\",\"message\":{\"role\":\"assistant\",\"id\":\"mb2\",\"content\":[{\"type\":\"tool_use\",\"id\":\"b2\",\"name\":\"Bash\",\"input\":{\"command\":\"cargo tauri android build\",\"description\":\"Build the Android app\"}}]}}\n"
+                      }
+                    ]
+                  }
+                },
+                "readPrefix": { "$fn": { "calls": [] } },
+                "readTail": { "$fn": { "calls": [] } },
+                "readDownloadBody": { "$fn": { "calls": [] } },
+                "findPiSessionForCwd": { "$fn": { "calls": [] } },
+                "findPiSessionById": { "$fn": { "calls": [] } },
+                "findClaudeSessionById": { "$fn": { "calls": [] } },
+                "findClaudeSuccessor": { "$fn": { "calls": [] } },
+                "findCodexSessionById": { "$fn": { "calls": [] } }
+              },
+              "herdrCall": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": ["agent.get", { "target": "p2" }],
+                      "async": true,
+                      "result": {
+                        "agent": {
+                          "agent": "claude",
+                          "agent_session": {
+                            "kind": "path",
+                            "value": "/tmp/rg-two/bbbb.jsonl"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "now": 1795096800000,
+          "result": { "$handle": 3 }
+        },
+        {
+          "on": 3,
+          "method": "readTasks",
+          "args": [{ "pane_id": "p2", "agent": "claude" }],
+          "now": 1795096800000,
+          "async": true,
+          "result": {
+            "tasks": [
+              {
+                "id": "b1",
+                "kind": "command",
+                "title": "Build in the background",
+                "detail": "cargo build",
+                "status": "running",
+                "startedAt": "2026-11-19T11:00:00.000Z",
+                "taskId": "bb1"
+              }
+            ],
+            "running_now": [],
+            "session": "bbbb"
+          }
+        }
+      ]
+    }
+  ]
+}

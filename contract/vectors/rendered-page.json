@@ -1,0 +1,931 @@
+{
+  "description": "Rendered pages: frame messages, site lists and their bounds. Read by `bun test` in shared/renderedPage.test.ts.",
+  "modules": { "renderedPage": "shared/renderedPage.ts" },
+  "cases": [
+    {
+      "name": "accepts the frame's messages",
+      "group": ["parseFrameMessage"],
+      "calls": [
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "a.html",
+              "title": "A"
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "a.html",
+            "title": "A"
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "select",
+              "url": "a",
+              "quote": " words ",
+              "selector": "p",
+              "rect": { "x": 1, "y": 2, "w": 3, "h": 4 }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "select",
+            "url": "a",
+            "quote": "words",
+            "selector": "p",
+            "rect": { "x": 1, "y": 2, "w": 3, "h": 4 }
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "point",
+              "url": "a",
+              "selector": "svg",
+              "region": { "x": 0.5, "y": 0.5, "w": 0, "h": 0 },
+              "rect": { "x": 1, "y": 2, "w": 3, "h": 4 },
+              "element": "node1"
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "point",
+            "url": "a",
+            "selector": "svg",
+            "region": { "x": 0.5, "y": 0.5, "w": 0, "h": 0 },
+            "rect": { "x": 1, "y": 2, "w": 3, "h": 4 },
+            "element": "node1"
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [{ "roamgate": "rendered", "type": "clear" }],
+          "result": { "roamgate": "rendered", "type": "clear" }
+        }
+      ]
+    },
+    {
+      "name": "refuses anything else",
+      "group": ["parseFrameMessage"],
+      "calls": [
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [null],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": ["x"],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [{ "type": "ready", "url": "a" }],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [{ "roamgate": "rendered", "type": "eval", "url": "a" }],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "select",
+              "url": "a",
+              "quote": "  ",
+              "selector": "p",
+              "rect": { "x": 1, "y": 2, "w": 3, "h": 4 }
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "select",
+              "url": "a",
+              "quote": { "$text": [["x", 4001]] },
+              "selector": "p",
+              "rect": { "x": 1, "y": 2, "w": 3, "h": 4 }
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "select",
+              "url": 5,
+              "quote": "x",
+              "selector": "p",
+              "rect": { "x": 1, "y": 2, "w": 3, "h": 4 }
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "select",
+              "url": "a",
+              "quote": "x",
+              "selector": "p",
+              "rect": { "x": { "$num": "NaN" }, "y": 0, "w": 0, "h": 0 }
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "point",
+              "url": "a",
+              "selector": "s",
+              "region": { "x": 2, "y": 0, "w": 0, "h": 0 },
+              "rect": { "x": 1, "y": 2, "w": 3, "h": 4 }
+            }
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "a page's root map comes with its ready, checked",
+      "group": ["a frame off its token"],
+      "calls": [
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "a.html",
+              "title": "",
+              "root": {
+                "base": "/",
+                "to": "/rendered/0123456789abcdef0123456789abcdef/.roamgate-root/"
+              }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "a.html",
+            "title": "",
+            "root": {
+              "base": "/",
+              "to": "/rendered/0123456789abcdef0123456789abcdef/.roamgate-root/"
+            }
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "a.html",
+              "title": "",
+              "root": {
+                "base": "/docs/",
+                "to": "/rendered/0123456789abcdef0123456789abcdef/"
+              }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "a.html",
+            "title": "",
+            "root": {
+              "base": "/docs/",
+              "to": "/rendered/0123456789abcdef0123456789abcdef/"
+            }
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "a.html",
+              "title": "",
+              "root": { "base": "/", "to": "/api/" }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "a.html",
+            "title": ""
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "a.html",
+              "title": "",
+              "root": {
+                "base": "/",
+                "to": "/rendered/0123456789abcdef0123456789abcdef/../"
+              }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "a.html",
+            "title": ""
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "a.html",
+              "title": "",
+              "root": {
+                "base": "docs/",
+                "to": "/rendered/0123456789abcdef0123456789abcdef/"
+              }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "a.html",
+            "title": ""
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "a.html",
+              "title": "",
+              "root": { "base": "/", "to": 1 }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "a.html",
+            "title": ""
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "a.html",
+              "title": "",
+              "root": "x"
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "a.html",
+            "title": ""
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [{ "roamgate": "rendered", "type": "stray", "url": "/a?b" }],
+          "result": { "roamgate": "rendered", "type": "stray", "url": "/a?b" }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [{ "roamgate": "rendered", "type": "stray", "url": "a" }],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            { "roamgate": "rendered", "type": "stray", "url": "//evil/x" }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [{ "roamgate": "rendered", "type": "stray", "url": 3 }],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "goes back under the token, never anywhere else",
+      "group": ["a frame off its token"],
+      "calls": [
+        {
+          "fn": "renderedPage.strayTarget",
+          "args": [
+            "/documentation/installing/index.html?x=1",
+            {
+              "base": "/",
+              "to": "/rendered/0123456789abcdef0123456789abcdef/.roamgate-root/"
+            }
+          ],
+          "result": "/rendered/0123456789abcdef0123456789abcdef/.roamgate-root/documentation/installing/index.html?x=1"
+        },
+        {
+          "fn": "renderedPage.strayTarget",
+          "args": [
+            "/docs/a.html",
+            {
+              "base": "/docs/",
+              "to": "/rendered/0123456789abcdef0123456789abcdef/"
+            }
+          ],
+          "result": "/rendered/0123456789abcdef0123456789abcdef/a.html"
+        },
+        {
+          "fn": "renderedPage.strayTarget",
+          "args": [
+            "/other/a.html",
+            {
+              "base": "/docs/",
+              "to": "/rendered/0123456789abcdef0123456789abcdef/"
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.strayTarget",
+          "args": [
+            "/../api/health",
+            {
+              "base": "/",
+              "to": "/rendered/0123456789abcdef0123456789abcdef/.roamgate-root/"
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.strayTarget",
+          "args": [
+            "/a/%2e%2e/%2E%2E/api",
+            {
+              "base": "/",
+              "to": "/rendered/0123456789abcdef0123456789abcdef/.roamgate-root/"
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.strayTarget",
+          "args": [
+            "/a%2fb",
+            {
+              "base": "/",
+              "to": "/rendered/0123456789abcdef0123456789abcdef/.roamgate-root/"
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.strayTarget",
+          "args": [
+            "/a\\b",
+            {
+              "base": "/",
+              "to": "/rendered/0123456789abcdef0123456789abcdef/.roamgate-root/"
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.strayTarget",
+          "args": [
+            "/./x",
+            {
+              "base": "/",
+              "to": "/rendered/0123456789abcdef0123456789abcdef/.roamgate-root/"
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.strayTarget",
+          "args": ["/a", { "base": "/", "to": "/api/" }],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "is exactly a set, remove or clear within the bounds",
+      "group": ["a page's storage write"],
+      "calls": [
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "storage",
+              "op": "set",
+              "key": "k",
+              "value": "v"
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "storage",
+            "op": "set",
+            "key": "k",
+            "value": "v"
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "storage",
+              "op": "remove",
+              "key": "k"
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "storage",
+            "op": "remove",
+            "key": "k"
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            { "roamgate": "rendered", "type": "storage", "op": "clear" }
+          ],
+          "result": { "roamgate": "rendered", "type": "storage", "op": "clear" }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "storage",
+              "op": "set",
+              "key": "k"
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "storage",
+              "op": "set",
+              "key": 5,
+              "value": "v"
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "storage",
+              "op": "set",
+              "key": "",
+              "value": "v"
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "storage",
+              "op": "set",
+              "key": "k",
+              "value": { "$text": [["x", 307200]] }
+            }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            { "roamgate": "rendered", "type": "storage", "op": "remove" }
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "storage",
+              "op": "other",
+              "key": "k"
+            }
+          ],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "are kept as http(s) prefixes or absolute directories",
+      "group": ["sites we work on"],
+      "calls": [
+        {
+          "fn": "renderedPage.normalizeSiteList",
+          "args": [
+            [
+              "http://localhost:8080",
+              "http://localhost:8080/docs/index.html",
+              "https://desktop:4000/docs/",
+              "http://localhost:8080/",
+              "/home/me/site",
+              "file:///etc",
+              "javascript:alert(1)",
+              "http://user:pw@host/",
+              "/a/../b",
+              "relative/path",
+              42
+            ]
+          ],
+          "result": [
+            "http://localhost:8080/",
+            "http://localhost:8080/docs/",
+            "https://desktop:4000/docs/",
+            "/home/me/site/"
+          ]
+        },
+        {
+          "fn": "renderedPage.normalizeSiteList",
+          "args": ["nope"],
+          "result": []
+        }
+      ]
+    },
+    {
+      "name": "match URLs and paths under them only",
+      "group": ["sites we work on"],
+      "calls": [
+        {
+          "fn": "renderedPage.listedSite",
+          "args": [
+            ["http://localhost:8080/docs/", "/home/me/site/"],
+            "http://localhost:8080/docs/a.html?x"
+          ],
+          "result": "http://localhost:8080/docs/"
+        },
+        {
+          "fn": "renderedPage.listedSite",
+          "args": [
+            ["http://localhost:8080/docs/", "/home/me/site/"],
+            "http://localhost:8080/docsother/"
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.listedSite",
+          "args": [
+            ["http://localhost:8080/docs/", "/home/me/site/"],
+            "http://localhost:8081/docs/"
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.listedSite",
+          "args": [
+            ["http://localhost:8080/docs/", "/home/me/site/"],
+            "http://evil.example/http://localhost:8080/docs/"
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.listedDirectory",
+          "args": [
+            ["http://localhost:8080/docs/", "/home/me/site/"],
+            "/home/me/site/index.html"
+          ],
+          "result": "/home/me/site/"
+        },
+        {
+          "fn": "renderedPage.listedDirectory",
+          "args": [
+            ["http://localhost:8080/docs/", "/home/me/site/"],
+            "/home/me/sitex/index.html"
+          ],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.listedDirectory",
+          "args": [["http://localhost/"], "/x"],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.listedSite",
+          "args": [["/home/"], "http://localhost/home/"],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "site URLs drop their fragment and refuse credentials",
+      "group": ["sites we work on"],
+      "calls": [
+        {
+          "fn": "renderedPage.parseSiteUrl",
+          "args": ["http://localhost:8080/a#b"],
+          "result": "http://localhost:8080/a"
+        },
+        {
+          "fn": "renderedPage.parseSiteUrl",
+          "args": ["http://u:p@localhost/"],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.parseSiteUrl",
+          "args": ["data:text/html,x"],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "is kept from the frame's home and found again under any token",
+      "group": ["a frame's page from its home"],
+      "calls": [
+        {
+          "fn": "renderedPage.pageFromHome",
+          "args": ["cancun/index.html", "cancun/"],
+          "result": "index.html"
+        },
+        {
+          "fn": "renderedPage.pageUnderHome",
+          "args": ["index.html", ""],
+          "result": "index.html"
+        },
+        {
+          "fn": "renderedPage.pageUnderHome",
+          "args": ["index.html", "cancun/"],
+          "result": "cancun/index.html"
+        },
+        {
+          "fn": "renderedPage.pageFromHome",
+          "args": ["cancun/day/2.html?x=1#a", "cancun/"],
+          "result": "day/2.html?x=1#a"
+        },
+        {
+          "fn": "renderedPage.pageFromHome",
+          "args": ["shared/map.html", "cancun/"],
+          "result": "../shared/map.html"
+        },
+        {
+          "fn": "renderedPage.pageFromHome",
+          "args": ["a/", "a/b/"],
+          "result": "../"
+        },
+        {
+          "fn": "renderedPage.pageUnderHome",
+          "args": ["../shared/map.html", "cancun/"],
+          "result": "shared/map.html"
+        },
+        {
+          "fn": "renderedPage.pageUnderHome",
+          "args": ["../shared/map.html", ""],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.pageUnderHome",
+          "args": ["a/../../b.html", "x/"],
+          "result": null
+        },
+        {
+          "fn": "renderedPage.pageFromHome",
+          "args": ["index.html", ""],
+          "result": "index.html"
+        }
+      ]
+    },
+    {
+      "name": "a ready message keeps a valid home only",
+      "group": ["a frame's page from its home"],
+      "calls": [
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "index.html",
+              "title": "",
+              "root": {
+                "base": "/",
+                "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+                "home": "cancun/"
+              }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "index.html",
+            "title": "",
+            "root": {
+              "base": "/",
+              "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+              "home": "cancun/"
+            }
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "index.html",
+              "title": "",
+              "root": {
+                "base": "/",
+                "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+                "home": "cancun"
+              }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "index.html",
+            "title": "",
+            "root": {
+              "base": "/",
+              "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+            }
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "index.html",
+              "title": "",
+              "root": {
+                "base": "/",
+                "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+                "home": "../"
+              }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "index.html",
+            "title": "",
+            "root": {
+              "base": "/",
+              "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+            }
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "index.html",
+              "title": "",
+              "root": {
+                "base": "/",
+                "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+                "home": "a/../"
+              }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "index.html",
+            "title": "",
+            "root": {
+              "base": "/",
+              "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+            }
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "index.html",
+              "title": "",
+              "root": {
+                "base": "/",
+                "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+                "home": "/a/"
+              }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "index.html",
+            "title": "",
+            "root": {
+              "base": "/",
+              "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+            }
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "index.html",
+              "title": "",
+              "root": {
+                "base": "/",
+                "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+                "home": "a?b/"
+              }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "index.html",
+            "title": "",
+            "root": {
+              "base": "/",
+              "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+            }
+          }
+        },
+        {
+          "fn": "renderedPage.parseFrameMessage",
+          "args": [
+            {
+              "roamgate": "rendered",
+              "type": "ready",
+              "url": "index.html",
+              "title": "",
+              "root": {
+                "base": "/",
+                "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+                "home": 3
+              }
+            }
+          ],
+          "result": {
+            "roamgate": "rendered",
+            "type": "ready",
+            "url": "index.html",
+            "title": "",
+            "root": {
+              "base": "/",
+              "to": "/rendered/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

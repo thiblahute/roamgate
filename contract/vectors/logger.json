@@ -1,0 +1,301 @@
+{
+  "description": "Log lines: levels, formatting, scopes, redaction and recovery summaries. Read by `bun test` in server/src/utils/logger.test.ts.",
+  "modules": { "logger": "server/src/utils/logger.ts" },
+  "cases": [
+    {
+      "name": "filters below the configured level and routes warnings to stderr",
+      "group": ["server logger"],
+      "calls": [
+        {
+          "fn": "logger.createLogger",
+          "args": [
+            {
+              "level": "info",
+              "scope": "bridge",
+              "stdout": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": [
+                        "2026-01-02T03:04:05.678Z INFO bridge listening port=8787"
+                      ],
+                      "result": 1
+                    }
+                  ]
+                }
+              },
+              "stderr": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": [
+                        "2026-01-02T03:04:05.678Z WARN bridge degraded connection=default"
+                      ],
+                      "result": 1
+                    }
+                  ]
+                }
+              },
+              "now": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": [],
+                      "result": { "$date": "2026-01-02T03:04:05.678Z" }
+                    },
+                    {
+                      "args": [],
+                      "result": { "$date": "2026-01-02T03:04:05.678Z" }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "result": { "$handle": 1 }
+        },
+        {
+          "on": 1,
+          "method": "debug",
+          "args": ["hidden request", { "method": "workspace.list" }],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 1,
+          "method": "info",
+          "args": ["listening", { "port": 8787 }],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 1,
+          "method": "warn",
+          "args": ["degraded", { "connection": "default" }],
+          "result": { "$undefined": true }
+        }
+      ]
+    },
+    {
+      "name": "formats child scopes and sanitizes bounded context",
+      "group": ["server logger"],
+      "calls": [
+        {
+          "fn": "logger.createLogger",
+          "args": [
+            {
+              "level": "debug",
+              "scope": "bridge",
+              "stdout": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": [
+                        "2026-01-02T03:04:05.678Z DEBUG bridge.terminal frame received terminal=term-1 detail=\"token=*** xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\" token=*** url=\"https://example.com/login?token=***&next=%2F\""
+                      ],
+                      "result": 1
+                    }
+                  ]
+                }
+              },
+              "now": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": [],
+                      "result": { "$date": "2026-01-02T03:04:05.678Z" }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "result": { "$handle": 2 }
+        },
+        {
+          "on": 2,
+          "method": "child",
+          "args": ["terminal"],
+          "result": { "$handle": 3 }
+        },
+        {
+          "on": 3,
+          "method": "debug",
+          "args": [
+            "frame\nreceived",
+            {
+              "terminal": "term-1",
+              "detail": "token=private-value xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+              "token": "private-value",
+              "url": "https://example.com/login?token=private-value&next=%2F"
+            }
+          ],
+          "result": { "$undefined": true }
+        }
+      ]
+    },
+    {
+      "name": "formats arbitrary lines without control-character injection",
+      "group": ["server logger"],
+      "calls": [
+        {
+          "fn": "logger.formatLogLine",
+          "args": [
+            {
+              "timestamp": { "$date": "2026-01-02T03:04:05.678Z" },
+              "level": "error",
+              "scope": "bridge\nspoofed",
+              "message": "failed\r\nFAKE ERROR",
+              "fields": { "bad key": "a\tb" }
+            }
+          ],
+          "result": "2026-01-02T03:04:05.678Z ERROR bridge spoofed failed FAKE ERROR bad_key=\"a b\""
+        }
+      ]
+    },
+    {
+      "name": "accepts supported levels case-insensitively",
+      "group": ["log level parsing"],
+      "calls": [
+        { "fn": "logger.parseLogLevel", "args": ["DEBUG"], "result": "debug" },
+        { "fn": "logger.parseLogLevel", "args": [" warn "], "result": "warn" }
+      ]
+    },
+    {
+      "name": "rejects unsupported levels with the accepted values",
+      "group": ["log level parsing"],
+      "calls": [
+        {
+          "fn": "logger.parseLogLevel",
+          "args": ["trace"],
+          "throws": "invalid log level \"trace\"; expected error, warn, info, debug"
+        }
+      ]
+    },
+    {
+      "name": "deduplicates equivalent failures and summarizes recovery",
+      "group": ["recovery reporter"],
+      "calls": [
+        {
+          "fn": "logger.createLogger",
+          "args": [
+            {
+              "level": "info",
+              "scope": "bridge.events",
+              "stdout": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": [
+                        "2026-01-02T03:04:05.678Z INFO bridge.events subscription recovered connection=default failures=2 suppressed=1 duration_ms=2000"
+                      ],
+                      "result": 1
+                    }
+                  ]
+                }
+              },
+              "stderr": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": [
+                        "2026-01-02T03:04:05.678Z WARN bridge.events subscription failed connection=default error=\"socket unavailable\""
+                      ],
+                      "result": 1
+                    }
+                  ]
+                }
+              },
+              "now": {
+                "$fn": {
+                  "calls": [
+                    {
+                      "args": [],
+                      "result": { "$date": "2026-01-02T03:04:05.678Z" }
+                    },
+                    {
+                      "args": [],
+                      "result": { "$date": "2026-01-02T03:04:05.678Z" }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "result": { "$handle": 4 }
+        },
+        {
+          "fn": "logger.createRecoveryReporter",
+          "args": [
+            {
+              "logger": { "$handle": 4 },
+              "failureMessage": "subscription failed",
+              "recoveryMessage": "subscription recovered",
+              "now": {
+                "$fn": {
+                  "calls": [
+                    { "args": [], "result": 1000 },
+                    { "args": [], "result": 3000 }
+                  ]
+                }
+              }
+            }
+          ],
+          "result": { "$handle": 5 }
+        },
+        {
+          "on": 5,
+          "method": "failure",
+          "args": [
+            { "$error": { "name": "Error", "message": "socket unavailable" } },
+            { "connection": "default" }
+          ],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 5,
+          "method": "failure",
+          "args": [
+            { "$error": { "name": "Error", "message": "socket unavailable" } },
+            { "connection": "default" }
+          ],
+          "result": { "$undefined": true }
+        },
+        {
+          "on": 5,
+          "method": "recovered",
+          "args": [{ "connection": "default" }],
+          "result": true
+        },
+        {
+          "on": 5,
+          "method": "recovered",
+          "args": [{ "connection": "default" }],
+          "result": false
+        }
+      ]
+    },
+    {
+      "name": "redacts PINs and session signing material from log fields and messages",
+      "calls": [
+        {
+          "fn": "logger.formatLogLine",
+          "args": [
+            {
+              "timestamp": { "$date": "2026-01-02T03:04:05.678Z" },
+              "level": "warn",
+              "scope": "bridge",
+              "message": "ROAMGATE_PIN=123456 pin=654321 {\"pin\":\"987654\"} sessionSecret=abcdef",
+              "fields": {
+                "pin": "123456",
+                "ROAMGATE_PIN": "654321",
+                "HERDR_GUI_PIN": "987654",
+                "sessionSecret": "abcdef",
+                "url": "https://example.test/?pin=123456"
+              }
+            }
+          ],
+          "result": "2026-01-02T03:04:05.678Z WARN bridge ROAMGATE_PIN=*** pin=*** {\"pin\":***} sessionSecret=*** pin=*** ROAMGATE_PIN=*** HERDR_GUI_PIN=*** sessionSecret=*** url=\"https://example.test/?pin=***\""
+        }
+      ]
+    }
+  ]
+}

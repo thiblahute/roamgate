@@ -1,5 +1,6 @@
-/** A command the user can type in a Claude session: `/name`. */
-export type AgentCommand = { name: string; description: string };
+import type { AgentCommand } from "../../../shared/agentSession";
+
+export type { AgentCommand };
 
 /**
  * The skills and custom commands a Claude session offers, from the listings
