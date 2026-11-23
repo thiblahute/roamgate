@@ -7128,10 +7128,13 @@ name = "roamgate-claude"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "fancy-regex 0.17.0",
  "futures-util",
+ "indexmap",
  "regex",
  "roamgate-agents",
  "roamgate-base",
+ "roamgate-conversation",
  "roamgate-exec",
  "roamgate-protocol",
  "serde",
@@ -7139,6 +7142,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
+ "url",
 ]
 
 [[package]]

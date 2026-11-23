@@ -2,11 +2,13 @@
 //! For now its tool registry: every tool Roamgate gives a model comes from
 //! `contract/tools/catalog.json`, served as agent socket commands, MCP
 //! tools, the Claude Code mod's catalog and SKILL.md's tool lists, with
-//! the texts compared byte for byte (`registry`). The Claude drivers, the
+//! the texts compared byte for byte (`registry`); conversation mode's
+//! Claude drivers (`conversation`). The headless driver, the
 //! loopback MCP server and the mod hub come with their subtasks (S19 to
 //! S23).
 
 pub mod catalog;
+pub mod conversation;
 pub mod driver;
 pub mod mcp;
 pub mod registry;

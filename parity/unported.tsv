@@ -54,7 +54,6 @@ roamgate-workspace	server/src/worktree/	S17
 roamgate-workspace	server/src/config/workspace-tree	S17
 
 # roamgate-claude was made by S15 for the tool registry; the Claude driver,
-# the claude-mod hub and the conversation drivers come with their subtasks.
+# the claude-mod hub comes with its subtask (S21 ported the conversation drivers).
 roamgate-claude	server/src/agent/claude-mod	S19
-roamgate-claude	server/src/conversation/drivers/claude-	S21
 roamgate-conversation	server/src/conversation/	S21

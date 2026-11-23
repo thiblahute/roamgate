@@ -211,8 +211,10 @@ pub trait RewindContext: Send + Sync {
         kind: &'a str,
         params: Object,
     ) -> BoxFuture<'a, Option<ControlAnswer>>;
-    /// None: this session cannot read its transcript.
-    fn read_transcript(&self) -> Option<BoxFuture<'_, Option<Transcript>>> {
+    /// None: this session cannot read its transcript. The future's error
+    /// is a read that failed (logged, and the rewind goes on without it);
+    /// its None, no transcript.
+    fn read_transcript(&self) -> Option<BoxFuture<'_, Result<Option<Transcript>, String>>> {
         None
     }
     fn log(&self, message: &str, fields: Option<Object>);
@@ -234,12 +236,13 @@ pub trait RewindDriver: Send + Sync {
     /// What a rewind to before `uuid` would do to the code; starts nothing.
     fn check<'a>(&'a self, context: &'a dyn RewindContext, uuid: &'a str) -> BoxFuture<'a, Value>;
     /// Rewinds, the session being idle and nothing written meanwhile
-    /// (`AgentChatRewindResult`).
+    /// (`AgentChatRewindResult`). An error is what the TS run threw (the
+    /// process would not start).
     fn run<'a>(
         &'a self,
         context: &'a dyn RewindContext,
         input: RewindInput,
-    ) -> BoxFuture<'a, Value>;
+    ) -> BoxFuture<'a, Result<Value, String>>;
 }
 
 /// What listing and switching models needs of the running process.
