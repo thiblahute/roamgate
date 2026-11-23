@@ -1,9 +1,6 @@
 # Rows of an existing crate that wait for a later subtask (parity/src/ledger.rs, Unported):
 # crate, file prefix, subtask. Remove an entry when its subtask ports those files.
 roamgate-cli	server/src/cli/history	S18
-roamgate-connections	server/src/connections/agent-sessions	S21
-roamgate-connections	server/src/connections/agent-tab-title	S21
-roamgate-connections	server/src/connections/agent-tasks	S21
 roamgate-connections	server/src/connections/http-routing	S18
 roamgate-connections	server/src/connections/protocol	S18
 roamgate-connections	server/src/connections/runtime	S21
@@ -11,8 +8,6 @@ roamgate-notify	server/src/connections/runtime	S18
 roamgate-workspace	server/src/connections/runtime	S17
 roamgate-connections	server/src/connections/shutdown	S18
 roamgate-connections	server/src/connections/startup	S18
-roamgate-connections	server/src/connections/tab-auto-rename	S21
-roamgate-connections	server/src/profiles/	S21
 roamgate-herdr	server/src/bridge/endpoint-	S18
 roamgate-forge	server/src/review/forge	S19
 roamgate-forge	server/src/review/github	S19
@@ -57,3 +52,8 @@ roamgate-workspace	server/src/config/workspace-tree	S17
 # the claude-mod hub comes with its subtask (S21 ported the conversation drivers).
 roamgate-claude	server/src/agent/claude-mod	S19
 roamgate-conversation	server/src/conversation/	S21
+# profiles.test.ts checks each spawn site follows the profile: those rows go with the sites.
+roamgate-claude	server/src/profiles/	S21
+roamgate-conversation	server/src/profiles/	S21
+roamgate-mr-reviews	server/src/profiles/	S20
+roamgate-voice-server	server/src/profiles/	S22

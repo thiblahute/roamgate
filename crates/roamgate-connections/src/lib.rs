@@ -2,8 +2,8 @@
 //! Phase 2 moved (S12, limit-resume and the usage-limit module) and the
 //! host layer of S16: the profile service, the runtime of a generation the
 //! core owns and the front's SSH commands (the `host` family's channel
-//! adapter is in the `roamgate` binary); routing, agent sessions, tab
-//! titles and agent profiles come with S18 and S21.
+//! adapter is in the `roamgate` binary), then S21's: every connection's
+//! agents, tab titles and agent profiles; routing comes with S18.
 //!
 //! | Module | What |
 //! |---|---|
@@ -18,9 +18,18 @@
 //! | [`subscription_loop`] | the Herdr event subscription loop (connections/subscription-loop.ts) |
 //! | [`agent_status`] | per-pane agent status subscriptions (connections/agent-status-subscription.ts) |
 //! | [`host_runtime`] | a generation's transport, probe and Herdr subscriptions while the core owns the `host` family, the rest built by the front (connections/runtime.ts) |
+//! | [`agent_models`] | /model's names, the picker's list, a model's short name (shared/agentModels.ts) |
+//! | [`agent_profiles`] | agent profiles: commands, session choices, launches, model discovery, `agent_profile.*` (profiles/, shared/agentProfiles.ts) |
+//! | [`agent_summaries`] | every ready connection's agents and their side tasks at once (connections/agent-sessions.ts, agent-tasks.ts) |
+//! | [`agent_tab_title`] | the title of a pane's agent session for its tab (connections/agent-tab-title.ts) |
+//! | [`tab_auto_rename`] | tabs named after their agent's session (connections/tab-auto-rename.ts) |
 //! | [`host_ops`] | the front's SSH commands run or held in the core's session slots (bridge/ssh-sessions.ts) |
 
+pub mod agent_models;
+pub mod agent_profiles;
 pub mod agent_status;
+pub mod agent_summaries;
+pub mod agent_tab_title;
 pub mod host_ops;
 pub mod host_runtime;
 pub mod limit_resume;
@@ -31,6 +40,7 @@ pub mod profiles;
 pub mod ssh_guard;
 pub mod ssh_profile_runtime;
 pub mod subscription_loop;
+pub mod tab_auto_rename;
 pub mod usage_limit;
 
 /// A boxed future, as the effects traits return.

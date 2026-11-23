@@ -1635,11 +1635,11 @@ server/src/config/workspace-tree.test.ts	reads the workspace Herdr reports close
 server/src/config/workspace-tree.test.ts	a closed workspace leaves at once, its group and siblings kept	rust-unit:roamgate-workspace	the workspace tree's store: its operations are the workspace-tree vectors' logic, which ports with the workspace family; it writes through SettingsStore (decided 2026-11-23)
 server/src/config/workspace-tree.test.ts	a ready connection's vanished workspaces leave once two reads agree	rust-unit:roamgate-workspace	the workspace tree's store: its operations are the workspace-tree vectors' logic, which ports with the workspace family; it writes through SettingsStore (decided 2026-11-23)
 server/src/config/workspace-tree.test.ts	a workspace back by the second read stays	rust-unit:roamgate-workspace	the workspace tree's store: its operations are the workspace-tree vectors' logic, which ports with the workspace family; it writes through SettingsStore (decided 2026-11-23)
-server/src/connections/agent-sessions.test.ts	summarizes only ready connections without switching or starting others	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-sessions.test.ts	contains read failures and tolerates missing optional agent metadata	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-sessions.test.ts	discards a retired runtime even if its read finishes before other servers	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-sessions.test.ts	Windows summaries use raw agents and skip Unix enrichment	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-sessions.test.ts	preserves each Unix runtime's durable activity metadata	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
+server/src/connections/agent-sessions.test.ts	summarizes only ready connections without switching or starting others	rust-unit:roamgate-connections:agent_summaries::tests::summarizes_only_ready_connections_without_switching_or_starting_others	
+server/src/connections/agent-sessions.test.ts	contains read failures and tolerates missing optional agent metadata	rust-unit:roamgate-connections:agent_summaries::tests::contains_read_failures_and_tolerates_missing_optional_agent_metadata	
+server/src/connections/agent-sessions.test.ts	discards a retired runtime even if its read finishes before other servers	rust-unit:roamgate-connections:agent_summaries::tests::discards_a_retired_runtime_even_if_its_read_finishes_before_other_servers	
+server/src/connections/agent-sessions.test.ts	Windows summaries use raw agents and skip Unix enrichment	rust-unit:roamgate-connections:agent_summaries::tests::windows_summaries_use_raw_agents_and_skip_unix_enrichment	
+server/src/connections/agent-sessions.test.ts	preserves each Unix runtime's durable activity metadata	rust-unit:roamgate-connections:agent_summaries::tests::preserves_each_unix_runtimes_durable_activity_metadata	
 server/src/connections/agent-status-subscription.test.ts	collects sorted pane ids that currently host an agent	rust-unit:roamgate-connections:agent_status::tests::collects_sorted_pane_ids_that_currently_host_an_agent	connection manager, profiles, routing and subscriptions
 server/src/connections/agent-status-subscription.test.ts	subscribes per agent pane and forwards status events	rust-unit:roamgate-connections:agent_status::tests::subscribes_per_agent_pane_and_forwards_status_events	connection manager, profiles, routing and subscriptions
 server/src/connections/agent-status-subscription.test.ts	rebuilds the subscription when a membership event changes the pane set	rust-unit:roamgate-connections:agent_status::tests::rebuilds_the_subscription_when_a_membership_event_changes_the_pane_set	connection manager, profiles, routing and subscriptions
@@ -1651,14 +1651,14 @@ server/src/connections/agent-status-subscription.test.ts	resubscribes when the s
 server/src/connections/agent-status-subscription.test.ts	honors a rebuild requested while a listing was in flight	rust-unit:roamgate-connections:agent_status::tests::honors_a_rebuild_requested_while_a_listing_was_in_flight	connection manager, profiles, routing and subscriptions
 server/src/connections/agent-status-subscription.test.ts	recovers when subscribe throws synchronously	rust-unit:roamgate-connections:agent_status::tests::recovers_when_subscribe_throws_synchronously	connection manager, profiles, routing and subscriptions
 server/src/connections/agent-status-subscription.test.ts	stop is idempotent and closes the active subscription	rust-unit:roamgate-connections:agent_status::tests::stop_is_idempotent_and_closes_the_active_subscription	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-tab-title.test.ts	Hermes selects the reported id rather than a newer concurrent session	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-tab-title.test.ts	missing or unmatched ids never adopt an unrelated Hermes session	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-tab-title.test.ts	the actual SSH SQLite command is scoped and read-only	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-tab-title.test.ts	Antigravity reads only the reported session annotation and handles escaped titles	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-tab-title.test.ts	Claude uses the existing bound summary and rejects a different session	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-tab-title.test.ts	drops a result when the agent session changes while reading its title	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-tab-title.test.ts	uses only this pane's sanitized OSC title when no bound metadata is available	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/agent-tasks.test.ts	reads side tasks of agents on several connections in one batch	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
+server/src/connections/agent-tab-title.test.ts	Hermes selects the reported id rather than a newer concurrent session	rust-unit:roamgate-connections:agent_tab_title::tests::hermes_selects_the_reported_id_rather_than_a_newer_concurrent_session	
+server/src/connections/agent-tab-title.test.ts	missing or unmatched ids never adopt an unrelated Hermes session	rust-unit:roamgate-connections:agent_tab_title::tests::missing_or_unmatched_ids_never_adopt_an_unrelated_hermes_session	
+server/src/connections/agent-tab-title.test.ts	the actual SSH SQLite command is scoped and read-only	rust-unit:roamgate-connections:agent_tab_title::tests::the_actual_ssh_sqlite_command_is_scoped_and_read_only	
+server/src/connections/agent-tab-title.test.ts	Antigravity reads only the reported session annotation and handles escaped titles	rust-unit:roamgate-connections:agent_tab_title::tests::antigravity_reads_only_the_reported_session_annotation_and_handles_escaped_titles	
+server/src/connections/agent-tab-title.test.ts	Claude uses the existing bound summary and rejects a different session	rust-unit:roamgate-connections:agent_tab_title::tests::claude_uses_the_existing_bound_summary_and_rejects_a_different_session	
+server/src/connections/agent-tab-title.test.ts	drops a result when the agent session changes while reading its title	rust-unit:roamgate-connections:agent_tab_title::tests::drops_a_result_when_the_agent_session_changes_while_reading_its_title	
+server/src/connections/agent-tab-title.test.ts	uses only this pane's sanitized OSC title when no bound metadata is available	rust-unit:roamgate-connections:agent_tab_title::tests::uses_only_this_panes_sanitized_osc_title_when_no_bound_metadata_is_available	
+server/src/connections/agent-tasks.test.ts	reads side tasks of agents on several connections in one batch	rust-unit:roamgate-connections:agent_summaries::tests::reads_side_tasks_of_agents_on_several_connections_in_one_batch	
 server/src/connections/host-facade.test.ts	calls go to the core's client of the generation	internal:core channel	the Bun side of the host family's handover (plan 8.2), deleted at cut-over; the core's side is crates/roamgate-connections (host_runtime, host_ops) and the hybrid runs (PARITY_RUST_OWNERS=host, ROAMGATE_TEST_RUST_FAMILIES=host)
 server/src/connections/host-facade.test.ts	a failing check before sending sends nothing	internal:core channel	the Bun side of the host family's handover (plan 8.2), deleted at cut-over; the core's side is crates/roamgate-connections (host_runtime, host_ops) and the hybrid runs (PARITY_RUST_OWNERS=host, ROAMGATE_TEST_RUST_FAMILIES=host)
 server/src/connections/host-facade.test.ts	a built host command runs there with its input, lane and connection	internal:core channel	the Bun side of the host family's handover (plan 8.2), deleted at cut-over; the core's side is crates/roamgate-connections (host_runtime, host_ops) and the hybrid runs (PARITY_RUST_OWNERS=host, ROAMGATE_TEST_RUST_FAMILIES=host)
@@ -1793,25 +1793,25 @@ server/src/connections/subscription-loop.test.ts	stop before ready closes once a
 server/src/connections/subscription-loop.test.ts	stop during retry wakes immediately and prevents another attempt	rust-unit:roamgate-connections:subscription_loop::tests::stop_during_retry_wakes_immediately_and_prevents_another_attempt	connection manager, profiles, routing and subscriptions
 server/src/connections/subscription-loop.test.ts	repeated stop shares the same drain and remains idempotent	rust-unit:roamgate-connections:subscription_loop::tests::repeated_stop_shares_the_same_drain_and_remains_idempotent	connection manager, profiles, routing and subscriptions
 server/src/connections/subscription-loop.test.ts	retries after ready and closed rejections even when callbacks throw	rust-unit:roamgate-connections:subscription_loop::tests::retries_after_ready_and_closed_rejections_even_when_callbacks_throw	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	identifies shell prompts and shell binaries as generic	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	identifies agent generated titles as non-generic	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	automatically renames tab when agent session title is available	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	does not overwrite manually renamed tabs	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	prioritizes focused pane agent title over other panes in split tab	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	falls back to first agent pane when focused pane has no agent in split tab	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	does not call tab.rename if title has not changed	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	does not rename when disabled via isEnabled setting	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	cleans up state when tab is closed	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	debounces evaluation on pane.agent_detected event	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	triggers evaluation on pane.agent_status_changed event	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	passes candidatePane to getAgentTitleForPane	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	preserves an existing custom label on startup/restart	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	cancels a title lookup after ${action}	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	rechecks manual ownership immediately before a queued RPC is sent	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	retries a failed rename with the same title	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	recognizes its own rename events and protects later edits from another client	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	keeps newly numbered default tabs eligible	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
-server/src/connections/tab-auto-rename.test.ts	serializes overlapping evaluations	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
+server/src/connections/tab-auto-rename.test.ts	identifies shell prompts and shell binaries as generic	rust-unit:roamgate-connections:tab_auto_rename::tests::identifies_shell_prompts_and_shell_binaries_as_generic	
+server/src/connections/tab-auto-rename.test.ts	identifies agent generated titles as non-generic	rust-unit:roamgate-connections:tab_auto_rename::tests::identifies_agent_generated_titles_as_non_generic	
+server/src/connections/tab-auto-rename.test.ts	automatically renames tab when agent session title is available	rust-unit:roamgate-connections:tab_auto_rename::tests::automatically_renames_tab_when_agent_session_title_is_available	
+server/src/connections/tab-auto-rename.test.ts	does not overwrite manually renamed tabs	rust-unit:roamgate-connections:tab_auto_rename::tests::does_not_overwrite_manually_renamed_tabs	
+server/src/connections/tab-auto-rename.test.ts	prioritizes focused pane agent title over other panes in split tab	rust-unit:roamgate-connections:tab_auto_rename::tests::prioritizes_focused_pane_agent_title_over_other_panes_in_split_tab	
+server/src/connections/tab-auto-rename.test.ts	falls back to first agent pane when focused pane has no agent in split tab	rust-unit:roamgate-connections:tab_auto_rename::tests::falls_back_to_first_agent_pane_when_focused_pane_has_no_agent_in_split_tab	
+server/src/connections/tab-auto-rename.test.ts	does not call tab.rename if title has not changed	rust-unit:roamgate-connections:tab_auto_rename::tests::does_not_call_tab_rename_if_title_has_not_changed	
+server/src/connections/tab-auto-rename.test.ts	does not rename when disabled via isEnabled setting	rust-unit:roamgate-connections:tab_auto_rename::tests::does_not_rename_when_disabled_via_is_enabled_setting	
+server/src/connections/tab-auto-rename.test.ts	cleans up state when tab is closed	rust-unit:roamgate-connections:tab_auto_rename::tests::cleans_up_state_when_tab_is_closed	
+server/src/connections/tab-auto-rename.test.ts	debounces evaluation on pane.agent_detected event	rust-unit:roamgate-connections:tab_auto_rename::tests::debounces_evaluation_on_pane_agent_detected_event	
+server/src/connections/tab-auto-rename.test.ts	triggers evaluation on pane.agent_status_changed event	rust-unit:roamgate-connections:tab_auto_rename::tests::triggers_evaluation_on_pane_agent_status_changed_event	
+server/src/connections/tab-auto-rename.test.ts	passes candidatePane to getAgentTitleForPane	rust-unit:roamgate-connections:tab_auto_rename::tests::passes_candidate_pane_to_get_agent_title_for_pane	
+server/src/connections/tab-auto-rename.test.ts	preserves an existing custom label on startup/restart	rust-unit:roamgate-connections:tab_auto_rename::tests::preserves_an_existing_custom_label_on_startup_restart	
+server/src/connections/tab-auto-rename.test.ts	cancels a title lookup after ${action}	rust-unit:roamgate-connections:tab_auto_rename::tests::cancels_a_title_lookup_after_action	
+server/src/connections/tab-auto-rename.test.ts	rechecks manual ownership immediately before a queued RPC is sent	rust-unit:roamgate-connections:tab_auto_rename::tests::rechecks_manual_ownership_immediately_before_a_queued_rpc_is_sent	
+server/src/connections/tab-auto-rename.test.ts	retries a failed rename with the same title	rust-unit:roamgate-connections:tab_auto_rename::tests::retries_a_failed_rename_with_the_same_title	
+server/src/connections/tab-auto-rename.test.ts	recognizes its own rename events and protects later edits from another client	rust-unit:roamgate-connections:tab_auto_rename::tests::recognizes_its_own_rename_events_and_protects_later_edits_from_another_client	
+server/src/connections/tab-auto-rename.test.ts	keeps newly numbered default tabs eligible	rust-unit:roamgate-connections:tab_auto_rename::tests::keeps_newly_numbered_default_tabs_eligible	
+server/src/connections/tab-auto-rename.test.ts	serializes overlapping evaluations	rust-unit:roamgate-connections:tab_auto_rename::tests::serializes_overlapping_evaluations	
 server/src/connections/windows-ssh-live.test.ts	Windows SSH live fixture dispatches only registered string reply IDs	internal:T3 live	opt-in windows-ssh-live (plan 5.4 T3)
 server/src/contract-record/check.test.ts	reports mismatches, unknown fields and unlisted messages	pending:S25	the record checker is tooling the parity suite runs under Bun; ported into parity/ when Bun goes (decided 2026-11-23)
 server/src/contract-record/check.test.ts	builds a shape census without a contract and diffs it	pending:S25	the record checker is tooling the parity suite runs under Bun; ported into parity/ when Bun goes (decided 2026-11-23)
@@ -3053,42 +3053,42 @@ server/src/notifications/web-push.test.ts	push payload uses Herdr text and toler
 server/src/notifications/web-push.test.ts	Ranger push preserves notification text and links to the durable task run	rust-unit:roamgate-notify:payload::tests::ranger_push_preserves_notification_text_and_links_to_the_durable_task_run	feed, task events and Web Push
 server/src/notifications/web-push.test.ts	Ranger success uses completion preferences; failures and waiting use attention preferences	rust-unit:roamgate-notify:payload::tests::ranger_success_uses_completion_preferences_failures_and_waiting_use_attention_preferences	feed, task events and Web Push
 server/src/notifications/web-push.test.ts	a device can stay quiet while the Android app is connected; the feed's payload and skip apply	rust-unit:roamgate-notify:web_push::tests::a_device_can_stay_quiet_while_the_android_app_is_connected_the_feed_s_payload_and_skip_apply	feed, task events and Web Push
-server/src/profiles/profiles.test.ts	no profiles: plain claude, exactly as before	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	a secret file is read at start, its newline dropped	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	a secret others can read is refused, naming the file only	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	a session's choice wins over the default	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	sessions sent away by a limit are due back after its reset	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	a token is good once, for its pane, for a while	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	conversation mode's headless start	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	the hand-back to the terminal	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	the reviews' Claude pane	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	the voice helpers	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	a profile command resolves once its secret reads	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	lists a gateway's chat models with the profile's token	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	warns about a configured model the server no longer has	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	Claude itself gets its aliases, asking no server	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	a failed list keeps the token out of its message	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	every start has it until the session answered on its profile	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	--model is replaced, never doubled	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	/model: kept with the session's profile until it answered with it	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/profiles.test.ts	a holder resume and a typed resume carry it	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	get: the session's profile, the others and its usage limit	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	switch in the terminal: remembered, then the TUI restarts	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	switch in conversation mode restarts its process	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	a refused switch leaves the session as it was	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	refusals name the agent, not its program; commands stay	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	switch checks the pane still runs the session it was asked for	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	launch: plain claude types as before, a profile a token	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	the terminal's idle Claude is told to continue	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	conversation mode gets it as a message	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	a busy terminal is left alone	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	a running session is switched; one gone just forgets	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	nothing happens with the setting off	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	back on Claude after Kimi: started on its Claude model until it answered	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	/model is kept until the session answered with it, not settled by an older answer	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	get says the model the session runs, the surest first	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	get says another agent's model from its transcript	rust-unit:roamgate-connections	agent profiles
-server/src/profiles/rpc.test.ts	a refused switch keeps the one-time model it had	rust-unit:roamgate-connections	agent profiles
+server/src/profiles/profiles.test.ts	no profiles: plain claude, exactly as before	rust-unit:roamgate-connections:agent_profiles::store::tests::no_profiles_plain_claude_exactly_as_before	
+server/src/profiles/profiles.test.ts	a secret file is read at start, its newline dropped	rust-unit:roamgate-connections:agent_profiles::store::tests::a_secret_file_is_read_at_start_its_newline_dropped	
+server/src/profiles/profiles.test.ts	a secret others can read is refused, naming the file only	rust-unit:roamgate-connections:agent_profiles::store::tests::a_secret_others_can_read_is_refused_naming_the_file_only	
+server/src/profiles/profiles.test.ts	a session's choice wins over the default	rust-unit:roamgate-connections:agent_profiles::store::tests::a_sessions_choice_wins_over_the_default	
+server/src/profiles/profiles.test.ts	sessions sent away by a limit are due back after its reset	rust-unit:roamgate-connections:agent_profiles::store::tests::sessions_sent_away_by_a_limit_are_due_back_after_its_reset	
+server/src/profiles/profiles.test.ts	a token is good once, for its pane, for a while	rust-unit:roamgate-connections:agent_profiles::store::tests::a_token_is_good_once_for_its_pane_for_a_while	
+server/src/profiles/profiles.test.ts	conversation mode's headless start	rust-unit:roamgate-claude	the headless start command (holderStartCommand) is the Claude conversation driver's
+server/src/profiles/profiles.test.ts	the hand-back to the terminal	rust-unit:roamgate-conversation	resumeReply is the holder protocol's
+server/src/profiles/profiles.test.ts	the reviews' Claude pane	rust-unit:roamgate-mr-reviews	profileLaunch is the MR reviews' Claude pane
+server/src/profiles/profiles.test.ts	the voice helpers	rust-unit:roamgate-voice-server	researchArgs and toolArgs are the voice helpers'
+server/src/profiles/profiles.test.ts	a profile command resolves once its secret reads	rust-unit:roamgate-connections:agent_profiles::store::tests::a_profile_command_resolves_once_its_secret_reads	
+server/src/profiles/profiles.test.ts	lists a gateway's chat models with the profile's token	rust-unit:roamgate-connections:agent_profiles::discovery::tests::lists_a_gateways_chat_models_with_the_profiles_token	
+server/src/profiles/profiles.test.ts	warns about a configured model the server no longer has	rust-unit:roamgate-connections:agent_profiles::discovery::tests::warns_about_a_configured_model_the_server_no_longer_has	
+server/src/profiles/profiles.test.ts	Claude itself gets its aliases, asking no server	rust-unit:roamgate-connections:agent_profiles::discovery::tests::claude_itself_gets_its_aliases_asking_no_server	
+server/src/profiles/profiles.test.ts	a failed list keeps the token out of its message	rust-unit:roamgate-connections:agent_profiles::discovery::tests::a_failed_list_keeps_the_token_out_of_its_message	
+server/src/profiles/profiles.test.ts	every start has it until the session answered on its profile	rust-unit:roamgate-connections:agent_profiles::store::tests::every_start_has_it_until_the_session_answered_on_its_profile	
+server/src/profiles/profiles.test.ts	--model is replaced, never doubled	rust-unit:roamgate-connections:agent_profiles::store::tests::model_is_replaced_never_doubled	
+server/src/profiles/profiles.test.ts	/model: kept with the session's profile until it answered with it	rust-unit:roamgate-connections:agent_profiles::store::tests::model_kept_with_the_sessions_profile_until_it_answered_with_it	
+server/src/profiles/profiles.test.ts	a holder resume and a typed resume carry it	rust-unit:roamgate-conversation	resumeReply is the holder protocol's
+server/src/profiles/rpc.test.ts	get: the session's profile, the others and its usage limit	rust-unit:roamgate-connections:agent_profiles::rpc::tests::get_the_sessions_profile_the_others_and_its_usage_limit	
+server/src/profiles/rpc.test.ts	switch in the terminal: remembered, then the TUI restarts	rust-unit:roamgate-connections:agent_profiles::rpc::tests::switch_in_the_terminal_remembered_then_the_tui_restarts	
+server/src/profiles/rpc.test.ts	switch in conversation mode restarts its process	rust-unit:roamgate-connections:agent_profiles::rpc::tests::switch_in_conversation_mode_restarts_its_process	
+server/src/profiles/rpc.test.ts	a refused switch leaves the session as it was	rust-unit:roamgate-connections:agent_profiles::rpc::tests::a_refused_switch_leaves_the_session_as_it_was	
+server/src/profiles/rpc.test.ts	refusals name the agent, not its program; commands stay	rust-unit:roamgate-connections:agent_profiles::rpc::tests::refusals_name_the_agent_not_its_program_commands_stay	
+server/src/profiles/rpc.test.ts	switch checks the pane still runs the session it was asked for	rust-unit:roamgate-connections:agent_profiles::rpc::tests::switch_checks_the_pane_still_runs_the_session_it_was_asked_for	
+server/src/profiles/rpc.test.ts	launch: plain claude types as before, a profile a token	rust-unit:roamgate-connections:agent_profiles::rpc::tests::launch_plain_claude_types_as_before_a_profile_a_token	
+server/src/profiles/rpc.test.ts	the terminal's idle Claude is told to continue	rust-unit:roamgate-connections:agent_profiles::rpc::tests::the_terminals_idle_claude_is_told_to_continue	
+server/src/profiles/rpc.test.ts	conversation mode gets it as a message	rust-unit:roamgate-connections:agent_profiles::rpc::tests::conversation_mode_gets_it_as_a_message	
+server/src/profiles/rpc.test.ts	a busy terminal is left alone	rust-unit:roamgate-connections:agent_profiles::rpc::tests::a_busy_terminal_is_left_alone	
+server/src/profiles/rpc.test.ts	a running session is switched; one gone just forgets	rust-unit:roamgate-connections:agent_profiles::rpc::tests::a_running_session_is_switched_one_gone_just_forgets	
+server/src/profiles/rpc.test.ts	nothing happens with the setting off	rust-unit:roamgate-connections:agent_profiles::rpc::tests::nothing_happens_with_the_setting_off	
+server/src/profiles/rpc.test.ts	back on Claude after Kimi: started on its Claude model until it answered	rust-unit:roamgate-connections:agent_profiles::rpc::tests::back_on_claude_after_kimi_started_on_its_claude_model_until_it_answered	
+server/src/profiles/rpc.test.ts	/model is kept until the session answered with it, not settled by an older answer	rust-unit:roamgate-connections:agent_profiles::rpc::tests::model_is_kept_until_the_session_answered_with_it_not_settled_by_an_older_answer	
+server/src/profiles/rpc.test.ts	get says the model the session runs, the surest first	rust-unit:roamgate-connections:agent_profiles::rpc::tests::get_says_the_model_the_session_runs_the_surest_first	
+server/src/profiles/rpc.test.ts	get says another agent's model from its transcript	rust-unit:roamgate-connections:agent_profiles::rpc::tests::get_says_another_agents_model_from_its_transcript	
+server/src/profiles/rpc.test.ts	a refused switch keeps the one-time model it had	rust-unit:roamgate-connections:agent_profiles::rpc::tests::a_refused_switch_keeps_the_one_time_model_it_had	
 server/src/review/agent-delivery.test.ts	text typed into the agent's pane has no control characters	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/agent-delivery.test.ts	agent names are plain words, quoted in the commands given to the agent	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/agent-delivery.test.ts	a long batch is cut, pointing the agent to the rest	rust-unit:roamgate-review	review service, storage, delivery and agent socket

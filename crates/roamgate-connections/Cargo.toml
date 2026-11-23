@@ -15,7 +15,12 @@ hex = "0.4"
 if-addrs = "0.13"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 indexmap = { version = "2", features = ["serde"] }
+jiff = "0.2"
 rand = "0.9"
+rusqlite = { version = "0.37", features = ["bundled"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+regex = "1"
+roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-herdr = { path = "../roamgate-herdr" }
@@ -23,7 +28,7 @@ sha2 = "0.10"
 tempfile = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["rt", "sync", "macros", "time", "net", "io-util"] }
+tokio = { version = "1", features = ["rt", "sync", "macros", "time", "net", "io-util", "process"] }
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["process"] }
