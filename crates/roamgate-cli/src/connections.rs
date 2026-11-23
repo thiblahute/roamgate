@@ -6,7 +6,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use roamgate_connections::manager::LEGACY_DEFAULT_CONNECTION_ID;
-use roamgate_connections::profile_test::{SocketsTest, test_connection_profile};
+use roamgate_connections::profile_service::{
+    ProbeResult, SshProbeEnvironment, test_connection_profile,
+};
 use roamgate_connections::profiles::{
     CONNECTION_PROFILE_FILE_VERSION, ConnectionProfile as Profile, LocalConnectionProfile,
     PersistedConnectionRegistry as Registry, validate_connection_profile,
@@ -31,7 +33,7 @@ pub type Probe = Box<dyn for<'a> Fn(&'a ServiceAccessInfo) -> LocalFuture<'a, bo
 
 /// Tests a profile: what Herdr answered, else why not.
 pub type TestProfile =
-    Box<dyn for<'a> Fn(&'a Profile) -> LocalFuture<'a, Result<SocketsTest, String>>>;
+    Box<dyn for<'a> Fn(&'a Profile) -> LocalFuture<'a, Result<ProbeResult, String>>>;
 
 /// The command's effects (ConnectionsDependencies).
 pub struct ConnectionsDeps {
@@ -48,8 +50,12 @@ impl ConnectionsDeps {
                 Box::pin(probe_listener(&access.host, access.port, access.tls))
             }),
             test: Box::new(move |profile| {
-                let env = env.clone();
-                Box::pin(async move { test_connection_profile(profile, env).await })
+                let environment = SshProbeEnvironment::real(env.clone());
+                Box::pin(async move {
+                    test_connection_profile(profile, &environment)
+                        .await
+                        .map_err(|error| error.message)
+                })
             }),
         }
     }

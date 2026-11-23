@@ -11,9 +11,10 @@ fn healthy() -> DoctorDeps {
         port_in_use: Box::new(|_, _| true),
         test_sockets: Box::new(|_, _| {
             Box::pin(async {
-                Ok(SocketsTest {
+                Ok(ProbeResult {
+                    ok: true,
                     version: Some("0.9.4".into()),
-                    protocol: serde_json::json!(7),
+                    protocol: 7,
                 })
             })
         }),

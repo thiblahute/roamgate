@@ -266,9 +266,10 @@ async fn test_reports_each_profile_and_fails_when_any_is_unreachable() {
                 if ssh {
                     Err("ssh: connection refused".to_owned())
                 } else {
-                    Ok(SocketsTest {
+                    Ok(ProbeResult {
+                        ok: true,
                         version: Some("0.9.4".into()),
-                        protocol: json!(7),
+                        protocol: 7,
                     })
                 }
             })

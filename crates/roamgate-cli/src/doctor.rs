@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use roamgate_base::env::roamgate_env;
-use roamgate_connections::profile_test::{SocketsTest, test_connection_sockets};
+use roamgate_connections::profile_service::{ProbeResult, test_connection_sockets};
 use roamgate_exec::process::ProcessRunner;
 use roamgate_exec::service::resolve_service_platform;
 use roamgate_herdr::service::{HerdrServiceDeps, herdr_service_status};
@@ -99,7 +99,7 @@ impl Check {
 
 /// Tests Herdr's control and render sockets.
 pub type TestSockets =
-    Box<dyn for<'a> Fn(&'a str, &'a str) -> LocalFuture<'a, Result<SocketsTest, String>>>;
+    Box<dyn for<'a> Fn(&'a str, &'a str) -> LocalFuture<'a, Result<ProbeResult, String>>>;
 
 /// The latest release's version for this platform; None without a package.
 pub type LatestVersion = Box<
@@ -141,7 +141,11 @@ impl Default for DoctorDeps {
             }),
             port_in_use: Box::new(default_port_in_use),
             test_sockets: Box::new(|control, client| {
-                Box::pin(test_connection_sockets(control, client))
+                Box::pin(async move {
+                    test_connection_sockets(control, client)
+                        .await
+                        .map_err(|error| error.message)
+                })
             }),
             herdr_service: Box::new(|context| {
                 let runtime = &context.runtime;
@@ -477,7 +481,7 @@ async fn herdr_check(context: &CliContext, setup: &ServiceSetup, deps: &DoctorDe
             format!(
                 "Herdr {}, protocol {}{managed}",
                 result.version.as_deref().unwrap_or("(unknown version)"),
-                crate::connections::template_text(&result.protocol)
+                crate::connections::template_text(&serde_json::json!(result.protocol))
             ),
         ),
         Err(error) => {
