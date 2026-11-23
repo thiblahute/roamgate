@@ -292,10 +292,37 @@ pub async fn run(args: &[String]) -> u8 {
         }
         env
     });
+    let address = format!("{}:{}", config.host, config.port);
+    let listener = match tokio::net::TcpListener::bind(&address).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            eprintln!("[bridge] FATAL: cannot listen on {address}: {error}");
+            return 1;
+        }
+    };
+    let bound: SocketAddr = listener.local_addr().expect("listener address");
+    let mut fields = roamgate_base::log::LogFields::new();
+    fields.insert(
+        "url".into(),
+        roamgate_cli::server_config::browser_url_for(&config.host, bound.port(), tls.is_some())
+            .into(),
+    );
+    fields.insert("websocket".into(), "/ws".into());
+    fields.insert("log_level".into(), config.log_level.as_str().into());
+    // Listening as the first core is welcomed, before it starts its
+    // connections: the Bun server listens, then connects.
+    let listening = {
+        let logged = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let logger = logger.clone();
+        Arc::new(move || {
+            if !logged.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                logger.info("listening", Some(&fields));
+            }
+        })
+    };
     let sockets = Sockets::default();
     let (link, core) = watch::channel(None);
     let (stop_core, core_stop) = watch::channel(false);
-    let mut core_up = core.clone();
     let sidecar = tokio::spawn(run_sidecar(
         SidecarConfig {
             command,
@@ -304,6 +331,7 @@ pub async fn run(args: &[String]) -> u8 {
             // front's do: a test clock's advance is no silence.
             clock: Arc::new(SystemClock),
             env: core_env,
+            on_welcome: listening.clone(),
         },
         sockets.clone(),
         link,
@@ -319,31 +347,11 @@ pub async fn run(args: &[String]) -> u8 {
         core,
         sockets,
     ));
-    let address = format!("{}:{}", config.host, config.port);
-    let listener = match tokio::net::TcpListener::bind(&address).await {
-        Ok(listener) => listener,
-        Err(error) => {
-            eprintln!("[bridge] FATAL: cannot listen on {address}: {error}");
-            sidecar.abort();
-            return 1;
-        }
-    };
-    let bound: SocketAddr = listener.local_addr().expect("listener address");
-    // Listening once the core is up, as the Bun server is once it serves.
-    let _ = tokio::time::timeout(
-        std::time::Duration::from_secs(60),
-        core_up.wait_for(|peer| peer.is_some()),
-    )
-    .await;
-    let mut fields = roamgate_base::log::LogFields::new();
-    fields.insert(
-        "url".into(),
-        roamgate_cli::server_config::browser_url_for(&config.host, bound.port(), tls.is_some())
-            .into(),
-    );
-    fields.insert("websocket".into(), "/ws".into());
-    fields.insert("log_level".into(), config.log_level.as_str().into());
-    logger.info("listening", Some(&fields));
+    // A core that never comes: listening all the same, its requests 503.
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        listening();
+    });
     let service = app(front).into_make_service_with_connect_info::<SocketAddr>();
     let served = match tls {
         Some(tls) => match crate::front_tls::TlsListener::new(listener, tls) {

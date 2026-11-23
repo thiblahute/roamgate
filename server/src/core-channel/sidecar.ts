@@ -74,6 +74,8 @@ export type SidecarOptions<WS> = {
   /** The channel closed: the process ends with it. */
   onClose: (error: Error | null) => void;
   log?: (level: "debug" | "info" | "warn", message: string) => void;
+  /** The front's `welcome` arrived: it holds the port and forwards. */
+  onWelcome?: () => void;
   connect?: (path: string) => Socket;
 };
 
@@ -386,8 +388,10 @@ export async function startSidecar<WS>(
       }
     },
     control: (message) => {
-      if (message.t === "welcome") log("info", "the front welcomed this core");
-      else if (message.t === "refused")
+      if (message.t === "welcome") {
+        log("info", "the front welcomed this core");
+        options.onWelcome?.();
+      } else if (message.t === "refused")
         log("warn", `the front refused this core: ${String(message.reason)}`);
       else if (message.t === "bye") channel.close();
     },

@@ -65,6 +65,9 @@ pub struct SidecarConfig {
     /// Variables set on each start of the core, worked out then (a test
     /// clock's start time is the front's time at that start).
     pub env: Arc<dyn Fn() -> Vec<(String, String)> + Send + Sync>,
+    /// Runs as the front welcomes a core, before the `welcome` is sent:
+    /// what the core does once welcomed comes after it.
+    pub on_welcome: Arc<dyn Fn() + Send + Sync>,
 }
 
 fn token() -> String {
@@ -120,9 +123,12 @@ async fn run_once(
         .map_err(|error| format!("cannot start {}: {error}", config.command.program.display()))?;
     let accepted = tokio::time::timeout(HELLO_TIMEOUT, async {
         let mut stream = listener.accept().await.map_err(|error| error.to_string())?;
-        accept_hello(&mut stream, &token, welcome)
-            .await
-            .map_err(|error| format!("{error:?}"))?;
+        accept_hello(&mut stream, &token, |hello| {
+            (config.on_welcome)();
+            welcome(hello)
+        })
+        .await
+        .map_err(|error| format!("{error:?}"))?;
         Ok::<_, String>(stream)
     })
     .await;

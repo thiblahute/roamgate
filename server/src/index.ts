@@ -6781,8 +6781,12 @@ const bridgeWebSocket: WebSocketHandler<ServeData> = {
  * core-channel/sidecar.ts): the same routing and WebSocket handlers, the
  * front's requests and sockets. The process ends with the channel.
  */
-function serveFront(channel: { path: string; token: string }): void {
+function serveFront(channel: { path: string; token: string }): Promise<void> {
   const log = logger.child("core");
+  let welcomed = () => {};
+  const welcome = new Promise<void>((resolve) => {
+    welcomed = resolve;
+  });
   void startSidecar<ServerWebSocket<ServeData>>({
     path: channel.path,
     token: channel.token,
@@ -6801,6 +6805,7 @@ function serveFront(channel: { path: string; token: string }): void {
       void shutdownController.request(error ? 1 : 0);
     },
     log: (level, message) => log[level](message),
+    onWelcome: () => welcomed(),
   })
     .then(() => log.info("serving a Rust front", { channel: channel.path }))
     .catch((error) => {
@@ -6810,16 +6815,20 @@ function serveFront(channel: { path: string; token: string }): void {
       });
       void shutdownController.request(1);
     });
+  return welcome;
 }
 
 function main() {
   historyRuntime.start();
   // A Rust front's core opens no port: it serves the front's channel.
   const frontChannel = coreChannelOf(process.env);
+  // A core starts its connections once the front holds the port, as a
+  // server does once it listens: what they send at once reaches browsers.
+  let frontWelcome: Promise<void> | null = null;
   const server = bindListenerBeforeConnectionStart({
     bindListener: () => {
       if (frontChannel) {
-        serveFront(frontChannel);
+        frontWelcome = serveFront(frontChannel);
         return null;
       }
       return recordServe(
@@ -6838,6 +6847,7 @@ function main() {
       });
     },
     startConnection: async () => {
+      if (frontWelcome) await frontWelcome;
       await startHostConnections();
       // Resume saved work even when no browser has opened Ranger yet.
       if (!assistantOnCore()) await getAssistantService();
