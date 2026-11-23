@@ -40,7 +40,70 @@ pub const FAMILY: &str = "settings";
 
 /// The family, once this build implements it.
 pub fn family() -> Option<Arc<dyn CoreFamily>> {
-    Some(Arc::new(SettingsFamily::default()))
+    let family = Arc::new(SettingsFamily::default());
+    *LATEST.lock().unwrap() = Arc::downgrade(&family);
+    Some(family)
+}
+
+/// The family this process made last: the core's other families write
+/// settings.json through its writer.
+static LATEST: Mutex<std::sync::Weak<SettingsFamily>> = Mutex::new(std::sync::Weak::new());
+
+/// The settings as the core holds them while it owns the family, else as
+/// the file says now (written by the front).
+pub async fn read_shared(cx: &FamilyContext) -> Arc<roamgate_base::settings::Settings> {
+    let family = LATEST.lock().unwrap().upgrade();
+    if let Some(family) = family
+        && let Ok(Some(service)) = family.writer(cx)
+    {
+        return service.store().read().await;
+    }
+    match settings_file() {
+        Ok(path) => SettingsStore::new(path).read().await,
+        Err(_) => Arc::new(roamgate_base::settings::Settings::defaults()),
+    }
+}
+
+/// A write of another family of the core through the settings family's
+/// writer, told to the front (`settings.changed`, with `cause`) before it
+/// answers. `change` gives the next settings, or None to leave the file
+/// as it is (answered with the settings as they are). Refused with
+/// `not_owner` while the front owns settings.json.
+pub async fn update_shared(
+    cx: &FamilyContext,
+    cause: Value,
+    change: impl FnOnce(&roamgate_base::settings::Settings) -> Option<Value>,
+) -> Result<Arc<roamgate_base::settings::Settings>, RpcError> {
+    let family = LATEST.lock().unwrap().upgrade();
+    let Some(family) = family else {
+        return Err(RpcError::with_code("no settings family", "not_owner"));
+    };
+    let service = family.owned_writer(cx)?;
+    let unchanged = std::sync::atomic::AtomicBool::new(false);
+    let written = service
+        .update_if(
+            |current| match change(current) {
+                Some(next) => next,
+                None => {
+                    unchanged.store(true, std::sync::atomic::Ordering::SeqCst);
+                    Value::Object(current.as_map().clone())
+                }
+            },
+            || !unchanged.load(std::sync::atomic::Ordering::SeqCst),
+        )
+        .await;
+    match written {
+        Ok(written) => {
+            changed(cx, &written, cause).await;
+            Ok(written.settings)
+        }
+        Err(roamgate_base::settings::SettingsError::Cancelled)
+            if unchanged.load(std::sync::atomic::Ordering::SeqCst) =>
+        {
+            Ok(service.store().read().await)
+        }
+        Err(error) => Err(RpcError::new(error.to_string())),
+    }
 }
 
 #[derive(Default)]

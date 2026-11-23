@@ -40,7 +40,20 @@ const READY_TIMEOUT: Duration = Duration::from_secs(10);
 const SETTINGS_EVERY_MS: i64 = 5_000;
 
 pub fn family() -> Option<Arc<dyn CoreFamily>> {
-    Some(Arc::new(MrCacheFamily::default()))
+    let family = MrCacheFamily::default();
+    *LATEST.lock().unwrap() = Arc::downgrade(&family.slot);
+    Some(Arc::new(family))
+}
+
+/// The slot of the family this process made last.
+static LATEST: Mutex<std::sync::Weak<Mutex<Slot>>> = Mutex::new(std::sync::Weak::new());
+
+/// The MR cache while the core holds it (it owns the family and the
+/// cache is loaded), for the core's other readers of forge answers.
+pub fn shared_cache() -> Option<MrCache> {
+    let slot = LATEST.lock().unwrap().upgrade()?;
+    let ready = slot.lock().unwrap().ready.clone()?;
+    ready.borrow().clone()
 }
 
 #[derive(Default)]

@@ -153,6 +153,22 @@ impl SettingsService {
         })
     }
 
+    /// [`Self::update`], left undone (`Cancelled`, the revision kept)
+    /// when `should_commit` turns false before the file is replaced.
+    pub async fn update_if(
+        &self,
+        change: impl FnOnce(&Settings) -> Value,
+        should_commit: impl Fn() -> bool,
+    ) -> Result<Revision, SettingsError> {
+        let mut revision = self.revision.lock().await;
+        let written = self.store.update_if(change, should_commit).await?;
+        *revision += 1;
+        Ok(Revision {
+            revision: *revision,
+            settings: written,
+        })
+    }
+
     async fn write(&self, change: impl FnOnce(&Settings) -> Value) -> Result<Revision, String> {
         self.update(change).await.map_err(|error| error.to_string())
     }
