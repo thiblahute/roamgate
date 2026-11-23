@@ -8,9 +8,11 @@
 //! | [`hosts`] | The hosts glab and gh have a login for, from their own config files | mr-reviews/hosts |
 //! | [`mr_cache`] | The MR cache: `mr-cache/state.json`, TTLs by state, the `forge_cache` pushes, on `roamgate_base::swr::SwrCache` | mr-cache/* |
 //! | [`pages`] | The pages of a paginated `glab api` or `gh api` answer | review/forge-cli `parseJsonPages` |
+//! | [`remote`] | The forge host and project a git remote URL names | review/gitlab `remoteProject`, `onGitlabHost` |
 
 pub mod complexity;
 pub mod gate;
 pub mod hosts;
 pub mod mr_cache;
 pub mod pages;
+pub mod remote;

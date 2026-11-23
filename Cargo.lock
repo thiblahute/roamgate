@@ -7217,6 +7217,7 @@ name = "roamgate-forge"
 version = "0.0.0"
 dependencies = [
  "futures-util",
+ "regex",
  "roamgate-base",
  "roamgate-protocol",
  "serde_json",
