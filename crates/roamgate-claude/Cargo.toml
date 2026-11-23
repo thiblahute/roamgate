@@ -1,7 +1,7 @@
 [package]
 name = "roamgate-claude"
 version = "0.0.0"
-description = "Roamgate's headless Claude layer (Rust migration plan, section 6.2): for now the tool registry built from contract/tools/catalog.json (socket command help, parameter checks, MCP tool lists, the mod's catalog module, the SKILL's tool names); conversation mode's Claude drivers (stream-json codec, TUI, rewind, models, MCP servers, memory); Claude Code turns and their loopback MCP server; the mod hub comes with its subtask"
+description = "Roamgate's Claude side (Rust migration plan, section 6.2): the tool registry built from contract/tools/catalog.json (socket command help, parameter checks, MCP tool lists, the mod's catalog module, the SKILL's tool names); conversation mode's Claude drivers (stream-json codec, TUI, rewind, models, MCP servers, memory); Claude Code turns and their loopback MCP server; the Claude mod's hub (each pane's inbox, what a live mod says of its session, the mod's tools per session) and its plugin, written as a marketplace on each host and installed through Claude Code's own plugin command"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
@@ -11,18 +11,24 @@ workspace = true
 
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
-futures-util = { version = "0.3", default-features = false, features = ["std"] }
+base64 = "0.22"
 fancy-regex = "0.17"
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+hex = "0.4"
 indexmap = "2"
+rand = "0.9"
 regex = "1"
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
-roamgate-exec = { path = "../roamgate-exec" }
 roamgate-conversation = { path = "../roamgate-conversation" }
+roamgate-exec = { path = "../roamgate-exec" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
 tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "sync", "time"] }
 tokio-util = "0.7"
+tracing = "0.1"
 url = "2"
 
 [dev-dependencies]
