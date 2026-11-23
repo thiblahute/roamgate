@@ -6334,11 +6334,27 @@ name = "roamgate"
 version = "0.8.15"
 dependencies = [
  "axum",
+ "roamgate-activity",
  "roamgate-base",
  "roamgate-connections",
+ "roamgate-exec",
  "roamgate-sidecar",
  "rust-embed",
  "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "roamgate-activity"
+version = "0.0.0"
+dependencies = [
+ "jiff",
+ "regex",
+ "roamgate-base",
+ "roamgate-exec",
  "serde_json",
  "tempfile",
  "tokio",

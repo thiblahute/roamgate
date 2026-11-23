@@ -69,6 +69,10 @@ pub struct Command {
     pub output_cap: Option<usize>,
     pub overflow: Overflow,
     pub kill_signal: KillSignal,
+    /// A program that does not exist fails with [`ExecError::Spawn`]
+    /// (`NotFound`) instead of the shell's exit 127, for callers that say
+    /// so in their own words (the time-report provider).
+    pub missing_is_error: bool,
 }
 
 impl Command {
@@ -123,6 +127,12 @@ impl Command {
 
     pub fn kill_signal(mut self, signal: KillSignal) -> Self {
         self.kill_signal = signal;
+        self
+    }
+
+    /// See [`Command::missing_is_error`].
+    pub fn missing_is_error(mut self) -> Self {
+        self.missing_is_error = true;
         self
     }
 
@@ -536,7 +546,7 @@ impl ProcessRunner {
         };
         let mut child = match spawn_child(command.build(stdin, Stdio::piped(), Stdio::piped())) {
             Ok(child) => child,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            Err(error) if error.kind() == io::ErrorKind::NotFound && !command.missing_is_error => {
                 return Ok(self.not_found(command, started));
             }
             Err(source) => return Err(ExecError::Spawn { program, source }),
@@ -818,6 +828,14 @@ mod tests {
             error
                 .to_string()
                 .starts_with("roamgate-no-such-program-x exited 127: ")
+        );
+        let error = runner()
+            .run(&Command::new(["roamgate-no-such-program-x"]).missing_is_error())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, ExecError::Spawn { source, .. } if source.kind() == io::ErrorKind::NotFound),
+            "{error}"
         );
     }
 

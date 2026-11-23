@@ -46,7 +46,8 @@ fn js_whitespace(character: char) -> bool {
     (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
 }
 
-fn js_trim(text: &str) -> &str {
+/// JavaScript's `String.prototype.trim`.
+pub fn js_trim(text: &str) -> &str {
     text.trim_matches(js_whitespace)
 }
 

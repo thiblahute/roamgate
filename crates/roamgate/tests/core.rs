@@ -79,6 +79,8 @@ async fn says_hello_and_exits_when_the_channel_closes() {
         .collect();
     assert_eq!(families, implemented);
     assert!(families.iter().any(|family| family == "limit_resume"));
+    assert!(families.iter().any(|family| family == "time_report"));
+    assert!(!families.iter().any(|family| family == "test.echo"));
     assert!(!test);
     drop(stream);
     assert_eq!(exit_code(child).await, 0);

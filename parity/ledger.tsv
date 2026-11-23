@@ -3291,7 +3291,7 @@ server/src/time-report/rpc.test.ts	day passes the whole day with subjects, idle_
 server/src/time-report/rpc.test.ts	excluded connections and subjects leave as anonymous excluded gaps	rust-unit:roamgate-activity	the time-report provider bridge
 server/src/time-report/rpc.test.ts	operations map to the provider's command line	scenario:parity/scenarios/time_report/operations.yaml	
 server/src/time-report/rpc.test.ts	arguments are checked before anything runs	scenario:parity/scenarios/time_report/errors.yaml	
-server/src/time-report/rpc.test.ts	one provider process at a time per day	rust-unit:roamgate-activity	the time-report provider bridge
+server/src/time-report/rpc.test.ts	one provider process at a time per day	rust-unit:roamgate-activity:time_report::tests::one_provider_process_at_a_time_per_day	the time-report provider bridge
 server/src/time-report/rpc.test.ts	submit needs the explicit confirmation and this bridge's own fresh preview, once	scenario:parity/scenarios/time_report/submit.yaml	
 server/src/utils/cpu-profile.test.ts	CPU profile: ${mode}	scenario:parity/scenarios/env/profile.yaml	
 server/src/utils/cpu-profile.test.ts	CPU profile rejects an unusable output directory before sampling	rust-unit:roamgate-cli	the server's opt-in CPU profile (--profile, ROAMGATE_PROFILE), rebuilt on a Rust sampler with the server start (decided 2026-11-23)

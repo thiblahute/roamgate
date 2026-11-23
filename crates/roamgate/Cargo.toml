@@ -15,13 +15,16 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+roamgate-activity = { path = "../roamgate-activity" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-connections = { path = "../roamgate-connections" }
+roamgate-exec = { path = "../roamgate-exec" }
 roamgate-sidecar = { path = "../roamgate-sidecar" }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
 rust-embed = { version = "8", features = ["interpolate-folder-path", "mime-guess"] }
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tokio = { version = "1", features = ["fs", "macros", "net", "rt-multi-thread", "signal"] }
+tracing = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

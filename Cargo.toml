@@ -10,8 +10,8 @@
 # (`-p roamgate-voice`, or from voice/helper): it pulls GStreamer's bundle.
 [workspace]
 resolver = "3"
-members = ["crates/roamgate", "crates/roamgate-base", "crates/roamgate-connections", "crates/roamgate-exec", "crates/roamgate-protocol", "crates/roamgate-sidecar", "crates/roamgate-ws", "parity", "parity/herdr-api", "voice/helper", "xtask"]
-default-members = ["crates/roamgate", "crates/roamgate-base", "crates/roamgate-connections", "crates/roamgate-exec", "crates/roamgate-protocol", "crates/roamgate-sidecar", "crates/roamgate-ws", "parity", "parity/herdr-api", "xtask"]
+members = ["crates/roamgate", "crates/roamgate-activity", "crates/roamgate-base", "crates/roamgate-connections", "crates/roamgate-exec", "crates/roamgate-protocol", "crates/roamgate-sidecar", "crates/roamgate-ws", "parity", "parity/herdr-api", "voice/helper", "xtask"]
+default-members = ["crates/roamgate", "crates/roamgate-activity", "crates/roamgate-base", "crates/roamgate-connections", "crates/roamgate-exec", "crates/roamgate-protocol", "crates/roamgate-sidecar", "crates/roamgate-ws", "parity", "parity/herdr-api", "xtask"]
 # Its own workspace: a benchmark with its own lockfile.
 exclude = ["scripts/bench-terminal"]
 
