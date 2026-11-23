@@ -1421,20 +1421,20 @@ server/src/cli/voice.test.ts	status says who holds it, even without voice.json	r
 server/src/cli/voice.test.ts	models sets parts by hand, --reset goes back	rust-unit:roamgate-cli:voice::tests::models_sets_parts_by_hand_reset_goes_back	CLI internals beyond its help and outputs
 server/src/cli/voice.test.ts	refuses what it does not know	rust-unit:roamgate-cli:voice::tests::refuses_what_it_does_not_know	CLI internals beyond its help and outputs
 server/src/config/auth-token.test.ts	requires 8 to 1024 Unicode characters for login secrets	rust-unit:roamgate-cli:server_config::tests::requires_8_to_1024_unicode_characters_for_login_secrets	generated login token
-server/src/config/auth-token.test.ts	flags passwords shorter than the recommended length	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	uses APPDATA for the Windows token	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	prints the token without revealing the account name	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	prints the default token command with trailing HOME separators	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	handles filesystem-root HOME without losing the boundary	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	prints Windows commands with trailing APPDATA or HOME separators	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	keeps adjacent prefixes and unsafe shell paths omitted	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	omits the token command outside the home directory	rust-unit:roamgate-http	generated login token
+server/src/config/auth-token.test.ts	flags passwords shorter than the recommended length	rust-unit:roamgate-cli:auth_token::print_tests::flags_passwords_shorter_than_the_recommended_length	generated login token
+server/src/config/auth-token.test.ts	uses APPDATA for the Windows token	rust-unit:roamgate-cli:auth_token::print_tests::uses_appdata_for_the_windows_token	generated login token
+server/src/config/auth-token.test.ts	prints the token without revealing the account name	rust-unit:roamgate-cli:auth_token::print_tests::prints_the_token_without_revealing_the_account_name	generated login token
+server/src/config/auth-token.test.ts	prints the default token command with trailing HOME separators	rust-unit:roamgate-cli:auth_token::print_tests::prints_the_default_token_command_with_trailing_home_separators	generated login token
+server/src/config/auth-token.test.ts	handles filesystem-root HOME without losing the boundary	rust-unit:roamgate-cli:auth_token::print_tests::handles_filesystem_root_home_without_losing_the_boundary	generated login token
+server/src/config/auth-token.test.ts	prints Windows commands with trailing APPDATA or HOME separators	rust-unit:roamgate-cli:auth_token::print_tests::prints_windows_commands_with_trailing_appdata_or_home_separators	generated login token
+server/src/config/auth-token.test.ts	keeps adjacent prefixes and unsafe shell paths omitted	rust-unit:roamgate-cli:auth_token::print_tests::keeps_adjacent_prefixes_and_unsafe_shell_paths_omitted	generated login token
+server/src/config/auth-token.test.ts	omits the token command outside the home directory	rust-unit:roamgate-cli:auth_token::print_tests::omits_the_token_command_outside_the_home_directory	generated login token
 server/src/config/auth-token.test.ts	creates a persistent random token with private permissions	rust-unit:roamgate-cli:auth_token::tests::creates_once_keeps_and_repairs_the_token	generated login token
 server/src/config/auth-token.test.ts	repairs permissions on an existing valid token	rust-unit:roamgate-cli:auth_token::tests::creates_once_keeps_and_repairs_the_token	generated login token
 server/src/config/auth-token.test.ts	rejects a malformed persisted token	rust-unit:roamgate-cli:auth_token::tests::creates_once_keeps_and_repairs_the_token	generated login token
 server/src/config/auth-token.test.ts	does not follow a generated-token symlink	rust-unit:roamgate-cli:auth_token::tests::creates_once_keeps_and_repairs_the_token	generated login token
-server/src/config/auth-token.test.ts	replaces the token atomically with private permissions	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	refuses symlinked token paths	rust-unit:roamgate-http	generated login token
+server/src/config/auth-token.test.ts	replaces the token atomically with private permissions	rust-unit:roamgate-cli:auth_token::print_tests::replaces_the_token_atomically_with_private_permissions	generated login token
+server/src/config/auth-token.test.ts	refuses symlinked token paths	rust-unit:roamgate-cli:auth_token::print_tests::refuses_symlinked_token_paths	generated login token
 server/src/config/data-paths.test.ts	fresh Unix and Windows data roots respect APPDATA	rust-unit:roamgate-base:paths::tests::data_roots_respect_appdata	data paths, environment precedence, settings store, locks
 server/src/config/data-paths.test.ts	copies all legacy data without resetting credentials (${platform})	rust-unit:roamgate-base:paths::tests::legacy_data_is_copied_without_resetting_credentials	data paths, environment precedence, settings store, locks
 server/src/config/data-paths.test.ts	new values win, including empty files and malformed data	rust-unit:roamgate-base:paths::tests::new_values_win_even_empty_or_malformed	data paths, environment precedence, settings store, locks
