@@ -44,6 +44,8 @@ pub trait ScheduledChild: Send + Sync {
 }
 
 pub type Publish = Arc<dyn Fn(Value) + Send + Sync>;
+/// A task notification sent to the user (best effort).
+pub type NotifyUser = Arc<dyn Fn(Value) -> Result<(), String> + Send + Sync>;
 pub type BeforeDispatch = Arc<dyn Fn() -> AssistantResult<()> + Send + Sync>;
 pub type MakeChild =
     Arc<dyn Fn(Value, PathBuf, Publish, BeforeDispatch) -> Arc<dyn ScheduledChild> + Send + Sync>;
@@ -66,7 +68,7 @@ pub struct TaskOptions {
     pub context: DataContext,
     pub clock: SharedClock,
     pub publish: Arc<dyn Fn() + Send + Sync>,
-    pub notify: Option<Arc<dyn Fn(Value) -> Result<(), String> + Send + Sync>>,
+    pub notify: Option<NotifyUser>,
     pub validate: Validate,
     pub validate_cleanup: Option<Validate>,
     pub rescope: Option<Rescope>,
@@ -104,9 +106,12 @@ struct State {
     busy: Option<String>,
     fault: Option<String>,
     timer: Option<JoinHandle<()>>,
+    timer_generation: u64,
     children: HashMap<String, Arc<dyn ScheduledChild>>,
     run_owners: HashMap<String, String>,
-    child_disposals: HashMap<usize, Disposal>,
+    /// By child, as Bun's WeakMap: the entry holds the child so that its
+    /// address is not another's, and goes once nothing else holds it.
+    child_disposals: HashMap<usize, (Arc<dyn ScheduledChild>, Disposal)>,
     failed_disposals: HashSet<String>,
     finalizing_proposals: HashSet<String>,
     admissions: HashMap<String, CancellationToken>,
@@ -1044,9 +1049,17 @@ impl AssistantTasks {
         let manager = self.clone();
         // The timer exists from now, as a `setTimeout` does.
         let sleep = inner.options.clock.sleep_until(now + wait);
+        state.timer_generation += 1;
+        let generation = state.timer_generation;
         state.timer = Some(tokio::spawn(async move {
             sleep.await;
-            manager.0.state.lock().unwrap().timer = None;
+            {
+                let mut state = manager.0.state.lock().unwrap();
+                if state.timer_generation != generation {
+                    return;
+                }
+                state.timer = None;
+            }
             let tick = manager.clone();
             manager.track(async move { tick.tick().await });
         }));
@@ -1078,11 +1091,16 @@ impl AssistantTasks {
     fn dispose_child(&self, run_id: &str, child: &Arc<dyn ScheduledChild>) -> Disposal {
         let key = child_key(child);
         let mut state = self.0.state.lock().unwrap();
-        if let Some(existing) = state.child_disposals.get(&key) {
+        if let Some((_, existing)) = state.child_disposals.get(&key) {
             return existing.clone();
         }
+        // What a WeakMap would have let go: children no one else holds.
+        state
+            .child_disposals
+            .retain(|_, (held, disposal)| Arc::strong_count(held) > 1 || disposal.peek().is_none());
         state.failed_disposals.remove(run_id);
         let manager = self.clone();
+        let child_ref = child.clone();
         let (run_id, child) = (run_id.to_owned(), child.clone());
         let work: BoxFuture<AssistantResult<()>> = Box::pin(async move {
             let result = child.dispose().await;
@@ -1111,7 +1129,9 @@ impl AssistantTasks {
             }
         });
         let shared = work.shared();
-        state.child_disposals.insert(key, shared.clone());
+        state
+            .child_disposals
+            .insert(key, (child_ref, shared.clone()));
         drop(state);
         let tracked = shared.clone();
         self.track(async move {
@@ -1200,7 +1220,8 @@ impl AssistantTasks {
                 .flatten()
         };
         if let Some(child) = child {
-            let _ = self.dispose_child(run_id, &child);
+            // Tracked by the manager; nothing waits for it here.
+            drop(self.dispose_child(run_id, &child));
         }
         self.arm();
     }
@@ -1221,16 +1242,13 @@ impl AssistantTasks {
     }
 
     /// `launch(entry, run, recover)`.
+    /// `launch(entry, run, recover)`: the model slot and the admission are
+    /// taken at once, as Bun's synchronous start of `launch` does; the rest
+    /// is the returned future.
     fn launch(&self, task_id: String, run_id: String, recover: bool) -> BoxFuture<()> {
-        let manager = self.clone();
-        Box::pin(async move { manager.launch_run(task_id, run_id, recover).await })
-    }
-
-    async fn launch_run(&self, task_id: String, run_id: String, recover: bool) {
-        let inner = self.inner();
         let admission = CancellationToken::new();
         {
-            let mut state = inner.state.lock().unwrap();
+            let mut state = self.0.state.lock().unwrap();
             state.busy = Some(run_id.clone());
             state.run_owners.insert(run_id.clone(), task_id.clone());
             state.admissions.insert(run_id.clone(), admission.clone());
@@ -1239,6 +1257,22 @@ impl AssistantTasks {
                 state.unstarted_admissions.insert(run_id.clone());
             }
         }
+        let manager = self.clone();
+        Box::pin(async move {
+            manager
+                .launch_run(task_id, run_id, recover, admission)
+                .await
+        })
+    }
+
+    async fn launch_run(
+        &self,
+        task_id: String,
+        run_id: String,
+        recover: bool,
+        admission: CancellationToken,
+    ) {
+        let inner = self.inner();
         let mut child: Option<Arc<dyn ScheduledChild>> = None;
         let mut stage = "reading its saved run";
         let result: AssistantResult<()> = async {
@@ -1585,8 +1619,8 @@ impl AssistantTasks {
                 queued.into_iter().next()
             };
             if let Some((_, task_id, run_id, recover)) = next {
-                let manager = self.clone();
-                self.track(async move { manager.launch(task_id, run_id, recover).await });
+                let launch = self.launch(task_id, run_id, recover);
+                self.track(launch);
             }
         }
         self.arm();
@@ -2140,10 +2174,11 @@ impl AssistantTasks {
                 Some(child) => child.stop().await,
                 None => Ok(()),
             };
-            let disposed = match &child {
-                Some(child) => self.dispose_child(active, child).await,
-                None => Ok(()),
-            };
+            // A failed disposal ends here, as its throw from Bun's finally:
+            // the model slot stays taken until a retry drains the child.
+            if let Some(child) = &child {
+                self.dispose_child(active, child).await?;
+            }
             self.clear_busy(active);
             let _ = inner.change(|_, state| {
                 if let Some(run) = state.run_mut(active) {
@@ -2151,7 +2186,7 @@ impl AssistantTasks {
                 }
             });
             self.arm();
-            outcome = stopped.and(disposed);
+            outcome = stopped;
         }
         // A previous disposal failure keeps history protected; Cancel and
         // Stop retry it without replaying a finalised proposal.
@@ -2172,7 +2207,7 @@ impl AssistantTasks {
                         .flatten()
                 };
                 if let Some(child) = child {
-                    let result = self.dispose_child(&run_id, &child).await;
+                    self.dispose_child(&run_id, &child).await?;
                     self.clear_busy(&run_id);
                     let stopped = inner
                         .state
@@ -2187,7 +2222,6 @@ impl AssistantTasks {
                             }
                         });
                     }
-                    result?;
                 }
             }
         }
@@ -2489,10 +2523,8 @@ impl AssistantTasks {
                     }
                 });
             } else if status(&run) == "running" && inner.state.lock().unwrap().busy.is_none() {
-                // Taken at once, as the TS's synchronous start of launch.
-                inner.state.lock().unwrap().busy = Some(run_id.clone());
-                let manager = self.clone();
-                self.track(async move { manager.launch(task_id, run_id, true).await });
+                let launch = self.launch(task_id, run_id, true);
+                self.track(launch);
             }
         }
         let busy_child = {

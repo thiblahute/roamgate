@@ -56,6 +56,8 @@ pub(super) struct Observed {
     pub stop_gate: Mutex<Option<Arc<Gate>>>,
     pub dispose_gate: Mutex<Option<Arc<Gate>>>,
     pub dispose_failure: AtomicBool,
+    /// What `stop` fails with once its gate opens (`stopGate.reject`).
+    pub stop_error: Mutex<Option<AssistantError>>,
     snapshot: Mutex<Value>,
     publish: Publish,
     clock: SharedClock,
@@ -192,6 +194,10 @@ impl ScheduledChild for ChildImpl {
             if let Some(gate) = gate {
                 gate.wait().await;
             }
+            let error = observed.stop_error.lock().unwrap().clone();
+            if let Some(error) = error {
+                return Err(error);
+            }
             observed.stopped.store(true, Ordering::SeqCst);
             let snapshot = {
                 let mut snapshot = observed.snapshot.lock().unwrap();
@@ -242,11 +248,13 @@ impl ScheduledChild for ChildImpl {
     }
 }
 
+pub(super) type NotifyHook = Arc<dyn Fn(&Value) -> Result<(), String> + Send + Sync>;
+
 #[derive(Default)]
 pub(super) struct FixtureOptions {
     pub existing: Option<(PathBuf, DataContext, &'static JestClock)>,
     pub validation: Option<Validation>,
-    pub notify: Option<Arc<dyn Fn(&Value) -> Result<(), String> + Send + Sync>>,
+    pub notify: Option<NotifyHook>,
     pub rescope: Option<Rescope>,
     pub narrow: Option<Narrow>,
     pub validate_cleanup: Option<Validate>,
@@ -352,7 +360,7 @@ pub(super) fn fixture_with(options: FixtureOptions) -> Fixture {
                 Some(hook) => hook(&notification),
                 None => Ok(()),
             }
-        }) as Arc<dyn Fn(Value) -> Result<(), String> + Send + Sync>
+        }) as NotifyUser
     };
     let child: MakeChild = {
         let runs = runs.clone();
@@ -377,6 +385,7 @@ pub(super) fn fixture_with(options: FixtureOptions) -> Fixture {
                 stop_gate: Mutex::new(None),
                 dispose_gate: Mutex::new(None),
                 dispose_failure: AtomicBool::new(false),
+                stop_error: Mutex::new(None),
                 snapshot: Mutex::new(snapshot),
                 publish,
                 clock: clock.clone(),
@@ -2430,6 +2439,1493 @@ async fn cancels_pending_scope_validation_without_starting_a_model() {
                 "running"
             }
         );
+        f.manager.dispose().await;
+    }
+}
+
+/// Validations that each wait on a gate of their own while `blocked`.
+#[derive(Default)]
+struct Gates {
+    blocked: AtomicBool,
+    gates: Mutex<Vec<Arc<Gate>>>,
+}
+
+impl Gates {
+    fn validation(self: &Arc<Self>) -> Validation {
+        let gates = self.clone();
+        Arc::new(move |_, _| {
+            let gates = gates.clone();
+            Box::pin(async move {
+                if gates.blocked.load(Ordering::SeqCst) {
+                    let gate = Arc::new(Gate::default());
+                    gates.gates.lock().unwrap().push(gate.clone());
+                    gate.wait().await;
+                }
+                Ok(())
+            })
+        })
+    }
+
+    fn release(&self) {
+        for gate in self.gates.lock().unwrap().drain(..) {
+            gate.open();
+        }
+    }
+
+    fn block(&self, value: bool) {
+        self.blocked.store(value, Ordering::SeqCst);
+    }
+}
+
+fn spawn_control(
+    f: &Fixture,
+    method: &'static str,
+    id: &str,
+) -> tokio::task::JoinHandle<AssistantResult<()>> {
+    let (manager, id) = (f.manager.clone(), id.to_owned());
+    tokio::spawn(async move { manager.control(method, &id).await })
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn deferred_permission_checks_cannot_duplicate_a_run_or_undo_newer_cancellation_and_template_changes()
+ {
+    let gates = Arc::new(Gates::default());
+    let f = fixture_with(with_validation(&gates.validation()));
+    let id = create(&f, &prepared()).await;
+    gates.block(true);
+    let first = spawn_control(&f, "run_now", &id);
+    let second = spawn_control(&f, "run_now", &id);
+    flush().await;
+    gates.release();
+    first.await.unwrap().unwrap();
+    second.await.unwrap().unwrap();
+    let queued = f.manager.detail(&id, None).unwrap()["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|run| run["status"] == "queued")
+        .count();
+    assert_eq!(queued, 1);
+    assert!(!f.restart().manager.invalid());
+    f.manager.control("stop", &id).await.unwrap();
+    f.manager.control("pause", &id).await.unwrap();
+    let late_resume = spawn_control(&f, "resume", &id);
+    flush().await;
+    f.manager.control("cancel", &id).await.unwrap();
+    assert!(late_resume.await.unwrap().is_err());
+    gates.release();
+    flush().await;
+    assert_eq!(
+        f.manager.detail(&id, None).unwrap()["task"]["status"],
+        "cancelled"
+    );
+    gates.block(false);
+    let proposal = f.manager.propose(&prepared(), None).await.unwrap();
+    let pid = proposal["id"].as_str().unwrap().to_owned();
+    gates.block(true);
+    let late_confirm = {
+        let (manager, pid) = (f.manager.clone(), pid.clone());
+        tokio::spawn(async move { manager.confirm_proposal(&pid, None).await })
+    };
+    flush().await;
+    f.manager.cancel_proposal(&pid);
+    assert!(late_confirm.await.unwrap().is_err());
+    gates.release();
+    flush().await;
+    assert_eq!(f.manager.proposal(&pid).unwrap()["status"], "cancelled");
+    assert_eq!(f.manager.summaries().len(), 1);
+    gates.block(false);
+    let mut mutable = prepared();
+    let other = create(&f, &mutable).await;
+    gates.block(true);
+    let late_run = spawn_control(&f, "run_now", &other);
+    flush().await;
+    gates.block(false);
+    mutable["input"]["prompt"] = json!("Explicitly changed task prompt");
+    f.manager.update(&other, &mutable, None).await.unwrap();
+    gates.release();
+    assert!(late_run.await.unwrap().is_err());
+    assert!(
+        f.manager.detail(&other, None).unwrap()["runs"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn successful_explicit_resume_recovers_a_save_failure_without_replaying_an_already_completed_child()
+ {
+    let f = fixture();
+    let id = create(&f, &prepared()).await;
+    f.manager.resume().await;
+    f.manager.control("run_now", &id).await.unwrap();
+    f.advance(0).await;
+    f.fail(true);
+    f.run(0).complete(false, None);
+    assert!(f.manager.error().unwrap().contains("Scheduling is paused"));
+    assert!(f.notifications().is_empty());
+    f.fail(false);
+    f.manager.control("resume", &id).await.unwrap();
+    assert_eq!(f.manager.error(), None);
+    assert_eq!(
+        f.manager.detail(&id, None).unwrap()["runs"][0]["status"],
+        "succeeded"
+    );
+    assert_eq!(f.run_count(), 1);
+    assert_eq!(f.notifications().len(), 1);
+    f.manager.control("resume", &id).await.unwrap();
+    assert_eq!(f.notifications().len(), 1);
+    f.manager.control("run_now", &id).await.unwrap();
+    f.advance(0).await;
+    assert_eq!(f.run_count(), 2);
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn delete_cannot_remove_private_history_until_a_cancelled_child_has_actually_drained() {
+    let f = fixture();
+    let id = create(&f, &prepared()).await;
+    f.manager.resume().await;
+    f.manager.control("run_now", &id).await.unwrap();
+    f.advance(0).await;
+    let gate = Arc::new(Gate::default());
+    *f.run(0).stop_gate.lock().unwrap() = Some(gate.clone());
+    let cancelling = spawn_control(&f, "cancel", &id);
+    flush().await;
+    assert_eq!(
+        f.manager.detail(&id, None).unwrap()["task"]["status"],
+        "cancelled"
+    );
+    let error = f.manager.delete(&id).unwrap_err();
+    assert!(error.to_string().contains("before deleting"));
+    assert!(!f.run(0).disposed.load(Ordering::SeqCst));
+    gate.open();
+    cancelling.await.unwrap().unwrap();
+    assert!(f.run(0).disposed.load(Ordering::SeqCst));
+    f.manager.delete(&id).unwrap();
+    assert!(f.manager.summaries().is_empty());
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn drains_a_child_after_its_stop_save_fails_before_releasing_the_model_slot() {
+    for method in ["stop", "cancel"] {
+        let f = fixture();
+        let first = create(&f, &prepared()).await;
+        let second = create(&f, &prepared()).await;
+        f.manager.resume().await;
+        f.manager.control("run_now", &first).await.unwrap();
+        f.advance(0).await;
+        f.manager.control("run_now", &second).await.unwrap();
+        let child = f.run(0);
+        let stop_gate = Arc::new(Gate::default());
+        let dispose_gate = Arc::new(Gate::default());
+        *child.stop_gate.lock().unwrap() = Some(stop_gate.clone());
+        *child.dispose_gate.lock().unwrap() = Some(dispose_gate.clone());
+        let stopping = spawn_control(&f, method, &first);
+        flush().await;
+        assert_eq!(
+            f.manager.detail(&first, None).unwrap()["runs"][0]["status"],
+            "stopped"
+        );
+        *child.stop_error.lock().unwrap() =
+            Some(internal("The Ranger changes could not be saved."));
+        stop_gate.open();
+        flush().await;
+        assert!(child.disposing.load(Ordering::SeqCst));
+        assert!(!child.disposed.load(Ordering::SeqCst));
+        assert!(!stopping.is_finished());
+        child.complete(false, None);
+        f.advance(5000).await;
+        assert_eq!(f.run_count(), 1);
+        assert_eq!(
+            f.manager.detail(&second, None).unwrap()["runs"][0]["status"],
+            "queued"
+        );
+        dispose_gate.open();
+        let error = stopping.await.unwrap().unwrap_err();
+        assert_eq!(error.to_string(), "The Ranger changes could not be saved.");
+        assert!(child.disposed.load(Ordering::SeqCst));
+        f.advance(0).await;
+        assert_eq!(f.run_count(), 2, "{method}");
+        assert_eq!(f.run(1).run["task_id"], second.as_str());
+        assert_eq!(
+            f.manager.detail(&second, None).unwrap()["runs"][0]["status"],
+            "running"
+        );
+        f.manager.dispose().await;
+    }
+}
+
+#[test]
+fn task_input_accepts_the_shared_inventory_bound_and_rejects_overflow() {
+    let mut input = prepared()["input"].clone();
+    input["scope"] = Value::Array(
+        (0..ASSISTANT_MAX_WORKSPACES)
+            .map(|index| json!({"connection_id": "local", "workspace_id": format!("w{index}")}))
+            .collect(),
+    );
+    assert_eq!(
+        validate_task_input(&input).unwrap()["scope"]
+            .as_array()
+            .unwrap()
+            .len(),
+        ASSISTANT_MAX_WORKSPACES
+    );
+    input["scope"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"connection_id": "local", "workspace_id": "overflow"}));
+    assert_eq!(
+        validate_task_input(&input).unwrap_err().to_string(),
+        "Invalid task input"
+    );
+}
+
+fn allow() -> AssertScope {
+    Arc::new(|_| Ok(()))
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn management_previews_preserve_task_identity_and_require_confirmation_for_each_edit_and_control()
+ {
+    let f = fixture();
+    let mut input = prepared();
+    input["input"]["mentions"] = json!([agent_mention()]);
+    input["config"]["approval_mode"] = json!("auto");
+    let id = create(&f, &input).await;
+    let original = f.manager.prepared(&id).unwrap();
+    let edit = f
+        .manager
+        .propose_management(
+            "update",
+            &id,
+            &json!({"title": "New title", "prompt": "New instructions", "notification_mode": "agent"}),
+            allow(),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(edit["operation"], "update");
+    assert_eq!(edit["task_id"], id.as_str());
+    assert_eq!(edit["status"], "pending");
+    assert_eq!(edit["prompt"], "New instructions");
+    assert_eq!(
+        f.manager.detail(&id, None).unwrap()["task"]["prompt"],
+        original["input"]["prompt"]
+    );
+    let eid = edit["id"].as_str().unwrap();
+    f.manager.confirm_proposal(eid, None).await.unwrap();
+    f.manager.confirm_proposal(eid, None).await.unwrap();
+    let now = f.manager.prepared(&id).unwrap();
+    assert_eq!(now["input"]["title"], "New title");
+    assert_eq!(now["input"]["prompt"], "New instructions");
+    assert_same!(now["input"]["mentions"], original["input"]["mentions"]);
+    assert_same!(now["input"]["scope"], original["input"]["scope"]);
+    let mut config = original["config"].clone();
+    config["approval_mode"] = json!("manual");
+    assert_same!(now["config"], config);
+    assert_same!(now["targets"], original["targets"]);
+    let status = |f: &Fixture| f.manager.detail(&id, None).unwrap()["task"]["status"].clone();
+    let pause = f
+        .manager
+        .propose_management("pause", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    assert_eq!(status(&f), "active");
+    f.manager
+        .confirm_proposal(pause["id"].as_str().unwrap(), None)
+        .await
+        .unwrap();
+    assert_eq!(status(&f), "paused");
+    let resume = f
+        .manager
+        .propose_management("resume", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    f.manager
+        .confirm_proposal(resume["id"].as_str().unwrap(), None)
+        .await
+        .unwrap();
+    assert_eq!(status(&f), "active");
+    let error = f
+        .manager
+        .propose_management("delete", &id, &json!({}), allow(), None)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("Cancel this task"));
+    let cancel = f
+        .manager
+        .propose_management("cancel", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    f.manager
+        .confirm_proposal(cancel["id"].as_str().unwrap(), None)
+        .await
+        .unwrap();
+    assert_eq!(status(&f), "cancelled");
+    let remove = f
+        .manager
+        .propose_management("delete", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    let rid = remove["id"].as_str().unwrap();
+    assert_eq!(f.manager.summaries().len(), 1);
+    f.manager.confirm_proposal(rid, None).await.unwrap();
+    f.manager.confirm_proposal(rid, None).await.unwrap();
+    assert!(f.manager.summaries().is_empty());
+    assert_eq!(f.manager.proposal(rid).unwrap()["status"], "confirmed");
+    f.manager.dispose().await;
+    assert_eq!(
+        f.restart().manager.proposal(rid).unwrap()["operation"],
+        "delete"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn task_management_validates_edit_fields_and_original_scope_before_permission_checks() {
+    let validations = Arc::new(AtomicUsize::new(0));
+    let counter = validations.clone();
+    let f = fixture_with(with_validation(
+        &(Arc::new(move |_, _| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) }) as BoxFuture<AssistantResult<()>>
+        }) as Validation),
+    ));
+    let id = create(&f, &prepared()).await;
+    validations.store(0, Ordering::SeqCst);
+    let error = f
+        .manager
+        .propose_management(
+            "pause",
+            &id,
+            &json!({}),
+            Arc::new(|_| Err(internal("Outside turn scope"))),
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "Outside turn scope");
+    for changes in [
+        json!({}),
+        json!({"scope": []}),
+        json!({"model": "other"}),
+        json!({"mentions": []}),
+        json!({"approval_mode": "auto"}),
+        json!({"title": ""}),
+        json!({"schedule": {"type": "interval", "minutes": 0}}),
+    ] {
+        assert!(
+            f.manager
+                .propose_management("update", &id, &changes, allow(), None)
+                .await
+                .is_err()
+        );
+    }
+    assert!(
+        f.manager
+            .propose_management("pause", &id, &json!({"title": "ignored"}), allow(), None)
+            .await
+            .is_err()
+    );
+    assert_eq!(validations.load(Ordering::SeqCst), 0);
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn management_revalidates_identity_and_scope_when_confirmed() {
+    for operation in ["update", "pause", "resume", "cancel", "delete"] {
+        let f = fixture();
+        let id = create(&f, &prepared()).await;
+        if operation == "delete" {
+            f.manager.control("cancel", &id).await.unwrap();
+        }
+        let allowed = Arc::new(AtomicBool::new(true));
+        let scope: AssertScope = {
+            let allowed = allowed.clone();
+            Arc::new(move |_| {
+                if allowed.load(Ordering::SeqCst) {
+                    Ok(())
+                } else {
+                    Err(internal("Scope revoked"))
+                }
+            })
+        };
+        let changes = if operation == "update" {
+            json!({"title": "Edited"})
+        } else {
+            json!({})
+        };
+        let preview = f
+            .manager
+            .propose_management(operation, &id, &changes, scope, None)
+            .await
+            .unwrap();
+        let pid = preview["id"].as_str().unwrap();
+        let before = f.manager.detail(&id, None).unwrap();
+        f.deny(true);
+        let error = f.manager.confirm_proposal(pid, None).await.unwrap_err();
+        assert!(error.to_string().contains("identity"), "{operation}");
+        f.deny(false);
+        allowed.store(false, Ordering::SeqCst);
+        let error = f.manager.confirm_proposal(pid, None).await.unwrap_err();
+        assert_eq!(error.to_string(), "Scope revoked");
+        assert_eq!(f.manager.detail(&id, None).unwrap(), before);
+        assert_eq!(f.manager.proposal(pid).unwrap()["status"], "pending");
+        f.manager.dispose().await;
+    }
+}
+
+/// A validation that waits on one gate while `blocked`.
+fn gated(gate: &Arc<Gate>, blocked: &Arc<AtomicBool>) -> Validation {
+    let (gate, blocked) = (gate.clone(), blocked.clone());
+    Arc::new(move |_, _| {
+        let (gate, blocked) = (gate.clone(), blocked.clone());
+        Box::pin(async move {
+            if blocked.load(Ordering::SeqCst) {
+                gate.wait().await;
+            }
+            Ok(())
+        })
+    })
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn management_rejects_concurrent_edits_before_and_after_proposal_admission() {
+    let (gate, block) = (Arc::new(Gate::default()), Arc::new(AtomicBool::new(false)));
+    let f = fixture_with(with_validation(&gated(&gate, &block)));
+    let id = create(&f, &prepared()).await;
+    block.store(true, Ordering::SeqCst);
+    let late = {
+        let (manager, id) = (f.manager.clone(), id.clone());
+        tokio::spawn(async move {
+            manager
+                .propose_management(
+                    "update",
+                    &id,
+                    &json!({"title": "Stale edit"}),
+                    allow(),
+                    None,
+                )
+                .await
+        })
+    };
+    flush().await;
+    block.store(false, Ordering::SeqCst);
+    let mut newer = prepared();
+    newer["input"]["title"] = json!("Newer edit");
+    f.manager.update(&id, &newer, None).await.unwrap();
+    gate.open();
+    assert!(late.await.unwrap().is_err());
+    let pause = f
+        .manager
+        .propose_management("pause", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    newer["input"]["prompt"] = json!("Newer prompt");
+    f.manager.update(&id, &newer, None).await.unwrap();
+    let error = f
+        .manager
+        .confirm_proposal(pause["id"].as_str().unwrap(), None)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("changed"));
+    let task = f.manager.detail(&id, None).unwrap()["task"].clone();
+    assert_eq!(task["title"], "Newer edit");
+    assert_eq!(task["prompt"], "Newer prompt");
+    assert_eq!(task["status"], "active");
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn management_confirmation_does_not_race_during_permission_validation() {
+    for change in ["revoke", "edit", "cancel_preview", "abort"] {
+        let (gate, block) = (Arc::new(Gate::default()), Arc::new(AtomicBool::new(false)));
+        let allowed = Arc::new(AtomicBool::new(true));
+        let f = fixture_with(with_validation(&gated(&gate, &block)));
+        let id = create(&f, &prepared()).await;
+        let scope: AssertScope = {
+            let allowed = allowed.clone();
+            Arc::new(move |_| {
+                if allowed.load(Ordering::SeqCst) {
+                    Ok(())
+                } else {
+                    Err(internal("Scope revoked"))
+                }
+            })
+        };
+        let preview = f
+            .manager
+            .propose_management("pause", &id, &json!({}), scope, None)
+            .await
+            .unwrap();
+        let pid = preview["id"].as_str().unwrap().to_owned();
+        block.store(true, Ordering::SeqCst);
+        let confirming = {
+            let (manager, pid, allowed) = (f.manager.clone(), pid.clone(), allowed.clone());
+            tokio::spawn(async move {
+                let authorized: Arc<dyn Fn() -> bool + Send + Sync> =
+                    Arc::new(move || allowed.load(Ordering::SeqCst));
+                manager.confirm_proposal(&pid, Some(authorized)).await
+            })
+        };
+        flush().await;
+        match change {
+            "revoke" | "abort" => allowed.store(false, Ordering::SeqCst),
+            "cancel_preview" => f.manager.cancel_proposal(&pid),
+            _ => {
+                block.store(false, Ordering::SeqCst);
+                let mut update = prepared();
+                update["input"]["title"] = json!("Newer");
+                f.manager.update(&id, &update, None).await.unwrap();
+            }
+        }
+        gate.open();
+        let _ = confirming.await.unwrap();
+        assert_eq!(
+            f.manager.detail(&id, None).unwrap()["task"]["status"],
+            "active",
+            "{change}"
+        );
+        assert_ne!(f.manager.proposal(&pid).unwrap()["status"], "confirmed");
+        f.manager.dispose().await;
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn management_preview_expiry_and_bridge_restart_cannot_recreate_a_management_operation_as_a_task()
+ {
+    let f = fixture();
+    let id = create(&f, &prepared()).await;
+    let stale = f
+        .manager
+        .propose_management("pause", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    f.advance(10 * 60_000).await;
+    let error = f
+        .manager
+        .confirm_proposal(stale["id"].as_str().unwrap(), None)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("expired"));
+    let preview = f
+        .manager
+        .propose_management("cancel", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    let pid = preview["id"].as_str().unwrap();
+    f.manager.dispose().await;
+    let restored = f.restart();
+    assert_eq!(
+        restored.manager.proposal(pid).unwrap()["status"],
+        "cancelled"
+    );
+    restored.manager.confirm_proposal(pid, None).await.unwrap();
+    assert_eq!(restored.manager.summaries().len(), 1);
+    assert_eq!(
+        restored.manager.detail(&id, None).unwrap()["task"]["status"],
+        "active"
+    );
+    restored.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn failed_management_saves_preserve_the_original_task_and_pending_preview_for_a_safe_retry() {
+    let f = fixture();
+    let id = create(&f, &prepared()).await;
+    let preview = f
+        .manager
+        .propose_management("pause", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    let pid = preview["id"].as_str().unwrap();
+    let before = f.manager.detail(&id, None).unwrap();
+    f.fail(true);
+    let error = f.manager.confirm_proposal(pid, None).await.unwrap_err();
+    assert!(error.to_string().contains("could not be saved"));
+    assert_eq!(f.manager.detail(&id, None).unwrap(), before);
+    assert_eq!(f.manager.proposal(pid).unwrap()["status"], "pending");
+    f.fail(false);
+    f.manager.confirm_proposal(pid, None).await.unwrap();
+    assert_eq!(
+        f.manager.detail(&id, None).unwrap()["task"]["status"],
+        "paused"
+    );
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn pause_cancels_unadmitted_scheduled_dispatch_even_if_validation_ignores_abort_and_resume_retains_the_once_occurrence()
+ {
+    let (gate, block) = (Arc::new(Gate::default()), Arc::new(AtomicBool::new(false)));
+    // Ignores its abort: it ends only when the gate opens.
+    let validation: Validation = {
+        let (gate, block) = (gate.clone(), block.clone());
+        Arc::new(move |_, _| {
+            let (gate, block) = (gate.clone(), block.clone());
+            Box::pin(async move {
+                if block.load(Ordering::SeqCst) {
+                    gate.wait().await;
+                }
+                Ok(())
+            })
+        })
+    };
+    let f = fixture_with(with_validation(&validation));
+    let id = create(
+        &f,
+        &prepared_with(json!({"type": "once", "at": "2026-10-04T00:01:00.000Z"})),
+    )
+    .await;
+    f.manager.resume().await;
+    block.store(true, Ordering::SeqCst);
+    f.advance(60_000).await;
+    f.manager.control("pause", &id).await.unwrap();
+    gate.open();
+    block.store(false, Ordering::SeqCst);
+    flush().await;
+    assert_eq!(f.run_count(), 0);
+    let task = f.manager.detail(&id, None).unwrap()["task"].clone();
+    assert_eq!(task["status"], "paused");
+    assert!(task["next_run_at"].is_null());
+    assert_eq!(task["current_run"]["status"], "queued");
+    assert!(task["current_run"].get("started_at").is_none());
+    f.manager.control("resume", &id).await.unwrap();
+    f.advance(0).await;
+    assert_eq!(f.run_count(), 1);
+    assert_eq!(f.run(0).run["scheduled_at"], "2026-10-04T00:01:00.000Z");
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn task_deletion_saves_a_non_replayable_warning_when_private_history_cleanup_cannot_finish() {
+    let home = Arc::new(tempfile::tempdir().unwrap());
+    let context = DataContext::new(home.path(), Platform::Unix, None);
+    let directory = home.path().join("assistant");
+    std::fs::create_dir_all(&directory).unwrap();
+    let outside = directory.join("protected-fixture");
+    std::fs::create_dir(&outside).unwrap();
+    std::fs::write(outside.join("sentinel"), "must stay").unwrap();
+    let armed = Arc::new(AtomicBool::new(false));
+    let planted = Arc::new(AtomicBool::new(false));
+    let task_directory: Arc<Mutex<PathBuf>> = Arc::default();
+    let handle: Arc<Mutex<Option<AssistantTasks>>> = Arc::default();
+    let clock = clock_at(START);
+    let publish = {
+        let (armed, planted, task_directory, handle) = (
+            armed.clone(),
+            planted.clone(),
+            task_directory.clone(),
+            handle.clone(),
+        );
+        let (directory, outside) = (directory.clone(), outside.clone());
+        Arc::new(move || {
+            let manager = handle.lock().unwrap().clone();
+            let Some(manager) = manager else { return };
+            if armed.load(Ordering::SeqCst)
+                && !planted.load(Ordering::SeqCst)
+                && manager.summaries().is_empty()
+            {
+                planted.store(true, Ordering::SeqCst);
+                let path = task_directory.lock().unwrap().clone();
+                std::fs::rename(&path, directory.join("retained-history")).unwrap();
+                std::os::unix::fs::symlink(&outside, &path).unwrap();
+            }
+        }) as Arc<dyn Fn() + Send + Sync>
+    };
+    let manager = AssistantTasks::new(TaskOptions {
+        directory: directory.clone(),
+        context: context.clone(),
+        clock: Arc::new(ClockRef(clock)),
+        publish,
+        notify: None,
+        validate: Arc::new(|_, _| Box::pin(async { Ok(()) })),
+        validate_cleanup: None,
+        rescope: None,
+        narrow: None,
+        child: Arc::new(|_, _, _, _| panic!("No task should run")),
+    });
+    *handle.lock().unwrap() = Some(manager.clone());
+    let task = manager.create(&prepared(), &uuid()).await.unwrap();
+    let id = task["id"].as_str().unwrap().to_owned();
+    let path = directory.join("tasks").join(&id);
+    std::fs::create_dir_all(&path).unwrap();
+    std::fs::write(path.join("private-history"), "fixture only").unwrap();
+    *task_directory.lock().unwrap() = path;
+    manager.control("cancel", &id).await.unwrap();
+    let proposal = manager
+        .propose_management("delete", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    let pid = proposal["id"].as_str().unwrap();
+    armed.store(true, Ordering::SeqCst);
+    let error = manager.confirm_proposal(pid, None).await.unwrap_err();
+    assert!(matches!(error, AssistantError::User(_)));
+    assert!(
+        error
+            .to_string()
+            .contains("deleted, but its private history could not be removed")
+    );
+    assert!(manager.summaries().is_empty());
+    let receipt = manager.proposal(pid).unwrap();
+    assert_eq!(receipt["status"], "confirmed");
+    assert_eq!(receipt["detail"], error.to_string().as_str());
+    manager.confirm_proposal(pid, None).await.unwrap();
+    assert!(outside.join("sentinel").exists());
+    manager.dispose().await;
+    *handle.lock().unwrap() = None;
+    let restored = fixture_with(FixtureOptions {
+        existing: Some((directory, context, clock)),
+        ..FixtureOptions::default()
+    });
+    let receipt = restored.manager.proposal(pid).unwrap();
+    assert_eq!(receipt["operation"], "delete");
+    assert_eq!(receipt["status"], "confirmed");
+    assert_eq!(receipt["detail"], error.to_string().as_str());
+    assert!(!restored.manager.invalid());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_cancelled_management_receipt_cannot_be_replayed_or_deleted_while_its_child_drains() {
+    let f = fixture();
+    let id = create(&f, &prepared()).await;
+    f.manager.resume().await;
+    let active = start_run(&f, &id).await;
+    let gate = Arc::new(Gate::default());
+    *active.stop_gate.lock().unwrap() = Some(gate.clone());
+    let proposal = f
+        .manager
+        .propose_management("cancel", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    let pid = proposal["id"].as_str().unwrap().to_owned();
+    let confirming = {
+        let (manager, pid) = (f.manager.clone(), pid.clone());
+        tokio::spawn(async move { manager.confirm_proposal(&pid, None).await })
+    };
+    flush().await;
+    assert_eq!(f.manager.proposal(&pid).unwrap()["status"], "confirmed");
+    f.manager.confirm_proposal(&pid, None).await.unwrap();
+    let error = f
+        .manager
+        .propose_management("delete", &id, &json!({}), allow(), None)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("Cancel this task"));
+    gate.open();
+    confirming.await.unwrap().unwrap();
+    let remove = f
+        .manager
+        .propose_management("delete", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    f.manager
+        .confirm_proposal(remove["id"].as_str().unwrap(), None)
+        .await
+        .unwrap();
+    assert!(f.manager.summaries().is_empty());
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_management_edit_cannot_rearm_a_completed_one_shot_and_seals_mutable_tool_arguments_before_awaiting()
+ {
+    let (gate, block) = (Arc::new(Gate::default()), Arc::new(AtomicBool::new(false)));
+    let f = fixture_with(with_validation(&gated(&gate, &block)));
+    let id = create(
+        &f,
+        &prepared_with(json!({"type": "once", "at": "2026-10-04T00:01:00.000Z"})),
+    )
+    .await;
+    f.manager.resume().await;
+    f.advance(60_000).await;
+    f.run(0).complete(false, None);
+    // The arguments are a value the call owns once made (the TS seals them
+    // before its first await).
+    let mut changes = json!({"title": "Approved title"});
+    block.store(true, Ordering::SeqCst);
+    let proposing = {
+        let (manager, id, changes) = (f.manager.clone(), id.clone(), changes.clone());
+        tokio::spawn(async move {
+            manager
+                .propose_management("update", &id, &changes, allow(), None)
+                .await
+        })
+    };
+    flush().await;
+    changes["title"] = json!("Changed while awaiting");
+    block.store(false, Ordering::SeqCst);
+    gate.open();
+    let proposal = proposing.await.unwrap().unwrap();
+    assert_eq!(proposal["title"], "Approved title");
+    f.manager
+        .confirm_proposal(proposal["id"].as_str().unwrap(), None)
+        .await
+        .unwrap();
+    let task = f.manager.detail(&id, None).unwrap()["task"].clone();
+    assert_eq!(task["title"], "Approved title");
+    assert!(task["next_run_at"].is_null());
+    f.advance(600_000).await;
+    assert_eq!(f.run_count(), 1);
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_failed_save_preserves_an_in_flight_admission_and_its_authoritative_run() {
+    for operation in ["pause", "cancel"] {
+        let (gate, block) = (Arc::new(Gate::default()), Arc::new(AtomicBool::new(false)));
+        let f = fixture_with(with_validation(&gated(&gate, &block)));
+        let id = create(
+            &f,
+            &prepared_with(json!({"type": "once", "at": "2026-10-04T00:01:00.000Z"})),
+        )
+        .await;
+        f.manager.resume().await;
+        block.store(true, Ordering::SeqCst);
+        f.advance(60_000).await;
+        let before = f.manager.detail(&id, None).unwrap();
+        assert_eq!(before["task"]["current_run"]["status"], "running");
+        f.fail(true);
+        let error = f.manager.control(operation, &id).await.unwrap_err();
+        assert!(error.to_string().contains("could not be saved"));
+        assert_eq!(f.manager.detail(&id, None).unwrap(), before);
+        f.fail(false);
+        block.store(false, Ordering::SeqCst);
+        gate.open();
+        flush().await;
+        assert_eq!(f.run_count(), 1, "{operation}");
+        assert_eq!(f.run(0).run["id"], before["task"]["current_run"]["id"]);
+        f.run(0).complete(false, None);
+        assert_eq!(
+            f.manager.detail(&id, None).unwrap()["runs"][0]["status"],
+            "succeeded"
+        );
+        f.manager.resume().await;
+        f.advance(120_000).await;
+        assert_eq!(f.run_count(), 1);
+        f.manager.dispose().await;
+    }
+}
+
+impl Observed {
+    /// A fresh dispose gate (`disposeGate = Promise.withResolvers()`).
+    fn gate_dispose(&self) -> Arc<Gate> {
+        let gate = Arc::new(Gate::default());
+        self.dispose_failure.store(false, Ordering::SeqCst);
+        *self.dispose_gate.lock().unwrap() = Some(gate.clone());
+        gate
+    }
+
+    /// `disposeGate.reject(...)`.
+    fn reject_dispose(&self, gate: &Gate) {
+        self.dispose_failure.store(true, Ordering::SeqCst);
+        gate.open();
+    }
+
+    fn gate_stop(&self) -> Arc<Gate> {
+        let gate = Arc::new(Gate::default());
+        *self.stop_gate.lock().unwrap() = Some(gate.clone());
+        gate
+    }
+}
+
+fn spawn_confirm(f: &Fixture, id: &str) -> tokio::task::JoinHandle<AssistantResult<()>> {
+    let (manager, id) = (f.manager.clone(), id.to_owned());
+    tokio::spawn(async move { manager.confirm_proposal(&id, None).await })
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_finalizing_receipt_and_run_survive_proposal_pruning_and_an_unrelated_failed_save() {
+    let f = fixture();
+    let id = create(&f, &prepared()).await;
+    f.manager.resume().await;
+    let active = start_run(&f, &id).await;
+    let stop_gate = active.gate_stop();
+    let proposal = f
+        .manager
+        .propose_management("cancel", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    let pid = proposal["id"].as_str().unwrap().to_owned();
+    let confirming = spawn_confirm(&f, &pid);
+    flush().await;
+    assert_eq!(f.manager.proposal(&pid).unwrap()["status"], "confirmed");
+    f.fail(true);
+    let error = f.manager.propose(&prepared(), None).await.unwrap_err();
+    assert!(error.to_string().contains("could not be saved"));
+    f.fail(false);
+    f.manager.propose(&prepared(), None).await.unwrap();
+    *active.stop_error.lock().unwrap() = Some(internal("Stop failed"));
+    stop_gate.open();
+    let failure = confirming.await.unwrap().unwrap_err();
+    assert!(matches!(failure, AssistantError::User(_)));
+    let receipt = f.manager.proposal(&pid).unwrap();
+    assert_eq!(receipt["status"], "confirmed");
+    assert!(
+        receipt["detail"]
+            .as_str()
+            .unwrap()
+            .contains("could not be fully stopped")
+    );
+    let saved = TaskStorage::open(&f.context, &f.directory)
+        .unwrap()
+        .load()
+        .unwrap();
+    let stored = saved["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["proposal"]["id"] == pid.as_str())
+        .unwrap()["proposal"]
+        .clone();
+    assert_same!(stored, receipt);
+    assert!(saved["tasks"][0]["runs"][0].get("input").is_none());
+    f.manager.confirm_proposal(&pid, None).await.unwrap();
+    assert_eq!(active.dispose_calls.load(Ordering::SeqCst), 1);
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn finalizing_receipts_count_toward_the_proposal_bound_and_cannot_be_displaced() {
+    let f = fixture();
+    let id = create(&f, &prepared()).await;
+    f.manager.resume().await;
+    let active = start_run(&f, &id).await;
+    let stop_gate = active.gate_stop();
+    let proposal = f
+        .manager
+        .propose_management("cancel", &id, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    let pid = proposal["id"].as_str().unwrap().to_owned();
+    let confirming = spawn_confirm(&f, &pid);
+    flush().await;
+    for _ in 0..49 {
+        f.manager.propose(&prepared(), None).await.unwrap();
+    }
+    let error = f.manager.propose(&prepared(), None).await.unwrap_err();
+    assert!(error.to_string().contains("Too many"));
+    let error = f
+        .manager
+        .propose_management("cancel", &id, &json!({}), allow(), None)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("Too many"));
+    assert_eq!(f.manager.proposal(&pid).unwrap()["status"], "confirmed");
+    let saved = TaskStorage::open(&f.context, &f.directory)
+        .unwrap()
+        .load()
+        .unwrap();
+    assert_eq!(saved["proposals"].as_array().unwrap().len(), 50);
+    stop_gate.open();
+    confirming.await.unwrap().unwrap();
+    f.manager.propose(&prepared(), None).await.unwrap();
+    assert!(f.manager.proposal(&pid).is_none());
+    assert!(!f.manager.invalid());
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn completed_child_disposal_protects_history_until_it_succeeds() {
+    for outcome in ["resolve", "reject"] {
+        let f = fixture();
+        let id = create(&f, &prepared()).await;
+        f.manager.resume().await;
+        let active = start_run(&f, &id).await;
+        let gate = active.gate_dispose();
+        active.complete(false, None);
+        flush().await;
+        assert!(active.disposing.load(Ordering::SeqCst));
+        f.manager.control("cancel", &id).await.unwrap();
+        assert!(
+            f.manager
+                .delete(&id)
+                .unwrap_err()
+                .to_string()
+                .contains("before deleting")
+        );
+        let error = f
+            .manager
+            .propose_management("delete", &id, &json!({}), allow(), None)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("before deleting"));
+        if outcome == "reject" {
+            active.reject_dispose(&gate);
+            flush().await;
+            assert!(
+                f.manager
+                    .delete(&id)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("before deleting")
+            );
+            let gate = active.gate_dispose();
+            let retrying = spawn_control(&f, "cancel", &id);
+            flush().await;
+            assert_eq!(active.dispose_calls.load(Ordering::SeqCst), 2);
+            f.manager.control("cancel", &id).await.unwrap();
+            assert_eq!(active.dispose_calls.load(Ordering::SeqCst), 2);
+            gate.open();
+            retrying.await.unwrap().unwrap();
+        } else {
+            gate.open();
+            flush().await;
+            assert_eq!(active.dispose_calls.load(Ordering::SeqCst), 1);
+        }
+        let proposal = f
+            .manager
+            .propose_management("delete", &id, &json!({}), allow(), None)
+            .await
+            .unwrap();
+        f.manager
+            .confirm_proposal(proposal["id"].as_str().unwrap(), None)
+            .await
+            .unwrap();
+        assert!(f.manager.summaries().is_empty(), "{outcome}");
+        f.manager.dispose().await;
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn run_retention_defers_private_history_removal_while_an_older_child_drains() {
+    let f = fixture();
+    let id = create(&f, &prepared()).await;
+    f.manager.resume().await;
+    let active = start_run(&f, &id).await;
+    let gate = active.gate_dispose();
+    std::fs::create_dir_all(&active.directory).unwrap();
+    let history = active.directory.join("private-history");
+    std::fs::write(&history, "Still owned by the child").unwrap();
+    active.complete(false, None);
+    for _ in 0..20 {
+        let next = start_run(&f, &id).await;
+        next.complete(false, None);
+        flush().await;
+    }
+    let runs = f.manager.detail(&id, None).unwrap()["runs"].clone();
+    assert_eq!(runs.as_array().unwrap().len(), 20);
+    assert!(
+        !runs
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|run| run["id"] == active.id())
+    );
+    assert!(history.exists());
+    f.manager.control("cancel", &id).await.unwrap();
+    assert!(
+        f.manager
+            .delete(&id)
+            .unwrap_err()
+            .to_string()
+            .contains("before deleting")
+    );
+    gate.open();
+    flush().await;
+    assert!(!history.exists());
+    f.manager.delete(&id).unwrap();
+    assert!(f.manager.summaries().is_empty());
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn retrying_failed_cancellation_disposal_releases_the_model_slot_without_replaying_its_receipt()
+ {
+    let f = fixture();
+    let first = create(&f, &prepared()).await;
+    let second = create(&f, &prepared()).await;
+    f.manager.resume().await;
+    let active = start_run(&f, &first).await;
+    f.manager.control("run_now", &second).await.unwrap();
+    let gate = active.gate_dispose();
+    let proposal = f
+        .manager
+        .propose_management("cancel", &first, &json!({}), allow(), None)
+        .await
+        .unwrap();
+    let pid = proposal["id"].as_str().unwrap().to_owned();
+    let confirming = spawn_confirm(&f, &pid);
+    flush().await;
+    assert!(active.disposing.load(Ordering::SeqCst));
+    active.reject_dispose(&gate);
+    assert!(matches!(
+        confirming.await.unwrap().unwrap_err(),
+        AssistantError::User(_)
+    ));
+    assert!(
+        f.manager
+            .delete(&first)
+            .unwrap_err()
+            .to_string()
+            .contains("retry cleanup")
+    );
+    f.manager.confirm_proposal(&pid, None).await.unwrap();
+    assert_eq!(active.dispose_calls.load(Ordering::SeqCst), 1);
+    let gate = active.gate_dispose();
+    let retrying = spawn_control(&f, "cancel", &first);
+    flush().await;
+    f.advance(5_000).await;
+    assert_eq!(f.run_count(), 1);
+    assert_eq!(active.dispose_calls.load(Ordering::SeqCst), 2);
+    gate.open();
+    retrying.await.unwrap().unwrap();
+    f.advance(0).await;
+    assert_eq!(f.run_count(), 2);
+    assert_eq!(f.run(1).run["task_id"], second.as_str());
+    assert_eq!(
+        f.manager.detail(&second, None).unwrap()["runs"][0]["status"],
+        "running"
+    );
+    f.manager.delete(&first).unwrap();
+    assert_eq!(f.manager.proposal(&pid).unwrap()["status"], "confirmed");
+    f.manager.dispose().await;
+}
+
+fn rescoping(
+    count: &Arc<AtomicUsize>,
+    map: impl Fn(Value) -> AssistantResult<Value> + Send + Sync + 'static,
+) -> Rescope {
+    let count = count.clone();
+    let map = Arc::new(map);
+    Arc::new(move |current, _| {
+        count.fetch_add(1, Ordering::SeqCst);
+        let result = map(current);
+        Box::pin(async move { result })
+    })
+}
+
+fn workspace_ids(list: &Value) -> Vec<String> {
+    list.as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["workspace_id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+fn fixture_at(iso: &str, options: FixtureOptions) -> Fixture {
+    let home = Arc::new(tempfile::tempdir().unwrap());
+    let context = DataContext::new(home.path(), Platform::Unix, None);
+    let directory = home.path().join("assistant");
+    let mut f = fixture_with(FixtureOptions {
+        existing: Some((directory, context, clock_at(iso))),
+        ..options
+    });
+    f.home = Some(home);
+    f
+}
+
+/// `later(base)`: a workspace created after the task, added.
+fn later(base: &Value) -> Value {
+    let mut out = base.clone();
+    let reference = json!({"connection_id": "local", "workspace_id": "later"});
+    out["input"]["scope"]
+        .as_array_mut()
+        .unwrap()
+        .push(reference.clone());
+    out["config"]["allowed_workspaces"]
+        .as_array_mut()
+        .unwrap()
+        .push(reference);
+    let workspace = merge(
+        &base["workspaces"][0],
+        json!({"workspace_id": "later", "label": "Later"}),
+    );
+    out["workspaces"].as_array_mut().unwrap().push(workspace);
+    let target = merge(&base["targets"][0], json!({"workspace_id": "later"}));
+    out["targets"].as_array_mut().unwrap().push(target);
+    out
+}
+
+fn first_only(current: &Value) -> Value {
+    let mut out = current.clone();
+    for path in [("input", "scope"), ("config", "allowed_workspaces")] {
+        let list = out[path.0][path.1].as_array().unwrap()[..1].to_vec();
+        out[path.0][path.1] = Value::Array(list);
+    }
+    for key in ["workspaces", "targets"] {
+        let list = out[key].as_array().unwrap()[..1].to_vec();
+        out[key] = Value::Array(list);
+    }
+    out
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_task_over_all_workspaces_takes_those_of_the_time_each_run_starts() {
+    let input = prepared()["input"].clone();
+    assert_eq!(
+        validate_task_input(&merge(&input, json!({"all_workspaces": true}))).unwrap()["all_workspaces"],
+        true
+    );
+    for bad in [json!(false), json!("yes")] {
+        let result = validate_task_input(&merge(&input, json!({"all_workspaces": bad})));
+        assert_eq!(result.unwrap_err().to_string(), "Invalid task input");
+    }
+    let rescoped = Arc::new(AtomicUsize::new(0));
+    let f = fixture_at(
+        "2026-10-28T00:00:00Z",
+        FixtureOptions {
+            rescope: Some(rescoping(&rescoped, |current| {
+                Ok(later(&first_only(&current)))
+            })),
+            ..FixtureOptions::default()
+        },
+    );
+    let mut all = prepared();
+    all["input"]["all_workspaces"] = json!(true);
+    let id = create(&f, &all).await;
+    f.manager.resume().await;
+    let first = start_run(&f, &id).await;
+    assert_eq!(rescoped.load(Ordering::SeqCst), 1);
+    assert_eq!(workspace_ids(&first.run["targets"]), ["workspace", "later"]);
+    assert_eq!(
+        workspace_ids(&f.manager.detail(&id, None).unwrap()["task"]["workspaces"]),
+        ["workspace", "later"]
+    );
+    // The same event is not notified again by a run over other workspaces.
+    let result = f
+        .manager
+        .notify_run(
+            &id,
+            first.id(),
+            &custom_notification("agent-work-1:completed"),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(text_json(&result)["accepted"], true);
+    first.complete(false, None);
+    flush().await;
+    let second = start_run(&f, &id).await;
+    assert_eq!(rescoped.load(Ordering::SeqCst), 2);
+    let result = f
+        .manager
+        .notify_run(
+            &id,
+            second.id(),
+            &custom_notification("agent-work-1:completed"),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        text_json(&result),
+        json!({"accepted": false, "reason": "already_notified"})
+    );
+    second.complete(false, None);
+    flush().await;
+    // A task over chosen workspaces keeps them.
+    let fixed = create(&f, &prepared()).await;
+    let run = start_run(&f, &fixed).await;
+    assert_eq!(rescoped.load(Ordering::SeqCst), 2);
+    assert_eq!(workspace_ids(&run.run["targets"]), ["workspace"]);
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_run_that_cannot_start_says_why_when_it_safely_can() {
+    let failure = Arc::new(Mutex::new(AssistantError::user(
+        "No workspace Ranger may use is available for this task.",
+    )));
+    let source = failure.clone();
+    let f = fixture_with(FixtureOptions {
+        rescope: Some(rescoping(&Arc::default(), move |_| {
+            Err(source.lock().unwrap().clone())
+        })),
+        ..FixtureOptions::default()
+    });
+    let mut all = prepared();
+    all["input"]["all_workspaces"] = json!(true);
+    let id = create(&f, &all).await;
+    f.manager.resume().await;
+    f.manager.control("run_now", &id).await.unwrap();
+    f.advance(0).await;
+    let run = f.manager.detail(&id, None).unwrap()["runs"][0].clone();
+    assert_eq!(run["status"], "failed");
+    assert_eq!(
+        run["error"],
+        "The task could not safely start: No workspace Ranger may use is available for this task."
+    );
+    // Other failures can carry transport details: they stay masked, but the
+    // run says at which step it failed.
+    *failure.lock().unwrap() = internal("connect ENOENT /run/user/1000/herdr.sock");
+    f.manager.control("run_now", &id).await.unwrap();
+    f.advance(0).await;
+    let masked = f.manager.detail(&id, None).unwrap()["runs"][0].clone();
+    assert_eq!(masked["status"], "failed");
+    assert_eq!(
+        masked["error"],
+        "The task could not safely start: an unexpected error while checking its workspaces. Run it again; if it keeps failing, edit the task to choose its workspaces and model again."
+    );
+    assert!(!masked["error"].as_str().unwrap().contains("herdr.sock"));
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_run_cannot_resume_after_its_herdr_restarted_and_says_to_start_a_fresh_one() {
+    let f = fixture();
+    let id = create(
+        &f,
+        &prepared_with(json!({"type": "once", "at": "2026-10-04T00:01:00.000Z"})),
+    )
+    .await;
+    f.manager.resume().await;
+    f.advance(60_000).await;
+    assert_eq!(f.run_count(), 1);
+    f.manager.dispose().await;
+    // The bridge restarts after Herdr on Desktop did.
+    let restarted: Validation =
+        Arc::new(|_, _| Box::pin(async { Err(AssistantError::server_restarted("Desktop")) }));
+    let restored = f.restart_with(with_validation(&restarted));
+    restored.manager.resume().await;
+    flush().await;
+    assert_eq!(restored.run_count(), 0);
+    let run = restored.manager.detail(&id, None).unwrap()["runs"][0].clone();
+    assert_eq!(run["status"], "failed");
+    assert_eq!(
+        run["error"],
+        "This run could not safely resume: Herdr on Desktop restarted since it started. Start a fresh run instead."
+    );
+    restored.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_task_over_all_workspaces_keeps_references_to_a_workspace_missing_from_one_run() {
+    let other = json!({"connection_id": "local", "workspace_id": "other"});
+    let mut both = prepared();
+    both["input"]["all_workspaces"] = json!(true);
+    both["input"]["scope"]
+        .as_array_mut()
+        .unwrap()
+        .push(other.clone());
+    both["config"]["allowed_workspaces"]
+        .as_array_mut()
+        .unwrap()
+        .push(other.clone());
+    let workspace = merge(
+        &merge(&both["workspaces"][0], other.clone()),
+        json!({"label": "Other"}),
+    );
+    both["workspaces"].as_array_mut().unwrap().push(workspace);
+    let target = merge(&both["targets"][0], other.clone());
+    both["targets"].as_array_mut().unwrap().push(target);
+    let mention = merge(
+        &merge(&agent_mention(), other),
+        json!({"workspace_label": "Other"}),
+    );
+    both["input"]["mentions"] = json!([mention]);
+    // What Ranger may use when each run starts, as the service rescopes.
+    let available = Arc::new(Mutex::new(vec!["workspace".to_owned()]));
+    let seen = available.clone();
+    let f = fixture_at(
+        "2026-10-28T00:00:00Z",
+        FixtureOptions {
+            rescope: Some(rescoping(&Arc::default(), move |current| {
+                let available = seen.lock().unwrap().clone();
+                let keep = |list: &Value| {
+                    Value::Array(
+                        list.as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter(|r| available.iter().any(|w| r["workspace_id"] == w.as_str()))
+                            .cloned()
+                            .collect(),
+                    )
+                };
+                let mut input = current["input"].clone();
+                let mentions = input.as_object_mut().unwrap().shift_remove("mentions");
+                let kept = keep(mentions.as_ref().unwrap_or(&json!([])));
+                input["scope"] = keep(&input["scope"]);
+                if !kept.as_array().unwrap().is_empty() {
+                    input["mentions"] = kept;
+                }
+                let mut config = current["config"].clone();
+                config["allowed_workspaces"] = keep(&config["allowed_workspaces"]);
+                Ok(json!({
+                    "input": input,
+                    "config": config,
+                    "workspaces": keep(&current["workspaces"]),
+                    "targets": keep(&current["targets"]),
+                }))
+            })),
+            ..FixtureOptions::default()
+        },
+    );
+    let id = create(&f, &both).await;
+    f.manager.resume().await;
+    let first = start_run(&f, &id).await;
+    assert!(first.run["input"].get("mentions").is_none());
+    assert_eq!(workspace_ids(&first.run["targets"]), ["workspace"]);
+    // The task still has the reference, and the workspace it is in.
+    let detail = f.manager.detail(&id, None).unwrap()["task"].clone();
+    assert_same!(detail["mentions"], json!([mention]));
+    assert_eq!(workspace_ids(&detail["scope"]), ["workspace", "other"]);
+    first.complete(false, None);
+    flush().await;
+    *available.lock().unwrap() = vec!["workspace".into(), "other".into()];
+    let second = start_run(&f, &id).await;
+    assert_same!(second.run["input"]["mentions"], json!([mention]));
+    assert_eq!(
+        workspace_ids(&second.run["targets"]),
+        ["workspace", "other"]
+    );
+    second.complete(false, None);
+    flush().await;
+    f.manager.dispose().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn of_an_all_workspaces_task_does_not_validate_obsolete_workspace_identities() {
+    for method in ["run_now", "resume"] {
+        let gone = Arc::new(AtomicBool::new(false));
+        let validation: Validation = {
+            let gone = gone.clone();
+            Arc::new(move |_, value| {
+                let old = gone.load(Ordering::SeqCst)
+                    && value["targets"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .any(|r| r["workspace_id"] == "workspace");
+                Box::pin(async move {
+                    if old {
+                        return Err(internal("Old workspace is gone"));
+                    }
+                    Ok(())
+                })
+            })
+        };
+        let f = fixture_at(
+            "2026-10-28T00:00:00Z",
+            FixtureOptions {
+                validation: Some(validation),
+                rescope: Some(rescoping(&Arc::default(), |value| {
+                    let mut out = value.clone();
+                    let new = json!([{"connection_id": "local", "workspace_id": "new"}]);
+                    out["input"]["scope"] = new.clone();
+                    out["config"]["allowed_workspaces"] = new;
+                    for key in ["targets", "workspaces"] {
+                        for entry in out[key].as_array_mut().unwrap() {
+                            entry["workspace_id"] = json!("new");
+                        }
+                    }
+                    Ok(out)
+                })),
+                ..FixtureOptions::default()
+            },
+        );
+        let mut all = prepared();
+        all["input"]["all_workspaces"] = json!(true);
+        let id = create(&f, &all).await;
+        f.manager.resume().await;
+        f.manager.control("pause", &id).await.unwrap();
+        gone.store(true, Ordering::SeqCst);
+        f.manager.control(method, &id).await.unwrap();
+        let run = start_run(&f, &id).await;
+        assert_eq!(workspace_ids(&run.run["targets"]), ["new"], "{method}");
         f.manager.dispose().await;
     }
 }
