@@ -70,7 +70,8 @@
     },
     "mr_cache": {
       "phase": 3,
-      "rpc": ["forge."],
+      "note": "the cache and its file; forge.status, forge.session and the PR card stay answered by Bun, whose forge reads (and forge gate) go with the host layer, asking the cache through internal.mr_cache.get while Rust owns it",
+      "rpc": [],
       "http": [],
       "files": ["data:mr-cache/state.json"],
       "shadow": []

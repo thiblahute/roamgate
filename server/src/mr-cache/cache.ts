@@ -142,12 +142,18 @@ export function createMrCache(
     publish?: (change: MrCacheChange) => void;
     /** Delays the write to disk; tests use 0. */
     saveDelayMs?: number;
+    /**
+     * Asked before each write: false while another process owns the file
+     * (the Rust core, while it owns the mr_cache family).
+     */
+    mayWrite?: () => boolean;
   } = {},
 ) {
   const now = options.now ?? (() => Date.now());
   const settings = options.settings ?? (() => DEFAULT_MR_CACHE_SETTINGS);
   const path = options.path === undefined ? mrCachePath() : options.path;
   const saveDelayMs = options.saveDelayMs ?? 2_000;
+  const mayWrite = options.mayWrite ?? (() => true);
   const entries = new Map<string, Stored>();
   const inFlight = new Map<string, Promise<unknown>>();
   const failures = new Map<string, { count: number; retryAt: number }>();
@@ -177,6 +183,7 @@ export function createMrCache(
     if (!path) return;
     const write = () => {
       timer = null;
+      if (!mayWrite()) return;
       try {
         mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
         replaceDataFile(
@@ -352,7 +359,7 @@ export function createMrCache(
     flush() {
       if (timer) clearTimeout(timer);
       timer = null;
-      if (!path) return;
+      if (!path || !mayWrite()) return;
       try {
         mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
         replaceDataFile(

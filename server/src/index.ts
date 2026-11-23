@@ -324,7 +324,13 @@ import { createHistoryRoute } from "./http/history";
 import { isHostPath, ReviewGoneError } from "./workspace/review-patch";
 import { createForgeCache, parseForgeRefParam } from "./review/forge";
 import { mrCachePush } from "./mr-cache/push";
-import { onMrCacheChange, sharedMrCache } from "./mr-cache/shared";
+import {
+  mrCacheLoad,
+  mrCacheRelease,
+  onMrCacheChange,
+  setMrCacheCore,
+  sharedMrCache,
+} from "./mr-cache/shared";
 import { SessionImageGoneError } from "./agent/session-images";
 import {
   type GlabContext,
@@ -1058,6 +1064,10 @@ const coreReverseTargets = {
       ),
     };
   },
+  // The mr_cache family: the forge reads stay here, asked by the core's
+  // cache; Bun's own cache is written and dropped when the core takes it.
+  "mr_cache.load": mrCacheLoad,
+  "mr_cache.release": async () => mrCacheRelease(),
 };
 
 /**
@@ -5672,6 +5682,7 @@ function main() {
     deliverPush: deliverCorePush,
     reverseTargets: coreReverseTargets,
   });
+  setMrCacheCore(coreFront);
   if (config.authRequired) {
     if (config.generatedAuthTokenPath) {
       logger.info("authentication required", {
