@@ -218,7 +218,7 @@ pub(crate) struct Inner {
     pub(crate) released: Mutex<HashMap<String, Released>>,
     /// Held around each read-modify-write of a lease: tasks run in
     /// parallel here, where Bun's event loop ran one change at a time.
-    pub(crate) lease_lock: Mutex<()>,
+    pub(crate) lease_lock: Arc<Mutex<()>>,
     /// Each pane's lease as last told to the browsers (to note releases
     /// the handover made).
     known: Mutex<HashMap<String, (String, String)>>,
@@ -1259,6 +1259,8 @@ impl ConversationService {
             let closed: Arc<dyn Fn() -> bool + Send + Sync> =
                 Arc::new(move || closed_me.upgrade().is_none_or(|me| me.closed()));
             let holders = HolderRegistry::new(options.clock.clone());
+            // The handover's lease writes take it too.
+            let lease_lock: Arc<Mutex<()>> = Arc::default();
             let mut deps = HandoverDeps::new(
                 options.herdr.clone(),
                 options.leases.clone(),
@@ -1270,6 +1272,7 @@ impl ConversationService {
             deps.resume_command = options.resume_command.clone();
             deps.launch_command = options.launch_command.clone();
             deps.closed = Some(closed.clone());
+            deps.lease_lock = Some(lease_lock.clone());
             deps.terminal_tasks = options.terminal_tasks.clone();
             deps.exact_status = options.exact_status.clone();
             deps.exit_swallowed = options.exit_swallowed.clone();
@@ -1355,7 +1358,7 @@ impl ConversationService {
                 model_notices: Mutex::new(HashMap::new()),
                 suspended,
                 released: Mutex::new(HashMap::new()),
-                lease_lock: Mutex::new(()),
+                lease_lock,
                 known: Mutex::new(HashMap::new()),
                 aux: aux::AuxState::default(),
                 holder_side: holders::HolderSideState::default(),

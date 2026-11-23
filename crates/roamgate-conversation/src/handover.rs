@@ -126,6 +126,9 @@ pub struct HandoverDeps {
     /// Whether the pane session's transcript has `command` as an ordinary
     /// user message since `since_ms`: (pane, command, since_ms).
     pub exit_swallowed: Option<ExitSwallowed>,
+    /// Held around each lease write: the service's read-modify-writes of a
+    /// lease take it as well, so a handover's write never lands inside one.
+    pub lease_lock: Option<Arc<std::sync::Mutex<()>>>,
     pub times: HandoverTimes,
 }
 
@@ -156,6 +159,7 @@ impl HandoverDeps {
             on_exit_dialog: None,
             exact_status: None,
             exit_swallowed: None,
+            lease_lock: None,
             times: HandoverTimes::default(),
         }
     }
@@ -424,17 +428,31 @@ impl Handover {
         }
     }
 
+    /// The service's lease lock, held for one write (not across an await).
+    fn lease_guard(&self) -> Option<std::sync::MutexGuard<'_, ()>> {
+        self.deps()
+            .lease_lock
+            .as_ref()
+            .map(|lock| lock.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
     fn set_lease(&self, lease: Lease) -> Step<Lease> {
         self.guard()?;
         let pane = lease_str(&lease, "pane_id").unwrap_or("").to_owned();
-        let next = self.deps().leases.set(lease);
+        let next = {
+            let _guard = self.lease_guard();
+            self.deps().leases.set(lease)
+        };
         self.lease_changed(&pane);
         Ok(next)
     }
 
     fn delete_lease(&self, pane_id: &str) -> Step<()> {
         self.guard()?;
-        self.deps().leases.delete(pane_id);
+        {
+            let _guard = self.lease_guard();
+            self.deps().leases.delete(pane_id);
+        }
         self.lease_changed(pane_id);
         Ok(())
     }
