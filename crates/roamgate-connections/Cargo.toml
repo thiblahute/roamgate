@@ -10,12 +10,13 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+fancy-regex = "0.17"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 indexmap = { version = "2", features = ["serde"] }
 roamgate-base = { path = "../roamgate-base" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["rt", "sync", "macros"] }
+tokio = { version = "1", features = ["rt", "sync", "macros", "time", "net", "io-util"] }
 
 [dev-dependencies]
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }

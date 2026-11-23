@@ -9,6 +9,7 @@
 //! | [`limit_resume`] | the store, a connection as the resumer sees it, the scheduler (server/src/limit-resume) |
 
 pub mod limit_resume;
+pub mod manager;
 pub mod usage_limit;
 
 /// A boxed future, as the effects traits return.
