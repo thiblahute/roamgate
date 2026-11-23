@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
-import { afterEach, expect, jest, test } from "bun:test";
+import { afterEach, expect, jest, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
 import {
   existsSync,
   mkdirSync,
@@ -48,6 +49,16 @@ afterEach(async () => {
 });
 async function flush() {
   for (let index = 0; index < 30; index++) await Promise.resolve();
+}
+
+/**
+ * Whether a path is gone soon: pruned runs are removed off the event loop.
+ * Waits on the file system, not on timers (faked here).
+ */
+async function removed(path: string) {
+  for (let tries = 0; tries < 2000 && existsSync(path); tries++)
+    await fs.promises.stat(path).catch(() => null);
+  return !existsSync(path);
 }
 
 const customNotification = (
@@ -278,6 +289,30 @@ test("notification history retains the latest 100 events independently of pruned
   expect(fixture(f.directory).manager.notificationHistory(task.id)).toEqual(
     history,
   );
+});
+
+test("a pruned run's files are removed off the event loop", async () => {
+  jest.useFakeTimers({ now: Date.parse("2026-10-04T00:00:00Z") });
+  const removals = spyOn(fs, "rmSync");
+  try {
+    const f = fixture();
+    const task = await f.manager.create(prepared(), randomUUID());
+    await f.manager.resume();
+    for (let index = 0; index < 21; index++) {
+      const run = await startRun(f, task.id);
+      mkdirSync(run.directory, { recursive: true });
+      writeFileSync(join(run.directory, "log"), "output");
+      run.complete();
+      await flush();
+    }
+    expect(f.manager.detail(task.id).runs).toHaveLength(20);
+    // Removing them on the event loop waited 18 s on a busy disk.
+    expect(removals).not.toHaveBeenCalled();
+    expect(await removed(f.runs[0]!.directory)).toBe(true);
+    expect(existsSync(f.runs[1]!.directory)).toBe(true);
+  } finally {
+    removals.mockRestore();
+  }
 });
 
 test("custom notification save failures do not emit and delivery failures keep a non-replayable receipt", async () => {
@@ -2641,7 +2676,7 @@ test("run retention defers private history removal while an older child drains",
     expect(() => f.manager.delete(task.id)).toThrow("before deleting");
     active.disposeGate.resolve();
     await flush();
-    expect(existsSync(history)).toBe(false);
+    expect(await removed(history)).toBe(true);
     f.manager.delete(task.id);
     expect(f.manager.summaries()).toHaveLength(0);
   } finally {

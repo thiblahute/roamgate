@@ -1,5 +1,6 @@
 import { trackSshProcess } from "../bridge/ssh-metrics";
 import { runSshCommand } from "../bridge/ssh-sessions";
+import { spawnOffLoop, threadText } from "./spawn-thread";
 
 export async function runProcess(
   argv: string[],
@@ -34,16 +35,12 @@ async function spawnWithCode(
   argv: string[],
   input?: string,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(argv, {
-    stdin: input === undefined ? "ignore" : Buffer.from(input),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const stderrText = new Response(proc.stderr).text();
+  const proc = spawnOffLoop(argv, input === undefined ? {} : { stdin: input });
+  const stderrText = threadText(proc.stderr);
   trackSshProcess(argv, proc.exited, stderrText);
   const [code, stdout, stderr] = await Promise.all([
     proc.exited,
-    new Response(proc.stdout).text(),
+    threadText(proc.stdout),
     stderrText,
   ]);
   return { code, stdout, stderr };
@@ -67,18 +64,13 @@ async function spawnWithCodeTimeout(
   timeoutMs: number,
   options: { cwd?: string; env?: NodeJS.ProcessEnv },
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(argv, {
-    ...options,
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const stderrText = new Response(proc.stderr).text();
+  const proc = spawnOffLoop(argv, options);
+  const stderrText = threadText(proc.stderr);
   trackSshProcess(argv, proc.exited, stderrText);
   let timer: ReturnType<typeof setTimeout> | null = null;
   const output = Promise.all([
     proc.exited,
-    new Response(proc.stdout).text(),
+    threadText(proc.stdout),
     stderrText,
   ]).then(([code, stdout, stderr]) => {
     if (timer) clearTimeout(timer);

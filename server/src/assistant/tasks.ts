@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, rmSync, statSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   AssistantConfig,
@@ -658,6 +659,19 @@ export function createAssistantTasks(options: {
       assertSafeDataPath(join(directory, ".guard"));
     return paths.at(-1)!;
   }
+  /**
+   * Removes a pruned run's files behind, off the event loop: removing them
+   * on it waited 18 s on a busy disk (2026-11-23), every call waiting.
+   */
+  function discardRun(taskId: string, runId: string) {
+    let path: string;
+    try {
+      path = runDirectory(taskId, runId);
+    } catch {
+      return;
+    }
+    void rm(path, { recursive: true, force: true }).catch(() => {});
+  }
   let storage: TaskStorage | undefined;
   try {
     storage = openTaskStorage(options.directory, validateSavedTasks);
@@ -800,12 +814,7 @@ export function createAssistantTasks(options: {
           !runOwners.has(run.id) &&
           tasks.some((item) => item.task.id === entry.task.id)
         ) {
-          try {
-            rmSync(runDirectory(entry.task.id, run.id), {
-              recursive: true,
-              force: true,
-            });
-          } catch {}
+          discardRun(entry.task.id, run.id);
         }
   }
   function find(id: unknown) {
@@ -1054,14 +1063,8 @@ export function createAssistantTasks(options: {
     const taskId = runOwners.get(runId);
     runOwners.delete(runId);
     const entry = tasks.find((item) => item.task.id === taskId);
-    if (entry && !entry.runs.some((run) => run.id === runId)) {
-      try {
-        rmSync(runDirectory(entry.task.id, runId), {
-          recursive: true,
-          force: true,
-        });
-      } catch {}
-    }
+    if (entry && !entry.runs.some((run) => run.id === runId))
+      discardRun(entry.task.id, runId);
   }
   function disposeChild(runId: string, child: ScheduledChild) {
     const existing = childDisposals.get(child);

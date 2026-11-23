@@ -1,4 +1,7 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MrEffort } from "../../../shared/mrReviews";
 import {
@@ -402,4 +405,42 @@ test("fuzzy proposals from upstream, confirmed and rejected; planned requests; w
   const after = changesOf(derived, store.ledger("e1"), store.seen("e1"));
   expect(after.landed).toEqual([]);
   expect(after.unsorted).toEqual([derived.commits.at(-1)!.key]);
+});
+
+test("an effort's files are written behind, never synced on the event loop, and read meanwhile", async () => {
+  const root = mkdtempSync(join(tmpdir(), "roamgate-efforts-"));
+  const syncs = spyOn(fs, "fsyncSync");
+  const appends = spyOn(fs, "appendFileSync");
+  try {
+    const store = createLedgerStore(join(root, "efforts"));
+    const ledger = { ...store.ledger("e1"), aliases: { p2: "p1" } };
+    store.writeLedger("e1", ledger);
+    store.appendHistory("e1", [{ key: "k", sha: "a" }]);
+    // The caller goes on at once (5 s on a busy disk, 2026-11-23): what it
+    // wrote is read back before it is in the file.
+    expect(existsSync(join(root, "efforts", "e1", "ledger.json"))).toBe(false);
+    expect(store.ledger("e1").aliases).toEqual({ p2: "p1" });
+    expect(store.history("e1", "k")).toEqual([{ key: "k", sha: "a" }]);
+    await store.flush();
+    store.appendHistory("e1", [{ key: "k", sha: "b" }]);
+    await store.flush();
+    expect(
+      JSON.parse(
+        readFileSync(join(root, "efforts", "e1", "ledger.json"), "utf8"),
+      ).aliases,
+    ).toEqual({ p2: "p1" });
+    expect(store.history("e1", "k").map((line) => line.sha)).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(createLedgerStore(join(root, "efforts")).ledger("e1")).toEqual(
+      store.ledger("e1"),
+    );
+    expect(syncs).not.toHaveBeenCalled();
+    expect(appends).not.toHaveBeenCalled();
+  } finally {
+    syncs.mockRestore();
+    appends.mockRestore();
+    rmSync(root, { recursive: true, force: true });
+  }
 });

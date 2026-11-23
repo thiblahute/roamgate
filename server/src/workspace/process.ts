@@ -1,5 +1,6 @@
 import { trackSshProcess } from "../bridge/ssh-metrics";
 import { holdSshSession, runSshCommand } from "../bridge/ssh-sessions";
+import { spawnOffLoop, threadText } from "../utils/spawn-thread";
 
 export async function runBinaryProcessWithTimeout(
   argv: string[],
@@ -15,23 +16,22 @@ export async function runBinaryProcessWithTimeout(
 }
 
 async function spawnBinaryWithTimeout(argv: string[], timeoutMs: number) {
-  const proc = Bun.spawn(argv, {
+  const proc = spawnOffLoop(argv, {
     env: { ...process.env, COPYFILE_DISABLE: "1" },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
   });
-  const stderrText = new Response(proc.stderr).text();
+  const stderrText = threadText(proc.stderr);
   trackSshProcess(argv, proc.exited, stderrText);
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const output = Promise.all([
-    proc.exited,
-    new Response(proc.stdout).arrayBuffer(),
-    stderrText,
-  ]).then(([code, stdout, stderr]) => {
-    if (timer) clearTimeout(timer);
-    return { code, stdout: Buffer.from(stdout), stderr };
-  });
+  const output = Promise.all([proc.exited, proc.stdout, stderrText]).then(
+    ([code, stdout, stderr]) => {
+      if (timer) clearTimeout(timer);
+      return {
+        code,
+        stdout: Buffer.from(stdout.buffer, stdout.byteOffset, stdout.length),
+        stderr,
+      };
+    },
+  );
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       try {
@@ -41,16 +41,6 @@ async function spawnBinaryWithTimeout(argv: string[], timeoutMs: number) {
     }, timeoutMs);
   });
   return Promise.race([output, timeout]);
-}
-
-// A child may exit before it reads stdin: `git check-ignore --stdin` outside a
-// repository exits 128 immediately. Writing a payload larger than the pipe
-// buffer then breaks the pipe, and Bun reports that EPIPE on the FileSink
-// promise rather than by throwing. Nothing awaits that promise, so leaving it
-// unhandled terminates the whole server. The child's exit code and stderr still
-// describe the failure, so the broken pipe itself is safe to drop here.
-function ignoreBrokenStdin(result: number | Promise<number>) {
-  if (typeof result !== "number") void result.catch(() => {});
 }
 
 export async function runProcessWithInputTimeout(
@@ -72,20 +62,16 @@ async function spawnWithInputTimeout(
   input: Buffer | string,
   timeoutMs: number,
 ) {
-  const proc = Bun.spawn(argv, {
+  const proc = spawnOffLoop(argv, {
     env: { ...process.env, COPYFILE_DISABLE: "1" },
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
+    stdin: input,
   });
-  ignoreBrokenStdin(proc.stdin.write(input));
-  ignoreBrokenStdin(proc.stdin.end());
-  const stderrText = new Response(proc.stderr).text();
+  const stderrText = threadText(proc.stderr);
   trackSshProcess(argv, proc.exited, stderrText);
   let timer: ReturnType<typeof setTimeout> | null = null;
   const output = Promise.all([
     proc.exited,
-    new Response(proc.stdout).text(),
+    threadText(proc.stdout),
     stderrText,
   ]).then(([code, stdout, stderr]) => {
     if (timer) clearTimeout(timer);

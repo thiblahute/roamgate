@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  dataFileAppender,
   dataFileWriter,
   dataRoot,
   defaultDataFile,
@@ -237,6 +238,30 @@ test("a store's file is written behind its changes, never synced on the event lo
   } finally {
     syncs.mockRestore();
     renames.mockRestore();
+  }
+});
+
+test("a store's history is appended behind, in order, and read with what is pending", async () => {
+  const root = home();
+  const target = join(root, "roamgate", "history.jsonl");
+  const appends = spyOn(fs, "appendFileSync");
+  try {
+    const history = dataFileAppender(target);
+    history.append("1\n");
+    history.append("2\n");
+    // The caller goes on at once: nothing in the file, all of it pending.
+    expect(existsSync(target)).toBe(false);
+    expect(history.pending()).toBe("1\n2\n");
+    await history.flush();
+    history.append("3\n");
+    await history.flush();
+    expect(readFileSync(target, "utf8")).toBe("1\n2\n3\n");
+    expect(history.pending()).toBe("");
+    expect(appends).not.toHaveBeenCalled();
+    if (process.platform !== "win32")
+      expect(statSync(target).mode & 0o777).toBe(0o600);
+  } finally {
+    appends.mockRestore();
   }
 });
 

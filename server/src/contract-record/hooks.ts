@@ -2,6 +2,7 @@ import childProcess from "node:child_process";
 import type { ServerWebSocket, WebSocketHandler } from "bun";
 import { WS_CHUNK_MARKER } from "../bridge/websocket-send";
 import type { ContractRecorder, RawKind, RecordChannel } from "./recorder";
+import { observeThreadSpawns } from "../utils/spawn-thread";
 
 /**
  * The wrappers that feed a ContractRecorder. Each takes the recorder (null
@@ -392,6 +393,19 @@ export function recordSpawns(recorder: ContractRecorder | null): void {
     });
   }
 
+  // Commands run from the spawn thread (spawn-thread.ts), as Bun.spawn's.
+  observeThreadSpawns({
+    started: (argv, cwd, pid) =>
+      started("Bun.spawn", { argv: argvOf(argv), cwd }, pid),
+    exited: (argv, pid, code, ms) =>
+      exited(
+        "Bun.spawn",
+        { argv: argvOf(argv) },
+        pid,
+        performance.now() - ms,
+        code,
+      ),
+  });
   const spawn = bun.spawn!;
   bun.spawn = function (this: unknown, ...args: unknown[]) {
     const begun = performance.now();

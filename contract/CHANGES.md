@@ -6,6 +6,23 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.20
+
+inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075
+
+Spawns off the server's event loop (Work item e5872732):
+
+- exec: the shared runners (runProcessWithCode and its timeout), the
+  binary runners, the runners fed on stdin and the Claude successor lookup
+  spawn their commands from a worker thread (`utils/spawn-thread.ts`), one
+  entry `spawn utils/spawn-thread.ts#spawnOnLoop` in place of their four
+  (spawned on the loop only when threads are off). Commands, arguments,
+  environment, timeouts and outputs are unchanged.
+- The MR reviews' efforts store and the Reviews agent's conversation are
+  written in the background, the JSONL appends share one appender, and a
+  Ranger run's files are removed asynchronously; files and formats are
+  unchanged.
+
 ## 1.19
 
 inventory: 31a27c547dd692d57fa719181b21e2cd034d673e75b9c8e7341e7b44be734694

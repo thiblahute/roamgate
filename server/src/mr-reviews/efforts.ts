@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   MR_DISPOSITIONS,
@@ -10,7 +10,12 @@ import {
   type MrOverlap,
   type MrPlan,
 } from "../../../shared/mrReviews";
-import { replaceDataFile } from "../config/data-paths";
+import {
+  type DataFileAppender,
+  type DataFileWriter,
+  dataFileAppender,
+  dataFileWriter,
+} from "../config/data-paths";
 import { type MrConnection, shQuote } from "./clones";
 import {
   parseUpstreamCandidates,
@@ -424,22 +429,57 @@ export function overlapOf(
   return { ...other, shared, relation, proposal };
 }
 
-/** An effort's files: ledger, derived, history; written one at a time. */
+/**
+ * An effort's files: ledger, derived, history; written one at a time,
+ * behind the changes and off the event loop (dataFileWriter): a sync of a
+ * derived file on a busy disk stalled every call for 5 s (2026-11-23). What
+ * is not yet written is read from memory meanwhile.
+ */
 export function createLedgerStore(root: string) {
   const queues = new Map<string, Promise<unknown>>();
+  const made = new Set<string>();
+  const writers = new Map<string, DataFileWriter>();
+  const appenders = new Map<string, DataFileAppender>();
+  /** Each file's contents not yet known to be written. */
+  const unwritten = new Map<string, string>();
   const dirOf = (id: string) => {
     const dir = join(root, id);
-    mkdirSync(dir, { recursive: true });
+    if (!made.has(dir)) {
+      mkdirSync(dir, { recursive: true });
+      made.add(dir);
+    }
     return dir;
   };
   const read = <T>(file: string, empty: () => T): T => {
     try {
-      return existsSync(file)
-        ? (JSON.parse(readFileSync(file, "utf8")) as T)
-        : empty();
+      const text =
+        unwritten.get(file) ??
+        (existsSync(file) ? readFileSync(file, "utf8") : null);
+      return text === null ? empty() : (JSON.parse(text) as T);
     } catch {
       return empty();
     }
+  };
+  const write = (file: string, value: unknown) => {
+    const text = `${JSON.stringify(value)}\n`;
+    unwritten.set(file, text);
+    let writer = writers.get(file);
+    if (!writer) {
+      writer = dataFileWriter(file);
+      writers.set(file, writer);
+    }
+    writer.write(() => text);
+    void writer.flush().then(() => {
+      if (unwritten.get(file) === text) unwritten.delete(file);
+    });
+  };
+  const appender = (file: string) => {
+    let found = appenders.get(file);
+    if (!found) {
+      found = dataFileAppender(file);
+      appenders.set(file, found);
+    }
+    return found;
   };
   return {
     ledger: (id: string) =>
@@ -448,47 +488,46 @@ export function createLedgerStore(root: string) {
     seen: (id: string): SeenSnapshot | null =>
       read<SeenSnapshot | null>(join(dirOf(id), "seen.json"), () => null),
     writeSeen(id: string, seen: SeenSnapshot) {
-      replaceDataFile(
-        join(dirOf(id), "seen.json"),
-        `${JSON.stringify(seen)}\n`,
-      );
+      write(join(dirOf(id), "seen.json"), seen);
     },
     derived: (id: string): DerivedFile | null =>
       read<DerivedFile | null>(join(dirOf(id), "derived.json"), () => null),
     writeLedger(id: string, ledger: LedgerFile) {
-      replaceDataFile(
-        join(dirOf(id), "ledger.json"),
-        `${JSON.stringify(ledger)}\n`,
-      );
+      write(join(dirOf(id), "ledger.json"), ledger);
     },
     writeDerived(id: string, derived: DerivedFile) {
-      replaceDataFile(
-        join(dirOf(id), "derived.json"),
-        `${JSON.stringify(derived)}\n`,
-      );
+      write(join(dirOf(id), "derived.json"), derived);
     },
     /** Appends versions of commits (D24): one line each, never rewritten. */
     appendHistory(id: string, lines: Record<string, unknown>[]) {
       if (!lines.length) return;
-      appendFileSync(
-        join(dirOf(id), "history.jsonl"),
+      appender(join(dirOf(id), "history.jsonl")).append(
         lines.map((line) => JSON.stringify(line)).join("\n") + "\n",
       );
     },
     history(id: string, key?: string): Record<string, any>[] {
       const file = join(dirOf(id), "history.jsonl");
-      if (!existsSync(file)) return [];
-      return readFileSync(file, "utf8")
-        .split("\n")
-        .flatMap((line) => {
-          if (!line) return [];
-          try {
-            const value = JSON.parse(line);
-            return !key || value.key === key ? [value] : [];
-          } catch {
-            return [];
-          }
-        });
+      const pending = appenders.get(file)?.pending() ?? "";
+      if (!existsSync(file) && !pending) return [];
+      const text =
+        (existsSync(file) ? readFileSync(file, "utf8") : "") + pending;
+      return text.split("\n").flatMap((line) => {
+        if (!line) return [];
+        try {
+          const value = JSON.parse(line);
+          return !key || value.key === key ? [value] : [];
+        } catch {
+          return [];
+        }
+      });
+    },
+    /** Resolves once every file holds what was written (tests, cleanup). */
+    async flush() {
+      await Promise.all(
+        [...writers.values(), ...appenders.values()].map((each) =>
+          each.flush(),
+        ),
+      );
     },
     /** One change of an effort's files at a time. */
     queue<T>(id: string, change: () => Promise<T> | T): Promise<T> {

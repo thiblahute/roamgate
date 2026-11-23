@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  appendFileSync,
   closeSync,
   constants,
   type Dirent,
@@ -17,6 +18,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import {
+  appendFile,
   lstat,
   mkdir,
   open,
@@ -324,6 +326,80 @@ export function dataFileWriter(
       file.unwritten = contents;
       writing ??= drain();
     },
+    async flush() {
+      while (writing) await writing;
+    },
+  };
+}
+
+/**
+ * A private file a server store appends lines to (a history), written in
+ * order off the event loop: a small append waited seconds on a busy disk.
+ * pending() is what is not yet in the file, for reads meanwhile; what was
+ * not yet handed to a write at exit is appended then.
+ */
+export type DataFileAppender = {
+  append(text: string): void;
+  /** Appended, not yet known to be in the file. */
+  pending(): string;
+  /** Resolves once every append asked so far is done (or failed). */
+  flush(): Promise<void>;
+};
+
+const appendingFiles = new Set<{
+  path: string;
+  mode: number;
+  queued: () => string;
+}>();
+let appendExitHooked = false;
+
+/** See DataFileAppender. A failed append is dropped, as a convenience log's. */
+export function dataFileAppender(
+  path: string,
+  options: { mode?: number; onError?: (error: unknown) => void } = {},
+): DataFileAppender {
+  const mode = options.mode ?? 0o600;
+  /** Being appended now, then waiting for the next append. */
+  let inFlight = "";
+  let queued = "";
+  let writing: Promise<void> | null = null;
+  appendingFiles.add({ path, mode, queued: () => queued });
+  if (!appendExitHooked) {
+    appendExitHooked = true;
+    process.on("exit", () => {
+      for (const file of appendingFiles) {
+        const text = file.queued();
+        if (!text) continue;
+        try {
+          mkdirSync(dirname(file.path), { recursive: true, mode: 0o700 });
+          appendFileSync(file.path, text, { mode: file.mode });
+        } catch {
+          // Nothing more can be done on the way out.
+        }
+      }
+    });
+  }
+  async function drain() {
+    while (queued) {
+      inFlight = queued;
+      queued = "";
+      try {
+        await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+        await appendFile(path, inFlight, { mode });
+      } catch (error) {
+        options.onError?.(error);
+      }
+      inFlight = "";
+    }
+    writing = null;
+  }
+  return {
+    append(text) {
+      if (!text) return;
+      queued += text;
+      writing ??= drain();
+    },
+    pending: () => inFlight + queued,
     async flush() {
       while (writing) await writing;
     },

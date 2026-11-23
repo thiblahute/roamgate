@@ -405,6 +405,8 @@ export function createEffortService(options: {
         }
         return effortSummary(effort, derived, list);
       } finally {
+        // Its writes are behind: done first, or they would make it again.
+        await scratch.flush();
         rmSync(root, { recursive: true, force: true });
       }
     },

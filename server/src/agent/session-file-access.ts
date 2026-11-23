@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { sshReadCommandArgv } from "../bridge/ssh-command";
 import type { SessionFile } from "./session-types";
+import { spawnOffLoop, threadText } from "../utils/spawn-thread";
 import {
   CLAUDE_SUCCESSOR_SH,
   CODEX_SESSION_FIND_PY,
@@ -292,13 +293,11 @@ export const localAgentSessionFiles: AgentSessionFileAccess = {
     // The search is a POSIX shell script; a Windows bridge keeps the
     // transcript Herdr reports.
     if (process.platform === "win32" || !validClaudeSessionId(id)) return null;
-    const proc = Bun.spawn(["sh", "-c", CLAUDE_SUCCESSOR_SCRIPT], {
+    const proc = spawnOffLoop(["sh", "-c", CLAUDE_SUCCESSOR_SCRIPT], {
       env: { ...process.env, f: path, id },
-      stdout: "pipe",
-      stderr: "ignore",
-      timeout: SESSION_FILE_TIMEOUT_MS,
+      timeoutMs: SESSION_FILE_TIMEOUT_MS,
     });
-    const found = (await new Response(proc.stdout).text()).trim();
+    const found = (await threadText(proc.stdout)).trim();
     await proc.exited;
     return found || null;
   },

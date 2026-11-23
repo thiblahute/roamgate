@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AssistantConfig } from "../../../shared/assistant";
 import type {
@@ -14,7 +14,7 @@ import {
   isClaudeCodePointer,
 } from "../assistant/claude-driver";
 import { createRangerMcp } from "../assistant/claude-mcp";
-import { dataRoot, replaceDataFile } from "../config/data-paths";
+import { dataFileWriter, dataRoot } from "../config/data-paths";
 import { type Logger, serverLogger } from "../utils/logger";
 import type { FoundRequest } from "./agent-search";
 import {
@@ -128,15 +128,17 @@ export function createMrAgent(deps: MrAgentDeps) {
     systemPrompt: reviewsAgentSystemPrompt,
   });
 
+  // Written behind, off the event loop: a sync on a busy disk stalled
+  // every call for seconds (dataFileWriter).
+  const writer = dataFileWriter(path);
   function save() {
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    replaceDataFile(
-      path,
-      `${JSON.stringify({
-        instance_id: instance,
-        ...(session ? { session } : {}),
-        messages: messages.slice(-MESSAGES_KEPT),
-      } satisfies Saved)}\n`,
+    writer.write(
+      () =>
+        `${JSON.stringify({
+          instance_id: instance,
+          ...(session ? { session } : {}),
+          messages: messages.slice(-MESSAGES_KEPT),
+        } satisfies Saved)}\n`,
     );
   }
 
@@ -381,6 +383,7 @@ export function createMrAgent(deps: MrAgentDeps) {
         saveTimer = null;
         save();
       }
+      await writer.flush();
     },
   };
 }
