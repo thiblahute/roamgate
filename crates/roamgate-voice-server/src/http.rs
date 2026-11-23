@@ -6,12 +6,17 @@
 //! | Module | Routes | TS it replaces |
 //! |---|---|---|
 //! | [`routes`] | `/api/voice`, its settings, speech, timing, trace and voices | http/voice (all but the companion's routes) |
+//! | [`companion`] | the companion's: route, event, forward, errand, research, tools, answers, memories, reset, image | http/voice (the companion's routes) |
 //! | [`setup`] | `/api/voice/setup` | http/voice-setup |
 //! | [`low_gpu`] | `/api/voice/low-gpu` | http/voice-low-gpu |
 //! | [`handoff`] | `/api/voice/call/handoff` | http/call-handoff |
 
-use serde_json::Value;
+use std::sync::{Arc, Mutex};
 
+use serde_json::Value;
+use tokio::sync::mpsc;
+
+pub mod companion;
 pub mod handoff;
 pub mod low_gpu;
 pub mod routes;
@@ -114,7 +119,48 @@ pub enum AnswerBody {
     Bytes(Vec<u8>),
     /// Text: sent `content-type: text/plain;charset=utf-8`.
     Text(&'static str),
+    /// Written as it comes (the route's NDJSON), then the end.
+    Stream(StreamBody),
     Empty,
+}
+
+/// A body written as it comes: chunks until the sender is dropped.
+#[derive(Clone)]
+pub struct StreamBody(Arc<Mutex<Option<mpsc::UnboundedReceiver<Vec<u8>>>>>);
+
+impl StreamBody {
+    pub fn new(chunks: mpsc::UnboundedReceiver<Vec<u8>>) -> Self {
+        Self(Arc::new(Mutex::new(Some(chunks))))
+    }
+
+    /// Its chunks, for the one who sends them (once).
+    pub fn take(&self) -> Option<mpsc::UnboundedReceiver<Vec<u8>>> {
+        self.0.lock().unwrap().take()
+    }
+
+    /// Every chunk until the end, as one (tests, and a plumbing that does
+    /// not stream).
+    pub async fn read_all(&self) -> Vec<u8> {
+        let mut all = Vec::new();
+        if let Some(mut chunks) = self.take() {
+            while let Some(chunk) = chunks.recv().await {
+                all.extend(chunk);
+            }
+        }
+        all
+    }
+}
+
+impl PartialEq for StreamBody {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::fmt::Debug for StreamBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("StreamBody")
+    }
 }
 
 /// A handler's answer.

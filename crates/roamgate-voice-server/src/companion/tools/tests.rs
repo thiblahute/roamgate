@@ -1830,6 +1830,10 @@ async fn a_job_reads_the_board_freely_and_every_write_waits_for_the_users_yes() 
     // The front's state says what waits on the user, in one line.
     assert_eq!(using.work_line(), work_state_line(&service));
     assert!(using.work_line().contains("1 For you"));
+    assert!(
+        crate::http::companion::with_searches("", None, Some(&using), 0.0)
+            .contains("Work board: 1 For you")
+    );
 
     process.push(result("Une chose t'attend."));
     settle().await;

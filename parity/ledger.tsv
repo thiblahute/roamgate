@@ -2734,44 +2734,44 @@ server/src/http/voice-socket.test.ts	the same words at each check of a pause kee
 server/src/http/voice-socket.test.ts	a question asked whole ends soon, even taken for thinking	rust-unit:roamgate-voice-server:socket::tests::listen::a_question_asked_whole_ends_soon_even_taken_for_thinking	voice HTTP and socket
 server/src/http/voice-socket.test.ts	a partial while speaking stops the count; none while no pause	rust-unit:roamgate-voice-server:socket::tests::listen::a_partial_while_speaking_stops_the_count_none_while_no_pause	voice HTTP and socket
 server/src/http/voice-socket.test.ts	fillers end the words: um, euh, heu, hmm, ben, alors	rust-unit:roamgate-voice-server:socket::tests::listen::fillers_end_the_words_um_euh_heu_hmm_ben_alors	voice HTTP and socket
-server/src/http/voice.test.ts	routing is reported, and asks the router with valid sessions	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice.test.ts	routing is reported, and asks the router with valid sessions	rust-unit:roamgate-voice-server:http::companion::tests::routing_is_reported_and_asks_the_router_with_valid_sessions	voice HTTP and socket
 server/src/http/voice.test.ts	without a router, or the voice header, it is for the agent on screen	scenario:parity/scenarios/voice/unconfigured.yaml	
-server/src/http/voice.test.ts	decides in the router's place, and says what it does	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	a turn is kept: what was said, what it started	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	words not for it are not kept	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	an answer is kept, with what it said of it	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	said aloud, a reset forgets and starts new sessions	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	an older page only hears it said	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice.test.ts	decides in the router's place, and says what it does	rust-unit:roamgate-voice-server:http::companion::tests::decides_in_the_routers_place_and_says_what_it_does	voice HTTP and socket
+server/src/http/voice.test.ts	a turn is kept: what was said, what it started	rust-unit:roamgate-voice-server:http::companion::tests::a_turn_is_kept_what_was_said_what_it_started	voice HTTP and socket
+server/src/http/voice.test.ts	words not for it are not kept	rust-unit:roamgate-voice-server:http::companion::tests::words_not_for_it_are_not_kept	voice HTTP and socket
+server/src/http/voice.test.ts	an answer is kept, with what it said of it	rust-unit:roamgate-voice-server:http::companion::tests::an_answer_is_kept_with_what_it_said_of_it	voice HTTP and socket
+server/src/http/voice.test.ts	said aloud, a reset forgets and starts new sessions	rust-unit:roamgate-voice-server:http::companion::tests::said_aloud_a_reset_forgets_and_starts_new_sessions	voice HTTP and socket
+server/src/http/voice.test.ts	an older page only hears it said	rust-unit:roamgate-voice-server:http::companion::tests::an_older_page_only_hears_it_said	voice HTTP and socket
 server/src/http/voice.test.ts	the button resets, only with the voice header	scenario:parity/scenarios/voice/front.yaml	
-server/src/http/voice.test.ts	a voice forget goes to the writer, said as self, and not noted	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	the memories are listed and deleted, only with the header	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice.test.ts	a voice forget goes to the writer, said as self, and not noted	rust-unit:roamgate-voice-server:http::companion::tests::a_voice_forget_goes_to_the_writer_said_as_self_and_not_noted	voice HTTP and socket
+server/src/http/voice.test.ts	the memories are listed and deleted, only with the header	rust-unit:roamgate-voice-server:http::companion::tests::the_memories_are_listed_and_deleted_only_with_the_header	voice HTTP and socket
 server/src/http/voice.test.ts	the status tells the epoch, for a page to forget its call	scenario:parity/scenarios/voice/front.yaml	
 server/src/http/voice.test.ts	streamed, the front's words come first, then the route	scenario:parity/scenarios/voice/front.yaml	
-server/src/http/voice.test.ts	with no session yet, the front still answers; the router needs one	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	the front hears who spoke, and its routes teach which voice is the user's	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	the front sees every voice score, and names a voice for later calls	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	lists what was routed to nobody, and routes a skipped sentence when the front recovers it	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	gives the front the call lately, and an errand its context	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice.test.ts	with no session yet, the front still answers; the router needs one	rust-unit:roamgate-voice-server:http::companion::tests::with_no_session_yet_the_front_still_answers_the_router_needs_one	voice HTTP and socket
+server/src/http/voice.test.ts	the front hears who spoke, and its routes teach which voice is the user's	rust-unit:roamgate-voice-server:http::companion::tests::the_front_hears_who_spoke_and_its_routes_teach_which_voice_is_the_users	voice HTTP and socket
+server/src/http/voice.test.ts	the front sees every voice score, and names a voice for later calls	rust-unit:roamgate-voice-server:http::companion::tests::the_front_sees_every_voice_score_and_names_a_voice_for_later_calls	voice HTTP and socket
+server/src/http/voice.test.ts	lists what was routed to nobody, and routes a skipped sentence when the front recovers it	rust-unit:roamgate-voice-server:http::companion::tests::lists_what_was_routed_to_nobody_and_routes_a_skipped_sentence_when_the_front_recovers_it	voice HTTP and socket
+server/src/http/voice.test.ts	gives the front the call lately, and an errand its context	rust-unit:roamgate-voice-server:http::companion::tests::gives_the_front_the_call_lately_and_an_errand_its_context	voice HTTP and socket
 server/src/http/voice.test.ts	muted call music is not described as playing	rust-unit:roamgate-voice-server:http::routes::tests::muted_call_music_is_not_described_as_playing	voice HTTP and socket
-server/src/http/voice.test.ts	keeps the words the front gives a session only when they are what was said	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice.test.ts	keeps the words the front gives a session only when they are what was said	rust-unit:roamgate-voice-server:http::companion::tests::keeps_the_words_the_front_gives_a_session_only_when_they_are_what_was_said	voice HTTP and socket
 server/src/http/voice.test.ts	gives a page of an older build only routes it knows	scenario:parity/scenarios/voice/front.yaml	
 server/src/http/voice.test.ts	tells an event, and stays quiet without a front	scenario:parity/scenarios/voice/front.yaml	
-server/src/http/voice.test.ts	gives the front an agent's whole answer, and who wrote it	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	gives a long answer as its start and the file where it is whole	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice.test.ts	gives the front an agent's whole answer, and who wrote it	rust-unit:roamgate-voice-server:http::companion::tests::gives_the_front_an_agents_whole_answer_and_who_wrote_it	voice HTTP and socket
+server/src/http/voice.test.ts	gives a long answer as its start and the file where it is whole	rust-unit:roamgate-voice-server:http::companion::tests::gives_a_long_answer_as_its_start_and_the_file_where_it_is_whole	voice HTTP and socket
 server/src/http/voice.test.ts	starts the companion's work on a session, its words as said	scenario:parity/scenarios/voice/errand-answers.yaml	
 server/src/http/voice.test.ts	keeps a job's answer that came while the user was away, mentioned once, read or dropped	scenario:parity/scenarios/voice/errand-answers.yaml	
 server/src/http/voice.test.ts	keeps what the front does with answers, reported with it	scenario:parity/scenarios/voice/voices-speak-settings.yaml	
 server/src/http/voice.test.ts	keeps the longest pause, reported with the rest	scenario:parity/scenarios/voice/voices-speak-settings.yaml	
-server/src/http/voice.test.ts	off, the router decides as it always did	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	go to the session in the errand folder, followed by a job	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	carry the sentence cut off in their voice note	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	words typed to the companion go as typed	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice.test.ts	off, the router decides as it always did	rust-unit:roamgate-voice-server:http::companion::tests::off_the_router_decides_as_it_always_did	voice HTTP and socket
+server/src/http/voice.test.ts	go to the session in the errand folder, followed by a job	rust-unit:roamgate-voice-server:http::companion::tests::go_to_the_session_in_the_errand_folder_followed_by_a_job	voice HTTP and socket
+server/src/http/voice.test.ts	carry the sentence cut off in their voice note	rust-unit:roamgate-voice-server:http::companion::tests::carry_the_sentence_cut_off_in_their_voice_note	voice HTTP and socket
+server/src/http/voice.test.ts	words typed to the companion go as typed	rust-unit:roamgate-voice-server:http::companion::tests::words_typed_to_the_companion_go_as_typed	voice HTTP and socket
 server/src/http/voice.test.ts	a general question is answered by the front itself, nothing started	scenario:parity/scenarios/voice/front.yaml	
 server/src/http/voice.test.ts	fresh information starts a search at once, said in one line	scenario:parity/scenarios/voice/front.yaml	
 server/src/http/voice.test.ts	a search is followed to its result, or cancelled	scenario:parity/scenarios/voice/front.yaml	
-server/src/http/voice.test.ts	what a search found never routes, forwards or sends anything	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	without searches set up, the front says it cannot look	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	come back as they are, for the page to send	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice.test.ts	what a search found never routes, forwards or sends anything	rust-unit:roamgate-voice-server:http::companion::tests::what_a_search_found_never_routes_forwards_or_sends_anything	voice HTTP and socket
+server/src/http/voice.test.ts	without searches set up, the front says it cannot look	rust-unit:roamgate-voice-server:http::companion::tests::without_searches_set_up_the_front_says_it_cannot_look	voice HTTP and socket
+server/src/http/voice.test.ts	come back as they are, for the page to send	rust-unit:roamgate-voice-server:http::companion::tests::come_back_as_they_are_for_the_page_to_send	voice HTTP and socket
 server/src/http/voice.test.ts	are listed, and changed only with the voice header	rust-unit:roamgate-voice-server:http::routes::tests::voices_are_listed_and_changed_only_with_the_voice_header	voice HTTP and socket
 server/src/http/voice.test.ts	a recording is uploaded, cloned, then removed	scenario:parity/scenarios/voice/voices-speak-settings.yaml	
 server/src/http/voice.test.ts	a refused change says why, with its status	scenario:parity/scenarios/voice/voices-speak-settings.yaml	
@@ -3897,19 +3897,19 @@ server/src/voice/voice-tools.test.ts	a held call left too long is forgotten	rust
 server/src/voice/voice-tools.test.ts	a job that ends without an answer failed	rust-unit:roamgate-voice-server:companion::tools::tests::a_job_that_ends_without_an_answer_failed	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	the front is told the tools, the jobs and the held call	rust-unit:roamgate-voice-server:companion::tools::tests::the_front_is_told_the_tools_the_jobs_and_the_held_call	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	parsed with their task or action	rust-unit:roamgate-voice-server:companion::tools::tests::parsed_with_their_task_or_action	voice helper driver, companion, setup and library
-server/src/voice/voice-tools.test.ts	a confirmation runs only on the user's own yes	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-tools.test.ts	a change forgets the held call and starts the corrected one	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-tools.test.ts	without tools, it says so	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-tools.test.ts	a tool route starts its job	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/voice-tools.test.ts	a confirmation runs only on the user's own yes	rust-unit:roamgate-voice-server:http::companion::tests::a_confirmation_runs_only_on_the_users_own_yes	voice helper driver, companion, setup and library
+server/src/voice/voice-tools.test.ts	a change forgets the held call and starts the corrected one	rust-unit:roamgate-voice-server:http::companion::tests::a_change_forgets_the_held_call_and_starts_the_corrected_one	voice helper driver, companion, setup and library
+server/src/voice/voice-tools.test.ts	without tools, it says so	rust-unit:roamgate-voice-server:http::companion::tests::without_tools_it_says_so	voice helper driver, companion, setup and library
+server/src/voice/voice-tools.test.ts	a tool route starts its job	rust-unit:roamgate-voice-server:http::companion::tests::a_tool_route_starts_its_job	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	only with a front and companion_mcp	rust-unit:roamgate-voice-server:companion::tools::tests::only_with_a_front_and_companion_mcp	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	music asked on a call plays on call_music_device	rust-unit:roamgate-voice-server:companion::tools::tests::music_asked_on_a_call_plays_on_call_music_device	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	music on call_music_device is set to full volume, and why	rust-unit:roamgate-voice-server:companion::tools::tests::music_on_call_music_device_is_set_to_full_volume_and_why	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	call_music_full_volume false leaves the device's volume	rust-unit:roamgate-voice-server:companion::tools::tests::call_music_full_volume_false_leaves_the_devices_volume	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	off a call, or without a device, the default device stays	rust-unit:roamgate-voice-server:companion::tools::tests::off_a_call_or_without_a_device_the_default_device_stays	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	makes that call once, with no words to check	rust-unit:roamgate-voice-server:companion::tools::tests::makes_that_call_once_with_no_words_to_check	voice helper driver, companion, setup and library
-server/src/voice/voice-tools.test.ts	is only the user's, through its own request	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-tools.test.ts	no forgets it, nothing made	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-tools.test.ts	without tools, nothing waits	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/voice-tools.test.ts	is only the user's, through its own request	rust-unit:roamgate-voice-server:http::companion::tests::is_only_the_users_through_its_own_request	voice helper driver, companion, setup and library
+server/src/voice/voice-tools.test.ts	no forgets it, nothing made	rust-unit:roamgate-voice-server:http::companion::tests::no_forgets_it_nothing_made	voice helper driver, companion, setup and library
+server/src/voice/voice-tools.test.ts	without tools, nothing waits	rust-unit:roamgate-voice-server:http::companion::tests::without_tools_nothing_waits	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	a job gets the player's tools, allowed, and when to use them	rust-unit:roamgate-voice-server:companion::tools::tests::a_job_gets_the_players_tools_allowed_and_when_to_use_them	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	a video that cannot play is told with its reason	rust-unit:roamgate-voice-server:companion::tools::tests::a_video_that_cannot_play_is_told_with_its_reason	voice helper driver, companion, setup and library
 server/src/voice/voice-tools.test.ts	the tools play in the helper's call, the video found by yt-dlp	rust-unit:roamgate-voice-server:companion::tools::tests::the_tools_play_in_the_helpers_call_the_video_found_by_yt_dlp	voice helper driver, companion, setup and library

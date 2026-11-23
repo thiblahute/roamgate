@@ -254,6 +254,18 @@ impl Default for RoutesOptions {
     }
 }
 
+/// The light voice the call has: the running helper's low-GPU set, else
+/// the one the next helper starts with (`low_gpu`); None with the full one.
+pub fn light_voice(
+    helper: &dyn VoiceSpeaker,
+    low_gpu: &(dyn Fn() -> Option<String> + Send + Sync),
+) -> Option<String> {
+    if helper.running_profile() == Some("full") {
+        return None;
+    }
+    helper.low_gpu_reason().or_else(low_gpu)
+}
+
 /// The routes (createVoiceRoutes, but for the companion's).
 pub struct VoiceRoutes {
     helper: Arc<dyn VoiceSpeaker>,
@@ -280,12 +292,7 @@ impl VoiceRoutes {
     /// The light voice the call has: the running helper's low-GPU set,
     /// else the one the next helper starts with.
     fn light_voice(&self) -> Option<String> {
-        if self.helper.running_profile() == Some("full") {
-            return None;
-        }
-        self.helper
-            .low_gpu_reason()
-            .or_else(|| (self.options.low_gpu)())
+        light_voice(&*self.helper, &*self.options.low_gpu)
     }
 
     /// The answer for `request`, None when the path is not one of these
@@ -870,4 +877,4 @@ pub async fn music_route(route: &Value, call: Option<&dyn CallLine>, errors: &Er
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

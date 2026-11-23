@@ -22,7 +22,7 @@ type Said = (String, Option<String>, Option<Vec<TtsModel>>, Option<f64>);
 /// The helper of voice.test.ts: set up, reads at 1.2, pauses 8 s, speaks
 /// "ogg" in the language asked.
 #[derive(Default)]
-struct FakeSpeaker {
+pub(crate) struct FakeSpeaker {
     spoken: Mutex<Vec<Said>>,
     /// The language each sentence is said in (None: the one asked).
     language: Option<&'static str>,
@@ -372,7 +372,7 @@ async fn keeps_the_longest_pause_reported_with_the_rest() {
 }
 
 /// A call with a background: `music` playing or not, at `volume`.
-struct FakeCall {
+pub(crate) struct FakeCall {
     music: bool,
     on: bool,
     waiting: bool,
@@ -381,7 +381,7 @@ struct FakeCall {
 }
 
 impl FakeCall {
-    fn new(music: bool, on: bool, waiting: bool) -> Self {
+    pub(crate) fn new(music: bool, on: bool, waiting: bool) -> Self {
         Self {
             music,
             on,

@@ -2224,4 +2224,4 @@ impl JobWork for BoardJob {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

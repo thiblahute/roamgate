@@ -55,15 +55,6 @@ roamgate-workspace	server/src/workspace/	S17
 roamgate-workspace	server/src/worktree/	S17
 roamgate-workspace	server/src/config/workspace-tree	S17
 
-# roamgate-voice-server holds voice.json, profiles, speakers, Kokoro's
-# languages, the helper supervisor, hardware, models, downloads, setup,
-# low-GPU, stock voices and the library (S22, landed Bun-owned); these wait.
-# The HTTP routes, call handoff's redeem route, Surprise, the CLI, the voice
-# socket, its signalling relay and the companion layer but its tools are
-# ported; the tools and voice.test.ts's companion cases wait.
-roamgate-voice-server	server/src/voice/voice-tools	S22
-roamgate-voice-server	server/src/http/voice.test	S22
-
 # roamgate-claude was made by S15 for the tool registry; the Claude driver,
 # the claude-mod hub and the conversation drivers come with their subtasks.
 roamgate-claude	server/src/agent/claude-mod	S19
