@@ -352,6 +352,11 @@ struct Inner {
     o: SessionOptions,
     agent_name: String,
     st: Mutex<St>,
+    /// What the changes tell, queued in the order the changes were made
+    /// (under `st`), run by one caller at a time: two tasks' changes never
+    /// tell their effects out of order.
+    effects: Mutex<std::collections::VecDeque<Box<dyn FnOnce() + Send>>>,
+    draining: std::sync::atomic::AtomicBool,
 }
 
 /// One conversation-owned session; cheap to clone (one actor).
@@ -425,6 +430,8 @@ impl ConversationSession {
             o: options,
             agent_name,
             st: Mutex::new(st),
+            effects: Mutex::new(std::collections::VecDeque::new()),
+            draining: std::sync::atomic::AtomicBool::new(false),
         }))
     }
 
@@ -437,12 +444,49 @@ impl ConversationSession {
         let mut fx: Fx = Vec::new();
         let result = {
             let mut st = self.0.st.lock().unwrap_or_else(|e| e.into_inner());
-            f(&mut st, &mut fx)
+            let result = f(&mut st, &mut fx);
+            self.0
+                .effects
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .extend(fx);
+            result
         };
-        for effect in fx {
-            effect();
-        }
+        self.drain_effects();
         result
+    }
+
+    /// Runs the queued effects in order; another caller already running
+    /// them runs these too (a callback's own change queues behind).
+    fn drain_effects(&self) {
+        use std::sync::atomic::Ordering;
+        loop {
+            if self.0.draining.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            loop {
+                let next = self
+                    .0
+                    .effects
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .pop_front();
+                match next {
+                    Some(effect) => effect(),
+                    None => break,
+                }
+            }
+            self.0.draining.store(false, Ordering::SeqCst);
+            if self
+                .0
+                .effects
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty()
+            {
+                return;
+            }
+        }
     }
 
     fn log(&self, fx: &mut Fx, message: &str, fields: Obj) {
@@ -2160,6 +2204,11 @@ impl ConversationSession {
     }
 
     // ------------------------------------------------------------ the API
+
+    /// Whether both are the same session.
+    pub fn same(&self, other: &ConversationSession) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
 
     pub fn pane_id(&self) -> &str {
         &self.o().pane_id
