@@ -166,6 +166,27 @@ interface WebSocketSendTarget {
   send(payload: string, compress?: boolean): number;
 }
 
+/**
+ * A socket whose browser end another process holds (the core's virtual
+ * socket behind a Rust front, contract/wire/core-channel.md): that process
+ * runs the flow (coalescing, flow control, chunking, the acknowledgements),
+ * so a send only hands it the payload with its context and key.
+ */
+export interface RemoteWebSocketFlow {
+  send(payload: string, context: string, coalesceKey?: string): void;
+  drop(coalesceKey: string): void;
+}
+
+const remoteFlows = new WeakMap<object, RemoteWebSocketFlow>();
+
+/** Hands `ws`'s flow to the process that holds its browser end. */
+export function setRemoteWebSocketFlow(
+  ws: object,
+  flow: RemoteWebSocketFlow,
+): void {
+  remoteFlows.set(ws, flow);
+}
+
 interface WebSocketSendOptions {
   cleanup: () => void;
   // Set for payloads that fully replace an earlier one with the same key, so a
@@ -292,6 +313,11 @@ export function sendWebSocketMessage(
   const sendContext = { cleanup, context, warn };
   const flow = flowOf(ws);
   flow.asked.set(context, (flow.asked.get(context) ?? 0) + payload.length);
+  const remote = remoteFlows.get(ws);
+  if (remote) {
+    remote.send(payload, context, coalesceKey);
+    return true;
+  }
   if (coalesceKey !== undefined) {
     const held = heldPayloads.get(ws);
     if (ws.getBufferedAmount() > WS_COALESCE_LIMIT_BYTES || congested(flow)) {
@@ -457,6 +483,11 @@ export function dropCoalescedMessage(
   ws: WebSocketSendTarget,
   coalesceKey: string,
 ): void {
+  const remote = remoteFlows.get(ws);
+  if (remote) {
+    remote.drop(coalesceKey);
+    return;
+  }
   heldPayloads.get(ws)?.delete(coalesceKey);
 }
 
@@ -474,6 +505,8 @@ export function receiveWebSocketAck(
   }: Omit<WebSocketSendOptions, "coalesceKey" | "context">,
 ): boolean {
   if (!text.startsWith(ACK_PREFIX)) return false;
+  // A remote flow's acknowledgements stay with the process that runs it.
+  if (remoteFlows.has(ws)) return true;
   const received = Number(text.slice(ACK_PREFIX.length, -1));
   if (!Number.isFinite(received)) return true;
   const flow = flowOf(ws);
@@ -529,6 +562,7 @@ export function flushCoalescedMessages(
     warn,
   }: Omit<WebSocketSendOptions, "coalesceKey">,
 ): void {
+  if (remoteFlows.has(ws)) return;
   // A drain is progress, whatever the buffer reads next.
   flowOf(ws).lastProgressAt = Date.now();
   const held = heldPayloads.get(ws);

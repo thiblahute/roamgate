@@ -74,6 +74,18 @@ export type HttpRequestHead = {
   ctx: CallContext;
 };
 
+/** A browser's upgrade request (stage 2's `ws_open`). */
+export type WsOpenRequest = HttpRequestHead & { socket_id: number };
+
+/** The virtual socket messages (contract's "Stage 2: the Rust front"). */
+const SOCKET_MESSAGES: ReadonlySet<string> = new Set([
+  "ws_message",
+  "ws_close",
+  "ws_send",
+  "ws_drop",
+  "ws_end",
+]);
+
 export type ChannelHttpRequest = HttpRequestHead & {
   body: ReadableStream<Uint8Array> | null;
 };
@@ -109,6 +121,17 @@ export type ChannelHandlers = {
     request: ChannelHttpRequest,
     signal: AbortSignal,
   ) => Promise<ChannelHttpResponse>;
+  /**
+   * A `ws_open` (stage 2, the Bun core's side): answered by `reply`.
+   * Without this handler it is ignored as an unknown message.
+   */
+  wsOpen?: (request: WsOpenRequest, signal: AbortSignal) => Promise<unknown>;
+  /**
+   * A virtual socket's message (stage 2): `ws_message` and `ws_close` on
+   * the core's side, `ws_send`, `ws_drop` and `ws_end` on the front's.
+   * Without this handler they are ignored as unknown messages.
+   */
+  socket?: (message: Message) => void;
   /** hello, welcome, refused, owner, pong, bye. */
   control?: (message: Message) => void;
   /** The channel closed; `error` when it broke. */
@@ -307,6 +330,21 @@ export class Channel {
         target,
         args: args ?? null,
         ...(ctx ? { ctx } : {}),
+      },
+      signal,
+    );
+  }
+
+  /** Asks the core to upgrade a browser socket (stage 2's `ws_open`). */
+  wsOpen(request: WsOpenRequest, signal?: AbortSignal): Promise<unknown> {
+    return this.request(
+      {
+        t: "ws_open",
+        socket_id: request.socket_id,
+        method: request.method,
+        url: request.url,
+        headers: request.headers,
+        ctx: request.ctx,
       },
       signal,
     );
@@ -557,6 +595,21 @@ export class Channel {
       case "push":
         this.handlers.push?.(message as unknown as PushMessage);
         return;
+      case "ws_open":
+        if (!this.handlers.wsOpen) break;
+        this.serve(id, (signal) =>
+          this.handlers.wsOpen!(
+            {
+              socket_id: Number(message.socket_id),
+              method: String(message.method ?? "GET"),
+              url: String(message.url),
+              headers: (message.headers as [string, string][]) ?? [],
+              ctx: (message.ctx as CallContext) ?? {},
+            },
+            signal,
+          ),
+        );
+        return;
       case "ping":
         this.send({ t: "pong", n: message.n ?? 0 });
         return;
@@ -569,13 +622,17 @@ export class Channel {
         this.handlers.control?.(message);
         return;
       default:
-        if (!this.unknownLogged.has(message.t)) {
-          this.unknownLogged.add(message.t);
-          this.handlers.log?.(
-            "debug",
-            `ignoring channel messages of type ${message.t}`,
-          );
+        if (this.handlers.socket && SOCKET_MESSAGES.has(message.t)) {
+          this.handlers.socket(message);
+          return;
         }
+    }
+    if (!this.unknownLogged.has(message.t)) {
+      this.unknownLogged.add(message.t);
+      this.handlers.log?.(
+        "debug",
+        `ignoring channel messages of type ${message.t}`,
+      );
     }
   }
 

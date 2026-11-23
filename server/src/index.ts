@@ -32,7 +32,7 @@ import {
   isShortAuthPassword,
   RECOMMENDED_PASSWORD_LENGTH,
 } from "./config/auth-token";
-import type { ServerWebSocket } from "bun";
+import type { ServerWebSocket, WebSocketHandler } from "bun";
 import { recordCli, recordServe, recordSpawns } from "./contract-record/hooks";
 import { contractRecorder } from "./contract-record/recorder";
 import { createAssistantContext } from "./assistant/context";
@@ -304,6 +304,7 @@ import {
   socketIdOf,
   startCoreFront,
 } from "./core-channel";
+import { coreChannelOf, startSidecar } from "./core-channel/sidecar";
 import { FAMILIES, httpFamilyOf } from "./core-channel/protocol";
 import { AssistantUserError } from "./assistant/errors";
 import { UnsupportedPlatformError } from "./connections/unix-only";
@@ -6307,479 +6308,525 @@ function socketChannel(ws: ServerWebSocket<unknown>) {
   return "ws" as const;
 }
 
+/** What each server socket carries (`server.upgrade`'s data). */
+type ServeData = {
+  sessionToken: string | null;
+  voice?: true;
+  /** The notification socket: the origin its links open on. */
+  notifications?: { origin: string };
+  /** A page's signalling for a call (voice-socket.ts). */
+  signalling?: { call: number; token: string };
+};
+
+/**
+ * What handleFetch uses of Bun's Server: Bun.serve's own, or the Bun
+ * core's for a request a Rust front forwarded (core-channel/sidecar.ts).
+ */
+type FetchServer = {
+  requestIP(req: Request): { address: string } | null;
+  timeout(req: Request, seconds: number): void;
+  upgrade(req: Request, options: { data: ServeData }): boolean;
+};
+
+/** The server's HTTP routing, Bun.serve's fetch handler. */
+async function handleFetch(
+  req: Request,
+  server: FetchServer,
+): Promise<Response | undefined> {
+  const requestPathname = rawRequestPathname(req.url);
+  let url: URL;
+  try {
+    url = new URL(req.url);
+  } catch {
+    return new Response("invalid request URL", { status: 400 });
+  }
+
+  // A rendered page's frame off its token: never the login page,
+  // nor anything behind the gate.
+  const stray = renderedStray(req, url);
+  if (stray) return stray;
+
+  // Forwarded headers are untrusted; use the actual TCP peer address.
+  const clientIp = server.requestIP(req)?.address ?? "unknown";
+  const tokenLoginResponse = handleTokenLogin(req, clientIp);
+  if (tokenLoginResponse) return tokenLoginResponse;
+
+  if (url.pathname === "/health" || url.pathname === "/healthz") {
+    return new Response("Ok", {
+      status: 200,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
+
+  // While the connections go to the Rust core, an API request waits
+  // for them (at most 10 s) rather than find them down for a
+  // moment. Logins and sockets go at once: a socket's calls wait the
+  // same way.
+  if (
+    hostSettling &&
+    url.pathname.startsWith("/api/") &&
+    !/^\/api\/(?:login|logout)(?:\/|$)/.test(url.pathname)
+  )
+    await hostSettling;
+
+  // A call handed to the Android app: its single-use token is the
+  // credential, exchanged for the call's and a login.
+  if (url.pathname === CALL_HANDOFF_PATH)
+    return redeemCallHandoff(req, clientIp);
+
+  // A rendered review's page: its frame is sandboxed with an opaque
+  // origin and sends no cookie; the token in the path is the
+  // credential.
+  const renderedPage = renderedPages.handle(req, url);
+  if (renderedPage) {
+    // A large page or model read whole over SSH can take longer
+    // than the default 10 s idle timeout before its first byte.
+    server.timeout(req, DOWNLOAD_TIMEOUT_MS / 1000);
+    return renderedPage;
+  }
+
+  // Auth endpoints are always reachable.
+  if (url.pathname === "/api/login/pin" && req.method === "POST") {
+    return handlePinLogin(req, clientIp);
+  }
+  if (url.pathname === "/api/login" && req.method === "POST") {
+    return handleLogin(req, clientIp);
+  }
+  if (url.pathname === "/login") {
+    return loginPage(req);
+  }
+  // The login page's logo and favicon must also work before login.
+  if (url.pathname === "/roamgate-icon-192.png") {
+    return serveStatic(req, config.publicDir);
+  }
+  if (url.pathname === "/api/logout") {
+    const response = handleLogout(req);
+    const token = sessionToken(req);
+    if (response.ok && config.authRequired && token) {
+      for (const client of clients) {
+        if (clientSessions.get(client) !== token) continue;
+        webSocketCleanup.cleanup(client);
+        client.close(4001, "Logged out");
+      }
+      notifications.closeSession(token);
+    }
+    return response;
+  }
+
+  // Authentication is bypassed only for development loopback listeners.
+  if (!isAuthed(req)) {
+    const accept = req.headers.get("accept") ?? "";
+    if (req.method === "GET" && accept.includes("text/html")) {
+      return unauthenticatedLoginRedirect();
+    }
+    return new Response("unauthorized", { status: 401 });
+  }
+
+  // A family given to the Rust core: it serves the path (never a
+  // WebSocket: Bun terminates them all).
+  const forwardToCore = () =>
+    coreFront!.forwardHttp(req, {
+      ...(sessionToken(req)
+        ? { session_id: sessionIdOf(sessionToken(req)) }
+        : {}),
+      client_ip: clientIp,
+    });
+  const coreServesHere = () =>
+    !!coreFront?.routesHttp(url.pathname) && !req.headers.get("upgrade");
+  if (
+    coreFront &&
+    !req.headers.get("upgrade") &&
+    !coreRoutedInPlace(url.pathname) &&
+    coreFront.routesHttp(url.pathname)
+  ) {
+    server.timeout(req, DOWNLOAD_TIMEOUT_MS / 1000);
+    return forwardToCore();
+  }
+
+  if (url.pathname === "/ws") {
+    // Never from another site, nor from a sandboxed page (its
+    // origin is "null"): the bridge is Roamgate's own pages'.
+    if (
+      req.headers.get("sec-fetch-site") === "cross-site" ||
+      req.headers.get("origin") === "null"
+    )
+      return new Response("forbidden", { status: 403 });
+    if (server.upgrade(req, { data: { sessionToken: sessionToken(req) } }))
+      return undefined;
+    return new Response("websocket upgrade failed", { status: 400 });
+  }
+  if (url.pathname === "/api/notifications/push") {
+    return webPush.handle(req);
+  }
+  if (url.pathname === "/api/notifications/ws") {
+    // The Android app's notification feed: never from another site,
+    // nor from a sandboxed page.
+    const origin = req.headers.get("origin");
+    if (req.headers.get("sec-fetch-site") === "cross-site" || origin === "null")
+      return new Response("forbidden", { status: 403 });
+    if (
+      server.upgrade(req, {
+        data: {
+          sessionToken: sessionToken(req),
+          notifications: {
+            origin: publicOrigin(url, req.headers, clientIp),
+          },
+        },
+      })
+    )
+      return undefined;
+    return new Response("websocket upgrade failed", { status: 400 });
+  }
+  if (url.pathname === "/api/instance-settings") {
+    return handleInstanceSettings(req);
+  }
+  if (url.pathname.startsWith("/api/history")) {
+    const history = await handleHistory(req, url.pathname);
+    if (history) return history;
+  }
+  if (url.pathname === "/api/health") {
+    return Response.json({
+      ok: true,
+      version: APP_VERSION,
+      socket: config.socketPath,
+      auth_required: config.authRequired,
+    });
+  }
+  if (url.pathname === "/api/update/check" && req.method === "GET") {
+    server.timeout(req, UPDATE_HTTP_IDLE_TIMEOUT_SECONDS);
+    if (coreServesHere()) return forwardToCore();
+    return handleUpdateCheck(req);
+  }
+  if (url.pathname === "/api/update/install" && req.method === "POST") {
+    // Binary download and verification can exceed Bun's default ten-second
+    // request timeout. Keep the larger budget scoped to update requests.
+    server.timeout(req, UPDATE_HTTP_IDLE_TIMEOUT_SECONDS);
+    if (coreServesHere()) return forwardToCore();
+    return handleUpdateInstall(req);
+  }
+  if (url.pathname === "/api/review/image" && req.method === "GET") {
+    return serveReviewImage(url);
+  }
+  if (url.pathname === "/api/herdr/status" && req.method === "GET") {
+    if (coreServesHere()) return forwardToCore();
+    return handleHerdrStatus();
+  }
+  if (url.pathname === "/api/herdr/setup" && req.method === "POST") {
+    // Herdr download plus service start shares the update budget.
+    server.timeout(req, UPDATE_HTTP_IDLE_TIMEOUT_SECONDS);
+    if (coreServesHere()) return forwardToCore();
+    return handleHerdrSetup(req);
+  }
+  if (url.pathname === "/api/voice/ws") {
+    if (
+      server.upgrade(req, {
+        data: { sessionToken: sessionToken(req), voice: true },
+      })
+    )
+      return undefined;
+    return new Response("websocket upgrade failed", { status: 400 });
+  }
+  if (url.pathname === "/api/voice/call/signalling") {
+    // A call's WebRTC signalling, for the page that owns the call
+    // (its `call_token`), from this site only.
+    const call = Number(url.searchParams.get("call"));
+    const token = url.searchParams.get("call_token") ?? "";
+    if (voiceSocket.signallingRefused(req, call, token))
+      return new Response("forbidden", { status: 403 });
+    if (
+      server.upgrade(req, {
+        data: {
+          sessionToken: sessionToken(req),
+          signalling: { call, token },
+        },
+      })
+    )
+      return undefined;
+    return new Response("websocket upgrade failed", { status: 400 });
+  }
+  if (url.pathname.startsWith("/api/voice")) {
+    // Transcribing a long recording can outlast the default timeout.
+    server.timeout(req, VOICE_HTTP_IDLE_TIMEOUT_SECONDS);
+    const setup = await handleVoiceSetup(req, url.pathname);
+    if (setup) return setup;
+    const lowGpu = await handleVoiceLowGpu(req, url.pathname);
+    if (lowGpu) return lowGpu;
+    const response = await handleVoice(req, url.pathname);
+    if (response) return response;
+  }
+  const connectionRoute = parseConnectionHttpRoute(requestPathname, req.method);
+  if (connectionRoute) {
+    if (
+      connectionRoute.kind === "connection" &&
+      connectionRoute.endpoint === "terminal-upload"
+    ) {
+      server.timeout(req, TERMINAL_UPLOAD_TIMEOUT_MS / 1000);
+    }
+    if (
+      connectionRoute.kind === "connection" &&
+      connectionRoute.endpoint === "file-download" &&
+      (url.searchParams.get("inline") !== "1" ||
+        isHtmlPath(url.searchParams.get("path") ?? ""))
+    ) {
+      // HTML preparation can require several bounded SSH resource
+      // reads; a download's first byte waits for SSH, and a
+      // directory's for its archive.
+      server.timeout(req, DOWNLOAD_TIMEOUT_MS / 1000);
+    }
+    return handleConnectionHttpRequest(connectionRoute, url, req);
+  }
+  // Everything else: serve the built frontend (embedded or on-disk).
+  return serveStatic(
+    req,
+    config.publicDir,
+    (await readGuiSettings()).title_suffix,
+  );
+}
+
+/** The server's WebSocket handlers, Bun.serve's `websocket`. */
+const bridgeWebSocket: WebSocketHandler<ServeData> = {
+  perMessageDeflate: WS_PER_MESSAGE_DEFLATE,
+  // Bun drops sends past its own limit; the slow-socket policy in
+  // websocket-send decides when a socket is too far behind.
+  backpressureLimit: WS_BACKPRESSURE_HARD_LIMIT_BYTES,
+  open(ws) {
+    if (ws.data.notifications)
+      return notifications.open(
+        ws,
+        ws.data.notifications.origin,
+        ws.data.sessionToken ?? undefined,
+        ws.remoteAddress,
+      );
+    if (ws.data.signalling) {
+      const { call, token } = ws.data.signalling;
+      return voiceSocket.openSignalling(ws, call, token);
+    }
+    // A voice socket is no Herdr client: see voiceSocket.
+    if (ws.data.voice) {
+      voiceSocketsOpen += 1;
+      lastVoiceAt = Date.now();
+      return;
+    }
+    clients.add(ws);
+    clientSessions.set(ws, ws.data.sessionToken);
+    const label = assignClientId(ws);
+    logger.debug("client connected", {
+      client: label,
+      clients: clients.size,
+    });
+    notifyBrowserClientCount();
+    safeSend(
+      ws,
+      JSON.stringify({
+        hello: true,
+        socket: config.socketPath,
+        bridge_protocol_version: 2,
+        default_connection_id: connectionManager.defaultId(),
+        capabilities: {
+          connection_id: true,
+          connection_scoped_http: true,
+          file_reveal: canRevealFiles(ws.remoteAddress),
+          connection_runtime_generation: true,
+          embedded_assistant: true,
+          flow_control: true,
+          list_delta: true,
+          herdr_task_notifications: config.taskNotificationSource === "herdr",
+        },
+      }),
+      "hello",
+    );
+    // The registry is global and must arrive before any Herdr catalog
+    // or runtime lease is available, including with an offline default.
+    safeSend(
+      ws,
+      JSON.stringify({
+        forwards: sshForwards.list().map(forwardToWire),
+      }),
+      "forwards",
+    );
+  },
+  drain(ws) {
+    if (ws.data.voice || ws.data.signalling || ws.data.notifications) return;
+    // The viewer caught up: send the newest repaint we held back.
+    flushCoalescedMessages(ws, {
+      cleanup: () => {
+        webSocketCleanup.cleanup(ws);
+      },
+      warn: (detail) =>
+        logger.warn("websocket send failed", {
+          detail: detail.replace(/^\[bridge\] /, ""),
+        }),
+    });
+  },
+  message(ws, message) {
+    if (ws.data.notifications) return notifications.message(ws, message);
+    if (ws.data.signalling) return voiceSocket.signallingMessage(ws, message);
+    if (ws.data.voice) {
+      lastVoiceAt = Date.now();
+      return voiceSocket.message(ws, message);
+    }
+    if (!clients.has(ws)) return;
+    const text = typeof message === "string" ? message : message.toString();
+    if (
+      receiveWebSocketAck(ws, text, {
+        cleanup: () => {
+          webSocketCleanup.cleanup(ws);
+        },
+        warn: (detail) =>
+          logger.warn("websocket send failed", {
+            detail: detail.replace(/^\[bridge\] /, ""),
+          }),
+      })
+    )
+      return;
+    const { id, method, connectionId, connectionGeneration, lane } =
+      parseRpcMeta(text);
+    const startedAt = Date.now();
+    let responseConnectionId: string | null = null;
+    let logConnectionId: string | null = null;
+    if (method && !isBridgeGlobalMethod(method)) {
+      if (connectionId === undefined) {
+        responseConnectionId = connectionManager.defaultId();
+        logConnectionId = responseConnectionId;
+      } else {
+        try {
+          responseConnectionId = validateConnectionId(connectionId);
+          logConnectionId = responseConnectionId;
+        } catch {
+          logConnectionId = "invalid";
+        }
+      }
+    }
+    runInSshLane(lane, () => handleRpc(ws, text))
+      .then(() => {
+        const outcome = takeRpcOutcome(ws, id);
+        logRpc(
+          ws,
+          method,
+          startedAt,
+          outcome?.status ?? "ok",
+          logConnectionId,
+          outcome?.detail,
+          takeRpcReplyChars(ws, id),
+        );
+      })
+      .catch((e) => {
+        logRpc(
+          ws,
+          method,
+          startedAt,
+          "error",
+          logConnectionId,
+          (e as Error).message,
+          takeRpcReplyChars(ws, id),
+        );
+        const errorMessage: Record<string, unknown> = {
+          error: { message: (e as Error).message },
+        };
+        if (id) errorMessage.id = id;
+        safeSend(
+          ws,
+          responseConnectionId
+            ? serializeConnectionEnvelope(
+                responseConnectionId,
+                errorMessage,
+                typeof connectionGeneration === "number"
+                  ? connectionGeneration
+                  : undefined,
+              )
+            : JSON.stringify(errorMessage),
+          "message-error",
+        );
+      });
+  },
+  pong(ws) {
+    if (ws.data.notifications) notifications.pong(ws);
+  },
+  close(ws, code, reason) {
+    if (ws.data.notifications) return notifications.close(ws, code, reason);
+    if (ws.data.signalling) return voiceSocket.closeSignalling(ws);
+    if (ws.data.voice) {
+      voiceSocketsOpen = Math.max(0, voiceSocketsOpen - 1);
+      lastVoiceAt = Date.now();
+      return voiceSocket.close(ws);
+    }
+    const { client, viewedTerminals } = webSocketCleanup.complete(ws);
+    const flow = webSocketFlowStats(ws);
+    logger.debug("client disconnected", {
+      client,
+      clients: clients.size,
+      // 4000 with a reason: the page gave up on the socket (its
+      // heartbeat, a full send buffer); 1006: the link dropped.
+      code,
+      reason: reason || undefined,
+      sent: flow.sent,
+      unacked: flow.enabled ? flow.sent - flow.acked : "n/a",
+      queued: flow.queued,
+      rate: flow.rate,
+      heaviest: flow.heaviest,
+      last_ack_ms: flow.lastAckAgeMs ?? undefined,
+      terminals: viewedTerminals.length ? viewedTerminals.join(",") : "none",
+    });
+  },
+};
+
+/**
+ * Serves a Rust front's channel instead of a port (stage 2,
+ * core-channel/sidecar.ts): the same routing and WebSocket handlers, the
+ * front's requests and sockets. The process ends with the channel.
+ */
+function serveFront(channel: { path: string; token: string }): void {
+  const log = logger.child("core");
+  void startSidecar<ServerWebSocket<ServeData>>({
+    path: channel.path,
+    token: channel.token,
+    version: APP_VERSION,
+    scheme: config.tls ? "https" : "http",
+    fetch: (req, server) => handleFetch(req, server),
+    websocket: bridgeWebSocket,
+    onClose: (error) => {
+      log.info("the front's channel closed: stopping", {
+        error: error?.message,
+      });
+      void shutdownController.request(error ? 1 : 0);
+    },
+    log: (level, message) => log[level](message),
+  })
+    .then(() => log.info("serving a Rust front", { channel: channel.path }))
+    .catch((error) => {
+      log.error("the front's channel did not open", {
+        channel: channel.path,
+        error: (error as Error).message,
+      });
+      void shutdownController.request(1);
+    });
+}
+
 function main() {
   historyRuntime.start();
+  // A Rust front's core opens no port: it serves the front's channel.
+  const frontChannel = coreChannelOf(process.env);
   const server = bindListenerBeforeConnectionStart({
-    bindListener: () =>
-      recordServe(
+    bindListener: () => {
+      if (frontChannel) {
+        serveFront(frontChannel);
+        return null;
+      }
+      return recordServe(
         recorder,
         "http",
         socketChannel,
-      )<{
-        sessionToken: string | null;
-        voice?: true;
-        /** The notification socket: the origin its links open on. */
-        notifications?: { origin: string };
-        /** A page's signalling for a call (voice-socket.ts). */
-        signalling?: { call: number; token: string };
-      }>({
+      )<ServeData>({
         port: config.port,
         hostname: config.host,
         tls: config.tls,
         maxRequestBodySize: terminalUploadRequestBodyLimit(),
-        async fetch(req, server) {
-          const requestPathname = rawRequestPathname(req.url);
-          let url: URL;
-          try {
-            url = new URL(req.url);
-          } catch {
-            return new Response("invalid request URL", { status: 400 });
-          }
-
-          // A rendered page's frame off its token: never the login page,
-          // nor anything behind the gate.
-          const stray = renderedStray(req, url);
-          if (stray) return stray;
-
-          // Forwarded headers are untrusted; use the actual TCP peer address.
-          const clientIp = server.requestIP(req)?.address ?? "unknown";
-          const tokenLoginResponse = handleTokenLogin(req, clientIp);
-          if (tokenLoginResponse) return tokenLoginResponse;
-
-          if (url.pathname === "/health" || url.pathname === "/healthz") {
-            return new Response("Ok", {
-              status: 200,
-              headers: { "content-type": "text/plain; charset=utf-8" },
-            });
-          }
-
-          // While the connections go to the Rust core, an API request waits
-          // for them (at most 10 s) rather than find them down for a
-          // moment. Logins and sockets go at once: a socket's calls wait the
-          // same way.
-          if (
-            hostSettling &&
-            url.pathname.startsWith("/api/") &&
-            !/^\/api\/(?:login|logout)(?:\/|$)/.test(url.pathname)
-          )
-            await hostSettling;
-
-          // A call handed to the Android app: its single-use token is the
-          // credential, exchanged for the call's and a login.
-          if (url.pathname === CALL_HANDOFF_PATH)
-            return redeemCallHandoff(req, clientIp);
-
-          // A rendered review's page: its frame is sandboxed with an opaque
-          // origin and sends no cookie; the token in the path is the
-          // credential.
-          const renderedPage = renderedPages.handle(req, url);
-          if (renderedPage) {
-            // A large page or model read whole over SSH can take longer
-            // than the default 10 s idle timeout before its first byte.
-            server.timeout(req, DOWNLOAD_TIMEOUT_MS / 1000);
-            return renderedPage;
-          }
-
-          // Auth endpoints are always reachable.
-          if (url.pathname === "/api/login/pin" && req.method === "POST") {
-            return handlePinLogin(req, clientIp);
-          }
-          if (url.pathname === "/api/login" && req.method === "POST") {
-            return handleLogin(req, clientIp);
-          }
-          if (url.pathname === "/login") {
-            return loginPage(req);
-          }
-          // The login page's logo and favicon must also work before login.
-          if (url.pathname === "/roamgate-icon-192.png") {
-            return serveStatic(req, config.publicDir);
-          }
-          if (url.pathname === "/api/logout") {
-            const response = handleLogout(req);
-            const token = sessionToken(req);
-            if (response.ok && config.authRequired && token) {
-              for (const client of clients) {
-                if (clientSessions.get(client) !== token) continue;
-                webSocketCleanup.cleanup(client);
-                client.close(4001, "Logged out");
-              }
-              notifications.closeSession(token);
-            }
-            return response;
-          }
-
-          // Authentication is bypassed only for development loopback listeners.
-          if (!isAuthed(req)) {
-            const accept = req.headers.get("accept") ?? "";
-            if (req.method === "GET" && accept.includes("text/html")) {
-              return unauthenticatedLoginRedirect();
-            }
-            return new Response("unauthorized", { status: 401 });
-          }
-
-          // A family given to the Rust core: it serves the path (never a
-          // WebSocket: Bun terminates them all).
-          const forwardToCore = () =>
-            coreFront!.forwardHttp(req, {
-              ...(sessionToken(req)
-                ? { session_id: sessionIdOf(sessionToken(req)) }
-                : {}),
-              client_ip: clientIp,
-            });
-          const coreServesHere = () =>
-            !!coreFront?.routesHttp(url.pathname) &&
-            !req.headers.get("upgrade");
-          if (
-            coreFront &&
-            !req.headers.get("upgrade") &&
-            !coreRoutedInPlace(url.pathname) &&
-            coreFront.routesHttp(url.pathname)
-          ) {
-            server.timeout(req, DOWNLOAD_TIMEOUT_MS / 1000);
-            return forwardToCore();
-          }
-
-          if (url.pathname === "/ws") {
-            // Never from another site, nor from a sandboxed page (its
-            // origin is "null"): the bridge is Roamgate's own pages'.
-            if (
-              req.headers.get("sec-fetch-site") === "cross-site" ||
-              req.headers.get("origin") === "null"
-            )
-              return new Response("forbidden", { status: 403 });
-            if (
-              server.upgrade(req, { data: { sessionToken: sessionToken(req) } })
-            )
-              return undefined;
-            return new Response("websocket upgrade failed", { status: 400 });
-          }
-          if (url.pathname === "/api/notifications/push") {
-            return webPush.handle(req);
-          }
-          if (url.pathname === "/api/notifications/ws") {
-            // The Android app's notification feed: never from another site,
-            // nor from a sandboxed page.
-            const origin = req.headers.get("origin");
-            if (
-              req.headers.get("sec-fetch-site") === "cross-site" ||
-              origin === "null"
-            )
-              return new Response("forbidden", { status: 403 });
-            if (
-              server.upgrade(req, {
-                data: {
-                  sessionToken: sessionToken(req),
-                  notifications: {
-                    origin: publicOrigin(url, req.headers, clientIp),
-                  },
-                },
-              })
-            )
-              return undefined;
-            return new Response("websocket upgrade failed", { status: 400 });
-          }
-          if (url.pathname === "/api/instance-settings") {
-            return handleInstanceSettings(req);
-          }
-          if (url.pathname.startsWith("/api/history")) {
-            const history = await handleHistory(req, url.pathname);
-            if (history) return history;
-          }
-          if (url.pathname === "/api/health") {
-            return Response.json({
-              ok: true,
-              version: APP_VERSION,
-              socket: config.socketPath,
-              auth_required: config.authRequired,
-            });
-          }
-          if (url.pathname === "/api/update/check" && req.method === "GET") {
-            server.timeout(req, UPDATE_HTTP_IDLE_TIMEOUT_SECONDS);
-            if (coreServesHere()) return forwardToCore();
-            return handleUpdateCheck(req);
-          }
-          if (url.pathname === "/api/update/install" && req.method === "POST") {
-            // Binary download and verification can exceed Bun's default ten-second
-            // request timeout. Keep the larger budget scoped to update requests.
-            server.timeout(req, UPDATE_HTTP_IDLE_TIMEOUT_SECONDS);
-            if (coreServesHere()) return forwardToCore();
-            return handleUpdateInstall(req);
-          }
-          if (url.pathname === "/api/review/image" && req.method === "GET") {
-            return serveReviewImage(url);
-          }
-          if (url.pathname === "/api/herdr/status" && req.method === "GET") {
-            if (coreServesHere()) return forwardToCore();
-            return handleHerdrStatus();
-          }
-          if (url.pathname === "/api/herdr/setup" && req.method === "POST") {
-            // Herdr download plus service start shares the update budget.
-            server.timeout(req, UPDATE_HTTP_IDLE_TIMEOUT_SECONDS);
-            if (coreServesHere()) return forwardToCore();
-            return handleHerdrSetup(req);
-          }
-          if (url.pathname === "/api/voice/ws") {
-            if (
-              server.upgrade(req, {
-                data: { sessionToken: sessionToken(req), voice: true },
-              })
-            )
-              return undefined;
-            return new Response("websocket upgrade failed", { status: 400 });
-          }
-          if (url.pathname === "/api/voice/call/signalling") {
-            // A call's WebRTC signalling, for the page that owns the call
-            // (its `call_token`), from this site only.
-            const call = Number(url.searchParams.get("call"));
-            const token = url.searchParams.get("call_token") ?? "";
-            if (voiceSocket.signallingRefused(req, call, token))
-              return new Response("forbidden", { status: 403 });
-            if (
-              server.upgrade(req, {
-                data: {
-                  sessionToken: sessionToken(req),
-                  signalling: { call, token },
-                },
-              })
-            )
-              return undefined;
-            return new Response("websocket upgrade failed", { status: 400 });
-          }
-          if (url.pathname.startsWith("/api/voice")) {
-            // Transcribing a long recording can outlast the default timeout.
-            server.timeout(req, VOICE_HTTP_IDLE_TIMEOUT_SECONDS);
-            const setup = await handleVoiceSetup(req, url.pathname);
-            if (setup) return setup;
-            const lowGpu = await handleVoiceLowGpu(req, url.pathname);
-            if (lowGpu) return lowGpu;
-            const response = await handleVoice(req, url.pathname);
-            if (response) return response;
-          }
-          const connectionRoute = parseConnectionHttpRoute(
-            requestPathname,
-            req.method,
-          );
-          if (connectionRoute) {
-            if (
-              connectionRoute.kind === "connection" &&
-              connectionRoute.endpoint === "terminal-upload"
-            ) {
-              server.timeout(req, TERMINAL_UPLOAD_TIMEOUT_MS / 1000);
-            }
-            if (
-              connectionRoute.kind === "connection" &&
-              connectionRoute.endpoint === "file-download" &&
-              (url.searchParams.get("inline") !== "1" ||
-                isHtmlPath(url.searchParams.get("path") ?? ""))
-            ) {
-              // HTML preparation can require several bounded SSH resource
-              // reads; a download's first byte waits for SSH, and a
-              // directory's for its archive.
-              server.timeout(req, DOWNLOAD_TIMEOUT_MS / 1000);
-            }
-            return handleConnectionHttpRequest(connectionRoute, url, req);
-          }
-          // Everything else: serve the built frontend (embedded or on-disk).
-          return serveStatic(
-            req,
-            config.publicDir,
-            (await readGuiSettings()).title_suffix,
-          );
+        fetch(req, server) {
+          return handleFetch(req, server);
         },
-        websocket: {
-          perMessageDeflate: WS_PER_MESSAGE_DEFLATE,
-          // Bun drops sends past its own limit; the slow-socket policy in
-          // websocket-send decides when a socket is too far behind.
-          backpressureLimit: WS_BACKPRESSURE_HARD_LIMIT_BYTES,
-          open(ws) {
-            if (ws.data.notifications)
-              return notifications.open(
-                ws,
-                ws.data.notifications.origin,
-                ws.data.sessionToken ?? undefined,
-                ws.remoteAddress,
-              );
-            if (ws.data.signalling) {
-              const { call, token } = ws.data.signalling;
-              return voiceSocket.openSignalling(ws, call, token);
-            }
-            // A voice socket is no Herdr client: see voiceSocket.
-            if (ws.data.voice) {
-              voiceSocketsOpen += 1;
-              lastVoiceAt = Date.now();
-              return;
-            }
-            clients.add(ws);
-            clientSessions.set(ws, ws.data.sessionToken);
-            const label = assignClientId(ws);
-            logger.debug("client connected", {
-              client: label,
-              clients: clients.size,
-            });
-            notifyBrowserClientCount();
-            safeSend(
-              ws,
-              JSON.stringify({
-                hello: true,
-                socket: config.socketPath,
-                bridge_protocol_version: 2,
-                default_connection_id: connectionManager.defaultId(),
-                capabilities: {
-                  connection_id: true,
-                  connection_scoped_http: true,
-                  file_reveal: canRevealFiles(ws.remoteAddress),
-                  connection_runtime_generation: true,
-                  embedded_assistant: true,
-                  flow_control: true,
-                  list_delta: true,
-                  herdr_task_notifications:
-                    config.taskNotificationSource === "herdr",
-                },
-              }),
-              "hello",
-            );
-            // The registry is global and must arrive before any Herdr catalog
-            // or runtime lease is available, including with an offline default.
-            safeSend(
-              ws,
-              JSON.stringify({
-                forwards: sshForwards.list().map(forwardToWire),
-              }),
-              "forwards",
-            );
-          },
-          drain(ws) {
-            if (ws.data.voice || ws.data.signalling || ws.data.notifications)
-              return;
-            // The viewer caught up: send the newest repaint we held back.
-            flushCoalescedMessages(ws, {
-              cleanup: () => {
-                webSocketCleanup.cleanup(ws);
-              },
-              warn: (detail) =>
-                logger.warn("websocket send failed", {
-                  detail: detail.replace(/^\[bridge\] /, ""),
-                }),
-            });
-          },
-          message(ws, message) {
-            if (ws.data.notifications)
-              return notifications.message(ws, message);
-            if (ws.data.signalling)
-              return voiceSocket.signallingMessage(ws, message);
-            if (ws.data.voice) {
-              lastVoiceAt = Date.now();
-              return voiceSocket.message(ws, message);
-            }
-            if (!clients.has(ws)) return;
-            const text =
-              typeof message === "string" ? message : message.toString();
-            if (
-              receiveWebSocketAck(ws, text, {
-                cleanup: () => {
-                  webSocketCleanup.cleanup(ws);
-                },
-                warn: (detail) =>
-                  logger.warn("websocket send failed", {
-                    detail: detail.replace(/^\[bridge\] /, ""),
-                  }),
-              })
-            )
-              return;
-            const { id, method, connectionId, connectionGeneration, lane } =
-              parseRpcMeta(text);
-            const startedAt = Date.now();
-            let responseConnectionId: string | null = null;
-            let logConnectionId: string | null = null;
-            if (method && !isBridgeGlobalMethod(method)) {
-              if (connectionId === undefined) {
-                responseConnectionId = connectionManager.defaultId();
-                logConnectionId = responseConnectionId;
-              } else {
-                try {
-                  responseConnectionId = validateConnectionId(connectionId);
-                  logConnectionId = responseConnectionId;
-                } catch {
-                  logConnectionId = "invalid";
-                }
-              }
-            }
-            runInSshLane(lane, () => handleRpc(ws, text))
-              .then(() => {
-                const outcome = takeRpcOutcome(ws, id);
-                logRpc(
-                  ws,
-                  method,
-                  startedAt,
-                  outcome?.status ?? "ok",
-                  logConnectionId,
-                  outcome?.detail,
-                  takeRpcReplyChars(ws, id),
-                );
-              })
-              .catch((e) => {
-                logRpc(
-                  ws,
-                  method,
-                  startedAt,
-                  "error",
-                  logConnectionId,
-                  (e as Error).message,
-                  takeRpcReplyChars(ws, id),
-                );
-                const errorMessage: Record<string, unknown> = {
-                  error: { message: (e as Error).message },
-                };
-                if (id) errorMessage.id = id;
-                safeSend(
-                  ws,
-                  responseConnectionId
-                    ? serializeConnectionEnvelope(
-                        responseConnectionId,
-                        errorMessage,
-                        typeof connectionGeneration === "number"
-                          ? connectionGeneration
-                          : undefined,
-                      )
-                    : JSON.stringify(errorMessage),
-                  "message-error",
-                );
-              });
-          },
-          pong(ws) {
-            if (ws.data.notifications) notifications.pong(ws);
-          },
-          close(ws, code, reason) {
-            if (ws.data.notifications)
-              return notifications.close(ws, code, reason);
-            if (ws.data.signalling) return voiceSocket.closeSignalling(ws);
-            if (ws.data.voice) {
-              voiceSocketsOpen = Math.max(0, voiceSocketsOpen - 1);
-              lastVoiceAt = Date.now();
-              return voiceSocket.close(ws);
-            }
-            const { client, viewedTerminals } = webSocketCleanup.complete(ws);
-            const flow = webSocketFlowStats(ws);
-            logger.debug("client disconnected", {
-              client,
-              clients: clients.size,
-              // 4000 with a reason: the page gave up on the socket (its
-              // heartbeat, a full send buffer); 1006: the link dropped.
-              code,
-              reason: reason || undefined,
-              sent: flow.sent,
-              unacked: flow.enabled ? flow.sent - flow.acked : "n/a",
-              queued: flow.queued,
-              rate: flow.rate,
-              heaviest: flow.heaviest,
-              last_ack_ms: flow.lastAckAgeMs ?? undefined,
-              terminals: viewedTerminals.length
-                ? viewedTerminals.join(",")
-                : "none",
-            });
-          },
-        },
-      }),
+        websocket: bridgeWebSocket,
+      });
+    },
     startConnection: async () => {
       await startHostConnections();
       // Resume saved work even when no browser has opened Ranger yet.
@@ -6810,7 +6857,7 @@ function main() {
       });
     },
   });
-  const listeningPort = server.port ?? config.port;
+  const listeningPort = server?.port ?? config.port;
   forwardReservedListeningPort = listeningPort;
   // Agent profiles: the settings read now (spawns that cannot wait use
   // them), and sessions a usage limit moved go back after its reset.
@@ -6850,25 +6897,29 @@ function main() {
     listeningPort,
     Boolean(config.tls),
   );
-  logger.info("listening", {
-    url: publicBrowserUrl,
-    websocket: "/ws",
-    log_level: config.logLevel,
-  });
-  // The Rust core, when ROAMGATE_CORE_BIN names one; nothing otherwise.
-  coreFront = startCoreFront({
-    // The front's executable, which the update family replaces.
-    env: {
-      ...process.env,
-      ROAMGATE_CLI_EXEC: process.execPath,
-      ROAMGATE_CLI_VERSION: APP_VERSION,
-      ROAMGATE_CLI_STANDALONE: isStandaloneBinary(process) ? "1" : "0",
-    },
-    dataDir: dataRoot(),
-    fromSource: !isStandaloneBinary(process),
-    deliverPush: deliverCorePush,
-    reverseTargets: { ...coreReverseTargets, ...hostReverseTargets },
-  });
+  if (!frontChannel)
+    logger.info("listening", {
+      url: publicBrowserUrl,
+      websocket: "/ws",
+      log_level: config.logLevel,
+    });
+  // The Rust core, when ROAMGATE_CORE_BIN names one; nothing otherwise,
+  // nor in a Rust front's core.
+  coreFront = frontChannel
+    ? null
+    : startCoreFront({
+        // The front's executable, which the update family replaces.
+        env: {
+          ...process.env,
+          ROAMGATE_CLI_EXEC: process.execPath,
+          ROAMGATE_CLI_VERSION: APP_VERSION,
+          ROAMGATE_CLI_STANDALONE: isStandaloneBinary(process) ? "1" : "0",
+        },
+        dataDir: dataRoot(),
+        fromSource: !isStandaloneBinary(process),
+        deliverPush: deliverCorePush,
+        reverseTargets: { ...coreReverseTargets, ...hostReverseTargets },
+      });
   setMrCacheCore(coreFront);
   if (config.authRequired) {
     if (config.generatedAuthTokenPath) {
@@ -6885,7 +6936,7 @@ function main() {
     client_socket: config.clientSocketPath,
     public_dir: config.publicDir,
   });
-  logger.info("browser URL", { url: publicBrowserUrl });
+  if (!frontChannel) logger.info("browser URL", { url: publicBrowserUrl });
   void removeLeftoverDataTemporaries()
     .then((removed) => {
       if (removed > 0)
@@ -6903,7 +6954,8 @@ function main() {
     publicBrowserUrl,
     config.generatedAuthToken,
   );
-  if (isAnyHost(config.host)) {
+  // The front's addresses are the front's to say and open.
+  if (!frontChannel && isAnyHost(config.host)) {
     const lanUrls = getLanIPs().map((ip) =>
       browserUrlFor(ip, listeningPort, Boolean(config.tls)),
     );
@@ -6923,7 +6975,7 @@ function main() {
       });
     }
   }
-  openBrowser(config, browserUrl);
+  if (!frontChannel) openBrowser(config, browserUrl);
 }
 
 let managerStopTask: Promise<void> | null = null;
