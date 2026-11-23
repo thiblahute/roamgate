@@ -37,4 +37,3 @@ roamgate-claude	server/src/profiles/	S21
 roamgate-conversation	server/src/profiles/	S21
 roamgate-mr-reviews	server/src/profiles/	S20
 roamgate-voice-server	server/src/profiles/	S22
-roamgate-review	server/src/review/agent-delivery	S19
