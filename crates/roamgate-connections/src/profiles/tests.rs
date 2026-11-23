@@ -98,7 +98,8 @@ fn invalidates_windows_recovery_when_its_endpoint_changes() {
         remote_session: Some("default".into()),
     };
     let fingerprint = connection_recovery_fingerprint(&ConnectionProfile::Ssh(profile.clone()));
-    let changes: [Box<dyn Fn(&mut SshConnectionProfile)>; 4] = [
+    type Change = Box<dyn Fn(&mut SshConnectionProfile)>;
+    let changes: [Change; 4] = [
         Box::new(|p| p.ssh_destination = "other-host".into()),
         Box::new(|p| p.remote_platform_windows = false),
         Box::new(|p| p.remote_herdr_path = Some(r"C:\Other\herdr.exe".into())),

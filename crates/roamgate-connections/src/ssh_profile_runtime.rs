@@ -22,13 +22,17 @@ pub struct DirectoryStat {
     pub mode: u32,
 }
 
+type PathMode = Arc<dyn Fn(&Path, u32) -> Result<(), String> + Send + Sync>;
+type PathStat = Arc<dyn Fn(&Path) -> Result<DirectoryStat, String> + Send + Sync>;
+type PathAction = Arc<dyn Fn(&Path) -> Result<(), String> + Send + Sync>;
+
 /// What the configuration touches, replaceable in tests.
 pub struct SshRuntimeConfigDeps {
     pub create_directory: Arc<dyn Fn() -> Result<PathBuf, String> + Send + Sync>,
-    pub chmod: Arc<dyn Fn(&Path, u32) -> Result<(), String> + Send + Sync>,
-    pub stat: Arc<dyn Fn(&Path) -> Result<DirectoryStat, String> + Send + Sync>,
+    pub chmod: PathMode,
+    pub stat: PathStat,
     pub remove_directory: Arc<dyn Fn(&Path) + Send + Sync>,
-    pub write_owner: Arc<dyn Fn(&Path) -> Result<(), String> + Send + Sync>,
+    pub write_owner: PathAction,
     /// Node's platform name (`linux`, `darwin`, `win32`).
     pub platform: String,
     pub environment: Arc<dyn Env>,

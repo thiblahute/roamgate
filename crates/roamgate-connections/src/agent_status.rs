@@ -94,6 +94,8 @@ impl StatusHerdr for HerdrClient {
 }
 
 type ErrorCallback = Arc<dyn Fn(String) + Send + Sync>;
+type PaneListObserver = Arc<dyn Fn(&Value, Option<i64>) + Send + Sync>;
+type LogSink = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// What the loop is made of.
 #[derive(Clone)]
@@ -105,8 +107,8 @@ pub struct AgentStatusArgs {
     pub on_list_error: Option<ErrorCallback>,
     /// A revision taken when a listing starts, given back with its result.
     pub on_pane_list_start: Option<Arc<dyn Fn() -> i64 + Send + Sync>>,
-    pub on_pane_list: Option<Arc<dyn Fn(&Value, Option<i64>) + Send + Sync>>,
-    pub log: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+    pub on_pane_list: Option<PaneListObserver>,
+    pub log: Option<LogSink>,
     pub retry_delay: Duration,
     pub rebuild_debounce: Duration,
     pub membership_poll: Duration,
