@@ -9,6 +9,8 @@
     "start": "bun run src/index.ts",
     "compile": "bun build --compile --minify --asset ./public --no-compile-autoload-dotenv --no-compile-autoload-bunfig src/index.ts --outfile roamgate",
     "postcompile": "bun run clean:bun-build",
+    "compile:pi": "bun build --compile --minify --no-compile-autoload-dotenv --no-compile-autoload-bunfig src/assistant/pi-sidecar-main.ts --outfile roamgate-pi",
+    "postcompile:pi": "bun run clean:bun-build",
     "compile:darwin-arm64": "bun build --compile --minify --asset ./public --no-compile-autoload-dotenv --no-compile-autoload-bunfig --target=bun-darwin-arm64 src/index.ts --outfile roamgate-darwin-arm64",
     "postcompile:darwin-arm64": "bun run clean:bun-build",
     "compile:darwin-x64": "bun build --compile --minify --asset ./public --no-compile-autoload-dotenv --no-compile-autoload-bunfig --target=bun-darwin-x64 src/index.ts --outfile roamgate-darwin-x64",

@@ -1,0 +1,426 @@
+{
+  "description": "The Pi sidecar's wire (contract/wire/pi-sidecar.md): reading and writing its JSON-RPC lines, the class of an error, and how ROAMGATE_PI_SIDECAR becomes a command. Read by `bun test` in server/src/assistant/pi-sidecar-protocol.test.ts and by roamgate-pi's tests.",
+  "modules": {
+    "piSidecar": "server/src/assistant/pi-sidecar-protocol.ts"
+  },
+  "cases": [
+    {
+      "name": "a request, a notification, a result and an error are told apart",
+      "group": ["parseLine"],
+      "calls": [
+        {
+          "fn": "piSidecar.parseLine",
+          "args": [
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"run\",\"params\":{\"directory\":\"/d\"}}"
+          ],
+          "result": {
+            "kind": "request",
+            "id": 1,
+            "method": "run",
+            "params": {
+              "directory": "/d"
+            }
+          }
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": [
+            "{\"jsonrpc\":\"2.0\",\"id\":\"r-1\",\"method\":\"run.tool\",\"params\":{\"request\":1,\"handler\":\"read\",\"args\":[\"status\",{}]}}"
+          ],
+          "result": {
+            "kind": "request",
+            "id": "r-1",
+            "method": "run.tool",
+            "params": {
+              "request": 1,
+              "handler": "read",
+              "args": ["status", {}]
+            }
+          }
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": [
+            "{\"jsonrpc\":\"2.0\",\"method\":\"run.event\",\"params\":{\"request\":1,\"type\":\"delta\",\"args\":[\"Hi\"]}}"
+          ],
+          "result": {
+            "kind": "notification",
+            "method": "run.event",
+            "params": {
+              "request": 1,
+              "type": "delta",
+              "args": ["Hi"]
+            }
+          }
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": [
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":[{\"type\":\"ranger-durable\",\"id\":\"x\"}]}"
+          ],
+          "result": {
+            "kind": "result",
+            "id": 1,
+            "result": [
+              {
+                "type": "ranger-durable",
+                "id": "x"
+              }
+            ]
+          }
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": ["{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":null}"],
+          "result": {
+            "kind": "result",
+            "id": 2,
+            "result": null
+          }
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": [
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-32000,\"message\":\"Invalid archive tool parameters.\",\"data\":{\"user\":true}}}"
+          ],
+          "result": {
+            "kind": "error",
+            "id": 3,
+            "error": {
+              "code": -32000,
+              "message": "Invalid archive tool parameters.",
+              "data": {
+                "user": true
+              }
+            }
+          }
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": [
+            "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}"
+          ],
+          "result": {
+            "kind": "error",
+            "id": null,
+            "error": {
+              "code": -32700,
+              "message": "Parse error"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "params left out are null",
+      "group": ["parseLine"],
+      "calls": [
+        {
+          "fn": "piSidecar.parseLine",
+          "args": ["{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"stop\"}"],
+          "result": {
+            "kind": "request",
+            "id": 4,
+            "method": "stop",
+            "params": null
+          }
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": ["{\"jsonrpc\":\"2.0\",\"method\":\"$/cancel\"}"],
+          "result": {
+            "kind": "notification",
+            "method": "$/cancel",
+            "params": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "what is not a JSON-RPC 2.0 message is null",
+      "group": ["parseLine"],
+      "calls": [
+        {
+          "fn": "piSidecar.parseLine",
+          "args": ["Deprecation (warning): something"],
+          "result": null
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": [""],
+          "result": null
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": ["{\"id\":1,\"method\":\"run\"}"],
+          "result": null
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": ["{\"jsonrpc\":\"1.0\",\"id\":1,\"method\":\"run\"}"],
+          "result": null
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": ["{\"jsonrpc\":\"2.0\",\"id\":1.5,\"method\":\"run\"}"],
+          "result": null
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": ["{\"jsonrpc\":\"2.0\",\"id\":{},\"result\":1}"],
+          "result": null
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": [
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":\"x\",\"message\":\"m\"}}"
+          ],
+          "result": null
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": ["{\"jsonrpc\":\"2.0\",\"id\":1}"],
+          "result": null
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": ["[1,2]"],
+          "result": null
+        }
+      ]
+    },
+    {
+      "name": "an error's data keeps only whether it is a user's",
+      "group": ["parseLine"],
+      "calls": [
+        {
+          "fn": "piSidecar.parseLine",
+          "args": [
+            "{\"jsonrpc\":\"2.0\",\"id\":5,\"error\":{\"code\":-32000,\"message\":\"m\",\"data\":{\"user\":false,\"stack\":\"secret\"}}}"
+          ],
+          "result": {
+            "kind": "error",
+            "id": 5,
+            "error": {
+              "code": -32000,
+              "message": "m",
+              "data": {
+                "user": false
+              }
+            }
+          }
+        },
+        {
+          "fn": "piSidecar.parseLine",
+          "args": [
+            "{\"jsonrpc\":\"2.0\",\"id\":5,\"error\":{\"code\":-32000,\"message\":\"m\",\"data\":{\"user\":\"yes\"}}}"
+          ],
+          "result": {
+            "kind": "error",
+            "id": 5,
+            "error": {
+              "code": -32000,
+              "message": "m"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "messages are compact lines in a fixed key order",
+      "group": ["encodeMessage"],
+      "calls": [
+        {
+          "fn": "piSidecar.encodeMessage",
+          "args": [
+            {
+              "kind": "request",
+              "id": 7,
+              "method": "catalog",
+              "params": {
+                "directory": "/r",
+                "credential_directory": "/r",
+                "source": "assistant"
+              }
+            }
+          ],
+          "result": "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"catalog\",\"params\":{\"directory\":\"/r\",\"credential_directory\":\"/r\",\"source\":\"assistant\"}}"
+        },
+        {
+          "fn": "piSidecar.encodeMessage",
+          "args": [
+            {
+              "kind": "notification",
+              "method": "run.event",
+              "params": {
+                "request": 7,
+                "type": "message",
+                "args": ["été 🙂"]
+              }
+            }
+          ],
+          "result": "{\"jsonrpc\":\"2.0\",\"method\":\"run.event\",\"params\":{\"request\":7,\"type\":\"message\",\"args\":[\"été 🙂\"]}}"
+        },
+        {
+          "fn": "piSidecar.encodeMessage",
+          "args": [
+            {
+              "kind": "result",
+              "id": 7,
+              "result": null
+            }
+          ],
+          "result": "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":null}"
+        },
+        {
+          "fn": "piSidecar.encodeMessage",
+          "args": [
+            {
+              "kind": "result",
+              "id": 8,
+              "result": {
+                "$undefined": true
+              }
+            }
+          ],
+          "result": "{\"jsonrpc\":\"2.0\",\"id\":8,\"result\":null}"
+        },
+        {
+          "fn": "piSidecar.encodeMessage",
+          "args": [
+            {
+              "kind": "error",
+              "id": 9,
+              "error": {
+                "code": -32000,
+                "message": "Ranger is not running"
+              }
+            }
+          ],
+          "result": "{\"jsonrpc\":\"2.0\",\"id\":9,\"error\":{\"code\":-32000,\"message\":\"Ranger is not running\"}}"
+        },
+        {
+          "fn": "piSidecar.encodeMessage",
+          "args": [
+            {
+              "kind": "error",
+              "id": 9,
+              "error": {
+                "code": -32000,
+                "message": "Invalid task",
+                "data": {
+                  "user": true
+                }
+              }
+            }
+          ],
+          "result": "{\"jsonrpc\":\"2.0\",\"id\":9,\"error\":{\"code\":-32000,\"message\":\"Invalid task\",\"data\":{\"user\":true}}}"
+        }
+      ]
+    },
+    {
+      "name": "a wire error is a user error only when it says so",
+      "group": ["errors"],
+      "calls": [
+        {
+          "fn": "piSidecar.wireErrorKind",
+          "args": [
+            {
+              "code": -32000,
+              "message": "m",
+              "data": {
+                "user": true
+              }
+            }
+          ],
+          "result": "user"
+        },
+        {
+          "fn": "piSidecar.wireErrorKind",
+          "args": [
+            {
+              "code": -32000,
+              "message": "m",
+              "data": {
+                "user": false
+              }
+            }
+          ],
+          "result": "error"
+        },
+        {
+          "fn": "piSidecar.wireErrorKind",
+          "args": [
+            {
+              "code": -32601,
+              "message": "Unknown method x"
+            }
+          ],
+          "result": "error"
+        }
+      ]
+    },
+    {
+      "name": "the variable names a Bun script or an executable",
+      "group": ["sidecarCommand"],
+      "calls": [
+        {
+          "fn": "piSidecar.sidecarCommand",
+          "args": [
+            {
+              "$undefined": true
+            },
+            "/usr/bin/bun"
+          ],
+          "result": null
+        },
+        {
+          "fn": "piSidecar.sidecarCommand",
+          "args": ["", "/usr/bin/bun"],
+          "result": null
+        },
+        {
+          "fn": "piSidecar.sidecarCommand",
+          "args": ["  ", "/usr/bin/bun"],
+          "result": null
+        },
+        {
+          "fn": "piSidecar.sidecarCommand",
+          "args": ["/opt/roamgate/roamgate-pi", "/usr/bin/bun"],
+          "result": ["/opt/roamgate/roamgate-pi"]
+        },
+        {
+          "fn": "piSidecar.sidecarCommand",
+          "args": ["C:\\Roamgate\\roamgate-pi.exe", "bun"],
+          "result": ["C:\\Roamgate\\roamgate-pi.exe"]
+        },
+        {
+          "fn": "piSidecar.sidecarCommand",
+          "args": [
+            "/src/server/src/assistant/pi-sidecar-main.ts",
+            "/usr/bin/bun"
+          ],
+          "result": [
+            "/usr/bin/bun",
+            "/src/server/src/assistant/pi-sidecar-main.ts"
+          ]
+        },
+        {
+          "fn": "piSidecar.sidecarCommand",
+          "args": [" /x/sidecar.mjs ", "bun"],
+          "result": ["bun", "/x/sidecar.mjs"]
+        },
+        {
+          "fn": "piSidecar.sidecarCommand",
+          "args": ["/x/sidecar.cjs", "bun"],
+          "result": ["bun", "/x/sidecar.cjs"]
+        },
+        {
+          "fn": "piSidecar.sidecarCommand",
+          "args": ["/x/sidecar.tsx", "bun"],
+          "result": ["/x/sidecar.tsx"]
+        }
+      ]
+    }
+  ]
+}

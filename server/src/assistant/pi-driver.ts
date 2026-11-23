@@ -74,7 +74,8 @@ export type AssistantDriver = {
   }>;
   configureModel?(
     input: AssistantModelConnection,
-    save: (path: string, value: unknown) => void,
+    /** Awaited: Pi reads the file back right after (the sidecar's is a reverse request). */
+    save: (path: string, value: unknown) => unknown,
   ): Promise<void>;
   readToolDetails?(
     entries: unknown[],
@@ -96,7 +97,8 @@ export type AssistantDriver = {
     entries: unknown[];
     requestId?: string;
     recover?: boolean;
-    checkpoint?(entries: unknown[]): void;
+    /** Awaited before admission (the sidecar's is a reverse request). */
+    checkpoint?(entries: unknown[]): unknown;
     replace?(text: string): void;
     /** The turn's visible reasoning so far: one entry per model call that shared any. */
     thinking?(steps: string[]): void;
@@ -599,7 +601,7 @@ export function createPiDriver(
           ),
         };
       };
-      save(path, {
+      await save(path, {
         ...saved,
         providers: {
           ...saved.providers,
@@ -871,7 +873,7 @@ export function createPiDriver(
         await root.configure(agent, context);
         retained = [{ type: "ranger-durable", id }];
         // Save the root pointer before admission can schedule a model or tool.
-        input.checkpoint?.(retained);
+        await input.checkpoint?.(retained);
         running.controller.signal.throwIfAborted();
         const submission = await root.submit(
           {

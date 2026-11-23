@@ -8,6 +8,7 @@ import {
 } from "./claude-driver";
 import { createRangerMcp, type RangerMcp } from "./claude-mcp";
 import { type AssistantDriver, createPiDriver } from "./pi-driver";
+import { createPiSidecarDriver, piSidecarFromEnv } from "./pi-sidecar-client";
 
 let sharedMcp: RangerMcp | undefined;
 
@@ -29,8 +30,12 @@ export function createRangerDriver(
   credentialDirectory = directory,
   drivers: { pi?: AssistantDriver; claude?: ClaudeCodeDriver } = {},
 ): AssistantDriver {
+  const sidecar = drivers.pi ? null : piSidecarFromEnv();
   const pi =
-    drivers.pi ?? createPiDriver(directory, undefined, credentialDirectory);
+    drivers.pi ??
+    (sidecar
+      ? createPiSidecarDriver(sidecar, directory, credentialDirectory)
+      : createPiDriver(directory, undefined, credentialDirectory));
   const claude =
     drivers.claude ??
     createClaudeCodeDriver({
