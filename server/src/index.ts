@@ -200,6 +200,7 @@ import { openActivityReader } from "./activity/reader";
 import { createTimeReport, TimeReportError } from "./time-report/rpc";
 import { createArchiveToolHandler } from "./assistant/archive-tools";
 import { createArchivedSessionReader } from "./archive/file-access";
+import { createArchiveRpc } from "./archive/rpc";
 import { normalizeArchiveSettings } from "./archive/settings";
 import { useArchivedSessionFiles } from "./agent/session-file-access";
 import { dataRoot } from "./config/data-paths";
@@ -1279,10 +1280,10 @@ useArchivedSessionFiles(
     }),
   }),
 );
-const assistantArchive = createArchiveToolHandler({
+const archiveDeps = {
   settings: async () =>
     (await readGuiSettings()).archive ?? normalizeArchiveSettings(undefined),
-  archiveDir: (settings) =>
+  archiveDir: (settings: { dir?: string }) =>
     resolveArchiveDir(
       process.env.ROAMGATE_ARCHIVE_DIR?.trim() || settings.dir,
       dataRoot(),
@@ -1294,7 +1295,10 @@ const assistantArchive = createArchiveToolHandler({
     env: process.env,
     dataDir: dataRoot(),
   }),
-});
+};
+const assistantArchive = createArchiveToolHandler(archiveDeps);
+// The archive search view: read-only, like Ranger's tools.
+const archiveRpc = createArchiveRpc(archiveDeps);
 let assistantServiceTask: Promise<
   Awaited<
     ReturnType<typeof import("./assistant/service").createAssistantService>
@@ -3333,6 +3337,18 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       sendReply({ id, result }, "activity-timeline");
     } catch (error) {
       sendError("activity-timeline-error", error);
+    }
+    return;
+  }
+  if (method === "bridge.archive.search" || method === "bridge.archive.open") {
+    try {
+      const result =
+        method === "bridge.archive.search"
+          ? await archiveRpc.search(params ?? {})
+          : await archiveRpc.open(params ?? {});
+      sendReply({ id, result }, "archive");
+    } catch (error) {
+      sendError("archive-error", error);
     }
     return;
   }

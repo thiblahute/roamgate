@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { setPriority } from "node:os";
 import { join } from "node:path";
 import { ADAPTERS } from "../archive/adapters";
 import { resolveArchiveDir } from "../archive/dir";
@@ -12,7 +13,7 @@ import {
   shQuote,
 } from "../archive/hosts";
 import {
-  rebuildIndex,
+  rebuildArchiveDb,
   runIngest,
   runPush,
   runSync,
@@ -20,8 +21,27 @@ import {
   type HostReport,
 } from "../archive/engine";
 import { archiveHealth } from "../archive/health";
-import { openArchiveDb } from "../archive/store";
-import { searchArchive } from "../archive/search";
+import {
+  archiveDbPath,
+  existingArchiveDb,
+  openArchiveDb,
+} from "../archive/store";
+import {
+  NoTextRepo,
+  type SearchQuery,
+  type SearchResult,
+  searchArchive,
+} from "../archive/search";
+import {
+  fetchTextRepo,
+  rebuildTextRepo,
+  type TextPassReport,
+  textRepoAgeMs,
+  textRepoPath,
+  textRepoStatus,
+  updateTextRepo,
+} from "../archive/text-repo";
+import { gameModeActive } from "../utils/gamemode";
 import {
   catFile,
   catLines,
@@ -56,22 +76,34 @@ Usage:
   roamgate archive ingest <host> [--json]
   roamgate archive search <terms...> [--agent A] [--host H] [--project P]
                           [--role R] [--kind K] [--since D] [--until D]
-                          [--recent] [--history] [-n N] [--json]
+                          [--recent] [--history] [--regex] [--tool-output]
+                          [-n N] [--json]
   roamgate archive session <id> [--agent A] [--host H] [--json]
   roamgate archive cat <id> [--agent A] [--host H] [--file RELPATH]
                        [--from-line N --limit N]
   roamgate archive resume <id> [--agent A] [--host H] [--remote SSH]
                           [--dry-run] [--json]
   roamgate archive health [--check] [--json]
-  roamgate archive rebuild-index
+  roamgate archive status [--json]
+  roamgate archive rebuild-text [--now] [--json]
+  roamgate archive fetch-text [--remote SSH] [--json]
+  roamgate archive rebuild-db
 
 sync copies, compresses and indexes this machine's agent sessions, then
 pulls every configured ssh host (unreachable hosts are recorded and skipped).
 With --push (or archive.push in settings) it sends this machine's files to the
 archive home and has it index them. Files under raw/ are the source of truth
-and are never deleted; the index (index.sqlite) is rebuilt from them.
-search matches substrings, case-insensitive (3+ characters). cat prints a
-session byte-identical to the original. resume restores a session into this
+and are never deleted; archive.sqlite (what each file holds, when each host
+synced) is rebuilt from them by rebuild-db. After
+each sync the conversation text goes into text.git (one commit, deferred while
+GameMode runs); rebuild-text builds it again from raw/, status shows it.
+search greps that text: substrings, case-insensitive, every word in one
+message ("phrases", OR, NOT), or a Perl regex with --regex; one line per
+session, most matching messages first (--recent: newest first), including
+this machine's sessions grown since the last commit. Tool output is only
+searched with --tool-output, which reads all of raw/ (slow). fetch-text
+copies the archive home's text repo (archive.remote) for local search. cat
+prints a session byte-identical to the original. resume restores a session into this
 machine's agent directory only where it does not exist, never overwriting.
 health reports the last sync per host and agent and warns when stale
 (--check exits 1 on any warning). Settings live under "archive" in
@@ -81,6 +113,12 @@ settings.json; --dir or ROAMGATE_ARCHIVE_DIR overrides the archive location.
 
 export type ArchiveCommandOptions = {
   exec?: Exec;
+  /** Whether GameMode runs (default: ask gamemoded). */
+  gameMode?: () => Promise<boolean | null>;
+  /** The ssh program for fetch-text (tests run a local stand-in). */
+  sshProgram?: string;
+  /** Lowers this process's priority before a rebuild (default: nice 19). */
+  lowerPriority?: () => void;
   write?: (chunk: Uint8Array) => Promise<void>;
   now?: () => Date;
 };
@@ -131,11 +169,12 @@ function archiveDirFor(
   );
 }
 
-function indexBytes(dir: string): number {
+function dbBytes(dir: string): number {
   let total = 0;
-  for (const name of ["index.sqlite", "index.sqlite-wal"]) {
+  const path = existingArchiveDb(dir) ?? archiveDbPath(dir);
+  for (const file of [path, `${path}-wal`]) {
     try {
-      total += statSync(join(dir, name)).size;
+      total += statSync(file).size;
     } catch {
       // Not there.
     }
@@ -156,6 +195,8 @@ export function createArchiveCommand(
   options: ArchiveCommandOptions = {},
 ): CliCommand {
   const exec = options.exec ?? defaultExec;
+  const gameMode = options.gameMode ?? (() => gameModeActive());
+  const sshProgram = options.sshProgram ?? "ssh";
   const write =
     options.write ??
     (async (chunk: Uint8Array) => {
@@ -175,7 +216,10 @@ export function createArchiveCommand(
       "cat",
       "resume",
       "health",
-      "rebuild-index",
+      "status",
+      "rebuild-text",
+      "fetch-text",
+      "rebuild-db",
     ],
     flags: [
       "--json",
@@ -187,6 +231,8 @@ export function createArchiveCommand(
       "--dir",
       "--recent",
       "--history",
+      "--regex",
+      "--tool-output",
     ],
     help: archiveHelp,
     async run(args, context) {
@@ -242,22 +288,44 @@ export function createArchiveCommand(
           if (!settings.push)
             throw new UsageError("--push needs archive.push in settings.json");
           const report = await runPush(syncOptions);
+          let fetched: string;
+          try {
+            const result = fetchTextRepo(
+              archiveDir,
+              settings.push.target,
+              SSH_OPTIONS,
+              settings.push.archive_dir,
+              sshProgram,
+            );
+            fetched = result.updated ? "updated" : "unchanged";
+          } catch (error) {
+            fetched = `not fetched: ${(error as Error).message}`;
+          }
           if (values.json)
             printJson(context, {
               push: report,
+              text_fetch: fetched,
               seconds: (Date.now() - started) / 1000,
             });
           else
             context.log(
-              `push to ${settings.push.target}: ${report.status}${report.message ? ` ${report.message}` : ""}`,
+              `push to ${settings.push.target}: ${report.status}${report.message ? ` ${report.message}` : ""}\ntext repo: ${fetched}`,
             );
           return EXIT_OK;
         }
         const report = await runSync(syncOptions);
+        const text = await textPass(
+          archiveDir,
+          settings,
+          runtime,
+          syncOptions.log,
+          gameMode,
+        );
         if (values.json) {
-          printJson(context, report);
+          printJson(context, { ...report, text });
         } else {
           for (const host of report.hosts) context.log(describeHost(host));
+          context.log(describeText(text));
           context.log(`done in ${Math.round(report.seconds)}s`);
         }
         const errors = report.hosts.reduce(
@@ -272,16 +340,24 @@ export function createArchiveCommand(
         const { values, positionals } = parseCommandArgs(rest, COMMON, 1);
         const host = positionals[0];
         if (!host) throw new UsageError("ingest needs a host name");
+        const archiveDir = archiveDirFor(context, settings, values.dir);
         const report = await runIngest({
           settings,
           runtime,
-          archiveDir: archiveDirFor(context, settings, values.dir),
+          archiveDir,
           host,
           exec,
           log: values.json ? () => {} : log,
         });
-        if (values.json) printJson(context, report);
-        else context.log(describeHost(report));
+        const text = await textPass(
+          archiveDir,
+          settings,
+          runtime,
+          values.json ? () => {} : log,
+          gameMode,
+        );
+        if (values.json) printJson(context, { ...report, text });
+        else context.log(`${describeHost(report)}\n${describeText(text)}`);
         return EXIT_OK;
       }
       case "search": {
@@ -298,6 +374,8 @@ export function createArchiveCommand(
             until: { type: "string" },
             recent: { type: "boolean" },
             history: { type: "boolean" },
+            regex: { type: "boolean" },
+            "tool-output": { type: "boolean" },
             limit: { type: "string", short: "n" },
             remote: { type: "string" },
           },
@@ -310,57 +388,181 @@ export function createArchiveCommand(
           throw new UsageError("-n must be 1 to 500");
         const remote = values.remote ?? settings.remote;
         const archiveDir = archiveDirFor(context, settings, values.dir);
-        if (remote && !existsSync(join(archiveDir, "index.sqlite")))
+        const hasText = existsSync(join(textRepoPath(archiveDir), "HEAD"));
+        const hasIndex = existingArchiveDb(archiveDir) !== null;
+        if (remote && !hasIndex && !values["tool-output"]) {
+          // A machine without its own archive: the home's text repo, fetched.
+          if (textRepoAgeMs(archiveDir) > TEXT_FETCH_EVERY_MS)
+            try {
+              fetchTextRepo(
+                archiveDir,
+                remote,
+                SSH_OPTIONS,
+                settings.remote_dir,
+                sshProgram,
+              );
+            } catch (error) {
+              if (!hasText) {
+                log(
+                  `could not fetch the text repo: ${(error as Error).message}`,
+                );
+                return passThrough(context, remote, [
+                  "search",
+                  ...rest.filter(
+                    (a, i) => a !== "--remote" && rest[i - 1] !== "--remote",
+                  ),
+                ]);
+              }
+              log(
+                `searching the last fetched text: ${(error as Error).message}`,
+              );
+            }
+        } else if (remote && !hasIndex && !hasText)
           return passThrough(context, remote, [
             "search",
             ...rest.filter(
               (a, i) => a !== "--remote" && rest[i - 1] !== "--remote",
             ),
           ]);
-        const db = await openOrRebuild(archiveDir, log, settings);
-        try {
-          const result = searchArchive(
-            db,
-            {
-              terms: positionals,
-              ...(values.agent ? { agent: values.agent } : {}),
-              ...(values.host ? { host: values.host } : {}),
-              ...(values.project ? { project: values.project } : {}),
-              ...(values.role ? { role: values.role } : {}),
-              ...(values.kind ? { kind: values.kind } : {}),
-              ...(values.since ? { since: values.since } : {}),
-              ...(values.until ? { until: values.until } : {}),
-              recent: values.recent === true,
-              history: values.history === true,
-              limit,
-            },
-            settings,
+        const query: SearchQuery = {
+          terms: positionals,
+          ...(values.agent ? { agent: values.agent } : {}),
+          ...(values.host ? { host: values.host } : {}),
+          ...(values.project ? { project: values.project } : {}),
+          ...(values.role ? { role: values.role } : {}),
+          ...(values.kind ? { kind: values.kind } : {}),
+          ...(values.since ? { since: values.since } : {}),
+          ...(values.until ? { until: values.until } : {}),
+          recent: values.recent === true,
+          history: values.history === true,
+          regex: values.regex === true,
+          toolOutput: values["tool-output"] === true,
+          limit,
+        };
+        let result: SearchResult;
+        if (query.toolOutput && !values.json)
+          context.error(
+            "searching tool output reads every archived transcript in raw/: this is slow",
           );
-          if (values.json) {
-            printJson(context, result);
-            return EXIT_OK;
-          }
-          if (result.warning) context.error(`warning: ${result.warning}`);
-          for (const hit of result.hits) {
-            context.log(
-              `${(hit.ts ?? "-").slice(0, 19)}  ${hit.session.slice(0, 8)}${hit.subagent ? " (subagent)" : ""}  ${hit.host}/${hit.agent}  ${hit.project.slice(-40)}`,
-            );
-            if (hit.title) context.log(`    title: ${hit.title}`);
+        let shown = -1;
+        try {
+          result = await searchArchive(archiveDir, query, settings, {
+            runtime,
+            onProgress: (done, total) => {
+              const percent = Math.floor((done * 100) / Math.max(1, total));
+              if (values.json || percent < shown + 10) return;
+              shown = percent;
+              context.error(`  ${percent}% of ${total} files`);
+            },
+          });
+        } catch (error) {
+          if (error instanceof NoTextRepo)
+            throw new Error(error.message, { cause: error });
+          throw error;
+        }
+        if (values.json) {
+          printJson(context, result);
+          return EXIT_OK;
+        }
+        if (result.warning) context.error(`warning: ${result.warning}`);
+        for (const hit of result.hits) {
+          context.log(
+            `${(hit.ts ?? "-").slice(0, 19)}  ${hit.session.slice(0, 8)}${hit.subagent ? " (subagent)" : ""}  ${hit.host}/${hit.agent}  ${hit.project.slice(-40)}${hit.matches ? `  ${hit.matches} match(es)` : ""}`,
+          );
+          if (hit.title) context.log(`    title: ${hit.title}`);
+          const snippets = hit.snippets?.length ? hit.snippets : [hit.snippet];
+          if (hit.snippets?.length)
+            for (const snippet of snippets) context.log(`    ${snippet}`);
+          else
             context.log(
               `    ${hit.role}/${hit.kind}${hit.tool ? `/${hit.tool}` : ""}: ${hit.snippet}`,
             );
-          }
-          for (const entry of result.history ?? [])
-            context.log(
-              `${entry.ts ?? "-"}  history  ${entry.host}  ${entry.project ?? ""}\n    ${entry.snippet}`,
-            );
-          context.log(
-            `-- ${result.hits.length} of ${result.total} hit(s)${result.truncated ? " (truncated)" : ""}`,
-          );
-          return EXIT_OK;
-        } finally {
-          db.close(false);
         }
+        for (const entry of result.history ?? [])
+          context.log(
+            `${entry.ts ?? "-"}  history  ${entry.host}  ${entry.project ?? ""}\n    ${entry.snippet}`,
+          );
+        context.log(
+          result.sessions !== undefined
+            ? `-- ${result.hits.length} of ${result.sessions} session(s), ${result.total} matching message(s)`
+            : `-- ${result.hits.length} of ${result.total} hit(s)${result.truncated ? " (truncated)" : ""}`,
+        );
+        return EXIT_OK;
+      }
+      case "status": {
+        const { values } = parseCommandArgs(rest, COMMON);
+        const archiveDir = archiveDirFor(context, settings, values.dir);
+        const status = textRepoStatus(archiveDir, settings);
+        if (values.json) printJson(context, { text: status });
+        else if (!status.exists)
+          context.log(
+            `text repo: none yet at ${status.path} (built by the next sync, or \`roamgate archive rebuild-text\`)`,
+          );
+        else
+          context.log(
+            [
+              `text repo: ${status.path}`,
+              `  ${status.files} file(s), ${megabytes(status.pack_bytes)}, last commit ${status.last_commit ?? "never"}, last repack ${status.last_repack ?? "never"}`,
+              `  secret-looking values redacted: ${status.redactions}`,
+              ...(status.stale_render
+                ? [
+                    "  the render settings changed: run `roamgate archive rebuild-text`",
+                  ]
+                : []),
+            ].join("\n"),
+          );
+        return EXIT_OK;
+      }
+      case "rebuild-text": {
+        const { values } = parseCommandArgs(rest, {
+          ...COMMON,
+          now: { type: "boolean" },
+        });
+        const archiveDir = archiveDirFor(context, settings, values.dir);
+        if (!values.now && (await gameMode()) === true) {
+          context.error(
+            "GameMode runs: the rebuild waits for the game to end (--now builds anyway, at the lowest priority)",
+          );
+          return EXIT_TEMPFAIL;
+        }
+        (options.lowerPriority ?? lowerPriority)();
+        const report = await rebuildTextRepo({
+          archiveDir,
+          settings,
+          host: resolveHosts(settings, runtime)[0]?.id ?? "host",
+          log: values.json ? () => {} : log,
+        });
+        if (values.json) printJson(context, { text: report });
+        else context.log(describeText(report));
+        return report.status === "locked" ? EXIT_FAILURE : EXIT_OK;
+      }
+      case "fetch-text": {
+        const { values } = parseCommandArgs(rest, {
+          ...COMMON,
+          remote: { type: "string" },
+        });
+        const remote =
+          values.remote ?? settings.remote ?? settings.push?.target;
+        if (!remote)
+          throw new UsageError(
+            "fetch-text needs archive.remote (or --remote SSH): the archive home",
+          );
+        const archiveDir = archiveDirFor(context, settings, values.dir);
+        const report = fetchTextRepo(
+          archiveDir,
+          remote,
+          SSH_OPTIONS,
+          values.remote
+            ? undefined
+            : (settings.remote_dir ?? settings.push?.archive_dir),
+          sshProgram,
+        );
+        if (values.json) printJson(context, { fetch: report });
+        else
+          context.log(
+            `text repo from ${remote}: ${report.updated ? "updated" : "unchanged"} (${report.head?.slice(0, 12) ?? "empty"})`,
+          );
+        return EXIT_OK;
       }
       case "session":
       case "cat":
@@ -392,7 +594,7 @@ export function createArchiveCommand(
         };
         let lookup: SessionLookup;
         let useRemote = false;
-        if (existsSync(join(archiveDir, "index.sqlite")) && !values.remote) {
+        if (existingArchiveDb(archiveDir) && !values.remote) {
           const db = await openOrRebuild(archiveDir, log, settings);
           try {
             lookup = lookupSession(db, id, lookupOptions);
@@ -467,7 +669,7 @@ export function createArchiveCommand(
             archiveDir,
             settings,
             runtime,
-            indexBytes(archiveDir),
+            dbBytes(archiveDir),
             options.now?.(),
           );
           if (values.json) printJson(context, health);
@@ -477,7 +679,12 @@ export function createArchiveCommand(
                 `${host.host}: ${host.files} files, ${host.sessions} sessions, last sync ${host.last_sync ?? "never"}${host.stale ? " (STALE)" : ""}${host.agents.map((a) => `\n  ${a.agent}: ${a.files} files, ${a.last_sync ?? "never"}`).join("")}`,
               );
             context.log(
-              `docs ${health.totals.docs}, history ${health.totals.history}, raw ${megabytes(health.sizes.raw_bytes)}, index ${megabytes(health.sizes.index_bytes)}, free ${health.disk.free_gb ?? "?"} GB`,
+              `${health.totals.sessions} sessions, raw ${megabytes(health.sizes.raw_bytes)}, database ${megabytes(health.sizes.db_bytes)}, free ${health.disk.free_gb ?? "?"} GB`,
+            );
+            context.log(
+              health.text.exists
+                ? `text repo: ${health.text.files} file(s), ${megabytes(health.text.pack_bytes)}, last commit ${health.text.last_commit ?? "never"}`
+                : "text repo: none yet (built by the next sync)",
             );
             for (const warning of health.warnings)
               context.log(`warning: ${warning}`);
@@ -492,17 +699,20 @@ export function createArchiveCommand(
           db.close(false);
         }
       }
+      case "rebuild-db":
       case "rebuild-index": {
         const { values } = parseCommandArgs(rest, COMMON);
         const archiveDir = archiveDirFor(context, settings, values.dir);
-        const db = await rebuildIndex(
+        const db = await rebuildArchiveDb(
           archiveDir,
           settings,
           values.json ? () => {} : log,
         );
         db.close(false);
         context.log(
-          values.json ? JSON.stringify({ rebuilt: true }) : "index rebuilt",
+          values.json
+            ? JSON.stringify({ rebuilt: true })
+            : "archive database rebuilt",
         );
         return EXIT_OK;
       }
@@ -581,6 +791,50 @@ export function createArchiveCommand(
   }
 }
 
+/** Between two fetches of the archive home's text repo, at most. */
+const TEXT_FETCH_EVERY_MS = 10 * 60 * 1000;
+/** sysexits' EX_TEMPFAIL: try again later. */
+const EXIT_TEMPFAIL = 75;
+
+/** Background work: the lowest CPU priority (the timer adds idle I/O). */
+function lowerPriority(): void {
+  try {
+    setPriority(19);
+  } catch {
+    // Not permitted here: as is.
+  }
+}
+
+/** The hourly text pass after a sync, deferred while GameMode runs. */
+async function textPass(
+  archiveDir: string,
+  settings: GuiArchiveSettings,
+  runtime: ArchiveRuntime,
+  log: (message: string) => void,
+  gameMode: () => Promise<boolean | null>,
+): Promise<TextPassReport | { status: "failed"; message: string }> {
+  try {
+    return await updateTextRepo({
+      archiveDir,
+      settings,
+      host: resolveHosts(settings, runtime)[0]?.id ?? "host",
+      log,
+      busy: async () => (await gameMode()) === true,
+    });
+  } catch (error) {
+    return { status: "failed", message: (error as Error).message };
+  }
+}
+
+function describeText(
+  report: TextPassReport | { status: "failed"; message: string },
+): string {
+  if (report.status === "failed") return `text repo: failed: ${report.message}`;
+  if (report.status !== "committed")
+    return `text repo: ${report.status}${report.message ? ` (${report.message})` : ""}`;
+  return `text repo: ${report.files} file(s), ${report.lines} line(s) committed${report.redactions ? `, ${report.redactions} secret(s) redacted` : ""}${report.repacked ? ", repacked" : ""} in ${report.seconds.toFixed(1)}s`;
+}
+
 function describeHost(report: HostReport): string {
   const parts = Object.entries(report.agents).map(
     ([agent, s]) =>
@@ -619,7 +873,7 @@ export const archiveCommand = createArchiveCommand();
 export function archiveCheck(context: CliContext, now = new Date()) {
   const settings = loadArchiveSettings(context);
   const archiveDir = archiveDirFor(context, settings);
-  if (!existsSync(join(archiveDir, "index.sqlite")))
+  if (!existingArchiveDb(archiveDir))
     return {
       name: "Archive",
       status: "skip" as const,
@@ -632,8 +886,8 @@ export function archiveCheck(context: CliContext, now = new Date()) {
       return {
         name: "Archive",
         status: "warn" as const,
-        detail: "the index needs a rebuild",
-        hint: "Run `roamgate archive rebuild-index`.",
+        detail: "the archive database needs a rebuild",
+        hint: "Run `roamgate archive rebuild-db`.",
       };
     }
     try {
@@ -642,7 +896,7 @@ export function archiveCheck(context: CliContext, now = new Date()) {
         archiveDir,
         settings,
         archiveRuntime(context),
-        indexBytes(archiveDir),
+        dbBytes(archiveDir),
         now,
       );
       return health.ok

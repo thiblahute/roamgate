@@ -3,7 +3,7 @@ import { Value } from "typebox/value";
 import { ADAPTERS, type ParseState } from "../archive/adapters";
 import { type ArchiveRuntime, resolveHosts } from "../archive/hosts";
 import { completeLines } from "../archive/lines";
-import { searchArchive } from "../archive/search";
+import { NoTextRepo, searchArchive } from "../archive/search";
 import { catFile, lookupSession } from "../archive/session";
 import { anyRuleMatches, type GuiArchiveSettings } from "../archive/settings";
 import { openArchiveDb } from "../archive/store";
@@ -26,10 +26,10 @@ export const archiveTools = [
   {
     kind: "search",
     name: "archive_search",
-    description: `Search the session archive: past Claude Code, Codex and Pi conversations from every machine, including sessions the agents already deleted. Substring match, case-insensitive, at least 3 characters per word; several words must all appear in one message. Returns the best matches with session id, host, agent, project, time and a snippet. Use archive_session and archive_read to look closer. ${UNTRUSTED}`,
+    description: `Search the session archive: past Claude Code, Codex and Pi conversations from every machine, including sessions the agents already deleted and what was said in the last hour. Substring match, case-insensitive; several words must all appear in one message ("quoted phrases", OR and NOT work too), or one Perl regex with regex=true. Tool calls are searched, tool output only with tool_output=true (slow: reads every transcript, a minute or more; only when asked). Returns one line per session, the sessions with the most matching messages first (or newest first with recent), with session id, host, agent, project, time, match count and a snippet. Use archive_session and archive_read to look closer. ${UNTRUSTED}`,
     parameters: Type.Object(
       {
-        query: Type.String({ minLength: 3, maxLength: 300 }),
+        query: Type.String({ minLength: 2, maxLength: 300 }),
         agent: Type.Optional(Type.String({ maxLength: 40 })),
         host: Type.Optional(Type.String({ maxLength: 64 })),
         project: Type.Optional(Type.String({ maxLength: 200 })),
@@ -42,7 +42,18 @@ export const archiveTools = [
         until: Type.Optional(Type.String({ maxLength: 32 })),
         recent: Type.Optional(
           Type.Boolean({
-            description: "Newest first instead of best match first.",
+            description: "Newest first instead of most matches first.",
+          }),
+        ),
+        regex: Type.Optional(
+          Type.Boolean({
+            description: "The query is one Perl-compatible regex.",
+          }),
+        ),
+        tool_output: Type.Optional(
+          Type.Boolean({
+            description:
+              "Also search tool output (slow: reads all of raw/). Only when asked.",
           }),
         ),
         limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 15 })),
@@ -136,6 +147,49 @@ export function createArchiveToolHandler(
   return async (kind, params, signal) => {
     const settings = await deps.settings();
     const archiveDir = deps.archiveDir(settings);
+    const str = (key: string) =>
+      typeof params[key] === "string" ? (params[key] as string) : undefined;
+    if (kind === "search") {
+      const limit = typeof params.limit === "number" ? params.limit : 8;
+      let result: Awaited<ReturnType<typeof searchArchive>>;
+      try {
+        result = await searchArchive(
+          archiveDir,
+          {
+            terms: (str("query") ?? "").split(/\s+/).filter(Boolean),
+            ...(str("agent") ? { agent: str("agent") } : {}),
+            ...(str("host") ? { host: str("host") } : {}),
+            ...(str("project") ? { project: str("project") } : {}),
+            ...(str("since") ? { since: str("since") } : {}),
+            ...(str("until") ? { until: str("until") } : {}),
+            recent: params.recent === true,
+            regex: params.regex === true,
+            toolOutput: params.tool_output === true,
+            limit,
+          },
+          settings,
+          { runtime: deps.runtime(), ...(signal ? { signal } : {}) },
+        );
+      } catch (error) {
+        if (error instanceof NoTextRepo)
+          throw new AssistantUserError("There is no session archive yet.");
+        if (/git grep: exit/.test((error as Error).message))
+          throw new AssistantUserError(
+            `The search failed: ${(error as Error).message.slice(0, 200)}`,
+          );
+        throw error;
+      }
+      const lines = result.hits.map(
+        (hit, index) =>
+          `${index + 1}. ${(hit.ts ?? "?").slice(0, 16)} ${hit.agent}@${hit.host} session ${hit.session}${hit.subagent ? " (subagent)" : ""}${hit.title ? ` "${clip(hit.title, 80)}"` : ""}${hit.matches ? ` ${hit.matches} match(es)` : ""} ${hit.role}/${hit.kind}${hit.tool ? `/${hit.tool}` : ""}: ${clip(hit.snippet, 260)}`,
+      );
+      return {
+        text: [
+          `${result.total} matching message(s)${result.sessions !== undefined ? ` in ${result.sessions} session(s)` : ""}${result.truncated ? `, showing ${result.hits.length}` : ""}.${result.warning ? ` Note: ${result.warning}.` : ""} ${UNTRUSTED}`,
+          ...lines,
+        ].join("\n"),
+      };
+    }
     let opened: ReturnType<typeof openArchiveDb>;
     try {
       opened = openArchiveDb(archiveDir, { readonly: true });
@@ -150,35 +204,6 @@ export function createArchiveToolHandler(
     }
     const { db } = opened;
     try {
-      const str = (key: string) =>
-        typeof params[key] === "string" ? (params[key] as string) : undefined;
-      if (kind === "search") {
-        const limit = typeof params.limit === "number" ? params.limit : 8;
-        const result = searchArchive(
-          db,
-          {
-            terms: (str("query") ?? "").split(/\s+/).filter(Boolean),
-            ...(str("agent") ? { agent: str("agent") } : {}),
-            ...(str("host") ? { host: str("host") } : {}),
-            ...(str("project") ? { project: str("project") } : {}),
-            ...(str("since") ? { since: str("since") } : {}),
-            ...(str("until") ? { until: str("until") } : {}),
-            recent: params.recent === true,
-            limit,
-          },
-          settings,
-        );
-        const lines = result.hits.map(
-          (hit, index) =>
-            `${index + 1}. ${(hit.ts ?? "?").slice(0, 16)} ${hit.agent}@${hit.host} session ${hit.session}${hit.subagent ? " (subagent)" : ""}${hit.title ? ` "${clip(hit.title, 80)}"` : ""} ${hit.role}/${hit.kind}${hit.tool ? `/${hit.tool}` : ""}: ${clip(hit.snippet, 260)}`,
-        );
-        return {
-          text: [
-            `${result.total} match(es)${result.truncated ? `, showing ${result.hits.length}` : ""}.${result.warning ? ` Note: ${result.warning}.` : ""} ${UNTRUSTED}`,
-            ...lines,
-          ].join("\n"),
-        };
-      }
       const runtime = deps.runtime();
       const self = resolveHosts(settings, runtime)[0];
       const lookup = lookupSession(db, str("id") ?? "", {

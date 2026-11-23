@@ -1,6 +1,30 @@
-/** Full-text search over the index. */
-import { type ArchiveDb } from "./store";
-import { type ArchiveRule, type GuiArchiveSettings } from "./settings";
+/** Archive search: `searchArchive` greps the conversation text repo (text-search.ts). */
+import { ADAPTERS } from "./adapters";
+import { type ArchiveRuntime } from "./hosts";
+import { type GuiArchiveSettings } from "./settings";
+import { parseTextLine, type ParsedLine } from "./text-render";
+import {
+  aggregator,
+  type FileInfo,
+  grepArgs,
+  hiddenBy,
+  historyPathspecs,
+  lineFilter,
+  liveOverlay,
+  nodeMatcher,
+  nodeTerms,
+  type Overlay,
+  overlayFiles,
+  parseQuery,
+  pathInfo,
+  projectOfPath,
+  rankFiles,
+  rawDocs,
+  runGrep,
+  stateByPath,
+  transcriptPathspecs,
+} from "./text-search";
+import { headCommit, readTextState, textRepoPath } from "./text-repo";
 
 export const SNIPPET_WIDTH = 120;
 
@@ -15,59 +39,15 @@ export type SearchQuery = {
   until?: string;
   recent?: boolean;
   history?: boolean;
+  /** The query is one Perl-compatible regular expression (git grep -P). */
+  regex?: boolean;
+  /** Search tool output too: greps raw/, slow. */
+  toolOutput?: boolean;
   limit: number;
 };
 
-export type SearchHit = {
-  session: string;
-  agent: string;
-  host: string;
-  project: string;
-  subagent: boolean;
-  title: string | null;
-  ts: string | null;
-  role: string;
-  kind: string;
-  tool: string | null;
-  snippet: string;
-  doc: number;
-  cost_usd: number | null;
-};
-
-export type SearchResult = {
-  query: string;
-  total: number;
-  hits: SearchHit[];
-  truncated: boolean;
-  history?: Array<{
-    host: string;
-    ts: string | null;
-    project: string | null;
-    snippet: string;
-  }>;
-  warning?: string;
-};
-
-const FTS_OPERATORS = /["()*]|\b(AND|OR|NOT|NEAR)\b/;
-
-/**
- * Bare words are quoted so paths and dashes do not trip FTS5 syntax. A query
- * that already uses FTS5 operators is passed through unchanged.
- */
-export function ftsQuery(query: string): string {
-  if (FTS_OPERATORS.test(query)) return query;
-  return query
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((term) => `"${term.replace(/"/g, '""')}"`)
-    .join(" ");
-}
-
-function plainTerms(terms: string[]): string[] {
-  return (terms.join(" ").match(/[^\s"()*]+/g) ?? []).filter(
-    (term) => !["AND", "OR", "NOT", "NEAR"].includes(term),
-  );
-}
+export type { SearchHit, SearchResult } from "../../../shared/archiveSearch";
+import type { SearchHit, SearchResult } from "../../../shared/archiveSearch";
 
 function lower(char: string): string {
   return char.toLowerCase().charAt(0) || char;
@@ -138,160 +118,300 @@ export function makeSnippet(
   return out.replace(/\n/g, " ");
 }
 
-function hideClause(
-  rules: readonly ArchiveRule[],
-  params: Array<string>,
-): string {
-  const parts: string[] = [];
-  for (const rule of rules) {
-    const conditions: string[] = [];
-    if (rule.host) {
-      conditions.push("f.host = ?");
-      params.push(rule.host);
-    }
-    if (rule.agent) {
-      conditions.push("f.agent = ?");
-      params.push(rule.agent);
-    }
-    if (rule.project) {
-      conditions.push("instr(f.project, ?) > 0");
-      params.push(rule.project);
-    }
-    if (conditions.length > 0) parts.push(`NOT (${conditions.join(" AND ")})`);
-  }
-  return parts.join(" AND ");
-}
+// ------------------------------------------------------- the text repo
 
-type HitRow = {
-  session: string;
-  agent: string;
-  host: string;
-  project: string;
-  subagent: number;
-  title: string | null;
-  ts: string | null;
-  role: string;
-  kind: string;
-  tool: string | null;
-  text: string;
-  doc: number;
-  cost_usd: number | null;
+export type SearchOptions = {
+  /** This machine, for the sessions grown since the last commit. */
+  runtime?: ArchiveRuntime;
+  /** Search the grown sessions too (default when a runtime is given). */
+  live?: boolean;
+  signal?: AbortSignal;
+  /** Progress of a toolOutput search, in raw/ files. */
+  onProgress?: (done: number, total: number) => void;
 };
 
-export function searchArchive(
-  db: ArchiveDb,
+export class NoTextRepo extends Error {
+  constructor() {
+    super(
+      "the archive has no text repo yet; run `roamgate archive rebuild-text`",
+    );
+  }
+}
+
+function regexTerms(source: string, texts: string[]): string[] {
+  let pattern: RegExp;
+  try {
+    pattern = new RegExp(source, "giu");
+  } catch {
+    return [];
+  }
+  const found = new Set<string>();
+  for (const text of texts)
+    for (const match of text.matchAll(pattern)) {
+      if (match[0]) found.add(match[0]);
+      if (found.size > 8) break;
+    }
+  return [...found];
+}
+
+type Agg = ReturnType<ReturnType<typeof aggregator>["result"]>["files"][number];
+
+function buildHits(
+  files: Agg[],
+  info: (path: string) => FileInfo | null,
   query: SearchQuery,
   settings: Pick<GuiArchiveSettings, "hide">,
-): SearchResult {
-  const raw = query.terms.join(" ").trim();
-  const fts = ftsQuery(raw);
-  const terms = plainTerms(query.terms);
-  const where: string[] = ["%TABLE% MATCH ?"];
-  const params: string[] = [fts];
-  const filters: Array<[string, string | undefined]> = [
-    ["f.agent = ?", query.agent],
-    ["f.host = ?", query.host],
-    ["d.role = ?", query.role],
-    ["d.kind = ?", query.kind],
-    ["d.ts >= ?", query.since],
-    ["d.ts <= ?", query.until],
-  ];
-  for (const [clause, value] of filters)
-    if (value) {
-      where.push(clause);
-      params.push(value);
-    }
-  if (query.project) {
-    where.push("instr(f.project, ?) > 0");
-    params.push(query.project);
-  }
-  const hide = hideClause(settings.hide, params);
-  if (hide) where.push(hide);
-  const order = query.recent ? "d.ts DESC" : "rank";
-  const warning = terms.some((term) => Array.from(term).length < 3)
-    ? "terms shorter than 3 characters match nothing in the trigram index"
-    : undefined;
-  const hasWords = Boolean(
-    db.query("SELECT 1 FROM files WHERE index_level = 'words' LIMIT 1").get(),
-  );
-  const tables = hasWords ? ["fts", "fts_words"] : ["fts"];
+  terms: string[],
+): { hits: SearchHit[]; total: number; sessions: number } {
   const hits: SearchHit[] = [];
   let total = 0;
-  for (const table of tables) {
-    const clause = where.join(" AND ").replace("%TABLE%", table);
-    const base = `FROM ${table} JOIN docs d ON d.id = ${table}.rowid JOIN files f ON f.id = d.file_id WHERE ${clause}`;
-    try {
-      total +=
-        db
-          .query<{ n: number }, string[]>(`SELECT count(*) AS n ${base}`)
-          .get(...params)?.n ?? 0;
-      const rows = db
-        .query<HitRow, string[]>(
-          `SELECT f.session, f.agent, f.host, f.project, f.subagent, f.title, d.ts, d.role, d.kind, d.tool,
-                  ${table}.text AS text, d.id AS doc, f.cost_usd
-           ${base} ORDER BY ${order.replace("rank", `${table}.rank`)} LIMIT ${Math.max(1, query.limit)}`,
-        )
-        .all(...params);
-      for (const row of rows)
-        hits.push({
-          session: row.session,
-          agent: row.agent,
-          host: row.host,
-          project: row.project,
-          subagent: row.subagent !== 0,
-          title: row.title,
-          ts: row.ts,
-          role: row.role,
-          kind: row.kind,
-          tool: row.tool,
-          snippet: makeSnippet(row.text, terms, SNIPPET_WIDTH),
-          doc: row.doc,
-          cost_usd: row.cost_usd,
+  let sessions = 0;
+  for (const file of rankFiles(files, query.recent === true)) {
+    const meta = info(file.path);
+    if (!meta) continue;
+    const adapter = ADAPTERS[meta.agent];
+    const project = projectOfPath(file.path) || meta.render.project || "";
+    if (
+      hiddenBy(settings.hide, { host: meta.host, agent: meta.agent, project })
+    )
+      continue;
+    total += file.count;
+    sessions += 1;
+    if (hits.length >= Math.max(1, query.limit)) continue;
+    const classified = meta.history
+      ? { project: "", session: "history", subagent: false }
+      : (adapter?.classify(meta.relpath) ?? {
+          project,
+          session: meta.relpath,
+          subagent: false,
         });
-    } catch (error) {
-      throw new Error(
-        `query error (query was: ${fts}): ${(error as Error).message}`,
-        { cause: error },
-      );
-    }
+    const latest = file.recent[file.recent.length - 1] as {
+      line: number;
+      parsed: ParsedLine;
+    };
+    const needles = query.regex
+      ? regexTerms(
+          query.terms.join(" "),
+          file.recent.map((entry) => entry.parsed.text),
+        )
+      : terms;
+    hits.push({
+      session: classified.session,
+      agent: meta.agent,
+      host: meta.host,
+      project,
+      subagent: classified.subagent,
+      title: meta.render.lastTitle ?? null,
+      ts: latest.parsed.ts,
+      role: latest.parsed.role,
+      kind: latest.parsed.kind,
+      tool: latest.parsed.tool,
+      snippet: makeSnippet(latest.parsed.text, needles, SNIPPET_WIDTH),
+      doc: latest.line,
+      cost_usd: meta.render.cost ?? null,
+      matches: file.count,
+      snippets: file.recent.map((entry) =>
+        makeSnippet(entry.parsed.text, needles, SNIPPET_WIDTH),
+      ),
+      path: file.path,
+      key: meta.key,
+    });
   }
-  if (tables.length > 1)
-    hits.sort((a, b) =>
-      query.recent ? (b.ts ?? "").localeCompare(a.ts ?? "") : 0,
+  return { hits, total, sessions };
+}
+
+/**
+ * Search the conversation text with git grep: words or phrases that must all
+ * appear in one message (AND, OR, NOT as the index had them), or one Perl
+ * regex; one hit per session, sessions ranked by matching messages, then by
+ * the latest one (or newest first with `recent`).
+ */
+export async function searchArchive(
+  archiveDir: string,
+  query: SearchQuery,
+  settings: GuiArchiveSettings,
+  options: SearchOptions = {},
+): Promise<SearchResult> {
+  const raw = query.terms.join(" ").trim();
+  if (query.toolOutput) return searchRaw(archiveDir, query, settings, options);
+  const repo = textRepoPath(archiveDir);
+  const head = headCommit(repo);
+  if (!head) throw new NoTextRepo();
+  const node = query.regex ? null : parseQuery(raw);
+  if (!query.regex && !node)
+    return { query: raw, total: 0, hits: [], truncated: false, source: "text" };
+  const patterns = query.regex
+    ? ["-P", "-e", raw]
+    : ["-F", ...grepArgs(node as NonNullable<typeof node>)];
+  const state = readTextState(repo);
+  const byPath = stateByPath(state);
+  const filter = {
+    ...(query.host ? { host: query.host } : {}),
+    ...(query.agent ? { agent: query.agent } : {}),
+    ...(query.project ? { project: query.project } : {}),
+  };
+  const agg = aggregator(lineFilter(query));
+  const pathspecs = transcriptPathspecs(filter);
+  await runGrep(
+    { repo, tree: true },
+    patterns,
+    pathspecs,
+    (hit) => agg.add(hit.path, hit.line, parseTextLine(hit.text)),
+    options.signal,
+  );
+  let overlay: Overlay | null = null;
+  if (options.runtime && options.live !== false) {
+    overlay = await liveOverlay(
+      archiveDir,
+      settings,
+      options.runtime,
+      state,
+      head,
     );
-  const limited = hits.slice(0, query.limit);
+    if (overlay.files.size > 0)
+      await runGrep(
+        { cwd: overlayFiles(archiveDir) },
+        patterns,
+        pathspecs,
+        (hit) =>
+          agg.add(
+            hit.path,
+            hit.line + (overlay?.files.get(hit.path)?.offset ?? 0),
+            parseTextLine(hit.text),
+          ),
+        options.signal,
+      );
+  }
+  const { files } = agg.result();
+  const built = buildHits(
+    files,
+    (path) => pathInfo(path, state, overlay, byPath),
+    query,
+    settings,
+    nodeTerms(node),
+  );
   const result: SearchResult = {
     query: raw,
-    total,
-    hits: limited,
-    truncated: total > limited.length,
-    ...(warning ? { warning } : {}),
+    total: built.total,
+    hits: built.hits,
+    truncated: built.sessions > built.hits.length,
+    sessions: built.sessions,
+    source: "text",
   };
   if (query.history) {
-    const params2: Array<string | number> = [fts];
-    const filter = query.host ? " AND h.host = ?" : "";
-    if (query.host) params2.push(query.host);
-    params2.push(query.limit);
-    result.history = db
-      .query<
-        {
-          host: string;
-          ts: string | null;
-          project: string | null;
-          text: string;
-        },
-        Array<string | number>
-      >(
-        `SELECT h.host, h.ts, h.project, hist_fts.text AS text FROM hist_fts JOIN history h ON h.id = hist_fts.rowid
-         WHERE hist_fts MATCH ?${filter} ORDER BY rank LIMIT ?`,
-      )
-      .all(...params2)
-      .map((row) => ({
-        host: row.host,
-        ts: row.ts,
-        project: row.project,
-        snippet: makeSnippet(row.text, terms, SNIPPET_WIDTH),
-      }));
+    const entries: NonNullable<SearchResult["history"]> = [];
+    const terms = nodeTerms(node);
+    await runGrep(
+      { repo, tree: true },
+      patterns,
+      historyPathspecs(query.host),
+      (hit) => {
+        const parsed = parseTextLine(hit.text);
+        if (!parsed) return;
+        const needles = query.regex ? regexTerms(raw, [parsed.text]) : terms;
+        entries.push({
+          host: hit.path.split("/")[0] ?? "",
+          ts: parsed.ts,
+          project: parsed.tool && parsed.tool !== "-" ? parsed.tool : null,
+          snippet: makeSnippet(parsed.text, needles, SNIPPET_WIDTH),
+        });
+      },
+      options.signal,
+    );
+    entries.sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""));
+    result.history = entries.slice(0, query.limit);
   }
   return result;
+}
+
+/**
+ * Search everything raw/ holds, tool output included, by reading every
+ * transcript: minutes on a large archive, so only on explicit request.
+ */
+export async function searchRaw(
+  archiveDir: string,
+  query: SearchQuery,
+  settings: GuiArchiveSettings,
+  options: SearchOptions = {},
+): Promise<SearchResult> {
+  const raw = query.terms.join(" ").trim();
+  let test: (text: string, lower: string) => boolean;
+  let terms: string[] = [];
+  if (query.regex) {
+    let pattern: RegExp;
+    try {
+      pattern = new RegExp(raw, "iu");
+    } catch (error) {
+      throw new Error(`invalid regex: ${(error as Error).message}`, {
+        cause: error,
+      });
+    }
+    test = (text) => pattern.test(text);
+  } else {
+    const node = parseQuery(raw);
+    if (!node)
+      return {
+        query: raw,
+        total: 0,
+        hits: [],
+        truncated: false,
+        source: "raw",
+      };
+    const match = nodeMatcher(node);
+    test = (_text, lower) => match(lower);
+    terms = nodeTerms(node);
+  }
+  const keep = lineFilter(query);
+  const agg = aggregator(keep);
+  const infos = new Map<string, FileInfo>();
+  for await (const entry of rawDocs(
+    archiveDir,
+    settings,
+    {
+      ...(query.host ? { host: query.host } : {}),
+      ...(query.agent ? { agent: query.agent } : {}),
+      ...(query.project ? { project: query.project } : {}),
+    },
+    options.onProgress,
+    options.signal,
+  )) {
+    if (!test(entry.doc.text, entry.lower)) continue;
+    infos.set(entry.key, {
+      key: entry.key,
+      host: entry.host,
+      agent: entry.agent,
+      relpath: entry.relpath,
+      history: false,
+      render: { project: entry.project },
+    });
+    agg.add(entry.key, entry.line, {
+      ts: entry.ts,
+      role: entry.doc.role,
+      kind: entry.doc.kind,
+      tool: entry.doc.tool,
+      text: entry.doc.text.replace(/\s+/g, " "),
+    });
+  }
+  const { files } = agg.result();
+  const built = buildHits(
+    files.map((file) => ({ ...file })),
+    (key) => infos.get(key) ?? null,
+    query,
+    settings,
+    terms,
+  );
+  for (const hit of built.hits) {
+    hit.project = infos.get(hit.path ?? "")?.render.project ?? hit.project;
+    delete hit.path;
+  }
+  return {
+    query: raw,
+    total: built.total,
+    hits: built.hits,
+    truncated: built.sessions > built.hits.length,
+    sessions: built.sessions,
+    source: "raw",
+    warning:
+      "searched tool output by reading every archived transcript in raw/: slow",
+  };
 }

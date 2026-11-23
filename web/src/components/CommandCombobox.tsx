@@ -16,6 +16,7 @@ import {
   activityViewForSearch,
   openActivityTimeline,
 } from "../activityTimelineOpen";
+import { ARCHIVE_SEARCH_ENTRY, openArchiveSearch } from "../archiveSearchOpen";
 import { askCompanion, callCompanion } from "../companionCallOpen";
 import {
   MR_REVIEWS_ENTRY,
@@ -47,6 +48,7 @@ import {
   Keyboard,
   ListChecks,
   ChartGantt,
+  FileSearch,
   MessageCircleQuestionMark,
   PhoneCall,
   Maximize2,
@@ -1144,6 +1146,14 @@ export function CommandCombobox({
       keywords: ACTIVITY_ENTRY.keywords,
       // One entry: a search for the hours opens it on its Hours tab.
       run: () => openActivityTimeline(activityViewForSearch(search)),
+    },
+    {
+      key: "archive-search",
+      icon: <FileSearch size={15} />,
+      title: ARCHIVE_SEARCH_ENTRY.title,
+      detail: ARCHIVE_SEARCH_ENTRY.detail,
+      keywords: ARCHIVE_SEARCH_ENTRY.keywords,
+      run: () => openArchiveSearch(),
     },
     {
       key: "mr-reviews",

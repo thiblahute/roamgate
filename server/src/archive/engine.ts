@@ -20,7 +20,7 @@ import {
 } from "./hosts";
 import { acquireHostLock } from "./lock";
 import {
-  indexLines,
+  scanLines,
   emptyStats,
   recordSync,
   syncSource,
@@ -34,7 +34,7 @@ import {
   getMeta,
   openArchiveDb,
   readKeptMeta,
-  removeIndex,
+  removeArchiveDb,
   setMeta,
 } from "./store";
 import { readArchived } from "./zstd";
@@ -61,7 +61,7 @@ export type HostReport = {
 
 export type SyncReport = { hosts: HostReport[]; seconds: number };
 
-/** Opens the index, rebuilding it from the raw files when its version is unknown. */
+/** Opens the archive's database, rebuilding it from the raw files when its version is unknown. */
 export async function openOrRebuild(
   archiveDir: string,
   log: (message: string) => void,
@@ -69,9 +69,11 @@ export async function openOrRebuild(
 ): Promise<ArchiveDb> {
   const opened = openArchiveDb(archiveDir);
   if (!opened.needsRebuild) return opened.db;
-  log("archive index has an unknown version: rebuilding it from the raw files");
+  log(
+    "the archive database has an unknown version: rebuilding it from the raw files",
+  );
   opened.db.close(false);
-  return rebuildIndex(archiveDir, settings, log);
+  return rebuildArchiveDb(archiveDir, settings, log);
 }
 
 function agentSources(
@@ -306,8 +308,8 @@ function* rawFiles(dir: string): Generator<string> {
   }
 }
 
-/** Drop the derived index and build it again from the raw files. */
-export async function rebuildIndex(
+/** Drop the archive's database and build it again from the raw files. */
+export async function rebuildArchiveDb(
   archiveDir: string,
   settings: GuiArchiveSettings | undefined,
   log: (message: string) => void,
@@ -320,7 +322,7 @@ export async function rebuildIndex(
   } catch {
     // No readable index: nothing to keep.
   }
-  removeIndex(archiveDir);
+  removeArchiveDb(archiveDir);
   const { db } = openArchiveDb(archiveDir);
   for (const [key, value] of kept) setMeta(db, key, value);
   const config =
@@ -368,14 +370,12 @@ export async function rebuildIndex(
     })();
     try {
       if (adapter.indexable || history) {
-        await indexLines(
+        await scanLines(
           {
             db,
             fileId,
             adapter,
             kind: history ? "history" : "transcript",
-            level,
-            host,
             thinking: config.thinking,
             unknown: new Map(),
           },
@@ -395,6 +395,6 @@ export async function rebuildIndex(
     count += 1;
     if (count % 200 === 0) log(`  rebuilt ${count} files`);
   }
-  log(`rebuilt the index from ${count} archived file(s)`);
+  log(`rebuilt the archive database from ${count} archived file(s)`);
   return db;
 }

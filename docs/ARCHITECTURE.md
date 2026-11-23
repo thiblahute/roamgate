@@ -731,16 +731,21 @@ use; `health` warns when both exist:
   old copy as `.zst.<mtime>`. Nothing in `raw/` is ever deleted.
 - `mirror/<host>/<agent>/{tree,extra}/`: for an ssh host, a plain rsync copy
   of its session files, synced like a local directory. Never deleted either.
-- `index.sqlite`: the derived index, rebuilt from `raw/` by
-  `rebuild-index` (also done automatically when `PRAGMA user_version` is not
-  the one this code knows). WAL is required. Tables: `files(host, agent,
-  relpath, kind, project, session, subagent, title, cost_usd, cwd, src_size,
-  src_mtime, archived_size, zst_size, indexed_bytes, index_level, first_ts,
-  last_ts)`, `docs(file_id, ts, role, kind, tool)` with `fts` (trigram, so a
-  substring and case-insensitive match) or `fts_words` (unicode61) holding the
-  text, and `history` with `hist_fts` (`~/.claude/history.jsonl` prompts).
+- `archive.sqlite`: the bookkeeping, rebuilt from `raw/` by `rebuild-db`
+  (also done automatically when `PRAGMA user_version` is not the one this
+  code knows). WAL is required. Tables: `files(host, agent, relpath, kind,
+  project, session, subagent, title, cost_usd, cwd, src_size, src_mtime,
+  archived_size, zst_size, indexed_bytes, index_level, first_ts, last_ts)`
+  and `meta` (each host's last sync, attempt and error, unknown record
+  types). It replaced `index.sqlite`, which also held an FTS index of every
+  message: the first writer opening an archive with an `index.sqlite` copies
+  its `files` and `meta` into `archive.sqlite` and deletes it; readers read
+  an unmigrated one as is.
+- `text.git`: the conversation text repo (below), derived from `raw/`;
+  `text-live/` holds the scratch copies of sessions grown since its last
+  commit.
 - `locks/<host>.lock`: one lock per host; a second sync of the same host
-  reports `locked` and does nothing.
+  reports `locked` and does nothing. `locks/_text.lock` guards the text repo.
 
 Session files are append-only JSONL. `indexed_bytes` is how far the index has
 read; only complete lines are indexed, so an unfinished last line is archived
@@ -786,21 +791,83 @@ transcripts `cleanupPeriodDays` after their mtime (default 30). Codex and Pi
 were not found to delete sessions by themselves in the installed versions;
 the archive does not depend on that, and never deletes.
 
-### What is indexed
+### What is searched
 
 User prompts, assistant text, tool call inputs (command, path, pattern, url,
-description and similar), tool results (the first 6000 and last 2000
-characters), titles, queued prompts, system text, merge request links, frame
-links, workflow results, `history.jsonl`. Not indexed: thinking (opt-in with
-`archive.thinking`), images and any run of 200 or more non-space characters,
-`api-request*` mirrors, file history and bookkeeping records. Record types
-the adapter does not know are counted and reported at the end of each sync
-and by `health`.
+description and similar, cut at `text_tool_chars`), titles, queued prompts,
+system text, merge request links, frame links, workflow results,
+`history.jsonl`; tool results only by the explicit raw/ search. Never:
+thinking (opt-in with `archive.thinking`), images and any run of 200 or more
+non-space characters, `api-request*` mirrors, file history and bookkeeping
+records. Record types the adapter does not know are counted and reported at
+the end of each sync and by `health`.
 
-`archive.index` sets a level per host, agent and project: `full` (trigram),
-`words` (whole words, a smaller index) or `none` (archived, not indexed).
-`archive.exclude` rules keep matching sessions out of the archive;
-`archive.hide` rules archive them but leave them out of search.
+`archive.index` sets a level per host, agent and project: `full` or `words`
+(both searched) or `none` (archived, but not in the text repo). `archive.exclude` rules keep matching sessions out of
+the archive; `archive.hide` rules archive them but leave them out of search.
+
+### Conversation text repo
+
+Search runs on `<archive>/text.git`, a bare git repo of the conversation text
+only (`archive/text-render.ts`, `text-repo.ts`). It is derived: `raw/` is the
+record, `rebuild-text` builds the repo again from it (into `text.git.new`,
+then swapped in; the old history is dropped).
+
+- **Layout.** `<host>/<agent>/<project>/<YYYY>/<MM>/<DD>/<session>[.<subagent>].md`,
+  dated by the session's first message, and `<host>/@history/<agent>/<name>.md`
+  for each host's prompt history. Path components keep `[A-Za-z0-9._-]`. A
+  path claimed by two `raw/` files goes to the first by raw path; every other
+  gets `.<first 8 hex of sha256(raw path)>` before `.md`, so a rebuild names
+  every file the same (an incremental pass renames the holder when a newcomer
+  sorts first).
+- **Format.** A header `# <host>/<agent>/<relpath>[ cwd=<cwd>]`, then one line
+  per message: `<timestamp> <role> <kind>[ <tool>]: <text>`, rendered by the
+  archive's own adapters, newlines folded to a visible return mark
+  (U+23CE), a record without a timestamp carrying the last one. Tool calls are cut at `text_tool_chars`
+  (2000); tool output is left out; a title or meta line equal to the previous
+  one is skipped; secret-looking values (token prefixes, private keys, URL
+  credentials, `Authorization` headers, `password=`-style pairs) become
+  `[secret]` (`utils/secrets.ts`, shared with the history repo). Prompt
+  lines are
+  `<ts> user prompt <project>: <text>`.
+- **Writes.** After each sync and ingest the CLI runs a pass: for every file
+  of the index's `files` table whose `archived_size` grew, it decompresses
+  `raw/` from the last zstd frame boundary it rendered at (`archived_size` and
+  `zst_size` are frame boundaries), renders the new complete lines and appends
+  them; a `.zst` with another inode or a smaller size (a shrunk source) is
+  rendered again from the start. The changes, and `.roamgate/state.json` (each
+  file's path, rendered offset, frame boundary, line count and renderer state),
+  go into one `git fast-import` commit on `main` by `Roamgate
+  <roamgate@<host>>`, so the text and its bookkeeping never disagree. Once a
+  day: `git repack -d --geometric=2` and the commit-graph. The pass is skipped
+  while GameMode runs and while another holds its lock.
+- **Search** (`archive/search.ts` `searchArchive`, `archive/text-search.ts`).
+  `git grep -I -n -i HEAD` with the query as `-F` patterns (words and phrases
+  joined by `--and`, `--or`, `--not` and parentheses as FTS read them) or one
+  `-P` regex; host, agent and project as `:(glob)` pathspecs (the project a
+  substring of its component), `.roamgate/` and `@history` excluded; role,
+  kind, `since` and `until` checked on each matching line's fields. Matches
+  fold per file; sessions rank by matching messages, then by their latest
+  (`recent`: the latest first); `hide` rules apply to the path's host, agent
+  and project. A hit is one session: its latest matching line (time, role,
+  kind, tool, `doc` = its line, a snippet trimmed by `makeSnippet`), its match
+  count, up to three snippets, title and cost from the renderer state, and
+  its `key` (`host/agent/relpath`). `history` greps the `@history` files.
+  With a runtime (the server and the CLI), this machine's transcripts larger
+  than what the repo rendered are rendered from their offset into
+  `text-live/files/` at their repo paths (cached by size until the next
+  commit) and grepped with `--no-index`, their line numbers shifted, so the
+  last hour is found too. `toolOutput` instead reads every `raw/` file through
+  the adapters (tool results included, `doc` = the record line): slow, said in
+  the result's `warning`.
+- **Other machines.** `fetch-text` (and `search` with `archive.remote` and
+  no archive of its own, at most every ten minutes; `sync --push` after a push)
+  runs `git fetch <ssh>:<archive>/text.git +refs/heads/main:refs/heads/main`
+  over ssh with the archive's ssh options. The repo is never pushed anywhere.
+- **Before the first pass** (it waits for GameMode to end) there is nothing
+  to search: `search` says to run `rebuild-text`. A first pass commits even
+  when nothing is rendered, so an archive of hidden or `none` sessions still
+  has a repo.
 
 ### Restoring
 
@@ -815,12 +882,23 @@ to the original. Command output is documented in `roamgate archive --help`.
 
 ### Integration
 
-- Ranger gets read-only tools `archive_search`, `archive_session` and
-  `archive_read` (`server/src/assistant/archive-tools.ts`): short bounded
-  results, `archive_read` by record range (at most 40 records and about 20000
+- Ranger and the voice companion get read-only tools `archive_search`,
+  `archive_session` and `archive_read`
+  (`server/src/assistant/archive-tools.ts`): short bounded results,
+  `archive_search` on the text repo (`regex`, `tool_output` for the slow raw/
+  search), `archive_read` by record range (at most 40 records and about 20000
   characters per call, with `next_line`). They run in any approval mode, are
   reachable only through the authenticated assistant, and never show a
   session matching `archive.hide`.
+- The UI's **Search past sessions** view (`web/src/components/ArchiveSearch.tsx`)
+  calls `bridge.archive.search` (the query, filters, `regex`, `recent`,
+  `tool_output`, `limit` up to 200) and `bridge.archive.open` (`key`, `line`,
+  `raw`): the records around the hit read from `raw/` (or this machine's live
+  file when it holds more), 12 before and after, messages up to 6000
+  characters, tool output included, the hit marked (`archive/open.ts`; a text
+  line is mapped to its record by rendering the transcript again). Both are
+  read-only and apply `archive.hide`; the wire shapes are
+  `shared/archiveSearch.ts`.
 - A transcript missing from its agent's directory is read from the archive:
   `localAgentSessionFiles` (the `AgentSessionFileAccess` seam) falls back on
   ENOENT to the archived copy for `statFile`, `readText`, `readPrefix`,
@@ -828,7 +906,8 @@ to the original. Command output is documented in `roamgate archive --help`.
   at server start). Sessions matching `archive.hide` are not served.
 - `roamgate doctor` has an Archive check that warns when a host's last sync
   is older than `archive.stale_hours`, a sync failed or the disk is low.
-- The archive has no HTTP surface of its own.
+- The archive has no HTTP surface of its own; the UI reaches it through the
+  two `bridge.archive.*` methods of the authenticated websocket.
 
 ## Agent integrations
 

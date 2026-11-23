@@ -12,7 +12,6 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { type AgentAdapter, type ParseState } from "./adapters";
-import { clip } from "./extract";
 import { completeLines, fileRange } from "./lines";
 import {
   anyRuleMatches,
@@ -90,7 +89,6 @@ type FileRow = {
   index_level: IndexLevel;
 };
 
-const CHUNK_DOCS = 2000;
 const HUGE_LINE = 100_000;
 
 /** Session files under `root`, as relative paths with `/`. */
@@ -144,37 +142,30 @@ function keepOldCopy(zst: string, mtime: number): void {
   renameSync(zst, keep);
 }
 
-function dropDocs(db: ArchiveDb, fileId: number): void {
-  db.query(
-    "DELETE FROM fts WHERE rowid IN (SELECT id FROM docs WHERE file_id = ?1)",
-  ).run(fileId);
-  db.query(
-    "DELETE FROM fts_words WHERE rowid IN (SELECT id FROM docs WHERE file_id = ?1)",
-  ).run(fileId);
-  db.query("DELETE FROM docs WHERE file_id = ?1").run(fileId);
+function resetScan(db: ArchiveDb, fileId: number): void {
   db.query("UPDATE files SET indexed_bytes = 0 WHERE id = ?1").run(fileId);
 }
 
 type LineSource = AsyncIterable<Buffer>;
 
-type IndexTarget = {
+type ScanTarget = {
   db: ArchiveDb;
   fileId: number;
   adapter: AgentAdapter;
   kind: "transcript" | "history";
-  level: IndexLevel;
-  host: string;
   thinking: boolean;
   unknown: Map<string, number>;
 };
 
 /**
- * Index the complete lines of `chunks`, which start at byte `start` of the
- * source. Commits every few thousand documents so concurrent syncs of other
- * hosts are not held up. Returns the new indexed byte count and documents.
+ * Read the complete lines of `chunks` (which start at byte `start` of the
+ * source) for what the archive keeps about a session: its title, cost,
+ * working directory, project and first and last time, and how far it was
+ * read (`indexed_bytes`). The text itself goes to the text repo. Returns the
+ * new position and the messages seen.
  */
-export async function indexLines(
-  target: IndexTarget,
+export async function scanLines(
+  target: ScanTarget,
   chunks: LineSource,
   start: number,
   row: Pick<FileRow, "title" | "cwd" | "project">,
@@ -185,136 +176,48 @@ export async function indexLines(
     unknown: target.unknown,
     ...(row.cwd ? { cwd: row.cwd } : {}),
   };
-  let lastTitle = row.title;
   let title: string | null = null;
   let firstTs: string | null = null;
   let lastTs: string | null = null;
   let position = start;
   let docs = 0;
-  let pending = 0;
-  let open = false;
-  const insertDoc = db.query(
-    "INSERT INTO docs(file_id, ts, role, kind, tool) VALUES(?1, ?2, ?3, ?4, ?5)",
-  );
-  const insertFts = db.query("INSERT INTO fts(rowid, text) VALUES(?1, ?2)");
-  const insertWords = db.query(
-    "INSERT INTO fts_words(rowid, text) VALUES(?1, ?2)",
-  );
-  const insertHistory = db.query(
-    "INSERT OR IGNORE INTO history(host, agent, ts, project, text) VALUES(?1, ?2, ?3, ?4, ?5)",
-  );
-  const insertHistoryFts = db.query(
-    "INSERT INTO hist_fts(rowid, text) VALUES(?1, ?2)",
-  );
-  const update = db.query(
+  for await (const { line, length } of completeLines(chunks)) {
+    position += length;
+    if (target.kind === "history" || line.length === 0) continue;
+    if (line.length > HUGE_LINE) {
+      const head = line.subarray(0, 400).toString("latin1");
+      if (head.includes('"type":"api-request')) continue;
+    }
+    let record: unknown;
+    try {
+      record = JSON.parse(line.toString("utf8"));
+    } catch {
+      continue;
+    }
+    const ts = adapter.timestampOf(record);
+    if (ts) {
+      firstTs ??= ts;
+      lastTs = ts;
+    }
+    for (const doc of adapter.parse(record, state)) {
+      if (doc.kind === "title") title = doc.text;
+      docs += 1;
+    }
+  }
+  db.query(
     `UPDATE files SET indexed_bytes = ?1, title = COALESCE(?2, title), cost_usd = COALESCE(?3, cost_usd),
        cwd = COALESCE(?4, cwd), project = COALESCE(NULLIF(project, ''), ?5, project),
        first_ts = COALESCE(first_ts, ?6), last_ts = COALESCE(?7, last_ts) WHERE id = ?8`,
+  ).run(
+    position,
+    title ?? row.title,
+    state.cost ?? null,
+    state.cwd ?? null,
+    state.project ?? null,
+    firstTs,
+    lastTs,
+    fileId,
   );
-  const flush = () => {
-    update.run(
-      position,
-      title,
-      state.cost ?? null,
-      state.cwd ?? null,
-      state.project ?? null,
-      firstTs,
-      lastTs,
-      fileId,
-    );
-    if (open) db.exec("COMMIT");
-    open = false;
-    pending = 0;
-    title = null;
-    firstTs = null;
-    lastTs = null;
-  };
-  const begin = () => {
-    if (!open) {
-      db.exec("BEGIN IMMEDIATE");
-      open = true;
-    }
-  };
-  try {
-    for await (const { line, length } of completeLines(chunks)) {
-      position += length;
-      if (line.length > HUGE_LINE) {
-        const head = line.subarray(0, 400).toString("latin1");
-        if (head.includes('"type":"api-request')) continue;
-      }
-      if (line.length === 0) continue;
-      let record: unknown;
-      try {
-        record = JSON.parse(line.toString("utf8"));
-      } catch {
-        continue;
-      }
-      if (target.kind === "history") {
-        const entry = record as {
-          display?: unknown;
-          timestamp?: unknown;
-          project?: unknown;
-        };
-        const text =
-          typeof entry.display === "string" ? entry.display.trim() : "";
-        if (!text) continue;
-        const ts =
-          typeof entry.timestamp === "number"
-            ? new Date(entry.timestamp).toISOString().slice(0, 19)
-            : null;
-        begin();
-        const result = insertHistory.run(
-          target.host,
-          adapter.id,
-          ts,
-          typeof entry.project === "string" ? entry.project : null,
-          text,
-        );
-        if (result.changes > 0) {
-          insertHistoryFts.run(
-            Number(result.lastInsertRowid),
-            clip(text, 20_000),
-          );
-          docs += 1;
-          pending += 1;
-        }
-      } else {
-        const ts = adapter.timestampOf(record);
-        if (ts) {
-          firstTs ??= ts;
-          lastTs = ts;
-        }
-        for (const doc of adapter.parse(record, state)) {
-          if (doc.kind === "title") {
-            if (lastTitle === doc.text) continue;
-            title = doc.text;
-            lastTitle = doc.text;
-          }
-          if (target.level === "none") continue;
-          begin();
-          const id = Number(
-            insertDoc.run(fileId, ts, doc.role, doc.kind, doc.tool)
-              .lastInsertRowid,
-          );
-          (target.level === "words" ? insertWords : insertFts).run(
-            id,
-            doc.text,
-          );
-          docs += 1;
-          pending += 1;
-        }
-      }
-      if (pending >= CHUNK_DOCS) {
-        flush();
-        begin();
-      }
-    }
-    begin();
-    flush();
-  } catch (error) {
-    if (open) db.exec("ROLLBACK");
-    throw error;
-  }
   return { position, docs };
 }
 
@@ -419,7 +322,7 @@ export async function syncOneFile(
     fileId = row.id;
     if (adapter.mode === "replace" || file.size < row.archived_size) {
       keepOldCopy(zst, row.src_mtime ?? 0);
-      dropDocs(db, fileId);
+      resetScan(db, fileId);
       outcome = adapter.mode === "replace" ? "replaced" : "shrunk";
     } else {
       from = row.archived_size;
@@ -448,15 +351,12 @@ export async function syncOneFile(
     stats.bytes += frame.bytes;
     const indexable = adapter.indexable || file.kind === "history";
     if (indexable) {
-      const fileLevel = row?.index_level ?? level;
-      const result = await indexLines(
+      const result = await scanLines(
         {
           db,
           fileId,
           adapter,
           kind: file.kind,
-          level: fileLevel,
-          host,
           thinking: ctx.settings.thinking,
           unknown,
         },

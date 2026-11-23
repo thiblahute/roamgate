@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   ChartGantt,
+  FileSearch,
   MessageCircleQuestionMark,
   PhoneCall,
   ChevronDown,
@@ -27,6 +28,7 @@ import {
 } from "lucide-react";
 import packageJson from "../../package.json";
 import { ACTIVITY_ENTRY, openActivityTimeline } from "../activityTimelineOpen";
+import { ARCHIVE_SEARCH_ENTRY, openArchiveSearch } from "../archiveSearchOpen";
 import { MR_REVIEWS_ENTRY, openMrReviews } from "../mrReviewsOpen";
 import { openWork, WORK_ENTRY } from "../workOpen";
 import { askCompanion, callCompanion } from "../companionCallOpen";
@@ -388,6 +390,16 @@ export function ConfigMenu({
                   onClick={() => {
                     setOpen(false);
                     openActivityTimeline();
+                  }}
+                />
+                <ConfigMenuItem
+                  icon={<FileSearch size={15} />}
+                  label={ARCHIVE_SEARCH_ENTRY.title}
+                  description={ARCHIVE_SEARCH_ENTRY.detail}
+                  className="config-menu-item-row"
+                  onClick={() => {
+                    setOpen(false);
+                    openArchiveSearch();
                   }}
                 />
                 <ConfigMenuItem

@@ -1826,7 +1826,10 @@ Settings, under `archive` in `settings.json` (all optional):
     },
     "exclude": [{ "project": "private-client" }],
     "hide": [{ "host": "mac", "project": "secrets" }],
-    "push": { "target": "desktop", "binary": "$HOME/.local/bin/roamgate" }
+    "push": { "target": "desktop", "binary": "$HOME/.local/bin/roamgate" },
+    "remote": "desktop",
+    "remote_dir": "~/.config/roamgate/archive",
+    "text_tool_chars": 2000
   }
 }
 ```
@@ -1849,10 +1852,31 @@ command line) and rsync on both ends. `roamgate archive health --check`
 exits 1 when a host's last sync is older than `stale_hours`, a sync failed or
 the disk under the archive is low; run it from a status check.
 
-Disk: the compressed copies are about a fifth of the transcripts, the
-trigram index a quarter to a half of them again, and an ssh host's mirror is
-a plain copy of its session files. Use `archive.index` levels or `exclude`
-rules to shrink them.
+After each sync the timer's run renders what the archive gained into the
+conversation text repo, `<archive>/text.git` (one commit per run, a geometric
+repack once a day), which `search`, Ranger and the UI grep. While GameMode
+runs (`gamemoded -s`, asked on the host from a toolbox) the pass is skipped
+and the next run catches up; `roamgate archive rebuild-text` builds the repo
+again from `raw/` (it waits for the game to end; `--now` builds anyway at the
+lowest priority), and applies a changed `text_tool_chars` (how much of each
+tool call is kept, default 2000). `roamgate archive status` shows the repo's
+last commit, last repack, size and how many secret-looking values were
+replaced by `[secret]`.
+
+A machine without its own archive (a laptop that pushes, or one that only
+searches) sets `archive.remote` to the archive home's ssh destination
+(`archive.remote_dir` when the home's archive is not
+`~/.config/roamgate/archive`): `search` then fetches the home's text repo
+over ssh (git on both ends; at most every ten minutes, read-only, never pushed
+back) and searches it locally, and `sync --push` fetches it after each push.
+`roamgate archive fetch-text` fetches it on demand.
+
+Disk: the compressed copies are about a fifth of the transcripts, the text
+repo a few percent of them (about 4 MB a day of history), `archive.sqlite` a
+few MB, and an ssh host's mirror is a plain copy of its session files. An
+archive from before the text repo had a 2 GB `index.sqlite`: the first sync
+after the update keeps its bookkeeping and deletes it. Use `archive.index` levels or `exclude` rules to
+shrink them.
 
 ## Merge and pull request cache
 

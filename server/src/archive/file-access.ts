@@ -3,12 +3,10 @@
  * from the archive: what AgentSessionFileAccess falls back to when a
  * transcript was deleted by the agent's own cleanup.
  */
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { ADAPTERS } from "./adapters";
 import { type ArchiveRuntime, resolveHosts } from "./hosts";
 import { anyRuleMatches, type GuiArchiveSettings } from "./settings";
-import { openArchiveDb } from "./store";
+import { existingArchiveDb, openArchiveDb } from "./store";
 import { zstPath } from "./sync";
 import { readArchived } from "./zstd";
 
@@ -60,7 +58,7 @@ export function createArchivedSessionReader(
       if (!path.startsWith(`${root}/`)) continue;
       const relpath = path.slice(root.length + 1);
       const archiveDir = deps.archiveDir(settings);
-      if (!existsSync(join(archiveDir, "index.sqlite"))) return null;
+      if (!existingArchiveDb(archiveDir)) return null;
       const { db, needsRebuild } = openArchiveDb(archiveDir, {
         readonly: true,
       });

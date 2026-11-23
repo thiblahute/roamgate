@@ -2615,14 +2615,25 @@ status|commit` does the same from a terminal
 
 ## Session archive
 
-`roamgate archive sync|search|cat|session|resume|health|rebuild-index` keeps
-every Claude Code, Codex and Pi session from every machine in one compressed,
-searchable archive, so the agents' own cleanup can run without losing history.
-It works without the server. `search` finds a substring in prompts, answers,
-tool calls and results across all hosts and agents (`--agent`, `--host`,
-`--project`, `--since`, `--json`); `cat <id>` prints a session byte-identical
-to the original; `resume <id>` restores it on this machine where it does not
-exist (never overwriting) and says what to run to continue it. See
+`roamgate archive sync|search|cat|session|resume|health|status|rebuild-text`
+keeps every Claude Code, Codex and Pi session from every machine in one
+compressed, searchable archive, so the agents' own cleanup can run without
+losing history. It works without the server. `search` greps the conversation
+text (prompts, answers, tool calls) of every host and agent, including what
+was said since the last hourly pass: words that must all appear in one message,
+"phrases", OR and NOT, or a Perl regex (`--regex`); one line per session, the
+sessions with the most matching messages first (`--recent`: newest first),
+filtered by `--agent`, `--host`, `--project`, `--role`, `--since`, `--until`.
+Tool output is searched only with `--tool-output`, which reads every archived
+transcript and is slow. `cat <id>` prints a session byte-identical to the
+original; `resume <id>` restores it on this machine where it does not exist
+(never overwriting) and says what to run to continue it.
+
+**Search past sessions** (command menu and the application menu) is the same
+search in the UI: type, filter by machine, agent, project and date, tick
+**Include tool output (slow)** when needed, and open a hit to read the
+conversation around it, tool output included. Ranger and the voice companion
+search the same way. See
 [Session archive](docs/DEPLOYMENT.md#session-archive).
 
 ## Remote, Multi-Client, and Operations

@@ -71,6 +71,6 @@ test("a transcript the agent deleted is read from the archive", async () => {
     await localAgentSessionFiles.statFile(join(dir, "never-archived.jsonl")),
   ).toBeNull();
   expect(
-    readFileSync(join(root, "archive", "index.sqlite")).length,
+    readFileSync(join(root, "archive", "archive.sqlite")).length,
   ).toBeGreaterThan(0);
 });

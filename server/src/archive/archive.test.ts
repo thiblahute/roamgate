@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mapClaudeProject, mapCwd } from "./adapters";
-import { rebuildIndex, runIngest, runSync } from "./engine";
+import { rebuildArchiveDb, runIngest, runSync } from "./engine";
 import { archiveHealth } from "./health";
 import { type ArchiveRuntime, type Exec, resolveHosts } from "./hosts";
 import { acquireHostLock } from "./lock";
@@ -26,6 +26,7 @@ import {
 } from "./session";
 import { type GuiArchiveSettings, normalizeArchiveSettings } from "./settings";
 import { openArchiveDb } from "./store";
+import { updateTextRepo } from "./text-repo";
 import { archivedDigest } from "./zstd";
 
 let root: string;
@@ -82,6 +83,17 @@ const query = (terms: string, extra: object = {}) => ({
   ...extra,
 });
 
+/** Search as the CLI does after a sync: the text pass, then the text repo. */
+async function found(terms: string, extra: object = {}, s = settings()) {
+  await updateTextRepo({
+    archiveDir,
+    settings: s,
+    host: "testhost",
+    log: () => {},
+  });
+  return searchArchive(archiveDir, query(terms, extra), s);
+}
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "roamgate-archive-"));
   runtime = {
@@ -108,33 +120,25 @@ describe("claude lifecycle", () => {
     writeFileSync(sub, record("user", "subagent walrus task"));
     let stats = (await sync()).claude;
     expect([stats?.new, stats?.error]).toEqual([2, 0]);
-    withDb((db) => {
-      expect(searchArchive(db, query("flamingo"), settings()).total).toBe(1);
-      const walrus = searchArchive(db, query("walrus"), settings()).hits[0];
-      expect(walrus?.subagent).toBe(true);
-      expect(walrus?.session).toBe(SESSION);
-    });
+    expect((await found("flamingo")).total).toBe(1);
+    const walrus = (await found("walrus")).hits[0];
+    expect(walrus?.subagent).toBe(true);
+    expect(walrus?.session).toBe(SESSION);
     stats = (await sync()).claude;
     expect([stats?.same, stats?.new, stats?.grown]).toEqual([2, 0, 0]);
 
     appendFileSync(main, record("user", "second narwhal question"));
     stats = (await sync()).claude;
     expect([stats?.grown, stats?.docs]).toEqual([1, 1]);
-    withDb((db) => {
-      expect(searchArchive(db, query("narwhal"), settings()).total).toBe(1);
-      expect(searchArchive(db, query("flamingo"), settings()).total).toBe(1);
-    });
+    expect((await found("narwhal")).total).toBe(1);
+    expect((await found("flamingo")).total).toBe(1);
 
     appendFileSync(main, '{"type":"user","message":{"content":"half pelican');
     await sync();
-    withDb((db) =>
-      expect(searchArchive(db, query("pelican"), settings()).total).toBe(0),
-    );
+    expect((await found("pelican")).total).toBe(0);
     appendFileSync(main, ' done"}}\n');
     await sync();
-    withDb((db) =>
-      expect(searchArchive(db, query("pelican"), settings()).total).toBe(1),
-    );
+    expect((await found("pelican")).total).toBe(1);
 
     // cat is byte-identical, also with the partial line archived once
     withDb((db) => {
@@ -160,10 +164,8 @@ describe("claude lifecycle", () => {
     expect(
       readdirSync(dir).filter((n) => n.includes(".jsonl.zst.")),
     ).toHaveLength(1);
-    withDb((db) => {
-      expect(searchArchive(db, query("flamingo"), settings()).total).toBe(0);
-      expect(searchArchive(db, query("axolotl"), settings()).total).toBe(1);
-    });
+    expect((await found("flamingo")).total).toBe(0);
+    expect((await found("axolotl")).total).toBe(1);
     expect(existsSync(main) && existsSync(sub)).toBe(true);
   });
 
@@ -201,9 +203,7 @@ describe("claude lifecycle", () => {
     appendFileSync(zst, Buffer.from("garbage from an interrupted append"));
     appendFileSync(main, record("user", "two ibex"));
     await sync();
-    withDb((db) =>
-      expect(searchArchive(db, query("ibex"), settings()).total).toBe(1),
-    );
+    expect((await found("ibex")).total).toBe(1);
     const digest = await archivedDigest(zst);
     expect(digest.bytes).toBe(readFileSync(main).length);
   });
@@ -220,56 +220,51 @@ describe("claude lifecycle", () => {
       record("user", "hidden okapi"),
     );
     await sync(settings({ hide: [{ project: "secret" }] }));
-    withDb((db) => {
-      expect(searchArchive(db, query("okapi"), settings()).total).toBe(2);
-      expect(
-        searchArchive(
-          db,
-          query("okapi"),
-          settings({ hide: [{ project: "secret" }] }),
-        ).total,
-      ).toBe(1);
-    });
+    expect((await found("okapi")).total).toBe(2);
+    expect(
+      (await found("okapi", {}, settings({ hide: [{ project: "secret" }] })))
+        .total,
+    ).toBe(1);
     rmSync(archiveDir, { recursive: true });
     const stats = await sync(settings({ exclude: [{ project: "secret" }] }));
     expect(stats.claude?.excluded).toBe(1);
-    withDb((db) =>
-      expect(searchArchive(db, query("okapi"), settings()).total).toBe(1),
-    );
+    expect((await found("okapi")).total).toBe(1);
   });
 
-  test("words level and none level", async () => {
+  test("the none level archives a session but keeps it out of search", async () => {
     writeFileSync(
       join(claudeDir(), `${SESSION}.jsonl`),
       record("user", "marmot colony"),
     );
-    await sync(settings({ index: { default: "words", rules: [] } }));
-    withDb((db) =>
-      expect(searchArchive(db, query("marmot"), settings()).total).toBe(1),
-    );
-    rmSync(archiveDir, { recursive: true });
-    await sync(settings({ index: { default: "none", rules: [] } }));
-    withDb((db) => {
-      expect(searchArchive(db, query("marmot"), settings()).total).toBe(0);
-      expect(lookupSession(db, SESSION).found).toBe(true);
-    });
+    const none = settings({ index: { default: "none", rules: [] } });
+    await sync(none);
+    expect((await found("marmot", {}, none)).total).toBe(0);
+    withDb((db) => expect(lookupSession(db, SESSION).found).toBe(true));
   });
 
-  test("rebuild-index restores the same search results", async () => {
+  test("rebuild-db restores the bookkeeping; the text repo carries on", async () => {
     writeFileSync(
       join(claudeDir(), `${SESSION}.jsonl`),
       record("user", "first lemur") + record("assistant", "reply ocelot"),
     );
     await sync();
-    const before = withDb(
-      (db) => searchArchive(db, query("ocelot"), settings()).total,
-    );
-    const rebuilt = await rebuildIndex(archiveDir, settings(), () => {});
+    const before = (await found("ocelot")).total;
+    const rebuilt = await rebuildArchiveDb(archiveDir, settings(), () => {});
     rebuilt.close(false);
-    withDb((db) => {
-      expect(searchArchive(db, query("ocelot"), settings()).total).toBe(before);
-      expect(lookupSession(db, SESSION).files[0]?.complete).toBe(true);
-    });
+    withDb((db) =>
+      expect(lookupSession(db, SESSION).files[0]?.complete).toBe(true),
+    );
+    expect(
+      (
+        await updateTextRepo({
+          archiveDir,
+          settings: settings(),
+          host: "testhost",
+          log: () => {},
+        })
+      ).status,
+    ).toBe("unchanged");
+    expect((await found("ocelot")).total).toBe(before);
     const stats = (await sync()).claude;
     expect(stats?.error).toBe(0);
   });
@@ -281,12 +276,7 @@ describe("claude lifecycle", () => {
       `${JSON.stringify({ display: "remember the tapir", timestamp: 1_760_000_000_000, project: "/x" })}\n`,
     );
     await sync();
-    withDb((db) =>
-      expect(
-        searchArchive(db, query("tapir", { history: true }), settings())
-          .history,
-      ).toHaveLength(1),
-    );
+    expect((await found("tapir", { history: true })).history).toHaveLength(1);
   });
 });
 
@@ -393,14 +383,13 @@ describe("other agents", () => {
     const stats = await sync();
     expect(stats.codex?.docs).toBe(3);
     expect(stats.pi?.docs).toBe(3);
+    // The text has the prompt; the tool output only the raw/ search reads.
+    expect((await found("capybara", { agent: "codex" })).total).toBe(1);
+    expect(
+      (await found("capybara", { agent: "codex", toolOutput: true })).total,
+    ).toBe(2);
+    expect((await found("quokka")).hits[0]?.agent).toBe("pi");
     withDb((db) => {
-      expect(
-        searchArchive(db, query("capybara", { agent: "codex" }), settings())
-          .total,
-      ).toBe(2);
-      expect(
-        searchArchive(db, query("quokka"), settings()).hits[0]?.agent,
-      ).toBe("pi");
       const codex = lookupSession(db, codexId.slice(0, 8));
       expect(codex.session).toBe(codexId);
       expect(codex.restorable).toBe(false);
@@ -557,8 +546,8 @@ describe("hosts and health", () => {
         "mac",
         "testhost",
       ]);
-      expect(searchArchive(db, query("kudu"), settings()).total).toBe(2);
     });
+    expect((await found("kudu")).total).toBe(2);
     expect(
       await runIngest({
         settings: settings(),

@@ -14,8 +14,19 @@ import {
 import { join } from "node:path";
 import { assertSafeDataPath } from "../config/data-paths";
 
-/** Bump when the index layout changes: an unknown version is rebuilt. */
-export const INDEX_VERSION = 1;
+/**
+ * The archive's bookkeeping: what each raw/ file holds (sizes, offsets,
+ * frame boundaries, the session it belongs to) and when each host last
+ * synced. Search is the text repo's (text-repo.ts); the FTS index that
+ * lived in `index.sqlite` before is gone, and an old `index.sqlite` is
+ * migrated: its files and meta are copied here, then it is deleted.
+ */
+
+/** Bump when the layout changes: an unknown version is rebuilt from raw/. */
+export const DB_VERSION = 2;
+export const DB_FILE = "archive.sqlite";
+/** The file before version 2, with the FTS tables. */
+export const LEGACY_INDEX_FILE = "index.sqlite";
 
 const SCHEMA = `
   CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT) STRICT;
@@ -34,25 +45,27 @@ const SCHEMA = `
     UNIQUE(host, agent, relpath)
   ) STRICT;
   CREATE INDEX files_session ON files(agent, session);
-  CREATE TABLE docs(
-    id INTEGER PRIMARY KEY, file_id INTEGER NOT NULL,
-    ts TEXT, role TEXT, kind TEXT, tool TEXT
-  ) STRICT;
-  CREATE INDEX docs_file ON docs(file_id);
-  CREATE TABLE history(
-    id INTEGER PRIMARY KEY, host TEXT NOT NULL, agent TEXT NOT NULL,
-    ts TEXT, project TEXT, text TEXT NOT NULL,
-    UNIQUE(host, agent, ts, project, text)
-  ) STRICT;
-  CREATE VIRTUAL TABLE fts USING fts5(text, tokenize='trigram');
-  CREATE VIRTUAL TABLE fts_words USING fts5(text, tokenize='unicode61');
-  CREATE VIRTUAL TABLE hist_fts USING fts5(text, tokenize='trigram');
 `;
+
+/** The columns of `files`, the same in version 1 (migrated from) and 2. */
+const FILE_COLUMNS =
+  "id, host, agent, relpath, kind, project, session, subagent, title, cost_usd, cwd, src_size, src_mtime, archived_size, zst_size, indexed_bytes, index_level, first_ts, last_ts";
 
 export type ArchiveDb = Database;
 
-export function indexPath(archiveDir: string): string {
-  return join(archiveDir, "index.sqlite");
+export function archiveDbPath(archiveDir: string): string {
+  return join(archiveDir, DB_FILE);
+}
+
+export function legacyIndexPath(archiveDir: string): string {
+  return join(archiveDir, LEGACY_INDEX_FILE);
+}
+
+/** The bookkeeping database to read: the current one, else an unmigrated index. */
+export function existingArchiveDb(archiveDir: string): string | null {
+  for (const path of [archiveDbPath(archiveDir), legacyIndexPath(archiveDir)])
+    if (existsSync(path)) return path;
+  return null;
 }
 
 function privateFile(path: string, create: boolean): void {
@@ -67,7 +80,7 @@ function privateFile(path: string, create: boolean): void {
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.nlink !== 1)
-      throw new Error("Invalid archive index file");
+      throw new Error("Invalid archive database file");
     fchmodSync(fd, 0o600);
   } finally {
     closeSync(fd);
@@ -80,15 +93,18 @@ function protectSidecars(path: string): void {
     if (!existsSync(sidecar)) continue;
     const stat = lstatSync(sidecar);
     if (!stat.isFile() || stat.nlink !== 1)
-      throw new Error("Invalid archive index file");
+      throw new Error("Invalid archive database file");
     chmodSync(sidecar, 0o600);
   }
 }
 
-export function removeIndex(archiveDir: string): void {
-  const path = indexPath(archiveDir);
+function removeSqlite(path: string): void {
   for (const file of [path, `${path}-wal`, `${path}-shm`, `${path}-journal`])
     rmSync(file, { force: true });
+}
+
+export function removeArchiveDb(archiveDir: string): void {
+  removeSqlite(archiveDbPath(archiveDir));
 }
 
 /** Meta kept across a rebuild: when each host last synced and what failed. */
@@ -108,20 +124,60 @@ export type OpenResult = {
 };
 
 /**
- * Opens the derived index in `archiveDir`, creating it when absent. WAL is
- * required. An index of another version is left alone and reported: the
- * caller rebuilds it from the raw files.
+ * Copies an old index's files and meta into the new database, then deletes
+ * the old index (its FTS tables were most of its size).
+ */
+function migrateLegacyIndex(db: ArchiveDb, archiveDir: string): void {
+  const legacy = legacyIndexPath(archiveDir);
+  if (!existsSync(legacy)) return;
+  assertSafeDataPath(legacy);
+  const old = new Database(legacy, { readonly: true });
+  try {
+    old.exec("PRAGMA busy_timeout = 30000");
+    const version = old
+      .query<{ user_version: number }, []>("PRAGMA user_version")
+      .get()?.user_version;
+    if (version !== 1) return;
+  } finally {
+    old.close(false);
+  }
+  db.exec(`ATTACH DATABASE '${legacy.replace(/'/g, "''")}' AS legacy`);
+  try {
+    db.transaction(() => {
+      db.exec(
+        `INSERT INTO files(${FILE_COLUMNS}) SELECT ${FILE_COLUMNS} FROM legacy.files`,
+      );
+      db.exec(
+        "INSERT INTO meta(key, value) SELECT key, value FROM legacy.meta",
+      );
+    })();
+  } finally {
+    db.exec("DETACH DATABASE legacy");
+  }
+  removeSqlite(legacy);
+}
+
+/**
+ * Opens the archive's database in `archiveDir`, creating it when absent
+ * (from an old index.sqlite when there is one). WAL is required. A database
+ * of another version is left alone and reported: the caller rebuilds it
+ * from the raw files. Read-only, an unmigrated index.sqlite is read as is.
  */
 export function openArchiveDb(
   archiveDir: string,
   options: { readonly?: boolean } = {},
 ): OpenResult {
-  const path = indexPath(archiveDir);
+  let path = archiveDbPath(archiveDir);
+  if (options.readonly && !existsSync(path)) {
+    const legacy = legacyIndexPath(archiveDir);
+    if (existsSync(legacy)) path = legacy;
+  }
+  const legacyRead = path !== archiveDbPath(archiveDir);
   assertSafeDataPath(path);
   mkdirSync(archiveDir, { recursive: true, mode: 0o700 });
   chmodSync(archiveDir, 0o700);
   const existing = existsSync(path);
-  if (options.readonly && !existing) throw new Error("no archive index yet");
+  if (options.readonly && !existing) throw new Error("no archive yet");
   privateFile(path, !existing);
   protectSidecars(path);
   const db = new Database(path, { readwrite: true, strict: true });
@@ -136,12 +192,15 @@ export function openArchiveDb(
     const version = db
       .query<{ user_version: number }, []>("PRAGMA user_version")
       .get()!.user_version;
-    if (version === 0) {
+    if (legacyRead) {
+      if (version !== 1) return { db, needsRebuild: true };
+    } else if (version === 0) {
       db.transaction(() => {
         db.exec(SCHEMA);
-        db.exec(`PRAGMA user_version = ${INDEX_VERSION}`);
+        db.exec(`PRAGMA user_version = ${DB_VERSION}`);
       })();
-    } else if (version !== INDEX_VERSION) {
+      migrateLegacyIndex(db, archiveDir);
+    } else if (version !== DB_VERSION) {
       return { db, needsRebuild: true };
     }
     protectSidecars(path);

@@ -2,7 +2,9 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { appendFileSync } from "node:fs";
 import { runSync } from "../archive/engine";
+import { updateTextRepo } from "../archive/text-repo";
 import {
   type GuiArchiveSettings,
   normalizeArchiveSettings,
@@ -50,6 +52,12 @@ beforeEach(async () => {
     runtime: runtime(),
     archiveDir: join(root, "archive"),
     localOnly: true,
+    log: () => {},
+  });
+  await updateTextRepo({
+    archiveDir: join(root, "archive"),
+    settings,
+    host: "testhost",
     log: () => {},
   });
 });
@@ -102,4 +110,30 @@ test("invalid parameters are refused", async () => {
   await expect(
     callArchiveTool("archive_read", { id: "x" }, handler()),
   ).rejects.toThrow();
+});
+
+test("search finds what was said since the last pass, and regexes", async () => {
+  appendFileSync(
+    join(root, ".claude", "projects", "-Users-t-proj", `${SESSION}.jsonl`),
+    `${JSON.stringify({ type: "user", timestamp: "2026-11-14T11:00:00Z", message: { content: "a late okapi" } })}\n`,
+  );
+  const live = await callArchiveTool(
+    "archive_search",
+    { query: "okapi" },
+    handler(),
+  );
+  expect(live.text).toContain("1 matching message(s) in 1 session(s)");
+  const regex = await callArchiveTool(
+    "archive_search",
+    { query: "ze+bra", regex: true },
+    handler(),
+  );
+  expect(regex.text).toContain(SESSION);
+});
+
+test("without a text repo there is no archive to search yet", async () => {
+  rmSync(join(root, "archive", "text.git"), { recursive: true, force: true });
+  await expect(
+    callArchiveTool("archive_search", { query: "zebra" }, handler()),
+  ).rejects.toThrow("no session archive yet");
 });

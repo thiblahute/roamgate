@@ -3,6 +3,7 @@ import { legacyArchiveWarning } from "./dir";
 import { resolveHosts, type ArchiveRuntime } from "./hosts";
 import type { GuiArchiveSettings } from "./settings";
 import { type ArchiveDb, getMeta } from "./store";
+import { type TextRepoStatus, textRepoStatus } from "./text-repo";
 
 export type AgentHealth = {
   agent: string;
@@ -32,10 +33,13 @@ export type ArchiveHealth = {
   now: string;
   stale_hours: number;
   hosts: HostHealth[];
-  totals: { files: number; sessions: number; docs: number; history: number };
-  sizes: { raw_bytes: number; index_bytes: number; source_bytes: number };
+  totals: { files: number; sessions: number };
+  /** The archive database's bytes, raw/'s, and what they hold uncompressed. */
+  sizes: { raw_bytes: number; db_bytes: number; source_bytes: number };
   disk: { free_gb: number | null; low: boolean };
   unknown_types: Record<string, number>;
+  /** The conversation text repo search runs on. */
+  text: TextRepoStatus;
   warnings: string[];
 };
 
@@ -54,7 +58,7 @@ export function archiveHealth(
   archiveDir: string,
   settings: GuiArchiveSettings,
   runtime: ArchiveRuntime,
-  indexBytes: number,
+  dbBytes: number,
   now = new Date(),
 ): ArchiveHealth {
   const warnings: string[] = [];
@@ -132,6 +136,11 @@ export function archiveHealth(
     warnings.push(
       `only ${freeGb} GB free under the archive (warning below ${settings.min_free_gb} GB)`,
     );
+  const text = textRepoStatus(archiveDir, settings);
+  if (text.stale_render)
+    warnings.push(
+      "the text repo was rendered with other settings: run `roamgate archive rebuild-text`",
+    );
   const unknown: Record<string, number> = {};
   for (const row of db
     .query<{ key: string; value: string }, []>(
@@ -158,16 +167,15 @@ export function archiveHealth(
       sessions: count(
         "SELECT count(*) AS n FROM (SELECT DISTINCT agent, session FROM files WHERE kind = 'transcript')",
       ),
-      docs: count("SELECT count(*) AS n FROM docs"),
-      history: count("SELECT count(*) AS n FROM history"),
     },
     sizes: {
       raw_bytes: raw?.n ?? 0,
-      index_bytes: indexBytes,
+      db_bytes: dbBytes,
       source_bytes: raw?.s ?? 0,
     },
     disk: { free_gb: freeGb, low },
     unknown_types: unknown,
+    text,
     warnings,
   };
 }

@@ -49,6 +49,10 @@ export type GuiArchiveSettings = {
   push?: { target: string; archive_dir?: string; binary?: string };
   /** An archive on another machine, reached over ssh (resume, search). */
   remote?: string;
+  /** Where the archive is on `remote`, for fetching its text repo; default the data root's. */
+  remote_dir?: string;
+  /** Characters of a tool call kept in the text repo; applied by rebuild-text. */
+  text_tool_chars?: number;
 };
 
 export const DEFAULT_ARCHIVE_SETTINGS: GuiArchiveSettings = {
@@ -159,6 +163,13 @@ export function normalizeArchiveSettings(raw: unknown): GuiArchiveSettings {
         }
       : {}),
     ...(str(obj.remote) ? { remote: str(obj.remote) } : {}),
+    ...(str(obj.remote_dir) ? { remote_dir: str(obj.remote_dir) } : {}),
+    ...(typeof obj.text_tool_chars === "number" &&
+    Number.isInteger(obj.text_tool_chars) &&
+    obj.text_tool_chars >= 80 &&
+    obj.text_tool_chars <= 100_000
+      ? { text_tool_chars: obj.text_tool_chars }
+      : {}),
   };
 }
 
