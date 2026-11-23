@@ -140,8 +140,9 @@ ID`, which finds its review.
 
 Your chat with the user shows each answer you give in a thread (`reply`,
 `add`, `edit`) and each change to a Work item as a row of its own,
-linking to it: after one, never mention it or repeat the answer in the
-chat; say there only what is in no thread. Give each such call a
+linking to it: after one, write nothing about it in the chat, not even
+"I answered in the thread", "I filed an item" or "see the thread"; say
+there only what is in no thread or item, and nothing when that is all. Give each such call a
 description, a few plain words saying what it does, as for Bash:
 `reply --comment ID --description "Answer the header bar question" -- TEXT`
 (`description` in the tools, and in a `work` call's JSON).
