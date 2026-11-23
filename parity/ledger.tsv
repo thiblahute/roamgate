@@ -3980,26 +3980,26 @@ server/src/workspace/auto-sync.test.ts	does not merge when the remote default ca
 server/src/workspace/auto-sync.test.ts	same-path runtimes execute and update only their connection keys	rust-unit:roamgate-workspace	files, previews, uploads, last steps
 server/src/workspace/auto-sync.test.ts	stop drains an active Git operation without publishing retired results	rust-unit:roamgate-workspace	files, previews, uploads, last steps
 server/src/workspace/auto-sync.test.ts	stop drains a deferred metadata read and prevents Git work	rust-unit:roamgate-workspace	files, previews, uploads, last steps
-server/src/workspace/compare-refs.test.ts	the scope picker's refs: branches with their dates, the newest tags, HEAD's upstream, its stack's neighbours and Automatic's base	rust-unit:roamgate-git	compare refs
-server/src/workspace/default-branch.test.ts	creates and syncs from %s, ignoring stale origin/HEAD	rust-unit:roamgate-git	default branch
-server/src/workspace/default-branch.test.ts	prepares and syncs %s while preserving dangling origin/%s	rust-unit:roamgate-git	default branch
-server/src/workspace/default-branch.test.ts	supports a prefix-related default rename from %s to %s	rust-unit:roamgate-git	default branch
-server/src/workspace/default-branch.test.ts	refreshes stale origin/main when the workspace is already up to date	rust-unit:roamgate-git	default branch
-server/src/workspace/default-branch.test.ts	preserves a concurrent %s tracking-ref change during fetch	rust-unit:roamgate-git	default branch
-server/src/workspace/default-branch.test.ts	supports a master-only remote	rust-unit:roamgate-git	default branch
-server/src/workspace/default-branch.test.ts	starts from the checked out commit	rust-unit:roamgate-git	default branch
-server/src/workspace/diff-base.test.ts	supports local main and master without a remote	rust-unit:roamgate-git	diff bases
-server/src/workspace/diff-base.test.ts	prefers the recorded custom remote default and its local branch	rust-unit:roamgate-git	diff bases
-server/src/workspace/diff-base.test.ts	passes over a remote HEAD naming a metadata branch (Entire's checkpoints)	rust-unit:roamgate-git	diff bases
-server/src/workspace/diff-base.test.ts	tells metadata refs from branches	rust-unit:roamgate-git	diff bases
-server/src/workspace/diff-base.test.ts	supports other remotes, configured local defaults, and origin fallbacks	rust-unit:roamgate-git	diff bases
-server/src/workspace/diff-base.test.ts	explicit selection wins and rejects revisions, options, and missing branches	rust-unit:roamgate-git	diff bases
-server/src/workspace/diff-base.test.ts	does not mistake current feature or stale metadata for a default	rust-unit:roamgate-git	diff bases
-server/src/workspace/diff-base.test.ts	a stale local main (behind origin/main): origin/main	rust-unit:roamgate-git	diff bases
-server/src/workspace/diff-base.test.ts	a local main ahead of origin/main: the local one, unless it is checked out	rust-unit:roamgate-git	diff bases
-server/src/workspace/diff-base.test.ts	diverged: the one whose merge-base with HEAD is newest	rust-unit:roamgate-git	diff bases
-server/src/workspace/diff-base.test.ts	the facts are read from the last lines, after what a login profile printed	rust-unit:roamgate-git	diff bases
-server/src/workspace/diff-base.test.ts	over SSH: two read-only scripts on the host, never a fetch; one when local and remote are the same commit	rust-unit:roamgate-git	diff bases
+server/src/workspace/compare-refs.test.ts	the scope picker's refs: branches with their dates, the newest tags, HEAD's upstream, its stack's neighbours and Automatic's base	rust-unit:roamgate-git:compare::tests::the_scope_picker_s_refs_branches_with_their_dates_the_newest_tags_head_s_upstream_its_stack_s_neighbours_and_automatic_s_base	compare refs
+server/src/workspace/default-branch.test.ts	creates and syncs from %s, ignoring stale origin/HEAD	rust-unit:roamgate-workspace	runs with the worktree base, auto-sync and file handlers that use roamgate-git (S17)
+server/src/workspace/default-branch.test.ts	prepares and syncs %s while preserving dangling origin/%s	rust-unit:roamgate-workspace	runs with the worktree base, auto-sync and file handlers that use roamgate-git (S17)
+server/src/workspace/default-branch.test.ts	supports a prefix-related default rename from %s to %s	rust-unit:roamgate-workspace	runs with the worktree base, auto-sync and file handlers that use roamgate-git (S17)
+server/src/workspace/default-branch.test.ts	refreshes stale origin/main when the workspace is already up to date	rust-unit:roamgate-workspace	runs with the worktree base, auto-sync and file handlers that use roamgate-git (S17)
+server/src/workspace/default-branch.test.ts	preserves a concurrent %s tracking-ref change during fetch	rust-unit:roamgate-workspace	runs with the worktree base, auto-sync and file handlers that use roamgate-git (S17)
+server/src/workspace/default-branch.test.ts	supports a master-only remote	rust-unit:roamgate-workspace	runs with the worktree base, auto-sync and file handlers that use roamgate-git (S17)
+server/src/workspace/default-branch.test.ts	starts from the checked out commit	rust-unit:roamgate-workspace	runs with the worktree base, auto-sync and file handlers that use roamgate-git (S17)
+server/src/workspace/diff-base.test.ts	supports local main and master without a remote	rust-unit:roamgate-git:diff_base::tests::supports_local_main_and_master_without_a_remote	diff bases
+server/src/workspace/diff-base.test.ts	prefers the recorded custom remote default and its local branch	rust-unit:roamgate-git:diff_base::tests::prefers_the_recorded_custom_remote_default_and_its_local_branch	diff bases
+server/src/workspace/diff-base.test.ts	passes over a remote HEAD naming a metadata branch (Entire's checkpoints)	rust-unit:roamgate-git:diff_base::tests::passes_over_a_remote_head_naming_a_metadata_branch_entire_s_checkpoints	diff bases
+server/src/workspace/diff-base.test.ts	tells metadata refs from branches	rust-unit:roamgate-git:diff_base::tests::tells_metadata_refs_from_branches	diff bases
+server/src/workspace/diff-base.test.ts	supports other remotes, configured local defaults, and origin fallbacks	rust-unit:roamgate-git:diff_base::tests::supports_other_remotes_configured_local_defaults_and_origin_fallbacks	diff bases
+server/src/workspace/diff-base.test.ts	explicit selection wins and rejects revisions, options, and missing branches	rust-unit:roamgate-git:diff_base::tests::explicit_selection_wins_and_rejects_revisions_options_and_missing_branches	diff bases
+server/src/workspace/diff-base.test.ts	does not mistake current feature or stale metadata for a default	rust-unit:roamgate-git:diff_base::tests::does_not_mistake_current_feature_or_stale_metadata_for_a_default	diff bases
+server/src/workspace/diff-base.test.ts	a stale local main (behind origin/main): origin/main	rust-unit:roamgate-git:diff_base::tests::a_stale_local_main_behind_origin_main_origin_main	diff bases
+server/src/workspace/diff-base.test.ts	a local main ahead of origin/main: the local one, unless it is checked out	rust-unit:roamgate-git:diff_base::tests::a_local_main_ahead_of_origin_main_the_local_one_unless_it_is_checked_out	diff bases
+server/src/workspace/diff-base.test.ts	diverged: the one whose merge-base with HEAD is newest	rust-unit:roamgate-git:diff_base::tests::diverged_the_one_whose_merge_base_with_head_is_newest	diff bases
+server/src/workspace/diff-base.test.ts	the facts are read from the last lines, after what a login profile printed	rust-unit:roamgate-git:diff_base::tests::the_facts_are_read_from_the_last_lines_after_what_a_login_profile_printed	diff bases
+server/src/workspace/diff-base.test.ts	over SSH: two read-only scripts on the host, never a fetch; one when local and remote are the same commit	rust-unit:roamgate-git:diff_base::tests::over_ssh_two_read_only_scripts_on_the_host_never_a_fetch_one_when_local_and_remote_are_the_same_commit	diff bases
 server/src/workspace/file-manager.test.ts	reveal capability requires explicit host opt-in and a loopback peer	rust-unit:roamgate-workspace	files, previews, uploads, last steps
 server/src/workspace/file-manager.test.ts	identifies loopback transport addresses without inferring browser location	rust-unit:roamgate-workspace	files, previews, uploads, last steps
 server/src/workspace/file-manager.test.ts	%s opens a file's folder or the directory itself (directory=%s)	rust-unit:roamgate-workspace	files, previews, uploads, last steps
@@ -4060,142 +4060,143 @@ server/src/workspace/forge-calls.test.ts	a 429 seen only on stderr pauses the ho
 server/src/workspace/forge-calls.test.ts	GETs come back with If-None-Match; a 304 answers with what was known	scenario:parity/scenarios/mr_reviews/forge-etag.yaml	
 server/src/workspace/forge-calls.test.ts	identical calls share one in flight and its answer for a while; failures are not kept	rust-unit:roamgate-forge:gate::tests::identical_calls_share_one_in_flight_and_its_answer_for_a_while_failures_are_not_kept	forge calls of workspaces
 server/src/workspace/forge-calls.test.ts	the response headers are cut off the body	rust-unit:roamgate-forge:gate::tests::the_response_headers_are_cut_off_the_body	forge calls of workspaces
-server/src/workspace/git-actions.test.ts	matches actions to XY states	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	counts each working tree bucket	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	decodes base64 paths and numeric values	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	stages untracked and unstaged files	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	rejects staging when nothing changed and reports a refresh	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	unstages while preserving the worktree	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	unstages a rename using both paths	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	unstages on an unborn HEAD	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	marks conflicted files resolved by staging	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-actions.test.ts	matches actions to XY states	rust-unit:roamgate-git:actions::tests::matches_actions_to_xy_states	git runner and parsers
+server/src/workspace/git-actions.test.ts	counts each working tree bucket	rust-unit:roamgate-git:actions::tests::counts_each_working_tree_bucket	git runner and parsers
+server/src/workspace/git-actions.test.ts	decodes base64 paths and numeric values	rust-unit:roamgate-git:actions::tests::decodes_base64_paths_and_numeric_values	git runner and parsers
+server/src/workspace/git-actions.test.ts	stages untracked and unstaged files	rust-unit:roamgate-git:actions::tests::stages_untracked_and_unstaged_files	git runner and parsers
+server/src/workspace/git-actions.test.ts	rejects staging when nothing changed and reports a refresh	rust-unit:roamgate-git:actions::tests::rejects_staging_when_nothing_changed_and_reports_a_refresh	git runner and parsers
+server/src/workspace/git-actions.test.ts	unstages while preserving the worktree	rust-unit:roamgate-git:actions::tests::unstages_while_preserving_the_worktree	git runner and parsers
+server/src/workspace/git-actions.test.ts	unstages a rename using both paths	rust-unit:roamgate-git:actions::tests::unstages_a_rename_using_both_paths	git runner and parsers
+server/src/workspace/git-actions.test.ts	unstages on an unborn HEAD	rust-unit:roamgate-git:actions::tests::unstages_on_an_unborn_head	git runner and parsers
+server/src/workspace/git-actions.test.ts	marks conflicted files resolved by staging	rust-unit:roamgate-git:actions::tests::marks_conflicted_files_resolved_by_staging	git runner and parsers
 server/src/workspace/git-actions.test.ts	reads local fingerprints in process as the stat script does	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	discards unstaged changes and preserves the staged version	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	restores a deleted file when discarding	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	refuses to discard when the file changed after the refresh	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	deletes untracked files, including dash-prefixed names	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	refuses to delete untracked directories	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	deletes untracked symlinks that point at directories	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	fails closed on destructive actions without a fingerprint	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	refuses to delete a tracked file	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	rejects paths escaping the repository	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	stages and unstages everything	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	unstages everything on an unborn HEAD	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	discards all unstaged changes but preserves staged ones	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	refuses repo-wide discard when the counts are stale	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	refuses repo-wide discard while conflicts are open	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	deletes all untracked files but keeps ignored ones	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	runs file and repo actions against a real repository	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	attaches worktree fingerprints to working summary entries	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	marks git-ignored entries in file listings	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	marks ignored entries and leaves others alone	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	returns an empty set outside a repository	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	caches non-repository directories and skips spawning again	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-actions.test.ts	does not cache successful ignore checks	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	a file's staged and unstaged changes read as one diff against HEAD	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	a chunk is partly staged when the index holds some of its lines	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	staging everything marks every changed line staged, the diff unchanged	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	lines added above an unstaged change keep the staged lines' numbers right	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	an untracked file is a new file, nothing of it staged	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	a new file added to the index then edited is partly staged	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	a staged rename reads as a rename with its edits	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	a binary file has no lines, and nothing staged to tell	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	a conflicted file is read against HEAD without staged lines	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	a repository with no commit yet reads its files as new	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	glob characters in a name are taken literally	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	stagedLines tells a removed line the index dropped from one it kept	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	diff.suppressBlankEmpty does not shift line numbers	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	diff.mnemonicPrefix does not change the paths	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	diff.noprefix keeps a real top-level a/ directory	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	non-ASCII names show as they are in the combined diff	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	the combined read refuses links out of the checkout and FIFOs	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-combined.test.ts	what a login profile prints before the output is skipped	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff-files.test.ts	reads several files of a branch review with one shell command, each its own patch	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff-files.test.ts	gives each file of the working review its combined diff, and a failing file its own error	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff-files.test.ts	keeps the per-file caps: a large automatic file is deferred, not sent	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff-files.test.ts	refuses no entries and more than its maximum	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff-files.test.ts	frames each script's output, error output and exit code, past a login profile's noise	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff-files.test.ts	a batch cut short gives the unanswered scripts the failure	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-actions.test.ts	discards unstaged changes and preserves the staged version	rust-unit:roamgate-git:actions::tests::discards_unstaged_changes_and_preserves_the_staged_version	git runner and parsers
+server/src/workspace/git-actions.test.ts	restores a deleted file when discarding	rust-unit:roamgate-git:actions::tests::restores_a_deleted_file_when_discarding	git runner and parsers
+server/src/workspace/git-actions.test.ts	refuses to discard when the file changed after the refresh	rust-unit:roamgate-git:actions::tests::refuses_to_discard_when_the_file_changed_after_the_refresh	git runner and parsers
+server/src/workspace/git-actions.test.ts	deletes untracked files, including dash-prefixed names	rust-unit:roamgate-git:actions::tests::deletes_untracked_files_including_dash_prefixed_names	git runner and parsers
+server/src/workspace/git-actions.test.ts	refuses to delete untracked directories	rust-unit:roamgate-git:actions::tests::refuses_to_delete_untracked_directories	git runner and parsers
+server/src/workspace/git-actions.test.ts	deletes untracked symlinks that point at directories	rust-unit:roamgate-git:actions::tests::deletes_untracked_symlinks_that_point_at_directories	git runner and parsers
+server/src/workspace/git-actions.test.ts	fails closed on destructive actions without a fingerprint	rust-unit:roamgate-git:actions::tests::fails_closed_on_destructive_actions_without_a_fingerprint	git runner and parsers
+server/src/workspace/git-actions.test.ts	refuses to delete a tracked file	rust-unit:roamgate-git:actions::tests::refuses_to_delete_a_tracked_file	git runner and parsers
+server/src/workspace/git-actions.test.ts	rejects paths escaping the repository	rust-unit:roamgate-git:actions::tests::rejects_paths_escaping_the_repository	git runner and parsers
+server/src/workspace/git-actions.test.ts	stages and unstages everything	rust-unit:roamgate-git:actions::tests::stages_and_unstages_everything	git runner and parsers
+server/src/workspace/git-actions.test.ts	unstages everything on an unborn HEAD	rust-unit:roamgate-git:actions::tests::unstages_everything_on_an_unborn_head	git runner and parsers
+server/src/workspace/git-actions.test.ts	discards all unstaged changes but preserves staged ones	rust-unit:roamgate-git:actions::tests::discards_all_unstaged_changes_but_preserves_staged_ones	git runner and parsers
+server/src/workspace/git-actions.test.ts	refuses repo-wide discard when the counts are stale	rust-unit:roamgate-git:actions::tests::refuses_repo_wide_discard_when_the_counts_are_stale	git runner and parsers
+server/src/workspace/git-actions.test.ts	refuses repo-wide discard while conflicts are open	rust-unit:roamgate-git:actions::tests::refuses_repo_wide_discard_while_conflicts_are_open	git runner and parsers
+server/src/workspace/git-actions.test.ts	deletes all untracked files but keeps ignored ones	rust-unit:roamgate-git:actions::tests::deletes_all_untracked_files_but_keeps_ignored_ones	git runner and parsers
+server/src/workspace/git-actions.test.ts	runs file and repo actions against a real repository	rust-unit:roamgate-workspace	runs with the worktree base, auto-sync and file handlers that use roamgate-git (S17)
+server/src/workspace/git-actions.test.ts	attaches worktree fingerprints to working summary entries	rust-unit:roamgate-workspace	runs with the worktree base, auto-sync and file handlers that use roamgate-git (S17)
+server/src/workspace/git-actions.test.ts	marks git-ignored entries in file listings	rust-unit:roamgate-workspace	runs with the worktree base, auto-sync and file handlers that use roamgate-git (S17)
+server/src/workspace/git-actions.test.ts	marks ignored entries and leaves others alone	rust-unit:roamgate-git:actions::tests::marks_ignored_entries_and_leaves_others_alone	git runner and parsers
+server/src/workspace/git-actions.test.ts	returns an empty set outside a repository	rust-unit:roamgate-git:actions::tests::returns_an_empty_set_outside_a_repository	git runner and parsers
+server/src/workspace/git-actions.test.ts	caches non-repository directories and skips spawning again	rust-unit:roamgate-git:actions::tests::caches_non_repository_directories_and_skips_spawning_again	git runner and parsers
+server/src/workspace/git-actions.test.ts	does not cache successful ignore checks	rust-unit:roamgate-git:actions::tests::does_not_cache_successful_ignore_checks	git runner and parsers
+server/src/workspace/git-combined.test.ts	a file's staged and unstaged changes read as one diff against HEAD	rust-unit:roamgate-git:combined::tests::a_file_s_staged_and_unstaged_changes_read_as_one_diff_against_head	git runner and parsers
+server/src/workspace/git-combined.test.ts	a chunk is partly staged when the index holds some of its lines	rust-unit:roamgate-git:combined::tests::a_chunk_is_partly_staged_when_the_index_holds_some_of_its_lines	git runner and parsers
+server/src/workspace/git-combined.test.ts	staging everything marks every changed line staged, the diff unchanged	rust-unit:roamgate-git:combined::tests::staging_everything_marks_every_changed_line_staged_the_diff_unchanged	git runner and parsers
+server/src/workspace/git-combined.test.ts	lines added above an unstaged change keep the staged lines' numbers right	rust-unit:roamgate-git:combined::tests::lines_added_above_an_unstaged_change_keep_the_staged_lines_numbers_right	git runner and parsers
+server/src/workspace/git-combined.test.ts	an untracked file is a new file, nothing of it staged	rust-unit:roamgate-git:combined::tests::an_untracked_file_is_a_new_file_nothing_of_it_staged	git runner and parsers
+server/src/workspace/git-combined.test.ts	a new file added to the index then edited is partly staged	rust-unit:roamgate-git:combined::tests::a_new_file_added_to_the_index_then_edited_is_partly_staged	git runner and parsers
+server/src/workspace/git-combined.test.ts	a staged rename reads as a rename with its edits	rust-unit:roamgate-git:combined::tests::a_staged_rename_reads_as_a_rename_with_its_edits	git runner and parsers
+server/src/workspace/git-combined.test.ts	a binary file has no lines, and nothing staged to tell	rust-unit:roamgate-git:combined::tests::a_binary_file_has_no_lines_and_nothing_staged_to_tell	git runner and parsers
+server/src/workspace/git-combined.test.ts	a conflicted file is read against HEAD without staged lines	rust-unit:roamgate-git:combined::tests::a_conflicted_file_is_read_against_head_without_staged_lines	git runner and parsers
+server/src/workspace/git-combined.test.ts	a repository with no commit yet reads its files as new	rust-unit:roamgate-git:combined::tests::a_repository_with_no_commit_yet_reads_its_files_as_new	git runner and parsers
+server/src/workspace/git-combined.test.ts	glob characters in a name are taken literally	rust-unit:roamgate-git:combined::tests::glob_characters_in_a_name_are_taken_literally	git runner and parsers
+server/src/workspace/git-combined.test.ts	stagedLines tells a removed line the index dropped from one it kept	rust-unit:roamgate-git:combined::tests::stagedlines_tells_a_removed_line_the_index_dropped_from_one_it_kept	git runner and parsers
+server/src/workspace/git-combined.test.ts	diff.suppressBlankEmpty does not shift line numbers	rust-unit:roamgate-git:combined::tests::diff_suppressblankempty_does_not_shift_line_numbers	git runner and parsers
+server/src/workspace/git-combined.test.ts	diff.mnemonicPrefix does not change the paths	rust-unit:roamgate-git:combined::tests::diff_mnemonicprefix_does_not_change_the_paths	git runner and parsers
+server/src/workspace/git-combined.test.ts	diff.noprefix keeps a real top-level a/ directory	rust-unit:roamgate-git:combined::tests::diff_noprefix_keeps_a_real_top_level_a_directory	git runner and parsers
+server/src/workspace/git-combined.test.ts	non-ASCII names show as they are in the combined diff	rust-unit:roamgate-git:combined::tests::non_ascii_names_show_as_they_are_in_the_combined_diff	git runner and parsers
+server/src/workspace/git-combined.test.ts	the combined read refuses links out of the checkout and FIFOs	rust-unit:roamgate-git:combined::tests::the_combined_read_refuses_links_out_of_the_checkout_and_fifos	git runner and parsers
+server/src/workspace/git-combined.test.ts	what a login profile prints before the output is skipped	rust-unit:roamgate-git:combined::tests::what_a_login_profile_prints_before_the_output_is_skipped	git runner and parsers
+server/src/workspace/git-diff-files.test.ts	reads several files of a branch review with one shell command, each its own patch	rust-unit:roamgate-git:diff::files_tests::reads_several_files_of_a_branch_review_with_one_shell_command_each_its_own_patch	git runner and parsers
+server/src/workspace/git-diff-files.test.ts	gives each file of the working review its combined diff, and a failing file its own error	rust-unit:roamgate-git:diff::files_tests::gives_each_file_of_the_working_review_its_combined_diff_and_a_failing_file_its_own_error	git runner and parsers
+server/src/workspace/git-diff-files.test.ts	keeps the per-file caps: a large automatic file is deferred, not sent	rust-unit:roamgate-git:diff::files_tests::keeps_the_per_file_caps_a_large_automatic_file_is_deferred_not_sent	git runner and parsers
+server/src/workspace/git-diff-files.test.ts	refuses no entries and more than its maximum	rust-unit:roamgate-git:diff::files_tests::refuses_no_entries_and_more_than_its_maximum	git runner and parsers
+server/src/workspace/git-diff-files.test.ts	frames each script's output, error output and exit code, past a login profile's noise	rust-unit:roamgate-git:diff::files_tests::frames_each_script_s_output_error_output_and_exit_code_past_a_login_profile_s_noise	git runner and parsers
+server/src/workspace/git-diff-files.test.ts	a batch cut short gives the unanswered scripts the failure	rust-unit:roamgate-git:diff::files_tests::a_batch_cut_short_gives_the_unanswered_scripts_the_failure	git runner and parsers
 server/src/workspace/git-diff.test.ts	missing defaults expose choices, including an empty unborn repository	scenario:parity/scenarios/workspace/git.yaml	
-server/src/workspace/git-diff.test.ts	resolves comparison metadata through SSH without fetching	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	summary and file use ${defaultBranch} and merge-base semantics	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	labels git statuses	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	parses working tree porcelain status	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	unquotes C-style quoted paths in porcelain status	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	parses branch name-status output	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	recognizes files marked generated by Git attributes	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	adds Git generated markers to diff summary entries	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	lets Git apply nested generated overrides and explicit unmarking	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	measures compared blobs independently of the live file across scopes	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	bounds patch transport and UTF-8 bytes while reporting the full patch size	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	defers large automatic patches before transfer while explicit requests return content	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-diff.test.ts	resolves comparison metadata through SSH without fetching	rust-unit:roamgate-git:diff::tests::resolves_comparison_metadata_through_ssh_without_fetching	git runner and parsers
+server/src/workspace/git-diff.test.ts	summary and file use ${defaultBranch} and merge-base semantics	rust-unit:roamgate-git:diff::tests::summary_and_file_use_defaultbranch_and_merge_base_semantics	git runner and parsers
+server/src/workspace/git-diff.test.ts	labels git statuses	rust-unit:roamgate-git:diff::tests::labels_git_statuses	git runner and parsers
+server/src/workspace/git-diff.test.ts	parses working tree porcelain status	rust-unit:roamgate-git:diff::tests::parses_working_tree_porcelain_status	git runner and parsers
+server/src/workspace/git-diff.test.ts	unquotes C-style quoted paths in porcelain status	rust-unit:roamgate-git:diff::tests::unquotes_c_style_quoted_paths_in_porcelain_status	git runner and parsers
+server/src/workspace/git-diff.test.ts	parses branch name-status output	rust-unit:roamgate-git:diff::tests::parses_branch_name_status_output	git runner and parsers
+server/src/workspace/git-diff.test.ts	recognizes files marked generated by Git attributes	rust-unit:roamgate-git:diff::tests::recognizes_files_marked_generated_by_git_attributes	git runner and parsers
+server/src/workspace/git-diff.test.ts	adds Git generated markers to diff summary entries	rust-unit:roamgate-git:diff::tests::adds_git_generated_markers_to_diff_summary_entries	git runner and parsers
+server/src/workspace/git-diff.test.ts	lets Git apply nested generated overrides and explicit unmarking	rust-unit:roamgate-git:diff::tests::lets_git_apply_nested_generated_overrides_and_explicit_unmarking	git runner and parsers
+server/src/workspace/git-diff.test.ts	measures compared blobs independently of the live file across scopes	rust-unit:roamgate-git:diff::tests::measures_compared_blobs_independently_of_the_live_file_across_scopes	git runner and parsers
+server/src/workspace/git-diff.test.ts	bounds patch transport and UTF-8 bytes while reporting the full patch size	rust-unit:roamgate-git:diff::tests::bounds_patch_transport_and_utf_8_bytes_while_reporting_the_full_patch_size	git runner and parsers
+server/src/workspace/git-diff.test.ts	defers large automatic patches before transfer while explicit requests return content	rust-unit:roamgate-git:diff::tests::defers_large_automatic_patches_before_transfer_while_explicit_requests_return_content	git runner and parsers
 server/src/workspace/git-diff.test.ts	counts untracked files with one command per batch over SSH	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-diff.test.ts	spreads a few local untracked files over the commands that run at once	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-diff.test.ts	a local summary runs no login shell and no per-file stat script	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	keeps a batch's counts when one of its files cannot be read	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	lists untracked files without line counts past the cap	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	overlapping refreshes each return complete untracked counts	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	runs temporary-index snapshots through the SSH command path	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	tracks worktree changes across bounded snapshots	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	leaves no capture scratch directory after successful disposal	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	does not delete capture storage after an uncertain failure	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	includes commits and untracked files made after the baseline	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	keeps rename metadata in an individual last-step patch	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	keeps the previous completed step visible until the active step completes	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	queues a rapid second completion while the first is still finalizing	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	binds file patches to the exact tree pair returned by the summary	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	does not revalidate snapshot trees for every file patch	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	returns a usable summary token when a newer step completes mid-request	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	expires only the snapshot whose tree is missing	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	does not let an older failed capture erase a newer same-root baseline	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	preserves the real index in a linked worktree	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	snapshots an unborn repository without mutating the user index	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	waits for step completion before publishing its replacement	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	retains the completed step when the next baseline capture fails	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	invalidates only one workspace sharing a repository root	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	preserves a valid baseline across transient cat-file failures	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	drains and invalidates in-flight captures during disposal	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	returns an empty state when the baseline object is missing	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-diff.test.ts	keeps a batch's counts when one of its files cannot be read	rust-unit:roamgate-git:diff::tests::keeps_a_batch_s_counts_when_one_of_its_files_cannot_be_read	git runner and parsers
+server/src/workspace/git-diff.test.ts	lists untracked files without line counts past the cap	rust-unit:roamgate-git:diff::tests::lists_untracked_files_without_line_counts_past_the_cap	git runner and parsers
+server/src/workspace/git-diff.test.ts	overlapping refreshes each return complete untracked counts	rust-unit:roamgate-git:diff::tests::overlapping_refreshes_each_return_complete_untracked_counts	git runner and parsers
+server/src/workspace/git-diff.test.ts	runs temporary-index snapshots through the SSH command path	rust-unit:roamgate-git:diff::tests::runs_temporary_index_snapshots_through_the_ssh_command_path	git runner and parsers
+server/src/workspace/git-diff.test.ts	tracks worktree changes across bounded snapshots	rust-unit:roamgate-git:diff::tests::tracks_worktree_changes_across_bounded_snapshots	git runner and parsers
+server/src/workspace/git-diff.test.ts	leaves no capture scratch directory after successful disposal	rust-unit:roamgate-git:diff::tests::leaves_no_capture_scratch_directory_after_successful_disposal	git runner and parsers
+server/src/workspace/git-diff.test.ts	does not delete capture storage after an uncertain failure	rust-unit:roamgate-git:diff::tests::does_not_delete_capture_storage_after_an_uncertain_failure	git runner and parsers
+server/src/workspace/git-diff.test.ts	includes commits and untracked files made after the baseline	rust-unit:roamgate-git:diff::tests::includes_commits_and_untracked_files_made_after_the_baseline	git runner and parsers
+server/src/workspace/git-diff.test.ts	keeps rename metadata in an individual last-step patch	rust-unit:roamgate-git:diff::tests::keeps_rename_metadata_in_an_individual_last_step_patch	git runner and parsers
+server/src/workspace/git-diff.test.ts	keeps the previous completed step visible until the active step completes	rust-unit:roamgate-git:diff::tests::keeps_the_previous_completed_step_visible_until_the_active_step_completes	git runner and parsers
+server/src/workspace/git-diff.test.ts	queues a rapid second completion while the first is still finalizing	rust-unit:roamgate-git:diff::tests::queues_a_rapid_second_completion_while_the_first_is_still_finalizing	git runner and parsers
+server/src/workspace/git-diff.test.ts	binds file patches to the exact tree pair returned by the summary	rust-unit:roamgate-git:diff::tests::binds_file_patches_to_the_exact_tree_pair_returned_by_the_summary	git runner and parsers
+server/src/workspace/git-diff.test.ts	does not revalidate snapshot trees for every file patch	rust-unit:roamgate-git:diff::tests::does_not_revalidate_snapshot_trees_for_every_file_patch	git runner and parsers
+server/src/workspace/git-diff.test.ts	returns a usable summary token when a newer step completes mid-request	rust-unit:roamgate-git:diff::tests::returns_a_usable_summary_token_when_a_newer_step_completes_mid_request	git runner and parsers
+server/src/workspace/git-diff.test.ts	expires only the snapshot whose tree is missing	rust-unit:roamgate-git:diff::tests::expires_only_the_snapshot_whose_tree_is_missing	git runner and parsers
+server/src/workspace/git-diff.test.ts	does not let an older failed capture erase a newer same-root baseline	rust-unit:roamgate-git:diff::tests::does_not_let_an_older_failed_capture_erase_a_newer_same_root_baseline	git runner and parsers
+server/src/workspace/git-diff.test.ts	preserves the real index in a linked worktree	rust-unit:roamgate-git:diff::tests::preserves_the_real_index_in_a_linked_worktree	git runner and parsers
+server/src/workspace/git-diff.test.ts	snapshots an unborn repository without mutating the user index	rust-unit:roamgate-git:diff::tests::snapshots_an_unborn_repository_without_mutating_the_user_index	git runner and parsers
+server/src/workspace/git-diff.test.ts	waits for step completion before publishing its replacement	rust-unit:roamgate-git:diff::tests::waits_for_step_completion_before_publishing_its_replacement	git runner and parsers
+server/src/workspace/git-diff.test.ts	retains the completed step when the next baseline capture fails	rust-unit:roamgate-git:diff::tests::retains_the_completed_step_when_the_next_baseline_capture_fails	git runner and parsers
+server/src/workspace/git-diff.test.ts	invalidates only one workspace sharing a repository root	rust-unit:roamgate-git:diff::tests::invalidates_only_one_workspace_sharing_a_repository_root	git runner and parsers
+server/src/workspace/git-diff.test.ts	preserves a valid baseline across transient cat-file failures	rust-unit:roamgate-git:diff::tests::preserves_a_valid_baseline_across_transient_cat_file_failures	git runner and parsers
+server/src/workspace/git-diff.test.ts	drains and invalidates in-flight captures during disposal	rust-unit:roamgate-git:diff::tests::drains_and_invalidates_in_flight_captures_during_disposal	git runner and parsers
+server/src/workspace/git-diff.test.ts	returns an empty state when the baseline object is missing	rust-unit:roamgate-git:diff::tests::returns_an_empty_state_when_the_baseline_object_is_missing	git runner and parsers
+server/src/workspace/git-diff.test.ts	counts untracked files with one command per batch	rust-unit:roamgate-git:diff::tests::counts_untracked_files_with_one_command_per_batch	git runner and parsers
 server/src/workspace/git-history.test.ts	commit history reads root, rename and deleted content from revisions	scenario:parity/scenarios/workspace/git.yaml	
-server/src/workspace/git-history.test.ts	merge changes compare with the first parent	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-history.test.ts	history pages remain anchored and shallow boundaries are explicit	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-history.test.ts	binary files and oversized historical previews are bounded	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-history.test.ts	merge changes compare with the first parent	rust-unit:roamgate-git:history::tests::merge_changes_compare_with_the_first_parent	git runner and parsers
+server/src/workspace/git-history.test.ts	history pages remain anchored and shallow boundaries are explicit	rust-unit:roamgate-git:history::tests::history_pages_remain_anchored_and_shallow_boundaries_are_explicit	git runner and parsers
+server/src/workspace/git-history.test.ts	binary files and oversized historical previews are bounded	rust-unit:roamgate-git:history::tests::binary_files_and_oversized_historical_previews_are_bounded	git runner and parsers
 server/src/workspace/git-shell.integration.test.ts	Git features preserve quoted paths and shell routing (%s)	scenario:parity/scenarios/workspace/git-shell-quoting-ssh.yaml,scenario:parity/scenarios/workspace/git-shell-quoting.yaml	black-box suite, ported by another S6 slice
-server/src/workspace/git-shell.test.ts	finds Git Bash when only Git's cmd directory is on PATH	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	finds portable Git from %s without relying on standard locations	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	prefers the Git installation on PATH over a different default install	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	falls back to Git's usr/bin Bash when the wrapper is absent	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	finds installations through %s without Git or sh on PATH	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	finds the default installation with an empty environment	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	uses SystemDrive for default locations	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	keeps a POSIX sh on PATH as a fallback	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	preserves script quoting and passes an install path as one argv entry	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	explains how to recover when Git Bash and sh are missing	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	does not probe relative environment paths from a workspace	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	keeps %s shell execution unchanged	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	keeps remote execution unchanged even on a Windows host with no shell	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-shell.test.ts	runs a Git-only script in a plain shell off Windows, a login one there	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	excludes an in-worktree Git directory %s without excluding neighboring files	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	refuses shared or ambiguous repository modes without changing objects, permissions, or staging	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	uses effective shared-repository configuration from included files	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	permits default and explicit non-shared repository modes	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	repeated unreadable captures leave no objects or packs and preserve staging	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	caps actual file and aggregate bytes including tracked modifications	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	refuses applicable filters without executing them, but permits unused filter config	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	captures raw CRLF bytes and executable files with shell-special names	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	refuses symlinks and control-character paths rather than omitting them	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	pins files without dereferencing a raced final symlink	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	does not publish a file that grows after enumeration	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	a raced ancestor symlink cannot redirect capture	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	captures submodules through staging, deinitialization, and index-only removal	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	preserves absent sparse-checkout entries with a %s index	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	captures current gitlinks and their deletion	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	an unsignaled SSH transport failure may finish with complete deduplicated objects	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	cleans only its quarantine on failure after object creation	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	interrupted publication leaves only complete objects without missing tree children	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	refuses an existing ownership directory and permits explicit recovery after quiescence	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	an expired capture cannot begin publication	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-snapshot.test.ts	actual timeout during ${phase} retains ownership and blocks retries	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-shell.test.ts	finds Git Bash when only Git's cmd directory is on PATH	rust-unit:roamgate-git:shell::tests::finds_git_bash_when_only_git_s_cmd_directory_is_on_path	git runner and parsers
+server/src/workspace/git-shell.test.ts	finds portable Git from %s without relying on standard locations	rust-unit:roamgate-git:shell::tests::finds_portable_git_from_s_without_relying_on_standard_locations	git runner and parsers
+server/src/workspace/git-shell.test.ts	prefers the Git installation on PATH over a different default install	rust-unit:roamgate-git:shell::tests::prefers_the_git_installation_on_path_over_a_different_default_install	git runner and parsers
+server/src/workspace/git-shell.test.ts	falls back to Git's usr/bin Bash when the wrapper is absent	rust-unit:roamgate-git:shell::tests::falls_back_to_git_s_usr_bin_bash_when_the_wrapper_is_absent	git runner and parsers
+server/src/workspace/git-shell.test.ts	finds installations through %s without Git or sh on PATH	rust-unit:roamgate-git:shell::tests::finds_installations_through_s_without_git_or_sh_on_path	git runner and parsers
+server/src/workspace/git-shell.test.ts	finds the default installation with an empty environment	rust-unit:roamgate-git:shell::tests::finds_the_default_installation_with_an_empty_environment	git runner and parsers
+server/src/workspace/git-shell.test.ts	uses SystemDrive for default locations	rust-unit:roamgate-git:shell::tests::uses_systemdrive_for_default_locations	git runner and parsers
+server/src/workspace/git-shell.test.ts	keeps a POSIX sh on PATH as a fallback	rust-unit:roamgate-git:shell::tests::keeps_a_posix_sh_on_path_as_a_fallback	git runner and parsers
+server/src/workspace/git-shell.test.ts	preserves script quoting and passes an install path as one argv entry	rust-unit:roamgate-git:shell::tests::preserves_script_quoting_and_passes_an_install_path_as_one_argv_entry	git runner and parsers
+server/src/workspace/git-shell.test.ts	explains how to recover when Git Bash and sh are missing	rust-unit:roamgate-git:shell::tests::explains_how_to_recover_when_git_bash_and_sh_are_missing	git runner and parsers
+server/src/workspace/git-shell.test.ts	does not probe relative environment paths from a workspace	rust-unit:roamgate-git:shell::tests::does_not_probe_relative_environment_paths_from_a_workspace	git runner and parsers
+server/src/workspace/git-shell.test.ts	keeps %s shell execution unchanged	rust-unit:roamgate-git:shell::tests::keeps_s_shell_execution_unchanged	git runner and parsers
+server/src/workspace/git-shell.test.ts	keeps remote execution unchanged even on a Windows host with no shell	rust-unit:roamgate-git:shell::tests::keeps_remote_execution_unchanged_even_on_a_windows_host_with_no_shell	git runner and parsers
+server/src/workspace/git-shell.test.ts	runs a Git-only script in a plain shell off Windows, a login one there	rust-unit:roamgate-git:shell::tests::runs_a_git_only_script_in_a_plain_shell_off_windows_a_login_one_there	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	excludes an in-worktree Git directory %s without excluding neighboring files	rust-unit:roamgate-git:snapshot::tests::excludes_an_in_worktree_git_directory_s_without_excluding_neighboring_files	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	refuses shared or ambiguous repository modes without changing objects, permissions, or staging	rust-unit:roamgate-git:snapshot::tests::refuses_shared_or_ambiguous_repository_modes_without_changing_objects_permissions_or_staging	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	uses effective shared-repository configuration from included files	rust-unit:roamgate-git:snapshot::tests::uses_effective_shared_repository_configuration_from_included_files	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	permits default and explicit non-shared repository modes	rust-unit:roamgate-git:snapshot::tests::permits_default_and_explicit_non_shared_repository_modes	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	repeated unreadable captures leave no objects or packs and preserve staging	rust-unit:roamgate-git:snapshot::tests::repeated_unreadable_captures_leave_no_objects_or_packs_and_preserve_staging	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	caps actual file and aggregate bytes including tracked modifications	rust-unit:roamgate-git:snapshot::tests::caps_actual_file_and_aggregate_bytes_including_tracked_modifications	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	refuses applicable filters without executing them, but permits unused filter config	rust-unit:roamgate-git:snapshot::tests::refuses_applicable_filters_without_executing_them_but_permits_unused_filter_config	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	captures raw CRLF bytes and executable files with shell-special names	rust-unit:roamgate-git:snapshot::tests::captures_raw_crlf_bytes_and_executable_files_with_shell_special_names	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	refuses symlinks and control-character paths rather than omitting them	rust-unit:roamgate-git:snapshot::tests::refuses_symlinks_and_control_character_paths_rather_than_omitting_them	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	pins files without dereferencing a raced final symlink	rust-unit:roamgate-git:snapshot::tests::pins_files_without_dereferencing_a_raced_final_symlink	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	does not publish a file that grows after enumeration	rust-unit:roamgate-git:snapshot::tests::does_not_publish_a_file_that_grows_after_enumeration	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	a raced ancestor symlink cannot redirect capture	rust-unit:roamgate-git:snapshot::tests::a_raced_ancestor_symlink_cannot_redirect_capture	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	captures submodules through staging, deinitialization, and index-only removal	rust-unit:roamgate-git:snapshot::tests::captures_submodules_through_staging_deinitialization_and_index_only_removal	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	preserves absent sparse-checkout entries with a %s index	rust-unit:roamgate-git:snapshot::tests::preserves_absent_sparse_checkout_entries_with_a_s_index	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	captures current gitlinks and their deletion	rust-unit:roamgate-git:snapshot::tests::captures_current_gitlinks_and_their_deletion	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	an unsignaled SSH transport failure may finish with complete deduplicated objects	rust-unit:roamgate-git:snapshot::tests::an_unsignaled_ssh_transport_failure_may_finish_with_complete_deduplicated_objects	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	cleans only its quarantine on failure after object creation	rust-unit:roamgate-git:snapshot::tests::cleans_only_its_quarantine_on_failure_after_object_creation	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	interrupted publication leaves only complete objects without missing tree children	rust-unit:roamgate-git:snapshot::tests::interrupted_publication_leaves_only_complete_objects_without_missing_tree_children	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	refuses an existing ownership directory and permits explicit recovery after quiescence	rust-unit:roamgate-git:snapshot::tests::refuses_an_existing_ownership_directory_and_permits_explicit_recovery_after_quiescence	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	an expired capture cannot begin publication	rust-unit:roamgate-git:snapshot::tests::an_expired_capture_cannot_begin_publication	git runner and parsers
+server/src/workspace/git-snapshot.test.ts	actual timeout during ${phase} retains ownership and blocks retries	rust-unit:roamgate-git:snapshot::tests::actual_timeout_during_phase_retains_ownership_and_blocks_retries	git runner and parsers
 server/src/workspace/html-preview.test.ts	renders bounded UTF-8 HTML with exact policy and leaves ordinary downloads intact	rust-unit:roamgate-workspace	files, previews, uploads, last steps
 server/src/workspace/html-preview.test.ts	rejects binary files, directories, missing files and symlink escapes	rust-unit:roamgate-workspace	files, previews, uploads, last steps
 server/src/workspace/html-preview.test.ts	inlines relative CSS imports, images and fonts without reading external or executable resources	rust-unit:roamgate-workspace	files, previews, uploads, last steps
@@ -4303,43 +4304,43 @@ server/src/workspace/remote-files.test.ts	parses download, upload, and delete re
 server/src/workspace/remote-files.test.ts	rejects malformed remote protocol responses	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
 server/src/workspace/remote-files.test.ts	remote image previews reject oversized files	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
 server/src/workspace/remote-files.test.ts	parses a remote stat, and refuses anything else	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
-server/src/workspace/review-files.test.ts	a range's summary lists each file with its status and counts, between its merge base and head	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-files.test.ts	a summary's files read a few at a time are the whole patch's files	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-files.test.ts	a commit's summary is against its first parent, a root commit's against the empty tree	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-files.test.ts	a compare's summary is tree against tree; a step's between its snapshots	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-files.test.ts	a range whose base is gone says so as the whole patch does	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-files.test.ts	each file's patch is cut at the limit on a whole hunk and marked; the others are whole	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-files.test.ts	the files script refuses names that are not revisions, paths out of the checkout and too many files	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	a range reviews what the head adds since the merge base	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	comparing two versions of a rewritten branch shows only what changed	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	the working tree includes untracked files	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	an unknown revision is reported	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	a removed checkout is reported as such, not as the shell's error	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	over SSH, a removed checkout and other failures are told apart	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	the repository root is found from a subdirectory	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	an empty or relative checkout is refused, never run in the login directory	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	a cut patch drops its partial last file	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	a single file cut at the size limit keeps its whole lines, marked cut	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	files are read at a commit or from the working tree, inside the checkout	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	heads of several checkouts in one command	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	a range's commits come oldest first, each with its own diff	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	a reworded or rebased commit keeps its patch id, an amended one not	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	the default branch itself shows its recent history	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	a review from the empty tree covers the whole repository	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	a review of a root commit as ROOT^..ROOT compares it with the empty tree	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	a review's state changes when its code does	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	an agent's session record brings in the repositories it edits	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	subprojects someone works in count, pinned ones and neighbors do not	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	diff.suppressBlankEmpty does not shift line numbers	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	diff.mnemonicPrefix does not change the paths	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	diff.noprefix keeps a real top-level a/ directory	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	non-ASCII names show as they are in a worktree review	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	the working tree read refuses links out of the checkout and FIFOs	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	the shas are found after what a login profile printed	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	heads match their entries despite a login banner	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	a Windows host's repositories are scanned and kept	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	a review's state sees every untracked file, past the first 200	rust-unit:roamgate-git	review read scripts
-server/src/workspace/review-patch.test.ts	one file's patch is read whole: past 200 untracked files and the 4 MiB cut	rust-unit:roamgate-git	review read scripts
+server/src/workspace/review-files.test.ts	a range's summary lists each file with its status and counts, between its merge base and head	rust-unit:roamgate-git:review_files::tests::a_range_s_summary_lists_each_file_with_its_status_and_counts_between_its_merge_base_and_head	review read scripts
+server/src/workspace/review-files.test.ts	a summary's files read a few at a time are the whole patch's files	rust-unit:roamgate-git:review_files::tests::a_summary_s_files_read_a_few_at_a_time_are_the_whole_patch_s_files	review read scripts
+server/src/workspace/review-files.test.ts	a commit's summary is against its first parent, a root commit's against the empty tree	rust-unit:roamgate-git:review_files::tests::a_commit_s_summary_is_against_its_first_parent_a_root_commit_s_against_the_empty_tree	review read scripts
+server/src/workspace/review-files.test.ts	a compare's summary is tree against tree; a step's between its snapshots	rust-unit:roamgate-git:review_files::tests::a_compare_s_summary_is_tree_against_tree_a_step_s_between_its_snapshots	review read scripts
+server/src/workspace/review-files.test.ts	a range whose base is gone says so as the whole patch does	rust-unit:roamgate-git:review_files::tests::a_range_whose_base_is_gone_says_so_as_the_whole_patch_does	review read scripts
+server/src/workspace/review-files.test.ts	each file's patch is cut at the limit on a whole hunk and marked; the others are whole	rust-unit:roamgate-git:review_files::tests::each_file_s_patch_is_cut_at_the_limit_on_a_whole_hunk_and_marked_the_others_are_whole	review read scripts
+server/src/workspace/review-files.test.ts	the files script refuses names that are not revisions, paths out of the checkout and too many files	rust-unit:roamgate-git:review_files::tests::the_files_script_refuses_names_that_are_not_revisions_paths_out_of_the_checkout_and_too_many_files	review read scripts
+server/src/workspace/review-patch.test.ts	a range reviews what the head adds since the merge base	rust-unit:roamgate-git:review_patch::tests::a_range_reviews_what_the_head_adds_since_the_merge_base	review read scripts
+server/src/workspace/review-patch.test.ts	comparing two versions of a rewritten branch shows only what changed	rust-unit:roamgate-git:review_patch::tests::comparing_two_versions_of_a_rewritten_branch_shows_only_what_changed	review read scripts
+server/src/workspace/review-patch.test.ts	the working tree includes untracked files	rust-unit:roamgate-git:review_patch::tests::the_working_tree_includes_untracked_files	review read scripts
+server/src/workspace/review-patch.test.ts	an unknown revision is reported	rust-unit:roamgate-git:review_patch::tests::an_unknown_revision_is_reported	review read scripts
+server/src/workspace/review-patch.test.ts	a removed checkout is reported as such, not as the shell's error	rust-unit:roamgate-git:review_patch::tests::a_removed_checkout_is_reported_as_such_not_as_the_shell_s_error	review read scripts
+server/src/workspace/review-patch.test.ts	over SSH, a removed checkout and other failures are told apart	rust-unit:roamgate-git:review_patch::tests::over_ssh_a_removed_checkout_and_other_failures_are_told_apart	review read scripts
+server/src/workspace/review-patch.test.ts	the repository root is found from a subdirectory	rust-unit:roamgate-git:review_patch::tests::the_repository_root_is_found_from_a_subdirectory	review read scripts
+server/src/workspace/review-patch.test.ts	an empty or relative checkout is refused, never run in the login directory	rust-unit:roamgate-git:review_patch::tests::an_empty_or_relative_checkout_is_refused_never_run_in_the_login_directory	review read scripts
+server/src/workspace/review-patch.test.ts	a cut patch drops its partial last file	rust-unit:roamgate-git:review_patch::tests::a_cut_patch_drops_its_partial_last_file	review read scripts
+server/src/workspace/review-patch.test.ts	a single file cut at the size limit keeps its whole lines, marked cut	rust-unit:roamgate-git:review_patch::tests::a_single_file_cut_at_the_size_limit_keeps_its_whole_lines_marked_cut	review read scripts
+server/src/workspace/review-patch.test.ts	files are read at a commit or from the working tree, inside the checkout	rust-unit:roamgate-git:review_patch::tests::files_are_read_at_a_commit_or_from_the_working_tree_inside_the_checkout	review read scripts
+server/src/workspace/review-patch.test.ts	heads of several checkouts in one command	rust-unit:roamgate-git:review_patch::tests::heads_of_several_checkouts_in_one_command	review read scripts
+server/src/workspace/review-patch.test.ts	a range's commits come oldest first, each with its own diff	rust-unit:roamgate-git:review_patch::tests::a_range_s_commits_come_oldest_first_each_with_its_own_diff	review read scripts
+server/src/workspace/review-patch.test.ts	a reworded or rebased commit keeps its patch id, an amended one not	rust-unit:roamgate-git:review_patch::tests::a_reworded_or_rebased_commit_keeps_its_patch_id_an_amended_one_not	review read scripts
+server/src/workspace/review-patch.test.ts	the default branch itself shows its recent history	rust-unit:roamgate-git:review_patch::tests::the_default_branch_itself_shows_its_recent_history	review read scripts
+server/src/workspace/review-patch.test.ts	a review from the empty tree covers the whole repository	rust-unit:roamgate-git:review_patch::tests::a_review_from_the_empty_tree_covers_the_whole_repository	review read scripts
+server/src/workspace/review-patch.test.ts	a review of a root commit as ROOT^..ROOT compares it with the empty tree	rust-unit:roamgate-git:review_patch::tests::a_review_of_a_root_commit_as_root_root_compares_it_with_the_empty_tree	review read scripts
+server/src/workspace/review-patch.test.ts	a review's state changes when its code does	rust-unit:roamgate-git:review_patch::tests::a_review_s_state_changes_when_its_code_does	review read scripts
+server/src/workspace/review-patch.test.ts	an agent's session record brings in the repositories it edits	rust-unit:roamgate-git:review_patch::tests::an_agent_s_session_record_brings_in_the_repositories_it_edits	review read scripts
+server/src/workspace/review-patch.test.ts	subprojects someone works in count, pinned ones and neighbors do not	rust-unit:roamgate-git:review_patch::tests::subprojects_someone_works_in_count_pinned_ones_and_neighbors_do_not	review read scripts
+server/src/workspace/review-patch.test.ts	diff.suppressBlankEmpty does not shift line numbers	rust-unit:roamgate-git:review_patch::tests::diff_suppressblankempty_does_not_shift_line_numbers	review read scripts
+server/src/workspace/review-patch.test.ts	diff.mnemonicPrefix does not change the paths	rust-unit:roamgate-git:review_patch::tests::diff_mnemonicprefix_does_not_change_the_paths	review read scripts
+server/src/workspace/review-patch.test.ts	diff.noprefix keeps a real top-level a/ directory	rust-unit:roamgate-git:review_patch::tests::diff_noprefix_keeps_a_real_top_level_a_directory	review read scripts
+server/src/workspace/review-patch.test.ts	non-ASCII names show as they are in a worktree review	rust-unit:roamgate-git:review_patch::tests::non_ascii_names_show_as_they_are_in_a_worktree_review	review read scripts
+server/src/workspace/review-patch.test.ts	the working tree read refuses links out of the checkout and FIFOs	rust-unit:roamgate-git:review_patch::tests::the_working_tree_read_refuses_links_out_of_the_checkout_and_fifos	review read scripts
+server/src/workspace/review-patch.test.ts	the shas are found after what a login profile printed	rust-unit:roamgate-git:review_patch::tests::the_shas_are_found_after_what_a_login_profile_printed	review read scripts
+server/src/workspace/review-patch.test.ts	heads match their entries despite a login banner	rust-unit:roamgate-git:review_patch::tests::heads_match_their_entries_despite_a_login_banner	review read scripts
+server/src/workspace/review-patch.test.ts	a Windows host's repositories are scanned and kept	rust-unit:roamgate-git:review_patch::tests::a_windows_host_s_repositories_are_scanned_and_kept	review read scripts
+server/src/workspace/review-patch.test.ts	a review's state sees every untracked file, past the first 200	rust-unit:roamgate-git:review_patch::tests::a_review_s_state_sees_every_untracked_file_past_the_first_200	review read scripts
+server/src/workspace/review-patch.test.ts	one file's patch is read whole: past 200 untracked files and the 4 MiB cut	rust-unit:roamgate-git:review_patch::tests::one_file_s_patch_is_read_whole_past_200_untracked_files_and_the_4_mib_cut	review read scripts
 server/src/workspace/search.test.ts	ignores git grep output settings color=${color} column=${column}	rust-unit:roamgate-workspace	files, previews, uploads, last steps
 server/src/workspace/search.test.ts	searches unloaded checkout files and content while respecting ignores and binary files	scenario:parity/scenarios/workspace/files.yaml	
 server/src/workspace/status.test.ts	with no cold budget, the first list answers at once and pushes the result	scenario:parity/scenarios/workspace/git-status-and-steps.yaml	
