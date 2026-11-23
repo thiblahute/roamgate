@@ -2525,6 +2525,8 @@ const claudeStartHooked = new Set<string>();
 /** A connection's status changed (Bun's manager's, or the core's). */
 function onConnectionStatus(status: ConnectionStatus) {
   if (assistantOnCore()) sendAssistantConnections();
+  // Whether its agents can use the review client may have changed with it.
+  if (reviewsOnCore()) sendReviewAgents();
   for (const listener of connectionStatusListeners)
     try {
       listener();
@@ -5370,6 +5372,7 @@ function setupRemoteReviewAgent(
   }).then(
     () => {
       reviewAgentHosts.add(connectionId);
+      if (reviewsOnCore()) sendReviewAgents();
       logger.debug("review client ready", { connection: connectionId });
     },
     (error) =>
@@ -8514,8 +8517,11 @@ function main() {
   if (process.platform !== "win32") {
     try {
       reviewAgentSockets.add(LOCAL_SOCKET_KEY);
-      if (reviewsOnCore()) sendReviewAgents();
-      else getReviewAgent().installLocal();
+      if (reviewsOnCore()) {
+        // Installed by the core's socket: tell it so in the same state.
+        reviewAgentInstalled = true;
+        sendReviewAgents();
+      } else getReviewAgent().installLocal();
       reviewAgentInstalled = true;
     } catch (error) {
       logger.warn("review agent unavailable", {
