@@ -56,6 +56,10 @@ impl From<LoadError> for ReviewError {
 pub type Load<T> = BoxFut<Result<T, LoadError>>;
 pub type Ask<T> = BoxFut<Result<T, String>>;
 
+///
+/// A read only builds its future: the service learns whether the host has
+/// a read (TS's `if (!loadCommits)`) by calling it and dropping what it
+/// answers unpolled, so nothing may happen before the future is polled.
 #[allow(unused_variables)]
 pub trait ReviewHost: Send + Sync + 'static {
     /// The review's diff, or one commit's; with `paths`, only those files,

@@ -72,10 +72,10 @@ impl ReviewService {
         &self,
         target: &ReviewSession,
     ) -> Result<Vec<ReviewCommit>, LoadError> {
-        let shared = {
+        let (id, shared) = {
             let mut state = self.0.lock();
             match state.listing.get(&target.id) {
-                Some((_, list)) => list.clone(),
+                Some((id, list)) => (*id, list.clone()),
                 None => {
                     let Some(load) = self.0.host.load_commits(target) else {
                         return Ok(Vec::new());
@@ -92,16 +92,24 @@ impl ReviewService {
                     let done = list.clone();
                     tokio::spawn(async move {
                         let _ = done.await;
-                        let mut state = this.0.lock();
-                        if state.listing.get(&key).is_some_and(|(each, _)| *each == id) {
-                            state.listing.remove(&key);
-                        }
+                        this.listing_done(&key, id);
                     });
-                    list
+                    (id, list)
                 }
             }
         };
-        shared.await
+        let list = shared.await;
+        // Gone before whoever waited goes on, as TS's `finally` is: a
+        // listing asked next reads the checkout again.
+        self.listing_done(&target.id, id);
+        list
+    }
+
+    fn listing_done(&self, key: &str, id: u64) {
+        let mut state = self.0.lock();
+        if state.listing.get(key).is_some_and(|(each, _)| *each == id) {
+            state.listing.remove(key);
+        }
     }
 
     /// A review not opened: a scope Changes shows before its first comment.

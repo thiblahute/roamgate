@@ -1410,4 +1410,6 @@ pub(crate) fn sends_by_itself(target: &ReviewSession) -> bool {
 }
 
 #[cfg(test)]
+mod suites;
+#[cfg(test)]
 mod tests;
