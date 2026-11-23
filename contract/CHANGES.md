@@ -6,6 +6,21 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.8
+
+inventory: 858ef95c89ead36eee2dfeab1288e69afcb4fe9363a8f263bd97d5706ba06107
+
+The Pi sidecar (Phase 12, S24; wire/pi-sidecar.md): Ranger's Pi driver
+served over a child's stdin and stdout, for the Rust server at the cut-over
+and for the Bun server when asked. Nothing changes without the variable.
+
+- env: `ROAMGATE_PI_SIDECAR`, the sidecar Ranger runs Pi in; unset, Pi
+  runs in the Bun server as before.
+- exec: `spawn assistant/pi-sidecar-client.ts#defaultSpawnSidecar`, that
+  sidecar, started on the first Pi call and closed after five idle minutes.
+- wire: `wire/pi-sidecar.md`, its JSON-RPC methods both ways, held to
+  `vectors/pi-sidecar.json`.
+
 ## 1.7
 
 inventory: 7a9f4c37bd29ddf5c043740889e556fd1781240a2b911221336c08bed223a3a3
