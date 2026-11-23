@@ -6976,6 +6976,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "futures-util",
+ "indexmap",
  "roamgate-activity",
  "roamgate-agents",
  "roamgate-archive",
@@ -6991,6 +6992,7 @@ dependencies = [
  "roamgate-http",
  "roamgate-mr-reviews",
  "roamgate-notify",
+ "roamgate-review",
  "roamgate-sidecar",
  "roamgate-voice-server",
  "roamgate-work",
@@ -7440,6 +7442,7 @@ dependencies = [
 name = "roamgate-review"
 version = "0.0.0"
 dependencies = [
+ "base64 0.22.1",
  "bytes",
  "fancy-regex 0.17.0",
  "futures-util",
