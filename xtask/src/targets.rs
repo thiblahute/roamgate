@@ -69,6 +69,16 @@ impl Target {
         }
     }
 
+    /// The Pi sidecar's executable in the package, beside `binary`
+    /// (contract/wire/pi-sidecar.md; the Rust server runs it from there).
+    pub fn pi_binary(&self) -> String {
+        if self.os == "win32" {
+            "roamgate-pi.exe".into()
+        } else {
+            "roamgate-pi".into()
+        }
+    }
+
     pub fn package_dir(&self) -> String {
         format!("roamgate-{}", self.platform)
     }

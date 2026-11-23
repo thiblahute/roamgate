@@ -6784,6 +6784,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "roamgate-pi"
+version = "0.0.0"
+dependencies = [
+ "regex",
+ "roamgate-base",
+ "roamgate-protocol",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "roamgate-protocol"
 version = "0.0.0"
 dependencies = [

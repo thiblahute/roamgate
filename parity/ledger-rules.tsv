@@ -10,6 +10,10 @@ server/src/assets/	rust-unit:roamgate-base	the template filler and the embedded 
 server/src/assistant/	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/claude-	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
 server/src/assistant/pi-	internal:Pi runtime	Pi stays a sidecar at cut-over (plan 6.8); tested with it
+server/src/assistant/durable-storage	internal:Pi runtime	the pi-durable SQLite store, opened only by the Pi driver: it runs in the Pi sidecar (decided 2026-11-23)
+server/src/assistant/pi-sidecar	rust-unit:roamgate-pi	the Pi sidecar's wire and process, the Rust client its twin
+server/src/assistant/pi-sidecar-protocol.test.ts	vector:contract/vectors/pi-sidecar.json	the Pi sidecar's wire, read by bun test and roamgate-pi
+server/src/assistant/pi-sidecar-process.test.ts	internal:Pi runtime	the real sidecar and the files it shares with Pi in the Bun server: Pi's code, tested with it
 server/src/bridge/	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/endpoint-	rust-unit:roamgate-herdr	Herdr endpoint generation 1 client
 server/src/bridge/herdr-client	rust-unit:roamgate-herdr	Herdr control client

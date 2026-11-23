@@ -45,7 +45,12 @@ test("the Bun build compiles every target", () => {
   >;
   const compiled = Object.entries(scripts)
     .filter(
-      ([name]) => /^compile:[a-z0-9-]+$/.test(name) && name !== "compile:all",
+      // compile:pi is the Pi sidecar for this machine (cargo xtask builds
+      // it per target for the Rust package).
+      ([name]) =>
+        /^compile:[a-z0-9-]+$/.test(name) &&
+        name !== "compile:all" &&
+        name !== "compile:pi",
     )
     .map(([name, command]) => ({
       platform: name.slice("compile:".length),

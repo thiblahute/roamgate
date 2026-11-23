@@ -17,7 +17,8 @@
 #   check     the CI runner that runs it natively: its --version, and the
 #             update proof for an `update` target
 #   update    `roamgate update` installs it: the updater knows the platform
-#   bun       the Bun compile target of the Bun build, until the cut-over
+#   bun       the Bun compile target of the Bun build until the cut-over,
+#             and of the Pi sidecar roamgate-pi the Rust package ships
 
 [[target]]
 platform = "linux-x64"

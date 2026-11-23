@@ -197,7 +197,8 @@ fn run() -> Result<()> {
             let selected = targets::select(&all, &args.names)?;
             for target in &selected {
                 let binary = compile::build(&build, target)?;
-                package::write_package(&out, target, &binary, &version)?;
+                let pi = compile::build_pi(&root, target)?;
+                package::write_package(&out, target, &binary, &pi, &version)?;
                 verify::verify(&out, target, &version)?;
             }
             for target in &selected {

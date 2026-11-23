@@ -1,10 +1,14 @@
 //! The release archive layout, as scripts/package-release.sh makes it for
 //! the Bun build and `roamgate update` and the installers read it:
 //!
-//!   roamgate-v<version>-<platform>.tar.xz  roamgate-<platform>/{roamgate[.exe], VERSION}
+//!   roamgate-v<version>-<platform>.tar.xz  roamgate-<platform>/{roamgate[.exe], roamgate-pi[.exe], VERSION}
 //!   roamgate-<platform>.tar.xz             the same bytes
 //!   <archive>.sha256                       "<hex>  <archive>\n"
 //!   roamgate-<platform>.update.json        schema 1, one line
+//!
+//! `roamgate-pi` is the Pi sidecar (contract/wire/pi-sidecar.md), which
+//! the Bun build has no need of; the installers and the updater extract
+//! `roamgate` and VERSION by name, so the extra file leaves them as they are.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -67,7 +71,7 @@ fn header(kind: tar::EntryType, mode: u32, size: u64, mtime: u64) -> tar::Header
 }
 
 /// The tar.xz bytes of a package.
-pub fn archive(target: &Target, binary: &[u8], version: &str) -> Result<Vec<u8>> {
+pub fn archive(target: &Target, binary: &[u8], pi: &[u8], version: &str) -> Result<Vec<u8>> {
     let dir = target.package_dir();
     let mtime = mtime();
     let encoder = xz2::write::XzEncoder::new(Vec::new(), 6);
@@ -77,6 +81,8 @@ pub fn archive(target: &Target, binary: &[u8], version: &str) -> Result<Vec<u8>>
     builder.append_data(&mut entry, format!("{dir}/"), std::io::empty())?;
     let mut entry = header(tar::EntryType::Regular, 0o755, binary.len() as u64, mtime);
     builder.append_data(&mut entry, format!("{dir}/{}", target.binary), binary)?;
+    let mut entry = header(tar::EntryType::Regular, 0o755, pi.len() as u64, mtime);
+    builder.append_data(&mut entry, format!("{dir}/{}", target.pi_binary()), pi)?;
     let version = version_file(version, &target.platform);
     let mut entry = header(tar::EntryType::Regular, 0o644, version.len() as u64, mtime);
     builder.append_data(&mut entry, format!("{dir}/VERSION"), version.as_bytes())?;
@@ -118,11 +124,22 @@ fn write(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Writes a target's package into `out`; returns the archive's digest.
-pub fn write_package(out: &Path, target: &Target, binary: &Path, version: &str) -> Result<String> {
+/// Writes a target's package into `out`, with its Pi sidecar `pi`;
+/// returns the archive's digest.
+pub fn write_package(
+    out: &Path,
+    target: &Target,
+    binary: &Path,
+    pi: &Path,
+    version: &str,
+) -> Result<String> {
     let bytes = std::fs::read(binary).with_context(|| binary.display().to_string())?;
     if bytes.is_empty() {
         bail!("{} is empty", binary.display());
+    }
+    let pi_bytes = std::fs::read(pi).with_context(|| pi.display().to_string())?;
+    if pi_bytes.is_empty() {
+        bail!("{} is empty", pi.display());
     }
     std::fs::create_dir_all(out)?;
     // The package directory too, as package-release.sh leaves it.
@@ -131,19 +148,21 @@ pub fn write_package(out: &Path, target: &Target, binary: &Path, version: &str) 
         std::fs::remove_dir_all(&dir)?;
     }
     std::fs::create_dir_all(&dir)?;
-    let installed = dir.join(&target.binary);
-    write(&installed, &bytes)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&installed, std::fs::Permissions::from_mode(0o755))?;
+    for (name, data) in [(&target.binary, &bytes), (&target.pi_binary(), &pi_bytes)] {
+        let installed = dir.join(name);
+        write(&installed, data)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&installed, std::fs::Permissions::from_mode(0o755))?;
+        }
     }
     write(
         &dir.join("VERSION"),
         version_file(version, &target.platform).as_bytes(),
     )?;
 
-    let archive = archive(target, &bytes, version)?;
+    let archive = archive(target, &bytes, &pi_bytes, version)?;
     let digest = sha256_hex(&archive);
     let versioned = target.versioned_archive(version);
     let latest = target.latest_archive();
@@ -215,10 +234,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let binary = dir.path().join("bin");
         std::fs::write(&binary, b"\x7fELF fake").unwrap();
+        let pi = dir.path().join("pi");
+        std::fs::write(&pi, b"\x7fELF pi").unwrap();
         let out = dir.path().join("dist");
         for platform in ["linux-x64", "windows-arm64"] {
             let target = target(platform);
-            let digest = write_package(&out, &target, &binary, "9.8.7").unwrap();
+            let digest = write_package(&out, &target, &binary, &pi, "9.8.7").unwrap();
             for path in package_paths(&out, &target, "9.8.7") {
                 assert!(path.is_file(), "{}", path.display());
             }
@@ -236,13 +257,16 @@ mod tests {
                 [
                     format!("{dir_name}/"),
                     format!("{dir_name}/{}", target.binary),
+                    format!("{dir_name}/{}", target.pi_binary()),
                     format!("{dir_name}/VERSION")
                 ]
             );
             assert_eq!(entries[1].mode, 0o755);
             assert_eq!(entries[1].data, b"\x7fELF fake");
+            assert_eq!(entries[2].mode, 0o755);
+            assert_eq!(entries[2].data, b"\x7fELF pi");
             assert_eq!(
-                entries[2].data,
+                entries[3].data,
                 format!("roamgate 9.8.7 {platform}\n").as_bytes()
             );
         }
@@ -261,8 +285,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let binary = dir.path().join("bin");
         std::fs::write(&binary, b"binary").unwrap();
+        let pi = dir.path().join("pi");
+        std::fs::write(&pi, b"pi").unwrap();
         let target = target("linux-x64");
-        write_package(&dir.path().join("dist"), &target, &binary, "1.0.0").unwrap();
+        write_package(&dir.path().join("dist"), &target, &binary, &pi, "1.0.0").unwrap();
         let extract = dir.path().join("x");
         std::fs::create_dir(&extract).unwrap();
         let status = std::process::Command::new("tar")

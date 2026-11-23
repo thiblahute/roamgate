@@ -97,8 +97,14 @@ pub fn verify(out: &Path, target: &Target, version: &str) -> Result<()> {
         .map(|entry| entry.path.trim_end_matches('/'))
         .collect();
     let binary_path = format!("{dir}/{}", target.binary);
+    let pi_path = format!("{dir}/{}", target.pi_binary());
     let version_path = format!("{dir}/VERSION");
-    let mut expected = vec![dir.as_str(), binary_path.as_str(), version_path.as_str()];
+    let mut expected = vec![
+        dir.as_str(),
+        binary_path.as_str(),
+        pi_path.as_str(),
+        version_path.as_str(),
+    ];
     let mut sorted = names.clone();
     sorted.sort_unstable();
     expected.sort_unstable();
@@ -138,6 +144,20 @@ pub fn verify(out: &Path, target: &Target, version: &str) -> Result<()> {
     if target.triple.ends_with("-musl") {
         ensure!(kind.static_elf, "{binary_path} is not statically linked");
     }
+    // The Pi sidecar: a Bun executable of the same platform (Bun's musl
+    // build links musl's loader, so it is not checked for a static ELF).
+    let pi_entry = entry(&pi_path);
+    ensure!(
+        pi_entry.kind == tar::EntryType::Regular && pi_entry.mode & 0o111 == 0o111,
+        "{pi_path} is not an executable regular file"
+    );
+    let pi_kind = binary::kind(&pi_entry.data)?;
+    ensure!(
+        pi_kind.os == target.os && pi_kind.arch == target.arch,
+        "{pi_path} is a {}-{} binary",
+        pi_kind.os,
+        pi_kind.arch
+    );
     if target.is_host() {
         let dir = out.join(format!(".verify-{}", target.platform));
         std::fs::create_dir_all(&dir)?;
