@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 
 use roamgate_agents::js::{self, Obj};
+use roamgate_base::clock::SharedClock;
 use roamgate_base::log::{LogFields, Logger};
 use roamgate_base::paths::DataContext;
 use roamgate_base::settings::SettingsStore;
@@ -48,7 +49,7 @@ use crate::home::{
     CreateWorktreeFn, MadeWorktree, MrHomes, MrHomesDeps, OpenReviewFn, PlaceWorkspaceFn,
     WorkspaceAt,
 };
-use crate::inbox::{MrInbox, MrInboxDeps, SettingsFn, Upstream, key_of, list};
+use crate::inbox::{MrInbox, MrInboxDeps, SettingsFn, SleepUntilFn, Upstream, key_of, list};
 use crate::inference::{Inference, InferenceSettings};
 use crate::links::{WorkspaceAt as LinkAt, WorkspaceLinker};
 use crate::open::{DefaultConnectionFn, MrOpener, MrOpenerDeps, SaveCloneFn};
@@ -170,6 +171,8 @@ pub struct MrReviewsOptions {
     pub agent_command: Option<AgentCommandFn>,
     /// The board tools' parameter check, said as typebox says it.
     pub first_error: Option<FirstError>,
+    /// The clock the inbox's timers follow (a test clock); None: tokio's.
+    pub clock: Option<SharedClock>,
     pub logger: Logger,
 }
 
@@ -204,6 +207,7 @@ impl MrReviewsOptions {
             effort_review: None,
             agent_command: None,
             first_error: None,
+            clock: None,
             logger: Logger::silent(),
         }
     }
@@ -1834,6 +1838,9 @@ fn build(options: MrReviewsOptions, weak: &Weak<Inner>) -> Inner {
 
     let mut deps = MrInboxDeps::new(options.fetchers.clone(), settings.clone(), store.clone());
     deps.logger = logger.clone();
+    deps.sleep_until = options.clock.clone().map(|clock| {
+        Arc::new(move |deadline: f64| clock.sleep_until(deadline.ceil() as i64)) as SleepUntilFn
+    });
     deps.upstream = Some({
         let weak = weak.clone();
         Arc::new(move |value: &Obj| {
@@ -1865,17 +1872,7 @@ fn build(options: MrReviewsOptions, weak: &Weak<Inner>) -> Inner {
     deps.after_refresh = Some({
         let weak = weak.clone();
         Arc::new(move |items: Vec<Obj>| {
-            let Some(this) = upgrade(&weak) else {
-                return;
-            };
-            {
-                let this = this.clone();
-                spawn(async move {
-                    this.0.upstream.refresh(false).await;
-                    this.rekey_branches().await;
-                    tokio::join!(this.0.efforts.refresh(false), this.0.inference.maybe_run());
-                });
-            }
+            let this = upgrade(&weak)?;
             {
                 let opener = this.0.opener.clone();
                 let items = items.clone();
@@ -1889,6 +1886,31 @@ fn build(options: MrReviewsOptions, weak: &Weak<Inner>) -> Inner {
                 let curation = this.0.curation.clone();
                 spawn(async move { curation.maybe_run(&items, false).await });
             }
+            // The branches read again, then the inference: the refresh ends
+            // once the inference decided whether it runs when nothing
+            // before it reads a checkout, as Bun's ends with its state set.
+            Some(Box::pin(async move {
+                let settings = this.settings().await;
+                let quick = this
+                    .0
+                    .upstream
+                    .quick(&settings, !this.effort_parts(&settings).is_empty());
+                let work = {
+                    let this = this.clone();
+                    async move {
+                        this.0.upstream.refresh(false).await;
+                        this.rekey_branches().await;
+                        let efforts = this.0.efforts.clone();
+                        spawn(async move { efforts.refresh(false).await });
+                        this.0.inference.maybe_run_decided().await;
+                    }
+                };
+                if quick {
+                    work.await;
+                } else {
+                    spawn(work);
+                }
+            }) as BoxFuture<'static, ()>)
         })
     });
     deps.curation = Some({

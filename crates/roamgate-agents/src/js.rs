@@ -595,8 +595,25 @@ pub fn iso(ms: f64) -> String {
     try_iso(ms).unwrap_or_else(|| "Invalid Date".into())
 }
 
-/// The time now, ms since the epoch.
+/// Where [`now_ms`] reads the time: the system's unless set.
+type NowSource = std::sync::Arc<dyn Fn() -> f64 + Send + Sync>;
+static NOW_SOURCE: std::sync::RwLock<Option<NowSource>> = std::sync::RwLock::new(None);
+
+/// Makes [`now_ms`] read `source` (a process following a test clock, as
+/// Bun's `Date.now` does under one); None: the system's time again.
+pub fn set_now_source(source: Option<NowSource>) {
+    *NOW_SOURCE.write().unwrap_or_else(|e| e.into_inner()) = source;
+}
+
+/// The time now, ms since the epoch (`Date.now()`).
 pub fn now_ms() -> f64 {
+    if let Some(source) = NOW_SOURCE
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
+        return source();
+    }
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0.0, |d| d.as_millis() as f64)

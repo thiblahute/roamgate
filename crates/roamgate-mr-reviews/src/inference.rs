@@ -467,6 +467,8 @@ impl Default for InferenceSettings {
 }
 
 type Shared<T> = Arc<dyn Fn() -> T + Send + Sync>;
+/// Dropped once a pass decided whether it runs.
+type Decided = Option<tokio::sync::oneshot::Sender<()>>;
 
 pub struct Inference {
     pub store: Arc<Mutex<MrStore>>,
@@ -694,7 +696,7 @@ impl Inference {
         failure.map_or(Ok(()), Err)
     }
 
-    async fn pass(&self, force: Option<&str>) -> Result<(), String> {
+    async fn pass(&self, force: Option<&str>, decided: Decided) -> Result<(), String> {
         let settings = (self.settings)().await;
         if !settings.inference && force.is_none() {
             self.set_status(status("off", None, None));
@@ -783,6 +785,7 @@ impl Inference {
             automatic.as_ref().map(|a| a as &dyn Fn() -> String),
         );
         self.set_status(status("running", Some(js::iso(now)), None));
+        drop(decided);
         if let Some(on_change) = &self.on_change {
             on_change();
         }
@@ -794,7 +797,7 @@ impl Inference {
         Ok(())
     }
 
-    async fn start(&self, force: Option<&str>) {
+    async fn start(&self, force: Option<&str>, decided: Decided) {
         let guard = match self.running.try_lock() {
             Ok(guard) => guard,
             Err(_) => {
@@ -805,7 +808,7 @@ impl Inference {
                 guard
             }
         };
-        if let Err(error) = self.pass(force).await {
+        if let Err(error) = self.pass(force, decided).await {
             let message = js::head16(&error, 300);
             tracing::warn!(target: "bridge.mr-reviews", error = %message, "own work not inferred");
             self.set_status(status("error", Some(js::iso((self.now)())), Some(message)));
@@ -818,12 +821,24 @@ impl Inference {
 
     /// After a refresh: twice a day over what moved, else meaningful events.
     pub async fn maybe_run(&self) {
-        self.start(None).await;
+        self.start(None, None).await;
+    }
+
+    /// [`Inference::maybe_run`] in the background: resolves once the pass
+    /// decided whether it runs (its state says so), as Bun's state is set
+    /// before anything waits on I/O.
+    pub fn maybe_run_decided(self: &Arc<Self>) -> BoxFuture<'static, ()> {
+        let (decided, told) = tokio::sync::oneshot::channel::<()>();
+        let this = self.clone();
+        tokio::spawn(async move { this.start(None, Some(decided)).await });
+        Box::pin(async move {
+            let _ = told.await;
+        })
     }
 
     /// One row now (`:infer`, reviews_refresh).
     pub async fn infer_row(&self, key: &str) {
-        self.start(Some(key)).await;
+        self.start(Some(key), None).await;
     }
 }
 

@@ -31,6 +31,7 @@ use roamgate_base::paths::DataContext;
 use roamgate_base::settings::Settings;
 use roamgate_forge::complexity::Provider;
 use roamgate_forge::hosts::{discover_forge_hosts, gh_hosts_path, glab_config_path};
+use roamgate_mr_reviews::agent_remote::RemoteDriver;
 use roamgate_mr_reviews::claude::{AgentCommand, AgentCommandFn};
 use roamgate_mr_reviews::connection::{
     BoxFuture as MrFuture, LaunchSpec, MrConnection, ShellResult, SwitchResult,
@@ -73,6 +74,8 @@ struct Slot {
 struct MrReviewsFamily {
     slot: Arc<Mutex<Slot>>,
     host: Arc<HostCache>,
+    /// The reviews agent's turns, run by Bun's Claude Code driver.
+    agent: Mutex<Option<RemoteDriver>>,
 }
 
 /// The connections as Bun last listed them, and the default one.
@@ -361,8 +364,10 @@ struct ReverseSettings {
     cx: FamilyContext,
 }
 
-async fn read_settings() -> Value {
-    let raw = match tokio::fs::read(settings_file(&ProcessEnv)).await {
+/// settings.json now, normalized. Read at once (a small file), as Bun's
+/// cached settings are: the module reads it at every step.
+fn read_settings() -> Value {
+    let raw = match std::fs::read(settings_file(&ProcessEnv)) {
         Ok(bytes) => serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null),
         Err(_) => Value::Null,
     };
@@ -371,13 +376,14 @@ async fn read_settings() -> Value {
 
 impl SettingsFile for ReverseSettings {
     fn read(&self) -> MrFuture<'_, Result<Value, String>> {
-        Box::pin(async { Ok(read_settings().await) })
+        let value = read_settings();
+        Box::pin(async move { Ok(value) })
     }
 
     fn update_mr_reviews(&self, change: MrReviewsChange) -> MrFuture<'_, Result<Obj, String>> {
         Box::pin(async move {
             for _ in 0..WRITE_TRIES {
-                let current = read_settings().await;
+                let current = read_settings();
                 let before = current.get("mr_reviews").and_then(Value::as_object);
                 let next = change(before);
                 let answer = self
@@ -471,7 +477,26 @@ fn discover_hosts() -> Vec<Value> {
         .collect()
 }
 
-fn options(cx: &FamilyContext, host: &Arc<HostCache>) -> MrReviewsOptions {
+/// The reviews agent's driver: its turns asked of Bun
+/// (`mr_reviews.agent_turn`, `mr_reviews.agent_stop`).
+fn remote_driver(cx: &FamilyContext) -> RemoteDriver {
+    let cx = cx.clone();
+    RemoteDriver::new(Arc::new(move |op: &'static str, args: Value| {
+        let cx = cx.clone();
+        Box::pin(async move {
+            let target = if op == "turn" {
+                "mr_reviews.agent_turn"
+            } else {
+                "mr_reviews.agent_stop"
+            };
+            cx.reverse(target, args)
+                .await
+                .map_err(|error| error.message)
+        })
+    }))
+}
+
+fn options(cx: &FamilyContext, host: &Arc<HostCache>, agent: &RemoteDriver) -> MrReviewsOptions {
     let context = DataContext::from_env(&ProcessEnv);
     let store = Arc::new(Mutex::new(MrStore::open(
         context.clone(),
@@ -484,6 +509,7 @@ fn options(cx: &FamilyContext, host: &Arc<HostCache>) -> MrReviewsOptions {
         Arc::new(ReverseFetchers { cx: cx.clone() }),
     );
     options.logger = super::limit_resume::scoped_logger(cx, "bridge");
+    options.clock = Some(cx.clock.clone());
     options.discover_hosts = Arc::new(discover_hosts);
     options.connections = {
         let host = host.clone();
@@ -626,6 +652,7 @@ fn options(cx: &FamilyContext, host: &Arc<HostCache>) -> MrReviewsOptions {
         })
     };
     options.agent_command = Some(agent_command);
+    options.agent_driver = Some(Arc::new(agent.clone()));
     options
 }
 
@@ -643,6 +670,7 @@ impl CoreFamily for MrReviewsFamily {
     fn call(&self, cx: &FamilyContext, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
         let reviews = self.reviews();
         let host = self.host.clone();
+        let agent = lock(&self.agent).clone();
         let cx = cx.clone();
         Box::pin(async move {
             // Served by Rust only while it owns the family (a shadow read
@@ -655,6 +683,24 @@ impl CoreFamily for MrReviewsFamily {
                 .starts_with(roamgate_sidecar::family::INTERNAL_PREFIX)
             {
                 roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &call.method);
+            }
+            // What the reviews agent's turn reports, and its tools' calls.
+            match (call.method.as_str(), agent) {
+                ("internal.mr_reviews.agent_event", Some(agent)) => {
+                    agent.event(&call.params);
+                    return Ok(json!({"ok": true}));
+                }
+                ("internal.mr_reviews.agent_tool", Some(agent)) => {
+                    let tool_params = call.params.get("params").cloned().unwrap_or(json!({}));
+                    return Ok(agent
+                        .tool(
+                            &text(&call.params, "turn_id"),
+                            &text(&call.params, "name"),
+                            &tool_params,
+                        )
+                        .await);
+                }
+                _ => {}
             }
             host.refresh(&cx).await;
             let params = call.params.as_object().cloned().unwrap_or_default();
@@ -684,9 +730,11 @@ impl CoreFamily for MrReviewsFamily {
                     tokio::spawn(async move { reviews.tree_changed(&tree).await });
                     Ok(json!({"ok": true}))
                 }
-                method if method.starts_with("bridge.mr_reviews.") => {
-                    reviews.handle(method, &params).await.map_err(channel_error)
-                }
+                // A browser's: its error as Bun's reply says it, the message alone.
+                method if method.starts_with("bridge.mr_reviews.") => reviews
+                    .handle(method, &params)
+                    .await
+                    .map_err(|error| RpcError::new(error.message())),
                 method => Err(RpcError::with_code(
                     format!("unknown method {method}"),
                     "unknown_method",
@@ -705,7 +753,13 @@ impl CoreFamily for MrReviewsFamily {
         if !owned {
             return;
         }
-        let reviews = MrReviews::new(options(cx, &self.host));
+        // The reviews read the time as Bun's Date.now does: the families'
+        // clock (a test clock followed, or the system's).
+        let clock = cx.clock.clone();
+        roamgate_agents::js::set_now_source(Some(Arc::new(move || clock.now() as f64)));
+        let agent = remote_driver(cx);
+        *lock(&self.agent) = Some(agent.clone());
+        let reviews = MrReviews::new(options(cx, &self.host, &agent));
         slot.reviews = Some(reviews.clone());
         drop(slot);
         let cx = cx.clone();

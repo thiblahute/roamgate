@@ -332,6 +332,10 @@ import {
   NotSignedInError,
 } from "./mr-reviews/fetchers";
 import { runClaudeModel } from "./mr-reviews/curation";
+import {
+  type CoreAgentTurn,
+  createCoreAgentTurns,
+} from "./mr-reviews/core-agent";
 import { defaultProfileInferenceModels } from "./mr-reviews/inference";
 import { stableJson } from "./history/format";
 import { isMrReviewsMethod } from "./mr-reviews/rpc";
@@ -1472,6 +1476,10 @@ const coreReverseTargets = {
       models: await models.list().catch(() => []),
     };
   },
+  // The reviews agent's turns: Bun's Claude Code driver, the core's tools.
+  "mr_reviews.agent_turn": async (args: unknown) =>
+    coreAgentTurns().run(args as CoreAgentTurn),
+  "mr_reviews.agent_stop": async () => coreAgentTurns().stop(),
   "mr_reviews.agent_command": async (args: unknown) => {
     const { session_id } = (args ?? {}) as { session_id?: unknown };
     if (typeof session_id !== "string")
@@ -1479,6 +1487,15 @@ const coreReverseTargets = {
     return commandForSession(session_id);
   },
 };
+
+let coreAgent: ReturnType<typeof createCoreAgentTurns> | null = null;
+/** The reviews agent's turns run for the core, made on first use. */
+function coreAgentTurns() {
+  coreAgent ??= createCoreAgentTurns({
+    call: (op, params) => coreFront!.callInternal("mr_reviews", op, params),
+  });
+  return coreAgent;
+}
 
 /** `mr_reviews.connection {connection_id, op, ...}`: a reviews connection's member. */
 async function mrReviewsConnectionOp(

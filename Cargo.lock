@@ -6977,6 +6977,7 @@ dependencies = [
  "base64 0.22.1",
  "futures-util",
  "roamgate-activity",
+ "roamgate-agents",
  "roamgate-archive",
  "roamgate-assistant",
  "roamgate-base",

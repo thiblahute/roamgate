@@ -163,8 +163,10 @@ pub struct MrInboxDeps {
     pub on_change: Option<Hook>,
     /// The inference's state, for the settings.
     pub inference: Option<Arc<dyn Fn() -> Value + Send + Sync>>,
-    /// After each refresh: prefetch, lifecycle, curation.
-    pub after_refresh: Option<Arc<dyn Fn(Vec<Obj>) + Send + Sync>>,
+    /// After each refresh: prefetch, lifecycle, curation. What it gives is
+    /// waited for before the refresh ends (what Bun's hook settles before
+    /// any I/O: the inference's decision).
+    pub after_refresh: Option<AfterRefreshFn>,
     /// Curation's state, shown in the inbox.
     pub curation: Option<Arc<dyn Fn() -> Value + Send + Sync>>,
     /// Branches headed upstream and the requests branches are, as last read.
@@ -175,7 +177,16 @@ pub struct MrInboxDeps {
     pub on_viewer: Option<Hook>,
     /// A scheduled merge became mergeable (section 15): the inference may run.
     pub on_merge_time: Option<Hook>,
+    /// Waits until this time (epoch ms) of the clock `now` reads; None:
+    /// tokio's timer, the system's time.
+    pub sleep_until: Option<SleepUntilFn>,
 }
+
+/// After a refresh, with its requests.
+pub type AfterRefreshFn = Arc<dyn Fn(Vec<Obj>) -> Option<BoxFuture<'static, ()>> + Send + Sync>;
+
+/// Waits until a time, epoch ms.
+pub type SleepUntilFn = Arc<dyn Fn(f64) -> BoxFuture<'static, ()> + Send + Sync>;
 
 impl MrInboxDeps {
     /// The deps with the system time, a silent logger and no hooks.
@@ -198,6 +209,7 @@ impl MrInboxDeps {
             efforts: None,
             on_viewer: None,
             on_merge_time: None,
+            sleep_until: None,
         }
     }
 }
@@ -301,10 +313,15 @@ fn spawn_after(
     let handle = tokio::runtime::Handle::try_current().ok()?;
     let weak: Weak<Inner> = Arc::downgrade(inner);
     // The deadline is taken now, as setTimeout's, not when the task first runs.
-    let deadline =
-        tokio::time::Instant::now() + Duration::from_millis(wait_ms.max(0.0).ceil() as u64);
+    let wait = wait_ms.max(0.0).ceil();
+    let sleep: BoxFuture<'static, ()> = match &inner.deps.sleep_until {
+        Some(sleep_until) => sleep_until(inner.now() + wait),
+        None => Box::pin(tokio::time::sleep_until(
+            tokio::time::Instant::now() + Duration::from_millis(wait as u64),
+        )),
+    };
     let task = handle.spawn(async move {
-        tokio::time::sleep_until(deadline).await;
+        sleep.await;
         if let Some(inner) = weak.upgrade() {
             fire(inner).await;
         }
@@ -1234,8 +1251,10 @@ impl Inner {
         self.changed();
         self.read_drafts(&items).await;
         self.changed();
-        if let Some(after) = &self.deps.after_refresh {
-            after(items);
+        if let Some(after) = &self.deps.after_refresh
+            && let Some(settled) = after(items)
+        {
+            settled.await;
         }
     }
 }

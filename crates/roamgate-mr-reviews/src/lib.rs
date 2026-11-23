@@ -12,6 +12,7 @@
 //! | [`board_tools`] | The Reviews board's tools, for the reviews agent and every agent session | mr-reviews/board-tools.ts, module.ts's `boardTool` |
 //! | [`agent_tools`] | The reviews agent's own tools and its system prompt | mr-reviews/agent-tools.ts |
 //! | [`agent`] | The reviews agent's chat over a driver of Claude Code turns | mr-reviews/agent.ts |
+//! | [`agent_remote`] | The reviews agent's turns run by another process, its tools answered here | (the core's reverse calls) |
 //! | [`tool_catalog`] | The board's and the agent's tools as the tool catalog has them | contract/tools/catalog.json |
 //! | [`agent_search`] | The reviews agent's searches, and requests as the agent names them | mr-reviews/agent-search.ts |
 //! | [`inbox`] | The inbox: refresh, merge, own requests, pins, snapshot | mr-reviews/inbox.ts |
@@ -32,6 +33,7 @@
 //! | [`workspace_tree`] | The Workspaces tree's paths, ancestors and live resolution | shared/workspaceTree.ts (in part) |
 
 pub mod agent;
+pub mod agent_remote;
 pub mod agent_search;
 pub mod agent_tools;
 pub mod board_tools;

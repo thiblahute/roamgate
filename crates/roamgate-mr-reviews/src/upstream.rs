@@ -1163,6 +1163,20 @@ impl UpstreamScanner {
             .collect()
     }
 
+    /// Whether [`UpstreamScanner::refresh`] would read no checkout now:
+    /// read within UPSTREAM_SCAN_MS, or nothing marked and no effort's
+    /// part (`has_parts`) to read.
+    pub fn quick(&self, settings: &Obj, has_parts: bool) -> bool {
+        let empty = |key: &str| {
+            settings
+                .get(key)
+                .and_then(Value::as_array)
+                .is_none_or(|list| list.is_empty())
+        };
+        (self.now)() - self.state().at < UPSTREAM_SCAN_MS
+            || (empty("upstreamGroups") && empty("upstreamWorkspaces") && !has_parts)
+    }
+
     /// Reads them again unless read within UPSTREAM_SCAN_MS (or forced); a
     /// call while a scan runs waits for that scan.
     pub async fn refresh(&self, force: bool) {
