@@ -100,6 +100,24 @@ impl ReviewStorage {
         Ok(Self { db })
     }
 
+    /// A consistent copy of `directory/reviews.sqlite` at `into` (a file
+    /// not there yet), read without writing: what a server that does not
+    /// own the reviews answers a shadow read from. Nothing to copy when
+    /// there is no database yet.
+    pub fn copy(directory: &Path, into: &Path) -> Result<bool, StorageError> {
+        let source = directory.join("reviews.sqlite");
+        if !source.exists() {
+            return Ok(false);
+        }
+        let db = rusqlite::Connection::open_with_flags(
+            &source,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        db.busy_timeout(std::time::Duration::from_millis(5_000))?;
+        db.execute("VACUUM INTO ?1", params![into.to_string_lossy()])?;
+        Ok(true)
+    }
+
     pub fn path(&self) -> &Path {
         self.db.path()
     }
@@ -315,6 +333,27 @@ mod tests {
         let mode = |path: PathBuf| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(dir.path().join("reviews")), 0o700);
         assert_eq!(mode(dir.path().join("reviews/reviews.sqlite")), 0o600);
+    }
+
+    #[test]
+    fn a_copy_is_read_while_the_owner_keeps_its_file_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let owner = open(dir.path());
+        owner.save_session_value(&session("s1", AT)).unwrap();
+        owner.save_thread_value(&thread("t1", "s1", "a")).unwrap();
+        let copy = dir.path().join("copy");
+        std::fs::create_dir_all(&copy).unwrap();
+        assert!(
+            ReviewStorage::copy(&dir.path().join("reviews"), &copy.join("reviews.sqlite")).unwrap()
+        );
+        // The owner writes on; the copy is what was.
+        owner.save_session_value(&session("s2", AT)).unwrap();
+        let read = ReviewStorage::open(&context(dir.path()), &copy).unwrap();
+        assert_eq!(read.load_session_values().unwrap().len(), 1);
+        assert_eq!(read.load_thread_values("s1").unwrap().len(), 1);
+        assert!(
+            !ReviewStorage::copy(&dir.path().join("none"), &copy.join("other.sqlite")).unwrap()
+        );
     }
 
     #[test]

@@ -12,6 +12,8 @@ pub mod list_since;
 pub mod model;
 pub mod parse;
 pub mod prompts;
+pub mod record;
 pub mod rendered_target;
+pub mod rpc;
 pub mod service;
 pub mod storage;

@@ -137,6 +137,36 @@ pub fn review_image_file(
     ))
 }
 
+/// The image `/api/review/image?<query>` serves (serveReviewImage): an
+/// agent's by `path` (`named`: it may change, so not kept), else a pasted
+/// one by `session` and `name`. Its path and content type.
+pub fn image_of_query(directory: &Path, query: &str) -> Option<(PathBuf, &'static str, bool)> {
+    let mut path = None;
+    let mut session = None;
+    let mut name = None;
+    for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+        let slot = match key.as_ref() {
+            "path" => &mut path,
+            "session" => &mut session,
+            "name" => &mut name,
+            _ => continue,
+        };
+        if slot.is_none() {
+            *slot = Some(value.into_owned());
+        }
+    }
+    if let Some(path) = path {
+        let content_type = local_image_file(&path)?;
+        return Some((PathBuf::from(path), content_type, true));
+    }
+    let (file, content_type) = review_image_file(
+        directory,
+        session.as_deref().unwrap_or(""),
+        name.as_deref().unwrap_or(""),
+    )?;
+    Some((file, content_type, false))
+}
+
 /// An image file of this host named by its absolute path in a comment (an
 /// agent's screenshot): its content type, read from its first bytes.
 pub fn local_image_file(path: &str) -> Option<&'static str> {
@@ -203,6 +233,30 @@ mod tests {
             review_image_file(dir.path(), "0123456789abcdef", &name),
             Some((path, "image/png"))
         );
+    }
+
+    #[test]
+    fn the_image_route_serves_a_pasted_one_or_an_agent_s_by_its_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = save_review_image(dir.path(), "0123456789abcdef", "image/png", &PNG).unwrap();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        assert_eq!(
+            image_of_query(dir.path(), &format!("session=0123456789abcdef&name={name}")),
+            Some((path.clone(), "image/png", false))
+        );
+        let named = format!("path={}", path.to_string_lossy().replace('/', "%2F"));
+        assert_eq!(
+            image_of_query(dir.path(), &named),
+            Some((path, "image/png", true))
+        );
+        assert_eq!(
+            image_of_query(
+                dir.path(),
+                "session=0123456789abcdef&name=../../reviews.sqlite"
+            ),
+            None
+        );
+        assert_eq!(image_of_query(dir.path(), "path=/etc/passwd"), None);
     }
 
     #[test]

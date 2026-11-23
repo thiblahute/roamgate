@@ -10,6 +10,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+base64 = "0.22"
 bytes = "1"
 fancy-regex = "0.17"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
