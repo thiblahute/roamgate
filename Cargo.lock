@@ -7570,6 +7570,7 @@ name = "roamgate-workspace"
 version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
+ "futures-util",
  "libc",
  "lightningcss",
  "lol_html",
@@ -7578,6 +7579,9 @@ dependencies = [
  "roamgate-base",
  "roamgate-exec",
  "roamgate-git",
+ "roamgate-protocol",
+ "rustix",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",

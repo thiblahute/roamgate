@@ -15,6 +15,7 @@ testing = []
 
 [dependencies]
 base64 = "0.22"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 lightningcss = { version = "1.0.0-alpha.72", default-features = false, features = ["visitor"] }
 lol_html = "2.9"
 percent-encoding = "2"
@@ -22,14 +23,17 @@ regex = "1"
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-git = { path = "../roamgate-git" }
+serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "process", "rt", "rt-multi-thread", "sync", "time"] }
 url = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+rustix = { version = "1", features = ["fs", "process"] }
 
 [dev-dependencies]
+roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
 tempfile = "3"
 tokio = { version = "1", features = ["full", "test-util"] }
