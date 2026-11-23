@@ -6,6 +6,22 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.24
+
+inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075
+
+Agent history cursors are the transcript's (agent_sessions, S21): either
+side, or a restarted server, answers a browser's cursor the same, so a
+cursor survives a flip and shadow reads compare like with like.
+
+- rpc: `agent_history.get`'s `cursor.revision` is the transcript's size in
+  bytes plus one and `cursor.epoch` a hash of the agent, path and file
+  identity (with the signature once the file was seen rewritten); a delta
+  is answered whenever its base can be read again from the transcript's
+  prefix (append-only formats; Antigravity answers a snapshot unless
+  nothing changed). The schema now lists the `cursor` parameter and the
+  delta's `base_revision`, `upserts`, `removed` and `order`.
+
 ## 1.23
 
 inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075
