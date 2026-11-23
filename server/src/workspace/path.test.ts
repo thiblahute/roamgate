@@ -24,7 +24,11 @@ for (const remote of [false, true]) {
           (argv, timeout) => {
             expect(argv[0]).toBe("ssh");
             expect(argv.at(-2)).toBe("remote-host");
-            return run(["bash", "-c", argv.at(-1)!], timeout, { cwd: root });
+            // The remote's home is this run's (scripts/test-home.ts).
+            return run(["bash", "-c", argv.at(-1)!], timeout, {
+              cwd: root,
+              env: process.env,
+            });
           },
         )
       : null;

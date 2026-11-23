@@ -41,6 +41,12 @@ The pre-commit hook runs lint and `bun run typecheck:bun` (Bun's native
 repeating it manually; without the hook, run both yourself. Never bypass it. Run
 formatting and related tests separately.
 
+Every `bun test` run starts in a temporary home (`scripts/test-home.ts`,
+preloaded by `bunfig.toml`): `os.homedir()` and `HOME` point there, so a
+store a test did not point elsewhere, or work a timed-out test left running
+after its file restored the environment, never reaches your own Roamgate
+data. Run tests from the repository root, where `bunfig.toml` is.
+
 PR CI runs format, lint, types, the site build, and the full `test:quick` suite.
 Releases run `bun run precommit` and must package and inspect every platform
 archive and checksum; see [builds](docs/DEPLOYMENT.md#build-a-standalone-executable)

@@ -1,3 +1,5 @@
 [test]
 # The Claude mod's own tests run under `claude plugin test`.
 pathIgnorePatterns = ["server/claude-mod/**"]
+# Every run gets a temporary home: no test reaches the user's data.
+preload = ["./scripts/test-home.ts"]
