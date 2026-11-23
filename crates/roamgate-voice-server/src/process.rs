@@ -187,3 +187,6 @@ fn renice(pid: u32, nice: i32, errors: &ErrorSink) {
 
 #[cfg(not(unix))]
 fn renice(_pid: u32, _nice: i32, _errors: &ErrorSink) {}
+
+#[cfg(test)]
+mod tests;
