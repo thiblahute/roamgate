@@ -104,3 +104,6 @@ roamgate-mr-reviews	server/src/mr-reviews/worktree.test.ts	S20
 roamgate-workspace	server/src/workspace/	S17
 roamgate-workspace	server/src/worktree/	S17
 roamgate-workspace	server/src/config/workspace-tree	S17
+roamgate-voice-server	server/src/voice/	S22
+roamgate-voice-server	server/src/http/voice	S22
+roamgate-voice-server	server/src/http/call-handoff	S22

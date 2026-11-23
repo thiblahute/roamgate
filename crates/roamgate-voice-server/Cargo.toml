@@ -1,0 +1,27 @@
+[package]
+name = "roamgate-voice-server"
+version = "0.0.0"
+description = "Roamgate's voice server (Rust migration plan, section 6.2): the helper supervisor, voice.json, speakers and profiles, the HTTP and socket surface, call signalling and handoff, setup, hardware, downloads, low-GPU and the voice library, then the companion layer"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+hex = "0.4"
+indexmap = { version = "2", features = ["serde"] }
+rand = "0.9"
+regex = "1"
+roamgate-agents = { path = "../roamgate-agents" }
+roamgate-base = { path = "../roamgate-base" }
+roamgate-protocol = { path = "../roamgate-protocol" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["rt", "sync", "macros", "process", "io-util", "time", "fs"] }
+
+[dev-dependencies]
+roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
+tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }

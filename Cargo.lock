@@ -7223,6 +7223,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "roamgate-voice-server"
+version = "0.0.0"
+dependencies = [
+ "hex",
+ "indexmap",
+ "rand 0.9.5",
+ "regex",
+ "roamgate-agents",
+ "roamgate-base",
+ "roamgate-protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "roamgate-workspace"
 version = "0.0.0"
 dependencies = [
