@@ -676,6 +676,14 @@ impl CoreFamily for MrReviewsFamily {
             // Served by Rust only while it owns the family (a shadow read
             // while Bun does is refused: an inbox read may ask the forges).
             let Some(reviews) = reviews.filter(|_| cx.owners.check_write(FAMILY).is_ok()) else {
+                // A shadow read is declined, not answered with a refusal the
+                // front would log as a difference.
+                if call.shadow {
+                    return Err(RpcError::with_code(
+                        "the core does not own the reviews",
+                        "shadow_declined",
+                    ));
+                }
                 return Err(not_owner());
             };
             if call

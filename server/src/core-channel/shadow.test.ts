@@ -157,6 +157,22 @@ describe("shadow reads", () => {
     s.timers.advance(10_000);
     expect(await cancelled).toBe("done");
     expect(s.lines().at(-1)?.error).toBe("no answer within 10 s, abandoned");
+    // A read the other side declines (it does not own what the read
+    // needs) is skipped, not logged.
+    s.timers.advance(5000);
+    const lines = s.lines().length;
+    expect(
+      await s.instance.offer({
+        ...request("g", 1, 1),
+        run: () =>
+          Promise.reject(
+            Object.assign(new Error("the core does not own the reviews"), {
+              code: "shadow_declined",
+            }),
+          ),
+      }),
+    ).toBe("skipped");
+    expect(s.lines().length).toBe(lines);
     const big = "x".repeat(256 * 1024 + 1);
     expect(await s.instance.offer(request("f", big, big))).toBe("skipped");
     s.done();

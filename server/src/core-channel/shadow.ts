@@ -10,6 +10,9 @@ import { REAL_TIMERS, type Timers } from "./channel";
 import type { ShadowSettings } from "./owners";
 import { type Side, shadowDiff } from "./protocol";
 
+/** The error code of a shadow read the other side declines to answer. */
+export const SHADOW_DECLINED = "shadow_declined";
+
 export const SHADOW_FILE = "shadow.jsonl";
 /** At most one shadow per method this often. */
 export const SHADOW_INTERVAL_MS = 5000;
@@ -96,6 +99,14 @@ export class ShadowSampler {
           ),
         ]);
       } catch (error) {
+        // The other side cannot answer this read while it does not own
+        // something the read needs (the code `shadow_declined`): no
+        // comparison, nothing to log.
+        if (
+          !controller.signal.aborted &&
+          (error as { code?: unknown }).code === SHADOW_DECLINED
+        )
+          return "skipped";
         // On the deadline the run's own abort listener (the channel's
         // cancel) rejects first, with "cancelled": say it timed out.
         this.record(request, {

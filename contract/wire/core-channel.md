@@ -675,7 +675,10 @@ never doubled.
 - Sampled: each eligible call is shadowed with probability `shadow.rate`, at
   most once per method every 5 s, at most 2 at a time, only when the
   request's params and the owner's result are under 256 KiB of JSON each.
-  A shadow call that takes more than 10 s is abandoned.
+  A shadow call that takes more than 10 s is abandoned. A side that cannot
+  answer a shadow read while it does not own something the read needs (the
+  MR reviews' inbox while the review family is Bun's) declines it with the
+  error code `shadow_declined`: no comparison, nothing logged.
 - Paused while GameMode reports a game (`gamemoded -s`, asked at most every
   30 s; through `host-spawn` in a toolbox), and when `shadow.enabled` is
   false.
