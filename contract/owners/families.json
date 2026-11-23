@@ -115,14 +115,19 @@
     },
     "workspace": {
       "phase": 6,
-      "rpc": ["file.", "git.", "worktree.", "bridge.workspace_tree."],
-      "http": [
-        "/api/file/delete",
-        "/api/file/download",
-        "/api/file/upload",
-        "/api/history",
-        "/api/history/commit"
+      "note": "the explorer, Changes, worktrees, the Workspaces arrangement and the settings that need git or worktree hooks; its writes of settings.json go through the settings family's writer (the core must own settings). The front tells the core its runtimes and their events (internal.workspace.*), the core reaches Herdr and SSH hosts through the front (herdr.call, workspace.ssh_run). /api/history stays with the history runtime, the front's",
+      "rpc": [
+        "file.",
+        "git.",
+        "worktree.",
+        "bridge.workspace_tree.",
+        "settings.workspace_auto_sync.",
+        "settings.worktree_directory.get",
+        "settings.worktree_hooks.get",
+        "settings.worktree_command.update",
+        "settings.update_repo"
       ],
+      "http": ["/api/file/delete", "/api/file/download", "/api/file/upload"],
       "files": [],
       "shadow": [
         "file.list",
