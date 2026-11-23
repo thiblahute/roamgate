@@ -507,7 +507,13 @@ function pathsIn(
 export function httpRoutes(): { paths: string[]; pairs: string[] } {
   const paths = new Set<string>();
   const pairs = new Set<string>();
-  const [fetch] = functionsNamed(source(INDEX), "fetch", "rawRequestPathname");
+  // The server's request handler: Bun.serve's fetch and the Rust front's
+  // forwarded requests both call it.
+  const [fetch] = functionsNamed(
+    source(INDEX),
+    "handleFetch",
+    "rawRequestPathname",
+  );
   const prefixes = pathsIn([fetch!], paths, pairs);
   for (const prefix of prefixes) {
     const delegate = HTTP_PREFIX_DELEGATES[prefix];

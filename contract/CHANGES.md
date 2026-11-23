@@ -6,6 +6,19 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.17
+
+inventory: 31a27c547dd692d57fa719181b21e2cd034d673e75b9c8e7341e7b44be734694
+
+Stage 2 of the core channel (Phase 7, S18; wire/core-channel.md, Stage 2:
+the Rust front): the Rust front holds the port and runs the Bun server as
+its portless core. The routes, methods and pushes are unchanged: the
+inventory reads the server's request handler, now `handleFetch` (Bun.serve's
+`fetch` and the front's forwarded requests both call it).
+
+- env: `ROAMGATE_CORE_CHANNEL` and `ROAMGATE_CORE_TOKEN`, set by the Rust
+  front for its Bun core (front).
+
 ## 1.16
 
 inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b
