@@ -7251,6 +7251,7 @@ dependencies = [
  "roamgate-agents",
  "roamgate-base",
  "roamgate-protocol",
+ "roamgate-review",
  "rustix",
  "serde",
  "serde_json",
@@ -7258,6 +7259,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-tungstenite",
+ "tokio-util",
  "unicode-normalization",
  "windows-sys 0.61.2",
 ]

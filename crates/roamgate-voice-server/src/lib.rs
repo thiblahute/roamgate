@@ -3,6 +3,7 @@
 //! cli/voice do in the Bun server. The helper itself (voice/helper) is
 //! unchanged: this crate supervises it and speaks its frames.
 
+pub mod companion;
 pub mod config;
 pub mod download;
 pub mod hardware;

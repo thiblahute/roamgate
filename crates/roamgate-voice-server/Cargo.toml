@@ -20,12 +20,14 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-protocol = { path = "../roamgate-protocol" }
+roamgate-review = { path = "../roamgate-review" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 unicode-normalization = "0.1"
 tokio = { version = "1", features = ["rt", "sync", "macros", "process", "io-util", "time", "fs"] }
 tokio-tungstenite = "0.28"
+tokio-util = "0.7"
 tempfile = { version = "3", optional = true }
 
 [features]
