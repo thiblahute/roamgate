@@ -11,12 +11,16 @@ workspace = true
 
 [dependencies]
 fancy-regex = "0.17"
+rand = "0.9"
 regex = "1"
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
+roamgate-exec = { path = "../roamgate-exec" }
 serde_json = { version = "1", features = ["preserve_order"] }
+tracing = "0.1"
 url = "2"
 
 [dev-dependencies]
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
 tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }

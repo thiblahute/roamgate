@@ -6637,12 +6637,16 @@ name = "roamgate-mr-reviews"
 version = "0.0.0"
 dependencies = [
  "fancy-regex 0.17.0",
+ "rand 0.9.5",
  "regex",
  "roamgate-agents",
  "roamgate-base",
+ "roamgate-exec",
  "roamgate-protocol",
  "serde_json",
  "tempfile",
+ "tokio",
+ "tracing",
  "url",
 ]
 

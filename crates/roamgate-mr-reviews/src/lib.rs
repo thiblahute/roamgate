@@ -8,6 +8,8 @@
 //! |---|---|---|
 //! | [`shared`] | Order, search filter, merge bots and scheduled merges, keys and unread marks | shared/mrReviews*.ts |
 
+pub mod connection;
+pub mod efforts;
 pub mod forge_ref;
 pub mod fuzzy;
 pub mod lanes;
