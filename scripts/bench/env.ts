@@ -317,6 +317,10 @@ export async function createEnv(options: EnvOptions = {}): Promise<BenchEnv> {
       // A HOME of its own, a fake ssh: its SSH hosts are fakes. (Bun's
       // guard reads that HOME as the account's; the Rust core's does not.)
       ROAMGATE_ALLOW_SSH: "1",
+      // The Rust front's Bun server (BENCH_SERVER_CMD="<roamgate> front").
+      ...(process.env.ROAMGATE_SIDECAR_BIN
+        ? { ROAMGATE_SIDECAR_BIN: process.env.ROAMGATE_SIDECAR_BIN }
+        : {}),
     },
     herdrSockets: {
       control: join(root, "herdr/herdr.sock"),
