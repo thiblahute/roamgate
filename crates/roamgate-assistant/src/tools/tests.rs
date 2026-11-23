@@ -1119,8 +1119,7 @@ async fn ranger_answers_a_chat_thread_with_its_own_tool_only_when_the_turn_has_o
     assert!(ranger_system_prompt(false).contains("chat_thread_reply"));
 }
 
-/// Every Ranger schema uses only what [`schema::check`] reads, and a turn
-/// with every handler lists the catalog's tools in its order, automatic
+/// A turn with every handler lists the catalog's tools in its order, automatic
 /// descriptions where the catalog has them.
 #[test]
 fn the_catalog_tables_are_the_turn_tools() {
@@ -1140,11 +1139,6 @@ fn the_catalog_tables_are_the_turn_tools() {
     for (table, automatic) in [("ranger", false), ("ranger-automatic", true)] {
         let tools = ranger_tools(&handlers, automatic);
         for entry in catalog["tables"][table]["tools"].as_array().unwrap() {
-            assert!(
-                schema::supported(&entry["input_schema"]),
-                "{}",
-                entry["name"]
-            );
             let tool = tools.iter().find(|t| t.name == entry["name"]).unwrap();
             assert_eq!(tool.description, entry["description"].as_str().unwrap());
             assert_eq!(tool.parameters, entry["input_schema"]);

@@ -11,7 +11,6 @@ pub mod errors;
 pub mod pi_driver;
 pub mod ranger_driver;
 pub mod saved;
-pub mod schema;
 pub mod service;
 pub mod task_schedule;
 pub mod task_storage;

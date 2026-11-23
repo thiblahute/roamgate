@@ -12,7 +12,6 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 
 use crate::errors::{AssistantError, AssistantResult};
-use crate::schema;
 
 pub const ASSISTANT_DEFAULT_TERMINAL_LINES: u64 = 120;
 pub const ASSISTANT_MAX_TERMINAL_LINES: u64 = 1000;
@@ -263,9 +262,7 @@ struct Catalog {
 }
 
 static CATALOG: LazyLock<Catalog> = LazyLock::new(|| {
-    let catalog: Value =
-        serde_json::from_str(include_str!("../../../contract/tools/catalog.json")).unwrap();
-    let tables = &catalog["tables"];
+    let tables = &roamgate_claude::catalog().tables;
     let manual = tables["ranger"]["tools"].as_array().unwrap();
     let manual = TOOLS
         .iter()
@@ -327,7 +324,7 @@ pub async fn call_tool(
         )));
     };
     let invalid = || AssistantError::user(format!("Invalid {} tool parameters.", family.noun()));
-    if !schema::check(&tool.parameters, &params) {
+    if !roamgate_claude::errors(&tool.parameters, &params).is_empty() {
         return Err(invalid());
     }
     let blank = |key: &str| {
