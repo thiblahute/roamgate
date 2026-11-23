@@ -19,15 +19,22 @@ http = "1"
 lol_html = "2"
 rand = "0.9"
 roamgate-base = { path = "../roamgate-base" }
-roamgate-connections = { path = "../roamgate-connections" }
+roamgate-exec = { path = "../roamgate-exec" }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 subtle = "2"
-tokio = { version = "1", features = ["fs", "sync"] }
+tempfile = "3"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["fs", "rt", "sync", "time"] }
+unicode-width = "0.2"
+roamgate-connections = { path = "../roamgate-connections" }
 tracing = "0.1"
 url = "2"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process"] }
+
 [dev-dependencies]
-tempfile = "3"
+roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
 tokio = { version = "1", features = ["full", "test-util"] }
