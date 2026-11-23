@@ -100,7 +100,8 @@ pub fn js_to_number(value: Option<&Value>) -> f64 {
     }
 }
 
-fn js_string_to_number(text: &str) -> f64 {
+/// `Number(text)`.
+pub fn js_string_to_number(text: &str) -> f64 {
     let text = js_trim(text);
     if text.is_empty() {
         return 0.0;

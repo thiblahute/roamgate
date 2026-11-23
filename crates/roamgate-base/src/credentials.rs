@@ -23,3 +23,35 @@ pub fn assert_valid_auth_pin(pin: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// `withLoginToken` (config/server-config.ts): the browser URL that logs in
+/// with the generated token (`searchParams.set("token", ...)`).
+pub fn with_login_token(address: &str, token: Option<&str>) -> String {
+    let Some(token) = token.filter(|token| !token.is_empty()) else {
+        return address.to_owned();
+    };
+    let Ok(mut url) = url::Url::parse(address) else {
+        return address.to_owned();
+    };
+    let mut pairs: Vec<(String, String)> = url
+        .query_pairs()
+        .map(|(name, value)| (name.into_owned(), value.into_owned()))
+        .collect();
+    match pairs.iter().position(|(name, _)| name == "token") {
+        Some(first) => {
+            pairs[first].1 = token.to_owned();
+            let mut index = 0;
+            pairs.retain(|(name, _)| {
+                index += 1;
+                index - 1 == first || name != "token"
+            });
+        }
+        None => pairs.push(("token".into(), token.into())),
+    }
+    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    for (name, value) in &pairs {
+        serializer.append_pair(name, value);
+    }
+    url.set_query(Some(&serializer.finish()));
+    url.to_string()
+}

@@ -16,7 +16,7 @@ use roamgate_voice_server::low_gpu::{
 use roamgate_voice_server::models::{VOICE_COMPONENTS, default_models_dir, format_bytes};
 use serde_json::{Map, Value, json};
 
-use crate::args::{Parsed, Spec, flag, parse_args, text};
+use crate::args::{Opt, Parsed, parse_command_args};
 use crate::commands::{CliRuntime, Failure, finish, wants_help};
 use crate::output::Printed;
 use crate::push::display_path;
@@ -217,7 +217,12 @@ fn parse_models(words: &[String]) -> Result<Map<String, Value>, Failure> {
     Ok(models)
 }
 
-const PROFILE_OPTIONS: [Spec; 4] = [text("by"), flag("now"), flag("reset"), flag("json")];
+const PROFILE_OPTIONS: [Opt; 4] = [
+    Opt::string("by"),
+    Opt::flag("now"),
+    Opt::flag("reset"),
+    Opt::flag("json"),
+];
 
 /// on, off, status, models for `holder` (None: as --by says).
 fn run_profile(
@@ -229,7 +234,7 @@ fn run_profile(
     let action = args.first().map(String::as_str);
     let rest = args.get(1..).unwrap_or_default();
     let max = if action == Some("models") { 32 } else { 0 };
-    let parsed: Parsed = parse_args(rest, &PROFILE_OPTIONS, max).map_err(Failure::Usage)?;
+    let parsed: Parsed = parse_command_args(rest, &PROFILE_OPTIONS, max)?;
     let by = holder.map(str::to_owned).or_else(|| parsed.text("by"));
     if let Some(by) = &by
         && !is_holder_name(by)

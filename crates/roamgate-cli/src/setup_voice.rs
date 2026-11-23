@@ -21,7 +21,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::BoxFuture;
 use crate::archive::Output;
-use crate::args::{Spec, flag, parse_args, text};
+use crate::args::{Opt, parse_command_args};
 use crate::commands::{CliRuntime, wants_help};
 use crate::push::display_path;
 
@@ -131,6 +131,15 @@ fn terminal_ask() -> Option<Ask> {
 enum Failure {
     Failed(String),
     Usage(String),
+}
+
+impl From<crate::args::Failure> for Failure {
+    fn from(failure: crate::args::Failure) -> Self {
+        match failure {
+            crate::args::Failure::Failed(message) => Failure::Failed(message),
+            crate::args::Failure::Usage(message) => Failure::Usage(message),
+        }
+    }
 }
 
 fn setup_deps(runtime: &CliRuntime, deps: &SetupCommandDeps) -> SetupDeps {
@@ -470,19 +479,19 @@ fn is_word(answer: &str, short: &str, long: &str) -> bool {
     lower == short || lower == long
 }
 
-const SETUP_OPTIONS: [Spec; 12] = [
-    text("tier"),
-    text("speech"),
-    text("reread"),
-    text("tts"),
-    text("stock-voices"),
-    text("speaker"),
-    text("turn"),
-    text("text-turn"),
-    text("helper"),
-    flag("verify"),
-    flag("yes").short('y'),
-    flag("json"),
+const SETUP_OPTIONS: [Opt; 12] = [
+    Opt::string("tier"),
+    Opt::string("speech"),
+    Opt::string("reread"),
+    Opt::string("tts"),
+    Opt::string("stock-voices"),
+    Opt::string("speaker"),
+    Opt::string("turn"),
+    Opt::string("text-turn"),
+    Opt::string("helper"),
+    Opt::flag("verify"),
+    Opt::flag("yes").short('y'),
+    Opt::flag("json"),
 ];
 
 async fn run_setup(
@@ -491,7 +500,7 @@ async fn run_setup(
     args: &[String],
     out: &mut dyn Output,
 ) -> Result<i32, Failure> {
-    let parsed = parse_args(args, &SETUP_OPTIONS, 1).map_err(Failure::Usage)?;
+    let parsed = parse_command_args(args, &SETUP_OPTIONS, 1).map_err(Failure::from)?;
     let action = parsed.positionals.first().map(String::as_str);
     if let Some(action) = action
         && action != "list"

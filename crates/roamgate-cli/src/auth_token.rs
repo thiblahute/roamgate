@@ -21,7 +21,7 @@ fn is_token(text: &str) -> bool {
 }
 
 /// Why a read failed, as Bun's `openSync` words it.
-fn open_error(error: &std::io::Error, path: &Path) -> String {
+pub(crate) fn open_error(error: &std::io::Error, path: &Path) -> String {
     let path = path.display();
     match error.raw_os_error() {
         Some(2) => format!("ENOENT: no such file or directory, open '{path}'"),

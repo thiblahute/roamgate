@@ -530,6 +530,106 @@ pub fn restart_service(
 
 // ---------------------------------------------------------- environment file
 
+/// The environment file `service install` writes when there is none.
+pub const DEFAULT_SERVICE_ENV_FILE: &str = "# roamgate service environment
+# This file is preserved by `roamgate service install`.
+HOST=0.0.0.0
+PORT=8787
+
+# Optional fixed password (8..1024 characters, 15+ recommended). Otherwise a token is generated.
+# ROAMGATE_PASSWORD=replace-with-a-strong-password
+# Optional convenience PIN: 6..12 digits, private networks/VPN only.
+# Keeps password/token login available for recovery.
+# ROAMGATE_PIN=
+
+# Optional native HTTPS. Set both to absolute PEM file paths.
+# ROAMGATE_TLS_CERT=/path/to/cert-chain.pem
+# ROAMGATE_TLS_KEY=/path/to/private-key.pem
+
+# Operational logs default to info. Use debug only while diagnosing an issue.
+# ROAMGATE_LOG_LEVEL=info
+
+# Optional Herdr connection settings.
+# HERDR_SOCKET_PATH=/path/to/herdr.sock
+# HERDR_CLIENT_SOCKET_PATH=/path/to/herdr-client.sock
+# HERDR_SSH_HOST=user@example.com
+";
+
+/// The last `NAME=value` of `name`, without checking the other lines
+/// (readEnvironmentValue).
+pub fn read_environment_value(contents: &str, name: &str) -> Option<String> {
+    let line_re = regex::Regex::new(&format!(
+        r"^\s*(?:export\s+)?{}\s*=\s*(.*?)\s*$",
+        regex::escape(name)
+    ))
+    .ok()?;
+    let mut value = None;
+    for line in contents.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if let Some(captures) = line_re.captures(line) {
+            value = Some(decode_value(&captures[1]));
+        }
+    }
+    value
+}
+
+/// The access settings of a service environment file (ServiceAccess).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceAccess {
+    pub host: String,
+    pub port: u16,
+    pub tls: bool,
+    pub uses_fixed_password: bool,
+}
+
+/// prepareServiceAccess: validates the password, PIN, port and TLS files
+/// of a service environment file.
+pub fn prepare_service_access(
+    config_path: &str,
+    contents: &str,
+    platform: ServicePlatform,
+    home: &str,
+) -> Result<ServiceAccess, String> {
+    let environment = if platform == ServicePlatform::Launchd {
+        Some(resolve_launchd_environment(contents, config_path, home)?)
+    } else {
+        None
+    };
+    let read = |name: &str| match &environment {
+        Some(values) => values.get(name).cloned(),
+        None => read_environment_value(contents, name),
+    };
+    let either = |name: &str| {
+        read(&format!("ROAMGATE_{name}")).or_else(|| read(&format!("HERDR_GUI_{name}")))
+    };
+    let password = either("PASSWORD").unwrap_or_default();
+    if !password.is_empty() {
+        roamgate_base::credentials::assert_valid_auth_password(&password)?;
+    }
+    let pin = either("PIN").unwrap_or_default();
+    if !pin.is_empty() {
+        roamgate_base::credentials::assert_valid_auth_pin(&pin)?;
+    }
+    let host = read("HOST").unwrap_or_else(|| "127.0.0.1".into());
+    let port = read("PORT").map_or(8787.0, |text| {
+        roamgate_base::settings::sections::js_string_to_number(&text)
+    });
+    if port.fract() != 0.0 || !(1.0..=65_535.0).contains(&port) {
+        return Err(format!("invalid PORT in {config_path}"));
+    }
+    let tls = crate::server_config::load_server_tls(
+        either("TLS_CERT").as_deref(),
+        either("TLS_KEY").as_deref(),
+    )?
+    .is_some();
+    Ok(ServiceAccess {
+        host,
+        port: port as u16,
+        tls,
+        uses_fixed_password: !password.is_empty(),
+    })
+}
+
 fn decode_value(raw: &str) -> String {
     let bytes = raw.as_bytes();
     if raw.len() >= 2 && (bytes[0] == b'\'' || bytes[0] == b'"') && bytes[raw.len() - 1] == bytes[0]

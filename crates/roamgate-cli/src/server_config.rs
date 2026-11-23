@@ -18,6 +18,13 @@ use crate::output::Printed;
 /// `roamgate --help`'s server part as printed (contract/cli/help/server.txt).
 const SERVER_OPTIONS_PRINTED: &str = include_str!("../../../contract/cli/help/server.txt");
 
+/// serverOptionsHelp: the server's options, as the top-level help ends.
+pub fn server_options_help() -> &'static str {
+    SERVER_OPTIONS_PRINTED
+        .strip_suffix('\n')
+        .unwrap_or(SERVER_OPTIONS_PRINTED)
+}
+
 /// `roamgate --help` of the server alone (serverHelp), as printed.
 pub fn server_help_printed() -> String {
     format!(
@@ -207,6 +214,29 @@ pub fn resolve_herdr_socket_paths(settings: &HerdrSocketSettings) -> (String, St
     )
 }
 
+/// `getLanIPs`: the IPv4 addresses of the interfaces that are up, not the
+/// loopback, by interface as `os.networkInterfaces` lists them.
+pub fn get_lan_ips() -> Vec<String> {
+    let Ok(interfaces) = if_addrs::get_if_addrs() else {
+        return Vec::new();
+    };
+    let mut names: Vec<&str> = Vec::new();
+    for interface in &interfaces {
+        if !names.contains(&interface.name.as_str()) {
+            names.push(&interface.name);
+        }
+    }
+    names
+        .iter()
+        .flat_map(|name| interfaces.iter().filter(move |i| i.name == *name))
+        .filter(|interface| interface.is_oper_up() && !interface.is_loopback())
+        .filter_map(|interface| match interface.ip() {
+            std::net::IpAddr::V4(ip) => Some(ip.to_string()),
+            std::net::IpAddr::V6(_) => None,
+        })
+        .collect()
+}
+
 pub fn is_any_host(host: &str) -> bool {
     host == "0.0.0.0" || host == "::"
 }
@@ -229,43 +259,6 @@ pub fn resolve_server_log_level(cli: Option<&str>, env: Option<&str>) -> Result<
         .map_err(|error| error.to_string())
 }
 
-/// JavaScript's `Number(text)` for the profile duration.
-fn js_number(text: &str) -> f64 {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return 0.0;
-    }
-    let radix = |digits: &str, radix: u32| {
-        if digits.is_empty() {
-            f64::NAN
-        } else {
-            u64::from_str_radix(digits, radix).map_or(f64::NAN, |value| value as f64)
-        }
-    };
-    let lower = trimmed.to_ascii_lowercase();
-    if let Some(hex) = lower.strip_prefix("0x") {
-        return radix(hex, 16);
-    }
-    if let Some(octal) = lower.strip_prefix("0o") {
-        return radix(octal, 8);
-    }
-    if let Some(binary) = lower.strip_prefix("0b") {
-        return radix(binary, 2);
-    }
-    match trimmed {
-        "Infinity" | "+Infinity" => return f64::INFINITY,
-        "-Infinity" => return f64::NEG_INFINITY,
-        _ => {}
-    }
-    let numeric = trimmed
-        .bytes()
-        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'.' | b'e' | b'E' | b'+' | b'-'));
-    if !numeric {
-        return f64::NAN;
-    }
-    trimmed.parse().unwrap_or(f64::NAN)
-}
-
 /// A CPU profile's capture.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProfileConfig {
@@ -282,7 +275,7 @@ pub fn resolve_server_profile(
     if !enabled {
         return Ok(None);
     }
-    let seconds = js_number(duration.unwrap_or("30"));
+    let seconds = roamgate_base::settings::sections::js_string_to_number(duration.unwrap_or("30"));
     if seconds.fract() != 0.0 || !(1.0..=300.0).contains(&seconds) {
         return Err("--profile-duration must be an integer from 1 to 300 seconds.".into());
     }

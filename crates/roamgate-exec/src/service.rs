@@ -292,9 +292,14 @@ pub mod fake {
     /// The exit code a fake command answers.
     pub type Answer = Box<dyn Fn(&[String]) -> i32 + Send + Sync>;
 
+    /// The exit code and standard output a fake capture answers.
+    pub type CaptureAnswer = Box<dyn Fn(&[String]) -> (i32, String) + Send + Sync>;
+
     pub struct Recorder {
         pub calls: Mutex<Vec<(Vec<String>, bool)>>,
         pub answer: Answer,
+        /// What `capture` answers; without it, the run's code and no output.
+        pub capture: Option<CaptureAnswer>,
     }
 
     impl Recorder {
@@ -302,7 +307,17 @@ pub mod fake {
             Self {
                 calls: Mutex::default(),
                 answer: Box::new(answer),
+                capture: None,
             }
+        }
+
+        /// Captures answer `capture` (recorded as quiet runs).
+        pub fn with_capture(
+            mut self,
+            capture: impl Fn(&[String]) -> (i32, String) + Send + Sync + 'static,
+        ) -> Self {
+            self.capture = Some(Box::new(capture));
+            self
         }
 
         pub fn argvs(&self) -> Vec<Vec<String>> {
@@ -319,6 +334,16 @@ pub mod fake {
         fn run(&self, argv: &[String], quiet: bool) -> i32 {
             self.calls.lock().unwrap().push((argv.to_vec(), quiet));
             (self.answer)(argv)
+        }
+
+        fn capture(&self, argv: &[String]) -> (i32, String) {
+            match &self.capture {
+                Some(capture) => {
+                    self.calls.lock().unwrap().push((argv.to_vec(), true));
+                    capture(argv)
+                }
+                None => (self.run(argv, true), String::new()),
+            }
         }
     }
 }

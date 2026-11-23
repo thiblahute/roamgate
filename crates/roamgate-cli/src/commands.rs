@@ -89,68 +89,7 @@ pub struct Effects {
     pub run: Arc<dyn RunCommand>,
 }
 
-pub(crate) enum Failure {
-    Failed(String),
-    Usage(String),
-}
-
-/// `wantsHelp`.
-pub(crate) fn wants_help(args: &[String]) -> bool {
-    args.first().map(String::as_str) == Some("help")
-        || args.iter().any(|arg| arg == "--help" || arg == "-h")
-}
-
-/// Strict boolean flags and no positionals (parseCommandArgs).
-pub(crate) fn parse_flags(args: &[String], known: &[&str]) -> Result<Vec<String>, Failure> {
-    let mut set = Vec::new();
-    let mut positionals = Vec::new();
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        if arg == "--" {
-            positionals.extend(rest.by_ref().cloned());
-            break;
-        }
-        if let Some(long) = arg.strip_prefix("--") {
-            let (name, inline) = match long.split_once('=') {
-                Some((name, _)) => (name, true),
-                None => (long, false),
-            };
-            if !known.contains(&name) {
-                return Err(Failure::Usage(format!("Unknown option '--{name}'")));
-            }
-            if inline {
-                return Err(Failure::Usage(format!(
-                    "Option '--{name}' does not take an argument"
-                )));
-            }
-            set.push(name.to_owned());
-        } else if let Some(short) = arg.strip_prefix('-').filter(|short| !short.is_empty()) {
-            let letter = short.chars().next().unwrap();
-            return Err(Failure::Usage(format!("Unknown option '-{letter}'")));
-        } else {
-            positionals.push(arg.clone());
-        }
-    }
-    if let Some(first) = positionals.first() {
-        return Err(Failure::Usage(format!("unexpected argument: {first}")));
-    }
-    Ok(set)
-}
-
-pub(crate) fn finish(command: &str, mut printed: Printed, result: Result<i32, Failure>) -> Printed {
-    match result {
-        Ok(code) => printed.exit(code),
-        Err(Failure::Failed(message)) => {
-            printed.error(&format!("roamgate {command}: {message}"));
-            printed.exit(1)
-        }
-        Err(Failure::Usage(message)) => {
-            printed.error(&format!("roamgate {command}: {message}"));
-            printed.error(&format!("Run `roamgate {command} --help` for usage."));
-            printed.exit(2)
-        }
-    }
-}
+pub(crate) use crate::args::{Failure, finish, parse_flags, wants_help};
 
 /// Restarts the managed service only when its definition runs
 /// `executable`.
@@ -569,7 +508,7 @@ mod tests {
             Printed {
                 code: 2,
                 stdout: String::new(),
-                stderr: "roamgate update: Unknown option '--nope'\nRun `roamgate update --help` for usage.\n".into()
+                stderr: "roamgate update: Unknown option '--nope'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- \"--nope\"\nRun `roamgate update --help` for usage.\n".into()
             }
         );
         let json = update(

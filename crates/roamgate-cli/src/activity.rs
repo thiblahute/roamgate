@@ -19,6 +19,7 @@ use roamgate_base::env::roamgate_env;
 use roamgate_base::paths::{DataContext, Platform};
 use serde_json::{Value, json};
 
+use crate::args::{Failure, Opt, Parsed, parse_command_args};
 use crate::commands::CliRuntime;
 use crate::output::Printed;
 use crate::service::read_service_environment;
@@ -58,94 +59,19 @@ everything but status. The log is opened read-only.
     )
 }
 
-enum Failure {
-    Failed(String),
-    Usage(String),
-}
-
-impl Failure {
-    fn message(&self) -> &str {
-        match self {
-            Self::Failed(message) | Self::Usage(message) => message,
-        }
-    }
-}
-
-/// Flags as `util.parseArgs` reads them, strictly: booleans and strings.
-struct Parsed {
-    values: BTreeMap<String, Option<String>>,
-    positionals: Vec<String>,
-}
-
-impl Parsed {
-    fn flag(&self, name: &str) -> bool {
-        self.values.contains_key(name)
-    }
-
-    fn string(&self, name: &str) -> Option<&str> {
-        self.values.get(name).and_then(|v| v.as_deref())
-    }
-}
-
+/// Strict flags: `booleans` and `strings`, at most `max_positionals`.
 fn parse(
     args: &[String],
-    booleans: &[&str],
-    strings: &[&str],
+    booleans: &[&'static str],
+    strings: &[&'static str],
     max_positionals: usize,
 ) -> Result<Parsed, Failure> {
-    let mut values = BTreeMap::new();
-    let mut positionals = Vec::new();
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        if arg == "--" {
-            positionals.extend(rest.by_ref().cloned());
-            break;
-        }
-        if let Some(long) = arg.strip_prefix("--") {
-            let (name, inline) = match long.split_once('=') {
-                Some((name, value)) => (name, Some(value.to_owned())),
-                None => (long, None),
-            };
-            if booleans.contains(&name) {
-                if inline.is_some() {
-                    return Err(Failure::Usage(format!(
-                        "Option '--{name}' does not take an argument"
-                    )));
-                }
-                values.insert(name.to_owned(), None);
-            } else if strings.contains(&name) {
-                let value = match inline {
-                    Some(value) => value,
-                    None => match rest.next() {
-                        Some(value) => value.clone(),
-                        None => {
-                            return Err(Failure::Usage(format!(
-                                "Option '--{name} <value>' argument missing"
-                            )));
-                        }
-                    },
-                };
-                values.insert(name.to_owned(), Some(value));
-            } else {
-                return Err(Failure::Usage(format!("Unknown option '--{name}'")));
-            }
-        } else if let Some(short) = arg.strip_prefix('-').filter(|short| !short.is_empty()) {
-            let letter = short.chars().next().unwrap_or('-');
-            return Err(Failure::Usage(format!("Unknown option '-{letter}'")));
-        } else {
-            positionals.push(arg.clone());
-        }
-    }
-    if positionals.len() > max_positionals {
-        return Err(Failure::Usage(format!(
-            "unexpected argument: {}",
-            positionals[max_positionals]
-        )));
-    }
-    Ok(Parsed {
-        values,
-        positionals,
-    })
+    let options: Vec<Opt> = booleans
+        .iter()
+        .map(|name| Opt::flag(name))
+        .chain(strings.iter().map(|name| Opt::string(name)))
+        .collect();
+    parse_command_args(args, &options, max_positionals)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -408,15 +334,7 @@ impl ActivityCli<'_> {
                     1
                 })
             }
-            Err(Failure::Failed(message)) => {
-                printed.error(&format!("roamgate activity: {message}"));
-                printed.exit(1)
-            }
-            Err(Failure::Usage(message)) => {
-                printed.error(&format!("roamgate activity: {message}"));
-                printed.error("Run `roamgate activity --help` for usage.");
-                printed.exit(2)
-            }
+            Err(failure) => crate::args::finish("activity", printed, Err(failure)),
         }
     }
 

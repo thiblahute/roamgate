@@ -4278,6 +4278,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "if-addrs"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0a05c691e1fae256cf7013d99dad472dc52d5543322761f83ec8d47eab40d2b"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "include_dir"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6946,9 +6956,11 @@ name = "roamgate-cli"
 version = "0.0.0"
 dependencies = [
  "hex",
+ "if-addrs 0.15.0",
  "jiff",
  "rand 0.9.5",
  "regex",
+ "reqwest 0.12.28",
  "roamgate-activity",
  "roamgate-agents",
  "roamgate-archive",
@@ -6974,7 +6986,7 @@ dependencies = [
  "fancy-regex 0.17.0",
  "futures-util",
  "hex",
- "if-addrs",
+ "if-addrs 0.13.4",
  "indexmap",
  "rand 0.9.5",
  "roamgate-base",
@@ -7061,12 +7073,36 @@ dependencies = [
 name = "roamgate-http"
 version = "0.0.0"
 dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "fancy-regex 0.17.0",
+ "futures-util",
+ "hex",
+ "hmac 0.12.1",
+ "http 1.5.0",
+ "lol_html",
+ "rand 0.9.5",
+ "regex",
  "roamgate-base",
  "roamgate-connections",
+ "roamgate-exec",
+ "roamgate-protocol",
+ "roamgate-sidecar",
+ "roamgate-ws",
+ "rustix",
+ "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "subtle",
  "tempfile",
+ "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "tungstenite 0.28.0",
+ "unicode-width 0.2.3",
+ "url",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -9955,6 +9991,12 @@ dependencies = [
  "toml 0.9.12+spec-1.1.0",
  "xz2",
 ]
+
+[[package]]
+name = "xxhash-rust"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40de123dbb523ebcc00d61ec01840ad192578afc378d859f3429caa38308fad5"
 
 [[package]]
 name = "xz2"

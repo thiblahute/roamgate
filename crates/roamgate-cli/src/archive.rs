@@ -32,7 +32,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::BoxFuture;
-use crate::args::{Kind, Parsed, Spec, flag, many, text};
+use crate::args::{Kind, Opt, Parsed};
 use crate::service::{ServiceRuntime, read_service_environment};
 
 /// `roamgate archive --help`, as printed (console.log adds the last
@@ -166,6 +166,15 @@ enum Failure {
     Usage(String),
 }
 
+impl From<crate::args::Failure> for Failure {
+    fn from(failure: crate::args::Failure) -> Self {
+        match failure {
+            crate::args::Failure::Failed(message) => Failure::Failed(message),
+            crate::args::Failure::Usage(message) => Failure::Usage(message),
+        }
+    }
+}
+
 impl From<roamgate_archive::Error> for Failure {
     fn from(error: roamgate_archive::Error) -> Self {
         Failure::Failed(error.message)
@@ -181,22 +190,14 @@ impl From<std::io::Error> for Failure {
 type Outcome = Result<i32, Failure>;
 
 /// node:util parseArgs with the CLI's usage errors.
-fn parse_args(args: &[String], specs: &[Spec], max_positionals: usize) -> Result<Parsed, Failure> {
-    crate::args::parse_args(args, specs, max_positionals).map_err(Failure::Usage)
+fn parse_args(args: &[String], specs: &[Opt], max_positionals: usize) -> Result<Parsed, Failure> {
+    crate::args::parse_command_args(args, specs, max_positionals).map_err(Failure::from)
 }
 
-const COMMON: [Spec; 2] = [text("dir"), flag("json")];
+const COMMON: [Opt; 2] = [Opt::string("dir"), Opt::flag("json")];
 
-fn with_common(extra: &[Spec]) -> Vec<Spec> {
-    COMMON
-        .iter()
-        .chain(extra)
-        .map(|spec| Spec {
-            name: spec.name,
-            kind: spec.kind,
-            short: spec.short,
-        })
-        .collect()
+fn with_common(extra: &[Opt]) -> Vec<Opt> {
+    COMMON.iter().chain(extra).copied().collect()
 }
 
 // ----------------------------------------------------------- helpers
@@ -645,7 +646,7 @@ impl ArchiveCli {
                 Ok(EXIT_OK)
             }
             "rebuild-text" => {
-                let parsed = parse_args(rest, &with_common(&[flag("now")]), 0)?;
+                let parsed = parse_args(rest, &with_common(&[Opt::flag("now")]), 0)?;
                 let archive_dir = self.archive_dir(&settings, parsed.text("dir").as_deref(), out);
                 if !parsed.flag("now") && self.gaming().await {
                     out.error(
@@ -689,7 +690,7 @@ impl ArchiveCli {
                 })
             }
             "fetch-text" => {
-                let parsed = parse_args(rest, &with_common(&[text("remote")]), 0)?;
+                let parsed = parse_args(rest, &with_common(&[Opt::string("remote")]), 0)?;
                 let remote = parsed
                     .text("remote")
                     .or_else(|| settings.remote.clone())
@@ -741,7 +742,7 @@ impl ArchiveCli {
                 self.session(action, rest, &settings, &runtime, out).await
             }
             "health" => {
-                let parsed = parse_args(rest, &with_common(&[flag("check")]), 0)?;
+                let parsed = parse_args(rest, &with_common(&[Opt::flag("check")]), 0)?;
                 let archive_dir = self.archive_dir(&settings, parsed.text("dir").as_deref(), out);
                 let mut lines = Vec::new();
                 let db = open_or_rebuild(
@@ -865,10 +866,10 @@ impl ArchiveCli {
         let parsed = parse_args(
             rest,
             &with_common(&[
-                many("host"),
-                many("agent"),
-                flag("local-only"),
-                flag("push"),
+                Opt::many("host"),
+                Opt::many("agent"),
+                Opt::flag("local-only"),
+                Opt::flag("push"),
             ]),
             0,
         )?;
@@ -986,23 +987,23 @@ impl ArchiveCli {
         let parsed = parse_args(
             rest,
             &with_common(&[
-                text("agent"),
-                text("host"),
-                text("project"),
-                text("role"),
-                text("kind"),
-                text("since"),
-                text("until"),
-                flag("recent"),
-                flag("history"),
-                flag("regex"),
-                flag("tool-output"),
-                Spec {
+                Opt::string("agent"),
+                Opt::string("host"),
+                Opt::string("project"),
+                Opt::string("role"),
+                Opt::string("kind"),
+                Opt::string("since"),
+                Opt::string("until"),
+                Opt::flag("recent"),
+                Opt::flag("history"),
+                Opt::flag("regex"),
+                Opt::flag("tool-output"),
+                Opt {
                     name: "limit",
-                    kind: Kind::Text,
+                    kind: Kind::String,
                     short: Some('n'),
                 },
-                text("remote"),
+                Opt::string("remote"),
             ]),
             200,
         )?;
@@ -1179,13 +1180,13 @@ impl ArchiveCli {
         let parsed = parse_args(
             rest,
             &with_common(&[
-                text("agent"),
-                text("host"),
-                text("file"),
-                text("from-line"),
-                text("limit"),
-                flag("dry-run"),
-                text("remote"),
+                Opt::string("agent"),
+                Opt::string("host"),
+                Opt::string("file"),
+                Opt::string("from-line"),
+                Opt::string("limit"),
+                Opt::flag("dry-run"),
+                Opt::string("remote"),
             ]),
             1,
         )?;
@@ -1543,10 +1544,10 @@ mod tests {
     #[test]
     fn arguments_parse_as_node_parse_args_does() {
         let specs = with_common(&[
-            many("host"),
-            Spec {
+            Opt::many("host"),
+            Opt {
                 name: "limit",
-                kind: Kind::Text,
+                kind: Kind::String,
                 short: Some('n'),
             },
         ]);
