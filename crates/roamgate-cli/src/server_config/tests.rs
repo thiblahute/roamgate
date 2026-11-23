@@ -397,6 +397,113 @@ fn loads_pem_files_and_gives_boringssl_s_reasons() {
     assert_eq!(config.tls, Some(loaded));
 }
 
+/// The TS row's parts roamgate-cli owns: the PEM files load, the flags win
+/// over the environment, the environment alone gives the same pair, a
+/// service file with them gives https login URLs, and a key of another
+/// certificate is refused. Serving HTTPS and WSS with them is the Rust
+/// listener's (Phase 7), not here.
+#[test]
+fn loads_pem_files_honors_cli_precedence_and_serves_trusted_https_and_wss() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = |name: &str| dir.path().join(name).display().to_string();
+    std::fs::write(
+        path("openssl.cnf"),
+        "[req]\ndistinguished_name=dn\nx509_extensions=extensions\n[dn]\n[extensions]\nsubjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=critical,CA:TRUE\n",
+    )
+    .unwrap();
+    let generated = std::process::Command::new("openssl")
+        .args([
+            "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "1",
+        ])
+        .args(["-subj", "/CN=localhost", "-keyout"])
+        .arg(path("key.pem"))
+        .arg("-out")
+        .arg(path("cert.pem"))
+        .arg("-config")
+        .arg(path("openssl.cnf"))
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if !generated {
+        return;
+    }
+    let tls = load_server_tls(Some(&path("cert.pem")), Some(&path("key.pem")))
+        .unwrap()
+        .unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let flags = load(
+        &[
+            "--host",
+            "127.0.0.1",
+            "--tls-cert",
+            &path("cert.pem"),
+            "--tls-key",
+            &path("key.pem"),
+            "--password",
+            "test-password-long",
+        ],
+        &[
+            ("NODE_ENV", "production"),
+            ("ROAMGATE_TLS_CERT", "missing-cert.pem"),
+            ("ROAMGATE_TLS_KEY", "missing-key.pem"),
+        ],
+        home.path(),
+    )
+    .unwrap();
+    assert_eq!(flags.tls.as_ref(), Some(&tls));
+    let environment = load(
+        &["--host", "127.0.0.1", "--password", "test-password-long"],
+        &[
+            ("NODE_ENV", "production"),
+            ("ROAMGATE_TLS_CERT", &path("cert.pem")),
+            ("ROAMGATE_TLS_KEY", &path("key.pem")),
+        ],
+        home.path(),
+    )
+    .unwrap();
+    assert_eq!(environment.tls, Some(tls));
+    // A service file with the pair: its login URLs are https.
+    let contents = format!(
+        "HOST=0.0.0.0\nPORT=8443\nROAMGATE_TLS_CERT={:?}\nROAMGATE_TLS_KEY={:?}\n",
+        path("cert.pem"),
+        path("key.pem")
+    );
+    let access = crate::service::prepare_service_access(
+        "/env",
+        &contents,
+        roamgate_exec::service::ServicePlatform::Systemd,
+        "/home/me",
+    )
+    .unwrap();
+    assert!(access.tls);
+    let urls = crate::service_context::access_urls(
+        &crate::service_context::ServiceAccessInfo {
+            host: access.host,
+            port: access.port,
+            tls: access.tls,
+            password: false,
+            token: Some("t".repeat(64)),
+            token_error: None,
+            token_path: "/x".into(),
+            pin_enabled: false,
+        },
+        || vec!["192.0.2.10".into()],
+    );
+    assert!(urls.local.starts_with("https://localhost:8443/"));
+    assert!(urls.lan[0].starts_with("https://192.0.2.10:8443/"));
+    let other = std::process::Command::new("openssl")
+        .args(["genrsa", "-out"])
+        .arg(path("other-key.pem"))
+        .arg("2048")
+        .output()
+        .is_ok_and(|output| output.status.success());
+    assert!(other);
+    assert!(
+        load_server_tls(Some(&path("cert.pem")), Some(&path("other-key.pem")))
+            .unwrap_err()
+            .contains("Invalid TLS configuration")
+    );
+}
+
 fn socket_config(list: &[&str], pairs: &[(&str, &str)]) -> ServerConfig {
     let home = tempfile::tempdir().unwrap();
     let mut all = vec!["--host", "127.0.0.1", "--password", "test-password-long"];
