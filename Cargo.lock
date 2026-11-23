@@ -7158,6 +7158,7 @@ dependencies = [
  "roamgate-connections",
  "roamgate-exec",
  "roamgate-herdr",
+ "roamgate-mr-reviews",
  "roamgate-notify",
  "roamgate-voice-server",
  "rustix",

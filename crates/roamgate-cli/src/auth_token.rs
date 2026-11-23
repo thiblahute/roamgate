@@ -20,13 +20,14 @@ fn is_token(text: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-/// Why a read failed, as Bun's `openSync` words it.
+/// Why a read failed, as Bun's `openSync` and `readFileSync` word it.
 pub(crate) fn open_error(error: &std::io::Error, path: &Path) -> String {
     let path = path.display();
     match error.raw_os_error() {
         Some(2) => format!("ENOENT: no such file or directory, open '{path}'"),
         Some(13) => format!("EACCES: permission denied, open '{path}'"),
         Some(40) => format!("ELOOP: too many symbolic links encountered, open '{path}'"),
+        Some(21) => "EISDIR: illegal operation on a directory, read".into(),
         _ => error.to_string(),
     }
 }

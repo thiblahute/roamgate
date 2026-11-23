@@ -8,6 +8,7 @@
 //! | [`update_http`] | `/api/update/check` and `/api/update/install` | http/update createUpdateHandlers |
 //! | [`commands`] | `roamgate update` and `roamgate rollback` | cli/update |
 //! | [`push`] | `roamgate push` | cli/push |
+//! | [`reviews`] | `roamgate reviews` | cli/reviews |
 //! | [`herdr`] | `roamgate herdr` | herdr/cli, the Herdr part of config/server-config |
 //! | [`service`] | Roamgate's own service: paths, the published legacy one, the environment file, status and restart | the parts of config/service-definitions, service-manager and launchd-environment these use |
 //! | [`server_config`] | the server's flags and environment as management commands read them, with their validation | config/server-config loadServerConfig |
@@ -39,6 +40,7 @@ pub mod plugin;
 pub mod push;
 pub mod qr;
 pub mod record;
+pub mod reviews;
 pub mod server_config;
 pub mod service;
 pub mod service_context;
