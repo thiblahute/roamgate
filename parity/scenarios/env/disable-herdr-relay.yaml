@@ -1,0 +1,48 @@
+name: ROAMGATE_DISABLE_HERDR_RELAY=1 forwards an SSH profile's Herdr control socket directly, without the relay
+family: env
+description: >
+  The same SSH profile as connections/ssh-profiles: with ROAMGATE_DISABLE_HERDR_RELAY set
+  (the current name), the tunnel never runs the Herdr relay on the
+  host nor forwards to its socket, and the profile still comes up through
+  its direct forwards.
+server:
+  herdr: false
+  herdrs:
+    alpha: { workspaces: [{ workspace_id: w1, label: from-alpha }] }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ALLOW_SSH: "1"
+    ROAMGATE_DISABLE_HERDR_RELAY: "1"
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 2
+        default_connection_id: ssh-alpha
+        profiles:
+          - {
+              id: ssh-alpha,
+              label: SSH-ALPHA,
+              type: ssh,
+              ssh_destination: alpha-host,
+              remote_control_socket_path: "${HERDR_alpha_CONTROL}",
+              remote_client_socket_path: "${HERDR_alpha_CLIENT}",
+              auto_connect: true,
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    id: alpha
+    no_wait: true
+    params: { id: ssh-alpha }
+  - await: alpha
+    advance_every: 50
+    reply: { state: ready, type: ssh }
+    save: { generation: /result/generation }
+  - call: workspace.list
+    connection_id: ssh-alpha
+    connection_generation: "${generation}"
+    reply: { workspaces: [{ label: from-alpha }] }
+  - fake_calls: { program: ssh, min: 1 }
+  - fake_calls: { program: ssh, argv_match: "herdr-relay", count: 0 }
