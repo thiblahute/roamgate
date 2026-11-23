@@ -41,6 +41,7 @@ rust-embed = { version = "8", features = ["interpolate-folder-path", "mime-guess
 tokio = { version = "1", features = ["fs", "macros", "net", "rt-multi-thread", "signal", "sync"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"] }
+url = "2"
 
 [dev-dependencies]
 tempfile = "3"
