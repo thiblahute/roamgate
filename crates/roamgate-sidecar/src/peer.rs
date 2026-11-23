@@ -124,11 +124,14 @@ pub struct PeerOptions {
 }
 
 impl PeerOptions {
-    /// The core's: it only answers pings.
+    /// The core's: it pings after 10 s without sending too, so a front
+    /// that keeps sending (and so never pings) still hears from a core
+    /// that waits on a long call; it never closes on silence itself (the
+    /// front decides that).
     pub fn core(clock: SharedClock) -> Self {
         Self {
             clock,
-            ping_after: None,
+            ping_after: Some(Duration::from_secs(10)),
             dead_after: None,
         }
     }

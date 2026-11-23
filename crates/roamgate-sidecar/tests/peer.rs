@@ -612,3 +612,45 @@ async fn families_get_their_calls_ownership_and_the_front_s_test_clock() {
     // Owned again, then the channel closed: told to stop.
     assert_eq!(family.owned.lock().unwrap().last(), Some(&false));
 }
+
+/// A core whose calls never answer (a family waiting on something slow).
+struct Stuck;
+
+impl Handler for Stuck {
+    fn call(&self, _peer: &Peer, _call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
+        Box::pin(std::future::pending())
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_core_waiting_on_a_slow_call_keeps_the_channel_while_the_front_keeps_sending() {
+    let clock = || -> SharedClock { Arc::new(roamgate_base::clock::TokioClock::starting_at(0)) };
+    // The front sends a call every 5 s, so it never pings (it pings only
+    // after 10 s without sending); each call hangs in the core.
+    let run = |core_options: PeerOptions| async move {
+        let (a, b) = pair();
+        let front = Peer::start(a, Arc::new(Nothing), PeerOptions::front(clock()));
+        let core = Peer::start(b, Arc::new(Stuck), core_options);
+        for _ in 0..12 {
+            let caller = front.clone();
+            tokio::spawn(async move {
+                let _ = caller
+                    .call("limit_resume.list", json!({}), Ctx::default(), true)
+                    .await;
+            });
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+        let closed = front.is_closed();
+        drop(core);
+        closed
+    };
+    // The core pings when it has said nothing for 10 s: the front hears
+    // from it, 60 s on.
+    assert!(!run(PeerOptions::core(clock())).await);
+    // A core that only answered pings went 30 s silent and was dropped.
+    let mute = PeerOptions {
+        ping_after: None,
+        ..PeerOptions::core(clock())
+    };
+    assert!(run(mute).await);
+}

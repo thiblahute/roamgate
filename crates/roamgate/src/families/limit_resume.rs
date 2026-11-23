@@ -41,6 +41,11 @@ use serde_json::{Value, json};
 
 pub const FAMILY: &str = "limit_resume";
 
+/// How long a shadow read waits for the observer's look before answering
+/// from its last one: well within the front's 10 s for a shadow call, as a
+/// look of a connection with tens of conversation panes can take longer.
+pub const SHADOW_LOOK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// The family, once this build implements it.
 pub fn family() -> Option<Arc<dyn CoreFamily>> {
     Some(Arc::new(LimitResumeFamily::default()))
@@ -278,6 +283,7 @@ impl CoreFamily for LimitResumeFamily {
     fn call(&self, cx: &FamilyContext, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
         let running = self.running();
         let observer = running.is_none().then(|| self.observer(cx));
+        let clock = cx.clock.clone();
         Box::pin(async move {
             let method = call.method.as_str();
             let params = &call.params;
@@ -307,7 +313,17 @@ impl CoreFamily for LimitResumeFamily {
                             // observer looks, with the owner's store.
                             let observer = observer.expect("an observer when not owned");
                             observer.store().reload();
-                            observer.look(&connection_id).await;
+                            // Bun answers from what its last look saw; the
+                            // observer waits a little for a fresh one, and
+                            // otherwise answers from its own last look
+                            // while this one goes on.
+                            let look = observer.look(&connection_id);
+                            let _ = roamgate_base::clock::timeout(
+                                clock.as_ref(),
+                                SHADOW_LOOK_WAIT,
+                                look,
+                            )
+                            .await;
                             observer.list(&connection_id)
                         }
                     };
