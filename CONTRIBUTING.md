@@ -84,7 +84,11 @@ checks the recorded traffic against `contract/`. The scenario format is in
 refreshes `parity/ledger.tsv`, which maps every TS test to what replaces it;
 `PARITY_GATE_STRICT=1` makes the ledger and the contract coverage gates fail
 on gaps. `PARITY_KEEP=1` keeps a run's directory, `PARITY_JOBS` bounds the
-servers run at once.
+servers run at once. To run the suite on the Rust front, set
+`ROAMGATE_SERVER_CMD` to `<checkout>/target/debug/roamgate front`,
+`ROAMGATE_SIDECAR_BIN` to `<checkout>/server/src/index.ts` and
+`ROAMGATE_CLI_CMD` to `bun <checkout>/server/src/index.ts`: the front's CLI
+is still the Bun one.
 
 ### Rust workspace
 

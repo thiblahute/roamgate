@@ -134,6 +134,9 @@ pub struct Run {
     /// The server's whole environment.
     pub env: BTreeMap<String, String>,
     pub command: Vec<String>,
+    /// What `cli` steps run: `ROAMGATE_CLI_CMD`, else the server command
+    /// (a Rust front's CLI is still the Bun one, contract/wire/core-channel.md).
+    pub cli_command: Vec<String>,
     pub cwd: PathBuf,
     pub herdr: Option<FakeHerdr>,
     pub herdrs: BTreeMap<String, FakeHerdr>,
@@ -368,6 +371,12 @@ impl Run {
             Some((command, cwd)) => (command.clone(), PathBuf::from(expand(cwd))),
             None => server_command(),
         };
+        let cli_command = match (&options.command, std::env::var("ROAMGATE_CLI_CMD")) {
+            (None, Ok(cli)) if !cli.trim().is_empty() => {
+                cli.split_whitespace().map(str::to_owned).collect()
+            }
+            _ => command.clone(),
+        };
         let path_var = std::env::var("PATH").unwrap_or_default();
         let separator = if cfg!(windows) { ";" } else { ":" };
         let text = |path: &Path| path.to_string_lossy().into_owned();
@@ -483,6 +492,7 @@ impl Run {
             clock_path,
             env,
             command,
+            cli_command,
             cwd,
             herdr,
             herdrs,

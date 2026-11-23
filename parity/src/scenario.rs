@@ -1814,7 +1814,7 @@ impl Runner {
         // (a stale file there is replaced): it runs on the real clock.
         env.remove("ROAMGATE_TEST_CLOCK");
         env.remove("ROAMGATE_TEST_CLOCK_EPOCH");
-        let command = self.run.command.clone();
+        let command = self.run.cli_command.clone();
         let cwd = self.run.cwd.clone();
         let output = crate::cli::run(
             &command,
