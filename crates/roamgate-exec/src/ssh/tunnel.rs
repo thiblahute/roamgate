@@ -829,6 +829,15 @@ impl SshTunnelManager {
         }
     }
 
+    /// Whether the command master serves, once its start settled (a
+    /// start in progress is joined, not repeated); false without one.
+    pub fn master_ready(&self) -> BoxFuture<bool> {
+        match &self.inner.master {
+            Some(master) => master.ensure(),
+            None => Box::pin(async { false }),
+        }
+    }
+
     /// Stops the tunnel and the master for good, then removes what the
     /// tunnel made; paths stay when a process could not be stopped.
     pub fn cleanup(&self) -> Task {

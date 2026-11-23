@@ -147,6 +147,9 @@ pub trait HostHooks: Send + Sync + 'static {
     fn master_ready(&self, connection_id: &str, generation: u64, host: &str, control_path: &str);
 }
 
+/// How long a generation's front part waits for the command master's start.
+const MASTER_SETTLE: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// The probe that a connection's sockets answer (profile_service's
 /// `test_connection_sockets`): its control socket, then its client socket.
 pub type Probe =
@@ -588,6 +591,12 @@ impl ConnectionRuntime for HostRuntime {
                     return Ok(());
                 }
                 state.background_started = true;
+            }
+            // The front's first commands (an upload directory's cleanup,
+            // the review client's setup) go over the command master, as
+            // under Bun: its start settles first, within a bound.
+            if let Some(tunnel) = &this.inner.tunnel {
+                let _ = tokio::time::timeout(MASTER_SETTLE, tunnel.master_ready()).await;
             }
             if !this.inner.skip_front {
                 this.inner
