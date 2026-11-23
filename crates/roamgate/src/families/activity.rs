@@ -79,6 +79,9 @@ struct State {
     start_requested: bool,
     /// Bumped at each ownership change: a stale fallback does nothing.
     generation: u64,
+    /// A recorder is being made: one at a time, or two would write the log
+    /// (the second's recovery would end the first's session).
+    starting: bool,
 }
 
 struct ActivityFamily(Arc<Inner>);
@@ -250,13 +253,16 @@ impl Inner {
     /// Starts the recorder if the core owns the family and Bun's stopped.
     async fn start_if_due(&self, cx: &FamilyContext) {
         {
-            let state = self.state.lock().unwrap();
-            if !state.owned || !state.start_requested || self.current().is_some() {
+            let mut state = self.state.lock().unwrap();
+            if !state.owned
+                || !state.start_requested
+                || state.starting
+                || self.current().is_some()
+                || cx.owners.check_write(FAMILY).is_err()
+            {
                 return;
             }
-        }
-        if cx.owners.check_write(FAMILY).is_err() {
-            return;
+            state.starting = true;
         }
         let raw = settings_json().await;
         let env = ProcessEnv;
@@ -269,7 +275,8 @@ impl Inner {
             clock: cx.clock.clone(),
             logger: logger(cx),
         });
-        let state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
+        state.starting = false;
         if state.owned && self.current().is_none() {
             self.recorder.send_replace(Some(Arc::new(recorder)));
         } else {
@@ -286,8 +293,13 @@ impl Inner {
     }
 
     async fn recorder_for_call(&self) -> Option<Arc<ActivityRecorder>> {
-        if !self.state.lock().unwrap().owned {
-            return None;
+        // Bun's start can come before the table that gives the core the
+        // family: wait for that one too.
+        {
+            let state = self.state.lock().unwrap();
+            if !state.owned && !state.start_requested {
+                return None;
+            }
         }
         let mut watch = self.recorder.subscribe();
         let wait = async {
@@ -363,10 +375,13 @@ impl CoreFamily for ActivityFamily {
                 "internal.activity.start" => {
                     this.state.lock().unwrap().start_requested = true;
                     this.start_if_due(&cx).await;
-                    Ok(json!({"ok": true, "recording": this.current().is_some()}))
+                    // Another start may be making it: the signals that
+                    // follow need it.
+                    let recording = this.recorder_for_call().await.is_some();
+                    Ok(json!({"ok": true, "recording": recording}))
                 }
                 "internal.activity.signals" => {
-                    let Some(recorder) = this.current() else {
+                    let Some(recorder) = this.recorder_for_call().await else {
                         return Ok(json!({"ok": false}));
                     };
                     for signal in params

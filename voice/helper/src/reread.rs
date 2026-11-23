@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-/// Whisper's CPU threads, beside the GPU.
+/// Whisper's threads, beside the GPU.
 const THREADS: usize = 4;
 
 /// The language a conversation is in: the last reply read, or the last
@@ -43,39 +43,10 @@ pub fn said_in(language: f32, english: f32) -> bool {
     language > english
 }
 
-/// Whether Whisper stays loaded once loaded: on macOS, where the GPU's
-/// memory is the system's and loading it compiles Metal shaders. On an
-/// NVIDIA card, kept, it held about 1 GB with its buffers beside Qwen3-TTS
-/// for the whole call: on 8 GB, Qwen3-TTS then ran out of memory on every
-/// sentence, and Whisper's own buffers running out of it aborted the
-/// helper. There it is loaded for an utterance to read again, when the GPU
-/// has room for it, and freed after it: such utterances are rare (Parakeet
-/// drifting to English), and loading it takes about a second. On the CPU,
-/// hearing one took about 30 s.
-const KEEP_LOADED: bool = cfg!(target_os = "macos");
-
-/// The GPU memory Whisper large-v3-turbo needs to read an utterance: its
-/// weights (573 MB), its buffers (about 380 MB) and CUDA's own, with room.
-const WHISPER_GPU_MIB: u64 = 1300;
-
-/// The GPU's free memory in MiB, as nvidia-smi says; None when it cannot
-/// tell.
-fn gpu_free_mib() -> Option<u64> {
-    let output = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=memory.free", "--format=csv,noheader,nounits", "-i", "0"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&output.stdout).trim().parse().ok()
-}
-
-/// Whisper: on macOS, loaded on a thread of its own once the first
-/// utterance is heard (loaded with the helper, its Metal shaders compiling
-/// held up the call the helper starts first, past the page's wait), an
-/// utterance that comes before it is ready kept as written; elsewhere,
-/// loaded for each utterance it reads again (KEEP_LOADED).
+/// Whisper, loaded on a thread of its own once the first utterance is
+/// heard: loaded with the helper, its Metal shaders compiling held up the
+/// call the helper starts first, past the page's wait. An utterance that
+/// comes before it is ready is kept as written.
 pub struct Reread {
     model: String,
     loading: std::sync::Once,
@@ -93,28 +64,18 @@ impl Reread {
         }
     }
 
-    /// Whisper from `model`; its failure said.
-    fn open(model: &str) -> Option<WhisperContext> {
-        // Whisper's and GGML's own lines (loading, Metal, CUDA) are left
-        // out; its failures come back as errors.
-        whisper_rs::install_logging_hooks();
-        match WhisperContext::new_with_params(model, WhisperContextParameters::default()) {
-            Ok(context) => Some(context),
-            Err(err) => {
-                eprintln!("[voice] Whisper does not load ({model}): {err}");
-                None
-            }
-        }
-    }
-
-    /// Starts loading Whisper to keep, the first time.
+    /// Starts loading Whisper, the first time.
     fn load(&self) {
         self.loading.call_once(|| {
             let loaded = self.whisper.clone();
             let model = self.model.clone();
             std::thread::spawn(move || {
-                if let Some(context) = Self::open(&model) {
-                    *loaded.lock().unwrap() = Some(context);
+                // Whisper's and GGML's own lines (loading, Metal) are left
+                // out; its failures come back as errors.
+                whisper_rs::install_logging_hooks();
+                match WhisperContext::new_with_params(&model, WhisperContextParameters::default()) {
+                    Ok(context) => *loaded.lock().unwrap() = Some(context),
+                    Err(err) => eprintln!("[voice] Whisper does not load ({model}): {err}"),
                 }
             });
         });
@@ -125,38 +86,17 @@ impl Reread {
     /// conversation's language, when it was said in it; None to keep
     /// `text`.
     pub fn check(&self, session: u32, text: &str, audio: &[f32]) -> Option<String> {
-        if KEEP_LOADED {
-            self.load();
-        }
+        self.load();
         let conversation = self.conversation.lock().unwrap().clone();
         let language = suspect(text, conversation.as_deref())?;
-        let started = std::time::Instant::now();
-        let result = if KEEP_LOADED {
-            let whisper = self.whisper.lock().unwrap();
-            let Some(whisper) = whisper.as_ref() else {
-                debug(&format!(
-                    "session {session}: not written in {language}, Whisper is not loaded yet: kept"
-                ));
-                return None;
-            };
-            read(whisper, &language, audio)
-        } else {
-            if let Some(free) = gpu_free_mib().filter(|free| *free < WHISPER_GPU_MIB) {
-                eprintln!(
-                    "[voice] session {session}: not written in {language}, but the GPU has \
-                     {free} MiB free, too little for Whisper: kept"
-                );
-                return None;
-            }
-            // Dropped once read: its GPU memory goes back.
-            let whisper = Self::open(&self.model)?;
-            read(&whisper, &language, audio)
+        let whisper = self.whisper.lock().unwrap();
+        let Some(whisper) = whisper.as_ref() else {
+            debug(&format!(
+                "session {session}: not written in {language}, Whisper is not loaded yet: kept"
+            ));
+            return None;
         };
-        debug(&format!(
-            "session {session}: Whisper heard it in {} ms",
-            started.elapsed().as_millis()
-        ));
-        match result {
+        match read(whisper, &language, audio) {
             Ok((heard, english, Some(again))) if crate::language::has_words(&again) => {
                 eprintln!(
                     "[voice] session {session}: said in {language}, not English \
