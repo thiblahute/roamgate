@@ -22,6 +22,7 @@ pub mod review_files;
 pub mod review_patch;
 pub mod shell;
 pub mod snapshot;
+pub mod steps;
 
 use std::time::Duration;
 
