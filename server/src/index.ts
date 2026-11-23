@@ -59,6 +59,7 @@ import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import packageJson from "../../package.json";
 import { diffState } from "../../shared/stateDelta";
+import type { AssistantTaskNotification } from "../../shared/assistant";
 import { createListDeltas, LIST_DELTA_SHAPES } from "./bridge/list-delta";
 import type { SshTunnelConfig } from "./bridge/ssh-tunnel";
 import {
@@ -304,6 +305,8 @@ import {
   startCoreFront,
 } from "./core-channel";
 import { FAMILIES, httpFamilyOf } from "./core-channel/protocol";
+import { AssistantUserError } from "./assistant/errors";
+import { UnsupportedPlatformError } from "./connections/unix-only";
 import { readOwners } from "./core-channel/owners";
 import { rpcLogLevel } from "./utils/rpc-logging";
 import { handleReviewRpc, isReviewMethod } from "./review/rpc";
@@ -987,7 +990,24 @@ let coreFront: CoreFront | null = null;
 
 /** A push of the core's, to the browsers it names. */
 function deliverCorePush(push: PushMessage): void {
-  const message = push.message as { event?: unknown; data?: unknown };
+  const message = push.message as {
+    event?: unknown;
+    data?: unknown;
+    assistant?: unknown;
+    assistant_notification?: unknown;
+  };
+  // Ranger's state and notifications, as Bun's own service publishes them
+  // (each socket's deltas, the notification feed).
+  if (!push.connection_id && message && "assistant" in message) {
+    publishAssistantSnapshot(message.assistant);
+    return;
+  }
+  if (!push.connection_id && message && "assistant_notification" in message) {
+    notifyAssistant(
+      message.assistant_notification as AssistantTaskNotification,
+    );
+    return;
+  }
   if (message?.event === LIMIT_PAUSES_EVENT && push.connection_id)
     rustLimitPauses.set(push.connection_id, parseLimitPauses(message.data));
   const line = push.connection_id
@@ -1033,6 +1053,60 @@ function corePaneText(args: unknown): { pane_id: string; text: string } {
 
 /** What the core may call in Bun (contract/wire/core-channel.md). */
 const coreReverseTargets = {
+  // The assistant family's (Ranger, while the core runs it): Bun stops its
+  // own service first, and answers the tools of what it still owns.
+  "assistant.release": async () => {
+    await releaseBunAssistant();
+    return {};
+  },
+  "assistant.workspace_tree": assistantReverse(
+    async (args: unknown, _ctx: unknown, signal: AbortSignal) => {
+      const { kind, params } = (args ?? {}) as {
+        kind?: unknown;
+        params?: unknown;
+      };
+      if (typeof kind !== "string")
+        throw new Error("assistant.workspace_tree needs a kind");
+      return assistantWorkspaceTree(
+        kind as Parameters<typeof assistantWorkspaceTree>[0],
+        (params ?? {}) as Record<string, unknown>,
+        signal,
+      );
+    },
+  ),
+  "assistant.archive": assistantReverse(
+    async (args: unknown, _ctx: unknown, signal: AbortSignal) => {
+      const { kind, params } = (args ?? {}) as {
+        kind?: unknown;
+        params?: unknown;
+      };
+      if (typeof kind !== "string")
+        throw new Error("assistant.archive needs a kind");
+      return assistantArchive(
+        kind as Parameters<typeof assistantArchive>[0],
+        (params ?? {}) as Record<string, unknown>,
+        signal,
+      );
+    },
+  ),
+  "assistant.chat_thread_reply": assistantReverse(async (args: unknown) => {
+    const { session_id, params } = (args ?? {}) as {
+      session_id?: unknown;
+      params?: { comment_id?: unknown; text?: unknown };
+    };
+    if (
+      typeof session_id !== "string" ||
+      typeof params?.comment_id !== "string" ||
+      typeof params.text !== "string"
+    )
+      throw new Error(
+        "assistant.chat_thread_reply needs a session and a reply",
+      );
+    return assistantChatThreadReply(session_id, {
+      comment_id: params.comment_id,
+      text: params.text,
+    });
+  }),
   "herdr.call": async (args: unknown) => {
     const { method, params, timeout_ms } = (args ?? {}) as {
       method?: unknown;
@@ -1916,12 +1990,140 @@ const assistantArchive = createArchiveToolHandler({
 });
 // The archive search view: read-only, like Ranger's tools.
 const archiveRpc = createArchiveRpc(archiveDeps);
+/**
+ * Ranger's state to the browsers: a socket that read it with a stamp gets
+ * each change as a delta from what it was last given. Bun's service and
+ * the Rust core's (its `assistant` pushes) both publish through here.
+ */
+function publishAssistantSnapshot(snapshot: unknown) {
+  let payload: string | null = null;
+  // A page that read the state with a stamp gets each change as a
+  // delta from what this socket was last given, in order.
+  let stamp: string | null = null;
+  const deltas = new Map<string, string | null>();
+  for (const ws of clients) {
+    const base = assistantBases.get(ws);
+    if (!base) {
+      payload ??= JSON.stringify({ assistant: snapshot });
+      safeSend(ws, payload, "assistant", "assistant");
+      continue;
+    }
+    stamp ??= Bun.hash(JSON.stringify(snapshot)).toString(36);
+    if (base.stamp === stamp) continue;
+    if (!deltas.has(base.stamp)) {
+      const delta = diffState(
+        base.snapshot as Record<string, unknown>,
+        snapshot as unknown as Record<string, unknown>,
+      );
+      deltas.set(
+        base.stamp,
+        delta
+          ? JSON.stringify({
+              assistant: {
+                state_delta: delta,
+                base: base.stamp,
+                stamp,
+              },
+            })
+          : null,
+      );
+    }
+    assistantBases.set(ws, { stamp, snapshot });
+    const line = deltas.get(base.stamp);
+    if (line) safeSend(ws, line, "assistant");
+  }
+}
+
+/** A task notification to the browsers and the notification feed. */
+function notifyAssistant(notification: AssistantTaskNotification) {
+  const payload = JSON.stringify({
+    assistant_notification: notification,
+  });
+  for (const ws of clients) safeSend(ws, payload, "assistant_notification");
+  notifications.publish(notification);
+}
+
+/**
+ * `bridge.assistant.get` with `since` (the stamp of the page's last read):
+ * an unchanged state is the stamp alone, not a megabyte. Pushes to this
+ * socket go as deltas from this state from now on, in the same order as
+ * this reply.
+ */
+function assistantStateReply(
+  ws: object,
+  params: Record<string, unknown>,
+  result: unknown,
+) {
+  const stamp = Bun.hash(JSON.stringify(result)).toString(36);
+  assistantBases.set(ws, { stamp, snapshot: result });
+  return params.since === stamp
+    ? { unchanged: true, stamp }
+    : { snapshot: result, stamp };
+}
+
+/**
+ * A reverse target of the assistant family: a message Ranger may show
+ * (AssistantUserError, a Unix-only refusal) keeps its kind across the
+ * channel, as a code; any other failure stays one the core masks.
+ */
+function assistantReverse<A extends unknown[]>(
+  run: (...args: A) => Promise<unknown>,
+): (...args: A) => Promise<unknown> {
+  return async (...args) => {
+    try {
+      return await run(...args);
+    } catch (error) {
+      if (error instanceof AssistantUserError)
+        throw new ChannelError(error.message, "assistant_user");
+      if (error instanceof UnsupportedPlatformError)
+        throw new ChannelError(error.message, "unsupported_platform");
+      throw error;
+    }
+  };
+}
+
+/** Ranger answers a comment on its chat's messages in its thread. */
+async function assistantChatThreadReply(
+  sessionId: string,
+  params: { comment_id: string; text: string },
+) {
+  const thread = getReviewService().replyInChat({
+    chat: rangerChatKey(sessionId),
+    commentId: params.comment_id,
+    text: params.text,
+    author: RANGER_THREAD_AUTHOR,
+  });
+  return { text: `Answered in thread [${thread.id.slice(0, 8)}].` };
+}
+
+/** Whether Bun gave Ranger to the core (its service disposed). */
+let assistantReleasedToCore = false;
+
+/** Disposes Bun's Ranger, for the core to run it. */
+async function releaseBunAssistant(): Promise<void> {
+  assistantReleasedToCore = true;
+  const task = assistantServiceTask;
+  assistantServiceTask = null;
+  if (!task) return;
+  await task.then((service) => service.dispose()).catch(() => undefined);
+  logger.child("assistant").info("handed to the Rust core");
+}
+
+/** The Rust core runs Ranger (it owns the assistant family). */
+function assistantOnCore(): boolean {
+  return !!coreFront && !bunOwns("assistant");
+}
+
 let assistantServiceTask: Promise<
   Awaited<
     ReturnType<typeof import("./assistant/service").createAssistantService>
   >
 > | null = null;
 function getAssistantService() {
+  // The Rust core runs Ranger now: Bun's service must not run beside it
+  // (both would write state.json and tasks.sqlite).
+  if (assistantOnCore())
+    return Promise.reject(new Error("Ranger runs in the Rust core"));
   assistantServiceTask ??= import("./assistant/service")
     .then(({ createAssistantService }) =>
       createAssistantService({
@@ -1930,63 +2132,10 @@ function getAssistantService() {
         archive: assistantArchive,
         // Ranger answers the comments on its chat's messages in their
         // threads, as an agent does with roamgate-review reply.
-        chatThreads: async (sessionId, params) => {
-          const thread = getReviewService().replyInChat({
-            chat: rangerChatKey(sessionId),
-            commentId: params.comment_id,
-            text: params.text,
-            author: RANGER_THREAD_AUTHOR,
-          });
-          return {
-            text: `Answered in thread [${thread.id.slice(0, 8)}].`,
-          };
-        },
-        publish: (snapshot) => {
-          let payload: string | null = null;
-          // A page that read the state with a stamp gets each change as a
-          // delta from what this socket was last given, in order.
-          let stamp: string | null = null;
-          const deltas = new Map<string, string | null>();
-          for (const ws of clients) {
-            const base = assistantBases.get(ws);
-            if (!base) {
-              payload ??= JSON.stringify({ assistant: snapshot });
-              safeSend(ws, payload, "assistant", "assistant");
-              continue;
-            }
-            stamp ??= Bun.hash(JSON.stringify(snapshot)).toString(36);
-            if (base.stamp === stamp) continue;
-            if (!deltas.has(base.stamp)) {
-              const delta = diffState(
-                base.snapshot as Record<string, unknown>,
-                snapshot as unknown as Record<string, unknown>,
-              );
-              deltas.set(
-                base.stamp,
-                delta
-                  ? JSON.stringify({
-                      assistant: {
-                        state_delta: delta,
-                        base: base.stamp,
-                        stamp,
-                      },
-                    })
-                  : null,
-              );
-            }
-            assistantBases.set(ws, { stamp, snapshot });
-            const line = deltas.get(base.stamp);
-            if (line) safeSend(ws, line, "assistant");
-          }
-        },
-        notify: (notification) => {
-          const payload = JSON.stringify({
-            assistant_notification: notification,
-          });
-          for (const ws of clients)
-            safeSend(ws, payload, "assistant_notification");
-          notifications.publish(notification);
-        },
+        chatThreads: async (sessionId, params) =>
+          assistantChatThreadReply(sessionId, params),
+        publish: publishAssistantSnapshot,
+        notify: notifyAssistant,
       }),
     )
     .catch((error) => {
@@ -2812,10 +2961,16 @@ function getReviewService(): ReviewService {
       // A Ranger chat's threads go to Ranger, as a message in that chat.
       const rangerChat = rangerChatSession(paneId);
       if (rangerChat) {
-        await (await getAssistantService()).deliverChatComments(
-          rangerChat,
-          text,
-        );
+        if (assistantOnCore())
+          await coreFront!.callInternal("assistant", "deliver_chat_comments", {
+            session_id: rangerChat,
+            text,
+          });
+        else
+          await (await getAssistantService()).deliverChatComments(
+            rangerChat,
+            text,
+          );
         return;
       }
       const runtime = runtimeOf(connectionId);
@@ -3503,6 +3658,12 @@ function setupRemoteReviewAgent(
 }
 
 function resumeAssistantIfLoaded() {
+  if (assistantOnCore()) {
+    void coreFront!
+      .callInternal("assistant", "resume", {})
+      .catch(() => logger.warn("Ranger recovery could not be started"));
+    return;
+  }
   void assistantServiceTask
     ?.then((service) => service.resume())
     .catch(() => {
@@ -4103,6 +4264,26 @@ onOwnershipChanged(() => {
   }
 });
 
+// Ranger: while the Rust core owns the assistant family it runs the
+// service (chats, runs, tasks); Bun's stops first (the core asks with
+// `assistant.release` before it starts its own) and is made again, lazily,
+// once the family comes back, after the core let go of it.
+onOwnershipChanged(() => {
+  const ours = bunOwns("assistant");
+  if (!ours && assistantServiceTask) {
+    void releaseBunAssistant();
+  } else if (ours && coreFront && assistantReleasedToCore) {
+    assistantReleasedToCore = false;
+    void coreFront
+      .callInternal("assistant", "release", {})
+      .catch(() => undefined)
+      .then(() => {
+        logger.child("assistant").info("served by Bun again");
+        resumeAssistantIfLoaded();
+      });
+  }
+});
+
 // The notifications family: while the Rust core owns it, it keeps the
 // feed's events and file and sends Web Push; Bun keeps the feed's sockets
 // (the Android app's), with the events the core sends back.
@@ -4420,6 +4601,13 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   if (coreFront?.routesRpc(method)) {
     try {
       const result = await coreFront.callRpc(method, params, coreContext());
+      if (method === "bridge.assistant.get" && params && "since" in params) {
+        sendReply(
+          { id, result: assistantStateReply(ws, params, result) },
+          "assistant",
+        );
+        return;
+      }
       // The other browsers hear of a preference, as Bun's handler tells them.
       if (method === "bridge.ui_settings.update") {
         const line = JSON.stringify({ ui_settings: result });
@@ -4552,18 +4740,8 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       // A page that holds the state sends the stamp of its last read
       // (`since`): an unchanged state is the stamp alone, not a megabyte.
       if (method === "bridge.assistant.get" && params && "since" in params) {
-        const stamp = Bun.hash(JSON.stringify(result)).toString(36);
-        // Pushes to this socket go as deltas from this state from now on,
-        // in the same order as this reply.
-        assistantBases.set(ws, { stamp, snapshot: result });
         sendReply(
-          {
-            id,
-            result:
-              params.since === stamp
-                ? { unchanged: true, stamp }
-                : { snapshot: result, stamp },
-          },
+          { id, result: assistantStateReply(ws, params, result) },
           "assistant",
         );
         return;
@@ -6358,7 +6536,7 @@ function main() {
     startConnection: async () => {
       await startHostConnections();
       // Resume saved work even when no browser has opened Ranger yet.
-      await getAssistantService();
+      if (!assistantOnCore()) await getAssistantService();
       resumeAssistantIfLoaded();
       notifyBrowserClientCount();
       const runtime = connectionManager.defaultReadyRuntime();
