@@ -37,7 +37,7 @@ export function FilesystemBrowser({
   onShowHiddenChange: (value: boolean) => void;
   activePath?: string;
   onSelect: (entry: FileExplorerEntry) => void;
-  onPinFile?: (path: string) => void;
+  onPinFile?: (entry: FileExplorerEntry) => void;
   onMenu: (entry: FileExplorerEntry, x: number, y: number) => void;
   onExit: () => void;
 }) {
@@ -242,7 +242,7 @@ export function FilesystemBrowser({
               title={entry.path}
               onClick={() => openEntry(entry)}
               onDoubleClick={() => {
-                if (entry.type !== "directory") onPinFile?.(entry.path);
+                if (entry.type !== "directory") onPinFile?.(entry);
               }}
               onKeyDown={(event) => {
                 if (event.key === "ArrowLeft" && parent !== currentPath) {

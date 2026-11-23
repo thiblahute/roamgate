@@ -14,6 +14,7 @@ import {
   readResourceFileTabs,
   writeResourceFileTabs,
   openResourceFileTab,
+  pinResourceFileTab,
   closeResourceFileTab,
   type ResourceFileTabs,
   inspectorMaximumSize,
@@ -681,6 +682,48 @@ describe("file preview tabs", () => {
         "b",
       ).activePath,
     ).toBe("c");
+  });
+
+  test("a pinned file keeps its tab when the next file opened is previewed", () => {
+    let tabs: ResourceFileTabs = {
+      paths: [],
+      activePath: null,
+      previewPath: null,
+    };
+    // Single clicks: one preview tab, replaced.
+    tabs = openResourceFileTab(tabs, "a");
+    tabs = openResourceFileTab(tabs, "b");
+    expect(tabs.paths).toEqual(["b"]);
+    // Kept open: the next file gets a tab of its own.
+    tabs = pinResourceFileTab(tabs, "b");
+    expect(tabs).toEqual({ paths: ["b"], activePath: "b", previewPath: null });
+    expect(pinResourceFileTab(tabs, "b")).toBe(tabs);
+    tabs = openResourceFileTab(tabs, "c");
+    expect(tabs).toEqual({
+      paths: ["b", "c"],
+      activePath: "c",
+      previewPath: "c",
+    });
+    // Pinned before it is opened (a double-click while it loads, a link):
+    // a permanent tab beside the preview, which its opening then shows.
+    tabs = pinResourceFileTab(tabs, "d");
+    expect(tabs).toEqual({
+      paths: ["b", "c", "d"],
+      activePath: "d",
+      previewPath: "c",
+    });
+    tabs = openResourceFileTab(tabs, "d");
+    expect(tabs).toEqual({
+      paths: ["b", "c", "d"],
+      activePath: "d",
+      previewPath: "c",
+    });
+    tabs = openResourceFileTab(tabs, "e");
+    expect(tabs).toEqual({
+      paths: ["b", "d", "e"],
+      activePath: "e",
+      previewPath: "e",
+    });
   });
 
   test("restores empty, ordered tabs and active selection across reopen", () => {

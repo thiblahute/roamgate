@@ -449,6 +449,20 @@ export function openResourceFileTab(
   };
 }
 
+/**
+ * `path` kept open in a tab of its own: its preview tab made permanent, or,
+ * when it is not open yet (pinned while it still loads, or opened from a
+ * link), a new permanent tab, shown, beside the preview tab.
+ */
+export function pinResourceFileTab(
+  tabs: ResourceFileTabs,
+  path: string,
+): ResourceFileTabs {
+  if (tabs.paths.includes(path))
+    return tabs.previewPath === path ? { ...tabs, previewPath: null } : tabs;
+  return { ...tabs, paths: [...tabs.paths, path], activePath: path };
+}
+
 /** The tab of `from` keeps its place, now for `to`. */
 export function renameResourceFileTab(
   tabs: ResourceFileTabs,

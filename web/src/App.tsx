@@ -361,6 +361,7 @@ import {
   keptFilePath,
   readResourceFileSelection,
   readResourceFileTabs,
+  pinResourceFileTab,
   renameResourceFileTab,
   writeResourceFileTabs,
   pathInRepository,
@@ -4260,19 +4261,23 @@ export default function App() {
         at.root,
         workspace.worktree?.checkout_path,
       );
-      if (at.newTab) {
-        // The file shown is pinned: the new one takes the preview tab.
-        const scope = resourceScopeForWorkspace(
-          connectionClient.connectionId,
-          workspace,
-        );
-        const tabs = readResourceFileTabs(roamgateLocalStorage, scope);
-        if (tabs.previewPath)
-          writeResourceFileTabs(roamgateLocalStorage, scope, {
-            ...tabs,
-            previewPath: null,
-          });
-      }
+      // A file opened from a link is kept in a tab of its own, not a
+      // preview the next file clicked in the tree replaces; with `newTab`
+      // the file shown is kept too. By the path its tab is kept by; a path
+      // relative to the pane-following root of a workspace without a
+      // checkout has none yet, and opens as a preview.
+      const scope = resourceScopeForWorkspace(
+        connectionClient.connectionId,
+        workspace,
+      );
+      const tabs = readResourceFileTabs(roamgateLocalStorage, scope);
+      const kept = keptFilePath(scope, path);
+      const shown = at.newTab ? { ...tabs, previewPath: null } : tabs;
+      writeResourceFileTabs(
+        roamgateLocalStorage,
+        scope,
+        kept === undefined ? shown : pinResourceFileTab(shown, kept),
+      );
       // At the review's line, rendered, as the review's Open.
       if (at.line !== undefined || at.rendered)
         openInspector("files", workspaceId, {

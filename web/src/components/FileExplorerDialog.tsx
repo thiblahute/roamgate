@@ -1052,6 +1052,20 @@ function FileExplorerContent({
     updateCache({ expanded: next });
   };
 
+  // A workspace without a checkout has its root follow its focused pane,
+  // so a path relative to it names another file once another pane is
+  // focused: its files are opened (and their tabs kept) by their absolute
+  // path, from the root they were listed in.
+  const openedEntry = (listed: FileExplorerEntry): FileExplorerEntry =>
+    workspace &&
+    rootInfo?.root &&
+    checkoutKeyForWorkspace(workspace) === null &&
+    isWorkspaceRelativePath(listed.path)
+      ? { ...listed, path: absolutePath(rootInfo.root, listed) }
+      : listed;
+  /** A file's tab kept open by the path it is opened by. */
+  const pinFile = (listed: FileExplorerEntry) =>
+    onPinFileTab?.(openedEntry(listed).path);
   const loadPreview = async (
     listed: FileExplorerEntry,
     fragment?: string,
@@ -1063,16 +1077,7 @@ function FileExplorerContent({
     onActiveDiffEntriesChange?.(
       gitStatusMaps.fileStatuses.get(listed.path)?.entries ?? [],
     );
-    // A workspace without a checkout has its root follow its focused pane,
-    // so a path relative to it names another file once another pane is
-    // focused: its files are opened by their absolute path, from the root
-    // they were listed in.
-    const entry =
-      rootInfo?.root &&
-      checkoutKeyForWorkspace(workspace) === null &&
-      isWorkspaceRelativePath(listed.path)
-        ? { ...listed, path: absolutePath(rootInfo.root, listed) }
-        : listed;
+    const entry = openedEntry(listed);
     const workspaceId = workspace.workspace_id;
     const key = filePreviewCacheKey(connectionClient, workspaceId, entry.path);
     // Links, quick-open and tree selections must retire each other at start,
@@ -1929,7 +1934,7 @@ function FileExplorerContent({
                 event.target.closest("button")
               )
             )
-              onPinFileTab?.(entry.path);
+              pinFile(entry);
           }}
         >
           <button
@@ -2218,7 +2223,7 @@ function FileExplorerContent({
               onSelect={(entry) => {
                 void loadPreview(entry);
               }}
-              onPinFile={onPinFileTab}
+              onPinFile={pinFile}
               onMenu={openEntryMenu}
               onExit={() => {
                 setEntryMenu(null);

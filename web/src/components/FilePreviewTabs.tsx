@@ -1,4 +1,4 @@
-import { File, X } from "lucide-react";
+import { File, Pin, X } from "lucide-react";
 import { useId, useLayoutEffect, useRef } from "react";
 import type { ResourceFileTabs } from "../workspaceResource";
 import "./FilePreviewTabs.css";
@@ -82,7 +82,11 @@ export function FilePreviewTabs({
               aria-controls={panelId}
               aria-selected={active}
               aria-label={path}
-              title={preview ? `${path} · Double-click to keep open` : path}
+              title={
+                preview
+                  ? `${path} · Preview: the next file opened replaces it. Double-click to keep open`
+                  : path
+              }
               aria-description={
                 preview
                   ? "Temporary preview. Press Enter to keep open."
@@ -126,6 +130,18 @@ export function FilePreviewTabs({
                 <span className="file-preview-tab-parent">{parent}</span>
               ) : null}
             </button>
+            {preview ? (
+              <button
+                type="button"
+                className="file-preview-tab-pin"
+                aria-label={`Keep ${path} open`}
+                title="Keep open: the next file opened takes a tab of its own (double-click or Enter on the tab)"
+                tabIndex={active ? 0 : -1}
+                onClick={() => onPin(path)}
+              >
+                <Pin size={12} aria-hidden="true" />
+              </button>
+            ) : null}
             <button
               type="button"
               className="file-preview-tab-close"

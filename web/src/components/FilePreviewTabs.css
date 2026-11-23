@@ -66,12 +66,18 @@
   color: var(--muted);
   font-size: 10px;
 }
-.file-preview-tab-close {
+.file-preview-tab-close,
+.file-preview-tab-pin {
   flex-shrink: 0;
   padding: 5px 8px;
   border-radius: 4px;
 }
-.file-preview-tab-close:hover {
+.file-preview-tab-pin {
+  padding-right: 2px;
+  color: var(--muted);
+}
+.file-preview-tab-close:hover,
+.file-preview-tab-pin:hover {
   color: var(--text);
   background: var(--panel-2);
 }
@@ -79,7 +85,8 @@
   .file-preview-tab button {
     min-height: 44px;
   }
-  .file-preview-tab-close {
+  .file-preview-tab-close,
+  .file-preview-tab-pin {
     min-width: 44px;
     justify-content: center;
   }

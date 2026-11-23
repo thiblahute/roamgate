@@ -14,6 +14,7 @@ import { FilePreviewTabs } from "./FilePreviewTabs";
 import { AnnotationComposerPopover } from "./AnnotationComposerPopover";
 import {
   closeResourceFileTab,
+  pinResourceFileTab,
   type InspectorView,
   type ResourceFileTabs,
 } from "../workspaceResource";
@@ -119,12 +120,7 @@ function registerDomTests() {
       panelId: "preview",
       onSelect: (activePath) =>
         setTabs((current) => ({ ...current, activePath })),
-      onPin: (path) =>
-        setTabs((current) =>
-          current.previewPath === path
-            ? { ...current, previewPath: null }
-            : current,
-        ),
+      onPin: (path) => setTabs((current) => pinResourceFileTab(current, path)),
       onClose: (path) =>
         setTabs((current) => closeResourceFileTab(current, path)),
       onEmptyFocus,
@@ -156,6 +152,23 @@ function registerDomTests() {
       expect(
         tab("src/index.ts").closest(".file-preview-tab")?.className,
       ).not.toContain("is-preview");
+    });
+
+    test("only the preview tab has a Keep open button, which keeps it", async () => {
+      await mount(createElement(Harness, { previewPath: "README.md" }));
+      const pins = () =>
+        container.querySelectorAll<HTMLButtonElement>(".file-preview-tab-pin");
+      expect(pins().length).toBe(1);
+      expect(pins()[0]!.getAttribute("aria-label")).toBe("Keep README.md open");
+      expect(pins()[0]!.closest(".file-preview-tab")).toBe(
+        tab("README.md").closest(".file-preview-tab"),
+      );
+      await act(async () => pins()[0]!.click());
+      expect(pins().length).toBe(0);
+      expect(
+        tab("README.md").closest(".file-preview-tab")?.className,
+      ).not.toContain("is-preview");
+      expect(container.querySelectorAll('[role="tab"]').length).toBe(3);
     });
 
     test("disambiguates paths, exposes selection and supports roving keyboard navigation", async () => {

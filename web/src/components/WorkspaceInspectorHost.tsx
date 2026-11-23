@@ -68,6 +68,7 @@ import {
   readResourceFileTabs,
   writeResourceFileTabs,
   closeResourceFileTab,
+  pinResourceFileTab,
   type InspectorDock,
   type InspectorSplitView,
   type InspectorView,
@@ -415,8 +416,10 @@ export function WorkspaceInspectorHost({
   };
   const onPinFileTab = (path: string) => {
     const current = readResourceFileTabs(roamgateLocalStorage, state.scope);
-    if (current.previewPath !== path) return;
-    const tabs = { ...current, previewPath: null };
+    // A file double-clicked before it has loaded is not its tab yet: it
+    // gets a permanent tab of its own, the one its load then shows.
+    const tabs = pinResourceFileTab(current, path);
+    if (tabs === current) return;
     writeResourceFileTabs(roamgateLocalStorage, state.scope, tabs);
     setFileTabs(tabs);
   };
@@ -1856,6 +1859,10 @@ export function WorkspaceInspectorHost({
                     }
                     annotations={annotations}
                     onCreateAnnotation={onCreateAnnotation}
+                    onKeepOpen={() => {
+                      const path = fileSelection.entry?.path;
+                      if (path) onPinFileTab(path);
+                    }}
                     {...(onAddReviewImage ? { onAddReviewImage } : {})}
                     onShowInReview={onShowInReview}
                     reviewFiles={reviewFiles}

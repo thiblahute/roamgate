@@ -70,6 +70,7 @@ if (
     __resetVimKeysForTests();
     setVimKeys(false);
     const created: unknown[] = [];
+    const kept = { count: 0 };
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -81,6 +82,7 @@ if (
           loading={false}
           error={null}
           onCreateAnnotation={(annotation) => created.push(annotation)}
+          onKeepOpen={() => kept.count++}
         />,
       ),
     );
@@ -119,7 +121,17 @@ if (
       host.remove();
       __resetVimKeysForTests();
     };
-    return { host, content, keys, on, draft, draftEditor, created, unmount };
+    return {
+      host,
+      content,
+      keys,
+      on,
+      draft,
+      draftEditor,
+      created,
+      kept,
+      unmount,
+    };
   }
 
   test("c on a block draws the comment box under it, after its threads, in the column; sent, the content has the keys", async () => {
@@ -146,10 +158,13 @@ if (
     // Written and sent: the comment, then the keys back on the content,
     // where j goes on.
     const view = EditorView.findFromDOM(editor)!;
+    // An empty box keeps nothing; a comment written keeps the file's tab.
+    expect(page.kept.count).toBe(0);
     await act(async () => {
       view.dispatch({ changes: { from: 0, insert: "Say more." } });
       await settle();
     });
+    expect(page.kept.count).toBeGreaterThan(0);
     await act(async () => {
       [...box!.querySelectorAll("button")]
         .find((button) => button.textContent === "Add comment")!

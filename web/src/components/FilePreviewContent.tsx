@@ -433,6 +433,7 @@ export function FilePreviewContent({
   treeHidden = false,
   onClosePreview,
   onCreateAnnotation,
+  onKeepOpen,
   onAddReviewImage,
   onShowInReview,
   reviewFiles,
@@ -462,6 +463,11 @@ export function FilePreviewContent({
     annotation: NewReviewAnnotation,
     capture?: FeedbackCapture & { root?: string },
   ) => void;
+  /**
+   * The file is worked on (a comment written on it): its tab is kept open
+   * rather than left a preview the next file opened replaces.
+   */
+  onKeepOpen?: () => void;
   /** Stores an image put in a comment; the Markdown for it. */
   onAddReviewImage?: (file: File) => Promise<string>;
   onReanchorAnnotations?: (path: string, text: string) => void;
@@ -584,12 +590,15 @@ export function FilePreviewContent({
     },
     [draftPath],
   );
+  const keepOpenRef = useRef(onKeepOpen);
+  keepOpenRef.current = onKeepOpen;
   const setDraftComment = useCallback(
     (comment: string) => {
       setFileDrafts((current) => ({
         ...current,
         [draftPath]: { pending: current[draftPath]?.pending ?? null, comment },
       }));
+      if (comment.trim()) keepOpenRef.current?.();
     },
     [draftPath],
   );
