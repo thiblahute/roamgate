@@ -61,7 +61,9 @@ pub fn note_served(env: &dyn Env, family: &str, what: &str) {
         .append(true)
         .open(path)
     {
-        let _ = writeln!(file, "{family} {what}");
+        // One write of the whole line: two families noting at once never
+        // interleave (an append of a short line is atomic).
+        let _ = file.write_all(format!("{family} {what}\n").as_bytes());
     }
 }
 

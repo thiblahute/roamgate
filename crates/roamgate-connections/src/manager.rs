@@ -441,6 +441,17 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
         Ok(())
     }
 
+    /// Makes a connection's generations continue from `floor`: after a
+    /// handover of the connections from the front, browsers never see a
+    /// generation go back.
+    pub fn raise_generation(&self, connection_id: &str, floor: u64) {
+        if let Some(entry) = self.lock().entries.get_mut(connection_id)
+            && entry.generation < floor
+        {
+            entry.generation = floor;
+        }
+    }
+
     pub fn has(&self, connection_id: &str) -> bool {
         self.lock().entries.contains_key(connection_id)
     }

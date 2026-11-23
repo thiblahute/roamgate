@@ -10,6 +10,7 @@ use roamgate_sidecar::family::Families;
 pub mod activity;
 pub mod archive;
 pub mod herdr;
+pub mod host;
 pub mod limit_resume;
 pub mod mr_cache;
 pub mod notifications;
@@ -29,6 +30,7 @@ pub fn core_families() -> Families {
         notifications::family(),
         activity::family(),
         archive::family(),
+        host::family(),
     ]
     .into_iter()
     .flatten()

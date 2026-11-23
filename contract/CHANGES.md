@@ -6,6 +6,27 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.13
+
+inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b
+
+The host family served by the Rust core (Phase 5, S16; wire/core-channel.md,
+The host family), while the owners table gives it to Rust.
+
+- owners: `owners/families.json` gives `host` the eight profile methods by
+  name (`connections.list`, `.create`, `.update`, `.remove`, `.set_default`,
+  `.connect`, `.disconnect`, `.test`) instead of the `connections.` prefix:
+  `connections.agent_sessions` and `connections.agent_tasks` read agent
+  sessions and stay with the agent_sessions family. `host` keeps
+  `connections.json` alone; `agent_profile.` and `session-profiles.json`
+  move to a new `agent_profiles` family (Phase 9, with conversation mode);
+  `data:profiles` (the `--profile` CPU profiles) moves to `front`.
+- wire: the front's `internal.host.start`, `.stop`, `.herdr_call`, `.run`,
+  `.ssh_hold` and `.ssh_release`; the reverse targets `host.runtime_start`,
+  `host.runtime_stop`, `host.events`, `host.status` and `host.master_ready`;
+  the handover of the connections in each direction without two processes
+  holding SSH masters or session slots at once.
+
 ## 1.11
 
 inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b

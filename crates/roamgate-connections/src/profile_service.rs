@@ -22,9 +22,7 @@ use futures_util::future::Shared;
 use indexmap::{IndexMap, IndexSet};
 use roamgate_base::clock::{SharedClock, SystemClock};
 use roamgate_exec::ssh::sessions::SshSessions;
-use roamgate_exec::ssh::tunnel::{
-    RunProcess, SshTunnelArgs, SshTunnelManager, TunnelDeps, TunnelError,
-};
+use roamgate_exec::ssh::tunnel::{RunProcess, SshTunnelArgs, SshTunnelManager, TunnelDeps};
 use roamgate_herdr::control::{HerdrClient, HerdrClientOptions};
 use roamgate_herdr::protocol::assert_supported_herdr_protocol;
 use roamgate_herdr::thin::{ConnectOptions, ThinClient};
@@ -32,6 +30,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::BoxFuture;
+use crate::host_runtime::tunnel_error;
 use crate::manager::{
     ConnectionIdentity, ConnectionManager, ConnectionRuntime, ConnectionState, ConnectionStatus,
     LEGACY_DEFAULT_CONNECTION_ID, RuntimeError, RuntimeFactory,
@@ -276,16 +275,6 @@ pub async fn test_local_connection_profile(
     profile: &LocalConnectionProfile,
 ) -> Result<ProbeResult, RuntimeError> {
     test_connection_sockets(&profile.control_socket_path, &profile.client_socket_path).await
-}
-
-fn tunnel_error(error: TunnelError) -> RuntimeError {
-    match error {
-        TunnelError::Failure(failure) => RuntimeError {
-            message: failure.message,
-            retryable: failure.retryable,
-        },
-        TunnelError::Message(message) => RuntimeError::new(message),
-    }
 }
 
 /// What an SSH profile's probe opens its tunnel with (the TS module's

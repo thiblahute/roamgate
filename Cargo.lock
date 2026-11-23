@@ -6781,6 +6781,8 @@ name = "roamgate"
 version = "0.8.15"
 dependencies = [
  "axum",
+ "base64 0.22.1",
+ "futures-util",
  "roamgate-activity",
  "roamgate-archive",
  "roamgate-base",

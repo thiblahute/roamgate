@@ -22,6 +22,7 @@ use roamgate_exec::ssh::command::{SshAnnotation, SshCommand};
 use roamgate_exec::ssh::sessions::{
     SessionError, SshOutput, SshSessionHold, SshSessionWait, SshSessions,
 };
+use roamgate_exec::ssh::tunnel::{ProcessOutput, RunProcess};
 
 /// A host command as the front built it (sshCommandArgv's arguments).
 #[derive(Debug, Clone, Default)]
@@ -184,6 +185,61 @@ impl HostOps {
             stdout: ran.output.stdout,
             stderr: ran.stderr,
         })
+    }
+
+    /// The tunnel's `runProcess` (its HOME probe): a command through the
+    /// session slots, an error unless it exits 0 (process-utils.ts
+    /// `runProcess`).
+    pub fn tunnel_run_process(&self) -> RunProcess {
+        let ops = self.clone();
+        Arc::new(
+            move |command: SshCommand, input: Option<String>, timeout_ms: Option<u64>| {
+                let ops = ops.clone();
+                Box::pin(async move {
+                    let wait = SshSessionWait {
+                        timeout_ms,
+                        signal: None,
+                    };
+                    let program = command.argv.first().cloned().unwrap_or_default();
+                    let ran = ops
+                        .sessions
+                        .run(
+                            &command,
+                            |attempt: SshCommand, remaining| {
+                                let mut local = Command::new(ops.local_argv(&attempt.argv));
+                                if let Some(input) = &input {
+                                    local = local.stdin(input.clone().into_bytes());
+                                }
+                                if let Some(ms) = remaining.or(timeout_ms) {
+                                    local = local.timeout(Duration::from_millis(ms));
+                                }
+                                let runner = ops.runner.clone();
+                                async move {
+                                    let output = runner.run(&local).await?;
+                                    let stderr =
+                                        String::from_utf8_lossy(&output.stderr).into_owned();
+                                    Ok::<_, ExecError>(Ran { output, stderr })
+                                }
+                            },
+                            &wait,
+                        )
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let stdout = ran.output.stdout_text();
+                    if ran.output.code != 0 {
+                        let detail = match ran.stderr.trim() {
+                            "" => stdout.trim().to_owned(),
+                            stderr => stderr.to_owned(),
+                        };
+                        return Err(format!("{program} exited {}: {detail}", ran.output.code));
+                    }
+                    Ok(ProcessOutput {
+                        stdout,
+                        stderr: ran.stderr,
+                    })
+                })
+            },
+        )
     }
 
     /// The argv to spawn for a held command (`program` in tests).

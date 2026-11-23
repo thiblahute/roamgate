@@ -645,6 +645,20 @@ impl ConnectionProfileStore {
         })
     }
 
+    /// The server's store (profiles.ts `defaultConnectionProfilesPath`):
+    /// `ROAMGATE_CONNECTIONS_PATH`, else `connections.json` in the data
+    /// root (migrated from the legacy root as the TS store does).
+    pub fn for_server(env: &dyn roamgate_base::env::Env) -> Result<Self, String> {
+        if let Some(path) = roamgate_base::env::roamgate_env(env, "CONNECTIONS_PATH") {
+            return Self::at(PathBuf::from(path));
+        }
+        let data = roamgate_base::paths::DataContext::from_env(env);
+        let path = data
+            .default_data_file(roamgate_base::paths::DataFile::Connections)
+            .map_err(|error| error.to_string())?;
+        Self::new(path, true, Some(data))
+    }
+
     /// A store at an explicit path (no repair of permissions).
     pub fn at(path: PathBuf) -> Result<Self, String> {
         Self::new(path, false, None)
