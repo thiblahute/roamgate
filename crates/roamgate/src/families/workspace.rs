@@ -815,6 +815,15 @@ async fn internal(
             .runtime(id)
             .ok_or_else(|| RpcError::with_code(format!("connection not ready: {id}"), "not_ready"))
     };
+    // The family's own answers to the front's other parts count as served
+    // (the parity suite's proof), the bookkeeping does not.
+    if matches!(op, "enrich" | "last_step" | "tree") {
+        roamgate_sidecar::core::note_served(
+            &ProcessEnv,
+            FAMILY,
+            &format!("internal.workspace.{op}"),
+        );
+    }
     match op {
         "runtime_start" => {
             let info = RuntimeInfo::from_params(params)?;
