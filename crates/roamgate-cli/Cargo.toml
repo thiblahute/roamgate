@@ -10,6 +10,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 if-addrs = "0.15"
 rand = "0.9"
@@ -20,6 +21,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 roamgate-activity = { path = "../roamgate-activity" }
 roamgate-archive = { path = "../roamgate-archive" }
 roamgate-base = { path = "../roamgate-base" }
+roamgate-connections = { path = "../roamgate-connections" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-herdr = { path = "../roamgate-herdr" }
 roamgate-notify = { path = "../roamgate-notify" }
@@ -30,6 +32,13 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "signal", "sync", "time"] }
 url = "2"
+x509-parser = "0.17"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["termios"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["process"] }
