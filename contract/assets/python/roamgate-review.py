@@ -1,0 +1,580 @@
+#!/usr/bin/env python3
+"""roamgate-review: talk to Roamgate's reviews (its Changes view).
+
+Installed by Roamgate and rewritten when Roamgate updates it. Output is JSON.
+"""
+
+import argparse
+import http.client
+import json
+import os
+import socket
+import subprocess
+import sys
+
+SOCKET = os.environ.get(
+    "ROAMGATE_REVIEW_SOCKET",
+    os.path.join(os.path.expanduser("~"), ".cache", "roamgate", "review.sock"),
+)
+# What Claude is told of a question or request put away in Roamgate.
+DISMISSED_QUESTION = "The user dismissed this question without answering."
+DISMISSED_PERMISSION = "The user dismissed this request without answering."
+# terminal in a claude's environment: it stays in the terminal.
+START_ENV = "ROAMGATE_CLAUDE_START"
+
+
+class UnixConnection(http.client.HTTPConnection):
+    def __init__(self, path, timeout):
+        super().__init__("roamgate", timeout=timeout)
+        self.unix_path = path
+
+    def connect(self):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(self.timeout)
+        sock.connect(self.unix_path)
+        self.sock = sock
+
+
+def fail(message, code=2):
+    print(json.dumps({"error": message}), file=sys.stderr)
+    sys.exit(code)
+
+
+def text_of(args):
+    if args.text == ["-"]:
+        return sys.stdin.read()
+    return " ".join(args.text) if args.text else None
+
+
+def default_agent():
+    # Claude Code says so in its environment.
+    return os.environ.get("ROAMGATE_REVIEW_AGENT") or (
+        "Claude" if os.environ.get("CLAUDECODE") else "agent"
+    )
+
+
+def real_repo(value):
+    # PATH, or PATH=BASE..HEAD: only the path is resolved.
+    path, sep, rng = value.rpartition("=")
+    if sep and path and ".." in rng:
+        return os.path.realpath(path) + "=" + rng
+    return os.path.realpath(value)
+
+
+def real_dir(value):
+    return os.path.realpath(os.path.expanduser(value))
+
+
+def common_options(target, default=None):
+    target.add_argument(
+        "--session",
+        default=default,
+        help="review to use (default: latest here)",
+    )
+    target.add_argument(
+        "--agent",
+        default=default or default_agent(),
+        help="your name (default: $ROAMGATE_REVIEW_AGENT, Claude in Claude Code, else 'agent')",
+    )
+
+
+DESCRIPTION_HELP = (
+    "what this call does, in a few plain words: the user's chat shows it "
+    "as the call's row, so you do not say it there"
+)
+
+
+def parser():
+    # --session and --agent work before or after the command; given after
+    # it, they win, and unset they keep what was given before.
+    common = argparse.ArgumentParser(add_help=False)
+    common_options(common, argparse.SUPPRESS)
+    p = argparse.ArgumentParser(
+        prog="roamgate-review",
+        description="Talk to Roamgate's reviews, shown in its Changes view. Output is JSON.",
+    )
+    common_options(p)
+    sub = p.add_subparsers(dest="command", required=True)
+    real_add = sub.add_parser
+
+    def add_parser(name, **kwargs):
+        return real_add(name, parents=[common], **kwargs)
+
+    sub.add_parser = add_parser
+
+    o = sub.add_parser("open", help="open a review in Roamgate")
+    target = o.add_mutually_exclusive_group()
+    target.add_argument("--range", help="BASE..HEAD (default: default branch..HEAD)")
+    target.add_argument("--worktree", action="store_true", help="uncommitted changes")
+    target.add_argument(
+        "--last-step",
+        action="store_true",
+        help="what your last step changed (the workspace's Last step)",
+    )
+    target.add_argument("--mr", help="merge request URL")
+    target.add_argument(
+        "--compare",
+        nargs=2,
+        metavar=("OLD", "NEW"),
+        help="only what changed from OLD to NEW (tree to tree), e.g. a branch before and after a force-push",
+    )
+    target.add_argument(
+        "--file",
+        help="a file to discuss as Roamgate renders it (Markdown, HTML, SVG, image)",
+    )
+    target.add_argument("--url", help="a site's page to browse and discuss in Roamgate")
+    o.add_argument(
+        "--repo",
+        action="append",
+        help="another repository worked on, PATH or PATH=BASE..HEAD (repeatable); same workspace",
+    )
+    o.add_argument("--title")
+    o.add_argument("--message", help="shown when the review opens")
+
+    sub.add_parser("skill", help="print the instructions for agents")
+    ls = sub.add_parser("list", help="reviews of this checkout (--all: every review here)")
+    ls.add_argument("--all", action="store_true", help="every review of this connection, whatever the checkout")
+    sub.add_parser("get", help="the review with all threads")
+
+    a = sub.add_parser("add", help="start a thread")
+    a.add_argument("--file")
+    a.add_argument("--line", type=int)
+    a.add_argument("--end-line", type=int)
+    a.add_argument("--side", choices=["old", "new"])
+    a.add_argument("--draft", action="store_true", help="a review comment, not a discussion")
+    a.add_argument(
+        "--quote",
+        help="in a rendered file, or with --on-comment: the words meant, as they read",
+    )
+    a.add_argument(
+        "--on-comment",
+        help="a comment's id (a work item's description_comment): the thread goes on its part --quote reads",
+    )
+    a.add_argument("--description", help=DESCRIPTION_HELP)
+    a.add_argument("text", nargs="*", help="text, or - for standard input")
+
+    for name, helptext in (
+        ("reply", "answer a thread"),
+        ("edit", "rewrite one of your comments"),
+    ):
+        c = sub.add_parser(name, help=helptext)
+        c.add_argument("--comment", required=True, help="comment or thread id (prefix ok)")
+        c.add_argument("--description", help=DESCRIPTION_HELP)
+        c.add_argument("text", nargs="*", help="text, or - for standard input")
+
+    d = sub.add_parser("delete", help="delete one of your comments")
+    d.add_argument("--comment", required=True)
+
+    r = sub.add_parser("resolve", help="resolve a thread")
+    r.add_argument("--comment", required=True)
+    r.add_argument("--unresolve", action="store_true")
+
+    o2 = sub.add_parser("reopen", help="reopen a resolved thread")
+    o2.add_argument("--comment", required=True)
+
+    w = sub.add_parser("watch", help="wait for threads that need your answer or a handoff")
+    w.add_argument("--any", action="store_true", help="wake on any change")
+    w.add_argument("--timeout", type=int, default=1800, help="seconds (default 1800)")
+
+    m = sub.add_parser("summary", help="the overall comment: read it (no text), or set it (kept only if the user has none)")
+    m.add_argument("text", nargs="*", help="text, or - for standard input; none reads it")
+
+    k = sub.add_parser("working", help="say you are working on the review")
+    k.add_argument("--comment", help="the thread you are working on (comment or thread id)")
+    k.add_argument("--message", help="what you are doing, shown to the user")
+    k.add_argument("--done", action="store_true")
+    k.add_argument("--description", help=DESCRIPTION_HELP)
+
+    u = sub.add_parser("update", help="say what changed")
+    u.add_argument("--message", required=True)
+
+    n = sub.add_parser(
+        "notify",
+        help="tell the user they need to act: a notification, and this agent in their list of what needs them",
+    )
+    n.add_argument("--title", help="a few words (default: your agent and workspace)")
+    n.add_argument("text", nargs="*", help="what the user needs to do, or - for standard input")
+
+    def group_args(command):
+        command.add_argument(
+            "--group",
+            help="put it in this group of the Workspaces tree instead of under yours: names from the top"
+            " (or from your own group) such as gst/upstreaming, case-insensitive; see groups",
+        )
+        command.add_argument(
+            "--create-group",
+            action="store_true",
+            help="make the groups of --group that do not exist",
+        )
+
+    pl = sub.add_parser(
+        "place",
+        help="put a workspace under yours in Roamgate's Workspaces list (one you started work in), or in --group",
+    )
+    placed = pl.add_mutually_exclusive_group(required=True)
+    placed.add_argument("--workspace-id", help="its Herdr workspace id")
+    placed.add_argument("--path", type=real_dir, help="its checkout or directory")
+    group_args(pl)
+
+    wt = sub.add_parser(
+        "worktree",
+        help="create a Git worktree workspace, listed under yours in Roamgate, or in --group",
+    )
+    wt.add_argument("--branch", required=True)
+    wt.add_argument("--repo", type=real_dir, help="the repository (default: here)")
+    wt.add_argument("--base", help="what to branch from (default: Herdr's)")
+    wt.add_argument("--path", help="the checkout's path (default: Herdr's)")
+    wt.add_argument("--label", help="the workspace's name")
+    group_args(wt)
+
+    ws = sub.add_parser(
+        "workspace",
+        help="create a workspace in a directory, listed under yours in Roamgate, or in --group",
+    )
+    ws.add_argument("--dir", type=real_dir, help="its directory (default: here)")
+    ws.add_argument("--label", help="its name")
+    group_args(ws)
+
+    sub.add_parser(
+        "groups",
+        help="the groups of Roamgate's Workspaces tree, as paths to give --group, and the one you are in",
+    )
+
+    sub.add_parser(
+        "sessions",
+        help="the agent sessions Roamgate manages, on every connection, with the address to message each",
+    )
+    msg = sub.add_parser(
+        "message",
+        help="send another agent session a message (it is told it comes from you, not its user)",
+    )
+    msg.add_argument("to", help="its address, CONNECTION/PANE, as sessions lists it")
+    msg.add_argument("text", nargs="*", help="text, or - for standard input")
+
+    rv = sub.add_parser(
+        "reviews",
+        help="the Reviews board: your requests' lanes and next steps, overrides, order (TOOL, then its parameters as JSON)",
+    )
+    rv.add_argument("tool", help="reviews_list, reviews_override, reviews_order, ...")
+    rv.add_argument("params", nargs="?", help="a JSON object, or - for standard input")
+
+    wk = sub.add_parser(
+        "work",
+        help="the Work board: work items by state, tags, owner and links (TOOL, then its parameters as JSON; help lists them)",
+    )
+    wk.add_argument("tool", help="work_list, work_add, work_update, work_done, work_reopen, work_adopt, work_project, help")
+    wk.add_argument("params", nargs="?", help="a JSON object, or - for standard input")
+    wk.add_argument("--description", help=DESCRIPTION_HELP)
+
+    q = sub.add_parser(
+        "permission",
+        help="Claude Code PermissionRequest hook: ask in Roamgate, else the terminal",
+    )
+    q.add_argument("--timeout", type=int, default=60, help="seconds to wait (default 60)")
+
+    a = sub.add_parser(
+        "questions",
+        help="Claude Code PreToolUse hook for AskUserQuestion: answer in Roamgate, else the terminal",
+    )
+    a.add_argument("--timeout", type=int, default=180, help="seconds to wait (default 180)")
+
+    sub.add_parser(
+        "claude-start",
+        help="Claude Code SessionStart hook: conversation mode takes a claude started by hand, if Roamgate is set so",
+    )
+    return p
+
+
+def ask(args, command, extra):
+    # A hook's request to Roamgate: its reply, or None on any failure.
+    pane = os.environ.get("HERDR_PANE_ID", "")
+    if not pane or not os.path.exists(SOCKET):
+        return None
+    body = {
+        "pane": pane,
+        "workspace": os.environ.get("HERDR_WORKSPACE_ID", ""),
+        "herdr_socket": os.environ.get("HERDR_SOCKET_PATH", ""),
+        "cwd": os.path.realpath(os.getcwd()),
+        "agent": args.agent,
+        "timeout": str(args.timeout),
+    }
+    body.update(extra)
+    connection = UnixConnection(SOCKET, args.timeout + 30)
+    try:
+        connection.request(
+            "POST",
+            "/v1/" + command,
+            body=json.dumps(body),
+            headers={"content-type": "application/json"},
+        )
+        response = connection.getresponse()
+        return json.loads(response.read().decode("utf-8", "replace"))
+    except (OSError, ValueError, http.client.HTTPException):
+        return None
+
+
+def headless():
+    # Roamgate's conversation mode runs this claude and asks the user itself
+    # (over stdio): its hooks must not ask a second time.
+    return os.environ.get("ROAMGATE_HEADLESS") == "1"
+
+
+def questions(args):
+    # A PreToolUse hook on AskUserQuestion: Claude Code shows its own
+    # questions only if this prints nothing.
+    if headless():
+        return
+    try:
+        hook = json.load(sys.stdin)
+    except ValueError:
+        return
+    tool_input = hook.get("tool_input") or {}
+    asked = tool_input.get("questions") or []
+    if not asked:
+        return
+    reply = ask(args, "questions", {"questions": json.dumps(asked)})
+    if (reply or {}).get("dismissed"):
+        # Put away unanswered in Roamgate: Claude is told so and goes on.
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": "deny",
+                        "permissionDecisionReason": DISMISSED_QUESTION,
+                    }
+                }
+            )
+        )
+        return
+    answers = (reply or {}).get("answers")
+    if not answers:
+        return
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": dict(tool_input, answers=answers),
+                }
+            }
+        )
+    )
+
+
+def permission(args):
+    # A PermissionRequest hook: Claude Code waits on it before its own
+    # dialog. Any failure, or no answer in time, prints nothing: the
+    # terminal asks as usual.
+    if headless():
+        return
+    pane = os.environ.get("HERDR_PANE_ID", "")
+    if not pane or not os.path.exists(SOCKET):
+        return
+    try:
+        hook = json.load(sys.stdin)
+    except ValueError:
+        return
+    # Claude's questions have their own hook (questions); a permission card
+    # could only allow them unanswered.
+    if hook.get("tool_name") == "AskUserQuestion":
+        return
+    suggestions = hook.get("permission_suggestions") or []
+    body = {
+        "pane": pane,
+        "workspace": os.environ.get("HERDR_WORKSPACE_ID", ""),
+        "herdr_socket": os.environ.get("HERDR_SOCKET_PATH", ""),
+        "cwd": os.path.realpath(os.getcwd()),
+        "agent": args.agent,
+        "tool": hook.get("tool_name") or "tool",
+        "input": json.dumps(hook.get("tool_input")),
+        "can_always": "1" if suggestions else "",
+        "timeout": str(args.timeout),
+    }
+    connection = UnixConnection(SOCKET, args.timeout + 30)
+    try:
+        connection.request(
+            "POST",
+            "/v1/permission",
+            body=json.dumps(body),
+            headers={"content-type": "application/json"},
+        )
+        response = connection.getresponse()
+        answer = json.loads(response.read().decode("utf-8", "replace")).get("answer")
+    except (OSError, ValueError, http.client.HTTPException):
+        return
+    if answer == "deny":
+        decision = {"behavior": "deny", "message": "Denied from Roamgate"}
+    elif answer == "dismiss":
+        decision = {"behavior": "deny", "message": DISMISSED_PERMISSION}
+    elif answer == "always":
+        decision = {"behavior": "allow", "updatedPermissions": suggestions}
+    elif answer == "allow":
+        decision = {"behavior": "allow"}
+    else:
+        return
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PermissionRequest",
+                    "decision": decision,
+                }
+            }
+        )
+    )
+
+
+def claude_process():
+    # The interactive claude this hook runs for: the nearest ancestor that
+    # is claude (the hook runs under a shell). None if none is found.
+    pid = os.getppid()
+    for _ in range(6):
+        if pid <= 1:
+            return None
+        try:
+            out = subprocess.run(
+                ["ps", "-o", "ppid=", "-o", "args=", "-p", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return None
+        parts = out.split(None, 1)
+        if len(parts) < 2:
+            return None
+        argv = parts[1].split()
+        names = [os.path.basename(word) for word in argv[:2]]
+        if "claude" in names or any(word.endswith("claude-code/cli.js") for word in argv[:2]):
+            return pid, argv
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            return None
+    return None
+
+
+def claude_start(args):
+    # A SessionStart hook: prints nothing (it would reach Claude's context),
+    # waits on nothing (Claude starts meanwhile). Roamgate decides, by its
+    # claude start setting, and takes the session once Claude is up.
+    if headless():
+        return
+    if os.environ.get(START_ENV, "").strip().lower() in ("terminal", "tui", "0", "off", "no"):
+        return
+    pane = os.environ.get("HERDR_PANE_ID", "")
+    if not pane or not os.path.exists(SOCKET):
+        return
+    try:
+        hook = json.load(sys.stdin)
+    except ValueError:
+        return
+    if not isinstance(hook, dict):
+        return
+    if hook.get("hook_event_name", "SessionStart") != "SessionStart":
+        return
+    # Only a claude started, or resumed, by hand: not /clear, not compact.
+    source = hook.get("source") or ""
+    session = hook.get("session_id") or ""
+    if source not in ("startup", "resume") or not session or hook.get("agent_id"):
+        return
+    found = claude_process()
+    if found is None:
+        return
+    pid, argv = found
+    # claude -p in a pane prints and ends: nothing to take.
+    if "-p" in argv or "--print" in argv:
+        return
+    body = {
+        "pane": pane,
+        "workspace": os.environ.get("HERDR_WORKSPACE_ID", ""),
+        "herdr_socket": os.environ.get("HERDR_SOCKET_PATH", ""),
+        "cwd": os.path.realpath(hook.get("cwd") or os.getcwd()),
+        "session": session,
+        "source": source,
+        "pid": str(pid),
+    }
+    connection = UnixConnection(SOCKET, 3)
+    try:
+        connection.request(
+            "POST",
+            "/v1/claude_start",
+            body=json.dumps(body),
+            headers={"content-type": "application/json"},
+        )
+        connection.getresponse().read()
+    except (OSError, http.client.HTTPException):
+        pass
+    finally:
+        connection.close()
+
+
+def main():
+    args = parser().parse_args()
+    if args.command == "claude-start":
+        claude_start(args)
+        return
+    if args.command == "permission":
+        permission(args)
+        return
+    if args.command == "questions":
+        questions(args)
+        return
+    if not os.path.exists(SOCKET):
+        fail("Roamgate review socket not found: " + SOCKET)
+    # A claude in conversation mode has its pane under Roamgate's names
+    # (Herdr's would make Herdr's hook claim the pane).
+    body = {
+        "pane": os.environ.get("HERDR_PANE_ID") or os.environ.get("ROAMGATE_PANE_ID", ""),
+        "workspace": os.environ.get("HERDR_WORKSPACE_ID", ""),
+        "herdr_socket": os.environ.get("HERDR_SOCKET_PATH")
+        or os.environ.get("ROAMGATE_HERDR_SOCKET_PATH", ""),
+        "cwd": os.path.realpath(os.getcwd()),
+        "agent": args.agent,
+    }
+    if args.session:
+        body["session"] = args.session
+    if getattr(args, "compare", None):
+        args.compare = "..".join(args.compare)
+    for key, value in vars(args).items():
+        if key in ("session", "agent", "command", "text") or value in (None, False):
+            continue
+        if isinstance(value, list):
+            value = "\n".join(real_repo(v) for v in value)
+        body[key.replace("-", "_")] = "1" if value is True else value
+    if args.command in ("reviews", "work") and args.params == "-":
+        body["params"] = sys.stdin.read()
+    if "text" in vars(args):
+        text = text_of(args)
+        if text is not None:
+            body["text"] = text
+    timeout = 60
+    if args.command == "watch":
+        body["mode"] = "any" if args.any else "unanswered"
+        body.pop("any", None)
+        timeout = args.timeout + 30
+    connection = UnixConnection(SOCKET, timeout)
+    try:
+        connection.request(
+            "POST",
+            "/v1/" + args.command,
+            body=json.dumps(body),
+            headers={"content-type": "application/json"},
+        )
+        response = connection.getresponse()
+        data = response.read().decode("utf-8", "replace")
+    except (OSError, http.client.HTTPException) as error:
+        fail("cannot reach Roamgate: " + str(error), 1)
+    if response.status >= 400:
+        print(data, file=sys.stderr)
+        sys.exit(1)
+    if args.command == "skill":
+        print(json.loads(data)["skill"], end="")
+        return
+    print(data)
+
+
+if __name__ == "__main__":
+    main()

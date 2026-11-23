@@ -3,6 +3,7 @@ import { userInfo } from "node:os";
 import { holdSshSession, runInSshLane } from "../bridge/ssh-sessions";
 import { sshCommandArgv } from "../bridge/ssh-command";
 import { BASH_OUTPUT_LIMIT } from "../../../shared/bashMode";
+import { SHELL_JOB_SH } from "../assets";
 
 /**
  * Runs a `!` line from a chat in conversation mode, as Claude Code's bash
@@ -14,21 +15,7 @@ import { BASH_OUTPUT_LIMIT } from "../../../shared/bashMode";
  * the whole job when its stdin closes: Stop closes it, and so does a
  * dropped SSH connection, so nothing is left running on the host.
  */
-const WRAPPER = [
-  "set -m",
-  'cd -- "$1" || exit 126',
-  'login="${3:-${SHELL:-/bin/sh}}"',
-  // The wrapper's own job notices go nowhere; the command's stderr is fd 3.
-  "exec 3>&2 2>/dev/null",
-  '"$login" -l -c "$2" </dev/null 2>&3 3>&- &',
-  "job=$!",
-  '( cat >/dev/null; kill -TERM -"$job" || kill -TERM "$job" ) 2>/dev/null &',
-  "watch=$!",
-  'wait "$job"',
-  "code=$?",
-  'kill "$watch" 2>/dev/null',
-  'exit "$code"',
-].join("\n");
+const WRAPPER = SHELL_JOB_SH;
 
 export type ShellOutput = {
   stdout: string;

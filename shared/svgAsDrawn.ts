@@ -3,8 +3,8 @@
  * into a copy, and the animations left out, so a picture of it is this
  * moment and not the start.
  *
- * Self-contained: the page's helper script embeds this function's source
- * (server/src/http/rendered-helper.ts). No imports, no module state.
+ * Self-contained: the page's helper script (web/src/renderedHelper.ts) is
+ * built with it. No imports, no module state.
  */
 export function svgAsDrawn(svg: SVGSVGElement): string {
   const smil = "animate, animateTransform, animateMotion, set";

@@ -1746,7 +1746,7 @@ describe("a listed site's localStorage", () => {
     // Scripts turned on for a file, its directory not listed: no site.
     const once = await html(pages, mintFiles(pages, "site"));
     expect(once).not.toContain("VALUE");
-    expect(once).toContain("null, {");
+    expect(once).toContain(", null);})();");
     const plain = createRenderedPages({
       readFile: async () => ({
         body: PAGE,
@@ -1977,6 +1977,6 @@ describe("the helper's storage shim", () => {
     const { win } = await page(null);
     const desc = Object.getOwnPropertyDescriptor(win, "localStorage");
     expect(desc?.get?.toString() ?? "").not.toContain("storage");
-    expect(renderedHelperSource("/p/")).toContain("null, {");
+    expect(renderedHelperSource("/p/")).toEndWith(", null);})();");
   });
 });

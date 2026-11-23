@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { REPO_INFO_BLOCK_SH, fillTemplate } from "../assets";
 
 /**
  * What the activity log keeps of a workspace's repository: its root (the
@@ -31,22 +32,8 @@ function shQuote(value: string): string {
 export function repoInfoScript(paths: readonly string[], marker: string) {
   return [
     "export GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0",
-    ...paths.map(
-      (path, index) => `p=${shQuote(path)}
-printf '${marker} begin ${index}\\n'
-if top=$(git -C "$p" rev-parse --show-toplevel 2>/dev/null); then
-  printf 'top %s\\n' "$top"
-  printf 'common %s\\n' "$(git -C "$p" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
-  printf 'gitdir %s\\n' "$(git -C "$p" rev-parse --path-format=absolute --git-dir 2>/dev/null)"
-  b=$(git -C "$p" symbolic-ref --short -q HEAD 2>/dev/null)
-  printf 'branch %s\\n' "$b"
-  r=""
-  [ -n "$b" ] && r=$(git -C "$p" config --get "branch.$b.remote" 2>/dev/null)
-  [ -z "$r" ] || [ "$r" = "." ] && r=origin
-  u=$(git -C "$p" remote get-url "$r" 2>/dev/null || git -C "$p" remote get-url "$(git -C "$p" remote 2>/dev/null | head -n 1)" 2>/dev/null)
-  printf 'remote %s\\n' "$u"
-fi
-printf '${marker} end ${index}\\n'`,
+    ...paths.map((path, index) =>
+      fillTemplate(REPO_INFO_BLOCK_SH, { path: shQuote(path), marker, index }),
     ),
   ].join("\n");
 }

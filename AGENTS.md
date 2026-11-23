@@ -30,6 +30,9 @@ the root manifest. Keep runtime dependencies in their owning workspace.
 - `bun run package:linux-arm64`, `package:darwin-x64`,
   `package:darwin-arm64`, `package:windows-x64`, and
   `package:windows-arm64`: package the other supported release targets.
+- `bun run build:assets`: rebuild `contract/assets/js/rendered-helper.js`,
+  the tool catalog and `contract/assets/index.json` after changing an
+  embedded asset, a tool or the rendered helper (see `contract/assets`).
 - `bun run format [paths...]`: format the given paths with the pinned root
   Biome config, or all supported files when no paths are given.
 - `bun run format:check [paths...]`: check formatting with the same path scope.

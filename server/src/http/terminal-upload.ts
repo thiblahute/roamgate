@@ -7,6 +7,7 @@ import { holdSshSession } from "../bridge/ssh-sessions";
 import { roamgateEnv } from "../config/environment";
 import { shQuote } from "../utils/process-utils";
 import { terminalPathText } from "./terminal-path-text";
+import { UPLOAD_CLEANUP_SH, UPLOAD_WRITE_SH, fillTemplate } from "../assets";
 
 const DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
 const DEFAULT_RETENTION_HOURS = 24;
@@ -52,33 +53,19 @@ export function sanitizeTerminalUploadName(
 }
 
 export function remoteTerminalCleanupScript(retentionMinutes: number) {
-  return `set -eu
-umask 077
-case "\${TMPDIR:-/tmp}" in /*) temp_root="\${TMPDIR:-/tmp}" ;; *) temp_root=/tmp ;; esac
-# macOS's TMPDIR ends with a slash: keep the paths sent to agents clean.
-while [ "\${temp_root%/}" != "$temp_root" ]; do temp_root=\${temp_root%/}; done
-root="$temp_root/roamgate-uploads-$(id -u)"
-[ ! -L "$root" ] || exit 1
-mkdir -m 700 -p "$root"
-[ -d "$root" ] && [ ! -L "$root" ] || exit 1
-owner=$(stat -c %u "$root" 2>/dev/null || stat -f %u "$root")
-mode=$(stat -c %a "$root" 2>/dev/null || stat -f %Lp "$root")
-[ "$owner" = "$(id -u)" ] && [ "$mode" = 700 ] || exit 1
-find "$root" -mindepth 1 -maxdepth 1 -type d -name 'upload-*' -mmin +${retentionMinutes} -exec rm -rf -- {} +`;
+  return fillTemplate(UPLOAD_CLEANUP_SH, {
+    retention_minutes: retentionMinutes,
+  });
 }
 
 export function remoteTerminalUploadScript(
   name: string,
   retentionMinutes: number,
 ) {
-  return `${remoteTerminalCleanupScript(retentionMinutes)}
-directory=$(mktemp -d "$root/upload-XXXXXXXX")
-trap 'rm -rf -- "$directory"' EXIT
-path="$directory/"${shQuote(name)}
-cat > "$path"
-chmod 600 "$path"
-printf '%s' "$path"
-trap - EXIT`;
+  return fillTemplate(UPLOAD_WRITE_SH, {
+    cleanup: remoteTerminalCleanupScript(retentionMinutes),
+    name: shQuote(name),
+  });
 }
 
 export function createTerminalUploadHandler(args: {

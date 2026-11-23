@@ -42,6 +42,11 @@ import {
   loadServerTls,
   withLoginToken,
 } from "./server-config";
+import {
+  TASK_STATUS_PS1,
+  TASK_WAIT_STOPPED_PS1,
+  fillTemplate,
+} from "../assets";
 
 type ServiceAction = "install" | "uninstall" | "status" | "restart" | "reload";
 
@@ -186,7 +191,11 @@ export function queryWindowsTask(
   runCommand: RunCommand,
 ): WindowsTaskQuery {
   const task = powershellLiteral(taskName);
-  const script = `try { $taskInfo = Get-ScheduledTask -TaskName ${task} -ErrorAction Stop; if ($taskInfo.State -eq 'Running') { exit 0 }; exit ${WINDOWS_TASK_INACTIVE_EXIT_CODE} } catch { if ($_.FullyQualifiedErrorId -like 'CmdletizationQuery_NotFound_TaskName*') { exit ${WINDOWS_TASK_NOT_FOUND_EXIT_CODE} }; Write-Error $_; exit 1 }`;
+  const script = fillTemplate(TASK_STATUS_PS1, {
+    task,
+    inactive_exit: WINDOWS_TASK_INACTIVE_EXIT_CODE,
+    not_found_exit: WINDOWS_TASK_NOT_FOUND_EXIT_CODE,
+  });
   const code = runCommand([
     "powershell.exe",
     "-NoProfile",
@@ -223,7 +232,7 @@ function waitForWindowsTaskStop(
   runCommand: RunCommand,
 ): number {
   const task = powershellLiteral(taskName);
-  const script = `$deadline = (Get-Date).AddSeconds(15); while ((Get-Date) -lt $deadline) { try { $taskInfo = Get-ScheduledTask -TaskName ${task} -ErrorAction Stop } catch { if ($_.FullyQualifiedErrorId -like 'CmdletizationQuery_NotFound_TaskName*') { exit 0 }; Write-Error $_; exit 1 }; if ($taskInfo.State -ne 'Running') { exit 0 }; Start-Sleep -Milliseconds 100 }; Write-Error 'scheduled task did not stop within 15 seconds'; exit 1`;
+  const script = fillTemplate(TASK_WAIT_STOPPED_PS1, { task });
   return runCommand([
     "powershell.exe",
     "-NoProfile",

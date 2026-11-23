@@ -6,7 +6,13 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!server/src/public-files.gen.ts"]
+    "includes": [
+      "**",
+      "!server/src/public-files.gen.ts",
+      "!contract/assets/**",
+      "!contract/tools/catalog.json",
+      "!server/claude-mod/hooks/catalog.gen.ts"
+    ]
   },
   "formatter": {
     "enabled": true,

@@ -1,0 +1,530 @@
+{
+  "data/voice-models.json": {
+    "kind": "data, read as JSON",
+    "used_by": [
+      "server/src/voice/voice-model-files.ts",
+      "server/src/voice/voice-models.ts"
+    ]
+  },
+  "html/login.html": {
+    "kind": "page, a template",
+    "tags": [
+      "clear_drafts",
+      "pin",
+      "token",
+      "token_command"
+    ],
+    "used_by": [
+      "server/src/http/login-page.ts"
+    ]
+  },
+  "js/rendered-helper.js": {
+    "kind": "page script, built from web/src (bun run build:assets)",
+    "tags": [],
+    "used_by": [
+      "server/src/http/rendered-helper.ts"
+    ]
+  },
+  "ps1/herdr-bridge.ps1": {
+    "kind": "PowerShell run on a Windows host, a template when it has tags",
+    "tags": [
+      "arguments",
+      "path"
+    ],
+    "used_by": [
+      "server/src/bridge/ssh-windows.ts"
+    ]
+  },
+  "ps1/herdr-probe.ps1": {
+    "kind": "PowerShell run on a Windows host, a template when it has tags",
+    "tags": [
+      "configured",
+      "path",
+      "session"
+    ],
+    "used_by": [
+      "server/src/bridge/ssh-windows.ts"
+    ]
+  },
+  "ps1/list-directory.ps1": {
+    "kind": "PowerShell run on a Windows host, a template when it has tags",
+    "tags": [
+      "limit",
+      "path",
+      "suggestions"
+    ],
+    "used_by": [
+      "server/src/workspace/path.ts"
+    ]
+  },
+  "ps1/task-status.ps1": {
+    "kind": "PowerShell run on a Windows host, a template when it has tags",
+    "tags": [
+      "inactive_exit",
+      "not_found_exit",
+      "task"
+    ],
+    "used_by": [
+      "server/src/config/service-manager.ts"
+    ]
+  },
+  "ps1/task-wait-stopped.ps1": {
+    "kind": "PowerShell run on a Windows host, a template when it has tags",
+    "tags": [
+      "task"
+    ],
+    "used_by": [
+      "server/src/config/service-manager.ts"
+    ]
+  },
+  "python/claude-start-hook-install.py": {
+    "kind": "Python 3 run on a host (the clients are installed there as files)",
+    "tags": [],
+    "used_by": [
+      "server/src/conversation/claude-start-hook.ts"
+    ]
+  },
+  "python/codex-session-find.py": {
+    "kind": "Python 3 run on a host (the clients are installed there as files)",
+    "tags": [],
+    "used_by": [
+      "server/src/agent/session-file-access.ts"
+    ]
+  },
+  "python/exclusive-rename.py": {
+    "kind": "Python 3 run on a host (the clients are installed there as files)",
+    "tags": [],
+    "used_by": [
+      "server/src/workspace/atomic-file-move.ts"
+    ]
+  },
+  "python/roamgate-hold.py": {
+    "kind": "Python 3 run on a host (the clients are installed there as files)",
+    "tags": [],
+    "used_by": [
+      "server/src/conversation/holder-script.ts"
+    ]
+  },
+  "python/roamgate-review.py": {
+    "kind": "Python 3 run on a host (the clients are installed there as files)",
+    "tags": [],
+    "used_by": [
+      "server/src/review/agent-client.ts"
+    ]
+  },
+  "sh/batch-block.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "index",
+      "script"
+    ],
+    "used_by": [
+      "server/src/workspace/git-diff.ts"
+    ]
+  },
+  "sh/batch.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "blocks",
+      "marker"
+    ],
+    "used_by": [
+      "server/src/workspace/git-diff.ts"
+    ]
+  },
+  "sh/capped-diff.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "automatic",
+      "command",
+      "head_bytes",
+      "large_patch_bytes",
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/git-diff.ts"
+    ]
+  },
+  "sh/claude-successor.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [],
+    "used_by": [
+      "server/src/agent/session-file-access.ts"
+    ]
+  },
+  "sh/combined-diff.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "automatic",
+      "cap",
+      "diff_options",
+      "git",
+      "large_patch_bytes",
+      "marker",
+      "max_bytes",
+      "path",
+      "pathspec",
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/git-combined.ts"
+    ]
+  },
+  "sh/compare-refs.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "git",
+      "near_history",
+      "near_listed",
+      "tags_listed"
+    ],
+    "used_by": [
+      "server/src/workspace/diff-base.ts"
+    ]
+  },
+  "sh/delete-file.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "rel",
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/remote-files.ts"
+    ]
+  },
+  "sh/delete-untracked.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "file",
+      "path",
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/git-actions.ts"
+    ]
+  },
+  "sh/diff-base-refs.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/diff-base.ts"
+    ]
+  },
+  "sh/diff-base-relation.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "local",
+      "remote",
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/diff-base.ts"
+    ]
+  },
+  "sh/download-file.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "audio_max_bytes",
+      "audio_patterns",
+      "block_size",
+      "capped",
+      "checked",
+      "count_blocks",
+      "inline",
+      "max_bytes",
+      "metadata_only",
+      "request",
+      "root",
+      "skip_blocks",
+      "slice",
+      "slice_size",
+      "stream",
+      "stream_size"
+    ],
+    "used_by": [
+      "server/src/workspace/remote-files.ts"
+    ]
+  },
+  "sh/find-session.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "id",
+      "names",
+      "root"
+    ],
+    "used_by": [
+      "server/src/agent/session-file-access.ts"
+    ]
+  },
+  "sh/git-status-block.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "index",
+      "marker",
+      "path"
+    ],
+    "used_by": [
+      "server/src/workspace/status.ts"
+    ]
+  },
+  "sh/html-preview-files.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "limit",
+      "limit_after",
+      "path",
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/html-preview-files.ts"
+    ]
+  },
+  "sh/last-step-refs.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "after_ref",
+      "baseline",
+      "before_ref",
+      "current",
+      "keep_from",
+      "kept",
+      "prefix",
+      "root",
+      "skipped",
+      "skipped_paths",
+      "skipped_ref"
+    ],
+    "used_by": [
+      "server/src/workspace/git-diff.ts"
+    ]
+  },
+  "sh/list-directory.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "limit",
+      "path",
+      "suggestions"
+    ],
+    "used_by": [
+      "server/src/workspace/path.ts"
+    ]
+  },
+  "sh/list-files.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "limit",
+      "rel",
+      "root",
+      "show_hidden"
+    ],
+    "used_by": [
+      "server/src/workspace/remote-files.ts"
+    ]
+  },
+  "sh/mutate-file.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "directory",
+      "move",
+      "name",
+      "rename",
+      "root",
+      "source_directory"
+    ],
+    "used_by": [
+      "server/src/workspace/remote-files.ts"
+    ]
+  },
+  "sh/process-cwds.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [],
+    "used_by": [
+      "server/src/worktree/remove.ts"
+    ]
+  },
+  "sh/read-file.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "image_limit",
+      "image_patterns",
+      "missing_exit",
+      "request",
+      "root",
+      "text_limit"
+    ],
+    "used_by": [
+      "server/src/workspace/remote-files.ts"
+    ]
+  },
+  "sh/read-session-tail.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "known",
+      "known_bytes",
+      "known_sha256",
+      "path",
+      "tail_from"
+    ],
+    "used_by": [
+      "server/src/agent/session-file-access.ts"
+    ]
+  },
+  "sh/repo-info-block.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "index",
+      "marker",
+      "path"
+    ],
+    "used_by": [
+      "server/src/activity/repo-info.ts"
+    ]
+  },
+  "sh/resolve-files.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "requests",
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/remote-files.ts"
+    ]
+  },
+  "sh/shell-job.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [],
+    "used_by": [
+      "server/src/conversation/shell.ts"
+    ]
+  },
+  "sh/site-root.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "dir",
+      "max_levels",
+      "rel"
+    ],
+    "used_by": [
+      "server/src/http/rendered-pages.ts"
+    ]
+  },
+  "sh/stat-batch.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [],
+    "used_by": [
+      "server/src/agent/session-file-access.ts"
+    ]
+  },
+  "sh/stat-file.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "request",
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/remote-files.ts"
+    ]
+  },
+  "sh/stat-loop.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [],
+    "used_by": [
+      "server/src/agent/history-watch.ts"
+    ]
+  },
+  "sh/step-snapshot.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/git-snapshot.ts"
+    ]
+  },
+  "sh/untracked-numstat.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "paths",
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/git-diff.ts"
+    ]
+  },
+  "sh/untracked-stats.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "paths",
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/git-actions.ts"
+    ]
+  },
+  "sh/update-install.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "archive_name",
+      "archive_url",
+      "binary_file",
+      "curl_transport",
+      "package_dir",
+      "platform",
+      "sha256",
+      "target",
+      "version",
+      "version_file"
+    ],
+    "used_by": [
+      "server/src/http/update.ts"
+    ]
+  },
+  "sh/upload-cleanup.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "retention_minutes"
+    ],
+    "used_by": [
+      "server/src/http/terminal-upload.ts"
+    ]
+  },
+  "sh/upload-file.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "name",
+      "rel",
+      "root"
+    ],
+    "used_by": [
+      "server/src/workspace/remote-files.ts"
+    ]
+  },
+  "sh/upload-write.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "cleanup",
+      "name"
+    ],
+    "used_by": [
+      "server/src/http/terminal-upload.ts"
+    ]
+  },
+  "sh/worktree-state.sh": {
+    "kind": "POSIX shell run on a host, a template when it has tags",
+    "tags": [
+      "path"
+    ],
+    "used_by": [
+      "server/src/worktree/remove.ts"
+    ]
+  },
+  "skill/SKILL.md": {
+    "kind": "installed on hosts beside roamgate-review",
+    "tags": [],
+    "used_by": [
+      "server/src/review/agent-skill.ts"
+    ]
+  }
+}

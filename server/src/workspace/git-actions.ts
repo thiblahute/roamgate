@@ -2,6 +2,11 @@ import { gitShellCommandArgv } from "./git-shell";
 import { GIT_DIFF_TIMEOUT_MS } from "./file-constants";
 import { sanitizeExplorerPath } from "./file-paths";
 import type { RunProcessWithCodeTimeout } from "./file-types";
+import {
+  DELETE_UNTRACKED_SH,
+  UNTRACKED_STATS_SH,
+  fillTemplate,
+} from "../assets";
 
 export const GIT_FILE_ACTIONS = [
   "stage",
@@ -149,17 +154,10 @@ export async function collectWorktreeFingerprints(
   const unique = Array.from(new Set(paths)).filter(Boolean);
   for (let index = 0; index < unique.length; index += FINGERPRINT_BATCH_SIZE) {
     const batch = unique.slice(index, index + FINGERPRINT_BATCH_SIZE);
-    const command = `
-set -- ${batch.map(context.shQuote).join(" ")}
-cd -- ${context.shQuote(context.root)}
-for p in "$@"; do
-  f="./$p"
-  [ -f "$f" ] || continue
-  values="$( (stat -c '%s %Y' "$f" 2>/dev/null || stat -f '%z %m' "$f" 2>/dev/null) )"
-  [ -n "$values" ] || continue
-  printf '%s\t%s\t%s\n' "$(printf '%s' "$p" | base64 | tr -d '\n')" "\${values%% *}" "\${values##* }"
-done
-`;
+    const command = fillTemplate(UNTRACKED_STATS_SH, {
+      paths: batch.map(context.shQuote).join(" "),
+      root: context.shQuote(context.root),
+    });
     const result = await context.runProcessWithCodeTimeout(
       gitShellCommandArgv(command, context.host),
       GIT_DIFF_TIMEOUT_MS,
@@ -208,16 +206,11 @@ async function assertPorcelainAllows(
 // Recursive directory deletion is intentionally out of scope. Symlinks are
 // fine: clean removes the link itself, even when it points at a directory.
 async function runDeleteUntracked(context: GitActionContext, path: string) {
-  const script = `
-set -eu
-cd -- ${context.shQuote(context.root)}
-f=${context.shQuote(`./${path}`)}
-if [ -d "$f" ] && [ ! -L "$f" ]; then
-  echo "delete_untracked supports files only; recursive directory deletion is not supported" >&2
-  exit 15
-fi
-git -c core.quotepath=false clean -f -- ${context.shQuote(path)}
-`;
+  const script = fillTemplate(DELETE_UNTRACKED_SH, {
+    root: context.shQuote(context.root),
+    file: context.shQuote(`./${path}`),
+    path: context.shQuote(path),
+  });
   const result = await context.runProcessWithCodeTimeout(
     gitShellCommandArgv(script, context.host),
     GIT_DIFF_TIMEOUT_MS,

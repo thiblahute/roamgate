@@ -12,6 +12,7 @@ export const CLAUDE_MOD_SOURCE_FILES = [
   "hooks/register.ts",
   "hooks/client.ts",
   "hooks/tools.ts",
+  "hooks/catalog.gen.ts",
 ] as const;
 
 export function claudeModSources(): Record<string, string> {

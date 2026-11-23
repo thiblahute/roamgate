@@ -3,6 +3,12 @@ import type { RunProcessWithCodeTimeout } from "./file-types";
 import { gitShellCommandArgv } from "./git-shell";
 import type { CompareRef, CompareRefs } from "../../../shared/compareRefs";
 import { isMetadataRef } from "../../../shared/review";
+import {
+  COMPARE_REFS_SH,
+  DIFF_BASE_REFS_SH,
+  DIFF_BASE_RELATION_SH,
+  fillTemplate,
+} from "../assets";
 
 export { isMetadataRef };
 
@@ -111,12 +117,7 @@ export function shortRefName(ref: string): string {
 
 /** One script: the refs, then `init.defaultBranch`. */
 export function refsScript(shQuote: (value: string) => string, root: string) {
-  return `
-set -eu
-git -C ${shQuote(root)} for-each-ref --format='%(refname)%09%(symref)%09%(objectname)' refs/heads/ refs/remotes/
-printf '\\n--diff-base-config--\\n'
-git -C ${shQuote(root)} config --get init.defaultBranch || test "$?" = 1
-`;
+  return fillTemplate(DIFF_BASE_REFS_SH, { root: shQuote(root) });
 }
 
 export function parseRefsOutput(stdout: string): {
@@ -143,22 +144,11 @@ function factsScript(
   local: string,
   remote: string,
 ) {
-  return `
-cd ${shQuote(root)} || exit 2
-l=${shQuote(local)}; r=${shQuote(remote)}
-flag() { if "$@" >/dev/null 2>&1; then printf '1\\n'; else printf '0\\n'; fi; }
-flag test "$(git symbolic-ref -q HEAD)" = "$l"
-flag git merge-base --is-ancestor "$r" "$l"
-flag git merge-base --is-ancestor "$l" "$r"
-ml=$(git merge-base HEAD "$l" 2>/dev/null || true)
-mr=$(git merge-base HEAD "$r" 2>/dev/null || true)
-if [ -n "$ml" ]; then git log -1 --format=%ct "$ml"; else printf '0\\n'; fi
-if [ -n "$mr" ]; then git log -1 --format=%ct "$mr"; else printf '0\\n'; fi
-if [ -n "$ml" ] && [ -n "$mr" ]; then
-  flag git merge-base --is-ancestor "$ml" "$mr"
-  flag git merge-base --is-ancestor "$mr" "$ml"
-else printf '0\\n0\\n'; fi
-`;
+  return fillTemplate(DIFF_BASE_RELATION_SH, {
+    root: shQuote(root),
+    local: shQuote(local),
+    remote: shQuote(remote),
+  });
 }
 
 export function parseFactsOutput(stdout: string): DefaultBaseFacts | undefined {
@@ -276,21 +266,12 @@ export function compareRefsScript(
   root: string,
 ) {
   const git = `git -C ${shQuote(root)}`;
-  return `
-set -eu
-${git} for-each-ref --format='%(refname)%09%(symref)%09%(objectname)%09%(creatordate:unix)%09%(upstream)' refs/heads/ refs/remotes/
-${git} for-each-ref --sort=-creatordate --count=${COMPARE_TAGS_LISTED} --format='%(refname)%09%09%(objectname)%09%(creatordate:unix)%09' refs/tags/
-printf '\\n--diff-base-config--\\n'
-${git} config --get init.defaultBranch || test "$?" = 1
-printf '\\n--compare-head--\\n'
-${git} symbolic-ref -q HEAD || true
-printf '\\n--compare-near--\\n'
-if ${git} rev-parse -q --verify HEAD >/dev/null; then
-  ${git} log --first-parent -n ${COMPARE_NEAR_HISTORY} --format=%H HEAD
-  printf '\\n--compare-above--\\n'
-  ${git} for-each-ref --contains HEAD --sort=creatordate --count=${COMPARE_NEAR_LISTED + 1} --format='%(refname)' refs/heads/
-fi
-`;
+  return fillTemplate(COMPARE_REFS_SH, {
+    git,
+    tags_listed: COMPARE_TAGS_LISTED,
+    near_history: COMPARE_NEAR_HISTORY,
+    near_listed: COMPARE_NEAR_LISTED + 1,
+  });
 }
 
 /** Splits compareRefsScript's output: the refs as parseRefsOutput reads them. */

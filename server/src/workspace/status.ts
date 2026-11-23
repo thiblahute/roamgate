@@ -5,6 +5,7 @@ import {
   readGuiSettings,
   workspaceRepoSettingsKey,
 } from "../config/gui-settings";
+import { GIT_STATUS_BLOCK_SH, fillTemplate } from "../assets";
 
 type RunProcessWithCodeTimeout = (
   argv: string[],
@@ -282,14 +283,12 @@ export function createStatusEnricher(args: {
     const marker = `__ROAMGATE_GIT_STATUS_${randomBytes(4).toString("hex")}__`;
     const command = [
       "export GIT_OPTIONAL_LOCKS=0",
-      ...checkoutPaths.map(
-        (path, index) => `
-p=${args.shQuote(path)}
-printf '${marker}BEGIN ${index}\\n'
-git -C "$p" status --porcelain=v1 --branch 2>&1
-code=$?
-printf '${marker}END ${index} %s\\n' "$code"
-`,
+      ...checkoutPaths.map((path, index) =>
+        fillTemplate(GIT_STATUS_BLOCK_SH, {
+          path: args.shQuote(path),
+          marker,
+          index,
+        }),
       ),
     ].join("\n");
     const timeoutMs = Math.max(

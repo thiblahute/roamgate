@@ -12,6 +12,7 @@ import {
 } from "../../../shared/renderedPage";
 import { renderedHelperSource } from "./rendered-helper";
 import type { SiteStorage } from "./rendered-storage";
+import { SITE_ROOT_SH, fillTemplate } from "../assets";
 
 /**
  * Pages of rendered reviews, served under `/rendered/<token>/<path>`: an
@@ -1187,20 +1188,11 @@ export function siteRootScript(
   path: string,
   shQuote: (value: string) => string,
 ): string {
-  return `set -u
-d=${shQuote(from.replace(/\/+$/, ""))}
-rel=${shQuote(path)}
-home="\${HOME:-}"; home="\${home%/}"
-n=0
-while [ "$n" -lt ${SITE_ROOT_MAX_LEVELS} ]; do
-  d="\${d%/*}"
-  [ -n "$d" ] || exit 44
-  if [ -n "$home" ]; then case "$home/" in "$d"/*) exit 44 ;; esac; fi
-  if [ -e "$d/$rel" ]; then printf '%s\\n' "$d"; exit 0; fi
-  n=$((n+1))
-done
-exit 44
-`;
+  return fillTemplate(SITE_ROOT_SH, {
+    dir: shQuote(from.replace(/\/+$/, "")),
+    rel: shQuote(path),
+    max_levels: SITE_ROOT_MAX_LEVELS,
+  });
 }
 
 /** How long a file read over SSH is kept for the pages that follow. */

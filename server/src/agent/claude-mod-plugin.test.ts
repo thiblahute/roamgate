@@ -36,6 +36,7 @@ test("the binary carries the mod, its tests left out", () => {
   expect(Object.keys(CLAUDE_MOD_FILES).sort()).toEqual([
     ".claude-plugin/marketplace.json",
     "roamgate/.claude-plugin/plugin.json",
+    "roamgate/hooks/catalog.gen.ts",
     "roamgate/hooks/client.ts",
     "roamgate/hooks/hooks.json",
     "roamgate/hooks/register.ts",

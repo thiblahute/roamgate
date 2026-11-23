@@ -8,6 +8,7 @@ import {
   worktreeCommandScript,
   worktreeShellArgv,
 } from "./command-template";
+import { PROCESS_CWDS_SH, WORKTREE_STATE_SH, fillTemplate } from "../assets";
 
 type RunProcessWithCodeTimeout = (
   argv: string[],
@@ -423,27 +424,7 @@ export function createWorktreeRemovalRuntime({
 
   const inspectCheckout = async (path: string): Promise<CheckoutState> => {
     const quotedPath = shQuote(path);
-    const script = `
-path=${quotedPath}
-git_bin=$(command -v git 2>/dev/null || true)
-if [ -z "$git_bin" ] && [ -x /usr/bin/git ]; then git_bin=/usr/bin/git; fi
-if [ ! -e "$path" ]; then
-  printf missing
-elif [ -z "$git_bin" ]; then
-  printf unknown
-elif ! path_root=$(cd "$path" 2>/dev/null && pwd -P); then
-  printf residual
-elif ! git_root=$("$git_bin" -C "$path" rev-parse --show-toplevel 2>/dev/null); then
-  printf residual
-elif ! git_root=$(cd "$git_root" 2>/dev/null && pwd -P); then
-  printf residual
-elif [ "$path_root" != "$git_root" ]; then
-  printf residual
-else
-  status_output=$("$git_bin" -C "$path" status --porcelain --untracked-files=all 2>/dev/null) || { printf unknown; exit 0; }
-  if [ -n "$status_output" ]; then printf dirty; else printf clean; fi
-fi
-`.trim();
+    const script = fillTemplate(WORKTREE_STATE_SH, { path: quotedPath }).trim();
     const result = await runShell(script);
     const state = result.stdout.trim();
     return ["missing", "clean", "dirty", "residual"].includes(state)
@@ -468,20 +449,7 @@ fi
       return parseCheckoutProcessIds(local, canonicalPath).filter(
         (processId) => processId !== process.pid,
       );
-    const script = `
-if [ -d /proc ]; then
-  for link in /proc/[0-9]*/cwd; do
-    cwd=$(readlink "$link" 2>/dev/null) || continue
-    pid=\${link#/proc/}
-    pid=\${pid%/cwd}
-    printf 'p%s\\nn%s\\n' "$pid" "$cwd"
-  done
-elif command -v lsof >/dev/null 2>&1; then
-  lsof -a -d cwd -Fp -Fn 2>/dev/null || true
-else
-  exit 127
-fi
-`.trim();
+    const script = PROCESS_CWDS_SH.trim();
     const result = await runShell(script);
     if (result.code !== 0) {
       throw new Error(

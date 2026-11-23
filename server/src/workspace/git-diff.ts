@@ -26,6 +26,14 @@ import type {
   GitDiffMode,
   RunProcessWithCodeTimeout,
 } from "./file-types";
+import {
+  BATCH_BLOCK_SH,
+  BATCH_SH,
+  CAPPED_DIFF_SH,
+  LAST_STEP_REFS_SH,
+  UNTRACKED_NUMSTAT_SH,
+  fillTemplate,
+} from "../assets";
 
 const GIT_ATTRIBUTE_BATCH_SIZE = 100;
 const LAST_STEP_SNAPSHOT_LIMIT = 64;
@@ -108,21 +116,20 @@ export async function persistLastStep({
 } & GitCommandContext): Promise<void> {
   const prefix = lastStepRefPrefix(workspaceId);
   const kept = keep.filter((id) => STEP_ID.test(id)).join(" ");
-  const skipped = range.skipped?.length
-    ? `blob=$(printf '%s\\n' ${range.skipped.map((path) => shQuote(path)).join(" ")} | git hash-object -w --stdin)
-git update-ref ${shQuote(`${prefix}/${step}/skipped`)} "$blob"`
-    : "";
-  const command = `set -eu
-cd ${shQuote(root)}
-p=${shQuote(prefix)}
-git update-ref ${shQuote(`${prefix}/${step}/before`)} ${shQuote(range.baseline)}
-git update-ref ${shQuote(`${prefix}/${step}/after`)} ${shQuote(range.current)}
-${skipped}
-git for-each-ref --format='%(refname)' "$p/" | sed -n "s|^$p/\\([^/]*\\)/.*|\\1|p" | sort -u -r | tail -n +${LAST_STEPS_KEPT + 1} | while IFS= read -r old; do
-  case " ${kept} " in *" $old "*) continue;; esac
-  for end in before after skipped; do git update-ref -d "$p/$old/$end" 2>/dev/null || true; done
-done
-`;
+  const skipped = range.skipped ?? [];
+  const command = fillTemplate(LAST_STEP_REFS_SH, {
+    root: shQuote(root),
+    prefix: shQuote(prefix),
+    before_ref: shQuote(`${prefix}/${step}/before`),
+    baseline: shQuote(range.baseline),
+    after_ref: shQuote(`${prefix}/${step}/after`),
+    current: shQuote(range.current),
+    skipped: skipped.length > 0,
+    skipped_paths: skipped.map((path) => shQuote(path)).join(" "),
+    skipped_ref: shQuote(`${prefix}/${step}/skipped`),
+    keep_from: LAST_STEPS_KEPT + 1,
+    kept,
+  });
   const result = await runProcessWithCodeTimeout(
     gitShellCommandArgv(command, host),
     GIT_DIFF_TIMEOUT_MS,
@@ -551,20 +558,13 @@ function gitPatchScript(
   shQuote: (value: string) => string,
   automatic: boolean,
 ) {
-  return `
-patch_file=$(mktemp "\${TMPDIR:-/tmp}/roamgate-diff.XXXXXX") || exit 1
-trap 'rm -f "$patch_file"' 0
-trap 'exit 1' HUP INT TERM
-git -C ${shQuote(root)} -c core.quotepath=false ${command} >"$patch_file"
-git_code=$?
-case "$git_code" in 0|1) ;; *) exit "$git_code" ;; esac
-patch_size=$(wc -c <"$patch_file")
-printf '%s\n' "$patch_size"
-if [ ${automatic ? "1" : "0"} -eq 0 ] || [ "$patch_size" -lt ${LARGE_DIFF_PATCH_BYTES} ]; then
-  head -c ${GIT_DIFF_MAX_BYTES + 4} "$patch_file"
-fi
-exit "$git_code"
-`;
+  return fillTemplate(CAPPED_DIFF_SH, {
+    root: shQuote(root),
+    command,
+    automatic: automatic ? "1" : "0",
+    large_patch_bytes: LARGE_DIFF_PATCH_BYTES,
+    head_bytes: GIT_DIFF_MAX_BYTES + 4,
+  });
 }
 
 function parseGitPatchOutput(
@@ -643,23 +643,10 @@ export async function runScriptBatch({
       ),
     ];
   const marker = `ROAMGATE-BATCH-${randomUUID()}`;
-  const blocks = scripts.map(
-    (script, index) => `printf '\\n%s B ${index}\\n' "$batch_marker"
-(
-${script}
-) 2>"$batch_err"
-batch_code=$?
-printf '\\n%s E ${index} %s\\n' "$batch_marker" "$batch_code"
-head -c 2000 "$batch_err"`,
+  const blocks = scripts.map((script, index) =>
+    fillTemplate(BATCH_BLOCK_SH, { index, script }),
   );
-  const command = `batch_marker='${marker}'
-batch_err=$(mktemp "\${TMPDIR:-/tmp}/roamgate-batch.XXXXXX") || exit 1
-trap 'rm -f "$batch_err"' 0
-trap 'exit 1' HUP INT TERM
-${blocks.join("\n")}
-printf '\\n%s Z\\n' "$batch_marker"
-exit 0
-`;
+  const command = fillTemplate(BATCH_SH, { marker, blocks: blocks.join("\n") });
   const result = await runProcessWithCodeTimeout(
     gitShellCommandArgv(command, host),
     timeoutMs,
@@ -1222,14 +1209,10 @@ async function collectStats({
       const batch = batches[cursor];
       cursor += 1;
       if (!batch) continue;
-      const command = `
-set -- ${batch.map((entry) => shQuote(entry.path)).join(" ")}
-for p in "$@"; do
-  git -C ${shQuote(root)} -c core.quotepath=false diff --no-ext-diff --no-index --numstat -- /dev/null "$p"
-done
-# The loop's status is only its last file's; keep the batch's other counts.
-exit 0
-`;
+      const command = fillTemplate(UNTRACKED_NUMSTAT_SH, {
+        paths: batch.map((entry) => shQuote(entry.path)).join(" "),
+        root: shQuote(root),
+      });
       const result = await runProcessWithCodeTimeout(
         gitShellCommandArgv(command, host),
         GIT_DIFF_TIMEOUT_MS,

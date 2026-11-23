@@ -37,6 +37,17 @@ import type {
 import { runProcessWithInputTimeout } from "./process";
 import { decodePreviewBuffer, previewLimitForPath } from "./preview";
 import { REMOTE_EXCLUSIVE_RENAME } from "./atomic-file-move";
+import {
+  DELETE_FILE_SH,
+  DOWNLOAD_FILE_SH,
+  LIST_FILES_SH,
+  MUTATE_FILE_SH,
+  READ_FILE_SH,
+  RESOLVE_FILES_SH,
+  STAT_FILE_SH,
+  UPLOAD_FILE_SH,
+  fillTemplate,
+} from "../assets";
 
 export function parseRemoteFileList(
   stdout: string,
@@ -99,38 +110,12 @@ export async function listRemoteFiles({
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
   shQuote: (value: string) => string;
 }) {
-  const command = `
-set -eu
-root=${shQuote(rootPath)}
-rel=${shQuote(relativePath)}
-show_hidden=${showHidden ? "1" : "0"}
-limit=${LIST_LIMIT}
-root_real="$(cd "$root" && pwd -P)"
-target="$root_real"
-if [ -n "$rel" ]; then
-  target="$root_real/$rel"
-fi
-target_real="$(cd "$target" && pwd -P)"
-case "$target_real/" in "$root_real"/*|"$root_real/") ;; *) exit 13 ;; esac
-printf 'ROOT\\t%s\\n' "$(printf '%s' "$root_real" | base64 | tr -d '\\n')"
-count=0
-while IFS= read -r -d '' p; do
-  name="$(basename "$p")"
-  if [ "$show_hidden" != "1" ] && [ "\${name#\\.}" != "$name" ]; then
-    continue
-  fi
-  count=$((count + 1))
-  if [ "$count" -gt "$limit" ]; then
-    printf 'TRUNCATED\\n'
-    break
-  fi
-  if [ -d "$p" ]; then type=directory; elif [ -L "$p" ]; then type=symlink; else type=file; fi
-  size="$(stat -c %s "$p" 2>/dev/null || stat -f %z "$p" 2>/dev/null || printf 0)"
-  mtime="$(stat -c %Y "$p" 2>/dev/null || stat -f %m "$p" 2>/dev/null || printf 0)"
-  name64="$(printf '%s' "$name" | base64 | tr -d '\\n')"
-  printf 'ENTRY\\t%s\\t%s\\t%s\\t%s\\n' "$type" "$size" "$mtime" "$name64"
-done < <(find "$target_real" -mindepth 1 -maxdepth 1 -print0)
-`;
+  const command = fillTemplate(LIST_FILES_SH, {
+    root: shQuote(rootPath),
+    rel: shQuote(relativePath),
+    show_hidden: showHidden ? "1" : "0",
+    limit: LIST_LIMIT,
+  });
   const result = await runProcessWithCodeTimeout(
     sshReadCommandArgv(host, `bash -lc ${shQuote(command)}`, [], "files.list"),
     LIST_TIMEOUT_MS,
@@ -159,25 +144,10 @@ export async function resolveRemoteFilePaths({
   shQuote: (value: string) => string;
 }) {
   const requests = requestedPaths.map((path) => shQuote(path)).join(" ");
-  const command = `
-set -eu
-root=${shQuote(rootPath)}
-root_real="$(cd "$root" && pwd -P)"
-root_prefix="\${root_real%/}/"
-requests=(${requests})
-for request in "\${requests[@]}"; do
-  case "$request" in
-    /*) target="$request"; requested_absolute=1 ;;
-    *) target="$root_real/$request"; requested_absolute=0 ;;
-  esac
-  target_real="$(realpath "$target" 2>/dev/null)" || continue
-  if [ "$requested_absolute" != "1" ]; then
-    case "$target_real/" in "$root_prefix"*) ;; *) continue ;; esac
-  fi
-  [ -f "$target_real" ] || [ -d "$target_real" ] || continue
-  printf 'FILE\\t%s\\n' "$(printf '%s' "$request" | base64 | tr -d '\\n')"
-done
-`;
+  const command = fillTemplate(RESOLVE_FILES_SH, {
+    root: shQuote(rootPath),
+    requests,
+  });
   const result = await runProcessWithCodeTimeout(
     sshReadCommandArgv(
       host,
@@ -260,48 +230,17 @@ export async function readRemoteFile({
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
   shQuote: (value: string) => string;
 }) {
-  const command = `
-set -eu
-root=${shQuote(rootPath)}
-request=${shQuote(requestedPath)}
-text_limit=${PREVIEW_MAX_BYTES}
-image_limit=${PREVIEW_IMAGE_MAX_BYTES}
-root_real="$(cd "$root" && pwd -P)"
-case "$request" in
-  /*) target="$request"; requested_absolute=1 ;;
-  *) target="$root_real/$request"; requested_absolute=0 ;;
-esac
-if [ ! -e "$target" ]; then exit ${MISSING_FILE_EXIT}; fi
-target_real="$(realpath "$target")"
-if [ "$requested_absolute" != "1" ]; then
-  case "$target_real/" in "$root_real"/*) ;; *) exit 13 ;; esac
-fi
-if [ "$requested_absolute" = "1" ]; then
-  rel="$target_real"
-else
-  rel="\${target_real#"$root_real"/}"
-fi
-if [ -d "$target_real" ]; then
-  mtime="$(stat -c %Y "$target_real" 2>/dev/null || stat -f %m "$target_real" 2>/dev/null || printf 0)"
-  printf 'META\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$(printf '%s' "$root_real" | base64 | tr -d '\\n')" 0 "$mtime" "$(printf '%s' "$rel" | base64 | tr -d '\\n')" directory
-  exit 0
-fi
-if [ ! -f "$target_real" ]; then
-  echo "only regular files can be previewed" >&2
-  exit 14
-fi
-size="$(stat -c %s "$target_real" 2>/dev/null || stat -f %z "$target_real" 2>/dev/null || printf 0)"
-mtime="$(stat -c %Y "$target_real" 2>/dev/null || stat -f %m "$target_real" 2>/dev/null || printf 0)"
-limit="$text_limit"
-case "$(printf '%s' "$rel" | tr '[:upper:]' '[:lower:]')" in
-  ${Array.from(IMAGE_MIME_TYPES.keys(), (extension) => `*.${extension}`).join("|")})
-    if [ "$size" -le "$image_limit" ]; then limit="$image_limit"; fi
-    ;;
-esac
-printf 'META\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$(printf '%s' "$root_real" | base64 | tr -d '\\n')" "$size" "$mtime" "$(printf '%s' "$rel" | base64 | tr -d '\\n')" file
-head -c $((limit + 1)) "$target_real" | base64 | tr -d '\\n'
-printf '\\n'
-`;
+  const command = fillTemplate(READ_FILE_SH, {
+    root: shQuote(rootPath),
+    request: shQuote(requestedPath),
+    text_limit: PREVIEW_MAX_BYTES,
+    image_limit: PREVIEW_IMAGE_MAX_BYTES,
+    missing_exit: MISSING_FILE_EXIT,
+    image_patterns: Array.from(
+      IMAGE_MIME_TYPES.keys(),
+      (extension) => `*.${extension}`,
+    ).join("|"),
+  });
   const result = await runProcessWithCodeTimeout(
     sshReadCommandArgv(host, `bash -lc ${shQuote(command)}`, [], "files.read"),
     PREVIEW_TIMEOUT_MS,
@@ -353,25 +292,10 @@ export async function statRemoteFile({
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
   shQuote: (value: string) => string;
 }): Promise<FileStatResult> {
-  const command = `
-set -eu
-root=${shQuote(rootPath)}
-request=${shQuote(requestedPath)}
-root_real="$(cd "$root" && pwd -P)"
-case "$request" in
-  /*) target="$request"; requested_absolute=1 ;;
-  *) target="$root_real/$request"; requested_absolute=0 ;;
-esac
-target_real="$(realpath "$target")"
-if [ "$requested_absolute" != "1" ]; then
-  case "$target_real/" in "$root_real"/*) ;; *) exit 13 ;; esac
-fi
-type=file
-if [ -d "$target_real" ]; then type=directory; fi
-size="$(stat -c %s "$target_real" 2>/dev/null || stat -f %z "$target_real" 2>/dev/null || printf 0)"
-mtime="$(stat -c %Y "$target_real" 2>/dev/null || stat -f %m "$target_real" 2>/dev/null || printf 0)"
-printf 'STAT\\t%s\\t%s\\t%s\\n' "$size" "$mtime" "$type"
-`;
+  const command = fillTemplate(STAT_FILE_SH, {
+    root: shQuote(rootPath),
+    request: shQuote(requestedPath),
+  });
   const result = await runProcessWithCodeTimeout(
     sshReadCommandArgv(host, `sh -c ${shQuote(command)}`, [], "files.stat"),
     PREVIEW_TIMEOUT_MS,
@@ -521,62 +445,29 @@ export async function downloadRemoteFile({
     slice?: { start: number; end: number; size: number },
     stream?: { size: number },
   ) {
-    return `
-set -euo pipefail
-root=${shQuote(rootPath)}
-request=${shQuote(requestedPath)}
-root_real="$(cd "$root" && pwd -P)"
-case "$request" in
-  /*) target="$request"; requested_absolute=1 ;;
-  *) target="$root_real/$request"; requested_absolute=0 ;;
-esac
-target_real="$(realpath "$target")"
-if [ "$requested_absolute" != "1" ]; then
-  case "$target_real/" in "$root_real"/*) ;; *) exit 13 ;; esac
-fi
-if [ ! -f "$target_real" ] && [ ! -d "$target_real" ]; then
-  echo "only regular files and directories can be downloaded" >&2
-  exit 14
-fi
-if [ "$requested_absolute" = "1" ]; then
-  rel="$target_real"
-else
-  rel="\${target_real#"$root_real"/}"
-fi
-name="\${target_real##*/}"
-${slice || stream ? '[ -f "$target_real" ] || { echo "file changed during download" >&2; exit 16; }' : ""}
-if [ -d "$target_real" ]; then
-  parent="$(dirname "$target_real")"
-  archive_name="$name.tar.gz"
-  content_type="application/gzip"
-  printf 'META\\t%s\\t%s\\t%s\\t%s\\n' "0" "$(printf '%s' "$rel" | base64 | tr -d '\\n')" "$(printf '%s' "$archive_name" | base64 | tr -d '\\n')" "$(printf '%s' "$content_type" | base64 | tr -d '\\n')"
-  ${metadataOnly ? "exit 0" : ""}
-  COPYFILE_DISABLE=1 tar -czf - -C "$parent" -- "$name" | base64 | tr -d '\\n'
-else
-  size="$(stat -c %s "$target_real" 2>/dev/null || stat -f %z "$target_real")"
-  ${
-    options.inline
-      ? `case "$(printf '%s' "$rel" | tr '[:upper:]' '[:lower:]')" in
-    ${Array.from(AUDIO_MIME_TYPES.keys(), (extension) => `*.${extension}`).join("|")})
-      [ "$size" -le ${AUDIO_INLINE_PREVIEW_MAX_BYTES} ] || exit 15 ;;
-  esac`
-      : ""
-  }
-  ${options.maxBytes !== undefined ? `[ "$size" -le ${Math.floor(options.maxBytes)} ] || { printf '%s' "$size" >&2; exit 17; }` : ""}
-  ${slice ? `[ "$size" -eq ${slice.size} ] || { echo "file changed during download" >&2; exit 16; }` : ""}
-  ${
-    stream
-      ? `[ "$size" -eq ${Math.floor(stream.size)} ] || { echo "file changed during download" >&2; exit 16; }
-  exec cat -- "$target_real"`
-      : ""
-  }
-  content_type="application/octet-stream"
-  printf 'META\\t%s\\t%s\\t%s\\t%s\\n' "$size" "$(printf '%s' "$rel" | base64 | tr -d '\\n')" "$(printf '%s' "$name" | base64 | tr -d '\\n')" "$(printf '%s' "$content_type" | base64 | tr -d '\\n')"
-  ${metadataOnly ? "exit 0" : ""}
-  ${slice ? `dd if="$target_real" bs=${blockSize} skip=${Math.floor(slice.start / blockSize)} count=${Math.ceil(slice.end / blockSize) - Math.floor(slice.start / blockSize)} 2>/dev/null | base64` : 'base64 < "$target_real"'} | tr -d '\\n'
-fi
-printf '\\n'
-`;
+    return fillTemplate(DOWNLOAD_FILE_SH, {
+      root: shQuote(rootPath),
+      request: shQuote(requestedPath),
+      checked: !!(slice || stream),
+      metadata_only: metadataOnly,
+      inline: !!options.inline,
+      audio_patterns: Array.from(
+        AUDIO_MIME_TYPES.keys(),
+        (extension) => `*.${extension}`,
+      ).join("|"),
+      audio_max_bytes: AUDIO_INLINE_PREVIEW_MAX_BYTES,
+      capped: options.maxBytes !== undefined,
+      max_bytes: Math.floor(options.maxBytes ?? 0),
+      slice: !!slice,
+      slice_size: slice?.size ?? 0,
+      stream: !!stream,
+      stream_size: Math.floor(stream?.size ?? 0),
+      block_size: blockSize,
+      skip_blocks: slice ? Math.floor(slice.start / blockSize) : 0,
+      count_blocks: slice
+        ? Math.ceil(slice.end / blockSize) - Math.floor(slice.start / blockSize)
+        : 0,
+    });
   }
   async function readDownload(
     metadataOnly = false,
@@ -697,34 +588,11 @@ export async function uploadRemoteFile({
   body: Buffer;
   shQuote: (value: string) => string;
 }) {
-  const command = `
-set -euo pipefail
-root=${shQuote(rootPath)}
-rel=${shQuote(directory)}
-name=${shQuote(filename)}
-root_real="$(cd "$root" && pwd -P)"
-target_dir="$root_real"
-if [ -n "$rel" ]; then
-  target_dir="$root_real/$rel"
-fi
-dir_real="$(cd "$target_dir" && pwd -P)"
-case "$dir_real/" in "$root_real"/*|"$root_real/") ;; *) exit 13 ;; esac
-if [ ! -d "$dir_real" ]; then
-  echo "upload target is not a directory" >&2
-  exit 14
-fi
-target="$dir_real/$name"
-overwritten=0
-if [ -d "$target" ] || [ -L "$target" ]; then
-  echo "cannot overwrite a directory or symlink" >&2
-  exit 15
-fi
-if [ -e "$target" ]; then overwritten=1; fi
-base64 -d > "$target"
-size="$(stat -c %s "$target" 2>/dev/null || stat -f %z "$target" 2>/dev/null || printf 0)"
-rel_path="\${target#"$root_real"/}"
-printf 'META\\t%s\\t%s\\t%s\\n' "$(printf '%s' "$rel_path" | base64 | tr -d '\\n')" "$size" "$overwritten"
-`;
+  const command = fillTemplate(UPLOAD_FILE_SH, {
+    root: shQuote(rootPath),
+    rel: shQuote(directory),
+    name: shQuote(filename),
+  });
   const result = await runProcessWithInputTimeout(
     sshCommandArgv(host, `bash -lc ${shQuote(command)}`, [], "files.upload"),
     body.toString("base64"),
@@ -766,29 +634,10 @@ export async function deleteRemoteFile({
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
   shQuote: (value: string) => string;
 }) {
-  const command = `
-set -euo pipefail
-root=${shQuote(rootPath)}
-rel=${shQuote(requestedPath)}
-root_real="$(cd "$root" && pwd -P)"
-target="$root_real/$rel"
-parent="$(dirname "$target")"
-parent_real="$(cd "$parent" && pwd -P)"
-case "$parent_real/" in "$root_real"/*|"$root_real/") ;; *) exit 13 ;; esac
-if [ ! -e "$target" ] && [ ! -L "$target" ]; then
-  echo "file does not exist" >&2
-  exit 14
-fi
-if [ -d "$target" ] && [ ! -L "$target" ]; then
-  type=directory
-elif [ -L "$target" ]; then
-  type=symlink
-else
-  type=file
-fi
-rm -rf -- "$target"
-printf 'META\\t%s\\t%s\\n' "$(printf '%s' "$rel" | base64 | tr -d '\\n')" "$type"
-`;
+  const command = fillTemplate(DELETE_FILE_SH, {
+    root: shQuote(rootPath),
+    rel: shQuote(requestedPath),
+  });
   const result = await runProcessWithCodeTimeout(
     sshCommandArgv(host, `bash -lc ${shQuote(command)}`, [], "files.delete"),
     DELETE_TIMEOUT_MS,
@@ -820,28 +669,16 @@ export async function mutateRemoteFile({
   runProcessWithCodeTimeout: RunProcessWithCodeTimeout;
   shQuote: (value: string) => string;
 }) {
-  const command = `
-set -euo pipefail
-# Keep trailing newlines in directory names through command substitution.
-root_real="$(cd -P -- ${shQuote(rootPath)} && printf '%s.' "$PWD")"
-root_real="\${root_real%.}"
-directory_real="$(cd -P -- "$root_real"/${shQuote(directory || ".")} && printf '%s.' "$PWD")"
-directory_real="\${directory_real%.}"
-case "$directory_real/" in "\${root_real%/}/"*) ;; *) echo "path escaped the workspace checkout" >&2; exit 13 ;; esac
-${
-  path === undefined
-    ? `mkdir -- "$directory_real"/${shQuote(name)}`
-    : `
-source_parent="$(cd -P -- "$root_real"/${shQuote(path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ".")} && printf '%s.' "$PWD")"
-source_parent="\${source_parent%.}"
-case "$source_parent/" in "\${root_real%/}/"*) ;; *) echo "path escaped the workspace checkout" >&2; exit 13 ;; esac
-source="$source_parent"/${shQuote(name)}
-if [ ! -f "$source" ] && [ ! -L "$source" ]; then echo "Only files can be moved" >&2; exit 14; fi
-command -v python3 >/dev/null || { echo "Moving files over SSH requires Python 3" >&2; exit 14; }
-python3 -c ${shQuote(REMOTE_EXCLUSIVE_RENAME)} "$source" "$directory_real"/${shQuote(name)}
-`
-}
-`;
+  const command = fillTemplate(MUTATE_FILE_SH, {
+    root: shQuote(rootPath),
+    directory: shQuote(directory || "."),
+    name: shQuote(name),
+    move: path !== undefined,
+    source_directory: shQuote(
+      path?.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ".",
+    ),
+    rename: shQuote(REMOTE_EXCLUSIVE_RENAME),
+  });
   const result = await runProcessWithCodeTimeout(
     sshCommandArgv(host, `bash -lc ${shQuote(command)}`),
     DELETE_TIMEOUT_MS,

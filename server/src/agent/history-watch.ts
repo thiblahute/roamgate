@@ -2,6 +2,7 @@ import { type FSWatcher, watch } from "node:fs";
 import { basename, dirname } from "node:path";
 import { sshReadCommandArgv } from "../bridge/ssh-command";
 import { holdSshSession, runInSshLane } from "../bridge/ssh-sessions";
+import { STAT_LOOP_SH } from "../assets";
 
 export type WatchHandle = { close(): void };
 
@@ -57,15 +58,7 @@ function watchLocalFile(path: string, onChange: () => void): WatchHandle {
 }
 
 /** The stat loop a remote host runs, one line per path each second. */
-export const REMOTE_STAT_SCRIPT = [
-  "while :; do",
-  '  for f in "$@"; do',
-  "    s=$(stat -c '%s %Y %i' \"$f\" 2>/dev/null || stat -f '%z %m %i' \"$f\" 2>/dev/null || echo gone)",
-  '    printf \'%s\\t%s\\n\' "$f" "$s"',
-  "  done",
-  "  sleep 1",
-  "done",
-].join("\n");
+export const REMOTE_STAT_SCRIPT = STAT_LOOP_SH;
 
 export function createRemoteStatSpawner(args: {
   host: string;

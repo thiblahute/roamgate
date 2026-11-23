@@ -1,0 +1,1 @@
+$p = Start-Process -FilePath {{path}} -ArgumentList {{arguments}} -NoNewWindow -PassThru -ErrorAction Stop; $null = $p.Handle; $p.WaitForExit(); exit $p.ExitCode

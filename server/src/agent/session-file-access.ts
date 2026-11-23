@@ -4,6 +4,14 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { sshReadCommandArgv } from "../bridge/ssh-command";
 import type { SessionFile } from "./session-types";
+import {
+  CLAUDE_SUCCESSOR_SH,
+  CODEX_SESSION_FIND_PY,
+  FIND_SESSION_SH,
+  READ_SESSION_TAIL_SH,
+  STAT_BATCH_SH,
+  fillTemplate,
+} from "../assets";
 
 const SESSION_FILE_TIMEOUT_MS = 15_000;
 /** A whole transcript can be tens of MB: give a slow link time to send it. */
@@ -23,16 +31,7 @@ const STAT_BATCH_PATHS = 64;
  * not be read, else "+" and its size, mtime, base64 path, identity and
  * change token (GNU stat, else BSD stat).
  */
-const STAT_BATCH_SCRIPT = `for path in "$@"; do
-  if [ ! -f "$path" ]; then echo -; continue; fi
-  size="$(stat -c %s "$path" 2>/dev/null || stat -f %z "$path" 2>/dev/null)" &&
-  mtime="$(stat -c %Y "$path" 2>/dev/null || stat -f %m "$path" 2>/dev/null)" &&
-  identity="$(stat -c '%d:%i' "$path" 2>/dev/null || stat -f '%d:%i' "$path" 2>/dev/null)" &&
-  change="$(stat -c '%y:%z' "$path" 2>/dev/null || stat -f '%Fm:%Fc' "$path" 2>/dev/null)" &&
-  path64="$(printf '%s' "$path" | base64 | tr -d '\\n')" ||
-  { echo '!'; continue; }
-  printf '+%s\\t%s\\t%s\\t%s\\t%s\\n' "$size" "$mtime" "$path64" "$identity" "$change"
-done`;
+const STAT_BATCH_SCRIPT = STAT_BATCH_SH;
 
 type StatBatch = {
   paths: Map<
@@ -184,20 +183,7 @@ async function localSessionFile(path: string): Promise<SessionFile | null> {
  * The newest .jsonl beside $f, newer than it, whose sessionId metadata names $id. Paths are read
  * one per line, so a folder with spaces in its name works too.
  */
-const CLAUDE_SUCCESSOR_SCRIPT = `
-find "$(dirname "$f")" -maxdepth 1 -name '*.jsonl' -newer "$f" -exec grep -l -E -- '"sessionId"[[:space:]]*:[[:space:]]*"'"$id"'"' {} + 2>/dev/null | {
-  best=""
-  best_mtime=0
-  while IFS= read -r g; do
-    m="$(stat -c %Y "$g" 2>/dev/null || stat -f %m "$g")"
-    if [ "$m" -gt "$best_mtime" ]; then
-      best="$g"
-      best_mtime="$m"
-    fi
-  done
-  printf %s "$best"
-}
-`;
+const CLAUDE_SUCCESSOR_SCRIPT = CLAUDE_SUCCESSOR_SH;
 
 /**
  * The directory Pi keeps a working directory's sessions in, under its
@@ -451,25 +437,11 @@ export function createAgentSessionFileAccess(args: {
     names: string,
     label: string,
   ): Promise<SessionFile | null> {
-    const command = `
-set -eu
-id=${args.shQuote(id)}
-root="${root}"
-[ -d "$root" ] || exit 44
-latest=""
-latest_mtime=0
-while IFS= read -r -d '' candidate; do
-  mtime="$(stat -c %Y "$candidate" 2>/dev/null || stat -f %m "$candidate")"
-  if [ "$mtime" -ge "$latest_mtime" ]; then
-    latest="$candidate"
-    latest_mtime="$mtime"
-  fi
-done < <(find -L "$root" -type f \\( ${names} \\) -print0)
-[ -n "$latest" ] || exit 44
-size="$(stat -c %s "$latest" 2>/dev/null || stat -f %z "$latest")"
-path64="$(printf '%s' "$latest" | base64 | tr -d '\\n')"
-printf '%s\\t%s\\t%s\\n' "$size" "$latest_mtime" "$path64"
-`;
+    const command = fillTemplate(FIND_SESSION_SH, {
+      id: args.shQuote(id),
+      root,
+      names,
+    });
     const result = await args.runBinaryProcessWithTimeout(
       sshReadCommandArgv(
         host,
@@ -516,27 +488,15 @@ printf '%s\\t%s\\t%s\\n' "$size" "$latest_mtime" "$path64"
     const old = kept.get(path);
     const overlap = old ? Math.min(KEPT_TEXT_OVERLAP, old.bytes.length) : 0;
     const output = await runRemote(
-      `set -eu
-path=${args.shQuote(path)}
-known=${args.shQuote(old && overlap ? old.identity : "")}
-identity="$(stat -c '%d:%i' "$path" 2>/dev/null || stat -f '%d:%i' "$path")"
-matches=false
-if [ -n "$known" ] && [ "$identity" = "$known" ]; then
-  sum=""
-  if command -v sha256sum >/dev/null 2>&1; then
-    sum="$(head -c ${old?.bytes.length ?? 0} "$path" | sha256sum)"
-  elif command -v shasum >/dev/null 2>&1; then
-    sum="$(head -c ${old?.bytes.length ?? 0} "$path" | shasum -a 256)"
-  fi
-  if [ "${"${sum%% *}"}" = ${args.shQuote(old ? createHash("sha256").update(old.bytes).digest("hex") : "")} ]; then matches=true; fi
-fi
-if [ "$matches" = true ]; then
-  printf '%s\ttail\n' "$identity"
-  tail -c +${(old?.bytes.length ?? 0) - overlap + 1} "$path"
-else
-  printf '%s\tfull\n' "$identity"
-  cat "$path"
-fi`,
+      fillTemplate(READ_SESSION_TAIL_SH, {
+        path: args.shQuote(path),
+        known: args.shQuote(old && overlap ? old.identity : ""),
+        known_bytes: old?.bytes.length ?? 0,
+        known_sha256: args.shQuote(
+          old ? createHash("sha256").update(old.bytes).digest("hex") : "",
+        ),
+        tail_from: (old?.bytes.length ?? 0) - overlap + 1,
+      }),
       SESSION_READ_TIMEOUT_MS,
     );
     const newline = output.indexOf(10);
@@ -565,19 +525,7 @@ fi`,
     statFile,
     async findCodexSessionById(id) {
       validateCodexSessionId(id);
-      const script = `
-import os, sys
-from pathlib import Path
-root = Path(os.path.expanduser(os.environ.get("CODEX_HOME") or "~/.codex"))
-matches = []
-for directory in ("sessions", "archived_sessions"):
-    matches.extend((root / directory).glob("**/*-" + sys.argv[1] + ".jsonl"))
-matches = [path for path in matches if path.is_file()]
-if len(matches) > 1:
-    sys.exit("Multiple transcripts match this Codex session ID.")
-if matches:
-    print(matches[0].resolve())
-`;
+      const script = CODEX_SESSION_FIND_PY;
       const path = (
         await runRemote(
           `python3 -c ${args.shQuote(script)} ${args.shQuote(id)}`,

@@ -13,6 +13,7 @@ import {
 } from "../../../shared/voiceSetup";
 import { dataRoot } from "../config/data-paths";
 import { GIB } from "./voice-hardware";
+import { VOICE_MODELS } from "../assets";
 import { MODEL_FILES, type ModelFile } from "./voice-model-files";
 import type { VoiceConfig } from "./voice-helper";
 
@@ -35,44 +36,18 @@ export type ModelPackage = {
   files: ModelFile[];
 };
 
-const pkg = (id: string, name: string, dir: string): ModelPackage => {
-  const files = MODEL_FILES[id];
-  if (!files) throw new Error(`no files for the voice model ${id}`);
-  return { id, name, dir, files };
-};
-
-/** Directory names as the desktop's models were laid out by hand. */
-export const PACKAGES: ModelPackage[] = [
-  pkg(
-    "parakeet-tdt-0.6b-v3",
-    "Parakeet TDT 0.6B v3 (int8)",
-    "parakeet-tdt-0.6b-v3",
-  ),
-  pkg("whisper-large-v3-turbo-q5", "Whisper large-v3-turbo (q5_0)", ""),
-  pkg("whisper-small-q5", "Whisper small (q5_1)", ""),
-  pkg("whisper-base-q5", "Whisper base (q5_1)", ""),
-  pkg("kokoro-onnx", "Kokoro v1.0 ONNX", ""),
-  pkg("kokoro-onnx-int8", "Kokoro v1.0 ONNX (int8)", ""),
-  pkg("kokoro-onnx-voices", "Kokoro v1.0 voices", ""),
-  pkg("kokoro-82m", "Kokoro-82M", "Kokoro-82M"),
-  pkg("pocket-tts-fr", "Pocket TTS (French)", "pocket-tts-fr"),
-  pkg("pocket-tts-en", "Pocket TTS (English)", "pocket-tts-en"),
-  pkg("qwen3-tts-1.7b-base", "Qwen3-TTS 1.7B Base", "Qwen3-TTS-1.7B-Base"),
-  pkg("qwen3-tts-0.6b-base", "Qwen3-TTS 0.6B Base", "Qwen3-TTS-0.6B-Base"),
-  pkg(
-    "qwen3-tts-1.7b-customvoice",
-    "Qwen3-TTS 1.7B CustomVoice",
-    "Qwen3-TTS-1.7B-CustomVoice",
-  ),
-  pkg(
-    "qwen3-tts-0.6b-customvoice",
-    "Qwen3-TTS 0.6B CustomVoice",
-    "Qwen3-TTS-0.6B-CustomVoice",
-  ),
-  pkg("wespeaker-resnet34", "WeSpeaker ResNet34", ""),
-  pkg("smart-turn-v3.2", "Smart Turn v3.2 (CPU)", ""),
-  pkg("qwen3-0.6b-onnx", "Qwen3 0.6B ONNX (int8)", "qwen3-0.6b"),
-];
+/**
+ * Directory names as the desktop's models were laid out by hand. The
+ * catalog is data (contract/assets/data/voice-models.json), shared with
+ * the Rust server.
+ */
+export const PACKAGES: ModelPackage[] = VOICE_MODELS.packages.map(
+  ({ id, name, dir }) => {
+    const files = MODEL_FILES[id];
+    if (!files) throw new Error(`no files for the voice model ${id}`);
+    return { id, name, dir, files };
+  },
+);
 
 export function packageById(id: string, packages = PACKAGES): ModelPackage {
   const found = packages.find((entry) => entry.id === id);
@@ -124,242 +99,15 @@ export type ComponentSpec = {
   requires?: { component: VoiceComponent; options: string[] };
 };
 
-export const COMPONENTS: ComponentSpec[] = [
-  {
-    id: "speech",
-    title: "Speech recognition",
-    description: "Turns what is said into text.",
-    optional: false,
-  },
-  {
-    id: "reread",
-    title: "Second reading",
-    description:
-      "Whisper hears again what Parakeet wrote in English while the conversation is in another language.",
-    optional: true,
-    requires: { component: "speech", options: ["parakeet"] },
-  },
-  {
-    id: "tts",
-    title: "Reading voice",
-    description:
-      "Reads the replies aloud. Qwen3-TTS reads with voices recorded in Voices below, Pocket TTS and Kokoro with their own.",
-    optional: false,
-  },
-  {
-    id: "stock_voices",
-    title: "Stock voices",
-    description:
-      "Qwen3-TTS CustomVoice: named voices (Ryan, Vivian...) to choose in Voices below.",
-    optional: true,
-    requires: {
-      component: "tts",
-      options: ["qwen3-tts-1.7b", "qwen3-tts-0.6b"],
-    },
-  },
-  {
-    id: "speaker",
-    title: "Who speaks",
-    description:
-      "Tells voices apart, so the companion knows you from the people around you.",
-    optional: true,
-  },
-  {
-    id: "turn",
-    title: "End of turn (voice)",
-    description:
-      "A pause ends what you say only when your voice sounds finished.",
-    optional: true,
-  },
-  {
-    id: "text_turn",
-    title: "End of turn (words)",
-    description:
-      "Reads what was said at each pause: unfinished words keep the turn open.",
-    optional: true,
-    requires: { component: "speech", options: ["parakeet"] },
-  },
-];
+export const COMPONENTS = VOICE_MODELS.components as ComponentSpec[];
 
-export const OPTIONS: ModelOption[] = [
-  {
-    id: "parakeet",
-    component: "speech",
-    name: "Parakeet TDT 0.6B v3",
-    description: "25 European languages, written as spoken. Runs on the CPU.",
-    packages: ["parakeet-tdt-0.6b-v3"],
-    speed: "about 0.1 s for a few seconds of speech, on a CPU",
-    runsOn: "cpu",
-  },
-  {
-    id: "whisper-large-v3-turbo",
-    component: "speech",
-    name: "Whisper large-v3-turbo",
-    description: "About 100 languages, the most accurate Whisper here.",
-    packages: ["whisper-large-v3-turbo-q5"],
-    speed: "about 0.3 s an utterance on a GPU, several seconds on a CPU",
-    runsOn: "gpu",
-    gpuBytes: 1.1 * GIB,
-  },
-  {
-    id: "whisper-small",
-    component: "speech",
-    name: "Whisper small",
-    description: "About 100 languages, less accurate, light enough for a CPU.",
-    packages: ["whisper-small-q5"],
-    speed: "about 1 s an utterance on a CPU",
-    runsOn: "any",
-    gpuBytes: 0.5 * GIB,
-  },
-  {
-    id: "whisper-base",
-    component: "speech",
-    name: "Whisper base",
-    description: "The smallest Whisper offered: for slow machines.",
-    packages: ["whisper-base-q5"],
-    speed: "under 0.5 s an utterance on a CPU",
-    runsOn: "any",
-  },
-  {
-    id: "whisper-large-v3-turbo",
-    component: "reread",
-    name: "Whisper large-v3-turbo",
-    description: "Loaded beside Parakeet once something was heard.",
-    packages: ["whisper-large-v3-turbo-q5"],
-    speed: "about 1 s more, only for what it reads again",
-    runsOn: "gpu",
-    gpuBytes: 1.1 * GIB,
-  },
-  {
-    id: "whisper-small",
-    component: "reread",
-    name: "Whisper small",
-    description: "A lighter second reading, for the CPU.",
-    packages: ["whisper-small-q5"],
-    speed: "about 1 s more on a CPU, only for what it reads again",
-    runsOn: "any",
-  },
-  {
-    id: "qwen3-tts-1.7b",
-    component: "tts",
-    name: "Qwen3-TTS 1.7B",
-    description:
-      "Natural voices, and your own voice once recorded; Kokoro-82M reads the languages it lacks, Pocket TTS when it fails.",
-    packages: [
-      "qwen3-tts-1.7b-base",
-      "kokoro-82m",
-      "pocket-tts-fr",
-      "pocket-tts-en",
-    ],
-    speed: "first audio in about 0.3 s, faster than real time on an 8 GB GPU",
-    runsOn: "gpu",
-    gpuBytes: 6 * GIB,
-  },
-  {
-    id: "qwen3-tts-0.6b",
-    component: "tts",
-    name: "Qwen3-TTS 0.6B",
-    description:
-      "The smaller Qwen3-TTS: recorded voices on a GPU with less memory; Kokoro-82M and Pocket TTS beside it.",
-    packages: [
-      "qwen3-tts-0.6b-base",
-      "kokoro-82m",
-      "pocket-tts-fr",
-      "pocket-tts-en",
-    ],
-    speed: "first audio in about 0.3 s, faster than real time on a 4 GB GPU",
-    runsOn: "gpu",
-    gpuBytes: 3.5 * GIB,
-  },
-  {
-    id: "kokoro-82m",
-    component: "tts",
-    name: "Kokoro-82M (any-tts)",
-    description: "Kokoro's voices on the GPU, through any-tts.",
-    packages: ["kokoro-82m"],
-    speed: "much faster than real time on a GPU",
-    runsOn: "gpu",
-    gpuBytes: 1 * GIB,
-  },
-  {
-    id: "pocket-tts",
-    component: "tts",
-    name: "Pocket TTS",
-    description:
-      "Kyutai's light voices on the CPU, French and English; Kokoro, when it is here, reads the other languages.",
-    packages: ["pocket-tts-fr", "pocket-tts-en"],
-    speed:
-      "first audio in about 0.2 s, about four times faster than real time on four cores",
-    runsOn: "cpu",
-  },
-  {
-    id: "kokoro-onnx",
-    component: "tts",
-    name: "Kokoro v1.0 (ONNX)",
-    description: "Kokoro's voices on the CPU.",
-    packages: ["kokoro-onnx", "kokoro-onnx-voices"],
-    speed: "faster than real time on a recent CPU",
-    runsOn: "cpu",
-  },
-  {
-    id: "kokoro-onnx-int8",
-    component: "tts",
-    name: "Kokoro v1.0 (ONNX, int8)",
-    description: "The smallest Kokoro, for machines short of memory.",
-    packages: ["kokoro-onnx-int8", "kokoro-onnx-voices"],
-    speed: "faster than real time on most CPUs, slightly rougher",
-    runsOn: "cpu",
-  },
-  {
-    id: "customvoice-1.7b",
-    component: "stock_voices",
-    name: "Qwen3-TTS 1.7B CustomVoice",
-    description: "Nine named voices for Qwen3-TTS 1.7B.",
-    packages: ["qwen3-tts-1.7b-customvoice"],
-    speed: "as the reading voice",
-    runsOn: "gpu",
-    gpuBytes: 6 * GIB,
-    requires: { component: "tts", options: ["qwen3-tts-1.7b"] },
-  },
-  {
-    id: "customvoice-0.6b",
-    component: "stock_voices",
-    name: "Qwen3-TTS 0.6B CustomVoice",
-    description: "Nine named voices for Qwen3-TTS 0.6B.",
-    packages: ["qwen3-tts-0.6b-customvoice"],
-    speed: "as the reading voice",
-    runsOn: "gpu",
-    gpuBytes: 3.5 * GIB,
-    requires: { component: "tts", options: ["qwen3-tts-0.6b"] },
-  },
-  {
-    id: "wespeaker",
-    component: "speaker",
-    name: "WeSpeaker ResNet34",
-    description: "Voice prints, kept on this machine.",
-    packages: ["wespeaker-resnet34"],
-    speed: "a few ms a stretch of speech, on a CPU",
-    runsOn: "cpu",
-  },
-  {
-    id: "smart-turn",
-    component: "turn",
-    name: "Smart Turn v3.2",
-    description: "Pipecat's turn model, for the CPU.",
-    packages: ["smart-turn-v3.2"],
-    speed: "about 10 ms a pause, on a CPU",
-    runsOn: "cpu",
-  },
-  {
-    id: "qwen3-0.6b",
-    component: "text_turn",
-    name: "Qwen3 0.6B (int8)",
-    description: "A small language model reading the words at each pause.",
-    packages: ["qwen3-0.6b-onnx"],
-    speed: "about 0.1 to 0.3 s a pause, on a CPU",
-    runsOn: "cpu",
-  },
-];
+export const OPTIONS: ModelOption[] = VOICE_MODELS.options.map(
+  ({ gpuGib, ...option }) =>
+    ({
+      ...option,
+      ...(gpuGib === undefined ? {} : { gpuBytes: gpuGib * GIB }),
+    }) as ModelOption,
+);
 
 export function optionsOf(component: VoiceComponent): ModelOption[] {
   return OPTIONS.filter((option) => option.component === component);

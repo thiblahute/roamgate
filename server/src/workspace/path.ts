@@ -7,6 +7,7 @@ import { sshReadCommandArgv } from "../bridge/ssh-command";
 import { powershellCommand } from "../bridge/ssh-windows";
 import type { RemotePlatform } from "../connections/unix-only";
 import { runProcessWithCodeTimeout, shQuote } from "../utils/process-utils";
+import { LIST_DIRECTORY_PS1, LIST_DIRECTORY_SH, fillTemplate } from "../assets";
 
 const DIRECTORY_LIMIT = 50;
 
@@ -44,56 +45,14 @@ export async function inspectWorkspacePath(
 
   if (connection.host) {
     const command = windows
-      ? powershellCommand(`
-$ErrorActionPreference = 'Stop'
-function Emit($kind, $value) { Write-Output ($kind + "\t" + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($value))) }
-$path = '${input.replaceAll("'", "''")}'
-if ($path -match '^~([/\\\\]|$)') { $path = $env:USERPROFILE + $path.Substring(1) }
-$path = [IO.Path]::GetFullPath($path)
-$errorText = ''
-if (Test-Path -LiteralPath $path -PathType Container) { $path = (Get-Item -Force -LiteralPath $path).FullName }
-elseif (Test-Path -LiteralPath $path) { $errorText = 'Path is not a directory.' }
-else { $errorText = 'Directory does not exist.' }
-Emit 'PATH' $path
-Emit 'ERROR' $errorText
-if (${suggestions ? "$true" : "$false"}) {
-  $directory = $path
-  $prefix = ''
-  if ($errorText) { $directory = [IO.Path]::GetDirectoryName($path); $prefix = [IO.Path]::GetFileName($path) }
-  Get-ChildItem -Force -Directory -LiteralPath $directory -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -and ($prefix.StartsWith('.') -or -not $_.Name.StartsWith('.')) -and $_.Name -notmatch '[\\x00-\\x1f\\x7f]' } |
-    Sort-Object Name | Select-Object -First ${DIRECTORY_LIMIT} | ForEach-Object { Emit 'DIRECTORY' $_.FullName }
-}
-`)
-      : `bash -c ${shQuote(`
-set -eu
-path=${shQuote(input)}
-case "$path" in '~'|'~/'*) path="$HOME\${path#\\~}" ;; esac
-error_text=''
-if [ -d "$path" ]; then
-  if [ -x "$path" ]; then path="$(cd -- "$path" && pwd -P)"; else error_text='Directory is not accessible.'; fi
-elif [ -e "$path" ]; then error_text='Path is not a directory.'
-else error_text='Directory does not exist.'; fi
-emit() { printf '%s\\t%s\\n' "$1" "$(printf '%s' "$2" | base64 | tr -d '\\n')"; }
-emit PATH "$path"
-emit ERROR "$error_text"
-if [ ${suggestions ? "1" : "0"} = 1 ]; then
-  directory="$path"
-  prefix=''
-  if [ -n "$error_text" ]; then directory="$(dirname -- "$path")"; prefix="$(basename -- "$path")"; fi
-  count=0
-  for child in "$directory"/* "$directory"/.[!.]* "$directory"/..?*; do
-    [ -d "$child" ] || continue
-    name="\${child##*/}"
-    case "$name" in "$prefix"*) ;; *) continue ;; esac
-    case "$name" in .*) case "$prefix" in .*) ;; *) continue ;; esac ;; esac
-    [[ "$name" =~ [[:cntrl:]] ]] && continue
-    emit DIRECTORY "$child"
-    count=$((count + 1))
-    [ "$count" -lt ${DIRECTORY_LIMIT} ] || break
-  done
-fi
-`)}`;
+      ? powershellCommand(
+          fillTemplate(LIST_DIRECTORY_PS1, {
+            path: input.replaceAll("'", "''"),
+            suggestions: suggestions ? "$true" : "$false",
+            limit: DIRECTORY_LIMIT,
+          }),
+        )
+      : `bash -c ${shQuote(fillTemplate(LIST_DIRECTORY_SH, { path: shQuote(input), suggestions: suggestions ? "1" : "0", limit: DIRECTORY_LIMIT }))}`;
     const result = await runProcessWithCodeTimeout(
       sshReadCommandArgv(connection.host, command, [], "workspace.path"),
       8000,

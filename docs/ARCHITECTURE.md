@@ -986,13 +986,14 @@ usage limit resumer; `agent_profile.get` carries the mod's `usage`.
 
 In every session, conversation mode's headless claude and `claude -p` runs
 included, the mod also gives the model tools (`server/claude-mod/hooks/tools.ts`,
-named `mcp__roamgate__<name>`): `review_get`, `review_reply`, `review_add`,
-`review_working`, `review_update`, `review_resolve`, `review_reopen`,
-`review_edit`, `review_notify`, `agent_message`, `agent_sessions`,
-`work_update` and `work_list` in the prompt's tool list (the delivered
-prompts name them), `review_open`, `review_summary`, `review_threads` and
-the other `work_*` tools behind tool search. Each is one request to the
-review socket with the body
+their names, schemas and descriptions from the tool catalog
+`contract/tools/catalog.json`, named `mcp__roamgate__<name>`): `review_get`,
+`review_reply`, `review_add`, `review_working`, `review_update`,
+`review_resolve`, `review_reopen`, `review_edit`, `review_notify`,
+`agent_message`, `agent_sessions`, `work_update` and `work_list` in the
+prompt's tool list (the delivered prompts name them), `review_open`,
+`review_summary`, `review_threads` and the other `work_*` tools behind tool
+search. Each is one request to the review socket with the body
 `roamgate-review` sends for the same command (`comment_id` is `comment`,
 `review` is `session`), the pane under Roamgate's names in a headless claude
 as the client does, `claude_session`, and `via: claude-mod` without `agent`:

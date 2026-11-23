@@ -27,6 +27,7 @@
     "demo:herdr": "sh scripts/screenshot-demo/herdr.sh",
     "build:web": "bun run --filter roamgate-web build",
     "build:site": "bun scripts/build-pages.ts",
+    "build:assets": "bun run --filter roamgate-web build:helper && bun scripts/contract/tools-catalog.ts --write && bun scripts/contract/assets-index.ts --write",
     "build:server": "bun run --filter roamgate-server compile",
     "build": "bun run build:web && bun run build:server",
     "postbuild": "bun run clean:bun-build",

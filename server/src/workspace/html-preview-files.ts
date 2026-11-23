@@ -5,6 +5,7 @@ import { sshReadCommandArgv } from "../bridge/ssh-command";
 import { assertInsideRoot, relativePreviewPath } from "./file-paths";
 import type { RunProcessWithCodeTimeout } from "./file-types";
 import { PREVIEW_TIMEOUT_MS } from "./file-constants";
+import { HTML_PREVIEW_FILES_SH, fillTemplate } from "../assets";
 
 export class HtmlPreviewError extends Error {
   constructor(
@@ -34,20 +35,12 @@ export async function readHtmlPreviewFile({
   shQuote: (value: string) => string;
 }): Promise<PreviewResource> {
   if (host) {
-    const command = `
-set -euo pipefail
-root_real="$(cd ${shQuote(rootPath)} && pwd -P)"
-request=${shQuote(path)}
-case "$request" in /*) target="$request" ;; *) target="$root_real/$request" ;; esac
-target_real="$(realpath "$target")"
-case "$target_real" in "$root_real"/*) ;; *) echo "HTML preview path is outside the workspace" >&2; exit 13 ;; esac
-[ -f "$target_real" ] || { echo "HTML preview requires a regular file" >&2; exit 14; }
-size="$(stat -c %s "$target_real" 2>/dev/null || stat -f %z "$target_real")"
-[ "$size" -le ${limit} ] || exit 15
-rel="\${target_real#"$root_real"/}"
-printf '%s\\n' "$(printf '%s' "$rel" | base64 | tr -d '\\n')"
-head -c ${limit + 1} "$target_real" | base64 | tr -d '\\n'
-`;
+    const command = fillTemplate(HTML_PREVIEW_FILES_SH, {
+      root: shQuote(rootPath),
+      path: shQuote(path),
+      limit,
+      limit_after: limit + 1,
+    });
     const result = await runProcessWithCodeTimeout(
       sshReadCommandArgv(host, `bash -lc ${shQuote(command)}`),
       PREVIEW_TIMEOUT_MS,

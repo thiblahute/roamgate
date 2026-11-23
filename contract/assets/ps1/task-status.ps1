@@ -1,0 +1,1 @@
+try { $taskInfo = Get-ScheduledTask -TaskName {{task}} -ErrorAction Stop; if ($taskInfo.State -eq 'Running') { exit 0 }; exit {{inactive_exit}} } catch { if ($_.FullyQualifiedErrorId -like 'CmdletizationQuery_NotFound_TaskName*') { exit {{not_found_exit}} }; Write-Error $_; exit 1 }

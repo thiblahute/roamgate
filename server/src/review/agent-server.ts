@@ -47,9 +47,9 @@ import {
 import { agentAddress } from "../../../shared/agentMessage";
 import { ClaudeModError, type ClaudeModHub } from "../agent/claude-mod";
 import { writeClaudeModPlugin } from "../agent/claude-mod-plugin";
-import { MOD_VIA } from "../../claude-mod/hooks/tools";
 import { describeTarget, ReviewError, type ReviewService } from "./service";
 import { renderedFileTarget } from "./rendered-target";
+import { MOD_VIA } from "../assets";
 
 /** What the agent server needs to know about a ready connection. */
 export type ReviewAgentConnection = {
