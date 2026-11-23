@@ -4,9 +4,12 @@
 //! unchanged: this crate supervises it and speaks its frames.
 
 pub mod config;
+pub mod download;
+pub mod hardware;
 pub mod helper;
 pub mod js;
 pub mod kokoro_language;
+pub mod models;
 pub mod process;
 pub mod profiles;
 pub mod speakers;
@@ -14,3 +17,6 @@ pub mod speech_rate;
 
 #[cfg(test)]
 mod testdata;
+
+#[cfg(test)]
+mod testing;
