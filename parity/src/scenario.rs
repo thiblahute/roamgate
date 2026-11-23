@@ -2305,6 +2305,7 @@ pub fn coverage(scenario: &Scenario) -> Vec<String> {
 pub fn owner_family(scenario_family: &str) -> &str {
     match scenario_family {
         "herdr" => "herdr_setup",
+        "forge" => "mr_cache",
         other => other,
     }
 }

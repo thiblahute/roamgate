@@ -34,7 +34,7 @@ struct TimeReportFamily {
 
 /// settings.json as the server's environment names it, without the
 /// legacy migration (Bun's, the file's owner until Phase 3).
-fn settings_file(env: &dyn Env) -> std::path::PathBuf {
+pub(crate) fn settings_file(env: &dyn Env) -> std::path::PathBuf {
     match roamgate_env(env, "SETTINGS_PATH") {
         Some(path) => path.into(),
         None => DataContext::from_env(env).data_root().join("settings.json"),
