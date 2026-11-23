@@ -3,7 +3,7 @@
 //! browsers are told of each paused session. Held to
 //! contract/vectors/limit-resume.json, as the TS side is.
 
-use roamgate_base::log::{parse_iso_millis, slice_utf16, utf16_len};
+use roamgate_base::log::{parse_iso_millis, slice_utf16};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -18,10 +18,11 @@ pub struct LimitResumeSettings {
     pub margin_seconds: i64,
 }
 
-pub const DEFAULT_LIMIT_RESUME_MESSAGE: &str = "The usage limit has reset. Continue where you stopped, and restart any background agents or workflows that failed because of the limit (resume workflows from their run id).";
-pub const DEFAULT_LIMIT_RESUME_MARGIN_SECONDS: i64 = 60;
-pub const MAX_LIMIT_RESUME_MARGIN_SECONDS: i64 = 3600;
-pub const MAX_LIMIT_RESUME_MESSAGE_LENGTH: usize = 4000;
+pub use roamgate_base::settings::sections::{
+    DEFAULT_LIMIT_RESUME_MARGIN_SECONDS, DEFAULT_LIMIT_RESUME_MESSAGE,
+    MAX_LIMIT_RESUME_MARGIN_SECONDS, MAX_LIMIT_RESUME_MESSAGE_LENGTH, limit_resume_settings_error,
+    normalize_limit_resume_settings,
+};
 
 impl Default for LimitResumeSettings {
     fn default() -> Self {
@@ -31,76 +32,6 @@ impl Default for LimitResumeSettings {
             margin_seconds: DEFAULT_LIMIT_RESUME_MARGIN_SECONDS,
         }
     }
-}
-
-const SETTING_KEYS: [&str; 3] = ["enabled", "message", "margin_seconds"];
-
-/// Why `raw` is not a valid (partial) `limit_resume` update, or None.
-/// Every key is optional; unknown keys are refused.
-pub fn limit_resume_settings_error(raw: &Map<String, Value>) -> Option<String> {
-    let unknown: Vec<&str> = raw
-        .keys()
-        .filter(|key| !SETTING_KEYS.contains(&key.as_str()))
-        .map(String::as_str)
-        .collect();
-    if !unknown.is_empty() {
-        return Some(format!(
-            "limit_resume takes enabled, message and margin_seconds, not {}",
-            unknown.join(", ")
-        ));
-    }
-    if let Some(enabled) = raw.get("enabled")
-        && !enabled.is_boolean()
-    {
-        return Some("limit_resume.enabled must be true or false".into());
-    }
-    if let Some(message) = raw.get("message") {
-        match message.as_str() {
-            Some(text) if !text.trim().is_empty() => {
-                if utf16_len(text) > MAX_LIMIT_RESUME_MESSAGE_LENGTH {
-                    return Some(format!(
-                        "limit_resume.message must be at most {MAX_LIMIT_RESUME_MESSAGE_LENGTH} characters"
-                    ));
-                }
-            }
-            _ => return Some("limit_resume.message must be some text".into()),
-        }
-    }
-    if let Some(margin) = raw.get("margin_seconds") {
-        let valid = margin.as_f64().is_some_and(|seconds| {
-            seconds.fract() == 0.0
-                && (0.0..=MAX_LIMIT_RESUME_MARGIN_SECONDS as f64).contains(&seconds)
-        });
-        if !valid {
-            return Some(format!(
-                "limit_resume.margin_seconds must be a whole number of seconds from 0 to {MAX_LIMIT_RESUME_MARGIN_SECONDS}"
-            ));
-        }
-    }
-    None
-}
-
-/// The stored settings' valid keys (what settings.json keeps); None for
-/// what is not an object.
-pub fn normalize_limit_resume_settings(raw: &Value) -> Option<Map<String, Value>> {
-    let raw = raw.as_object()?;
-    let mut kept = Map::new();
-    for key in SETTING_KEYS {
-        let Some(value) = raw.get(key) else {
-            continue;
-        };
-        let mut one = Map::new();
-        one.insert(key.into(), value.clone());
-        if limit_resume_settings_error(&one).is_some() {
-            continue;
-        }
-        let value = match (key, value.as_str()) {
-            ("message", Some(text)) => Value::String(text.trim().into()),
-            _ => value.clone(),
-        };
-        kept.insert(key.into(), value);
-    }
-    Some(kept)
 }
 
 /// The settings in effect: the stored ones over the defaults.

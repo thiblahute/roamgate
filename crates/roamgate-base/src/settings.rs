@@ -6,13 +6,11 @@
 //! writes it as `JSON.stringify(settings, null, 2)` plus a newline through
 //! a temporary file renamed over it (0600), and broadcasts each change.
 //!
-//! Normalising keeps the TS shape and key order: the fields this crate
-//! knows are normalised here; the sections whose rules belong to a family
-//! not ported yet (`archive`, `limit_resume`, `profiles`, `mr_reviews`,
-//! `workspace_tree`, `rendered_sites`, `rendered_site_roots`) are kept as
-//! read until that family plugs its normaliser in with
-//! [`SettingsStore::with_section`]; keys the TS type does not have are
-//! dropped, as `normalizeGuiSettings` drops them.
+//! Normalising keeps the TS shape and key order, held to
+//! contract/vectors/settings.json: every section is normalised as
+//! `normalizeGuiSettings` does, those whose rules belong to a family not
+//! ported yet with their TS rules in [`sections`]; keys the TS type does
+//! not have are dropped, as `normalizeGuiSettings` drops them.
 
 use std::collections::{BTreeSet, HashMap};
 use std::io::Write;
@@ -28,6 +26,8 @@ use crate::json_store::{JsonFormat, to_js_json};
 use crate::paths::{DataContext, DataFile, dirname};
 use crate::private::{create_dir_all_mode, set_file_mode};
 
+pub mod sections;
+
 /// The connection id of the single connection before connections existed.
 pub const LEGACY_DEFAULT_CONNECTION_ID: &str = "legacy-default";
 pub const DEFAULT_WORKSPACE_AUTO_SYNC_INTERVAL_MINUTES: i64 = 10;
@@ -42,7 +42,7 @@ pub const DEFAULT_TIME_REPORT_TIMEOUT_SECONDS: i64 = 60;
 // JavaScript's notions the TS normaliser relies on.
 
 /// JavaScript's `\s` and `trim`: Unicode White_Space but NEL, plus BOM.
-fn js_whitespace(character: char) -> bool {
+pub(crate) fn js_whitespace(character: char) -> bool {
     (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
 }
 
@@ -53,10 +53,6 @@ pub fn js_trim(text: &str) -> &str {
 
 fn utf16_len(text: &str) -> usize {
     text.encode_utf16().count()
-}
-
-fn is_record(value: &Value) -> bool {
-    value.is_object()
 }
 
 /// `value && typeof value === "object"`: objects and arrays.
@@ -407,52 +403,35 @@ pub fn ui_setting_value_error(value: Option<&Value>) -> Option<String> {
         .then(|| format!("Preference value is {bytes} bytes; the limit is {UI_SETTING_MAX_BYTES}."))
 }
 
-/// How a section the TS type has but this crate does not normalise yet is
-/// kept: the family that owns it registers its normaliser.
+/// A section's normaliser; a family that owns a section may plug its own
+/// in with [`SettingsStore::with_section`].
 pub type SectionNormalizer = fn(Option<&Value>) -> Option<Value>;
-
-fn keep_defined(raw: Option<&Value>) -> Option<Value> {
-    raw.cloned()
-}
-
-fn keep_record(raw: Option<&Value>) -> Option<Value> {
-    raw.filter(|value| is_record(value)).cloned()
-}
-
-fn keep_tree(raw: Option<&Value>) -> Option<Value> {
-    raw.filter(|value| {
-        value
-            .get("nodes")
-            .and_then(Value::as_array)
-            .is_some_and(|nodes| !nodes.is_empty())
-    })
-    .cloned()
-}
-
-fn keep_list(raw: Option<&Value>) -> Option<Value> {
-    raw.filter(|value| value.as_array().is_some_and(|items| !items.is_empty()))
-        .cloned()
-}
-
-fn keep_nonempty_record(raw: Option<&Value>) -> Option<Value> {
-    raw.filter(|value| value.as_object().is_some_and(|map| !map.is_empty()))
-        .cloned()
-}
 
 fn default_sections() -> HashMap<&'static str, SectionNormalizer> {
     HashMap::from([
-        ("archive", keep_defined as SectionNormalizer),
-        ("limit_resume", keep_record),
-        ("profiles", keep_defined),
-        ("mr_reviews", keep_record),
-        ("workspace_tree", keep_tree),
-        ("rendered_sites", keep_list),
-        ("rendered_site_roots", keep_nonempty_record),
+        ("archive", sections::archive_section as SectionNormalizer),
+        ("limit_resume", sections::limit_resume_section),
+        ("profiles", sections::profiles_section),
+        ("mr_reviews", sections::normalize_stored_mr_reviews),
+        ("workspace_tree", sections::workspace_tree_section),
     ])
 }
 
 /// normalizeGuiSettings: the TS type's fields, in its order.
 fn normalize(
+    raw: &Value,
+    sections: &HashMap<&'static str, SectionNormalizer>,
+) -> Map<String, Value> {
+    // Objects as JSON.parse gives them to the TS side: array-index keys
+    // first. The result is ordered again, as JS orders what it assigns.
+    let raw = sections::js_key_order(raw.clone());
+    match sections::js_key_order(Value::Object(normalize_ordered(&raw, sections))) {
+        Value::Object(map) => map,
+        _ => unreachable!(),
+    }
+}
+
+fn normalize_ordered(
     raw: &Value,
     sections: &HashMap<&'static str, SectionNormalizer>,
 ) -> Map<String, Value> {
@@ -614,10 +593,16 @@ fn normalize(
         }
     }
     out.insert("ui".into(), Value::Object(ui));
-    for key in ["workspace_tree", "rendered_sites", "rendered_site_roots"] {
-        if let Some(value) = section(key) {
-            out.insert(key.into(), value);
-        }
+    if let Some(value) = section("workspace_tree") {
+        out.insert("workspace_tree".into(), value);
+    }
+    let sites = sections::normalize_site_list(object.get("rendered_sites"));
+    let roots = sections::normalize_site_roots(object.get("rendered_site_roots"), &sites);
+    if !sites.is_empty() {
+        out.insert("rendered_sites".into(), sites.into());
+    }
+    if !roots.is_empty() {
+        out.insert("rendered_site_roots".into(), Value::Object(roots));
     }
     if let Some(history) = normalize_history(object.get("history")) {
         out.insert("history".into(), history);

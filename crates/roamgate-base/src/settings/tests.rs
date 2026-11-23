@@ -439,7 +439,7 @@ async fn the_file_is_written_as_the_bun_server_writes_it() {
         .unwrap();
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
-        "{\n  \"version\": 1,\n  \"title_suffix\": \"\",\n  \"auto_rename_agent_tabs\": true,\n  \"repositories\": {},\n  \"workspace_auto_sync\": {},\n  \"terminal_transport\": {},\n  \"archive\": {\n    \"agents\": [\n      \"claude\"\n    ]\n  },\n  \"custom\": {\n    \"1\": \"y\",\n    \"2\": \"x\"\n  },\n  \"ui\": {\n    \"b\": 1,\n    \"a\": 2\n  },\n  \"history\": {\n    \"enabled\": false,\n    \"location\": \"/h\"\n  }\n}\n"
+        "{\n  \"version\": 1,\n  \"title_suffix\": \"\",\n  \"auto_rename_agent_tabs\": true,\n  \"repositories\": {},\n  \"workspace_auto_sync\": {},\n  \"terminal_transport\": {},\n  \"archive\": {\n    \"agents\": [\n      \"claude\"\n    ],\n    \"hosts\": {},\n    \"stale_hours\": 48,\n    \"thinking\": false,\n    \"index\": {\n      \"default\": \"full\",\n      \"rules\": []\n    },\n    \"exclude\": [],\n    \"hide\": [],\n    \"min_free_gb\": 20\n  },\n  \"custom\": {\n    \"1\": \"y\",\n    \"2\": \"x\"\n  },\n  \"ui\": {\n    \"b\": 1,\n    \"a\": 2\n  },\n  \"history\": {\n    \"enabled\": false,\n    \"location\": \"/h\"\n  }\n}\n"
     );
     #[cfg(unix)]
     {
@@ -519,4 +519,46 @@ fn instance_name_vectors() {
             }
         }
     }
+}
+
+/// `$text` tags of the vectors back to their strings.
+fn untag(value: &Value) -> Value {
+    if let Some(text) = roamgate_protocol::vectors::text(value)
+        && !value.is_string()
+    {
+        return Value::String(text);
+    }
+    match value {
+        Value::Array(items) => Value::Array(items.iter().map(untag).collect()),
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, value)| (key.clone(), untag(value)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// contract/vectors/settings.json: every section normalised as
+/// normalizeGuiSettings does, in the file's key order.
+#[test]
+fn settings_vectors() {
+    let file = roamgate_protocol::vectors::load("settings");
+    let mut failures = Vec::new();
+    for case in &file.cases {
+        for call in &case.calls {
+            assert_eq!(call.target(), "guiSettings.normalizeGuiSettings");
+            let raw = untag(&call.args[0]);
+            let want = untag(call.result.as_ref().expect("a result"));
+            let got = Settings::normalize(&raw).into_value();
+            let (got, want) = (
+                serde_json::to_string_pretty(&got).unwrap(),
+                serde_json::to_string_pretty(&want).unwrap(),
+            );
+            if got != want {
+                failures.push(format!("{}:\n got {got}\nwant {want}", case.title()));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
