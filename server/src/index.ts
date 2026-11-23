@@ -1,7 +1,12 @@
 // First: with ROAMGATE_TEST_CLOCK set, every module must see the test clock.
 import "./utils/test-clock-env";
 import { defaultSessionIndexDir } from "./agent/session-index-store";
-import { launchRegistry, sessionProfiles } from "./profiles/profiles";
+import {
+  commandForSession,
+  type LaunchSpec,
+  launchRegistry,
+  sessionProfiles,
+} from "./profiles/profiles";
 import { PROFILE_RPC_METHODS, returnAfterReset } from "./profiles/rpc";
 import { createUiSettingsRpcHandler } from "./bridge/settings-rpc";
 import {
@@ -209,12 +214,14 @@ import {
   renderedStoragePath,
 } from "./http/rendered-storage";
 import { RENDERED_PREFIX } from "../../shared/renderedPage";
+import type { MrItem } from "../../shared/mrReviews";
 import { downloadLocalFile } from "./workspace/local-files";
 import { downloadRemoteFile } from "./workspace/remote-files";
 import {
   activitySettings,
   applyRemoteGuiSettings,
   claudeStartMode,
+  type GuiSettings,
   type GuiSettingsRemote,
   limitResumeSettings,
   onGuiSettingsChanged,
@@ -318,6 +325,15 @@ import { readOwners } from "./core-channel/owners";
 import { rpcLogLevel } from "./utils/rpc-logging";
 import { handleReviewRpc, isReviewMethod } from "./review/rpc";
 import { createMrReviews, type MrReviews } from "./mr-reviews/module";
+import {
+  createInboxFetchers,
+  type FetchCall,
+  ForgeToolMissingError,
+  NotSignedInError,
+} from "./mr-reviews/fetchers";
+import { runClaudeModel } from "./mr-reviews/curation";
+import { defaultProfileInferenceModels } from "./mr-reviews/inference";
+import { stableJson } from "./history/format";
 import { isMrReviewsMethod } from "./mr-reviews/rpc";
 import { handleWorkRpc, isWorkMethod } from "./work/rpc";
 import {
@@ -1358,7 +1374,214 @@ const coreReverseTargets = {
     historyWorkChanged(args as WorkChange);
     return { ok: true };
   },
+  // The mr_reviews family: what the reviews module asks of this server,
+  // through the same code Bun's own module uses (mrReviewsHost).
+  "mr_reviews.connections": async () => {
+    const status = connectionManager.list().find((each) => each.is_default);
+    return {
+      connections: mrReviewConnections().map((each) => ({
+        id: each.id,
+        label: each.label,
+        can_launch: !!each.launch,
+      })),
+      default: status
+        ? {
+            id: status.id,
+            label: status.label,
+            ready: !!connectionManager.readyRuntime(status.id),
+          }
+        : null,
+    };
+  },
+  "mr_reviews.connection": async (args: unknown) =>
+    mrReviewsConnectionOp((args ?? {}) as Record<string, unknown>),
+  "mr_reviews.fetch": async (args: unknown) =>
+    mrReviewsFetch((args ?? {}) as Record<string, unknown>),
+  "mr_reviews.settings_write": async (args: unknown) => {
+    const { expect, mr_reviews } = (args ?? {}) as {
+      expect?: unknown;
+      mr_reviews?: unknown;
+    };
+    if (!mr_reviews || typeof mr_reviews !== "object")
+      throw new Error("mr_reviews.settings_write needs mr_reviews");
+    // Written only over what the core read: else it reads again.
+    let written = false;
+    const next = await updateGuiSettings((current) => {
+      if (stableJson(current.mr_reviews ?? null) !== stableJson(expect ?? null))
+        return current;
+      written = true;
+      return {
+        ...current,
+        mr_reviews: mr_reviews as GuiSettings["mr_reviews"],
+      };
+    });
+    return { written, mr_reviews: next.mr_reviews ?? {} };
+  },
+  "mr_reviews.review": async (args: unknown) => {
+    const { op, params } = (args ?? {}) as {
+      op?: unknown;
+      params?: Record<string, any>;
+    };
+    const given = params ?? {};
+    switch (op) {
+      case "open":
+        return mrReviewsHost.openReview(given as any);
+      case "open_range":
+        return mrReviewsHost.openRange(given as any);
+      case "request":
+        await mrReviewsHost.requestReview(given as any);
+        return { ok: true };
+      case "remove":
+        mrReviewsHost.removeReview(String(given.sessionId ?? ""));
+        return { ok: true };
+      case "effort":
+        return mrReviewsHost.effortReview(given as any) ?? null;
+      default:
+        throw new Error(
+          `mr_reviews.review: unknown op ${String(op).slice(0, 40)}`,
+        );
+    }
+  },
+  "mr_reviews.tree": async (args: unknown) => {
+    const { op, ops } = (args ?? {}) as { op?: unknown; ops?: unknown };
+    if (op === "read") return mrReviewsHost.tree.read();
+    if (op === "apply" && Array.isArray(ops)) {
+      await mrReviewsHost.tree.apply(ops as WorkspaceTreeOp[]);
+      return { ok: true };
+    }
+    throw new Error("mr_reviews.tree needs op read, or apply with ops");
+  },
+  "mr_reviews.create_worktree": async (args: unknown) => {
+    const { params } = (args ?? {}) as { params?: Record<string, any> };
+    return mrReviewsHost.createWorktree((params ?? {}) as any);
+  },
+  "mr_reviews.run_model": async (args: unknown) => {
+    const { model, system, prompt } = (args ?? {}) as Record<string, unknown>;
+    if (
+      typeof model !== "string" ||
+      typeof system !== "string" ||
+      typeof prompt !== "string"
+    )
+      throw new Error("mr_reviews.run_model needs a model, system and prompt");
+    return runClaudeModel(model, system, prompt);
+  },
+  "mr_reviews.inference_models": async () => {
+    const models = defaultProfileInferenceModels();
+    return {
+      automatic: models.automatic(),
+      models: await models.list().catch(() => []),
+    };
+  },
+  "mr_reviews.agent_command": async (args: unknown) => {
+    const { session_id } = (args ?? {}) as { session_id?: unknown };
+    if (typeof session_id !== "string")
+      throw new Error("mr_reviews.agent_command needs a session_id");
+    return commandForSession(session_id);
+  },
 };
+
+/** `mr_reviews.connection {connection_id, op, ...}`: a reviews connection's member. */
+async function mrReviewsConnectionOp(
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  const conn = mrReviewConnections().find(
+    (each) => each.id === args.connection_id,
+  );
+  if (!conn)
+    throw new Error(
+      `connection not ready: ${String(args.connection_id).slice(0, 80)}`,
+    );
+  const text = (key: string) => {
+    const value = args[key];
+    if (typeof value !== "string")
+      throw new Error(`mr_reviews.connection needs ${key}`);
+    return value;
+  };
+  switch (args.op) {
+    case "run":
+      return conn.run(
+        text("script"),
+        typeof args.timeout_ms === "number" ? args.timeout_ms : undefined,
+      );
+    case "dirs":
+      return conn.dirs();
+    case "herdr":
+      return conn.herdr(
+        text("method"),
+        (args.params ?? {}) as Record<string, unknown>,
+      );
+    case "launch":
+      if (!conn.launch) throw new Error("no profile launch here");
+      return conn.launch(text("pane_id"), args.spec as LaunchSpec);
+    case "conversation_owned":
+      return conn.conversation?.owned(text("pane_id")) ?? null;
+    case "conversation_switch":
+      if (!conn.conversation)
+        return { ok: false, busy: false, reason: "no conversation mode here" };
+      return conn.conversation.switch(text("pane_id"), text("session_id"));
+    case "conversation_prompt":
+      return (
+        (await conn.conversation?.prompt?.(text("pane_id"), text("text"))) ??
+        false
+      );
+    default:
+      throw new Error(
+        `mr_reviews.connection: unknown op ${String(args.op).slice(0, 40)}`,
+      );
+  }
+}
+
+/**
+ * `mr_reviews.fetch {op, ...}`: the inbox's forge reads, `{value}` or
+ * `{error: {kind?, message}}` (kind `not_signed_in` or `tool_missing`).
+ */
+async function mrReviewsFetch(args: Record<string, unknown>): Promise<unknown> {
+  const call = (args.call ?? undefined) as FetchCall | undefined;
+  try {
+    switch (args.op) {
+      case "gitlab":
+        return {
+          value: await mrInboxFetchers.gitlab(
+            String(args.host),
+            String(args.query),
+            call,
+          ),
+        };
+      case "github":
+        return {
+          value: await mrInboxFetchers.github(
+            String(args.host),
+            String(args.query),
+            call,
+          ),
+        };
+      case "gitlab_drafts":
+        return {
+          value: await mrInboxFetchers.gitlabDrafts(args.item as MrItem),
+        };
+      case "gitlab_label_events":
+        return {
+          value: await mrInboxFetchers.gitlabLabelEvents!(args.item as MrItem),
+        };
+      default:
+        throw new Error(
+          `mr_reviews.fetch: unknown op ${String(args.op).slice(0, 40)}`,
+        );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      error: {
+        ...(error instanceof NotSignedInError
+          ? { kind: "not_signed_in" }
+          : error instanceof ForgeToolMissingError
+            ? { kind: "tool_missing" }
+            : {}),
+        message,
+      },
+    };
+  }
+}
 
 /** A reverse call's connection, for the work family. */
 function workConnectionOf(args: unknown): string {
@@ -2759,134 +2982,162 @@ function voiceWork(): VoiceWorkBoard {
   };
 }
 
+/** The reviews' forge reads: glab and gh with this machine's logins. */
+const mrInboxFetchers = createInboxFetchers(runProcessWithCodeTimeout);
+
+/**
+ * What the reviews module asks of this server: Bun's own module's, and the
+ * Rust core's through the mr_reviews reverse targets while it owns them.
+ */
+const mrReviewsHost = {
+  // The order, pins and removals belong to this server: every page
+  // follows them at once, whichever connection it shows.
+  publish: (push) => {
+    const line = JSON.stringify({ mr_reviews: push });
+    for (const ws of clients) safeSend(ws, line, "mr-reviews");
+  },
+  connections: mrReviewConnections,
+  tree: {
+    read: () => readWorkspaceTree(),
+    apply: (ops) => applyWorkspaceTreeOps(ops),
+    onChanged: onWorkspaceTreeChanged,
+  },
+  defaultConnection: () => {
+    const status = connectionManager.list().find((each) => each.is_default);
+    return status
+      ? {
+          id: status.id,
+          label: status.label,
+          ready: !!connectionManager.readyRuntime(status.id),
+        }
+      : null;
+  },
+  openReview: ({ connectionId, workspaceId, root, url, title, paneId }) =>
+    getReviewService().open({
+      connectionId,
+      workspaceId,
+      root,
+      target: { kind: "mr", url },
+      title,
+      ...(paneId ? { paneId, agent: "Claude" } : {}),
+      raise: false,
+    }),
+  openRange: ({
+    connectionId,
+    workspaceId,
+    root,
+    base,
+    head,
+    title,
+    compare,
+  }) => {
+    const snapshot = getReviewService().open({
+      connectionId,
+      workspaceId,
+      root,
+      target: { kind: "range", base, head, ...(compare ? { compare } : {}) },
+      title,
+      raise: false,
+    });
+    return { sessionId: snapshot.session.id, snapshot };
+  },
+  // An effort's part: the same worktree path as the workspace menu's.
+  createWorktree: async ({ connectionId, workspaceId, cwd, branch }) => {
+    const runtime = connectionManager.readyRuntime(connectionId);
+    if (!runtime) throw new Error("this connection is not ready");
+    const result: any = await createWorkspaceWorktree(
+      runtime,
+      {
+        ...(workspaceId ? { workspace_id: workspaceId } : { cwd }),
+        branch,
+        focus: false,
+      },
+      () => true,
+      undefined,
+      undefined,
+      undefined,
+      // Never an existing checkout: the worktree command takes one as
+      // done, and the part's pick would then run in it.
+      { freshPath: "part" },
+    );
+    const path =
+      result?.worktree?.path ??
+      result?.worktree?.checkout_path ??
+      result?.workspace?.worktree?.checkout_path ??
+      result?.workspace?.cwd;
+    if (typeof path !== "string" || !path)
+      throw new Error("the worktree was made but its path is unknown");
+    return {
+      path,
+      ...(typeof result?.workspace?.workspace_id === "string"
+        ? { workspaceId: result.workspace.workspace_id }
+        : {}),
+    };
+  },
+  requestReview: ({ sessionId, paneId, focus }) =>
+    getReviewService().requestAgentReview({
+      sessionId,
+      paneId,
+      agent: "Claude",
+      ...(focus ? { focus } : {}),
+    }),
+  removeReview: (sessionId) => {
+    getReviewService().remove({ sessionId });
+  },
+  effortReview: ({ effort, connectionId, workspaceId, root, title, open }) => {
+    const service = getReviewService();
+    // Wherever it was opened: its head may have moved since.
+    const found = service
+      .list({ chats: true })
+      .find(
+        ({ session }) =>
+          session.target.kind === "effort" && session.target.effort === effort,
+      );
+    if (found || !open) return found ?? null;
+    return service.open({
+      connectionId,
+      workspaceId,
+      root,
+      target: { kind: "effort", effort },
+      title,
+      agent: "Claude",
+      raise: false,
+    });
+  },
+} satisfies Partial<Parameters<typeof createMrReviews>[0]>;
+
+/** Whether the Rust core serves the reviews now. */
+function coreServesMrReviews(): boolean {
+  return !!coreFront && !bunOwns("mr_reviews");
+}
+
+// Bun's reviews run (their timers, their writes) only while Bun owns the
+// mr_reviews family: stopped when the core takes it, made again (their
+// state read again: the core wrote it meanwhile) at their next use.
+onOwnershipChanged(() => {
+  if (!bunOwns("mr_reviews") && mrReviews) {
+    mrReviews.stop();
+    mrReviews = null;
+    logger.child("mr-reviews").info("handed to the Rust core");
+  }
+});
+// The core's reviews follow the Workspaces tree too (a group deleted is no
+// longer headed upstream).
+onWorkspaceTreeChanged((tree) => {
+  if (coreServesMrReviews())
+    void coreFront!
+      .callInternal("mr_reviews", "tree_changed", { tree })
+      .catch(() => undefined);
+});
+
 let mrReviews: MrReviews | null = null;
 /** The reviews inbox (bridge.mr_reviews.*), started on first use. */
 function getMrReviews(): MrReviews {
   if (mrReviews) return mrReviews;
   mrReviews = createMrReviews({
     run: runProcessWithCodeTimeout,
-    // The order, pins and removals belong to this server: every page
-    // follows them at once, whichever connection it shows.
-    publish: (push) => {
-      const line = JSON.stringify({ mr_reviews: push });
-      for (const ws of clients) safeSend(ws, line, "mr-reviews");
-    },
-    connections: mrReviewConnections,
-    tree: {
-      read: () => readWorkspaceTree(),
-      apply: (ops) => applyWorkspaceTreeOps(ops),
-      onChanged: onWorkspaceTreeChanged,
-    },
-    defaultConnection: () => {
-      const status = connectionManager.list().find((each) => each.is_default);
-      return status
-        ? {
-            id: status.id,
-            label: status.label,
-            ready: !!connectionManager.readyRuntime(status.id),
-          }
-        : null;
-    },
-    openReview: ({ connectionId, workspaceId, root, url, title, paneId }) =>
-      getReviewService().open({
-        connectionId,
-        workspaceId,
-        root,
-        target: { kind: "mr", url },
-        title,
-        ...(paneId ? { paneId, agent: "Claude" } : {}),
-        raise: false,
-      }),
-    openRange: ({
-      connectionId,
-      workspaceId,
-      root,
-      base,
-      head,
-      title,
-      compare,
-    }) => {
-      const snapshot = getReviewService().open({
-        connectionId,
-        workspaceId,
-        root,
-        target: { kind: "range", base, head, ...(compare ? { compare } : {}) },
-        title,
-        raise: false,
-      });
-      return { sessionId: snapshot.session.id, snapshot };
-    },
-    // An effort's part: the same worktree path as the workspace menu's.
-    createWorktree: async ({ connectionId, workspaceId, cwd, branch }) => {
-      const runtime = connectionManager.readyRuntime(connectionId);
-      if (!runtime) throw new Error("this connection is not ready");
-      const result: any = await createWorkspaceWorktree(
-        runtime,
-        {
-          ...(workspaceId ? { workspace_id: workspaceId } : { cwd }),
-          branch,
-          focus: false,
-        },
-        () => true,
-        undefined,
-        undefined,
-        undefined,
-        // Never an existing checkout: the worktree command takes one as
-        // done, and the part's pick would then run in it.
-        { freshPath: "part" },
-      );
-      const path =
-        result?.worktree?.path ??
-        result?.worktree?.checkout_path ??
-        result?.workspace?.worktree?.checkout_path ??
-        result?.workspace?.cwd;
-      if (typeof path !== "string" || !path)
-        throw new Error("the worktree was made but its path is unknown");
-      return {
-        path,
-        ...(typeof result?.workspace?.workspace_id === "string"
-          ? { workspaceId: result.workspace.workspace_id }
-          : {}),
-      };
-    },
-    requestReview: ({ sessionId, paneId, focus }) =>
-      getReviewService().requestAgentReview({
-        sessionId,
-        paneId,
-        agent: "Claude",
-        ...(focus ? { focus } : {}),
-      }),
-    removeReview: (sessionId) => {
-      getReviewService().remove({ sessionId });
-    },
-    effortReview: ({
-      effort,
-      connectionId,
-      workspaceId,
-      root,
-      title,
-      open,
-    }) => {
-      const service = getReviewService();
-      // Wherever it was opened: its head may have moved since.
-      const found = service
-        .list({ chats: true })
-        .find(
-          ({ session }) =>
-            session.target.kind === "effort" &&
-            session.target.effort === effort,
-        );
-      if (found || !open) return found ?? null;
-      return service.open({
-        connectionId,
-        workspaceId,
-        root,
-        target: { kind: "effort", effort },
-        title,
-        agent: "Claude",
-        raise: false,
-      });
-    },
+    fetchers: mrInboxFetchers,
+    ...mrReviewsHost,
   });
   mrReviews.start();
   return mrReviews;
@@ -2902,10 +3153,15 @@ async function effortLeaderPane(
   effort: string,
 ): Promise<string | null> {
   try {
-    const answer = (await getMrReviews().handle(
-      "bridge.mr_reviews.effort.leader",
-      { id: effort },
-    )) as { state?: string; connectionId?: string; paneId?: string };
+    const asked = { id: effort };
+    const answer = (
+      coreServesMrReviews()
+        ? await coreFront!.callInternal("mr_reviews", "call", {
+            method: "bridge.mr_reviews.effort.leader",
+            params: asked,
+          })
+        : await getMrReviews().handle("bridge.mr_reviews.effort.leader", asked)
+    ) as { state?: string; connectionId?: string; paneId?: string };
     return answer.state === "ready" &&
       answer.connectionId === connectionId &&
       answer.paneId
@@ -3417,12 +3673,18 @@ function getReviewAgent(): ReviewAgentServer {
     messages: getAgentMessenger(),
     claudeMod: claudeModHub,
     // The Reviews board's tools, for any agent session.
-    reviews: async ({ connectionId, workspaceId, agent, tool, params }) =>
-      getMrReviews().boardTool(
-        tool,
-        params,
-        `${agent || "Claude"} in ${await agentWorkspaceLabel(connectionId, workspaceId)}`,
-      ),
+    reviews: async ({ connectionId, workspaceId, agent, tool, params }) => {
+      const caller = `${agent || "Claude"} in ${await agentWorkspaceLabel(connectionId, workspaceId)}`;
+      if (coreServesMrReviews())
+        return (
+          (await coreFront!.callInternal("mr_reviews", "board_tool", {
+            tool,
+            params,
+            caller,
+          })) as { text: string }
+        ).text;
+      return getMrReviews().boardTool(tool, params, caller);
+    },
     // The Work board's tools, for any agent session.
     work: async ({
       connectionId,

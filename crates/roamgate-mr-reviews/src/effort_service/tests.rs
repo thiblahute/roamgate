@@ -287,11 +287,12 @@ impl Env {
                 Arc::new(move |input: Obj| {
                     let open = input["open"] == json!(true);
                     threads.lock().unwrap().push(input);
-                    if open {
+                    let snapshot = if open {
                         json!({"session": {"id": "rs-effort"}, "threads": []})
                     } else {
                         Value::Null
-                    }
+                    };
+                    Box::pin(async move { snapshot })
                 })
             }),
         };

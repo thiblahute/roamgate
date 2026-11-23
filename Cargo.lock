@@ -6986,6 +6986,7 @@ dependencies = [
  "roamgate-forge",
  "roamgate-herdr",
  "roamgate-http",
+ "roamgate-mr-reviews",
  "roamgate-notify",
  "roamgate-sidecar",
  "roamgate-work",

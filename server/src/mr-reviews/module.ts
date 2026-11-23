@@ -607,7 +607,7 @@ export function createMrReviews(options: {
   }
 
   // A group deleted from the tree is no longer headed upstream (D5).
-  options.tree?.onChanged?.((tree) => {
+  const offTree = options.tree?.onChanged?.((tree) => {
     void editSettings(async () => {
       const current = await saved();
       const groups = new Set(
@@ -1170,6 +1170,7 @@ export function createMrReviews(options: {
     agent: reviewsAgent,
     start: () => inbox.start(),
     stop: () => {
+      offTree?.();
       inbox.stop();
       void agent?.dispose();
     },

@@ -14,6 +14,7 @@ pub mod herdr;
 pub mod host;
 pub mod limit_resume;
 pub mod mr_cache;
+pub mod mr_reviews;
 pub mod notifications;
 pub mod settings;
 pub mod time_report;
@@ -35,6 +36,7 @@ pub fn core_families() -> Families {
         assistant::family(),
         work::family(),
         host::family(),
+        mr_reviews::family(),
     ]
     .into_iter()
     .flatten()

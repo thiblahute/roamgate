@@ -26,6 +26,7 @@ roamgate-connections = { path = "../roamgate-connections" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-forge = { path = "../roamgate-forge" }
 roamgate-herdr = { path = "../roamgate-herdr" }
+roamgate-mr-reviews = { path = "../roamgate-mr-reviews" }
 roamgate-http = { path = "../roamgate-http" }
 roamgate-notify = { path = "../roamgate-notify" }
 roamgate-sidecar = { path = "../roamgate-sidecar" }

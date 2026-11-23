@@ -43,7 +43,7 @@ pub type GroupLabelFn = Arc<dyn Fn(String) -> BoxFuture<'static, Option<String>>
 /// An object in, an object (or nothing) out, or the error's text.
 pub type CallFn = Arc<dyn Fn(Obj) -> BoxFuture<'static, Result<Obj, String>> + Send + Sync>;
 /// The effort's review (`effortReview`): its snapshot, or null.
-pub type EffortReviewFn = Arc<dyn Fn(Obj) -> Value + Send + Sync>;
+pub type EffortReviewFn = Arc<dyn Fn(Obj) -> BoxFuture<'static, Value> + Send + Sync>;
 
 /// What the methods need (`handleEffortRpc`'s deps).
 #[derive(Clone)]
@@ -2328,7 +2328,7 @@ async fn effort_threads(call: &Call<'_>) -> RpcResult<Value> {
         json!(format!("Effort {}", s(&effort, &["name"]))),
     );
     input.insert("open".into(), json!(open));
-    Ok(json!({"snapshot": effort_review(input)}))
+    Ok(json!({"snapshot": effort_review(input).await}))
 }
 
 async fn effort_leader(call: &Call<'_>) -> RpcResult<Value> {
