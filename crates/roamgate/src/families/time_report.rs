@@ -93,6 +93,7 @@ impl TimeReportSource for Source {
         let cx = self.cx.clone();
         Box::pin(async move {
             if cx.owners.owner("activity") == Side::Rust {
+                super::activity::settle().await;
                 return local_day_input(cx.clock.now(), date).await;
             }
             cx.reverse("activity.dayInput", json!({ "date": date }))

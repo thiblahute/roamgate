@@ -46,7 +46,8 @@ wire/core-channel.md), each while the owners table gives it to Rust.
   `internal.activity.signals` (what only the front sees in stage 1, each
   stamped with its arrival time: connection states, the Herdr events and
   listings the recorder reads, the agents conversation mode runs, closed
-  browser sockets) and `internal.activity.stop`, the handover of
+  browser sockets), `internal.activity.flush` (asked before each advance
+  of a test clock) and `internal.activity.stop`, the handover of
   activity.sqlite without two writers, and the signals held while the
   table names Rust and the core has not connected (15 s at most); the
   reverse target `activity.hostScript` (the recorder's read-only git

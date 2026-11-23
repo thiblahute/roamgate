@@ -48,10 +48,28 @@ const START_FALLBACK: Duration = Duration::from_secs(15);
 /// The family, once this build implements it.
 pub fn family() -> Option<Arc<dyn CoreFamily>> {
     let (recorder, _) = watch::channel(None);
-    Some(Arc::new(ActivityFamily(Arc::new(Inner {
+    let inner = Arc::new(Inner {
         state: Mutex::default(),
         recorder,
-    }))))
+    });
+    *CURRENT.lock().unwrap() = Arc::downgrade(&inner);
+    Some(Arc::new(ActivityFamily(inner)))
+}
+
+/// The core's activity family, for its readers in other families.
+static CURRENT: Mutex<std::sync::Weak<Inner>> = Mutex::new(std::sync::Weak::new());
+
+/// How long a read waits for the signals the recorder already has.
+const SETTLE: Duration = Duration::from_secs(5);
+
+/// Before reading the log the core writes: its recorder applied every
+/// signal it received (a Bun reader reads its own recorder's writes the
+/// same way, in one process). Nothing while the core does not record.
+pub async fn settle() {
+    let inner = CURRENT.lock().unwrap().upgrade();
+    if let Some(inner) = inner {
+        inner.settle().await;
+    }
 }
 
 #[derive(Default)]
@@ -261,6 +279,12 @@ impl Inner {
 
     /// The recorder the core runs now, waiting a little for one being
     /// handed over.
+    async fn settle(&self) {
+        if let Some(recorder) = self.recorder_for_call().await {
+            let _ = roamgate_base::clock::timeout(&SystemClock, SETTLE, recorder.flush()).await;
+        }
+    }
+
     async fn recorder_for_call(&self) -> Option<Arc<ActivityRecorder>> {
         if !self.state.lock().unwrap().owned {
             return None;
@@ -292,6 +316,7 @@ impl Inner {
     async fn timeline(&self, params: &Value, now: i64) -> Result<Value, RpcError> {
         let raw = settings_json().await;
         let settings = ActivitySettings::from_settings(&raw);
+        self.settle().await;
         let recording = match self.current() {
             Some(recorder) => recorder.ready().await,
             // Not this side's to record (a shadow read): Bun records while
@@ -346,6 +371,14 @@ impl CoreFamily for ActivityFamily {
                         .flatten()
                     {
                         apply(&recorder, signal);
+                    }
+                    Ok(json!({"ok": true}))
+                }
+                "internal.activity.flush" => {
+                    if let Some(recorder) = this.current() {
+                        let _ =
+                            roamgate_base::clock::timeout(&SystemClock, SETTLE, recorder.flush())
+                                .await;
                     }
                     Ok(json!({"ok": true}))
                 }
