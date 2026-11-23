@@ -3,29 +3,44 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-/// The repository's root, found at run time: the checkout whose code runs
-/// is the one cargo names (`CARGO_MANIFEST_DIR` of the test or `cargo run`),
-/// else the one around the current directory, else the one this binary was
-/// built in. Worktrees sharing a `CARGO_TARGET_DIR` may run a binary built
-/// in another worktree: the root must still be the caller's, never the
-/// builder's, or parity-ledger would rewrite another checkout's ledger.
+/// The repository's root, found at run time, never the one this binary was
+/// built in: worktrees sharing a `CARGO_TARGET_DIR` run the same binaries,
+/// and a run must read and write its own checkout (its ledger, contract and
+/// Bun server). In order: `PARITY_REPO`, the checkout around the current
+/// directory (cargo and nextest run tests from the package's directory),
+/// the one around `CARGO_MANIFEST_DIR` as cargo sets it for the run, then
+/// the builder's as a last resort.
 pub fn repo_root() -> PathBuf {
     static ROOT: OnceLock<PathBuf> = OnceLock::new();
     ROOT.get_or_init(|| {
-        let manifest = std::env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from);
-        let current = std::env::current_dir().ok();
-        manifest
-            .iter()
-            .chain(current.iter())
-            .find_map(|start| find_root(start))
-            .unwrap_or_else(|| {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .parent()
-                    .expect("parity/ is in the repository")
-                    .to_path_buf()
-            })
+        root_from(
+            std::env::var_os("PARITY_REPO").map(PathBuf::from),
+            std::env::current_dir().ok(),
+            std::env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from),
+        )
+        .unwrap_or_else(|| {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("parity/ is in the repository")
+                .to_path_buf()
+        })
     })
     .clone()
+}
+
+/// The root `repo_root` picks from these places, in this order.
+pub fn root_from(
+    explicit: Option<PathBuf>,
+    current: Option<PathBuf>,
+    manifest: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if let Some(explicit) = explicit.and_then(|dir| find_root(&dir)) {
+        return Some(explicit);
+    }
+    current
+        .iter()
+        .chain(manifest.iter())
+        .find_map(|start| find_root(start))
 }
 
 /// The nearest directory from `start` up holding the contract and the
@@ -66,5 +81,34 @@ mod tests {
         assert_eq!(find_root(&root.join("parity/src")), Some(root.clone()));
         assert_eq!(find_root(&root), Some(root));
         assert_eq!(find_root(dir.path()), None);
+    }
+
+    #[test]
+    fn one_binary_run_from_two_worktrees_reads_each_its_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let make = |name: &str| {
+            let root = dir.path().join(name);
+            std::fs::create_dir_all(root.join("contract")).unwrap();
+            std::fs::create_dir_all(root.join("parity")).unwrap();
+            std::fs::write(root.join("contract/contract.json"), "{}").unwrap();
+            std::fs::write(root.join("parity/Cargo.toml"), "").unwrap();
+            root
+        };
+        let (a, b) = (make("a"), make("b"));
+        // The builder's manifest directory names worktree a; run from b.
+        let built_in_a = Some(a.join("parity"));
+        assert_eq!(
+            root_from(None, Some(b.join("parity")), built_in_a.clone()),
+            Some(b.clone())
+        );
+        assert_eq!(
+            root_from(None, Some(a.join("parity")), built_in_a.clone()),
+            Some(a.clone())
+        );
+        // PARITY_REPO wins over the directory a run starts in.
+        assert_eq!(
+            root_from(Some(b.clone()), Some(a.join("parity")), built_in_a),
+            Some(b)
+        );
     }
 }
