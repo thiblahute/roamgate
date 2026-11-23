@@ -5,6 +5,7 @@ import {
   commandForSession,
   type LaunchSpec,
   launchRegistry,
+  profileForSession,
   profilesOf,
   sessionProfiles,
 } from "./profiles/profiles";
@@ -82,6 +83,12 @@ import { createWebPushService } from "./notifications/web-push";
 import { rmSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
+import {
+  type ConversationMirror,
+  emptyConversationMirror,
+} from "./conversation/core-front";
+import { flushLeaseFiles, forgetLeaseFiles } from "./conversation/lease";
+import { profileModels } from "./profiles/models";
 import packageJson from "../../package.json";
 import { diffState } from "../../shared/stateDelta";
 import type { AssistantTaskNotification } from "../../shared/assistant";
@@ -251,6 +258,7 @@ import {
   setGuiSettingsRemote,
   updateGuiSettings,
   worktreeRemoveCommandFor,
+  conversationIdleStopMinutes,
 } from "./config/gui-settings";
 import {
   claudeStartHookInstallArgv,
@@ -447,6 +455,7 @@ import {
   updateDraftNote,
 } from "./review/gitlab";
 import {
+  REVIEW_HOME_DIR,
   createReviewAgentServer,
   LOCAL_SOCKET_KEY,
   type ReviewAgentServer,
@@ -1209,6 +1218,173 @@ function deliverCorePush(push: PushMessage): void {
 }
 
 /** The connection a reverse call names, or the default one. */
+/** Whether the Rust core runs conversation mode now. */
+function conversationOnCore(): boolean {
+  return !!coreFront && !bunOwns("conversation");
+}
+
+/** What the core's conversation mode shows each connection's front. */
+const conversationMirrors = new Map<string, ConversationMirror>();
+
+/** The front's side of a connection's conversation mode in the core. */
+function conversationCoreFor(connectionId: string) {
+  return {
+    onCore: conversationOnCore,
+    call: (
+      op: string,
+      params: Record<string, unknown>,
+      signal?: AbortSignal,
+    ) => {
+      if (!coreFront) return Promise.reject(new Error("no core"));
+      return conversationSwitch.then(() =>
+        coreFront!.callInternal(
+          "conversation",
+          op,
+          { connection_id: connectionId, ...params },
+          signal,
+        ),
+      );
+    },
+    mirror: () =>
+      conversationMirrors.get(connectionId) ?? emptyConversationMirror(),
+  };
+}
+
+// The family changing hands: the side that had it saves what it read on
+// the leases (conversation-leases.json) before the other reads them.
+let conversationOnCoreNow = false;
+let conversationSwitch: Promise<void> = Promise.resolve();
+let conversationReleased: (() => void) | null = null;
+onOwnershipChanged(() => {
+  const onCore = conversationOnCore();
+  if (onCore === conversationOnCoreNow) return;
+  conversationOnCoreNow = onCore;
+  const runtimes: LegacyConnectionRuntime[] = [];
+  connectionManager.forEachCurrentRuntime((runtime) => runtimes.push(runtime));
+  conversationSwitch = conversationSwitch.then(async () => {
+    if (onCore) {
+      for (const runtime of runtimes) runtime.conversationOwnerChanged(true);
+      await flushLeaseFiles();
+      forgetLeaseFiles();
+      for (const runtime of runtimes)
+        await coreFront
+          ?.callInternal("conversation", "attach", {
+            connection_id: runtime.identity.id,
+          })
+          .catch(() => undefined);
+      return;
+    }
+    // Back to Bun: once the core saved its own (or a while, a core gone).
+    if (coreFront)
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 5000);
+        conversationReleased = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+    conversationReleased = null;
+    conversationMirrors.clear();
+    forgetLeaseFiles();
+    for (const runtime of runtimes) runtime.conversationOwnerChanged(false);
+  });
+});
+
+/** `conversation.host`: what the core's conversation mode asks. */
+async function conversationHost(
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const op = args.op;
+  if (op === "released") {
+    conversationReleased?.();
+    return { ok: true };
+  }
+  const runtime = coreRuntime(args);
+  const connectionId = runtime.identity.id;
+  const paneId = typeof args.pane_id === "string" ? args.pane_id : "";
+  switch (op) {
+    case "connection": {
+      const lease = connectionManager.readyRuntimeLease(connectionId);
+      const sshHost = runtime.sshHost();
+      return {
+        connection_id: connectionId,
+        generation: lease?.generation ?? null,
+        ssh: !!sshHost,
+        // Locally, this Roamgate's own holder and socket.
+        local_holder: sshHost
+          ? null
+          : {
+              bin: join(homedir(), REVIEW_HOME_DIR, "bin", "roamgate-hold"),
+              socket: join(homedir(), REVIEW_HOME_DIR, "review.sock"),
+            },
+      };
+    }
+    case "ssh_argv": {
+      const host = runtime.sshHost();
+      if (!host) throw new Error("this connection has no SSH host");
+      return sshReadCommandArgv(
+        host,
+        String(args.command ?? ""),
+        [],
+        typeof args.tag === "string" ? args.tag : "agent_chat",
+      );
+    }
+    case "ask":
+      return getReviewService().prompts.request({
+        tool: String(args.tool ?? ""),
+        input: args.input,
+        canAlways: args.can_always === true,
+        ...(Array.isArray(args.questions)
+          ? { questions: args.questions as never }
+          : {}),
+        timeoutMs: typeof args.timeout_ms === "number" ? args.timeout_ms : 0,
+        connectionId,
+        paneId,
+        agent: "Claude",
+        noTerminal: true,
+        signal,
+      });
+    case "idle_stop_minutes":
+      return conversationIdleStopMinutes(await readGuiSettings());
+    case "keep_awake":
+      return conversationKeepAwake(connectionId, paneId);
+    case "models_offered":
+      return profileModels(
+        profileForSession(
+          await readGuiSettings(),
+          String(args.session_id ?? ""),
+        ),
+      );
+    case "choose_model":
+      sessionProfiles().chooseModel(
+        String(args.session_id ?? ""),
+        String(args.model ?? ""),
+        typeof args.resolved === "string" ? args.resolved : null,
+      );
+      return { ok: true };
+    case "register_launch":
+      launchRegistry().register(
+        connectionId,
+        paneId,
+        args.spec as LaunchSpec,
+        String(args.token ?? ""),
+      );
+      return { ok: true };
+    case "mirror":
+      conversationMirrors.set(connectionId, args.mirror as ConversationMirror);
+      return { ok: true };
+    case "tell":
+      if (args.what === "lease_changed")
+        runtime.conversationLeaseChanged(paneId);
+      else if (args.what === "owned_status")
+        runtime.conversationOwnedStatus(paneId);
+      return { ok: true };
+    default:
+      throw new Error(`conversation.host: unknown op ${String(op)}`);
+  }
+}
+
 function coreRuntime(args: { connection_id?: unknown }) {
   const id =
     typeof args.connection_id === "string"
@@ -1564,6 +1740,13 @@ const coreReverseTargets = {
     coreRemoteWatches.set(connection_id, { id: watch_id, handle });
     return { ok: true };
   },
+  // The conversation family in the core: what it asks of this front
+  // (contract/wire/core-channel.md, The conversation family).
+  "conversation.host": async (
+    args: unknown,
+    _ctx: unknown,
+    signal: AbortSignal,
+  ) => conversationHost((args ?? {}) as Record<string, unknown>, signal),
   "agent_sessions.seen_written": async () => {
     // The core wrote its last marks: Bun reads them, owning them again.
     if (!agentSessionsOnCore()) agentSeen = createAgentSeenStore();
@@ -4892,7 +5075,7 @@ function reviewAgentHost() {
         return { action: "terminal", reason: "this connection is not ready" };
       if (claudeStartMode(await readGuiSettings()) !== "conversation")
         return { action: "terminal", reason: "the setting says terminal" };
-      const started = runtime.conversation.autoStart(paneId, sessionId);
+      const started = await runtime.conversation.autoStart(paneId, sessionId);
       logger.info("claude started in a pane", {
         connection: connectionId,
         pane: paneId,
@@ -5445,6 +5628,7 @@ function composeConnectionRuntime(
     taskNotificationSource: config.taskNotificationSource,
     conversationLeaseFile: defaultLeaseFile(),
     conversationKeepAwake,
+    conversationCore: conversationCoreFor(identity.id),
     claudeMod: claudeModHub,
     sessionIndexDir: defaultSessionIndexDir(),
     workspaceFront,
@@ -6177,6 +6361,13 @@ const webSocketCleanup = new WebSocketCleanupTracker<
   // The core's history watchers drop the socket too.
   if (coreFront?.tableOwner("agent_sessions") === "rust")
     tellAgentSessions("socket_closed", { socket_id: socketIdOf(ws) });
+  // And the core's chats.
+  if (conversationOnCore())
+    void coreFront!
+      .callInternal("conversation", "socket_closed", {
+        socket_id: socketIdOf(ws),
+      })
+      .catch(() => undefined);
   notifyBrowserClientCount();
   return snapshot;
 });
@@ -6389,6 +6580,17 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   // A family given to the Rust core: it answers.
   if (coreFront?.routesRpc(method)) {
     try {
+      // The user's own turn, as Bun's chat handler notes it.
+      if (
+        (method === "agent_chat.send" || method === "agent_chat.voice") &&
+        typeof params?.pane_id === "string" &&
+        params.stop !== true
+      )
+        turnCauses.note(
+          coreContext().connection_id ?? connectionManager.defaultId(),
+          params.pane_id,
+          { by: "user", via: "chat" },
+        );
       const result = await coreFront.callRpc(method, params, coreContext());
       if (method === "bridge.assistant.get" && params && "since" in params) {
         sendReply(
@@ -8554,6 +8756,11 @@ function stopManagerOnce(): Promise<void> {
     await stopHostOnCore();
     // The core's seen marks are on disk before the channel goes.
     await seenWritten;
+    // The core's conversations saved on their leases, on disk.
+    if (conversationOnCore())
+      await coreFront!
+        .callInternal("conversation", "stop", {})
+        .catch(() => undefined);
     // The core: what it owns stops writing before Bun's own goes.
     await coreFront?.stop();
     // Pause the harness before taking away the runtimes its reads depend on.

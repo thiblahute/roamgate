@@ -427,9 +427,14 @@ export function createLaunchRegistry(
       if (entry.until <= at) launches.delete(token);
   }
   return {
-    register(connectionId: string, paneId: string, spec: LaunchSpec): string {
+    register(
+      connectionId: string,
+      paneId: string,
+      spec: LaunchSpec,
+      /** The core's own token (its conversation mode types it). */
+      token = randomBytes(16).toString("hex"),
+    ): string {
       sweep();
-      const token = randomBytes(16).toString("hex");
       launches.set(token, {
         connectionId,
         paneId,

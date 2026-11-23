@@ -54,6 +54,11 @@ import { exitSentAsMessage } from "../conversation/handover";
 import { createImageReader } from "../conversation/images";
 import { createShellRunner } from "../conversation/shell";
 import { createLeaseStore } from "../conversation/lease";
+import {
+  type ConversationCore,
+  conversationFront,
+  emptyConversationMirror,
+} from "../conversation/core-front";
 import { createSessionIndexStore } from "../agent/session-index-store";
 import {
   type ConversationService,
@@ -283,6 +288,11 @@ export function createLegacyConnectionRuntime(args: {
   /** Roamgate's Claude mods, across connections (agent/claude-mod.ts). */
   claudeMod?: ClaudeModHub | null;
   /**
+   * The Rust core's conversation mode for this connection, while it owns
+   * the conversation family (conversation/core-front.ts).
+   */
+  conversationCore?: ConversationCore;
+  /**
    * Set while the Rust core owns the host family (host-facade.ts): its
    * Herdr client, whose calls go to the core's; the transport and the
    * Herdr subscriptions are the core's then, their events given to
@@ -335,7 +345,19 @@ export function createLegacyConnectionRuntime(args: {
   });
   // These helper groups run Unix shell commands over SSH.
   // Set below; the session resolver asks it which sessions it owns.
-  let conversation: ConversationService<ServerWebSocket<unknown>> | null = null;
+  // Bun's own conversation service while Bun owns the family; the
+  // callers see conversationFront, the core's while it owns it.
+  let localConversation: ConversationService<ServerWebSocket<unknown>> | null =
+    null;
+  const conversationCore: ConversationCore = args.conversationCore ?? {
+    onCore: () => false,
+    call: () => Promise.reject(new Error("no core")),
+    mirror: emptyConversationMirror,
+  };
+  const conversation = conversationFront<ServerWebSocket<unknown>>(
+    () => localConversation,
+    conversationCore,
+  );
   // Herdr as the agent session readers see it: conversation mode's and the
   // Claude mods' panes over Herdr's own answers (the Rust core's readers
   // call it too, through the agent_sessions.herdr_call reverse target).
@@ -459,154 +481,172 @@ export function createLegacyConnectionRuntime(args: {
       return sessionId ? [{ paneId: agent.pane_id, sessionId }] : [];
     });
   };
-  conversation = createConversationService<ServerWebSocket<unknown>>({
-    connectionId: identity.id,
-    herdr: withStatusReports(
-      createConversationHerdr({
-        call: (method, params, timeoutMs) =>
-          herdr.call(method, params, timeoutMs),
-        pidAlive: config.sshHost
-          ? async (pid) => {
-              const result = await runProcessWithCodeTimeout(
-                sshReadCommandArgv(
-                  config.sshHost!,
-                  `ps -p ${Math.trunc(pid)} >/dev/null`,
-                  [],
-                  "agent_chat.pid",
-                ),
-                10_000,
-              );
-              // Unsure (no answer from the host) counts as alive.
-              return result.code !== 1;
-            }
-          : localPidAlive,
-        // Unsure (no answer from the host) throws: nothing starts or resumes.
-        listProcesses: async () => {
-          const result = await runProcessWithCodeTimeout(
-            config.sshHost
-              ? sshReadCommandArgv(
-                  config.sshHost,
-                  "ps -eo pid=,args=",
-                  [],
-                  "agent_chat.ps",
-                )
-              : ["ps", "-eo", "pid=,args="],
-            10_000,
-          );
-          if (result.code !== 0)
-            throw new Error(
-              `Could not list the host's processes (ps exited ${result.code})`,
-            );
-          return result.stdout;
-        },
-      }),
-      (paneId) => args.onOwnedAgentStatus?.(paneId),
-    ),
-    leases: createLeaseStore({
+  const createLocalConversation = () =>
+    createConversationService<ServerWebSocket<unknown>>({
       connectionId: identity.id,
-      file: args.conversationLeaseFile ?? null,
-    }),
-    // Kept beside the leases: the conversations stopped as shell jobs.
-    suspendedFile: args.conversationLeaseFile
-      ? join(dirname(args.conversationLeaseFile), "conversation-suspended.json")
-      : null,
-    ...(args.spawnHeadless ? { spawn: args.spawnHeadless } : {}),
-    ask: (paneId, prompt) =>
-      args.askAgentPrompt
-        ? args.askAgentPrompt({ ...prompt, connectionId: identity.id, paneId })
-        : Promise.resolve(null),
-    // `!` lines from the chat: on the pane's host, as typed in it.
-    runShell: createShellRunner({
-      ...(config.sshHost ? { sshHost: config.sshHost } : {}),
-      shQuote,
-      annotate: forConnection,
-    }),
-    readImage: createImageReader({
-      sshHost: config.sshHost,
-      run: (argv, timeoutMs) => runProcessWithCodeTimeout(argv, timeoutMs),
-      shQuote,
-    }),
-    // A large transcript's records come from its slim index, never read whole.
-    readTranscript: (paneId) => agentSessions.readRecords({ pane_id: paneId }),
-    // Only asked of a turn that has been silent a long while.
-    transcriptStat: async (paneId) => {
-      const path = await agentSessions.resolvePath({ pane_id: paneId });
-      return typeof path === "string" ? agentSessionFiles.statFile(path) : null;
-    },
-    handover: {
-      // What the TUI still runs on the side, when its footer cannot say.
-      terminalTasks: async (paneId, agent = "claude") => {
-        const read = (await agentSessions.readTasks({
-          pane_id: paneId,
-          agent,
-        })) as { tasks?: { kind?: string; status?: string }[] };
-        return (read.tasks ?? []).filter(
-          (task) =>
-            task.status === "running" &&
-            (task.kind === "command" || task.kind === "monitor"),
-        ).length;
-      },
-      // A live Claude mod knows whether Claude is idle; Herdr's screen
-      // detection may lag behind a turn that just started.
-      exactStatus: (paneId) =>
-        claudeMod.live(paneId)
-          ? (claudeMod.pane(paneId)?.status ?? null)
-          : null,
-      // An /exit Claude took as a message is in its transcript's end.
-      exitSwallowed: async (paneId, command, sinceMs) => {
+      herdr: withStatusReports(
+        createConversationHerdr({
+          call: (method, params, timeoutMs) =>
+            herdr.call(method, params, timeoutMs),
+          pidAlive: config.sshHost
+            ? async (pid) => {
+                const result = await runProcessWithCodeTimeout(
+                  sshReadCommandArgv(
+                    config.sshHost!,
+                    `ps -p ${Math.trunc(pid)} >/dev/null`,
+                    [],
+                    "agent_chat.pid",
+                  ),
+                  10_000,
+                );
+                // Unsure (no answer from the host) counts as alive.
+                return result.code !== 1;
+              }
+            : localPidAlive,
+          // Unsure (no answer from the host) throws: nothing starts or resumes.
+          listProcesses: async () => {
+            const result = await runProcessWithCodeTimeout(
+              config.sshHost
+                ? sshReadCommandArgv(
+                    config.sshHost,
+                    "ps -eo pid=,args=",
+                    [],
+                    "agent_chat.ps",
+                  )
+                : ["ps", "-eo", "pid=,args="],
+              10_000,
+            );
+            if (result.code !== 0)
+              throw new Error(
+                `Could not list the host's processes (ps exited ${result.code})`,
+              );
+            return result.stdout;
+          },
+        }),
+        (paneId) => args.onOwnedAgentStatus?.(paneId),
+      ),
+      leases: createLeaseStore({
+        connectionId: identity.id,
+        file: args.conversationLeaseFile ?? null,
+      }),
+      // Kept beside the leases: the conversations stopped as shell jobs.
+      suspendedFile: args.conversationLeaseFile
+        ? join(
+            dirname(args.conversationLeaseFile),
+            "conversation-suspended.json",
+          )
+        : null,
+      ...(args.spawnHeadless ? { spawn: args.spawnHeadless } : {}),
+      ask: (paneId, prompt) =>
+        args.askAgentPrompt
+          ? args.askAgentPrompt({
+              ...prompt,
+              connectionId: identity.id,
+              paneId,
+            })
+          : Promise.resolve(null),
+      // `!` lines from the chat: on the pane's host, as typed in it.
+      runShell: createShellRunner({
+        ...(config.sshHost ? { sshHost: config.sshHost } : {}),
+        shQuote,
+        annotate: forConnection,
+      }),
+      readImage: createImageReader({
+        sshHost: config.sshHost,
+        run: (argv, timeoutMs) => runProcessWithCodeTimeout(argv, timeoutMs),
+        shQuote,
+      }),
+      // A large transcript's records come from its slim index, never read whole.
+      readTranscript: (paneId) =>
+        agentSessions.readRecords({ pane_id: paneId }),
+      // Only asked of a turn that has been silent a long while.
+      transcriptStat: async (paneId) => {
         const path = await agentSessions.resolvePath({ pane_id: paneId });
-        if (typeof path !== "string") return false;
-        const tail = new TextDecoder().decode(
-          await agentSessionFiles.readTail(path, 64 * 1024),
-        );
-        return exitSentAsMessage(tail, command, sinceMs);
+        return typeof path === "string"
+          ? agentSessionFiles.statFile(path)
+          : null;
       },
-    },
-    send: (ws, envelope) => sendConnectionEvent(ws, envelope, "agent_chat"),
-    // Idle stop: the setting, read at each check.
-    idleStopMinutes: async () =>
-      conversationIdleStopMinutes(await readGuiSettings()),
-    keepAwake: (paneId) =>
-      args.conversationKeepAwake?.(identity.id, paneId) ?? null,
-    // Locally, this Roamgate's own holder and socket, whatever the pane's
-    // $HOME; over SSH, the host's.
-    holderCommand: config.sshHost
-      ? (sessionId) => holderCommand(sessionId)
-      : (sessionId) =>
-          holderCommand(sessionId, {
-            bin: join(homedir(), REVIEW_HOME_DIR, "bin", "roamgate-hold"),
-            socket: join(homedir(), REVIEW_HOME_DIR, "review.sock"),
-          }),
-    resumeCommand,
-    // Each session's profile (its choice, else the default).
-    commandFor: (sessionId) => commandForSession(sessionId),
-    // /model: the profile's models, and the choice its next starts use.
-    models: {
-      offered: async (sessionId) =>
-        profileModels(profileForSession(await readGuiSettings(), sessionId)),
-      lastAnswered: async (paneId) => {
-        const tail = await transcriptTail(paneId);
-        return tail ? latestSessionModel(tail) : null;
+      handover: {
+        // What the TUI still runs on the side, when its footer cannot say.
+        terminalTasks: async (paneId, agent = "claude") => {
+          const read = (await agentSessions.readTasks({
+            pane_id: paneId,
+            agent,
+          })) as { tasks?: { kind?: string; status?: string }[] };
+          return (read.tasks ?? []).filter(
+            (task) =>
+              task.status === "running" &&
+              (task.kind === "command" || task.kind === "monitor"),
+          ).length;
+        },
+        // A live Claude mod knows whether Claude is idle; Herdr's screen
+        // detection may lag behind a turn that just started.
+        exactStatus: (paneId) =>
+          claudeMod.live(paneId)
+            ? (claudeMod.pane(paneId)?.status ?? null)
+            : null,
+        // An /exit Claude took as a message is in its transcript's end.
+        exitSwallowed: async (paneId, command, sinceMs) => {
+          const path = await agentSessions.resolvePath({ pane_id: paneId });
+          if (typeof path !== "string") return false;
+          const tail = new TextDecoder().decode(
+            await agentSessionFiles.readTail(path, 64 * 1024),
+          );
+          return exitSentAsMessage(tail, command, sinceMs);
+        },
       },
-      chosen: (sessionId) => sessionProfiles().get(sessionId)?.model ?? null,
-      choose: (sessionId, model, resolved) =>
-        sessionProfiles().chooseModel(sessionId, model, resolved),
-    },
-    launchCommand: (paneId, spec) => typedLaunch(paneId, spec),
-    onLeaseChanged: (paneId) => {
-      // The pane's history may now be another file (/clear).
-      historyWatcher?.refresh(paneId);
-      // Herdr's view of the pane changes with it (see overlayOwnedPanes):
-      // the browsers read it again.
-      if (!disposed)
-        args.onEvent(
-          { event: "roamgate.conversation_lease", data: { pane_id: paneId } },
-          identity,
-        );
-    },
-    log: (message, fields) =>
-      logger.info(message, { connection: identity.id, ...fields }),
-  });
+      send: (ws, envelope) => sendConnectionEvent(ws, envelope, "agent_chat"),
+      // Idle stop: the setting, read at each check.
+      idleStopMinutes: async () =>
+        conversationIdleStopMinutes(await readGuiSettings()),
+      keepAwake: (paneId) =>
+        args.conversationKeepAwake?.(identity.id, paneId) ?? null,
+      // Locally, this Roamgate's own holder and socket, whatever the pane's
+      // $HOME; over SSH, the host's.
+      holderCommand: config.sshHost
+        ? (sessionId) => holderCommand(sessionId)
+        : (sessionId) =>
+            holderCommand(sessionId, {
+              bin: join(homedir(), REVIEW_HOME_DIR, "bin", "roamgate-hold"),
+              socket: join(homedir(), REVIEW_HOME_DIR, "review.sock"),
+            }),
+      resumeCommand,
+      // Each session's profile (its choice, else the default).
+      commandFor: (sessionId) => commandForSession(sessionId),
+      // /model: the profile's models, and the choice its next starts use.
+      models: {
+        offered: async (sessionId) =>
+          profileModels(profileForSession(await readGuiSettings(), sessionId)),
+        lastAnswered: async (paneId) => {
+          const tail = await transcriptTail(paneId);
+          return tail ? latestSessionModel(tail) : null;
+        },
+        chosen: (sessionId) => sessionProfiles().get(sessionId)?.model ?? null,
+        choose: (sessionId, model, resolved) =>
+          sessionProfiles().chooseModel(sessionId, model, resolved),
+      },
+      launchCommand: (paneId, spec) => typedLaunch(paneId, spec),
+      onLeaseChanged: (paneId) => conversationLeaseChanged(paneId),
+      log: (message, fields) =>
+        logger.info(message, { connection: identity.id, ...fields }),
+    });
+  /** A pane's lease changed (owner, or the session after /clear). */
+  function conversationLeaseChanged(paneId: string) {
+    // The pane's history may now be another file (/clear).
+    historyWatcher?.refresh(paneId);
+    // Herdr's view of the pane changes with it (see overlayOwnedPanes):
+    // the browsers read it again.
+    if (!disposed)
+      args.onEvent(
+        { event: "roamgate.conversation_lease", data: { pane_id: paneId } },
+        identity,
+      );
+  }
+  /** Bun's own service runs again (the family back, its files read afresh). */
+  function startLocalConversation() {
+    if (!localConversation && !disposed)
+      localConversation = createLocalConversation();
+  }
   // oxlint-disable-next-line prefer-const -- read by conversation above.
   let historyWatcher: HistoryWatcher<ServerWebSocket<unknown>> | undefined;
   historyWatcher = createHistoryWatcher<ServerWebSocket<unknown>>({
@@ -1336,7 +1376,7 @@ export function createLegacyConnectionRuntime(args: {
     terminalBridge.dispose();
     // The headless processes go with the connection; their leases stay and
     // the next turn starts them again.
-    conversation?.dispose();
+    localConversation?.dispose();
     historyWatcher?.dispose();
     const subscriptionStop = subscriptionLoop.stop();
     const agentStatusStop = agentStatusSubscriptions.stop();
@@ -1408,6 +1448,9 @@ export function createLegacyConnectionRuntime(args: {
     }
   }
 
+  if (!conversationCore.onCore()) startLocalConversation();
+  // The core's runs: it reads again what the holders run.
+  else void conversationCore.call("attach", {}).catch(() => undefined);
   return {
     identity,
     socketPath,
@@ -1431,7 +1474,21 @@ export function createLegacyConnectionRuntime(args: {
     agentSessions,
     agentHerdrCall,
     tabAutoRenamer,
-    conversation: conversation!,
+    conversation,
+    /**
+     * The core took conversation mode (Bun's service saves what it read
+     * and goes), or gave it back (Bun's runs again, reading the files).
+     */
+    /** What the core's conversation mode tells this connection's front. */
+    conversationLeaseChanged,
+    conversationOwnedStatus: (paneId: string) =>
+      args.onOwnedAgentStatus?.(paneId),
+    conversationOwnerChanged(onCore: boolean) {
+      if (onCore) {
+        localConversation?.dispose();
+        localConversation = null;
+      } else startLocalConversation();
+    },
     typedLaunch,
     profileRpc,
     /** What the profile RPCs need of this connection (the core's too). */
@@ -1441,7 +1498,7 @@ export function createLegacyConnectionRuntime(args: {
     limitConnection: limitConnection({
       id: identity.id,
       herdr,
-      conversation: conversation!,
+      conversation,
       transcriptTail,
       claudeMod,
     }),
