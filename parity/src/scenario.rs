@@ -351,11 +351,7 @@ impl Runner {
     pub async fn new(fake_bin: &Path, scenario: &Scenario) -> Result<Runner> {
         let mut run = Run::new(fake_bin, options(scenario)?).await?;
         let family = owner_family(&scenario.family);
-        let owners = crate::run::rust_owners();
-        // The host family is every scenario's connections: with it on the
-        // core, each scenario starts once the core took and started them.
-        run.wait_for_host = owners.iter().any(|name| name == "host");
-        run.wait_for_core = run.wait_for_host || owners.iter().any(|name| name == family);
+        run.wait_for_core = crate::run::rust_owners().iter().any(|name| name == family);
         let mut runner = Runner {
             run,
             vars: BTreeMap::new(),

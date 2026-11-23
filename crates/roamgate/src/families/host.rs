@@ -272,12 +272,14 @@ fn host_command(params: &Value) -> Result<(HostCommand, HostWait), RpcError> {
 }
 
 impl Inner {
-    fn ops(&self, cx: &FamilyContext) -> HostOps {
+    fn ops(&self) -> HostOps {
         self.ops
             .lock()
             .unwrap()
             .get_or_insert_with(|| {
-                let clock: SharedClock = cx.clock.clone();
+                // The real clock: these are I/O (process deadlines, session
+                // waits); the front's test clock drives the supervision.
+                let clock: SharedClock = Arc::new(roamgate_base::clock::SystemClock);
                 HostOps::new(SshSessions::new(clock.clone()), ProcessRunner::new(clock))
             })
             .clone()
@@ -360,8 +362,6 @@ impl Inner {
         // Answered once the local connections are up (or failed), as the
         // front's own start would have them by its first browser call.
         local_starts_settled(&running, &before).await;
-        // The parity suite's sign that the connections started.
-        roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, "started");
         Ok(Self::list(&running))
     }
 
@@ -375,7 +375,7 @@ impl Inner {
             .get("explicit_legacy_override")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        let ops = self.ops(cx);
+        let ops = self.ops();
         let env: Arc<dyn Env> = Arc::new(ProcessEnv);
         // Masters of a server or core that died with them still up.
         let root = ssh_runtime_directory_root(env.as_ref());
@@ -728,15 +728,12 @@ impl CoreFamily for HostFamily {
                         ),
                         None => None,
                     };
-                    let output =
-                        inner
-                            .ops(&cx)
-                            .run(&command, stdin, &wait)
-                            .await
-                            .map_err(|error| match error.code {
-                                Some(code) => RpcError::with_code(error.message, code),
-                                None => RpcError::new(error.message),
-                            })?;
+                    let output = inner.ops().run(&command, stdin, &wait).await.map_err(
+                        |error| match error.code {
+                            Some(code) => RpcError::with_code(error.message, code),
+                            None => RpcError::new(error.message),
+                        },
+                    )?;
                     Ok(json!({
                         "code": output.code,
                         "stdout_b64": base64::engine::general_purpose::STANDARD.encode(&output.stdout),
@@ -749,7 +746,7 @@ impl CoreFamily for HostFamily {
                         .get("long_lived")
                         .and_then(Value::as_bool)
                         .unwrap_or(false);
-                    let ops = inner.ops(&cx);
+                    let ops = inner.ops();
                     let held = inner
                         .holds
                         .hold(&ops, &command, &wait, long_lived)

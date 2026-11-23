@@ -167,6 +167,42 @@ pub fn tunnel_error(error: TunnelError) -> RuntimeError {
     }
 }
 
+/// The command master's readiness, told the front once its part of the
+/// generation exists (the master may be up before it is built).
+#[derive(Default)]
+struct MasterReady {
+    fire: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    /// (front started, a readiness waits for it)
+    state: Mutex<(bool, bool)>,
+}
+
+impl MasterReady {
+    fn ready(&self) {
+        let fire = {
+            let mut state = self.state.lock().unwrap();
+            if !state.0 {
+                state.1 = true;
+                return;
+            }
+            true
+        };
+        if fire && let Some(fire) = &*self.fire.lock().unwrap() {
+            fire();
+        }
+    }
+
+    fn front_started(&self) {
+        let pending = {
+            let mut state = self.state.lock().unwrap();
+            state.0 = true;
+            std::mem::take(&mut state.1)
+        };
+        if pending && let Some(fire) = &*self.fire.lock().unwrap() {
+            fire();
+        }
+    }
+}
+
 /// Everything a runtime is made from.
 pub struct HostRuntimeArgs {
     pub identity: ConnectionIdentity,
@@ -207,6 +243,7 @@ struct Inner {
     skip_front: bool,
     events: mpsc::UnboundedSender<HostEvent>,
     event_queue: Mutex<Option<mpsc::UnboundedReceiver<HostEvent>>>,
+    master_ready: Arc<MasterReady>,
     subscriptions: EventSubscriptionLoop,
     agent_status: AgentStatusSubscriptionLoop,
     /// Shared with the master-ready hook.
@@ -234,12 +271,15 @@ impl HostRuntime {
             HerdrClientOptions {
                 logger: Some(args.logger.child("herdr")),
                 connection_id: Some(id.clone()),
-                clock: Some(args.clock.clone()),
+                // Its calls' deadlines are I/O, on the real clock; the
+                // subscriptions' retries and polls follow `clock`.
+                clock: Some(Arc::new(roamgate_base::clock::SystemClock)),
                 read_reuse_ms: None,
             },
         );
         let (events, event_queue) = mpsc::unbounded_channel();
         let disposed = Arc::new(AtomicBool::new(false));
+        let master_ready = Arc::new(MasterReady::default());
 
         // The tunnel (an SSH host's), with its command master.
         let tunnel = match &args.config.ssh_host {
@@ -250,13 +290,16 @@ impl HostRuntime {
                 let host = host.clone();
                 let master_id = id.clone();
                 let ready_disposed = disposed.clone();
+                let ready = master_ready.clone();
                 let on_master_ready: Option<Arc<dyn Fn() + Send + Sync>> =
                     control_path.map(|control_path| {
-                        Arc::new(move || {
+                        *ready.fire.lock().unwrap() = Some(Box::new(move || {
                             if !ready_disposed.load(Ordering::SeqCst) {
                                 hooks.master_ready(&master_id, generation, &host, &control_path);
                             }
-                        }) as Arc<dyn Fn() + Send + Sync>
+                        }));
+                        let ready = ready.clone();
+                        Arc::new(move || ready.ready()) as Arc<dyn Fn() + Send + Sync>
                     });
                 let on_exit = args.on_transport_exit.clone();
                 let on_unexpected_exit: Option<Arc<dyn Fn(TunnelError) + Send + Sync>> = on_exit
@@ -401,6 +444,7 @@ impl HostRuntime {
             skip_front: args.skip_front,
             events,
             event_queue: Mutex::new(Some(event_queue)),
+            master_ready,
             subscriptions,
             agent_status,
             disposed,
@@ -556,6 +600,7 @@ impl ConnectionRuntime for HostRuntime {
                     .await?;
                 this.lock().front_started = true;
             }
+            this.inner.master_ready.front_started();
             if this.inner.disposed.load(Ordering::SeqCst) {
                 return Err("connection runtime is disposed".into());
             }

@@ -151,10 +151,6 @@ pub struct Run {
     /// Each start waits for the core to connect (a scenario of a family
     /// PARITY_RUST_OWNERS gives to Rust).
     pub wait_for_core: bool,
-    /// The host family is Rust's: once the core connected, the run also
-    /// waits for it to have started the connections (`host started` in the
-    /// served log), as Bun's own start is done by the time a step runs.
-    pub wait_for_host: bool,
 }
 
 /// The variable naming the Rust core a Bun server runs beside it.
@@ -491,7 +487,6 @@ impl Run {
             last_exit: None,
             core_connected: None,
             wait_for_core: false,
-            wait_for_host: false,
         })
     }
 
@@ -604,22 +599,6 @@ impl Run {
         // family's background work would start at another time.
         if self.wait_for_core {
             self.check_core().await?;
-        }
-        if self.wait_for_host && self.env.contains_key(CORE_BIN_ENV) {
-            let deadline = tokio::time::Instant::now() + CORE_CONNECT_TIMEOUT;
-            while !self
-                .core_served()
-                .lines()
-                .any(|line| line == "host started")
-            {
-                if tokio::time::Instant::now() >= deadline {
-                    bail!(
-                        "hybrid: the core did not start the connections within {CORE_CONNECT_TIMEOUT:?}\n--- server output ---\n{}",
-                        self.log_text()
-                    );
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
         }
         Ok(())
     }

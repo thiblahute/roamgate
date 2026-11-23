@@ -345,3 +345,20 @@ async fn pane_listings_reach_the_front_with_their_start_in_order() {
     );
     runtime.stop().await.unwrap();
 }
+
+#[test]
+fn a_master_ready_before_the_front_part_is_told_once_it_exists() {
+    let fired = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let ready = MasterReady::default();
+    let count = fired.clone();
+    *ready.fire.lock().unwrap() = Some(Box::new(move || {
+        count.fetch_add(1, Ordering::SeqCst);
+    }));
+    ready.ready();
+    assert_eq!(fired.load(Ordering::SeqCst), 0);
+    ready.front_started();
+    assert_eq!(fired.load(Ordering::SeqCst), 1);
+    // Ready again (a recycled master): told at once.
+    ready.ready();
+    assert_eq!(fired.load(Ordering::SeqCst), 2);
+}
