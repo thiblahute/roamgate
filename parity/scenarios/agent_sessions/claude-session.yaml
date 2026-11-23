@@ -197,7 +197,28 @@ steps:
     normalize: [run-paths, session-file-stat, uuid, history-entry-id]
     golden: history-v2
     save:
-      { last_entry: /result/entries/3/id, first_entry: /result/entries/0/id }
+      {
+        last_entry: /result/entries/3/id,
+        first_entry: /result/entries/0/id,
+        epoch: /result/cursor/epoch,
+      }
+  # The cursor is the file's (its size plus one, an epoch of its own): the
+  # same poll is answered as nothing new, whichever side reads it.
+  - call: agent_history.get
+    params:
+      {
+        pane_id: p1,
+        history_version: 2,
+        cursor: { epoch: "${epoch}", revision: 2415 },
+      }
+    reply:
+      {
+        mode: delta,
+        cursor: { epoch: "${epoch}", revision: 2415 },
+        base_revision: 2415,
+        upserts: [],
+        removed: [],
+      }
   - call: agent_history.older
     params: { pane_id: p1, before_id: "${last_entry}", limit: 2 }
     normalize: [run-paths, session-file-stat, history-entry-id]
@@ -227,6 +248,22 @@ steps:
             pane_id: p1,
             path: "{{contains:/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl}}",
           },
+      }
+  # What was appended comes as a delta from the same cursor.
+  - call: agent_history.get
+    params:
+      {
+        pane_id: p1,
+        history_version: 2,
+        cursor: { epoch: "${epoch}", revision: 2415 },
+      }
+    reply:
+      {
+        mode: delta,
+        cursor: { epoch: "${epoch}", revision: 2672 },
+        base_revision: 2415,
+        upserts: "{{array}}",
+        removed: [],
       }
   - call: agent_history.unsubscribe
     params: { pane_id: p1 }

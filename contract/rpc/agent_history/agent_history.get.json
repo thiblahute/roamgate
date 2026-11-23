@@ -10,6 +10,18 @@
       },
       "history_version": {
         "type": "integer"
+      },
+      "cursor": {
+        "properties": {
+          "epoch": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": ["epoch", "revision"],
+        "type": "object"
       }
     },
     "required": ["pane_id"],
@@ -197,6 +209,87 @@
           },
           "required": ["kind", "role", "text", "sent_at", "id"],
           "type": "object"
+        },
+        "type": "array"
+      },
+      "base_revision": {
+        "type": "integer"
+      },
+      "upserts": {
+        "items": {
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "sent_at": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            },
+            "images": {
+              "type": "integer"
+            },
+            "id": {
+              "type": "string"
+            },
+            "message_id": {
+              "type": "string"
+            },
+            "block_index": {
+              "type": "integer"
+            },
+            "tool_name": {
+              "type": "string"
+            },
+            "source_call_id": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "text_bytes": {
+              "type": "integer"
+            },
+            "text_hash": {
+              "type": "string"
+            },
+            "is_error": {
+              "type": "boolean"
+            },
+            "artifact": {
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": ["url", "title"],
+              "type": "object"
+            }
+          },
+          "required": ["kind", "role", "text", "sent_at", "id"],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "removed": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "order": {
+        "items": {
+          "type": "string"
         },
         "type": "array"
       },

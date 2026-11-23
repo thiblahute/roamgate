@@ -28,7 +28,7 @@
     "mode": "snapshot",
     "cursor": {
       "epoch": "{{uuid}}",
-      "revision": 1
+      "revision": 2415
     },
     "window_limit": 200,
     "entries": [

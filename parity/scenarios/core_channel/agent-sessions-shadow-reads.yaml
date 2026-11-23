@@ -1,0 +1,137 @@
+name: the agent sessions' shadowed history reads answer the same on both sides while Bun owns them
+family: core_channel
+tier: T2
+description: >
+  With a Rust core beside it and agent_sessions Bun's, every agent_history.get
+  is asked of the core too and compared with Bun's answer as the browser gets
+  it: the first read, a poll with the cursor it gave (nothing new), and the
+  same cursor once the agent wrote more (a delta from it). The cursor is the
+  transcript's, so the core, which never answered the browser, gives the same
+  epoch, revisions and delta. A clean soak writes no runtime/shadow.jsonl.
+# Stage 1: the Bun server holds the port and shadows the core's family.
+fronts: [bun]
+server:
+  env:
+    ROAMGATE_CORE_BIN: "${CORE}"
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        cwd: /work
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+  files:
+    ".config/roamgate/runtime/owners.json":
+      mode: "0600"
+      json:
+        version: 1
+        owners: { agent_sessions: bun }
+        shadow: { enabled: true, rate: 1 }
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2026-01-01T00:00:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message: { role: user, content: Read the README },
+          }
+        - {
+            type: assistant,
+            uuid: a1,
+            parentUuid: u1,
+            timestamp: "2026-01-01T00:00:01.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              {
+                id: msg_1,
+                role: assistant,
+                model: claude-opus-4,
+                content:
+                  [
+                    { type: text, text: Reading it },
+                    {
+                      type: tool_use,
+                      id: toolu_1,
+                      name: Read,
+                      input: { file_path: /work/README.md },
+                    },
+                  ],
+              },
+          }
+        - {
+            type: user,
+            uuid: u2,
+            parentUuid: a1,
+            timestamp: "2026-01-01T00:00:02.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              {
+                role: user,
+                content:
+                  [
+                    {
+                      type: tool_result,
+                      tool_use_id: toolu_1,
+                      content: "# Work",
+                    },
+                  ],
+              },
+          }
+steps:
+  - login: {}
+  - connect: {}
+  - expect_log: { contains: "connected (pid", within_ms: 60000 }
+  - call: agent_history.get
+    params: { pane_id: p1, history_version: 2 }
+    reply: { mode: snapshot, entries: "{{array}}" }
+    save: { epoch: /result/cursor/epoch, revision: /result/cursor/revision }
+  # One shadow read per method every 5 s: each read gets its own.
+  - sh: sleep 5.5
+  - call: agent_history.get
+    params:
+      {
+        pane_id: p1,
+        history_version: 2,
+        cursor: { epoch: "${epoch}", revision: "${revision}" },
+      }
+    reply:
+      {
+        mode: delta,
+        cursor: { epoch: "${epoch}", revision: "${revision}" },
+        upserts: [],
+        removed: [],
+      }
+  - sh: sleep 5.5
+  - sh: printf '%s\n' '{"type":"assistant","uuid":"a2","parentUuid":"u2","timestamp":"2026-01-01T00:00:03.000Z","sessionId":"11111111-2222-4333-8444-555555555555","cwd":"/work","message":{"id":"msg_2","role":"assistant","model":"claude-opus-4","content":[{"type":"text","text":"It says Work"}]}}' >> home/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl
+  - call: agent_history.get
+    params:
+      {
+        pane_id: p1,
+        history_version: 2,
+        cursor: { epoch: "${epoch}", revision: "${revision}" },
+      }
+    reply:
+      {
+        mode: delta,
+        cursor: { epoch: "${epoch}" },
+        base_revision: "${revision}",
+        upserts: "{{array}}",
+        removed: [],
+      }
+  # The shadow reads run after each answer; give them their time, then a
+  # clean run left no line.
+  - sh: sleep 5
+  - expect_log: { lacks: "[shadow]" }
+  - assert_absent: "${DATA}/runtime/shadow.jsonl"
