@@ -1,8 +1,9 @@
 //! Roamgate's connections (Rust migration plan, section 6.2): the leaf
 //! Phase 2 moved (S12, limit-resume and the usage-limit module) and the
-//! host layer of S16 with its profile service. The runtime composition and
-//! the `host` family's adapter come with S16's next steps; routing, agent
-//! sessions, tab titles and agent profiles with S18 and S21.
+//! host layer of S16: the profile service, the runtime of a generation the
+//! core owns and the front's SSH commands (the `host` family's channel
+//! adapter is in the `roamgate` binary); routing, agent sessions, tab
+//! titles and agent profiles come with S18 and S21.
 //!
 //! | Module | What |
 //! |---|---|
@@ -16,6 +17,8 @@
 //! | [`network_watch`] | external address changes (connections/network-watch.ts) |
 //! | [`subscription_loop`] | the Herdr event subscription loop (connections/subscription-loop.ts) |
 //! | [`agent_status`] | per-pane agent status subscriptions (connections/agent-status-subscription.ts) |
+//! | [`host_runtime`] | a generation's transport, probe and Herdr subscriptions while the core owns the `host` family, the rest built by the front (connections/runtime.ts) |
+//! | [`host_ops`] | the front's SSH commands run or held in the core's session slots (bridge/ssh-sessions.ts) |
 
 pub mod agent_status;
 pub mod host_ops;
