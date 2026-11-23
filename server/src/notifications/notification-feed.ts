@@ -61,6 +61,20 @@ type StoredClear = {
 type Stored = StoredNotification | StoredClear;
 type Saved = { version: 1; last: number; events: Stored[] };
 
+/**
+ * The Rust core's side of the feed while it owns the notifications family
+ * (contract/wire/core-channel.md): it keeps the events and their file and
+ * sends Web Push; the feed keeps the sockets, with a copy of the events the
+ * core sends after each change (`applyCore`).
+ */
+export type CoreFeed = {
+  call(op: string, params: Record<string, unknown>): Promise<unknown>;
+};
+/** What the core sends after each change: its events, and those to send. */
+export type CoreFeedState = { last: number; events: unknown[] };
+/** The stale-runtime checks of notifications the core queued for Web Push. */
+const MAX_CURRENT_CHECKS = 512;
+
 /** The socket as the feed uses it: Bun's ServerWebSocket fits. */
 export type FeedSocket = {
   send(text: string): unknown;
@@ -110,33 +124,37 @@ function load(path: string): Saved {
   try {
     assertSafeDataPath(path);
     if (!existsSync(path) || statSync(path).size > MAX_FILE_BYTES) return empty;
-    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (
-      !isRecord(value) ||
-      value.version !== 1 ||
-      !Number.isSafeInteger(value.last) ||
-      !Array.isArray(value.events)
-    )
-      return empty;
-    const events = value.events.filter(
-      (event): event is Stored =>
-        isRecord(event) &&
-        (event.event === "notification" ||
-          event.event === "notification_clear") &&
-        Number.isSafeInteger(event.id) &&
-        Number.isFinite(event.at) &&
-        typeof event.tag === "string" &&
-        (event.event === "notification_clear" ||
-          (typeof event.title === "string" &&
-            typeof event.body === "string" &&
-            typeof event.path === "string" &&
-            typeof event.group === "string" &&
-            (event.pref === "completed" || event.pref === "blocked"))),
-    );
-    return { version: 1, last: value.last as number, events };
+    return parseSaved(JSON.parse(readFileSync(path, "utf8"))) ?? empty;
   } catch {
     return empty;
   }
+}
+
+/** The feed as saved (the file, or the core's state), or null when invalid. */
+function parseSaved(value: unknown): Saved | null {
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    !Number.isSafeInteger(value.last) ||
+    !Array.isArray(value.events)
+  )
+    return null;
+  const events = value.events.filter(
+    (event): event is Stored =>
+      isRecord(event) &&
+      (event.event === "notification" ||
+        event.event === "notification_clear") &&
+      Number.isSafeInteger(event.id) &&
+      Number.isFinite(event.at) &&
+      typeof event.tag === "string" &&
+      (event.event === "notification_clear" ||
+        (typeof event.title === "string" &&
+          typeof event.body === "string" &&
+          typeof event.path === "string" &&
+          typeof event.group === "string" &&
+          (event.pref === "completed" || event.pref === "blocked"))),
+  );
+  return { version: 1, last: value.last as number, events };
 }
 
 /** The page a click on the notification opens: what the service worker does. */
@@ -213,6 +231,22 @@ export function createNotificationFeed(options: {
   const clients = new Map<FeedSocket, Client>();
   let socketIds = 0;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
+  /** The Rust core, while it owns the family; null while Bun does. */
+  let core: CoreFeed | null = null;
+  /** isCurrent of what the core queued for Web Push, by token. */
+  const currentChecks = new Map<number, () => boolean>();
+  let currentTokens = 0;
+
+  /** One of the core's calls; a failure is only logged (as a save's). */
+  function coreCall(op: string, params: Record<string, unknown>) {
+    void core?.call(op, params).catch((error: unknown) => {
+      warn(
+        `The Rust core did not take the notification feed's ${op}: ${
+          (error as Error).message
+        }`,
+      );
+    });
+  }
 
   function prune() {
     const oldest = now() - MAX_AGE_MS;
@@ -296,6 +330,7 @@ export function createNotificationFeed(options: {
 
   /** Withdraws the notifications with this tag, if any is still out. */
   function clearTag(tag: string) {
+    if (core) return coreCall("clear_tag", { tag });
     if (!live(tag)) return;
     events = events.filter((event) => event.tag !== tag);
     append({ event: "notification_clear", id: ++last, at: now(), tag });
@@ -378,6 +413,22 @@ export function createNotificationFeed(options: {
     });
   }
 
+  function clientsStatus() {
+    const at = now();
+    return {
+      android_connected: androidConnected(),
+      clients: [...clients.values()].map((client) => ({
+        socket: client.socketId,
+        client: client.client,
+        remote: client.remote ?? null,
+        connected_at: client.connectedAt,
+        last_seen: client.lastSeen,
+        silent_ms: at - client.lastSeen,
+        preferences: { ...client.preferences },
+      })),
+    };
+  }
+
   function action(socket: FeedSocket, message: Record<string, unknown>) {
     const id = message.id;
     const reply = (result: { ok: true } | { error: string }) =>
@@ -420,6 +471,28 @@ export function createNotificationFeed(options: {
     ) {
       const isCurrent = extra.isCurrent ?? (() => true);
       if (!isCurrent()) return;
+      if (core) {
+        // The core builds, keeps and pushes it, then sends it back to be
+        // delivered to the sockets; its Web Push asks isCurrent again
+        // before each send, by token.
+        let current: number | undefined;
+        if (extra.isCurrent) {
+          current = ++currentTokens;
+          currentChecks.set(current, isCurrent);
+          if (currentChecks.size > MAX_CURRENT_CHECKS)
+            currentChecks.delete(currentChecks.keys().next().value!);
+        }
+        coreCall("publish", {
+          task,
+          ...(extra.kind ? { kind: extra.kind } : {}),
+          ...(extra.actions?.length ? { actions: extra.actions } : {}),
+          ...(extra.prompt ? { prompt: extra.prompt } : {}),
+          ...(extra.path ? { path: extra.path } : {}),
+          android_connected: androidConnected(),
+          ...(current !== undefined ? { current } : {}),
+        });
+        return undefined;
+      }
       // A page path of its own (a work item's) travels in the push too.
       const payload = taskPushPayload(task, extra.path);
       const event: StoredNotification = {
@@ -462,11 +535,21 @@ export function createNotificationFeed(options: {
     clearTag,
     /** The user looked at the pane: its notifications are done with. */
     clearPane(connectionId: string, paneId: string) {
+      if (core)
+        return coreCall("clear_pane", {
+          connection_id: connectionId,
+          pane_id: paneId,
+        });
       const pane = `${connectionId}\n${paneId}`;
       clearWhere((event) => event.pane === pane);
     },
     /** The pane's agent stopped waiting on the user. */
     clearBlockedPane(connectionId: string, paneId: string) {
+      if (core)
+        return coreCall("clear_blocked_pane", {
+          connection_id: connectionId,
+          pane_id: paneId,
+        });
       const pane = `${connectionId}\n${paneId}`;
       // A permission prompt's notification goes with the prompt instead.
       clearWhere(
@@ -476,6 +559,7 @@ export function createNotificationFeed(options: {
     },
     /** The prompt was answered, or went back to the terminal. */
     clearPrompt(promptId: string) {
+      if (core) return coreCall("clear_prompt", { prompt_id: promptId });
       clearWhere((event) => event.prompt?.promptId === promptId);
     },
     androidConnected,
@@ -542,24 +626,50 @@ export function createNotificationFeed(options: {
         }
       }
     },
+    /**
+     * The Rust core takes the feed (its events, file and Web Push), or
+     * gives it back (null): then the file, which the core wrote, is read
+     * again. Taking it asks the core for its events.
+     */
+    async useCore(next: CoreFeed | null) {
+      core = next;
+      currentChecks.clear();
+      if (!next) {
+        const saved = load(path);
+        last = saved.last;
+        events = saved.events;
+        return;
+      }
+      const state = parseSaved(await next.call("state", {}));
+      if (state && core === next) {
+        last = state.last;
+        events = state.events;
+      }
+    },
+    /**
+     * The core's events after a change, and those of them to send to the
+     * sockets now (in order).
+     */
+    applyCore(state: CoreFeedState, deliverIds: number[] = []) {
+      const saved = parseSaved({ version: 1, ...state });
+      if (!core || !saved) return;
+      last = saved.last;
+      events = saved.events;
+      for (const id of deliverIds) {
+        const event = events.find((each) => each.id === id);
+        if (event) deliver(event);
+      }
+    },
+    /** Whether what the core queued under `token` is still current. */
+    currentCheck(token: number): boolean {
+      return currentChecks.get(token)?.() ?? false;
+    },
     /** The sockets open now, for `bridge.notifications.status`. */
     status() {
-      const at = now();
-      return {
-        last,
-        events: events.length,
-        android_connected: androidConnected(),
-        clients: [...clients.values()].map((client) => ({
-          socket: client.socketId,
-          client: client.client,
-          remote: client.remote ?? null,
-          connected_at: client.connectedAt,
-          last_seen: client.lastSeen,
-          silent_ms: at - client.lastSeen,
-          preferences: { ...client.preferences },
-        })),
-      };
+      return { last, events: events.length, ...clientsStatus() };
     },
+    /** The sockets open now, without the events (the core's status). */
+    clients: clientsStatus,
     stop() {
       stopHeartbeat();
       for (const socket of clients.keys())

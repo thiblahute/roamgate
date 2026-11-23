@@ -526,3 +526,77 @@ test("connections, hellos, sends and closes are logged", () => {
     'notification client disconnected socket=1 client=android code=1001 reason="Going away" lived_ms=2000 clients=0',
   );
 });
+
+test("while the Rust core owns the feed, Bun only relays: it asks the core, sends what the core gives back and reads the file again when it returns", async () => {
+  const saved = feed();
+  saved.publish(blocked);
+  const calls: [string, Record<string, unknown>][] = [];
+  const state = JSON.parse(
+    readFileSync(join(root, "notifications.json"), "utf8"),
+  );
+  const f = feed();
+  const s = hello(f);
+  await f.useCore({
+    call: async (op, params) => {
+      calls.push([op, params]);
+      return op === "state" ? state : { ok: true };
+    },
+  });
+  let current = true;
+  f.publish(completed, { isCurrent: () => current });
+  f.clearTag("t");
+  f.clearPane("alpha", "p1");
+  f.clearBlockedPane("alpha", "p1");
+  f.clearPrompt("q1");
+  expect(calls.map(([op]) => op)).toEqual([
+    "state",
+    "publish",
+    "clear_tag",
+    "clear_pane",
+    "clear_blocked_pane",
+    "clear_prompt",
+  ]);
+  const publish = calls[1]![1];
+  expect(publish).toMatchObject({ task: completed, android_connected: true });
+  // The core asks whether what it queued is still current, by token.
+  expect(f.currentCheck(publish.current as number)).toBe(true);
+  current = false;
+  expect(f.currentCheck(publish.current as number)).toBe(false);
+  expect(f.currentCheck(999)).toBe(false);
+  // Nothing written by Bun while the core owns the file.
+  expect(readFileSync(join(root, "notifications.json"), "utf8")).toBe(
+    `${JSON.stringify(state)}\n`,
+  );
+  // The core's events after a change: the copy, and what to send now.
+  const event = {
+    event: "notification",
+    id: 2,
+    at: clock,
+    kind: "completed",
+    title: "done",
+    body: "b",
+    tag: "x",
+    group: "roamgate",
+    path: "/",
+    pref: "completed",
+  };
+  s.sent.length = 0;
+  f.applyCore({ last: 2, events: [...state.events, event] }, [2]);
+  expect(s.sent).toEqual([
+    {
+      event: "notification",
+      id: 2,
+      at: clock,
+      kind: "completed",
+      title: "done",
+      body: "b",
+      tag: "x",
+      group: "roamgate",
+      url: `${ORIGIN}/`,
+    },
+  ]);
+  expect(f.status()).toMatchObject({ last: 2, events: 2 });
+  // Back to Bun: the file is read again (the core's last write).
+  await f.useCore(null);
+  expect(f.status()).toMatchObject({ last: 1, events: 1 });
+});

@@ -82,7 +82,8 @@
       "rpc": ["bridge.notifications."],
       "http": ["/api/notifications/push"],
       "files": ["data:notifications.json", "data:web-push.json"],
-      "shadow": []
+      "shadow": [],
+      "cli": ["push"]
     },
     "work": {
       "phase": 4,

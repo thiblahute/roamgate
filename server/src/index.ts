@@ -506,15 +506,20 @@ const timeReportDeps = {
     }),
 };
 const timeReport = createTimeReport(timeReportDeps);
-const webPush = createWebPushService({
-  warn: (message) => logger.warn(message),
-});
+const createBunWebPush = () =>
+  createWebPushService({
+    warn: (message) => logger.warn(message),
+  });
+// Bun's Web Push runs while Bun owns the notifications family (always,
+// without a Rust core); a fresh one (with the registry read again) starts
+// when the family comes back from the core.
+let webPush = createBunWebPush();
 /**
  * Every notification goes through the feed: it builds the message once for
  * Web Push and for the notification socket (the Android app).
  */
 const notifications = createNotificationFeed({
-  webPush,
+  webPush: { notify: (...args) => webPush.notify(...args) },
   answerPrompt: ({ connectionId, promptId }, answer) =>
     getReviewService().prompts.answer({ connectionId, id: promptId, answer }),
   warn: (message) => logger.warn(message),
@@ -964,6 +969,30 @@ const coreReverseTargets = {
         },
       ];
     }),
+  // The notifications family's: the feed's events after a change in the
+  // core (those to send to the sockets now by id), the sockets open, and
+  // whether a notification the core queued for Web Push is still current.
+  "notifications.feed": async (args: unknown) => {
+    const { last, events, deliver } = (args ?? {}) as {
+      last?: unknown;
+      events?: unknown;
+      deliver?: unknown;
+    };
+    if (typeof last !== "number" || !Array.isArray(events))
+      throw new Error("notifications.feed needs last and events");
+    notifications.applyCore(
+      { last, events },
+      Array.isArray(deliver)
+        ? deliver.filter((id): id is number => typeof id === "number")
+        : [],
+    );
+    return { ok: true };
+  },
+  "notifications.clients": async () => notifications.clients(),
+  "notifications.current": async (args: unknown) => {
+    const { token } = (args ?? {}) as { token?: unknown };
+    return typeof token === "number" && notifications.currentCheck(token);
+  },
   "settings.limit_resume.get": async () =>
     limitResumeSettings(await readGuiSettings()),
   "conversation.owned_panes": async (args: unknown) =>
@@ -3384,6 +3413,35 @@ onOwnershipChanged(() => {
     limitResumer = createBunLimitResumer(createLimitResumeStore());
     if (limitResumerStarted) limitResumer.start();
     logger.child("limit-resume").info("served by Bun again");
+  }
+});
+
+// The notifications family: while the Rust core owns it, it keeps the
+// feed's events and file and sends Web Push; Bun keeps the feed's sockets
+// (the Android app's), with the events the core sends back.
+let notificationsOnCore = false;
+onOwnershipChanged(() => {
+  const ours = bunOwns("notifications");
+  const log = logger.child("notifications");
+  if (!ours && !notificationsOnCore && coreFront) {
+    notificationsOnCore = true;
+    webPush.stop();
+    const front = coreFront;
+    notifications
+      .useCore({
+        call: (op, params) => front.callInternal("notifications", op, params),
+      })
+      .catch((error: unknown) =>
+        log.warn("the Rust core did not give its notification feed", {
+          error,
+        }),
+      );
+    log.info("handed to the Rust core");
+  } else if (ours && notificationsOnCore) {
+    notificationsOnCore = false;
+    void notifications.useCore(null);
+    webPush = createBunWebPush();
+    log.info("served by Bun again");
   }
 });
 
