@@ -634,10 +634,26 @@ async fn a_rewind_s_scan_reads_the_slim_index_as_it_would_the_text() {
             "input": { "file_path": "/src/a.ts", "old_string": "a".repeat(9000) } }] } }));
     let bytes = lines(&records);
     let session = fixture(bytes.clone(), None);
-    let slim = session.handlers.read_records(&json!({ "pane_id": "p" })).await.map_err(|e| e.message).unwrap().unwrap();
+    let slim = session
+        .handlers
+        .read_records(&json!({ "pane_id": "p" }))
+        .await
+        .map_err(|e| e.message)
+        .unwrap()
+        .unwrap();
     assert_eq!(session.files.whole_reads.load(Ordering::SeqCst), 0);
     let uuid = prompt.as_str().unwrap();
     let from_slim = scan_rewind(Transcript::Records(slim), uuid);
-    assert_eq!(from_slim, scan_rewind(Transcript::Text(&String::from_utf8(bytes).unwrap()), uuid));
-    assert_eq!(from_slim, RewindScan { found: true, edited: vec!["/src/a.ts".into()], checkpoint: true });
+    assert_eq!(
+        from_slim,
+        scan_rewind(Transcript::Text(&String::from_utf8(bytes).unwrap()), uuid)
+    );
+    assert_eq!(
+        from_slim,
+        RewindScan {
+            found: true,
+            edited: vec!["/src/a.ts".into()],
+            checkpoint: true
+        }
+    );
 }

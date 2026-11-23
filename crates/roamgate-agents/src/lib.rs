@@ -41,6 +41,10 @@ pub mod utils;
 pub use registry::*;
 
 #[cfg(test)]
+mod discovery_tests;
+#[cfg(test)]
+mod rewind_history_tests;
+#[cfg(test)]
 mod tail_tests;
 #[cfg(test)]
 mod vectors_tests;

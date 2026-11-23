@@ -590,26 +590,50 @@ fn agy_env(root: &Path) -> AgentEnv {
 async fn resolves_antigravity_session_via_resolve_agent_session() {
     let root = tempfile::tempdir().unwrap();
     let id = "session-herdr-resolved";
-    crate::antigravity::tests::synthetic_db(root.path(), id, "/workspace/test-repo", 1726272000, "m");
+    crate::antigravity::tests::synthetic_db(
+        root.path(),
+        id,
+        "/workspace/test-repo",
+        1726272000,
+        "m",
+    );
     let agent_env = agy_env(root.path());
-    let files = LocalSessionFiles { env: agent_env.clone() };
-    let herdr = Herdr(json!({ "agent": { "agent": "agy", "cwd": "/workspace/test-repo",
-        "agent_session": { "source": "herdr:antigravity_cli", "agent": "agy", "kind": "id", "value": id } } }));
+    let files = LocalSessionFiles {
+        env: agent_env.clone(),
+    };
+    let herdr = Herdr(
+        json!({ "agent": { "agent": "agy", "cwd": "/workspace/test-repo",
+        "agent_session": { "source": "herdr:antigravity_cli", "agent": "agy", "kind": "id", "value": id } } }),
+    );
     let found = resolve(&herdr, &files, &ResolverContext::new(agent_env)).await;
     assert_eq!(found["status"], json!("ok"));
     assert_eq!(found["agent"], json!("agy"));
     assert_eq!(found["session"]["value"], json!(id));
-    assert!(found["file"]["path"].as_str().unwrap().ends_with(&format!("{id}.db")));
+    assert!(
+        found["file"]["path"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("{id}.db"))
+    );
 }
 
 #[tokio::test]
 async fn resolves_antigravity_session_via_cwd_fallback_when_agent_session_is_missing() {
     let root = tempfile::tempdir().unwrap();
     let id = "session-fallback-cwd";
-    crate::antigravity::tests::synthetic_db(root.path(), id, "/workspace/fallback-dir", 1726272000, "m");
+    crate::antigravity::tests::synthetic_db(
+        root.path(),
+        id,
+        "/workspace/fallback-dir",
+        1726272000,
+        "m",
+    );
     let agent_env = agy_env(root.path());
-    let files = LocalSessionFiles { env: agent_env.clone() };
-    let herdr = Herdr(json!({ "agent": { "agent": "antigravity", "cwd": "/workspace/fallback-dir" } }));
+    let files = LocalSessionFiles {
+        env: agent_env.clone(),
+    };
+    let herdr =
+        Herdr(json!({ "agent": { "agent": "antigravity", "cwd": "/workspace/fallback-dir" } }));
     let found = resolve(&herdr, &files, &ResolverContext::new(agent_env)).await;
     assert_eq!(found["status"], json!("ok"));
     assert_eq!(found["agent"], json!("agy"));
@@ -620,9 +644,14 @@ async fn resolves_antigravity_session_via_cwd_fallback_when_agent_session_is_mis
 async fn returns_missing_session_with_integration_command_when_session_cannot_be_resolved() {
     let root = tempfile::tempdir().unwrap();
     let agent_env = agy_env(root.path());
-    let files = LocalSessionFiles { env: agent_env.clone() };
+    let files = LocalSessionFiles {
+        env: agent_env.clone(),
+    };
     let herdr = Herdr(json!({ "agent": { "agent": "agy", "cwd": "" } }));
     let found = resolve(&herdr, &files, &ResolverContext::new(agent_env)).await;
     assert_eq!(found["status"], json!("missing_session"));
-    assert_eq!(found["command"], json!("herdr integration install antigravity-cli"));
+    assert_eq!(
+        found["command"],
+        json!("herdr integration install antigravity-cli")
+    );
 }

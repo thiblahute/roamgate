@@ -819,7 +819,13 @@ pub(crate) mod tests {
         .unwrap();
     }
 
-    pub(crate) fn synthetic_db(root: &Path, session: &str, cwd: &str, base: u64, model: &str) -> PathBuf {
+    pub(crate) fn synthetic_db(
+        root: &Path,
+        session: &str,
+        cwd: &str,
+        base: u64,
+        model: &str,
+    ) -> PathBuf {
         std::fs::create_dir_all(root).unwrap();
         let path = root.join(format!("{session}.db"));
         let db = Connection::open(&path).unwrap();

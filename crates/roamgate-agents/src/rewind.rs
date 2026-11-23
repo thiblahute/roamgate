@@ -182,28 +182,45 @@ pub fn scan_rewind(transcript: Transcript<'_>, uuid: &str) -> RewindScan {
             })
             .collect(),
     };
-    let checkpoint = records
-        .iter()
-        .any(|r| js::str_of(r.get("type")) == Some("file-history-snapshot") && js::str_of(r.get("messageId")) == Some(uuid));
+    let checkpoint = records.iter().any(|r| {
+        js::str_of(r.get("type")) == Some("file-history-snapshot")
+            && js::str_of(r.get("messageId")) == Some(uuid)
+    });
     let kept = without_rewound_turns(records);
-    let Some(at) = kept.iter().position(|r| js::str_of(r.get("uuid")) == Some(uuid)) else {
-        return RewindScan { found: false, edited: Vec::new(), checkpoint };
+    let Some(at) = kept
+        .iter()
+        .position(|r| js::str_of(r.get("uuid")) == Some(uuid))
+    else {
+        return RewindScan {
+            found: false,
+            edited: Vec::new(),
+            checkpoint,
+        };
     };
     let mut edited: Vec<String> = Vec::new();
     for record in &kept[at + 1..] {
         if js::str_of(record.get("type")) != Some("assistant") {
             continue;
         }
-        let Some(content) = js::rec(record.get("message")).and_then(|m| m.get("content")).and_then(Value::as_array) else {
+        let Some(content) = js::rec(record.get("message"))
+            .and_then(|m| m.get("content"))
+            .and_then(Value::as_array)
+        else {
             continue;
         };
         for block in content {
-            let Some(block) = block.as_object() else { continue };
-            let Some(name) = js::str_of(block.get("name")) else { continue };
+            let Some(block) = block.as_object() else {
+                continue;
+            };
+            let Some(name) = js::str_of(block.get("name")) else {
+                continue;
+            };
             if js::str_of(block.get("type")) != Some("tool_use") || !EDIT_TOOLS.contains(&name) {
                 continue;
             }
-            let Some(input) = js::rec(block.get("input")) else { continue };
+            let Some(input) = js::rec(block.get("input")) else {
+                continue;
+            };
             // `file_path ?? notebook_path`: a null file_path falls through.
             let path = match input.get("file_path") {
                 None | Some(Value::Null) => input.get("notebook_path"),
@@ -217,7 +234,11 @@ pub fn scan_rewind(transcript: Transcript<'_>, uuid: &str) -> RewindScan {
             }
         }
     }
-    RewindScan { found: true, edited, checkpoint }
+    RewindScan {
+        found: true,
+        edited,
+        checkpoint,
+    }
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 fancy-regex = "0.17"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 icu_collator = "2"
 indexmap = "2"

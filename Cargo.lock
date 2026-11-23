@@ -6441,6 +6441,7 @@ name = "roamgate-agents"
 version = "0.0.0"
 dependencies = [
  "fancy-regex 0.17.0",
+ "futures-util",
  "hex",
  "icu_collator",
  "indexmap",

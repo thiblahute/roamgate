@@ -362,8 +362,17 @@ fn canonical_directory(path: &str) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| resolve(path))
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many Muse metadata prefixes were read (the TS test spies on
+    /// readPrefix).
+    pub(crate) static MUSE_WORKSPACE_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 fn read_muse_workspace(path: &str) -> Option<String> {
     use std::io::Read;
+    #[cfg(test)]
+    MUSE_WORKSPACE_READS.with(|reads| reads.set(reads.get() + 1));
     let mut prefix = Vec::new();
     std::fs::File::open(path)
         .ok()?

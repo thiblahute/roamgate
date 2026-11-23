@@ -134,19 +134,22 @@ impl TaskWatcher {
             .lock()
             .unwrap()
             .retain(|_, (at, _)| now - *at < SUBAGENT_STAT_MS);
-        let mut activity = HashMap::new();
-        for id in &ids {
-            activity.insert(
-                id.clone(),
-                self.stat(&format!("{dir}/agent-{id}.jsonl"), now).await,
-            );
-        }
+        // Together, as Promise.all: a remote host's stats go as one command.
+        let stats = futures_util::future::join_all(ids.iter().map(|id| {
+            let path = format!("{dir}/agent-{id}.jsonl");
+            async move { (id.clone(), self.stat(&path, now).await) }
+        }))
+        .await;
+        let activity: HashMap<String, Option<f64>> = stats.into_iter().collect();
         let mut next = with_subagent_activity(&tasks, &activity, now);
         if !outputs.is_empty() {
-            let mut output_activity = HashMap::new();
-            for path in &outputs {
-                output_activity.insert(path.clone(), self.stat(path, now).await);
-            }
+            let stats = futures_util::future::join_all(
+                outputs
+                    .iter()
+                    .map(|path| async move { (path.clone(), self.stat(path, now).await) }),
+            )
+            .await;
+            let output_activity: HashMap<String, Option<f64>> = stats.into_iter().collect();
             let open = self.holds(&outputs, now);
             next = with_command_activity(&next, &output_activity, now, &|path| {
                 open.as_ref().map(|o| o.contains(path))
@@ -168,6 +171,7 @@ pub struct AgentSessionHandlers {
     pub resolver: Arc<ResolverContext>,
     pub cache: Arc<ProjectionCache>,
     pub tasks: TaskWatcher,
+    pub settled: SettledTimes,
     pub now: Arc<dyn Fn() -> f64 + Send + Sync>,
 }
 
@@ -194,6 +198,7 @@ impl AgentSessionHandlers {
         Self {
             cache: ProjectionCache::new(files.clone(), store),
             tasks: TaskWatcher::new(files.clone(), now.clone()),
+            settled: SettledTimes::default(),
             herdr,
             files,
             resolver,
@@ -559,6 +564,7 @@ impl AgentSessionHandlers {
             let run_dir = format!("{session_dir}/subagents/workflows/{run_id}");
             let workflow = read_workflow_run(
                 self.files.as_ref(),
+                &self.settled,
                 &run_dir,
                 &format!("{session_dir}/workflows/{run_id}.json"),
             )
@@ -828,9 +834,17 @@ fn event_text(value: Option<&Value>) -> Option<String> {
     }
 }
 
+/// File times that do not change (a meta file's, an ended agent's
+/// transcript), by path: one per file access, as Bun's WeakMap keeps them.
+#[derive(Default)]
+pub struct SettledTimes(Mutex<HashMap<String, f64>>);
+
+const SETTLED_TIMES_LIMIT: usize = 2000;
+
 /// A workflow run's phases and agents.
 pub async fn read_workflow_run(
     files: &dyn SessionFiles,
+    settled: &SettledTimes,
     run_dir: &str,
     record_path: &str,
 ) -> Value {
@@ -904,7 +918,7 @@ pub async fn read_workflow_run(
             .collect()
     };
     let Some(Value::Object(record)) = record else {
-        add_live_agent_times(files, run_dir, &phases, &mut agents).await;
+        add_live_agent_times(files, settled, run_dir, &phases, &mut agents).await;
         return Value::Object(obj! { "phases" => build(&phases, &agents) });
     };
     let mut ordered: Vec<String> = Vec::new();
@@ -982,45 +996,79 @@ pub async fn read_workflow_run(
 
 async fn add_live_agent_times(
     files: &dyn SessionFiles,
+    settled: &SettledTimes,
     run_dir: &str,
     phases: &[(String, Vec<String>)],
     agents: &mut [(String, Obj)],
 ) {
     static ID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_-]+$").unwrap());
+    {
+        let mut known = settled.0.lock().unwrap();
+        if known.len() > SETTLED_TIMES_LIMIT {
+            known.clear();
+        }
+    }
+    let mtime = |path: String| async move {
+        files
+            .stat_file(&path)
+            .await
+            .ok()
+            .flatten()
+            .map(|f| f.mtime_ms)
+    };
+    let settled_mtime = |path: String| async move {
+        if let Some(time) = settled.0.lock().unwrap().get(&path).copied() {
+            return Some(time);
+        }
+        let time = mtime(path.clone()).await;
+        if let Some(time) = time {
+            settled.0.lock().unwrap().insert(path, time);
+        }
+        time
+    };
     let ids: Vec<String> = phases.iter().flat_map(|(_, ids)| ids.clone()).collect();
-    for id in ids {
-        let Some(at) = agents.iter().position(|(a, _)| *a == id) else {
-            continue;
-        };
-        let running = sv(agents[at].1.get("state")) == "running";
-        if !ID.is_match(&id) || (files.remote() && !running) {
-            continue;
-        }
-        let mtime = |path: String| async move {
-            files
-                .stat_file(&path)
-                .await
-                .ok()
-                .flatten()
-                .map(|f| f.mtime_ms)
-        };
-        let started = mtime(format!("{run_dir}/agent-{id}.meta.json")).await;
-        let agent = &mut agents[at].1;
-        if let Some(started) = started {
-            agent.insert("startedAt".into(), js::number(started.round()));
-        }
+    let watched: Vec<(usize, String, bool)> = ids
+        .into_iter()
+        .filter_map(|id| {
+            let at = agents.iter().position(|(a, _)| *a == id)?;
+            let running = sv(agents[at].1.get("state")) == "running";
+            (ID.is_match(&id) && (!files.remote() || running)).then_some((at, id, running))
+        })
+        .collect();
+    // Together, as Promise.all: a remote host's stats go as one command.
+    let times = futures_util::future::join_all(watched.iter().map(|(_, id, running)| async move {
+        let started = settled_mtime(format!("{run_dir}/agent-{id}.meta.json")).await;
         let transcript = format!("{run_dir}/agent-{id}.jsonl");
-        if running {
-            if let Some(active) = mtime(transcript).await {
-                agent.insert("lastActiveAt".into(), js::number(active.round()));
-            }
-            continue;
+        let later = if *running {
+            mtime(transcript).await
+        } else {
+            settled_mtime(transcript).await
+        };
+        (started, later)
+    }))
+    .await;
+    for ((at, _, running), (started, later)) in watched.iter().zip(times) {
+        let agent = &mut agents[*at].1;
+        if let Some(started) = started {
+            agent.insert("startedAt".into(), js::number(js_round(started)));
         }
-        if let (Some(started), Some(ended)) = (started, mtime(transcript).await) {
+        if *running {
+            if let Some(active) = later {
+                agent.insert("lastActiveAt".into(), js::number(js_round(active)));
+            }
+        } else if let (Some(started), Some(ended)) = (started, later) {
             agent.insert(
                 "durationMs".into(),
-                js::number((ended - started).round().max(0.0)),
+                js::number(js_round(ended - started).max(0.0)),
             );
         }
     }
 }
+
+/// `Math.round`: halves go up.
+fn js_round(value: f64) -> f64 {
+    (value + 0.5).floor()
+}
+
+#[cfg(test)]
+mod tests;

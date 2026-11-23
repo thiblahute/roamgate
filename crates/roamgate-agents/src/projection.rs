@@ -294,14 +294,14 @@ async fn read_large_tail(
     .await
 }
 
-/// A large Claude transcript's projection from its end only.
+/// A large Claude transcript's entries shown (its window), from its end only.
 pub async fn read_tail_projection(
     file: &SessionFile,
     files: &dyn SessionFiles,
 ) -> io::Result<Vec<Value>> {
     let fallback = file.created_at_ms.unwrap_or(file.mtime_ms);
     let tail = read_large_tail(file, files, fallback).await?;
-    Ok(project_tail(file, &tail.records, fallback).all)
+    Ok(project_tail(file, &tail.records, fallback).entries)
 }
 
 /// What needs the whole session, from slim records.
