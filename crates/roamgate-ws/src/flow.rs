@@ -60,6 +60,10 @@ pub trait Target {
     fn send(&mut self, payload: &str, compress: bool) -> Result<SendStatus, String>;
     /// Starts the close handshake; `None` closes without a status code.
     fn close(&mut self, close: Option<(u16, &str)>) -> Result<(), String>;
+    /// Closing or closed (`readyState` 2 or 3): a send is skipped quietly.
+    fn closing(&self) -> bool {
+        false
+    }
     /// Milliseconds on a monotonic clock.
     fn now_ms(&self) -> u64;
     /// The owner's teardown for this socket; may be called more than once.
@@ -120,6 +124,44 @@ pub struct Flow {
     window: f64,
     /// Terminal repaints held back while the socket is behind, newest per key.
     held: Vec<(String, String)>,
+}
+
+/// Runs a socket's teardown once however many paths ask for it (a failed
+/// send, the close handler), and gives every caller the same snapshot
+/// until the close handling completes.
+pub struct CleanupTracker<K, S, F> {
+    snapshots: std::collections::HashMap<K, std::sync::Arc<S>>,
+    perform: F,
+}
+
+impl<K, S, F> CleanupTracker<K, S, F>
+where
+    K: Eq + std::hash::Hash + Clone,
+    F: FnMut(&K) -> S,
+{
+    pub fn new(perform: F) -> Self {
+        Self {
+            snapshots: std::collections::HashMap::new(),
+            perform,
+        }
+    }
+
+    /// The socket's teardown, run the first time only.
+    pub fn cleanup(&mut self, socket: &K) -> std::sync::Arc<S> {
+        if let Some(snapshot) = self.snapshots.get(socket) {
+            return snapshot.clone();
+        }
+        let snapshot = std::sync::Arc::new((self.perform)(socket));
+        self.snapshots.insert(socket.clone(), snapshot.clone());
+        snapshot
+    }
+
+    /// The close handling is done: the snapshot, then forgotten.
+    pub fn complete(&mut self, socket: &K) -> std::sync::Arc<S> {
+        let snapshot = self.cleanup(socket);
+        self.snapshots.remove(socket);
+        snapshot
+    }
 }
 
 /// UTF-16 length of a string, as JavaScript's `length` gives it.
@@ -253,6 +295,12 @@ impl Flow {
         context: &str,
         coalesce_key: Option<&str>,
     ) -> bool {
+        // A reply made after the browser left (a connection error answered
+        // once its page closed) is not a send failure.
+        if target.closing() {
+            target.cleanup();
+            return false;
+        }
         let chars = utf16_len(&payload);
         match self.asked.iter_mut().find(|(name, _)| name == context) {
             Some(entry) => entry.1 += chars as u64,

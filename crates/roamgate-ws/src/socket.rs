@@ -196,6 +196,10 @@ impl Target for Wire {
         Ok(())
     }
 
+    fn closing(&self) -> bool {
+        self.close_sent.is_some()
+    }
+
     fn now_ms(&self) -> u64 {
         self.epoch.elapsed().as_millis() as u64
     }

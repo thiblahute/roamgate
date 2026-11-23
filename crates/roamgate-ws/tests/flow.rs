@@ -19,6 +19,8 @@ struct Mock {
     now: u64,
     cleanups: usize,
     warnings: Vec<String>,
+    /// The socket's `readyState` (0 is taken as open).
+    ready_state: u8,
 }
 
 impl Mock {
@@ -56,6 +58,10 @@ impl Target for Mock {
         self.closes
             .push(close.map(|(code, reason)| (code, reason.to_owned())));
         Ok(())
+    }
+
+    fn closing(&self) -> bool {
+        self.ready_state >= 2
     }
 
     fn now_ms(&self) -> u64 {
@@ -162,6 +168,33 @@ fn cleans_up_when_a_message_is_dropped_because_of_a_connection_issue() {
     );
     assert_eq!(mock.sent, ["payload"]);
     assert_eq!(mock.closes, [None]);
+}
+
+#[test]
+fn a_reply_made_after_the_browser_left_is_skipped_quietly() {
+    // A connection error answered once its page had closed: Bun would drop
+    // it (send gives 0); it is not a send failure.
+    for ready_state in [2, 3] {
+        let mut mock = Mock {
+            send_result: Some(Ok(SendStatus::Dropped)),
+            ready_state,
+            ..Mock::default()
+        };
+        let mut flow = Flow::new(0);
+        assert_eq!(
+            observe(&mut flow, &mut mock, "connections-mutation-error"),
+            (1, false, vec![])
+        );
+        assert!(mock.sent.is_empty());
+        assert!(mock.closes.is_empty());
+    }
+    let mut open = Mock {
+        ready_state: 1,
+        ..Mock::default()
+    };
+    let mut flow = Flow::new(0);
+    assert!(observe(&mut flow, &mut open, "terminal frame").1);
+    assert_eq!(open.sent, ["payload"]);
 }
 
 #[test]
@@ -619,4 +652,22 @@ fn sizes_the_window_to_a_second_of_the_measured_rate() {
     assert!(ack_all(&mut flow, &mut mock));
     assert!(!flow.receive_ack(&mut mock, "{\"acknowledged\":1}"));
     assert!(flow.receive_ack(&mut mock, "{\"ack\":Infinity}"));
+}
+
+#[test]
+fn preserves_the_first_cleanup_snapshot_until_close_handling_completes() {
+    use std::sync::Arc;
+    let socket = 1u64;
+    let cleanups = Cell::new(0);
+    let mut cleanup = CleanupTracker::new(|cleaned: &u64| {
+        assert_eq!(*cleaned, socket);
+        cleanups.set(cleanups.get() + 1);
+        ("c1", vec!["term_1"])
+    });
+    let first = cleanup.cleanup(&socket);
+    assert!(Arc::ptr_eq(&cleanup.cleanup(&socket), &first));
+    assert!(Arc::ptr_eq(&cleanup.complete(&socket), &first));
+    assert_eq!(cleanups.get(), 1);
+    assert!(!Arc::ptr_eq(&cleanup.cleanup(&socket), &first));
+    assert_eq!(cleanups.get(), 2);
 }
