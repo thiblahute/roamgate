@@ -6,6 +6,31 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.23
+
+inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075
+
+Conversation mode served by the Rust core (Phase 9, S21; wire/core-channel.md,
+The conversation family), while the owners table gives the conversation
+family to Rust. The browser surface (`agent_chat.*` and its events), the
+holder protocol and the agent socket are unchanged; the inventory too.
+
+- wire, reverse targets: `conversation.host` (what the core's services
+  need of Bun by `op`: the connection, the SSH argv for its host, prompt
+  cards, idle stop and keep awake, the profiles' launches, the mirror of
+  the state Bun's synchronous readers read, `released` after a handover of
+  the family).
+- wire: the front's own calls `internal.conversation.attach`, the
+  holder's requests (`.holder_hold`, `.holder_fg`, `.holder_output`,
+  `.holder_handback`), Bun's callers of the service (`.prompt`, `.send`,
+  `.switch_session`, `.restart_process`, `.restart_terminal`,
+  `.auto_start`) and its notices (`.pane_closed`, `.sweep`,
+  `.socket_closed`, `.stop`).
+- storage: conversation-leases.json and conversation-suspended.json have
+  one writer, the family's owner; they change hands through the files (the
+  side giving the family up saves the holders' read positions on the
+  leases first).
+
 ## 1.22
 
 inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075
