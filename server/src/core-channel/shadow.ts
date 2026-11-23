@@ -46,6 +46,11 @@ export type ShadowSamplerOptions = {
   random?: () => number;
 };
 
+/** A value as JSON carries it (undefined keys dropped, undefined items null). */
+function wireForm(value: unknown): unknown {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
 export class ShadowSampler {
   private readonly timers: Timers;
   private readonly random: () => number;
@@ -118,9 +123,11 @@ export class ShadowSampler {
       } finally {
         this.timers.clearTimeout(timer);
       }
+      // Compared as the browser gets them: a key Bun's handler leaves
+      // undefined is not on the wire, nor is it a difference.
       const { diffs, truncated } = shadowDiff(
-        request.result,
-        other,
+        wireForm(request.result),
+        wireForm(other),
         SHADOW_DIFF_LIMIT,
       );
       if (diffs.length) this.record(request, { diffs, truncated });

@@ -682,7 +682,9 @@ never doubled.
 - Paused while GameMode reports a game (`gamemoded -s`, asked at most every
   30 s; through `host-spawn` in a toolbox), and when `shadow.enabled` is
   false.
-- The comparison (`shadowDiff` in the vectors) walks both results: an object
+- The comparison (`shadowDiff` in the vectors) takes both results as JSON
+  carries them to a browser (a key whose value is undefined in Bun's answer
+  is absent, as on the wire) and walks them: an object
   by the owner's keys in order, then the other's extra keys; an array
   element by element after comparing lengths; it reports `missing`,
   `extra`, `type` (with both JSON types), `length` (with both lengths) and

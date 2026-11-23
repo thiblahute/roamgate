@@ -193,6 +193,22 @@ describe("shadow reads", () => {
     s.done();
   });
 
+  test("compares answers as the wire carries them: undefined keys are absent", async () => {
+    const s = sampler();
+    expect(
+      await s.instance.offer(
+        request(
+          "wire",
+          { base: undefined, snapshot_id: undefined, entries: [1, undefined] },
+          { entries: [1, null] },
+        ),
+      ),
+    ).toBe("done");
+    expect(s.lines()).toEqual([]);
+    expect(s.warnings).toEqual([]);
+    s.done();
+  });
+
   test("differences are logged once and written, rotated past 5 MiB", async () => {
     const s = sampler();
     expect(await s.instance.offer(request("same", { a: 1 }, { a: 1 }))).toBe(

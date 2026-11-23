@@ -1,0 +1,78 @@
+name: the workspace family's shadowed reads answer the same on both sides while Bun owns it
+family: core_channel
+tier: T2
+description: >
+  With a Rust core beside it and the family Bun's, every read the family
+  declares shadowed (contract/owners/families.json) is asked of the core
+  too and compared with Bun's answer as the browser gets it: the file
+  reads, Changes' summary in its working, branch and Last step modes, the
+  refs, the history and the Workspaces arrangement. A clean soak writes no
+  runtime/shadow.jsonl.
+# Stage 1: the Bun server holds the port and shadows the core's family.
+fronts: [bun]
+server:
+  env:
+    ROAMGATE_CORE_BIN: "${CORE}"
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes:
+      [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/repo", focused: true }]
+  files:
+    ".config/roamgate/runtime/owners.json":
+      mode: "0600"
+      json:
+        version: 1
+        owners: { workspace: bun }
+        shadow: { enabled: true, rate: 1 }
+steps:
+  - sh: |
+      export GIT_AUTHOR_DATE=2025-01-01T00:00:00Z GIT_COMMITTER_DATE=2025-01-01T00:00:00Z
+      git init -q --bare origin.git && git clone -q origin.git repo 2>/dev/null && cd repo &&
+      printf 'one\ntwo\n' > a.txt && git add -A && git commit -qm "first" &&
+      git push -q origin HEAD:main 2>/dev/null && git checkout -qb feature &&
+      printf 'feature\n' > f.txt && git add f.txt && git commit -qm "feature work" &&
+      printf 'one\nTWO\n' > a.txt && printf 'new\n' > untracked.txt
+  - login: {}
+  - connect: {}
+  - expect_log: { contains: "connected (pid", within_ms: 60000 }
+  - call: bridge.workspace_tree.apply
+    params:
+      {
+        ops:
+          [
+            {
+              op: create_group,
+              id: g1,
+              label: Projects,
+              parent: { root: top },
+            },
+          ],
+      }
+    reply: { tree: "{{object}}" }
+  - call: bridge.workspace_tree.get
+    reply: { tree: "{{object}}" }
+  - call: file.list
+    params: { workspace_id: w1 }
+    reply: { entries: "{{array}}" }
+  - call: file.stat
+    params: { workspace_id: w1, path: a.txt }
+    reply: "{{object}}"
+  - call: file.read
+    params: { workspace_id: w1, path: a.txt }
+    reply: "{{object}}"
+  # The working mode's answer has no base and no snapshot: Bun's handler
+  # leaves them undefined, which the wire drops.
+  - call: git.diff_summary
+    params: { workspace_id: w1 }
+    reply: { mode: working, entries: "{{array}}" }
+  - call: git.refs
+    params: { workspace_id: w1 }
+    reply: "{{object}}"
+  - call: git.commits
+    params: { workspace_id: w1 }
+    reply: "{{object}}"
+  # The shadow reads run after each answer; give them their time, then a
+  # clean run left no line.
+  - sh: sleep 5
+  - expect_log: { lacks: "[shadow]" }
+  - assert_absent: "${DATA}/runtime/shadow.jsonl"
