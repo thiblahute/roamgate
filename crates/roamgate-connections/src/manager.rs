@@ -73,15 +73,82 @@ pub struct ConnectionStatus {
     pub error: Option<StatusError>,
 }
 
+/// Why a runtime or a lifecycle step failed, and whether supervision may
+/// try again (the TS `SshTunnelError` and `ConnectionProbeError` carry
+/// `retryable`; any other error counts as retryable).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeError {
+    pub message: String,
+    pub retryable: bool,
+}
+
+impl RuntimeError {
+    /// A failure a retry may get past.
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            retryable: true,
+        }
+    }
+
+    /// A failure no retry gets past (a refused host key, an unsupported
+    /// Herdr protocol, a test server's refusal of SSH hosts).
+    pub fn permanent(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            retryable: false,
+        }
+    }
+}
+
+impl From<String> for RuntimeError {
+    fn from(message: String) -> Self {
+        Self::new(message)
+    }
+}
+
+impl From<&str> for RuntimeError {
+    fn from(message: &str) -> Self {
+        Self::new(message)
+    }
+}
+
+impl std::ops::Deref for RuntimeError {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.message
+    }
+}
+
+impl std::fmt::Display for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RuntimeError {}
+
+impl PartialEq<str> for RuntimeError {
+    fn eq(&self, other: &str) -> bool {
+        self.message == other
+    }
+}
+
+impl PartialEq<&str> for RuntimeError {
+    fn eq(&self, other: &&str) -> bool {
+        self.message == *other
+    }
+}
+
 /// A shared lifecycle task.
-pub type Task = Shared<BoxFuture<'static, Result<(), String>>>;
+pub type Task = Shared<BoxFuture<'static, Result<(), RuntimeError>>>;
 
 /// A connection's runtime: transport, then background work, then stop.
 pub trait ConnectionRuntime: Send + Sync + 'static {
     fn identity(&self) -> ConnectionIdentity;
-    fn start_transport(&self) -> BoxFuture<'static, Result<(), String>>;
-    fn start_background(&self) -> BoxFuture<'static, Result<(), String>>;
-    fn stop(&self) -> BoxFuture<'static, Result<(), String>>;
+    fn start_transport(&self) -> BoxFuture<'static, Result<(), RuntimeError>>;
+    fn start_background(&self) -> BoxFuture<'static, Result<(), RuntimeError>>;
+    fn stop(&self) -> BoxFuture<'static, Result<(), RuntimeError>>;
 }
 
 type IsCurrent = Arc<dyn Fn() -> bool + Send + Sync>;
@@ -116,7 +183,8 @@ impl RuntimeContext {
     }
 }
 
-pub type RuntimeFactory<R> = Arc<dyn Fn(RuntimeContext) -> Result<Arc<R>, String> + Send + Sync>;
+pub type RuntimeFactory<R> =
+    Arc<dyn Fn(RuntimeContext) -> Result<Arc<R>, RuntimeError> + Send + Sync>;
 
 /// A ready runtime handed out for one request.
 pub struct ReadyRuntimeLease<R> {
@@ -225,12 +293,12 @@ impl<R> Clone for ConnectionManager<R> {
     }
 }
 
-fn ready_task(result: Result<(), String>) -> Task {
+fn ready_task(result: Result<(), RuntimeError>) -> Task {
     futures_util::future::ready(result).boxed().shared()
 }
 
 /// A task fed by the returned sender.
-fn deferred_task() -> (tokio::sync::oneshot::Sender<Result<(), String>>, Task) {
+fn deferred_task() -> (tokio::sync::oneshot::Sender<Result<(), RuntimeError>>, Task) {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let task = async move { rx.await.unwrap_or_else(|_| Err("task dropped".into())) }
         .boxed()
@@ -312,14 +380,14 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
         &self,
         identity: ConnectionIdentity,
         create: RuntimeFactory<R>,
-    ) -> Result<(), String> {
+    ) -> Result<(), RuntimeError> {
         let status = {
             let mut state = self.lock();
             if state.stop_all.is_some() {
                 return Err("connection manager is stopping".into());
             }
             if state.entries.contains_key(&identity.id) {
-                return Err(format!("connection already registered: {}", identity.id));
+                return Err(format!("connection already registered: {}", identity.id).into());
             }
             state.serial += 1;
             let serial = state.serial;
@@ -349,7 +417,7 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
         self.lock().default_id.clone()
     }
 
-    pub fn set_default(&self, connection_id: &str) -> Result<(), String> {
+    pub fn set_default(&self, connection_id: &str) -> Result<(), RuntimeError> {
         let (previous, next) = {
             let mut state = self.lock();
             if state.stop_all.is_some() {
@@ -357,7 +425,7 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
             }
             if !state.entries.contains_key(connection_id) || state.removing.contains(connection_id)
             {
-                return Err(format!("unknown connection: {connection_id}"));
+                return Err(format!("unknown connection: {connection_id}").into());
             }
             if state.default_id == connection_id {
                 return Ok(());
@@ -621,10 +689,12 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
             state.serial += 1;
             let token = state.serial;
             let Some(entry) = state.entries.get_mut(connection_id) else {
-                return ready_task(Err(format!("unknown connection: {connection_id}")));
+                return ready_task(Err(format!("unknown connection: {connection_id}").into()));
             };
             if removing {
-                return ready_task(Err(format!("connection is being removed: {connection_id}")));
+                return ready_task(Err(
+                    format!("connection is being removed: {connection_id}").into()
+                ));
             }
             if stopping {
                 return ready_task(Err("connection manager is stopping".into()));
@@ -681,7 +751,7 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
         id: &str,
         serial: u64,
         token: u64,
-    ) -> BoxFuture<'static, Result<(), String>> {
+    ) -> BoxFuture<'static, Result<(), RuntimeError>> {
         let retired = {
             let mut state = self.lock();
             let default_id = state.default_id.clone();
@@ -737,7 +807,11 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
     }
 
     /// A new generation's runtime, made and started.
-    fn create_and_run(&self, id: &str, serial: u64) -> BoxFuture<'static, Result<(), String>> {
+    fn create_and_run(
+        &self,
+        id: &str,
+        serial: u64,
+    ) -> BoxFuture<'static, Result<(), RuntimeError>> {
         let (generation, create) = {
             let mut state = self.lock();
             let Some(entry) = state.entries.get_mut(id) else {
@@ -834,7 +908,8 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
                         Err(format!(
                             "runtime identity mismatch: expected {}, received {actual}",
                             entry.identity.id
-                        ))
+                        )
+                        .into())
                     } else {
                         Ok(to_status(entry, &default_id))
                     }
@@ -882,7 +957,12 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
     }
 
     /// A start no longer current: its runtime stops unless a stop has it.
-    async fn drop_stale(&self, id: &str, serial: u64, runtime: &Arc<R>) -> Result<(), String> {
+    async fn drop_stale(
+        &self,
+        id: &str,
+        serial: u64,
+        runtime: &Arc<R>,
+    ) -> Result<(), RuntimeError> {
         let stop_pending = {
             let state = self.lock();
             state
@@ -908,8 +988,8 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
         id: &str,
         runtime: &Arc<R>,
         current: IsCurrent,
-        error: String,
-    ) -> Result<(), String> {
+        error: RuntimeError,
+    ) -> Result<(), RuntimeError> {
         if current() {
             let status = {
                 let mut state = self.lock();
@@ -946,7 +1026,7 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
             state.serial += 1;
             let token = state.serial;
             let Some(entry) = state.entries.get_mut(connection_id) else {
-                return ready_task(Err(format!("unknown connection: {connection_id}")));
+                return ready_task(Err(format!("unknown connection: {connection_id}").into()));
             };
             if let Some((_, stop)) = &entry.stop_task {
                 if matches!(
@@ -1042,11 +1122,11 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
     }
 
     /// Removes a non-default connection after draining its runtime.
-    pub async fn unregister(&self, connection_id: &str) -> Result<(), String> {
+    pub async fn unregister(&self, connection_id: &str) -> Result<(), RuntimeError> {
         let serial = {
             let mut state = self.lock();
             let Some(entry) = state.entries.get(connection_id) else {
-                return Err(format!("unknown connection: {connection_id}"));
+                return Err(format!("unknown connection: {connection_id}").into());
             };
             let serial = entry.serial;
             if state.stop_all.is_some() {
@@ -1056,9 +1136,7 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
                 return Err("cannot remove the default connection".into());
             }
             if !state.removing.insert(connection_id.to_owned()) {
-                return Err(format!(
-                    "connection is already being removed: {connection_id}"
-                ));
+                return Err(format!("connection is already being removed: {connection_id}").into());
             }
             serial
         };
@@ -1070,9 +1148,7 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
             .get(connection_id)
             .is_none_or(|entry| entry.serial != serial)
         {
-            return Err(format!(
-                "connection changed while being removed: {connection_id}"
-            ));
+            return Err(format!("connection changed while being removed: {connection_id}").into());
         }
         // Once stop invalidated the lease, the factory goes even when the
         // runtime's cleanup failed, so the profile can never reconnect.
@@ -1094,20 +1170,20 @@ impl<R: ConnectionRuntime> ConnectionManager<R> {
         &self,
         identity: ConnectionIdentity,
         create: RuntimeFactory<R>,
-    ) -> Result<(), String> {
+    ) -> Result<(), RuntimeError> {
         let id = identity.id.clone();
         {
             let mut state = self.lock();
             let stopping = state.stop_all.is_some();
             let removing = state.removing.contains(&id);
             let Some(entry) = state.entries.get_mut(&id) else {
-                return Err(format!("unknown connection: {id}"));
+                return Err(format!("unknown connection: {id}").into());
             };
             if stopping {
                 return Err("connection manager is stopping".into());
             }
             if removing {
-                return Err(format!("connection is being removed: {id}"));
+                return Err(format!("connection is being removed: {id}").into());
             }
             entry.start_token = None;
             entry.generation += 1;

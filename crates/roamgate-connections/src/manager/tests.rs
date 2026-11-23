@@ -8,10 +8,10 @@ use futures_util::future::{BoxFuture, Shared};
 
 use super::*;
 
-type Gate = Shared<BoxFuture<'static, Result<(), String>>>;
+type Gate = Shared<BoxFuture<'static, Result<(), RuntimeError>>>;
 
 /// A gate opened (or failed) by its sender.
-fn deferred() -> (tokio::sync::oneshot::Sender<Result<(), String>>, Gate) {
+fn deferred() -> (tokio::sync::oneshot::Sender<Result<(), RuntimeError>>, Gate) {
     let (tx, rx) = tokio::sync::oneshot::channel();
     (
         tx,
@@ -20,7 +20,7 @@ fn deferred() -> (tokio::sync::oneshot::Sender<Result<(), String>>, Gate) {
 }
 
 fn failed(message: &str) -> Gate {
-    futures_util::future::ready(Err(message.to_owned()))
+    futures_util::future::ready(Err(message.into()))
         .boxed()
         .shared()
 }
@@ -55,7 +55,7 @@ impl ConnectionRuntime for FakeRuntime {
     fn identity(&self) -> ConnectionIdentity {
         identity(&self.id)
     }
-    fn start_transport(&self) -> BoxFuture<'static, Result<(), String>> {
+    fn start_transport(&self) -> BoxFuture<'static, Result<(), RuntimeError>> {
         self.starts.fetch_add(1, Ordering::SeqCst);
         let gate = self.options.transport.clone();
         async move {
@@ -66,12 +66,12 @@ impl ConnectionRuntime for FakeRuntime {
         }
         .boxed()
     }
-    fn start_background(&self) -> BoxFuture<'static, Result<(), String>> {
+    fn start_background(&self) -> BoxFuture<'static, Result<(), RuntimeError>> {
         self.backgrounds.fetch_add(1, Ordering::SeqCst);
         let error = self.options.background_error.clone();
-        async move { error.map_or(Ok(()), Err) }.boxed()
+        async move { error.map_or(Ok(()), |error| Err(error.into())) }.boxed()
     }
-    fn stop(&self) -> BoxFuture<'static, Result<(), String>> {
+    fn stop(&self) -> BoxFuture<'static, Result<(), RuntimeError>> {
         self.stops.fetch_add(1, Ordering::SeqCst);
         let gate = self.options.stop.clone();
         async move {
