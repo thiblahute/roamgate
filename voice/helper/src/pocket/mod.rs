@@ -14,6 +14,7 @@
 mod config;
 mod model;
 mod rng;
+mod spoken;
 pub mod synthesizer;
 mod text;
 mod tokenizer;

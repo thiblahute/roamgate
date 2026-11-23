@@ -85,6 +85,9 @@ esac
 
 here=$(cd "$(dirname "$0")" && pwd)
 helper=$(dirname "$here")
+# The cases some tests read (contract/vectors), where /src/../../ finds
+# them in the container.
+vectors=$(dirname "$(dirname "$helper")")/contract/vectors
 image=${ROAMGATE_VOICE_BUILD_IMAGE:-roamgate-voice-build}
 cache=${ROAMGATE_VOICE_BUILD_CACHE:-roamgate-voice-build-cache}
 test=
@@ -107,6 +110,7 @@ $yield podman run --rm --security-opt label=disable \
     ${test:+--device nvidia.com/gpu=all} \
     ${jobs:+-e CARGO_BUILD_JOBS=$jobs -e RUST_TEST_THREADS=$jobs} \
     -v "$helper:/src:ro" -v "$cache:/cache" -v "$out:/out" \
+    -v "$vectors:/contract/vectors:ro" \
     -e CUDA_COMPUTE_CAP="$cap" -e CMAKE_CUDA_ARCHITECTURES="$cap" \
     -e SYSTEM_DEPS_BUILD_MANIFEST=/src/Cargo.toml -e TEST="$test" \
     "$image" sh -euc '
