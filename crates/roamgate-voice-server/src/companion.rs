@@ -11,6 +11,7 @@ pub mod dictation;
 pub mod errands;
 pub mod images;
 pub mod keyed;
+pub mod memory;
 pub mod memory_files;
 pub mod research;
 pub mod router;
