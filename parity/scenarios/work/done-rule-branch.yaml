@@ -1,0 +1,117 @@
+name: the branch done rule finishes an item once its commit lands on the project's branch, at the board's 10-minute check
+family: work
+tier: T2
+description: >
+  A real git repository: the item's commit sits on a feature branch, so
+  the first check leaves it open; merged into main, the next check (10
+  minutes later on the test clock) makes it done with a deploy link, and
+  an item waiting for the user keeps its state with its landing recorded.
+ledger:
+  - "server/src/work/service.test.ts > the branch rule asks the project's root on its connection"
+  - "server/src/work/service.test.ts > an item for you whose commit lands stays for you, its landing recorded; an open one goes done"
+steps:
+  - sh: |
+      set -e
+      git init -q repo && cd repo
+      git commit -q --allow-empty -m base
+      git checkout -q -b feature
+      git commit -q --allow-empty -m "Fix the keys"
+      git commit -q --allow-empty -m "Fix the mouse"
+      git checkout -q main
+  - sh: printf %s "$(git -C repo rev-parse feature~1)"
+    save: { keys: /stdout }
+  - sh: printf %s "$(git -C repo rev-parse feature)"
+    save: { mouse: /stdout }
+  - login: {}
+  - connect: {}
+  - call: bridge.work.project.set
+    params:
+      {
+        name: app,
+        roots: ["${ROOT}/repo"],
+        done: { kind: branch, root: "${ROOT}/repo", branch: main },
+      }
+    reply:
+      {
+        project:
+          {
+            id: app,
+            done: { kind: branch, root: "${ROOT}/repo", branch: main },
+          },
+      }
+  - call: bridge.work.add
+    params:
+      {
+        project: app,
+        title: Fix the keys,
+        state: doing,
+        links: [{ kind: commit, sha: "${keys}", subject: Fix the keys }],
+      }
+    save: { open_item: /result/item/id }
+  - call: bridge.work.add
+    params:
+      {
+        project: app,
+        title: Fix the mouse,
+        state: verify,
+        ask: Try the mouse.,
+        links: [{ kind: commit, sha: "${mouse}" }],
+      }
+    save: { verify_item: /result/item/id }
+  - call: bridge.work.check
+    reply: { landed: [], recorded: [], checked: 2 }
+  - call: bridge.work.link_target
+    params: { item: "${open_item}", link: { kind: commit, sha: "${keys}" } }
+    reply: { target: { connectionId: legacy-default, root: "${ROOT}/repo" } }
+  - call: bridge.work.link_target
+    params: { item: "${open_item}", link: { kind: branch, name: feature } }
+    reply: { target: { root: "${ROOT}/repo" } }
+  - sh: git -C repo merge -q --ff-only feature
+  - drain: {}
+  # The board's own check, every 10 minutes.
+  - advance: 600000
+  - expect_push: work
+    message:
+      {
+        work:
+          {
+            changed: [item],
+            item: "${open_item}",
+            by: agent,
+            summary: "{{contains:Fix the keys landed}}",
+          },
+      }
+  - expect_push: work
+    message:
+      {
+        work:
+          {
+            changed: [item],
+            item: "${verify_item}",
+            by: agent,
+            summary: "{{contains:still to verify}}",
+          },
+      }
+  - call: bridge.work.list
+    params: { project: app }
+    reply:
+      items:
+        $unordered:
+          - {
+              id: "${open_item}",
+              state: done,
+              doneAt: "{{time}}",
+              links:
+                { $contains: [{ kind: deploy, sha: "${keys}", branch: main }] },
+            }
+          - {
+              id: "${verify_item}",
+              state: verify,
+              ask: Try the mouse.,
+              links:
+                {
+                  $contains: [{ kind: deploy, sha: "${mouse}", branch: main }],
+                },
+            }
+  - call: bridge.work.check
+    reply: { landed: [], recorded: [], checked: 0 }

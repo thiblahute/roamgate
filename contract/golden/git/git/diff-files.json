@@ -1,0 +1,28 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "workspace_id": "w1",
+    "root": "$ROOT/repo",
+    "files": [
+      {
+        "workspace_id": "w1",
+        "root": "$ROOT/repo",
+        "path": "a.txt",
+        "kind": "unstaged",
+        "diff": "diff --git a/a.txt b/a.txt\nindex 4cb29ea..ddc897f 100644\n--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n",
+        "patch_size": 119,
+        "truncated": false
+      },
+      {
+        "workspace_id": "w1",
+        "root": "$ROOT/repo",
+        "path": "untracked.txt",
+        "kind": "untracked",
+        "diff": "diff --git a/untracked.txt b/untracked.txt\nnew file mode 100644\nindex 0000000..3e75765\n--- /dev/null\n+++ b/untracked.txt\n@@ -0,0 +1 @@\n+new\n",
+        "patch_size": 140,
+        "truncated": false
+      }
+    ]
+  }
+}

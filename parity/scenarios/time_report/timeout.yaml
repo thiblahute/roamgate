@@ -1,0 +1,36 @@
+name: a hung provider is killed at its timeout, on the bridge's clock
+family: time_report
+ledger:
+  - "server/src/time-report/provider.test.ts > a hung provider is killed at the timeout"
+server:
+  files:
+    .config/roamgate/settings.json:
+      {
+        json:
+          {
+            time_report:
+              { command: [time-report-provider], timeout_seconds: 5 },
+          },
+      }
+  fakes:
+    time-report-provider:
+      rules:
+        - { args: [health], delay_ms: 600000, stdout_json: { ok: true } }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.time_report
+    params: { op: health }
+    id: hung
+    no_wait: true
+  # The provider runs (its timer is set when it starts).
+  - wait_file: ${ROOT}/fakes/time-report-provider.hits
+  - fake_calls: { program: time-report-provider, count: 1 }
+  - advance: 5000
+  - await: hung
+    reply:
+      {
+        ok: false,
+        error: The provider did not answer within 5 seconds.,
+        code: timeout,
+      }

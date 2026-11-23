@@ -1,0 +1,112 @@
+name: the archive search view searches and opens an archived session, read-only
+family: archive
+server:
+  files:
+    .config/roamgate/settings.json:
+      { json: { version: 1, archive: { host: desk } } }
+    .claude/projects/-home-t-proj/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl:
+      jsonl:
+        - {
+            type: user,
+            timestamp: "2026-11-14T10:00:00Z",
+            cwd: /home/t/proj,
+            message: { content: where is the zebra },
+          }
+        - {
+            type: assistant,
+            timestamp: "2026-11-14T10:00:05Z",
+            cwd: /home/t/proj,
+            message:
+              {
+                role: assistant,
+                content: [{ type: text, text: the zebra is in the zoo }],
+              },
+          }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: bridge.archive.open,
+      kind: mismatch,
+      reason: "an open without a line, refused on purpose",
+    }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.archive.search
+    params: { query: zebra }
+    error: { message: There is no session archive here yet. }
+  - cli: [archive, sync, --local-only]
+  - call: bridge.archive.search
+    params: { query: zebra }
+    reply:
+      {
+        query: zebra,
+        source: "{{re:^(text|index)$}}",
+        hits:
+          {
+            $contains:
+              [
+                {
+                  session: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee,
+                  agent: claude,
+                  host: desk,
+                  project: "-home-t-proj",
+                },
+              ],
+          },
+      }
+  - call: bridge.archive.search
+    params: { query: zebra, agent: codex }
+    reply: { hits: [] }
+  - call: bridge.archive.search
+    params: { query: "" }
+    error: { message: type something to search for }
+  - call: bridge.archive.open
+    params:
+      {
+        key: desk/claude/-home-t-proj/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl,
+        line: 1,
+        raw: true,
+      }
+    reply:
+      key: desk/claude/-home-t-proj/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl
+      host: desk
+      agent: claude
+      session: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+      project: "-home-t-proj"
+      cwd: /home/t/proj
+      hit: 1
+      records:
+        - {
+            line: 1,
+            ts: "2026-11-14T10:00:00",
+            hit: true,
+            messages:
+              [
+                {
+                  role: user,
+                  kind: text,
+                  tool: null,
+                  text: where is the zebra,
+                },
+              ],
+          }
+        - {
+            line: 2,
+            ts: "2026-11-14T10:00:05",
+            hit: false,
+            messages:
+              [{ role: assistant, kind: text, text: the zebra is in the zoo }],
+          }
+      before: false
+      after: false
+  # Keys outside the archive open nothing.
+  - call: bridge.archive.open
+    params: { key: desk/claude/../../settings.json, line: 1, raw: true }
+    reply: null
+  - call: bridge.archive.open
+    params: { key: desk/nobody/x.jsonl, line: 1 }
+    reply: null
+  - call: bridge.archive.open
+    params: { key: desk/claude/x.jsonl }
+    error: { message: invalid session }

@@ -6,6 +6,15 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "surface_codecs": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false,
+    "required": ["surface_codecs"]
+  },
+  "status": "typed"
 }

@@ -1,0 +1,51 @@
+name: GLAB_CONFIG_DIR and GH_CONFIG_DIR name where the Reviews find the forge logins, before the default places
+family: mr_reviews
+description: >
+  glab's config.yml under GLAB_CONFIG_DIR and gh's hosts.yml under
+  GH_CONFIG_DIR (directories outside ~/.config) give the Reviews their
+  hosts; logins left in the default places are not the ones read first.
+covers: [env:GLAB_CONFIG_DIR, env:GH_CONFIG_DIR]
+server:
+  env:
+    GLAB_CONFIG_DIR: "${ROOT}/glab-config"
+    GH_CONFIG_DIR: "${ROOT}/gh-config"
+  files:
+    "${ROOT}/glab-config/config.yml": "host: gitlab.example.com\nhosts:\n    gitlab.example.com:\n        token: glpat-parity\n        api_host: gitlab.example.com\n"
+    "${ROOT}/gh-config/hosts.yml": "github.com:\n    user: me\n"
+  fakes:
+    gh:
+      rules:
+        - {
+            args_prefix: [auth, status],
+            exit: 1,
+            stderr: "You are not logged into any GitHub hosts.\n",
+          }
+      default: { graphql: {} }
+    glab:
+      rules:
+        - { args_prefix: [config, get], exit: 1 }
+      default: { exit: 1, stderr: "parity: no forge answers here\n" }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.mr_reviews.inbox
+    params: { fresh: true }
+  - call: bridge.mr_reviews.inbox
+    until: { refreshing: false, hosts: { $len: 2 } }
+    within_ms: 20000
+    reply:
+      hosts:
+        {
+          $unordered:
+            [
+              { host: gitlab.example.com, provider: gitlab },
+              { host: github.com, provider: github },
+            ],
+        }
+  - fake_calls:
+      {
+        program: gh,
+        argv_match: "^auth status --hostname github.com$",
+        min: 1,
+        calls: { $contains: [{ env: { GH_CONFIG_DIR: "${ROOT}/gh-config" } }] },
+      }

@@ -1,0 +1,132 @@
+name: git reads and actions of a workspace's checkout, on a real repository
+family: git
+tier: T2
+description: >
+  A real git repository with deterministic commits (fixed dates) and a bare
+  remote: the diff summary and patches in working-tree and branch modes,
+  refs, history, commits and their files, stage and unstage, a pull, and
+  the pull request of a branch without a forge.
+ledger:
+  - "server/src/workspace/git-history.test.ts > commit history reads root, rename and deleted content from revisions"
+  - "server/src/workspace/git-diff.test.ts > missing defaults expose choices, including an empty unborn repository"
+  - "server/src/workspace/files.test.ts > commit history uses the workspace checkout and renders an unborn HEAD as empty"
+  - "server/src/workspace/files.test.ts > prefers pane cwd over an agent foreground directory for git operations"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes:
+      [
+        {
+          pane_id: p1,
+          workspace_id: w1,
+          cwd: "${ROOT}/repo",
+          foreground_cwd: "${ROOT}",
+          focused: true,
+        },
+      ]
+steps:
+  - sh: |
+      export GIT_AUTHOR_DATE=2025-01-01T00:00:00Z GIT_COMMITTER_DATE=2025-01-01T00:00:00Z
+      git init -q --bare origin.git && git clone -q origin.git repo 2>/dev/null && cd repo &&
+      printf 'one\ntwo\n' > a.txt && printf 'gone\n' > old.txt && git add -A && git commit -qm "first" &&
+      git mv old.txt renamed.txt && printf 'one\ntwo\nthree\n' > a.txt && git add -A && git commit -qm "second" &&
+      git push -q origin HEAD:main 2>/dev/null && git checkout -qb feature &&
+      printf 'feature\n' > f.txt && git add f.txt && git commit -qm "feature work" &&
+      printf 'one\nTWO\nthree\n' > a.txt && printf 'new\n' > untracked.txt &&
+      cd .. && git clone -q origin.git other && cd other && printf 'remote\n' > r.txt && git add r.txt &&
+      git commit -qm "remote change" && git push -q origin HEAD:main 2>/dev/null
+  - login: {}
+  - connect: {}
+  - call: git.diff_summary
+    params: { workspace_id: w1 }
+    normalize: [run-paths, timestamps-ms]
+    golden: diff-summary-working
+    save: { working: /result }
+  - call: git.diff_summary
+    params: { workspace_id: w1, mode: branch-main }
+    normalize: [run-paths, timestamps-ms]
+    golden: diff-summary-branch
+  - call: git.diff_file
+    params: { workspace_id: w1, path: a.txt, kind: unstaged }
+    normalize: [run-paths, timestamps-ms]
+    golden: diff-file
+  - call: git.diff_files
+    params:
+      {
+        workspace_id: w1,
+        entries:
+          [
+            { path: a.txt, kind: unstaged },
+            { path: untracked.txt, kind: untracked },
+          ],
+      }
+    normalize: [run-paths, timestamps-ms]
+    golden: diff-files
+  - call: git.refs
+    params: { workspace_id: w1 }
+    normalize: [run-paths, timestamps-ms]
+    golden: refs
+  - call: git.commits
+    params: { workspace_id: w1 }
+    normalize: [run-paths, timestamps-ms]
+    golden: commits
+    save:
+      {
+        head: /result/commits/0/sha,
+        second: /result/commits/1/sha,
+        first: /result/commits/2/sha,
+      }
+  - call: git.commit
+    params: { workspace_id: w1, sha: "${second}" }
+    normalize: [run-paths, timestamps-ms]
+    golden: commit
+  - call: git.commit_file
+    params:
+      {
+        workspace_id: w1,
+        sha: "${second}",
+        base: "${first}",
+        path: renamed.txt,
+        old_path: old.txt,
+      }
+    normalize: [run-paths, timestamps-ms]
+    golden: commit-file
+  - call: git.commit_file
+    params: { workspace_id: w1, sha: "${first}", base: null, path: a.txt }
+    normalize: [run-paths, timestamps-ms]
+    golden: commit-file-root
+  - call: git.commit_preview
+    params: { workspace_id: w1, sha: "${second}", path: a.txt }
+    normalize: [run-paths, timestamps-ms]
+    golden: commit-preview
+  - call: git.file_action
+    params: { workspace_id: w1, action: stage, path: untracked.txt }
+    normalize: [run-paths, timestamps-ms]
+    golden: stage
+  - sh: cd repo && git status --porcelain
+    expect: { exit: 0, stdout_contains: "A  untracked.txt" }
+  - call: git.file_action
+    params: { workspace_id: w1, action: unstage, path: untracked.txt }
+  - call: git.repo_action
+    params: { workspace_id: w1, action: stage_all }
+    normalize: [run-paths, timestamps-ms]
+    golden: stage-all
+  - call: git.repo_action
+    params: { workspace_id: w1, action: unstage_all }
+  - sh: cd repo && git status --porcelain
+    expect: { exit: 0, stdout: " M a.txt\n?? untracked.txt\n" }
+  - sh: cd repo && git checkout -q main 2>/dev/null || git checkout -qb main origin/main
+  - call: git.pull
+    params: { workspace_id: w1 }
+    normalize: [run-paths, timestamps-ms]
+    golden: pull
+  - sh: cd repo && git log --format=%s -1 main
+    expect: { exit: 0, stdout: "remote change\n" }
+  - call: git.pull_request
+    params: { workspace_id: w1 }
+    any_outcome: true
+    normalize: [run-paths, timestamps-ms]
+    golden: pull-request
+  - call: git.file_action
+    params: { workspace_id: w1, action: explode, path: a.txt }
+    error: { message: "{{string}}" }

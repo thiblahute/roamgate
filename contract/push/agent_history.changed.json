@@ -2,7 +2,7 @@
   "x-inventory": "event:agent_history.changed",
   "x-kind": "event",
   "x-sent-by": ["server/src/agent/history-watch.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["event", "data"],
   "properties": {
@@ -10,7 +10,25 @@
       "const": "agent_history.changed"
     },
     "data": {
-      "type": "object"
+      "type": "object",
+      "required": ["pane_id", "path"],
+      "properties": {
+        "pane_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "connection_id": {
+      "type": "string"
+    },
+    "connection_generation": {
+      "type": "integer"
     }
-  }
+  },
+  "description": "The transcript a subscribed pane's history reads from changed (agent_history.subscribe).",
+  "additionalProperties": false
 }

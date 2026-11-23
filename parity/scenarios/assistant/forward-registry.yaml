@@ -1,0 +1,88 @@
+name: a fresh socket receives the global forward registry before choosing any Herdr runtime
+family: forward
+ledger:
+  - "server/src/assistant.integration.test.ts > a fresh socket receives the global forward registry before choosing any Herdr runtime"
+server:
+  herdr: false
+  herdrs:
+    healthy:
+      workspaces: [{ workspace_id: w1, label: Allowed workspace }]
+    broken:
+      responses:
+        workspace.list:
+          {
+            error:
+              {
+                code: error,
+                message: "api_key=PRIVATE_KEY /private/control.sock",
+              },
+          }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ASSISTANT_DIR: "${ROOT}/ranger"
+  files:
+    "${ROOT}/connections.json": &profiles
+      mode: "0600"
+      json:
+        version: 1
+        default_connection_id: offline
+        profiles:
+          - {
+              id: offline,
+              label: offline,
+              type: local,
+              control_socket_path: "${ROOT}/missing.sock",
+              client_socket_path: "${ROOT}/missing-render.sock",
+              auto_connect: false,
+            }
+          - {
+              id: healthy,
+              label: healthy,
+              type: local,
+              control_socket_path: "${HERDR_healthy_CONTROL}",
+              client_socket_path: "${HERDR_healthy_CLIENT}",
+              auto_connect: false,
+            }
+          - {
+              id: broken,
+              label: broken,
+              type: local,
+              control_socket_path: "${HERDR_broken_CONTROL}",
+              client_socket_path: "${HERDR_broken_CLIENT}",
+              auto_connect: false,
+            }
+    "${ROOT}/ranger/state.json": &ranger
+      mode: "0600"
+      json:
+        config:
+          {
+            provider: "",
+            model: "",
+            credential_source: assistant,
+            allowed_workspaces: [],
+          }
+        messages:
+          - {
+              id: saved-question,
+              role: user,
+              text: Saved Ranger question,
+              sent_at: "2026-10-04T00:00:00Z",
+              tools: [],
+              sources: [],
+            }
+          - {
+              id: saved-answer,
+              role: assistant,
+              text: Saved Ranger answer,
+              sent_at: "2026-10-04T00:00:01Z",
+              tools: [],
+              sources: [],
+            }
+        entries: []
+        entry_scope: ""
+        requests: []
+steps:
+  - login: {}
+  - connect: { expect_hello: { default_connection_id: offline } }
+  - expect_push: forwards
+    message: { forwards: [], $exact: true }

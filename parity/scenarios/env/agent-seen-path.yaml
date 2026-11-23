@@ -1,0 +1,27 @@
+name: ROAMGATE_AGENT_SEEN_PATH holds the agents' seen marks, and HERDR_GUI_AGENT_SEEN_PATH only without it
+family: env
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1 }]
+    panes: [{ pane_id: "w1:p1", workspace_id: w1, agent: claude }]
+    agents:
+      [
+        {
+          pane_id: "w1:p1",
+          agent: claude,
+          agent_status: done,
+          state_change_seq: 40,
+        },
+      ]
+  env:
+    HERDR_GUI_AGENT_SEEN_PATH: "${ROOT}/legacy-seen.json"
+    ROAMGATE_AGENT_SEEN_PATH: "${ROOT}/seen.json"
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent_seen.mark
+    params: { pane_id: "w1:p1", terminal_id: "term-w1:p1", seq: 40 }
+    reply: { marked: true }
+  - stop: {}
+  - assert_file: { path: "${ROOT}/seen.json", text_contains: "w1:p1" }
+  - assert_absent: "${ROOT}/legacy-seen.json"

@@ -6,6 +6,70 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "required": ["last", "events", "android_connected", "clients"],
+    "properties": {
+      "last": {
+        "type": "integer"
+      },
+      "events": {
+        "type": "integer"
+      },
+      "android_connected": {
+        "type": "boolean"
+      },
+      "clients": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "socket",
+            "client",
+            "remote",
+            "connected_at",
+            "last_seen",
+            "silent_ms",
+            "preferences"
+          ],
+          "properties": {
+            "socket": {
+              "type": "integer"
+            },
+            "client": {
+              "type": ["string", "null"]
+            },
+            "remote": {
+              "type": ["string", "null"]
+            },
+            "connected_at": {
+              "type": "number"
+            },
+            "last_seen": {
+              "type": "number"
+            },
+            "silent_ms": {
+              "type": "number"
+            },
+            "preferences": {
+              "type": "object",
+              "required": ["completed", "blocked"],
+              "properties": {
+                "completed": {
+                  "type": "boolean"
+                },
+                "blocked": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

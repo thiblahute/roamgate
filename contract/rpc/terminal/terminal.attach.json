@@ -4,8 +4,56 @@
   "scope": "connection",
   "handler": "server/src/bridge/terminal-bridge.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "cols": {
+        "type": "number"
+      },
+      "pane_id": {
+        "type": "string"
+      },
+      "rows": {
+        "type": "number"
+      },
+      "terminal_id": {
+        "type": "string"
+      }
+    },
+    "required": ["cols", "pane_id", "rows", "terminal_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "endpoint": {
+        "type": "object",
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "generation": {
+            "type": "number"
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "serverVersion": {
+            "type": "string"
+          }
+        },
+        "required": ["capabilities", "generation", "methods", "serverVersion"]
+      },
+      "ok": {
+        "type": "boolean"
+      }
+    },
+    "required": ["ok"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

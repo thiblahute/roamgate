@@ -1,0 +1,32 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "head": "7536b02cf389023b601aecec664bf0e2d06ce412",
+    "commits": [
+      {
+        "sha": "7536b02cf389023b601aecec664bf0e2d06ce412",
+        "short_sha": "7536b02",
+        "author": "Parity",
+        "authored_at": "2025-01-01T00:00:00Z",
+        "subject": "feature work"
+      },
+      {
+        "sha": "88485eb4633d2e82abff76848a20b9e847928151",
+        "short_sha": "88485eb",
+        "author": "Parity",
+        "authored_at": "2025-01-01T00:00:00Z",
+        "subject": "second"
+      },
+      {
+        "sha": "5236eaa0295ac0e726880932d821b1623b39f058",
+        "short_sha": "5236eaa",
+        "author": "Parity",
+        "authored_at": "2025-01-01T00:00:00Z",
+        "subject": "first"
+      }
+    ],
+    "has_more": false,
+    "shallow": false
+  }
+}

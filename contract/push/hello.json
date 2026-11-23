@@ -2,10 +2,47 @@
   "x-inventory": "hello",
   "x-kind": "keyed",
   "x-sent-by": ["server/src/index.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
-  "required": ["hello"],
+  "required": [
+    "hello",
+    "socket",
+    "bridge_protocol_version",
+    "default_connection_id",
+    "capabilities"
+  ],
   "properties": {
-    "hello": {}
-  }
+    "hello": { "const": true },
+    "socket": {
+      "type": "string",
+      "description": "the default connection's Herdr control socket path"
+    },
+    "bridge_protocol_version": { "const": 2 },
+    "default_connection_id": { "type": ["string", "null"] },
+    "capabilities": {
+      "type": "object",
+      "required": [
+        "connection_id",
+        "connection_scoped_http",
+        "file_reveal",
+        "connection_runtime_generation",
+        "embedded_assistant",
+        "flow_control",
+        "list_delta",
+        "herdr_task_notifications"
+      ],
+      "properties": {
+        "connection_id": { "type": "boolean" },
+        "connection_scoped_http": { "type": "boolean" },
+        "file_reveal": { "type": "boolean" },
+        "connection_runtime_generation": { "type": "boolean" },
+        "embedded_assistant": { "type": "boolean" },
+        "flow_control": { "type": "boolean" },
+        "list_delta": { "type": "boolean" },
+        "herdr_task_notifications": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
 }

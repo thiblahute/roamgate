@@ -4,8 +4,80 @@
   "scope": "connection",
   "handler": "server/src/bridge/settings-rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "checkout_path": {
+        "type": "string"
+      },
+      "config_path": {
+        "type": "null"
+      },
+      "config_source": {
+        "type": "null"
+      },
+      "default_worktree_command": {
+        "type": "null"
+      },
+      "default_worktree_remove_command": {
+        "type": "null"
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "error": {
+        "type": "string"
+      },
+      "hooks": {
+        "type": "object",
+        "properties": {}
+      },
+      "key": {
+        "type": ["null", "string"]
+      },
+      "paseo_path": {
+        "type": "null"
+      },
+      "repo_name": {
+        "type": "string"
+      },
+      "repo_root": {
+        "type": "string"
+      },
+      "source_checkout_path": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      },
+      "worktree_command": {
+        "type": "null"
+      },
+      "worktree_directory": {
+        "type": "null"
+      },
+      "worktree_remove_command": {
+        "type": "null"
+      }
+    },
+    "required": [
+      "config_path",
+      "config_source",
+      "enabled",
+      "hooks",
+      "key",
+      "paseo_path",
+      "workspace_id"
+    ]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

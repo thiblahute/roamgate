@@ -1,0 +1,104 @@
+name: agent profiles are listed, saved and their models read; a pane's profile is read, launched, switched and retried
+family: agent_profile
+description: >
+  settings.profiles.* keep the profiles in settings.json (the built-in
+  Claude added); a profile with an Anthropic endpoint lists its models from
+  it (fake-openai's /v1/models). agent_profile.get reads the profile of a
+  pane's Claude session, launch types a profile's start into a pane through
+  Herdr, switch and retry act on a session.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes:
+      [
+        { pane_id: p1, workspace_id: w1, cwd: "${ROOT}", agent: claude },
+        { pane_id: p2, workspace_id: w1, cwd: "${ROOT}" },
+      ]
+    agents:
+      - {
+          pane_id: p1,
+          agent: claude,
+          agent_status: idle,
+          agent_session:
+            {
+              source: claude,
+              agent: claude,
+              kind: id,
+              value: 22222222-2222-4222-8222-222222222222,
+            },
+        }
+steps:
+  - login: {}
+  - connect: {}
+  - call: settings.profiles.get
+    golden: profiles-default
+  - call: settings.profiles.update
+    params:
+      list:
+        - {
+            name: Work,
+            agent: claude,
+            builtin: false,
+            env:
+              [
+                { name: ANTHROPIC_BASE_URL, value: "${FAKE_HTTP}" },
+                { name: ANTHROPIC_API_KEY, value: sk-parity },
+              ],
+            unset: [],
+          }
+      default: Claude
+      return_after_reset: true
+    normalize: [loopback-port]
+    golden: profiles-saved
+  - assert_file:
+      {
+        path: .config/roamgate/settings.json,
+        json: { profiles: { list: [{ name: Work }] } },
+        mode: "0600",
+      }
+  - call: settings.profiles.update
+    params: { list: [], default: Nobody }
+    error: { message: "{{string}}" }
+  - call: settings.profiles.update
+    params: { list: [], extra: 1 }
+    error:
+      {
+        message: "settings.profiles.update takes list, default and return_after_reset",
+      }
+  - call: settings.profiles.models
+    params: { name: Work }
+    any_outcome: true
+    golden: models
+  - http_fake_calls: { fake: openai, path: /v1/models, min: 0 }
+  - call: settings.profiles.models
+    params: { name: Missing }
+    error: { message: No profile is named Missing }
+  - call: agent_profile.get
+    params: { pane_id: p1 }
+    any_outcome: true
+    golden: get
+  - call: agent_profile.launch
+    params: { pane_id: p2, profile: Work }
+    any_outcome: true
+    normalize: [run-paths, uuid, hex-token]
+    golden: launch
+  - call: agent_profile.switch
+    params:
+      {
+        pane_id: p1,
+        session_id: 22222222-2222-4222-8222-222222222222,
+        profile: Work,
+      }
+    any_outcome: true
+    golden: switch
+  - call: agent_profile.retry
+    params: { pane_id: p1 }
+    any_outcome: true
+    golden: retry
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: settings.profiles.update,
+      kind: mismatch,
+      reason: "refused requests sent on purpose",
+    }

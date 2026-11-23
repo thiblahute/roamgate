@@ -2,7 +2,7 @@
   "x-inventory": "event:roamgate.conversation_lease",
   "x-kind": "event",
   "x-sent-by": ["server/src/connections/runtime.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["event", "data"],
   "properties": {
@@ -10,7 +10,22 @@
       "const": "roamgate.conversation_lease"
     },
     "data": {
-      "type": "object"
+      "type": "object",
+      "required": ["pane_id"],
+      "properties": {
+        "pane_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "connection_id": {
+      "type": "string"
+    },
+    "connection_generation": {
+      "type": "integer"
     }
-  }
+  },
+  "description": "A pane's conversation lease changed: browsers read Herdr's view of it again (the overlay of owned panes).",
+  "additionalProperties": false
 }

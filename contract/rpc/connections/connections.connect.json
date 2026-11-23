@@ -4,8 +4,81 @@
   "scope": "bridge",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string"
+      }
+    },
+    "required": ["id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "auto_connect": {
+        "type": "boolean"
+      },
+      "client_socket_path": {
+        "type": "string"
+      },
+      "control_socket_path": {
+        "type": "string"
+      },
+      "generation": {
+        "type": "number"
+      },
+      "id": {
+        "type": "string"
+      },
+      "is_default": {
+        "type": "boolean"
+      },
+      "label": {
+        "type": "string"
+      },
+      "read_only": {
+        "type": "boolean"
+      },
+      "remote_client_socket_path": {
+        "type": "string"
+      },
+      "remote_control_socket_path": {
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "ssh_destination": {
+        "type": "string"
+      },
+      "state": {
+        "type": "string"
+      },
+      "type": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "auto_connect",
+      "generation",
+      "id",
+      "is_default",
+      "label",
+      "read_only",
+      "source",
+      "state",
+      "type"
+    ]
+  },
+  "status": "typed",
+  "error": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": ["message"]
+  },
+  "x-typed-from": "parity recordings"
 }

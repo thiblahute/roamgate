@@ -4,8 +4,68 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
+    "properties": {
+      "pane_id": {
+        "type": "string"
+      }
+    },
+    "required": ["pane_id"],
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "properties": {
+      "tasks": {
+        "items": {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "detail": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "startedAt": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "endedAt": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "detail",
+            "status",
+            "startedAt",
+            "summary",
+            "endedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "running_now": {
+        "type": "array"
+      },
+      "session": {
+        "type": "string"
+      }
+    },
+    "required": ["tasks", "running_now", "session"],
+    "type": "object",
+    "x-inferred": "from the parity suite's recordings (agent_sessions); fields seen in every reply are required"
+  },
+  "status": "typed"
 }

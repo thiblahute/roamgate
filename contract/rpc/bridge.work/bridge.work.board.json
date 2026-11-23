@@ -9,5 +9,5 @@
   "reply": {
     "$ref": "../../schemas/shared/work.schema.json#/$defs/WorkBoard"
   },
-  "status": "inventoried"
+  "status": "typed"
 }

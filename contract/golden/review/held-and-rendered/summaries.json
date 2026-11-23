@@ -1,0 +1,64 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "summaries": [
+      {
+        "session": {
+          "id": "{{id}}",
+          "connectionId": "legacy-default",
+          "workspaceId": "w1",
+          "root": "$ROOT/repo",
+          "title": "main..feature",
+          "target": {
+            "kind": "range",
+            "base": "main",
+            "head": "feature"
+          },
+          "automaticBase": false,
+          "gitlab": false,
+          "autoSend": true,
+          "summary": "",
+          "agent": {},
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        },
+        "counts": {
+          "threads": 1,
+          "open": 1,
+          "drafts": 0,
+          "comments": 1,
+          "waiting": 0
+        }
+      },
+      {
+        "session": {
+          "id": "{{id}}",
+          "connectionId": "legacy-default",
+          "workspaceId": "w1",
+          "root": "$ROOT/repo",
+          "title": "page.html",
+          "target": {
+            "kind": "rendered",
+            "path": "page.html"
+          },
+          "gitlab": false,
+          "autoSend": true,
+          "summary": "",
+          "agent": {},
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:00:00.000Z"
+        },
+        "counts": {
+          "threads": 0,
+          "open": 0,
+          "drafts": 0,
+          "comments": 0,
+          "waiting": 0
+        }
+      }
+    ],
+    "stamps": "{{stamp}}",
+    "version": 1
+  }
+}

@@ -1,0 +1,162 @@
+name: a review opened in the browser, read and commented, exported and imported, removed
+family: review
+ledger:
+  - "server/src/review/rpc.test.ts > the browser opens by workspace and always writes as the user"
+  - "server/src/review/images.test.ts > a pasted image is kept with its review, named by its content"
+  - "server/src/review/images.test.ts > an agent's image by its path: only image files, by their bytes"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes: [{ pane_id: "w1:p1", workspace_id: w1, cwd: "${ROOT}/repo" }]
+steps:
+  - sh: |
+      export GIT_AUTHOR_DATE=2025-12-31T12:00:00Z GIT_COMMITTER_DATE=2025-12-31T12:00:00Z
+      git init -q repo && cd repo
+      printf 'one\ntwo\nthree\n' > f.txt && git add f.txt && git commit -qm init
+      git checkout -qb feature
+      printf 'one\nTWO\nthree\nfour\n' > f.txt && printf 'new\n' > g.txt && git add . && git commit -qm change
+  - login: {}
+  - connect: {}
+  - connect: { name: other }
+  - call: review.open
+    params: { workspace_id: w1, path: "${ROOT}/repo", title: Feature review }
+    reply:
+      {
+        session:
+          {
+            title: Feature review,
+            root: "${ROOT}/repo",
+            target: { kind: range, base: main, head: HEAD },
+          },
+        threads: [],
+      }
+    save: { session: /result/session/id }
+  - expect_push: review
+    socket: other
+  - call: review.list
+    reply: { sessions: { $contains: [{ session: { id: "${session}" } }] } }
+  - call: review.get
+    params: { session_id: "${session}" }
+    reply: { session: { id: "${session}" }, threads: [] }
+  - call: review.state
+    params: { session_id: "${session}" }
+    golden: state
+    normalize: [hex-id, run-paths]
+  - call: review.diff
+    params: { session_id: "${session}" }
+    golden: diff
+    normalize: [hex-id, run-paths]
+  - call: review.commits
+    params: { session_id: "${session}" }
+    golden: commits
+    normalize: [hex-id, run-paths, iso-time]
+  - call: review.file
+    params: { session_id: "${session}", path: f.txt }
+    golden: file
+    normalize: [hex-id, run-paths]
+  - call: review.diff
+    params:
+      { workspace_id: w1, checkout: "${ROOT}/repo", target: { kind: worktree } }
+    golden: preview-diff
+    normalize: [hex-id, run-paths]
+  - call: review.thread.add
+    params:
+      {
+        session_id: "${session}",
+        kind: discussion,
+        text: Why upper case?,
+        anchor: { path: f.txt, line: 2 },
+      }
+    reply:
+      {
+        kind: discussion,
+        anchor: { path: f.txt, line: 2 },
+        comments: [{ author: "{{string}}", body: Why upper case? }],
+      }
+    save: { thread: /result, comment: /result/comments/0/id }
+  - expect_push: review
+    socket: other
+  - call: review.edit
+    params:
+      {
+        session_id: "${session}",
+        comment_id: "${comment}",
+        text: Why is it upper case?,
+      }
+    reply: { comments: [{ body: Why is it upper case? }] }
+  - call: review.resolve
+    params: { session_id: "${session}", comment_id: "${comment}" }
+    reply: { resolved: true }
+  - call: review.resolve
+    params:
+      { session_id: "${session}", comment_id: "${comment}", resolved: false }
+    reply: { resolved: false }
+  - call: review.reanchor
+    params: { session_id: "${session}", path: f.txt }
+  - call: review.delete
+    params: { session_id: "${session}", comment_id: "${comment}" }
+    save: { deleted: /result }
+  - call: review.restore
+    params: { session_id: "${session}", thread: "${thread}" }
+    reply: { comments: [{ id: "${comment}" }] }
+  - call: review.update
+    params: { session_id: "${session}", summary: Looks good overall }
+    reply: { session: { summary: Looks good overall } }
+  - call: review.snapshots
+    params: { ids: ["${session}", nope] }
+    reply: { snapshots: [{ session: { id: "${session}" } }], missing: [nope] }
+    save: { snapshot: /result/snapshots/0 }
+  - call: review.activity
+    params: { session_ids: ["${session}"] }
+    golden: activity
+    normalize: [hex-id, run-paths]
+  - call: review.repos
+    params: { paths: ["${ROOT}/repo"], agent_paths: [] }
+    reply: { repos: [{ root: "${ROOT}/repo" }] }
+  - call: review.image.add
+    params:
+      {
+        session_id: "${session}",
+        type: image/png,
+        data: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==,
+      }
+    reply: { path: "{{string}}" }
+    save: { image: /result/path }
+  - http: GET /api/review/image?path=${image}
+    expect:
+      {
+        status: 200,
+        headers:
+          {
+            content-type: image/png,
+            cache-control: "private, no-cache",
+            content-security-policy: "default-src 'none'",
+          },
+      }
+  - http: GET /api/review/image?session=${session}&name=../../reviews.sqlite
+    expect: { status: 404 }
+  - http: GET /api/review/image?path=/etc/passwd
+    expect: { status: 404 }
+  - call: review.remove
+    params: { session_id: "${session}" }
+  - call: review.get
+    params: { session_id: "${session}" }
+    error: { message: "{{string}}" }
+  - call: review.import
+    params: { snapshot: "${snapshot}" }
+    reply: { session: { title: Feature review } }
+  - call: review.unknown
+    error: { message: "{{contains:unknown review method}}" }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: review.unknown,
+      kind: unlisted,
+      reason: "no such method: the case checks the refusal",
+    }
+  - {
+      surface: rpc.reply,
+      name: review.unknown,
+      kind: unlisted,
+      reason: "no such method: the case checks the refusal",
+    }

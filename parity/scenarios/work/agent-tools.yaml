@@ -1,0 +1,151 @@
+name: an agent writes the Work board through the agent socket, its answers JSON after the untrusted line
+family: work
+ledger:
+  - "server/src/work/service.test.ts > the tools validate their parameters and answer JSON after the untrusted line"
+steps:
+  - login: {}
+  - connect: {}
+  - agent: work
+    body:
+      {
+        tool: work_add,
+        agent: Claude,
+        params: '{"title": "From a tool", "tags": ["voice"], "text": "First words", "source": "voice job 12"}',
+      }
+    expect:
+      status: 200
+      json:
+        tool: work_add
+        note: "{{contains:written by other people}}"
+        result:
+          {
+            item: { title: From a tool, source: voice job 12, tags: [voice] },
+            thread: "{{string}}",
+            review: "{{string}}",
+            updated: "{{absent}}",
+          }
+    save: { item: /json/result/item/id, thread: /json/result/thread }
+  - expect_push: work
+    message:
+      {
+        work:
+          { by: agent, summary: '{{re:^Claude in .* added "From a tool"$}}' },
+      }
+  - agent: work
+    body:
+      {
+        tool: work_add,
+        agent: Claude,
+        params: '{"title": "From a tool", "tags": ["voice", "calls"], "text": "Other words", "source": "voice job 12"}',
+      }
+    expect:
+      status: 200
+      json:
+        {
+          result:
+            {
+              item: { id: "${item}" },
+              updated: true,
+              changed: { tags: [voice, calls] },
+              ignored: [text],
+              note: "{{contains:changed, not added}}",
+              thread: "${thread}",
+            },
+        }
+  - agent: work
+    body:
+      {
+        tool: work_add,
+        params: '{"title": "Another title", "source": "voice job 12"}',
+      }
+    expect: { status: 400, json: { error: "{{contains:replace: true}}" } }
+  - agent: work
+    body: { tool: work_list, params: '{"tags": ["voice"]}' }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            result:
+              {
+                count: 1,
+                projects: [{ name: roamgate }],
+                items: [{ id: "${item}" }],
+              },
+          },
+      }
+  - agent: work
+    body: { tool: work_list, params: '{"item": "${item}"}' }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            result:
+              {
+                item: { id: "${item}" },
+                description: First words,
+                description_comment: "{{string}}",
+              },
+          },
+      }
+  - agent: work
+    body: { tool: work_update, params: '{"item": "${item}", "state": "you"}' }
+    expect: { status: 400, json: { error: "{{string}}" } }
+  - agent: work
+    body:
+      {
+        tool: work_update,
+        params: '{"item": "${item}", "state": "you", "ask": "Dictate once; text should appear", "answers": ["It works", "It does not"]}',
+      }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            result:
+              {
+                item:
+                  {
+                    state: you,
+                    ask: "Dictate once; text should appear",
+                    answers: [It works, It does not],
+                  },
+              },
+          },
+      }
+  - agent: work
+    body:
+      {
+        tool: work_done,
+        params: '{"item": "${item}", "landed": {"commit": "abcdef1234", "subject": "Fix the keys"}}',
+      }
+    expect: { status: 200, json: { result: { item: { state: done } } } }
+  - agent: work
+    body: { tool: work_reopen, params: '{"item": "${item}", "state": "done"}' }
+    expect: { status: 400 }
+  - agent: work
+    body:
+      {
+        tool: work_reopen,
+        params: '{"item": "${item}", "state": "verify", "ask": "Check it"}',
+      }
+    expect: { status: 200, json: { result: { item: { state: verify } } } }
+  - agent: work
+    body: { tool: work_update, params: '{"item": "ffffffff", "state": "open"}' }
+    expect: { status: 404, json: { error: "{{contains:no work item}}" } }
+  - agent: work
+    body: { tool: work_project, params: '{"name": "gst2", "roots": ["/g"]}' }
+    expect: { status: 200, json: { result: { project: { id: gst2 } } } }
+  - agent: work
+    body: { tool: work_list, params: "[1]" }
+    expect: { status: 400, json: { error: params must be a JSON object } }
+  - agent: work
+    body: { params: "{}" }
+    expect: { status: 400, json: { error: tool is required } }
+  - call: bridge.work.board
+    reply:
+      {
+        projects: { $unordered: [{ id: roamgate }, { id: gst2 }] },
+        items: [{ id: "${item}", state: verify, by: agent }],
+      }

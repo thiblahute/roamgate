@@ -1,0 +1,14 @@
+name: the legacy HERDR_GUI_PROFILE names start and place a CPU profile
+family: env
+server:
+  env:
+    {
+      HERDR_GUI_PROFILE: "1",
+      HERDR_GUI_PROFILE_DURATION: "1",
+      HERDR_GUI_PROFILE_DIR: "${ROOT}/legacy-profiles",
+    }
+steps:
+  - login: {}
+  - advance: 1500
+  - sh: ls legacy-profiles/roamgate-*/cpu.json | wc -l
+    expect: { exit: 0, stdout: "{{re:^\\s*1\\n$}}" }

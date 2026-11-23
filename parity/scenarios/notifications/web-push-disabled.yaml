@@ -1,0 +1,22 @@
+name: an empty VAPID subject turns Web Push off
+family: notifications
+server:
+  env: { ROAMGATE_WEB_PUSH_SUBJECT: "" }
+steps:
+  - login: {}
+  - http: GET /api/notifications/push
+    expect: { status: 200, json: { available: false, publicKey: null } }
+  - http: POST /api/notifications/push
+    headers: { x-roamgate-push: "1" }
+    body:
+      {
+        subscription:
+          {
+            endpoint: https://fcm.googleapis.com/fcm/send/x,
+            keys: { p256dh: a, auth: b },
+          },
+        preferences: { completed: true, blocked: true },
+      }
+    expect:
+      { status: 503, json: { error: Web Push is unavailable on this server } }
+  - assert_absent: "${DATA}/web-push.json"

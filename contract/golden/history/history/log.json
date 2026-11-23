@@ -1,0 +1,5 @@
+{
+  "exit": 0,
+  "stdout": "mr-reviews: the Reviews' settings; settings: auto_rename_agent_tabs, custom, history, repositories, terminal_transport, title_suffix, ui, version, workspace_auto_sync\nStart the Roamgate history\n",
+  "stderr": ""
+}

@@ -1,0 +1,37 @@
+name: ROAMGATE_TLS_CERT and ROAMGATE_TLS_KEY serve HTTPS, the legacy names only without them
+family: env
+tier: T2
+description: >
+  A self-signed pair made with openssl. The server listens with TLS (its
+  listening line says https), and curl reaches it over TLS only.
+server:
+  start: false
+  env:
+    ROAMGATE_TLS_CERT: "${ROOT}/tls/cert.pem"
+    ROAMGATE_TLS_KEY: "${ROOT}/tls/key.pem"
+steps:
+  - sh: >-
+      mkdir -p tls && openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=127.0.0.1
+      -keyout tls/key.pem -out tls/cert.pem 2>/dev/null && chmod 600 tls/key.pem
+  - start: {}
+  - expect_log: { matches: "bridge listening url=https://" }
+  - sh: curl -sk -o /dev/null -w '%{http_code}' https://${ADDRESS}/api/health
+    expect: { exit: 0, stdout: "401" }
+  - sh: curl -s -o /dev/null http://${ADDRESS}/api/health
+    expect: { exit_not: 0 }
+  - restart:
+      {
+        env:
+          {
+            ROAMGATE_TLS_CERT: null,
+            ROAMGATE_TLS_KEY: null,
+            HERDR_GUI_TLS_CERT: "${ROOT}/tls/cert.pem",
+            HERDR_GUI_TLS_KEY: "${ROOT}/tls/key.pem",
+          },
+      }
+  - sh: curl -sk -o /dev/null -w '%{http_code}' https://${ADDRESS}/api/health
+    expect: { exit: 0, stdout: "401" }
+  # The harness's empty ROAMGATE_ names win over the legacy pair: plain HTTP.
+  - restart: { env: { ROAMGATE_TLS_CERT: "", ROAMGATE_TLS_KEY: "" } }
+  - http: GET /api/health
+    expect: { status: 401 }

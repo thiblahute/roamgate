@@ -1,0 +1,115 @@
+name: provider errors and refused arguments are answers with a code, and nothing runs for a refused request
+family: time_report
+ledger:
+  - "server/src/time-report/rpc.test.ts > arguments are checked before anything runs"
+  - "server/src/time-report/provider.test.ts > errors carry the provider's message and code, and submit's partial result"
+  - "server/src/time-report/provider.test.ts > a missing command says so"
+  - "server/src/time-report/provider.test.ts > only a runnable command is a provider setting"
+server:
+  files:
+    .config/roamgate/settings.json:
+      { json: { time_report: { command: [time-report-provider] } } }
+  fakes:
+    time-report-provider:
+      rules:
+        - {
+            args: [targets],
+            stderr: "starting\n{\"error\":\"no such account\",\"code\":\"not_found\"}\n",
+            exit: 3,
+          }
+        - { args: [mappings], stderr: "boom\n", exit: 6 }
+        - { args: [health], stdout: "not json\n" }
+        - {
+            args_prefix: [submit, "2026-11-02"],
+            stdout_json: { submitted: [b1] },
+            stderr: "{\"error\":\"b2 refused\",\"code\":\"conflict\"}\n",
+            exit: 4,
+          }
+        - {
+            args_prefix: [submit-preview],
+            stdout_json: { confirm_token: tok-1, blocks: [b1, b2] },
+          }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.time_report
+    params: { op: targets }
+    reply: { ok: false, error: no such account, code: not_found, partial: null }
+  - call: bridge.time_report
+    params: { op: mappings }
+    reply: { ok: false, error: boom, code: upstream }
+  - call: bridge.time_report
+    params: { op: health }
+    reply: { ok: false, error: The provider printed no JSON., code: error }
+  # Refused before anything runs.
+  - call: bridge.time_report
+    params: { op: rm -rf }
+    reply: { ok: false, error: unknown time report operation, code: invalid }
+  - call: bridge.time_report
+    params: { op: day, date: today }
+    reply:
+      { ok: false, error: "date must be a date, YYYY-MM-DD", code: invalid }
+  - call: bridge.time_report
+    params: { op: block-delete, date: "2026-11-02", block: --all }
+    reply: { ok: false, error: block must be an id, code: invalid }
+  - call: bridge.time_report
+    params: { op: block-split, date: "2026-11-02", block: b1, at: noon }
+    reply: { ok: false, error: at must be an ISO 8601 time, code: invalid }
+  - call: bridge.time_report
+    params: { op: block-update, date: "2026-11-02", block: b1 }
+    reply: { ok: false, error: body must be an object, code: invalid }
+  - call: bridge.time_report
+    params: { op: submit-preview, date: "2026-11-02", blocks: ["; rm"] }
+    reply: { ok: false, error: block must be an id, code: invalid }
+  - call: bridge.time_report
+    params: { op: days, from: "2026-11-02", to: "2026-11-01" }
+    reply: { ok: false, error: to is before from, code: invalid }
+  - fake_calls: { program: time-report-provider, count: 3 }
+  # A partial submit keeps what the provider printed.
+  - call: bridge.time_report
+    params: { op: submit-preview, date: "2026-11-02", blocks: [b1, b2] }
+    reply: { ok: true, value: { confirm_token: tok-1 } }
+  - call: bridge.time_report
+    params:
+      { op: submit, date: "2026-11-02", confirm_token: tok-1, confirmed: true }
+    reply:
+      {
+        ok: false,
+        error: b2 refused,
+        code: conflict,
+        partial: { submitted: [b1] },
+      }
+  # A command that is not there.
+  - write:
+      {
+        path: .config/roamgate/settings.json,
+        json: { time_report: { command: [no-such-provider] } },
+      }
+  - restart: {}
+  - login: {}
+  - connect: {}
+  - call: bridge.time_report
+    params: { op: health }
+    reply:
+      {
+        ok: false,
+        error: "The provider command was not found: no-such-provider",
+        code: error,
+      }
+  # No runnable command: not configured.
+  - write:
+      {
+        path: .config/roamgate/settings.json,
+        json: { time_report: { command: [""] } },
+      }
+  - restart: {}
+  - login: {}
+  - connect: {}
+  - call: bridge.time_report
+    params: { op: health }
+    reply:
+      {
+        ok: false,
+        error: No time report provider is configured (time_report.command).,
+        code: not_configured,
+      }

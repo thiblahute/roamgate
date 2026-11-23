@@ -6,6 +6,22 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "required": ["snapshot"],
+    "properties": {
+      "snapshot": {
+        "anyOf": [
+          {
+            "$ref": "../../schemas/shared/review.schema.json#/$defs/ReviewSnapshot"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

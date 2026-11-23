@@ -1,0 +1,40 @@
+name: a preview's token is good for 15 minutes of the bridge's clock
+family: time_report
+server:
+  files:
+    .config/roamgate/settings.json:
+      { json: { time_report: { command: [time-report-provider] } } }
+  fakes:
+    time-report-provider:
+      rules:
+        - {
+            args_prefix: [submit-preview],
+            stdout_json: { confirm_token: tok-1 },
+          }
+        - { args_prefix: [submit], stdout_json: { submitted: [b1] } }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.time_report
+    params: { op: submit-preview, date: "2026-11-02" }
+    reply: { ok: true, value: { confirm_token: tok-1 } }
+  - advance: 900000
+  - call: bridge.time_report
+    params:
+      { op: submit, date: "2026-11-02", confirm_token: tok-1, confirmed: true }
+    reply:
+      {
+        ok: false,
+        code: forbidden,
+        error: "This preview is unknown or expired: preview again.",
+      }
+  - call: bridge.time_report
+    params: { op: submit-preview, date: "2026-11-02" }
+    reply: { ok: true }
+  - advance: 899000
+  - call: bridge.time_report
+    params:
+      { op: submit, date: "2026-11-02", confirm_token: tok-1, confirmed: true }
+    reply: { ok: true, value: { submitted: [b1] } }
+  - fake_calls:
+      { program: time-report-provider, argv_match: "^submit ", count: 1 }

@@ -1,0 +1,42 @@
+name: the real roamgate-review client reads and writes the Work board
+family: work
+steps:
+  - login: {}
+  - connect: {}
+  - client: [work, help]
+    expect: { exit: 0, stdout_contains: [work_list, work_add] }
+  - client: [work, work_add, '{"title": "From the client", "tags": ["cli"]}']
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          {
+            tool: work_add,
+            result: { item: { title: From the client, tags: [cli] } },
+          },
+      }
+    save: { item: /json/result/item/id }
+  - expect_push: work
+    message: { work: { by: agent } }
+  - client: [work, work_update, "-"]
+    stdin: '{"item": "${item}", "state": "doing"}'
+    expect:
+      {
+        exit: 0,
+        stdout_json: { result: { item: { id: "${item}", state: doing } } },
+      }
+  - client: [work, work_list, '{"state": "doing"}']
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          {
+            result:
+              { count: 1, items: [{ id: "${item}", title: From the client }] },
+          },
+      }
+  - client: [work, work_done, '{"item": "nope0000"}']
+    expect: { exit: 1, stderr_contains: no work item }
+  - assert_file:
+      path: .config/roamgate/work/work.json
+      json: { items: [{ id: "${item}", state: doing, by: agent }] }

@@ -5,8 +5,61 @@
   "handler": "server/src/index.ts",
   "herdr": "intercepted",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "tabs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "agent_status": {
+              "type": "string"
+            },
+            "focused": {
+              "type": "boolean"
+            },
+            "label": {
+              "type": "string"
+            },
+            "number": {
+              "type": "number"
+            },
+            "pane_count": {
+              "type": "number"
+            },
+            "tab_id": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent_status",
+            "focused",
+            "label",
+            "number",
+            "pane_count",
+            "tab_id",
+            "workspace_id"
+          ]
+        }
+      },
+      "type": {
+        "type": "string"
+      }
+    },
+    "required": ["tabs", "type"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

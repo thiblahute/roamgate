@@ -1,0 +1,19 @@
+# The Rust side of Roamgate (docs: the Rust migration plan, section 6.2).
+# For now it holds the parity suite only; the server crates join under crates/.
+[workspace]
+resolver = "3"
+members = ["parity", "parity/herdr-api"]
+default-members = ["parity", "parity/herdr-api"]
+# Own workspaces until they join this one.
+exclude = ["voice/helper", "scripts/bench-terminal"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"

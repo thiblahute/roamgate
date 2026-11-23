@@ -55,11 +55,32 @@ paths:
           description: See the handler.
   "/api/connections/{connection_id}/herdr-info":
     get:
-      summary: "/api/connections/{connection_id}/herdr-info"
-      x-status: inventoried
+      summary: A connection's Herdr version and protocol
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        "200":
+          description: What Herdr's ping says.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, protocol]
+                properties:
+                  version: { type: string }
+                  protocol: { type: integer, minimum: 1 }
+                additionalProperties: false
+        "4XX": { description: "Not logged in, or no such connection." }
+        "5XX":
+          description: Herdr unreachable or invalid (503), or a Windows host (501).
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [error],
+                  properties: { error: { type: string } },
+                  additionalProperties: false,
+                }
   "/api/connections/{connection_id}/terminal-upload":
     post:
       summary: "/api/connections/{connection_id}/terminal-upload"
@@ -104,25 +125,96 @@ paths:
           description: See the handler.
   /api/herdr-info:
     get:
-      summary: /api/herdr-info
-      x-status: inventoried
+      summary: The default connection's Herdr version and protocol
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        "200": &herdrInfo
+          description: What Herdr's ping says.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, protocol]
+                properties:
+                  version: { type: string }
+                  protocol: { type: integer, minimum: 1 }
+                additionalProperties: false
+        "4XX": { description: Not logged in. }
+        "5XX": &herdrError
+          description: Herdr unreachable or invalid (503).
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [error],
+                  properties: { error: { type: string } },
+                  additionalProperties: false,
+                }
   /api/herdr/setup:
     post:
-      summary: /api/herdr/setup
-      x-status: inventoried
+      summary: "Installs (when missing) and starts the local Herdr as a user service; needs x-roamgate-herdr-setup: 1"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        "200":
+          description: Herdr answers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, outcome, version, protocol]
+                properties:
+                  ok: { const: true }
+                  outcome: { enum: [already-running, started, installed] }
+                  version: { type: string }
+                  protocol: { type: integer }
+                  binary_path:
+                    { type: string, description: absent when already running }
+                additionalProperties: false
+        "4XX": &setupError
+          description: 403 without the confirmation header, 409 while a setup runs, 401 not logged in.
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [error],
+                  properties: { error: { type: string } },
+                  additionalProperties: false,
+                }
+        "5XX": *setupError
   /api/herdr/status:
     get:
-      summary: /api/herdr/status
-      x-status: inventoried
+      summary: The local Herdr's state and whether managed setup is possible
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        "200":
+          description: running (version, protocol), installed (binary_path) or missing.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state, can_setup, verified_version]
+                properties:
+                  state: { enum: [running, installed, missing] }
+                  version: { type: string }
+                  protocol: { type: integer }
+                  binary_path: { type: string }
+                  can_setup: { type: boolean }
+                  verified_version: { type: string }
+                additionalProperties: false
+        "4XX": { description: Not logged in. }
+        "5XX":
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [error],
+                  properties: { error: { type: string } },
+                  additionalProperties: false,
+                }
+          description: The guard or the detection failed.
   /api/history:
     get:
       summary: /api/history
@@ -179,23 +271,92 @@ paths:
           description: See the handler.
   /api/notifications/push:
     get:
-      summary: /api/notifications/push
-      x-status: inventoried
+      summary: The Web Push state, VAPID public key
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        "200":
+          description: Whether Web Push is available, and the key browsers subscribe with.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [available, publicKey]
+                properties:
+                  available: { type: boolean }
+                  publicKey: { type: ["string", "null"] }
+                additionalProperties: false
+        "401": { description: Not logged in. }
     post:
-      summary: /api/notifications/push
-      x-status: inventoried
+      summary: Registers (or replaces) a device's push subscription; needs x-roamgate-push 1, same site, JSON
+      x-status: typed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subscription, preferences]
+              properties:
+                subscription:
+                  type: object
+                  required: [endpoint, keys]
+                  properties:
+                    endpoint:
+                      {
+                        type: string,
+                        description: "https on an allow-listed push provider host",
+                      }
+                    keys:
+                      type: object
+                      required: [p256dh, auth]
+                      properties:
+                        p256dh: { type: string }
+                        auth: { type: string }
+                preferences:
+                  type: object
+                  required: [completed, blocked]
+                  properties:
+                    completed: { type: boolean }
+                    blocked: { type: boolean }
+                    quietWithAndroidApp: { type: boolean }
       responses:
-        default:
-          description: See the handler.
+        "200": &pushOk
+          description: Saved.
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [ok],
+                  properties: { ok: { const: true } },
+                  additionalProperties: false,
+                }
+        "4XX": &pushError
+          description: "403 without the header or from another site (text), 400 invalid, 401 not logged in, 409 too many devices"
+          content:
+            application/json:
+              schema:
+                {
+                  type: object,
+                  required: [error],
+                  properties: { error: { type: string } },
+                  additionalProperties: false,
+                }
+        "5XX": *pushError
     delete:
-      summary: /api/notifications/push
-      x-status: inventoried
+      summary: Removes a device by endpoint; needs x-roamgate-push 1, same site, JSON
+      x-status: typed
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint: { type: string }
       responses:
-        default:
-          description: See the handler.
+        "200": *pushOk
+        "4XX": *pushError
+        "5XX": *pushError
   /api/notifications/ws:
     get:
       summary: WebSocket upgrade (see contract/ws/asyncapi.yaml)
@@ -219,18 +380,61 @@ paths:
           description: See the handler.
   /api/update/check:
     get:
-      summary: /api/update/check
-      x-status: inventoried
+      summary: "The latest release on the update mirror; needs x-roamgate-update: 1 (or x-herdr-gui-update)"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        "200":
+          description: The current and latest versions; latest_version is absent when checks are disabled or the platform has no package.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [current_version, update_available, can_auto_update, platform]
+                properties:
+                  current_version: { type: string }
+                  latest_version: { type: string }
+                  update_available: { type: boolean }
+                  can_auto_update: { type: boolean }
+                  reason: { type: string }
+                  platform: { type: string }
+                  source_url: { type: string }
+                  metadata_url: { type: string }
+                additionalProperties: false
+        "4XX": &updateError
+          description: 403 without the confirmation header, 401 not logged in.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error: { type: string }
+                  current_version: { type: string }
+                  source_url: { type: string }
+                  metadata_url: { type: string }
+                additionalProperties: false
+        "5XX": *updateError
   /api/update/install:
     post:
-      summary: /api/update/install
-      x-status: inventoried
+      summary: "Installs the latest release over the standalone binary and restarts under its supervisor; needs x-roamgate-update: 1"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        "2XX":
+          description: Installed; the process exits so the supervisor restarts it.
+        "4XX": &installError
+          description: 403 without the confirmation header, 409 not possible here or already running, 401 not logged in.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error: { type: string }
+                  current_version: { type: string }
+                  source_url: { type: string }
+                  metadata_url: { type: string }
+        "5XX": *installError
   /api/upload-image:
     post:
       summary: /api/upload-image
@@ -240,245 +444,2579 @@ paths:
           description: See the handler.
   /api/voice:
     get:
-      summary: /api/voice
-      x-status: inventoried
+      summary: "The voice chat's state: available or why not, the companion, reading speed, longest pause"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "available": { "type": "boolean" },
+                              "detail": { "type": "string" },
+                              "route": { "type": "boolean" },
+                              "front": { "type": "boolean" },
+                              "front_mode": { "enum": ["companion", "relay"] },
+                              "companion_epoch": { "type": "integer" },
+                              "speech_rate": { "type": "number" },
+                              "max_pause_ms": { "type": "integer" },
+                              "surprise": { "type": "boolean" },
+                              "low_gpu": { "type": "string" },
+                              "debug": { "type": "boolean" },
+                            },
+                          "required":
+                            ["available", "speech_rate", "max_pause_ms"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/answers:
     get:
-      summary: /api/voice/answers
-      x-status: inventoried
+      summary: "The jobs' answers nobody heard yet (voice header); ?job= one, whole"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "oneOf":
+                            [
+                              {
+                                "type": "object",
+                                "properties":
+                                  {
+                                    "answers":
+                                      {
+                                        "type": "array",
+                                        "items":
+                                          {
+                                            "type": "object",
+                                            "properties":
+                                              {
+                                                "job": { "type": "string" },
+                                                "label": { "type": "string" },
+                                                "question":
+                                                  { "type": "string" },
+                                                "at": { "type": "integer" },
+                                                "mentioned":
+                                                  { "type": "boolean" },
+                                                "chars": { "type": "integer" },
+                                              },
+                                            "required":
+                                              [
+                                                "job",
+                                                "label",
+                                                "question",
+                                                "at",
+                                                "mentioned",
+                                                "chars",
+                                              ],
+                                            "additionalProperties": false,
+                                          },
+                                      },
+                                  },
+                                "required": ["answers"],
+                                "additionalProperties": false,
+                              },
+                              {
+                                "type": "object",
+                                "properties":
+                                  {
+                                    "job": { "type": "string" },
+                                    "pane": { "type": "string" },
+                                    "label": { "type": "string" },
+                                    "question": { "type": "string" },
+                                    "answer": { "type": "string" },
+                                    "at": { "type": "integer" },
+                                    "mentioned": { "type": "boolean" },
+                                  },
+                                "required": ["job", "answer"],
+                                "additionalProperties": false,
+                              },
+                            ],
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/answers/heard:
     post:
-      summary: /api/voice/answers/heard
-      x-status: inventoried
+      summary: "An answer heard: dropped (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties": { "job": { "type": "string" } },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties": { "heard": { "type": "string" } },
+                          "required": ["heard"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/answers/mentioned:
     post:
-      summary: /api/voice/answers/mentioned
-      x-status: inventoried
+      summary: "Answers mentioned in a call (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties":
+                        {
+                          "jobs":
+                            { "type": "array", "items": { "type": "string" } },
+                        },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties": { "mentioned": { "type": "integer" } },
+                          "required": ["mentioned"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/call/handoff:
     post:
-      summary: /api/voice/call/handoff
-      x-status: inventoried
+      summary: "Redeems a call's handoff token for its carrier token, without login (the Android app)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties": { "handoff": {} },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "call": { "type": "integer" },
+                              "carrier": { "type": "string" },
+                            },
+                          "required": ["call", "carrier"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused (403), bad request (400), unknown, used or expired (410), too many attempts (429).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/call/signalling:
     get:
-      summary: WebSocket upgrade (see contract/ws/asyncapi.yaml)
-      x-status: inventoried
+      summary: "A call's signalling WebSocket, for its page or carrying app: ?call=&call_token= (see contract/ws/asyncapi.yaml)"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "101":
+            { "description": "Relayed to the helper's signalling server." },
+          "4XX":
+            {
+              "description": "Not logged in (401), or not the call's owner (403).",
+            },
+        }
   /api/voice/companion/reset:
     post:
-      summary: /api/voice/companion/reset
-      x-status: inventoried
+      summary: "The companion forgets everything (voice header): its new epoch"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties": { "epoch": { "type": "integer" } },
+                          "required": ["epoch"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/errand:
     get:
-      summary: /api/voice/errand
-      x-status: inventoried
+      summary: "A companion job on a session, ?job="
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "done": { "type": "boolean" },
+                              "answer": { "type": ["string", "null"] },
+                              "notice": { "type": ["object", "null"] },
+                            },
+                          "required": ["done", "answer"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/event:
     post:
-      summary: /api/voice/event
-      x-status: inventoried
+      summary: "Something that happened, told to the companion: what it says of it (empty without a front or the header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties":
+                        {
+                          "event": { "type": "string" },
+                          "kind": { "enum": ["event", "answer", "progress"] },
+                          "agent": { "type": "string" },
+                          "current": { "type": "string" },
+                          "sessions": { "type": "array" },
+                          "context": {},
+                        },
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "reply": { "type": "string" },
+                              "file": { "type": "string" },
+                            },
+                          "required": ["reply"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/forward:
     post:
-      summary: /api/voice/forward
-      x-status: inventoried
+      summary: "Words for a session, followed as a job (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties":
+                        {
+                          "pane": { "type": "string" },
+                          "words": { "type": "string" },
+                          "label": { "type": "string" },
+                          "question": { "type": "string" },
+                        },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties": { "job": { "type": "string" } },
+                          "required": ["job"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/image:
     get:
-      summary: /api/voice/image
-      x-status: inventoried
+      summary: "An image the companion was given or names, by its absolute path"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "The image, its type from its magic bytes.",
+              "content":
+                {
+                  "image/*":
+                    { "schema": { "type": "string", "format": "binary" } },
+                },
+            },
+          "404": { "description": "Not an image file here." },
+        }
   /api/voice/low-gpu:
     get:
-      summary: /api/voice/low-gpu
-      x-status: inventoried
+      summary: "The low-GPU profile's state"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "$ref": "../schemas/shared/voiceLowGpu.schema.json#/$defs/LowGpuStatus",
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
     post:
-      summary: /api/voice/low-gpu
-      x-status: inventoried
+      summary: "Holds or lets go the low-GPU profile by name, or switches now (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties":
+                        {
+                          "on": { "type": "boolean" },
+                          "holder": { "type": "string" },
+                          "now": { "type": "boolean" },
+                        },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required":
+                            [
+                              "active",
+                              "reason",
+                              "holders",
+                              "gameMode",
+                              "running",
+                              "pending",
+                              "choices",
+                              "models",
+                              "gpuBytes",
+                              "overrides",
+                              "path",
+                            ],
+                          "properties":
+                            {
+                              "active": {},
+                              "reason": {},
+                              "holders": {},
+                              "gameMode": {},
+                              "running": {},
+                              "pending": {},
+                              "choices": {},
+                              "models": {},
+                              "gpuBytes": {},
+                              "overrides": {},
+                              "path": {},
+                              "error": {},
+                              "applied": {},
+                            },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/research:
     get:
-      summary: /api/voice/research
-      x-status: inventoried
+      summary: "The companion's web searches, ?job= one"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "oneOf":
+                            [
+                              {
+                                "type": "object",
+                                "properties":
+                                  {
+                                    "jobs":
+                                      {
+                                        "type": "array",
+                                        "items":
+                                          {
+                                            "type": "object",
+                                            "properties":
+                                              {
+                                                "id": { "type": "string" },
+                                                "question":
+                                                  { "type": "string" },
+                                                "status":
+                                                  {
+                                                    "enum":
+                                                      [
+                                                        "running",
+                                                        "done",
+                                                        "failed",
+                                                        "cancelled",
+                                                      ],
+                                                  },
+                                                "steps":
+                                                  {
+                                                    "type": "array",
+                                                    "items":
+                                                      { "type": "string" },
+                                                  },
+                                                "started":
+                                                  { "type": "integer" },
+                                                "finished":
+                                                  { "type": "integer" },
+                                                "spoken": { "type": "string" },
+                                                "answer": { "type": "string" },
+                                                "sources": { "type": "array" },
+                                                "error": { "type": "string" },
+                                              },
+                                            "required": ["id", "status"],
+                                          },
+                                      },
+                                  },
+                                "required": ["jobs"],
+                                "additionalProperties": false,
+                              },
+                              {
+                                "type": "object",
+                                "properties":
+                                  {
+                                    "id": { "type": "string" },
+                                    "question": { "type": "string" },
+                                    "status":
+                                      {
+                                        "enum":
+                                          [
+                                            "running",
+                                            "done",
+                                            "failed",
+                                            "cancelled",
+                                          ],
+                                      },
+                                    "steps":
+                                      {
+                                        "type": "array",
+                                        "items": { "type": "string" },
+                                      },
+                                    "started": { "type": "integer" },
+                                    "finished": { "type": "integer" },
+                                    "spoken": { "type": "string" },
+                                    "answer": { "type": "string" },
+                                    "sources": { "type": "array" },
+                                    "error": { "type": "string" },
+                                  },
+                                "required": ["id", "status"],
+                              },
+                            ],
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/research/cancel:
     post:
-      summary: /api/voice/research/cancel
-      x-status: inventoried
+      summary: "Cancels a search, or all (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties": { "job": { "type": "string" } },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "cancelled":
+                                {
+                                  "type": "array",
+                                  "items": { "type": "string" },
+                                },
+                            },
+                          "required": ["cancelled"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/route:
     post:
-      summary: /api/voice/route
-      x-status: inventoried
+      summary: "Who words said are for: the router's or the companion's route; NDJSON with stream (early words, then the route)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties":
+                        {
+                          "current": { "type": "string" },
+                          "said": { "type": "string" },
+                          "sessions": { "type": "array" },
+                          "context": {},
+                          "interrupted_at": { "type": "string" },
+                          "typed": { "type": "boolean" },
+                          "routes":
+                            { "type": "array", "items": { "type": "string" } },
+                          "recent": { "type": "string" },
+                          "stream": { "type": "boolean" },
+                          "skipped": { "type": "array" },
+                          "voice": {},
+                        },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "The route; with stream, NDJSON lines",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "to": { "type": "string" },
+                              "reply": { "type": "string" },
+                              "query": { "type": "string" },
+                              "job": { "type": "string" },
+                              "task": { "type": "string" },
+                              "words": { "type": "string" },
+                              "say": { "type": "string" },
+                              "pane": { "type": "string" },
+                              "agent": { "type": "string" },
+                              "resume": { "type": "boolean" },
+                              "recovered": { "type": "string" },
+                              "context": { "type": "string" },
+                              "music": { "type": "string" },
+                              "mode": { "type": "string" },
+                            },
+                          "required": ["to"],
+                          "additionalProperties": false,
+                        },
+                    },
+                  "application/x-ndjson": { "schema": { "type": "string" } },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/settings:
     post:
-      summary: /api/voice/settings
-      x-status: inventoried
+      summary: "Keeps the reading speed, the longest pause or the companion's mode in voice.json (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties":
+                        {
+                          "speech_rate": { "type": "number" },
+                          "max_pause_ms": { "type": "number" },
+                          "front_mode": { "type": "string" },
+                        },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "speech_rate": { "type": "number" },
+                              "max_pause_ms": { "type": "integer" },
+                              "front_mode": { "type": "string" },
+                            },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/setup:
     get:
-      summary: /api/voice/setup
-      x-status: inventoried
+      summary: "The setup assistant's state: the machine, the catalog, what voice.json uses, the job"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "$ref": "../schemas/shared/voiceSetup.schema.json#/$defs/VoiceSetupState",
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
     post:
-      summary: /api/voice/setup
-      x-status: inventoried
+      summary: "Starts the setup of the chosen models (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties": { "choices": { "type": "object" } },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "202":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "$ref": "../schemas/shared/voiceSetup.schema.json#/$defs/VoiceSetupState",
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/setup/cancel:
     post:
-      summary: /api/voice/setup/cancel
-      x-status: inventoried
+      summary: "Cancels the setup job (voice header)"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "$ref": "../schemas/shared/voiceSetup.schema.json#/$defs/VoiceSetupState",
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/setup/remove:
     post:
-      summary: /api/voice/setup/remove
-      x-status: inventoried
+      summary: "Removes unused models (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties":
+                        {
+                          "ids":
+                            {
+                              "oneOf":
+                                [
+                                  { "const": "all" },
+                                  {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                  },
+                                ],
+                            },
+                        },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required":
+                            [
+                              "hardware",
+                              "tier",
+                              "recommended",
+                              "current",
+                              "components",
+                              "modelsDir",
+                              "configPath",
+                              "helper",
+                              "packages",
+                              "unused",
+                              "job",
+                            ],
+                          "properties":
+                            {
+                              "hardware": {},
+                              "tier": {},
+                              "recommended": {},
+                              "current": {},
+                              "components": {},
+                              "modelsDir": {},
+                              "configPath": {},
+                              "configError": {},
+                              "helper": {},
+                              "freeBytes": {},
+                              "packages": {},
+                              "unused": {},
+                              "job": {},
+                              "freedBytes": { "type": "integer" },
+                            },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/speak:
     post:
-      summary: /api/voice/speak
-      x-status: inventoried
+      summary: "Speech of a text by the helper: a file, or queued into the call's mix (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties":
+                        {
+                          "text": { "type": "string" },
+                          "language": { "type": "string" },
+                          "reading": { "type": "string" },
+                          "rate": { "type": "number" },
+                          "call": { "type": "integer" },
+                        },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "Ogg speech, or the call's queue",
+              "content":
+                {
+                  "audio/ogg":
+                    { "schema": { "type": "string", "format": "binary" } },
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "queued": { "const": true },
+                              "call": { "type": "integer" },
+                              "start_ms": { "type": "number" },
+                              "duration_ms": { "type": "number" },
+                              "now_ms": { "type": "number" },
+                              "language": { "type": "string" },
+                              "native_rate": { "type": "number" },
+                            },
+                          "required": ["queued", "call"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/timing:
     post:
-      summary: /api/voice/timing
-      x-status: inventoried
+      summary: "A turn's timings for the debug log: numbers and short words only (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content": { "application/json": { "schema": { "type": "object" } } },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "204": { "description": "Logged." },
+          "403": { "description": "No voice header." },
+        }
   /api/voice/tools:
     get:
-      summary: /api/voice/tools
-      x-status: inventoried
+      summary: "The companion's tool jobs, ?job= one"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "oneOf":
+                            [
+                              {
+                                "type": "object",
+                                "properties":
+                                  {
+                                    "jobs":
+                                      {
+                                        "type": "array",
+                                        "items":
+                                          {
+                                            "type": "object",
+                                            "properties":
+                                              {
+                                                "id": { "type": "string" },
+                                                "task": { "type": "string" },
+                                                "question":
+                                                  { "type": "string" },
+                                                "tool": { "type": "boolean" },
+                                                "spoken": { "type": "string" },
+                                                "answer": { "type": "string" },
+                                                "sources": { "type": "array" },
+                                                "error": { "type": "string" },
+                                                "status": { "type": "string" },
+                                                "steps": { "type": "array" },
+                                                "started":
+                                                  { "type": "integer" },
+                                                "finished":
+                                                  { "type": "integer" },
+                                              },
+                                            "required": ["id"],
+                                          },
+                                      },
+                                  },
+                                "required": ["jobs"],
+                                "additionalProperties": false,
+                              },
+                              {
+                                "type": "object",
+                                "properties":
+                                  {
+                                    "id": { "type": "string" },
+                                    "task": { "type": "string" },
+                                    "question": { "type": "string" },
+                                    "tool": { "type": "boolean" },
+                                    "spoken": { "type": "string" },
+                                    "answer": { "type": "string" },
+                                    "sources": { "type": "array" },
+                                    "error": { "type": "string" },
+                                    "status": { "type": "string" },
+                                    "steps": { "type": "array" },
+                                    "started": { "type": "integer" },
+                                    "finished": { "type": "integer" },
+                                  },
+                                "required": ["id"],
+                              },
+                            ],
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/tools/answer:
     post:
-      summary: /api/voice/tools/answer
-      x-status: inventoried
+      summary: "Yes or no to a held tool call (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties":
+                        {
+                          "job": { "type": "string" },
+                          "answer": { "type": "string" },
+                        },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "job": { "type": "string" },
+                              "declined": { "type": "string" },
+                            },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/tools/cancel:
     post:
-      summary: /api/voice/tools/cancel
-      x-status: inventoried
+      summary: "Cancels a tool job, or all (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties": { "job": { "type": "string" } },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "cancelled":
+                                {
+                                  "type": "array",
+                                  "items": { "type": "string" },
+                                },
+                            },
+                          "required": ["cancelled"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/trace:
     post:
-      summary: /api/voice/trace
-      x-status: inventoried
-      responses:
-        default:
-          description: See the handler.
+      summary: "A page's debug line, logged with ROAMGATE_VOICE_DEBUG (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties": { "line": { "type": "string" } },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
+      responses: { "204": { "description": "Logged, or ignored." } }
   /api/voice/voices:
     get:
-      summary: /api/voice/voices
-      x-status: inventoried
+      summary: "The voice library"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "voices":
+                                {
+                                  "type": "array",
+                                  "items":
+                                    {
+                                      "type": "object",
+                                      "properties":
+                                        {
+                                          "id": { "type": "string" },
+                                          "name": { "type": "string" },
+                                          "languages":
+                                            {
+                                              "type": "array",
+                                              "items": { "type": "string" },
+                                            },
+                                          "path": { "type": "string" },
+                                          "reference": { "type": "string" },
+                                          "created": { "type": "string" },
+                                          "owned": { "type": "boolean" },
+                                          "native": { "type": "string" },
+                                        },
+                                      "required": ["id", "name"],
+                                      "additionalProperties": false,
+                                    },
+                                },
+                              "stock": { "type": "array" },
+                              "stock_detail": { "type": "string" },
+                              "kokoro": { "type": "boolean" },
+                              "surprise": { "type": "boolean" },
+                              "assignments":
+                                {
+                                  "type": "object",
+                                  "properties":
+                                    {
+                                      "all": { "type": "string" },
+                                      "languages":
+                                        {
+                                          "type": "object",
+                                          "additionalProperties":
+                                            { "type": "string" },
+                                        },
+                                    },
+                                },
+                              "can_clone": { "type": "boolean" },
+                              "clone_detail": { "type": "string" },
+                            },
+                          "required":
+                            [
+                              "voices",
+                              "stock",
+                              "kokoro",
+                              "surprise",
+                              "can_clone",
+                            ],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
     post:
-      summary: /api/voice/voices
-      x-status: inventoried
+      summary: "A voice recorded: the helper clones the multipart recording (voice header)"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "201":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "voice":
+                                {
+                                  "type": "object",
+                                  "properties":
+                                    {
+                                      "id": { "type": "string" },
+                                      "name": { "type": "string" },
+                                      "languages":
+                                        {
+                                          "type": "array",
+                                          "items": { "type": "string" },
+                                        },
+                                      "path": { "type": "string" },
+                                      "reference": { "type": "string" },
+                                      "created": { "type": "string" },
+                                      "owned": { "type": "boolean" },
+                                      "native": { "type": "string" },
+                                    },
+                                  "required": ["id", "name"],
+                                  "additionalProperties": false,
+                                },
+                              "heard": { "type": "string" },
+                              "transcript": { "type": "string" },
+                              "kind": { "enum": ["shown", "partial", "heard"] },
+                            },
+                          "required": ["voice", "heard", "transcript", "kind"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/voices/assign:
     post:
-      summary: /api/voice/voices/assign
-      x-status: inventoried
+      summary: "Which voice reads replies, for all or one language (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties":
+                        {
+                          "voice": { "type": ["string", "null"] },
+                          "language": {},
+                        },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "voices":
+                                {
+                                  "type": "array",
+                                  "items":
+                                    {
+                                      "type": "object",
+                                      "properties":
+                                        {
+                                          "id": { "type": "string" },
+                                          "name": { "type": "string" },
+                                          "languages":
+                                            {
+                                              "type": "array",
+                                              "items": { "type": "string" },
+                                            },
+                                          "path": { "type": "string" },
+                                          "reference": { "type": "string" },
+                                          "created": { "type": "string" },
+                                          "owned": { "type": "boolean" },
+                                          "native": { "type": "string" },
+                                        },
+                                      "required": ["id", "name"],
+                                      "additionalProperties": false,
+                                    },
+                                },
+                              "stock": { "type": "array" },
+                              "stock_detail": { "type": "string" },
+                              "kokoro": { "type": "boolean" },
+                              "surprise": { "type": "boolean" },
+                              "assignments":
+                                {
+                                  "type": "object",
+                                  "properties":
+                                    {
+                                      "all": { "type": "string" },
+                                      "languages":
+                                        {
+                                          "type": "object",
+                                          "additionalProperties":
+                                            { "type": "string" },
+                                        },
+                                    },
+                                },
+                              "can_clone": { "type": "boolean" },
+                              "clone_detail": { "type": "string" },
+                            },
+                          "required":
+                            [
+                              "voices",
+                              "stock",
+                              "kokoro",
+                              "surprise",
+                              "can_clone",
+                            ],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/voices/sample:
     post:
-      summary: /api/voice/voices/sample
-      x-status: inventoried
+      summary: "A voice heard reading a sample sentence (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties": { "voice": {}, "language": {} },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "The speech, Ogg (x-voice-language, x-voice-native-rate, x-voice-name headers).",
+              "content":
+                {
+                  "audio/ogg":
+                    { "schema": { "type": "string", "format": "binary" } },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/voices/surprise:
     post:
-      summary: /api/voice/voices/surprise
-      x-status: inventoried
+      summary: "Surprise on or off: replies read by the recorded voices in turn (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties": { "on": {} },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "voices":
+                                {
+                                  "type": "array",
+                                  "items":
+                                    {
+                                      "type": "object",
+                                      "properties":
+                                        {
+                                          "id": { "type": "string" },
+                                          "name": { "type": "string" },
+                                          "languages":
+                                            {
+                                              "type": "array",
+                                              "items": { "type": "string" },
+                                            },
+                                          "path": { "type": "string" },
+                                          "reference": { "type": "string" },
+                                          "created": { "type": "string" },
+                                          "owned": { "type": "boolean" },
+                                          "native": { "type": "string" },
+                                        },
+                                      "required": ["id", "name"],
+                                      "additionalProperties": false,
+                                    },
+                                },
+                              "stock": { "type": "array" },
+                              "stock_detail": { "type": "string" },
+                              "kokoro": { "type": "boolean" },
+                              "surprise": { "type": "boolean" },
+                              "assignments":
+                                {
+                                  "type": "object",
+                                  "properties":
+                                    {
+                                      "all": { "type": "string" },
+                                      "languages":
+                                        {
+                                          "type": "object",
+                                          "additionalProperties":
+                                            { "type": "string" },
+                                        },
+                                    },
+                                },
+                              "can_clone": { "type": "boolean" },
+                              "clone_detail": { "type": "string" },
+                            },
+                          "required":
+                            [
+                              "voices",
+                              "stock",
+                              "kokoro",
+                              "surprise",
+                              "can_clone",
+                            ],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   "/api/voice/voices/{id}":
     patch:
-      summary: "/api/voice/voices/{id}"
-      x-status: inventoried
+      summary: "Renames a voice (voice header)"
+      x-status: typed
+      requestBody:
+        {
+          "content":
+            {
+              "application/json":
+                {
+                  "schema":
+                    {
+                      "type": "object",
+                      "properties": { "name": {} },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+        }
       responses:
-        default:
-          description: See the handler.
+        {
+          "200":
+            {
+              "description": "OK",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "properties":
+                            {
+                              "id": { "type": "string" },
+                              "name": { "type": "string" },
+                              "languages":
+                                {
+                                  "type": "array",
+                                  "items": { "type": "string" },
+                                },
+                              "path": { "type": "string" },
+                              "reference": { "type": "string" },
+                              "created": { "type": "string" },
+                              "owned": { "type": "boolean" },
+                              "native": { "type": "string" },
+                            },
+                          "required": ["id", "name"],
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
     delete:
-      summary: "/api/voice/voices/{id}"
-      x-status: inventoried
+      summary: "Deletes a voice and its files (voice header)"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "204": { "description": "Deleted." },
+          "4XX":
+            {
+              "description": "Refused: not logged in (401, no body), no voice header (403), a bad request (400), unknown (404), a conflict (409).",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+          "5XX":
+            {
+              "description": "The helper or the configuration failed.",
+              "content":
+                {
+                  "application/json":
+                    {
+                      "schema":
+                        {
+                          "type": "object",
+                          "required": ["error"],
+                          "properties": { "error": { "type": "string" } },
+                          "additionalProperties": false,
+                        },
+                    },
+                },
+            },
+        }
   /api/voice/ws:
     get:
-      summary: WebSocket upgrade (see contract/ws/asyncapi.yaml)
-      x-status: inventoried
+      summary: "WebSocket upgrade (see contract/ws/asyncapi.yaml)"
+      x-status: typed
       responses:
-        default:
-          description: See the handler.
+        {
+          "101": { "description": "The voice socket." },
+          "4XX": { "description": "Not logged in, or another site." },
+        }
   /health:
     get:
       summary: /health

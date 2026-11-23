@@ -1,0 +1,5 @@
+{
+  "exit": 1,
+  "stdout": "",
+  "stderr": "roamgate-hold: no such start for this pane (it expired?)\n"
+}

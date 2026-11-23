@@ -4,8 +4,99 @@
   "scope": "connection",
   "handler": "server/src/conversation/rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "required": ["pane_id", "to"],
+    "properties": {
+      "pane_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "to": {
+        "enum": ["conversation", "terminal"]
+      },
+      "interrupt": {
+        "type": "boolean"
+      },
+      "auto": {
+        "type": "boolean"
+      },
+      "session_id": {
+        "type": "string",
+        "pattern": "^[\\w-]{1,100}$"
+      },
+      "quit_writer": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "suspend": {
+        "type": "boolean"
+      },
+      "title": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "anyOf": [
+      {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "owner": {
+            "$ref": "../../schemas/shared/agentChat.schema.json#/$defs/AgentChatOwner"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "suspended": {
+            "type": "boolean",
+            "description": "Handed back stopped (the chat's Ctrl+Z): the pane's shell has its prompt, and `fg` there brings the conversation back."
+          },
+          "lease": {
+            "$ref": "../../schemas/shared/agentChat.schema.json#/$defs/AgentChatLease",
+            "description": "agent_chat.handover to conversation: the lease it took (service.ts handover)."
+          }
+        },
+        "required": ["ok", "owner", "session_id"],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": false
+          },
+          "reason": {
+            "type": "string"
+          },
+          "waiting": {
+            "type": "string",
+            "const": "background_tasks",
+            "description": "Refused for now, not for good: Claude's background work (a shell, a monitor) would stop with it. A switch asked \"when idle\" waits on."
+          },
+          "writer": {
+            "$ref": "../../schemas/shared/agentChat.schema.json#/$defs/AgentChatOtherWriter",
+            "description": "Refused because another Claude runs the session in another pane: which, so the user can go there or, when it is idle, have it quit (`quit_writer` on the next switch)."
+          }
+        },
+        "required": ["ok", "reason"],
+        "additionalProperties": false
+      }
+    ],
+    "description": "AgentChatHandoverResult, and the lease a handover to conversation took (not in the shared type)."
+  },
+  "status": "typed"
 }

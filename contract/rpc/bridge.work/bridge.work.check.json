@@ -6,6 +6,28 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "required": ["landed", "recorded", "checked"],
+    "properties": {
+      "landed": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "recorded": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "checked": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

@@ -1,0 +1,290 @@
+name: the rest of the Reviews board's RPCs answer on a fresh board, without any forge write
+family: mr_reviews
+description: >
+  Export and import (dry run, then applied), the inference models and one
+  row inferred through fake-claude, the panel's search, review workspaces
+  and links, the upstream marks of groups and workspaces, a request not
+  proposed yet refused, the checkout, clone, open and home refusals before
+  a clone is known, and the reviews agent: a turn through fake-claude
+  (ROAMGATE_REVIEWS_AGENT_COMMAND), unqueue, stop and reset.
+ledger:
+  - "server/src/mr-reviews/panel.test.ts > the panel's search and filter: kept in settings.json, pushed to every page, read back with the inbox, no new version"
+server:
+  env:
+    ROAMGATE_REVIEWS_AGENT_COMMAND: "${BIN}/claude"
+  files:
+    .config/glab-cli/config.yml: "host: gitlab.example.com\nhosts:\n    gitlab.example.com:\n        token: glpat-parity\n        api_host: gitlab.example.com\n"
+  fakes:
+    glab:
+      rules:
+        - { args: [config, get, host], stdout: "gitlab.example.com\n" }
+        - {
+            args: [config, get, token, --host, gitlab.example.com],
+            stdout: "glpat-parity\n",
+          }
+        - { args_prefix: [config, get, token], exit: 1 }
+      default:
+        http_headers: { content-type: application/json }
+        graphql:
+          currentUser:
+            username: me
+            rr:
+              {
+                nodes:
+                  [
+                    &mr7 {
+                      iid: "7",
+                      title: Fix the parser,
+                      webUrl: "https://gitlab.example.com/group/other/-/merge_requests/7",
+                      draft: false,
+                      state: opened,
+                      updatedAt: "2025-12-31T10:00:00Z",
+                      userNotesCount: 1,
+                      diffHeadSha: aaaaaaa7,
+                      sourceBranch: fix,
+                      targetBranch: main,
+                      project: { fullPath: group/other },
+                      author: { username: alice },
+                      headPipeline: { status: SUCCESS },
+                      diffRefs: { baseSha: bbbbbbbb },
+                      labels: { nodes: [] },
+                    },
+                  ],
+              }
+            as: { nodes: [] }
+            todos: { nodes: [] }
+            op:
+              {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes:
+                  [
+                    &mr3 {
+                      iid: "3",
+                      title: My change,
+                      webUrl: "https://gitlab.example.com/me/proj/-/merge_requests/3",
+                      draft: false,
+                      state: opened,
+                      updatedAt: "2025-12-31T09:00:00Z",
+                      userNotesCount: 0,
+                      diffHeadSha: ccccccc3,
+                      sourceBranch: mine,
+                      targetBranch: main,
+                      project: { fullPath: me/proj },
+                      author: { username: me },
+                      headPipeline: { status: RUNNING },
+                      diffRefs: { baseSha: bbbbbbbb },
+                      labels: { nodes: [] },
+                    },
+                  ],
+              }
+            mg: { nodes: [] }
+            cl: { nodes: [] }
+          p0:
+            mergeRequests:
+              nodes:
+                - iid: "3"
+                  webUrl: "https://gitlab.example.com/me/proj/-/merge_requests/3"
+                  updatedAt: "2025-12-31T09:00:00Z"
+                  diffHeadSha: ccccccc3
+                  userNotesCount: 0
+                  project: { fullPath: me/proj }
+                  headPipeline: { status: RUNNING }
+                  diffRefs: { baseSha: bbbbbbbb }
+                  conflicts: false
+                  shouldBeRebased: false
+                  approved: false
+                  detailedMergeStatus: NOT_APPROVED
+                  approvedBy: { nodes: [] }
+                  resolvableDiscussionsCount: 0
+                  resolvedDiscussionsCount: 0
+                  description: A change of mine.
+                  discussions: { nodes: [] }
+                  assignees: { nodes: [{ username: me }] }
+                  reviewers: { nodes: [{ username: bob }] }
+                  autoMergeEnabled: false
+                  mergeUser: null
+    claude:
+      rules:
+        - args_match: "stream-json"
+          stream:
+            - {
+                type: system,
+                subtype: init,
+                session_id: "{{session_id}}",
+                model: claude-parity,
+              }
+            - {
+                type: assistant,
+                session_id: "{{session_id}}",
+                message:
+                  {
+                    id: m1,
+                    role: assistant,
+                    content: [{ type: text, text: Reviewed the board. }],
+                  },
+              }
+            - {
+                type: result,
+                subtype: success,
+                is_error: false,
+                result: Reviewed the board.,
+                session_id: "{{session_id}}",
+              }
+        - args_prefix: ["-p"]
+          stdout_json:
+            {
+              type: result,
+              is_error: false,
+              result: '[{"key": "gitlab:gitlab.example.com/me/proj#3", "whose": "person:bob", "next": "Waiting for bob''s review", "depends_on": [], "stale": false}]',
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.mr_reviews.inbox
+    params: { fresh: true }
+  - call: bridge.mr_reviews.inbox
+    until: { refreshing: false, hosts: [{ state: ok }] }
+  - call: bridge.mr_reviews.export
+    reply: { text: '{{contains:"format": "roamgate-reviews"}}' }
+    save: { export: /result/text }
+  - call: bridge.mr_reviews.import
+    params: { text: "${export}" }
+    reply: { applied: false, changes: "{{any}}" }
+  - call: bridge.mr_reviews.import
+    params: { text: "${export}", apply: true }
+    reply: { applied: true }
+  - call: bridge.mr_reviews.import
+    params: { text: not json }
+    error: { message: "{{string}}" }
+  - call: bridge.mr_reviews.inference_models
+    reply: { automatic: sonnet, models: { $contains: [opus, sonnet, haiku] } }
+  - call: bridge.mr_reviews.infer
+    params: { key: "gitlab:gitlab.example.com/me/proj#3" }
+    reply:
+      {
+        ok: true,
+        inferred: { whose: { person: bob }, next: "Waiting for bob's review" },
+      }
+  - fake_calls: { program: claude, argv_match: "^-p", min: 1 }
+  - call: bridge.mr_reviews.panel
+    params: { search: parser }
+    reply: { panel: { search: parser, filter: all } }
+  - expect_push: mr_reviews
+    message: { mr_reviews: { changed: [panel] } }
+  - call: bridge.mr_reviews.panel
+    error: { message: search or filter is required }
+  - call: bridge.mr_reviews.workspaces
+    reply: { workspaces: [] }
+  - call: bridge.mr_reviews.links
+    params: { keys: ["gitlab:gitlab.example.com/me/proj#3"] }
+    reply: { links: {} }
+  - call: bridge.mr_reviews.forget_worktree
+    params: { project: me/proj }
+    error: { message: no review worktree for that project }
+  - call: bridge.mr_reviews.claude
+    params: { key: "gitlab:gitlab.example.com/me/proj#3", action: status }
+    error: { message: "open the request's review first" }
+  - call: bridge.mr_reviews.claude
+    params: { key: "gitlab:gitlab.example.com/me/proj#3", action: dance }
+    error: { message: "action must be status, switch, start or review" }
+  - call: bridge.mr_reviews.checkout
+    params: { key: "gitlab:gitlab.example.com/me/proj#3", local: bad }
+    error: { message: "local must be refuse, wip or discard" }
+  - call: bridge.mr_reviews.checkout
+    params: { key: "gitlab:gitlab.example.com/me/proj#3" }
+    error: { message: open the request first }
+  - call: bridge.mr_reviews.clone
+    params:
+      {
+        host: gitlab.example.com,
+        project: me/proj,
+        provider: gitlab,
+        connection_id: legacy-default,
+        path: "${ROOT}/clones/proj",
+      }
+    error: { message: "{{contains:is not a Git checkout there}}" }
+  - call: bridge.mr_reviews.clone
+    params: { host: gitlab.example.com }
+    error:
+      {
+        message: "host, project, provider, connection_id and an absolute path are required",
+      }
+  - call: bridge.mr_reviews.open
+    params: { key: "gitlab:gitlab.example.com/me/proj#3" }
+    reply:
+      {
+        needClone:
+          {
+            host: gitlab.example.com,
+            project: me/proj,
+            connections: [{ id: legacy-default, label: Default }],
+          },
+      }
+  - call: bridge.mr_reviews.home
+    params: { key: "gitlab:gitlab.example.com/me/proj#3" }
+    error:
+      {
+        message: "no clone of me/proj is known: open its review once to pick one",
+      }
+  - call: bridge.mr_reviews.unsent
+    params: { key: "branch:nothing" }
+    error: { message: no such branch headed upstream }
+  - call: bridge.mr_reviews.unsent
+    params: { key: "gitlab:gitlab.example.com/me/proj#3" }
+    error: { message: only a branch can be not proposed yet }
+  - call: bridge.mr_reviews.upstream.marks
+    reply: { groups: [], skip: [], workspaces: [] }
+  - call: bridge.mr_reviews.upstream.group
+    params: { group: g1 }
+    reply: { ok: true, headed: true, changed: true }
+  - call: bridge.mr_reviews.upstream.group
+    params: { group: bad group }
+    error: { message: group (a node id) is required }
+  - call: bridge.mr_reviews.upstream.workspace
+    params: { ref: { connection_id: legacy-default, path: /work } }
+    reply: { ok: true, headed: true, changed: true }
+  - call: bridge.mr_reviews.upstream.marks
+    reply:
+      {
+        groups: [g1],
+        skip: [],
+        workspaces: [{ connection_id: legacy-default, path: /work }],
+      }
+  - assert_file:
+      {
+        path: .config/roamgate/settings.json,
+        json: { mr_reviews: { panel: { search: parser } } },
+      }
+  - call: bridge.mr_reviews.agent.get
+    reply: { running: false, error: null, messages: [], queue: [] }
+  - call: bridge.mr_reviews.agent.send
+    params: { text: What is waiting on me?, request_id: q1 }
+    reply: { queued: false, snapshot: { running: true } }
+  - call: bridge.mr_reviews.agent.get
+    until: { running: false }
+    reply:
+      {
+        error: null,
+        messages:
+          [
+            { role: user, text: What is waiting on me? },
+            { role: assistant, text: "{{contains:Reviewed the board.}}" },
+          ],
+      }
+  - fake_calls: { program: claude, argv_match: "stream-json", min: 1 }
+  - call: bridge.mr_reviews.agent.unqueue
+    params: { id: nothing }
+    reply: { removed: false }
+  - call: bridge.mr_reviews.agent.stop
+    reply: { running: false }
+  - call: bridge.mr_reviews.agent.reset
+    reply: { running: false, messages: [], queue: [] }
+  - call: bridge.mr_reviews.agent.send
+    params: { text: "" }
+    error: { message: text is required }
+  - fake_calls:
+      {
+        program: glab,
+        argv_match: "(--method (PUT|PATCH|DELETE))|draft_notes|mutation",
+        count: 0,
+      }

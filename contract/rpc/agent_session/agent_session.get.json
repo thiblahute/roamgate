@@ -4,8 +4,151 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
+    "properties": {
+      "pane_id": {
+        "type": "string"
+      }
+    },
+    "required": ["pane_id"],
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "properties": {
+      "version": {
+        "type": "integer"
+      },
+      "agent": {
+        "type": "string"
+      },
+      "pane_id": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      },
+      "tab_id": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "detail": {
+        "type": "string"
+      },
+      "updated_at": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "session": {
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": ["source", "agent", "kind", "value"],
+        "type": ["null", "object"]
+      },
+      "file": {
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "mtimeMs": {
+            "type": "number"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "identity": {
+            "type": "string"
+          },
+          "changeToken": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "createdAtMs": {
+            "type": "integer"
+          },
+          "modelName": {
+            "type": "string"
+          }
+        },
+        "required": ["path", "mtimeMs", "size", "identity", "changeToken"],
+        "type": ["null", "object"]
+      },
+      "stats": {
+        "properties": {
+          "turns": {
+            "type": "integer"
+          },
+          "records": {
+            "type": "integer"
+          },
+          "token_usage": {
+            "properties": {
+              "input_tokens": {
+                "type": "integer"
+              },
+              "output_tokens": {
+                "type": "integer"
+              }
+            },
+            "required": ["input_tokens", "output_tokens"],
+            "type": ["null", "object"]
+          }
+        },
+        "required": ["turns", "records", "token_usage"],
+        "type": "object"
+      },
+      "title": {
+        "type": "null"
+      },
+      "text": {
+        "type": "null"
+      },
+      "truncated": {
+        "type": "boolean"
+      },
+      "trajectory": {
+        "type": "null"
+      },
+      "command": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "version",
+      "agent",
+      "pane_id",
+      "workspace_id",
+      "tab_id",
+      "status",
+      "detail",
+      "updated_at",
+      "path",
+      "session",
+      "file",
+      "stats",
+      "title",
+      "text",
+      "truncated",
+      "trajectory"
+    ],
+    "type": "object",
+    "x-inferred": "from the parity suite's recordings (agent_sessions); fields seen in every reply are required"
+  },
+  "status": "typed"
 }

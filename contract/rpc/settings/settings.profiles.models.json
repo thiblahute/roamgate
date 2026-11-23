@@ -4,8 +4,44 @@
   "scope": "connection",
   "handler": "server/src/bridge/settings-rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    },
+    "required": ["name"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "fetched_at": {
+        "type": "number"
+      },
+      "missing": {
+        "type": "array"
+      },
+      "models": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": ["fetched_at", "missing", "models", "source"]
+  },
+  "status": "typed",
+  "error": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": ["message"]
+  },
+  "x-typed-from": "parity recordings"
 }

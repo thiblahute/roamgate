@@ -1,0 +1,22 @@
+{
+  "result": {
+    "clients": 2,
+    "terminals": [],
+    "default_connection_id": "legacy-default",
+    "connections": [
+      {
+        "id": "legacy-default",
+        "label": "Default",
+        "source": "legacy-config",
+        "is_default": true,
+        "state": "ready",
+        "generation": 1,
+        "type": "local",
+        "control_socket_path": "$ROOT/herdr/herdr.sock",
+        "client_socket_path": "$ROOT/herdr/client.sock",
+        "auto_connect": true,
+        "read_only": true
+      }
+    ]
+  }
+}

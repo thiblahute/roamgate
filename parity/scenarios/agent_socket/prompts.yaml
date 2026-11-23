@@ -1,0 +1,105 @@
+name: an agent's permission and question hooks wait for the browser's answer
+family: review
+ledger:
+  - "server/src/review/prompts.test.ts > a prompt waits for the browser's answer"
+  - "server/src/review/prompts.test.ts > Claude's questions are answered with the chosen options"
+  - "server/src/review/prompts.test.ts > In the terminal hands a prompt back unanswered"
+description: >
+  With a browser open, a permission prompt and a question wait on the
+  agent socket until answered through review.prompts and
+  review.prompt.answer; with no browser, they answer nothing at once.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1 }]
+    panes: [{ pane_id: "w1:p1", workspace_id: w1, cwd: / }]
+steps:
+  - expect_log:
+      {
+        contains: "connection ready connection=legacy-default",
+        within_ms: 10000,
+      }
+  - agent: permission
+    body:
+      { pane: "w1:p1", agent: Claude, tool: Bash, input: '{"command": "ls"}' }
+    expect: { status: 200, json: { answer: null, $exact: true } }
+  - agent: questions
+    body:
+      {
+        pane: "w1:p1",
+        agent: Claude,
+        questions: '[{"question": "Which?", "options": [{"label": "A"}, {"label": "B"}]}]',
+      }
+    expect: { status: 200, json: { answers: null, $exact: true } }
+  - login: {}
+  - connect: {}
+  - agent: permission
+    no_wait: permission
+    body:
+      {
+        pane: "w1:p1",
+        agent: Claude,
+        tool: Bash,
+        input: '{"command": "ls"}',
+        can_always: "1",
+      }
+  - call: review.prompts
+    until: { prompts: [{ tool: Bash }] }
+    reply:
+      {
+        prompts:
+          [
+            {
+              paneId: "w1:p1",
+              connectionId: legacy-default,
+              agent: Claude,
+              tool: Bash,
+              summary: ls,
+              canAlways: true,
+            },
+          ],
+      }
+    save: { permission: /result/prompts/0/id }
+  - call: review.prompt.answer
+    params: { id: "${permission}", answer: always }
+    reply: { answered: true }
+  - await_http: permission
+    expect: { status: 200, json: { answer: always, $exact: true } }
+  - agent: questions
+    no_wait: questions
+    body:
+      {
+        pane: "w1:p1",
+        agent: Claude,
+        questions: '[{"question": "Which?", "options": [{"label": "A"}, {"label": "B"}]}]',
+      }
+  - call: review.prompts
+    until: { prompts: [{ tool: AskUserQuestion }] }
+    reply: { prompts: [{ tool: AskUserQuestion }] }
+    save: { question: /result/prompts/0/id }
+  - call: review.prompt.answer
+    params: { id: "${question}", answers: { "Which?": B } }
+    reply: { answered: true }
+  - await_http: questions
+    expect: { status: 200, json: { answers: { "Which?": B } } }
+  - agent: permission
+    no_wait: dismissed
+    body: { pane: "w1:p1", agent: Claude, tool: Edit, input: "{}" }
+  - call: review.prompts
+    until: { prompts: [{ tool: Edit }] }
+    reply: { prompts: [{ tool: Edit }] }
+    save: { edit: /result/prompts/0/id }
+  - call: review.prompt.answer
+    params: { id: "${edit}", answer: maybe }
+    error: { message: "answer must be allow, always, deny or dismiss" }
+  - call: review.prompt.answer
+    params: { id: "${edit}", release: true }
+    reply: { answered: true }
+  - await_http: dismissed
+    expect: { status: 200, json: { answer: null } }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: review.prompt.answer,
+      kind: mismatch,
+      reason: "an answer that is not one: the case checks the refusal",
+    }

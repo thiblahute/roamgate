@@ -1,0 +1,27 @@
+name: HERDR_GUI_UPLOAD_MAX_BYTES bounds a terminal upload and HERDR_GUI_UPLOAD_RETENTION_HOURS how long it stays
+family: env
+ledger:
+  - "server/src/http/terminal-upload.test.ts > sweeps expired uploads at startup and without a later upload"
+description: >
+  An upload past the limit is refused with 413. A staged upload stays for
+  the retention hours: the cleanup runs on the server's clock (every hour at
+  most), comparing it with the upload's real modification time, so the clock
+  starts at the real time here.
+server:
+  epoch: now
+  env:
+    { HERDR_GUI_UPLOAD_MAX_BYTES: "8", HERDR_GUI_UPLOAD_RETENTION_HOURS: "2" }
+steps:
+  - login: {}
+  - http: POST /api/terminal-upload?filename=big.txt
+    text: "more than eight bytes"
+    expect: { status: 413, json: { error: "file too large (>8 bytes)" } }
+  - http: POST /api/terminal-upload?filename=small.txt
+    text: "8 bytes."
+    expect: { status: 200, json: { path: "{{string}}" } }
+    save: { upload: /json/path }
+  - assert_file: { path: "${upload}", text: "8 bytes." }
+  - advance: 3660000
+  - assert_file: { path: "${upload}", text: "8 bytes." }
+  - advance: 3660000
+  - assert_absent: "${upload}"

@@ -6,6 +6,15 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "mode": {
+        "enum": ["terminal", "conversation"]
+      }
+    },
+    "additionalProperties": false,
+    "required": ["mode"]
+  },
+  "status": "typed"
 }

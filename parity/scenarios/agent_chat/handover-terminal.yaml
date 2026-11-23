@@ -1,0 +1,181 @@
+name: conversation mode hands the session back to the terminal, and refuses what the pane cannot do
+family: agent_chat
+ledger:
+  - "server/src/conversation/service.test.ts > events reach only the pane's subscribers, until they go"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/work" }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        cwd: "${ROOT}/work"
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+    terminals:
+      p1: { args: [--model, opus] }
+  files:
+    "${ROOT}/work/.keep": ""
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2025-12-31T23:59:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message: { role: user, content: hello },
+          }
+        - {
+            type: assistant,
+            uuid: a1,
+            timestamp: "2025-12-31T23:59:01.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              {
+                id: msg_0,
+                role: assistant,
+                model: claude-opus,
+                content: [{ type: text, text: Hi there }],
+              },
+          }
+  fakes:
+    claude:
+      default_turn:
+        - { $echo_user: true }
+        - {
+            type: system,
+            subtype: init,
+            session_id: "{{session_id}}",
+            cwd: /work,
+            model: claude-opus,
+          }
+        - {
+            type: assistant,
+            message:
+              {
+                id: msg_n,
+                role: assistant,
+                model: claude-opus,
+                content: [{ type: text, text: "Done: {{user_text}}" }],
+              },
+          }
+        - {
+            type: result,
+            subtype: success,
+            is_error: false,
+            result: "Done: {{user_text}}",
+            session_id: "{{session_id}}",
+          }
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent_chat.handover
+    id: handover
+    no_wait: true
+    params: { pane_id: p1, to: conversation }
+  - await: handover
+    advance_every: 200
+    within_ms: 30000
+    reply: { ok: true, owner: conversation }
+  - call: agent_chat.subscribe
+    params: { pane_id: p1 }
+  - call: agent_chat.send
+    params: { pane_id: p1, text: first }
+    within_ms: 20000
+  - expect_push: "event:agent_chat.result"
+  - expect_push: "event:agent_chat.status"
+    message: { data: { status: idle } }
+  # The holder runs in a shell without job control (no terminal): it
+  # cannot stop as a job, so the chat's Ctrl+Z is refused.
+  - call: agent_chat.handover
+    params: { pane_id: p1, to: terminal, suspend: true, title: my chat }
+    within_ms: 20000
+    reply: { ok: false, reason: "{{contains:cannot stop as a shell job}}" }
+  - call: agent_chat.fg
+    params: { pane_id: p1 }
+    reply: { ok: false, reason: No conversation is stopped in this pane }
+  - call: agent_chat.handover.cancel
+    params: { pane_id: p1 }
+    reply: { ok: true, cleared: false }
+  # Recover on a healthy conversation: its process starts anew.
+  - call: agent_chat.recover
+    id: recover
+    no_wait: true
+    params: { pane_id: p1 }
+  - await: recover
+    advance_every: 200
+    within_ms: 30000
+    reply: { ok: true, $exact: true }
+  - expect_push: "event:agent_chat.status"
+    within_ms: 20000
+    message: { data: { status: idle } }
+  - drain: {}
+  - call: agent_chat.handover
+    id: back
+    no_wait: true
+    params: { pane_id: p1, to: terminal }
+  - await: back
+    advance_every: 200
+    within_ms: 30000
+    reply:
+      {
+        ok: true,
+        owner: terminal,
+        session_id: 11111111-2222-4333-8444-555555555555,
+        confirmed: true,
+      }
+  - expect_pushes:
+      - {
+          push: "event:agent_chat.lease",
+          message:
+            {
+              data:
+                {
+                  owner: conversation,
+                  phase: to_terminal,
+                  session_id: 11111111-2222-4333-8444-555555555555,
+                },
+            },
+        }
+      - {
+          push: "event:agent_chat.status",
+          message: { data: { status: stopped } },
+        }
+      - {
+          push: "event:agent_chat.lease",
+          message:
+            { data: { owner: terminal, phase: terminal, session_id: null } },
+        }
+  - expect_push: "event:roamgate.conversation_lease"
+    message: { event: roamgate.conversation_lease, data: { pane_id: p1 } }
+  - call: agent_chat.state
+    params: { pane_id: p1 }
+    reply:
+      { owner: terminal, phase: terminal, session_id: null, status: stopped }
+  # The holder resumed claude in the terminal; this fake claude has quit
+  # since, so there is no TUI to hand over again.
+  - call: agent_chat.handover
+    id: again
+    no_wait: true
+    params: { pane_id: p1, to: conversation }
+  - await: again
+    advance_every: 200
+    within_ms: 30000
+    reply: { ok: false, reason: "{{string}}" }
+  - fake_calls:
+      {
+        program: claude,
+        argv_match: "^--model opus -p --resume 11111111-2222-4333-8444-555555555555 --input-format stream-json",
+        count: 2,
+      }
+  - call: agent_chat.unsubscribe
+    params: { pane_id: p1 }
+    reply: { ok: true, $exact: true }

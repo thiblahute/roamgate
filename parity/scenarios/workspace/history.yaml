@@ -1,0 +1,57 @@
+name: the settings history is a git repository the server commits to, configured over HTTP
+family: history
+tier: T2
+description: >
+  /api/history reports the settings history (a git repository of the data
+  files, ROAMGATE_HISTORY_DIR); PUT turns it on or off and moves it,
+  /api/history/commit commits now. Changes need the settings header and
+  JSON, never from another site. ROAMGATE_HISTORY=off starts it disabled.
+server:
+  env: { ROAMGATE_HISTORY_DIR: "${ROOT}/history", ROAMGATE_HISTORY: "off" }
+steps:
+  - login: {}
+  - http: GET /api/history
+    normalize: [run-paths, iso-time, timestamps-ms, git-sha, byte-sizes]
+    expect:
+      {
+        status: 200,
+        headers: { cache-control: no-store },
+        json: { enabled: false },
+      }
+    golden: status-off
+  - http: PUT /api/history
+    body: { enabled: true }
+    expect: { status: 403 }
+  - http: PUT /api/history
+    headers: { x-roamgate-settings: "1", sec-fetch-site: cross-site }
+    body: { enabled: true }
+    expect: { status: 403 }
+  - http: PUT /api/history
+    headers: { x-roamgate-settings: "1" }
+    body: { enabled: "yes" }
+    expect: { status: 400, json: { error: enabled is true or false } }
+  - http: PUT /api/history
+    headers: { x-roamgate-settings: "1" }
+    body: { enabled: true }
+    normalize: [run-paths, iso-time, timestamps-ms, git-sha, byte-sizes]
+    expect: { status: 200, json: { enabled: true } }
+    golden: status-on
+  - http: GET /api/history/commit
+    expect: { status: 405 }
+  - http: POST /api/history/commit
+    headers: { x-roamgate-settings: "1" }
+    body: {}
+    normalize: [run-paths, iso-time, timestamps-ms, git-sha, byte-sizes]
+    expect: { status: 200 }
+    golden: committed
+  - sh: git -C history log --format=%s | head -3
+    expect: { exit: 0, stdout: "{{re:.+}}" }
+    golden: log
+  - http: PUT /api/history
+    headers: { x-roamgate-settings: "1" }
+    body: { location: 42 }
+    expect: { status: 400, json: { error: location is a path or null } }
+  - http: PUT /api/history
+    headers: { x-roamgate-settings: "1" }
+    body: { enabled: false }
+    expect: { status: 200, json: { enabled: false } }

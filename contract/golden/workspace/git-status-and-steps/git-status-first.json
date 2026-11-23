@@ -1,0 +1,23 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "event": "workspace.git_status",
+  "data": {
+    "type": "workspace.git_status",
+    "statuses": [
+      {
+        "checkout_path": "$ROOT/repo",
+        "git_status": {
+          "ahead": 0,
+          "behind": 0,
+          "staged": 0,
+          "unstaged": 0,
+          "untracked": 0,
+          "conflicted": 0,
+          "dirty": false,
+          "branch": "main"
+        }
+      }
+    ]
+  }
+}

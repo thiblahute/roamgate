@@ -1,0 +1,17 @@
+name: a call handoff is redeemed without login, its token the only credential
+family: voice
+ledger:
+  - "server/src/http/auth-process.test.ts > a call handoff is redeemed without login, its token the only credential"
+steps:
+  - http: POST /api/voice/call/handoff
+    body: { handoff: not-a-token }
+    expect: { status: 410, headers: { set-cookie: "{{absent}}" } }
+  - http: POST /api/voice/call/handoff/x
+    expect: { status: 401 }
+contract_exceptions:
+  - {
+      surface: http,
+      name: "POST /api/voice/call/handoff/x",
+      kind: unlisted,
+      reason: "no such route: the case checks it stays behind the login",
+    }

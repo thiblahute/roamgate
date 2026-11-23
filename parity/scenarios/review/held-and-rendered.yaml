@@ -1,0 +1,111 @@
+name: held comments wait among the workspace's comments to send; a rendered file is framed in the sandbox with its storage
+family: review
+covers:
+  - "http:GET /rendered/{token}/{path}"
+  - "http:HEAD /rendered/{token}/{path}"
+ledger:
+  - "server/src/review/rpc.test.ts > a branch (head, a work item's branch link) is reviewed against the default branch, in the checkout at the path"
+  - "server/src/review/rpc.test.ts > a page's storage write reaches the connection with its token, checked"
+  - "server/src/review/rpc.test.ts > a page asks for summaries: each review counted, its threads read only for what it shows"
+description: >
+  A comment written held stays out of the agent's way until moved or let
+  go (handed in one prompt). A rendered review's page is served under its
+  token (GET and HEAD, the sandbox CSP), what the page stores is kept per
+  site and cleared on request, and a branch is opened by its name.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes: [{ pane_id: "w1:p1", workspace_id: w1, cwd: "${ROOT}/repo" }]
+steps:
+  - sh: |
+      export GIT_AUTHOR_DATE=2025-12-31T12:00:00Z GIT_COMMITTER_DATE=2025-12-31T12:00:00Z
+      git init -q repo && cd repo
+      printf 'one\ntwo\n' > f.txt && printf '<!doctype html><title>Doc</title><p>Hello page</p>\n' > page.html && git add . && git commit -qm init
+      git checkout -qb feature && printf 'one\nTWO\n' > f.txt && git commit -qam change
+  - login: {}
+  - connect: {}
+  - call: review.open
+    params: { workspace_id: w1, path: "${ROOT}/repo", head: feature }
+    reply: { session: { target: { kind: range, base: main, head: feature } } }
+    save: { session: /result/session/id }
+  - call: review.open
+    params: { workspace_id: w1, path: "${ROOT}/repo", head: --bad }
+    error: { message: head must be a branch name }
+  - call: review.thread.add
+    params:
+      {
+        session_id: "${session}",
+        kind: discussion,
+        text: Later,
+        anchor: { path: f.txt, line: 2 },
+        held: 1,
+      }
+    reply: { held: 1 }
+    save: { held: /result/comments/0/id }
+  - call: review.thread.move
+    params: { session_id: "${session}", comment_id: "${held}", held: 3 }
+    reply: { held: 3 }
+  - call: review.thread.release
+    params: { session_id: "${session}", comment_id: "${held}", handed: true }
+    reply: { held: "{{absent}}", handedAt: "{{string}}" }
+  - call: review.thread.move
+    params: { session_id: "${session}", comment_id: "${held}", held: 1 }
+    error: { message: that comment is not held }
+  - call: review.open
+    params:
+      {
+        workspace_id: w1,
+        target: { kind: rendered },
+        file: "${ROOT}/repo/page.html",
+      }
+    reply: { session: { target: { kind: rendered } } }
+    save: { rendered: /result/session/id }
+  - call: review.rendered.page
+    params: { session_id: "${rendered}" }
+    reply: { src: "{{re:^/rendered/}}", mode: "{{string}}" }
+    save: { src: /result/src }
+  - http: GET ${src}
+    cookie: false
+    expect:
+      {
+        status: 200,
+        headers: { content-security-policy: "{{contains:sandbox}}" },
+        text_contains: Hello page,
+      }
+  - http: HEAD ${src}
+    cookie: false
+    expect: { status: 200 }
+  - call: review.rendered.page
+    params:
+      {
+        svg: "<svg xmlns='http://www.w3.org/2000/svg' width='4' height='4'><rect width='4' height='4'/></svg>",
+        color: "#000",
+      }
+    reply: { src: "{{re:^/rendered/}}" }
+  - call: review.rendered.page
+    params: { session_id: "${session}" }
+    error: { message: not a rendered review }
+  - call: review.rendered.storage
+    params: { token: nope, write: { op: set, key: k, value: v } }
+    any_outcome: true
+    golden: storage-unknown-token
+  - call: review.rendered.storage
+    params: { token: nope, write: { op: bogus } }
+    error: { message: invalid storage write }
+  - call: review.rendered.storage.clear
+    params: { site: "${ROOT}/repo" }
+    reply: { cleared: true, $exact: true }
+  - call: review.rendered.storage.clear
+    params: {}
+    error: { message: invalid site }
+  - call: review.list
+    params: { summaries: 1 }
+    golden: summaries
+    normalize: [opaque-stamps, hex-id, run-paths]
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: review.rendered.storage,
+      kind: mismatch,
+      reason: "a write that is not one: the case checks the refusal",
+    }

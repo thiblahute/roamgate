@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "json": {
+    "enabled": true,
+    "location": "$ROOT/history",
+    "defaultLocation": "$ROOT/history",
+    "exists": false,
+    "lastCommit": null,
+    "commits": 0,
+    "sizeBytes": "{{bytes}}",
+    "files": {},
+    "lastPass": null,
+    "blocked": [],
+    "errors": [],
+    "pending": ["mr-reviews", "settings"],
+    "running": false,
+    "deferred": null
+  }
+}

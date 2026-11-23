@@ -4,8 +4,31 @@
   "scope": "connection",
   "handler": "server/src/bridge/forward-rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "port": {
+        "type": "integer"
+      },
+      "remote_port": {
+        "type": "integer"
+      },
+      "direction": {
+        "enum": ["local", "remote"]
+      },
+      "label": {
+        "type": "string"
+      }
+    }
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "required": ["forward"],
+    "properties": {
+      "forward": {
+        "$ref": "../../schemas/server.schema.json#/$defs/ForwardWire"
+      }
+    },
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

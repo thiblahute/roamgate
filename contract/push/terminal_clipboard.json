@@ -2,10 +2,31 @@
   "x-inventory": "terminal_clipboard",
   "x-kind": "keyed",
   "x-sent-by": ["server/src/bridge/terminal-bridge.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["terminal_clipboard"],
   "properties": {
-    "terminal_clipboard": {}
-  }
+    "terminal_clipboard": {
+      "type": "object",
+      "required": ["terminal_id", "data"],
+      "properties": {
+        "terminal_id": {
+          "type": "string"
+        },
+        "data": {
+          "type": "string",
+          "description": "base64 clipboard content (OSC 52)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "connection_id": {
+      "type": "string"
+    },
+    "connection_generation": {
+      "type": "integer"
+    }
+  },
+  "description": "What a terminal program copied (OSC 52), sent to the browser that typed in it last.",
+  "additionalProperties": false
 }

@@ -1,0 +1,31 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "session": {
+      "id": "{{id}}",
+      "connectionId": "legacy-default",
+      "workspaceId": "w1",
+      "root": "$ROOT/repo",
+      "title": "gitlab.example.com/g/p/-/merge_requests/1",
+      "target": {
+        "kind": "mr",
+        "url": "https://gitlab.example.com/g/p/-/merge_requests/1"
+      },
+      "gitlab": true,
+      "autoSend": true,
+      "summary": "",
+      "agent": {},
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    },
+    "threads": [],
+    "mergeRequest": {
+      "url": "https://gitlab.example.com/g/p/-/merge_requests/1",
+      "title": "The feature",
+      "state": "opened",
+      "headSha": "d200e92de7043a0c719298ef08282897dbb5d8e9",
+      "security": false
+    }
+  }
+}

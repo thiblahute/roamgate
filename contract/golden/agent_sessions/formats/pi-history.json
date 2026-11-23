@@ -1,0 +1,48 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "version": 1,
+    "agent": "pi",
+    "pane_id": "pi",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "status": "ok",
+    "detail": "",
+    "updated_at": "{{file-stat}}",
+    "path": "$ROOT/pi/sessions/--work--/2026-01-01T00-00-00-000Z_22222222-0000-4000-8000-000000000002.jsonl",
+    "session": {
+      "source": "pi",
+      "agent": "pi",
+      "kind": "id",
+      "value": "22222222-0000-4000-8000-000000000002"
+    },
+    "file": {
+      "path": "$ROOT/pi/sessions/--work--/2026-01-01T00-00-00-000Z_22222222-0000-4000-8000-000000000002.jsonl",
+      "mtimeMs": "{{file-stat}}",
+      "size": 885,
+      "identity": "{{file-stat}}",
+      "changeToken": "{{file-stat}}"
+    },
+    "messages": [
+      {
+        "id": "2026-01-01T00-00-00-000Z_22222222-0000-4000-8000-000000000002.jsonl:1",
+        "role": "user",
+        "text": "run it",
+        "sent_at": "2026-01-01T00:00:01.000Z"
+      },
+      {
+        "id": "2026-01-01T00-00-00-000Z_22222222-0000-4000-8000-000000000002.jsonl:2",
+        "role": "assistant",
+        "text": "Running",
+        "sent_at": "2026-01-01T00:00:02.000Z"
+      },
+      {
+        "id": "2026-01-01T00-00-00-000Z_22222222-0000-4000-8000-000000000002.jsonl:4",
+        "role": "assistant",
+        "text": "Failed",
+        "sent_at": "2026-01-01T00:00:04.000Z"
+      }
+    ]
+  }
+}

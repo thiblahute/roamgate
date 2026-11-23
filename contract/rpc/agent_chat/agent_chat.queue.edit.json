@@ -4,8 +4,34 @@
   "scope": "connection",
   "handler": "server/src/conversation/rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "required": ["pane_id", "id"],
+    "properties": {
+      "pane_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[\\w-]{1,100}$"
+      },
+      "text": {
+        "type": "string",
+        "maxLength": 200000
+      }
+    },
+    "additionalProperties": false
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "edited": {
+        "type": "boolean"
+      }
+    },
+    "required": ["edited"],
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

@@ -1,0 +1,56 @@
+[package]
+name = "roamgate-parity"
+version = "0.0.0"
+description = "Roamgate's parity suite: drives a server (Bun or Rust) from outside, with fakes for everything it talks to"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "parity-fake"
+path = "src/bin/parity-fake.rs"
+
+[[test]]
+name = "scenarios"
+harness = false
+
+[[test]]
+name = "gate"
+
+[[test]]
+name = "vectors"
+
+[[test]]
+name = "fakes"
+
+[[test]]
+name = "check"
+
+[dependencies]
+aes-gcm = "0.10"
+anyhow = "1"
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
+base64 = "0.22"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+herdr-api = { path = "herdr-api" }
+hkdf = "0.12"
+jsonschema = { version = "0.33", default-features = false }
+libtest-mimic = "0.8"
+p256 = { version = "0.13", features = ["ecdh", "ecdsa"] }
+regex = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml = "0.9"
+sha2 = "0.10"
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.28"
+walkdir = "2"
+zstd = "0.13"

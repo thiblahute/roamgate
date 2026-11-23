@@ -1,0 +1,166 @@
+name: "the chat's ! lines run in the pane's directory with the login shell, and go to claude with the next message"
+family: agent_chat
+ledger:
+  - "server/src/conversation/service.test.ts > a `!` line runs on the host and reaches Claude, in bash-mode format, with the next message only"
+server:
+  env: { SHELL: /bin/sh }
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/work" }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        cwd: "${ROOT}/work"
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+    terminals:
+      p1: { args: [--model, opus] }
+  files:
+    "${ROOT}/work/.keep": ""
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2025-12-31T23:59:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message: { role: user, content: hello },
+          }
+        - {
+            type: assistant,
+            uuid: a1,
+            timestamp: "2025-12-31T23:59:01.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              {
+                id: msg_0,
+                role: assistant,
+                model: claude-opus,
+                content: [{ type: text, text: Hi there }],
+              },
+          }
+  fakes:
+    claude:
+      default_turn:
+        - { $echo_user: true }
+        - {
+            type: system,
+            subtype: init,
+            session_id: "{{session_id}}",
+            cwd: /work,
+            model: claude-opus,
+          }
+        - {
+            type: assistant,
+            message:
+              {
+                id: msg_n,
+                role: assistant,
+                model: claude-opus,
+                content: [{ type: text, text: "Done: {{user_text}}" }],
+              },
+          }
+        - {
+            type: result,
+            subtype: success,
+            is_error: false,
+            result: "Done: {{user_text}}",
+            session_id: "{{session_id}}",
+          }
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent_chat.handover
+    id: handover
+    no_wait: true
+    params: { pane_id: p1, to: conversation }
+  - await: handover
+    advance_every: 200
+    within_ms: 30000
+    reply: { ok: true, owner: conversation }
+  - call: agent_chat.subscribe
+    params: { pane_id: p1 }
+  - call: agent_chat.shell
+    params: { pane_id: p1, command: echo hi from the shell, id: sh1 }
+    within_ms: 20000
+    reply: { id: sh1, $exact: true }
+  - expect_push: "event:agent_chat.shell"
+    within_ms: 10000
+    message:
+      {
+        data:
+          {
+            shell:
+              {
+                id: sh1,
+                command: echo hi from the shell,
+                status: done,
+                stdout: "hi from the shell\n",
+                stderr: "",
+                truncated: false,
+                exit_code: 0,
+                cwd: "${ROOT}/work",
+                started_at: "{{time}}",
+                finished_at: "{{time}}",
+              },
+          },
+      }
+  - call: agent_chat.shell.stop
+    params: { pane_id: p1, id: sh1 }
+    reply: { stopped: false, $exact: true }
+  - call: agent_chat.shell.stop
+    params: { pane_id: p1 }
+    error: { message: id is required }
+  - call: agent_chat.shell
+    params: { pane_id: p1, command: "   " }
+    error: { message: invalid command }
+  # A long one, stopped: its job ends and the chat says so.
+  - call: agent_chat.shell
+    params: { pane_id: p1, command: sleep 30, id: sh2 }
+    within_ms: 20000
+    reply: { id: sh2, $exact: true }
+  - call: agent_chat.shell.stop
+    params: { pane_id: p1, id: sh2 }
+    reply: { stopped: true, $exact: true }
+  - expect_push: "event:agent_chat.shell"
+    within_ms: 10000
+    message: { data: { shell: { id: sh2, status: stopped, exit_code: null } } }
+  # The lines go to claude before the next message, as Claude Code's own
+  # bash mode records them.
+  - call: agent_chat.send
+    params: { pane_id: p1, text: what did it say }
+    within_ms: 20000
+  - expect_pushes:
+      - {
+          push: "event:agent_chat.user",
+          message: { data: { text: what did it say } },
+        }
+      - {
+          push: "event:agent_chat.block_stop",
+          message:
+            {
+              data:
+                {
+                  text: "{{contains:<bash-stdout>hi from the shell\n</bash-stdout>}}",
+                },
+            },
+        }
+      - {
+          push: "event:agent_chat.result",
+          message: { data: { subtype: success } },
+        }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: agent_chat.shell.stop,
+      kind: mismatch,
+      reason: "a stop without an id, refused on purpose",
+    }

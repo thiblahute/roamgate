@@ -6,6 +6,15 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false,
+    "required": ["enabled"]
+  },
+  "status": "typed"
 }

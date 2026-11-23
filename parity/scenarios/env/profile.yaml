@@ -1,0 +1,25 @@
+name: ROAMGATE_PROFILE samples the CPU for ROAMGATE_PROFILE_DURATION seconds into ROAMGATE_PROFILE_DIR
+family: env
+ledger:
+  - "server/src/utils/cpu-profile.test.ts > CPU profile: ${mode}"
+description: >
+  The profile ends on the server's clock: after the duration a
+  roamgate-<id> directory under the profile directory holds cpu.json and
+  summary.txt.
+server:
+  env:
+    {
+      ROAMGATE_PROFILE: "1",
+      ROAMGATE_PROFILE_DURATION: "2",
+      ROAMGATE_PROFILE_DIR: "${ROOT}/profiles",
+    }
+steps:
+  - login: {}
+  - advance: 2500
+  - sh: ls profiles/roamgate-*/cpu.json profiles/roamgate-*/summary.txt | sed 's#roamgate-[^/]*#roamgate-ID#'
+    within_ms: 20000
+    expect:
+      {
+        exit: 0,
+        stdout: "profiles/roamgate-ID/cpu.json\nprofiles/roamgate-ID/summary.txt\n",
+      }

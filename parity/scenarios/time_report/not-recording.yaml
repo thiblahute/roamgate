@@ -1,0 +1,21 @@
+name: day and refresh say so while the activity log is off
+family: time_report
+server:
+  files:
+    .config/roamgate/settings.json:
+      { json: { time_report: { command: [time-report-provider] } } }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.time_report
+    params: { op: day, date: "2026-01-01" }
+    reply:
+      {
+        ok: false,
+        error: Activity recording is off (activity.enabled).,
+        code: not_configured,
+      }
+  - call: bridge.time_report
+    params: { op: refresh, date: "2026-01-01" }
+    reply: { ok: false, code: not_configured }
+  - fake_calls: { program: time-report-provider, count: 0 }

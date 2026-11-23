@@ -1,0 +1,267 @@
+name: a confirmed task binds the mentioned session after a reconnect and refuses a replaced session
+family: assistant
+ledger:
+  - "server/src/assistant/mention-task.integration.test.ts > confirmed task binds the selected session after reconnect and blocks replacement notifications (replaced: %s)"
+server:
+  herdr: false
+  start: false
+  herdrs:
+    healthy:
+      endpoint: true
+      workspaces:
+        - workspace_id: w1
+          label: Recovery workspace
+          worktree:
+            {
+              repo_key: workspace,
+              repo_name: workspace,
+              repo_root: "${ROOT}/workspace",
+              checkout_path: "${ROOT}/workspace",
+              is_linked_worktree: false,
+            }
+      panes:
+        [
+          {
+            pane_id: p1,
+            workspace_id: w1,
+            cwd: "${ROOT}/workspace",
+            agent: codex,
+            label: Codex,
+          },
+        ]
+      agents:
+        - {
+            pane_id: p1,
+            agent: codex,
+            agent_status: working,
+            agent_session:
+              { source: codex, agent: codex, kind: id, value: session-one },
+          }
+      responses:
+        pane.process_info:
+          {
+            type: pane_process_info,
+            process_info:
+              {
+                pane_id: p1,
+                shell_pid: 4242,
+                foreground_processes: [{ pid: 4243, name: codex }],
+              },
+          }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ASSISTANT_DIR: "${ROOT}/ranger"
+    PI_CODING_AGENT_DIR: "${ROOT}/pi"
+  openai:
+    anthropic:
+      replies:
+        - {
+            "tools":
+              [
+                {
+                  "name": "propose_ranger_task",
+                  "id": "monitor-proposal",
+                  "input":
+                    {
+                      "title": "Monitor selected Agent",
+                      "prompt": "Notify when the selected Agent finishes",
+                      "scope":
+                        [{ "connection_id": "healthy", "workspace_id": "w1" }],
+                      "schedule": { "type": "interval", "minutes": 1 },
+                      "notification_mode": "agent",
+                    },
+                },
+              ],
+          }
+        - { "text": "Confirm the task to watch the Agent." }
+        - {
+            "tools":
+              [
+                {
+                  "name": "send_user_notification",
+                  "id": "notify-agent",
+                  "input":
+                    {
+                      "event_key": "selected-agent:finished",
+                      "kind": "completed",
+                      "title": "Agent completed",
+                      "body": "The selected session finished successfully.",
+                    },
+                },
+              ],
+          }
+        - { "text": "Notified." }
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 1
+        default_connection_id: healthy
+        profiles:
+          - {
+              id: healthy,
+              label: Healthy,
+              type: local,
+              control_socket_path: "${HERDR_healthy_CONTROL}",
+              client_socket_path: "${HERDR_healthy_CLIENT}",
+              auto_connect: true,
+            }
+    "${ROOT}/ranger/auth.json":
+      {
+        mode: "0600",
+        json: { anthropic: { type: api_key, key: synthetic-recovery-key } },
+      }
+    "${ROOT}/ranger/models.json":
+      {
+        mode: "0600",
+        json: { providers: { anthropic: { baseUrl: "${FAKE_HTTP}" } } },
+      }
+steps:
+  - sh: chmod 700 ranger && mkdir -p workspace
+  - start: {}
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    params: { id: healthy }
+    reply: { state: ready }
+  - call: bridge.assistant.configure
+    params:
+      {
+        config:
+          {
+            provider: anthropic,
+            model: claude-haiku-4-5,
+            credential_source: assistant,
+            allowed_workspaces: [{ connection_id: healthy, workspace_id: w1 }],
+          },
+      }
+  - call: bridge.assistant.mentions
+    params: { scope: [{ connection_id: healthy, workspace_id: w1 }] }
+    reply:
+      {
+        targets:
+          {
+            $contains:
+              [
+                {
+                  kind: agent,
+                  pane_id: p1,
+                  agent: codex,
+                  terminal_id: term-p1,
+                },
+              ],
+          },
+      }
+    save:
+      identity: "/result/targets/[kind=agent]/agent_identity"
+      generation: "/result/targets/[kind=agent]/runtime_generation"
+      label: "/result/targets/[kind=agent]/label"
+      workspace_label: "/result/targets/[kind=agent]/workspace_label"
+      connection_label: "/result/targets/[kind=agent]/connection_label"
+  - call: bridge.assistant.send
+    params:
+      request_id: monitor-agent
+      text: Monitor @Codex
+      mentions:
+        - {
+            kind: agent,
+            connection_id: healthy,
+            workspace_id: w1,
+            connection_label: "${connection_label}",
+            workspace_label: "${workspace_label}",
+            runtime_generation: "${generation}",
+            label: "${label}",
+            pane_id: p1,
+            terminal_id: term-p1,
+            agent: codex,
+            agent_identity: "${identity}",
+            start: 8,
+            end: 14,
+          }
+  - expect_push: assistant
+    message:
+      assistant:
+        running: false
+        messages:
+          {
+            $contains:
+              [
+                {
+                  task_proposals:
+                    [
+                      {
+                        status: pending,
+                        mentions:
+                          [
+                            {
+                              kind: agent,
+                              pane_id: p1,
+                              agent_identity: "${identity}",
+                            },
+                          ],
+                      },
+                    ],
+                },
+              ],
+          }
+    save:
+      {
+        proposal_id: "/assistant/messages/[role=assistant]/task_proposals/0/id",
+      }
+  - call: bridge.assistant.task.confirm_proposal
+    params: { proposal_id: "${proposal_id}" }
+    save: { task: /result/tasks/0/id }
+  # A reconnect: the connection's runtime generation moves on.
+  - call: connections.disconnect
+    params: { id: healthy }
+  - call: connections.connect
+    params: { id: healthy }
+    reply: { state: ready }
+  - herdr_seed:
+      endpoint: true
+      workspaces:
+        - workspace_id: w1
+          label: Recovery workspace
+          worktree:
+            {
+              repo_key: workspace,
+              repo_name: workspace,
+              repo_root: "${ROOT}/workspace",
+              checkout_path: "${ROOT}/workspace",
+              is_linked_worktree: false,
+            }
+      panes:
+        [
+          {
+            pane_id: p1,
+            workspace_id: w1,
+            cwd: "${ROOT}/workspace",
+            agent: codex,
+            label: Codex,
+          },
+        ]
+      agents:
+        - {
+            pane_id: p1,
+            agent: codex,
+            agent_status: working,
+            agent_session:
+              { source: codex, agent: codex, kind: id, value: session-two },
+          }
+      responses:
+        pane.process_info:
+          {
+            type: pane_process_info,
+            process_info:
+              {
+                pane_id: p1,
+                shell_pid: 4242,
+                foreground_processes: [{ pid: 4243, name: codex }],
+              },
+          }
+    herdr: healthy
+  - call: bridge.assistant.task.run_now
+    params: { task_id: "${task}" }
+    error: { message: "{{contains:Mentioned agent session changed}}" }
+  - expect_no_push: assistant_notification
+  - http_fake_calls: { fake: anthropic, count: 2 }

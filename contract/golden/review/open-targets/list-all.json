@@ -1,0 +1,90 @@
+{
+  "status": 200,
+  "json": [
+    {
+      "id": "{{id}}",
+      "title": "main..HEAD",
+      "target": "main..HEAD",
+      "root": "$ROOT/repo",
+      "gitlab": false,
+      "summary": "",
+      "handoff_at": null,
+      "agent": {
+        "name": "Claude",
+        "paneId": "w1:p1"
+      },
+      "updated_at": "2026-01-01T00:00:00.000Z",
+      "threads": 1
+    },
+    {
+      "id": "{{id}}",
+      "title": "main vs feature",
+      "target": "main vs feature",
+      "root": "$ROOT/repo",
+      "gitlab": false,
+      "summary": "",
+      "handoff_at": null,
+      "agent": {
+        "name": "Claude"
+      },
+      "updated_at": "2026-01-01T00:00:00.000Z",
+      "threads": 0
+    },
+    {
+      "id": "{{id}}",
+      "title": "working tree",
+      "target": "working tree",
+      "root": "$ROOT/repo",
+      "gitlab": false,
+      "summary": "",
+      "handoff_at": null,
+      "agent": {
+        "name": "Claude"
+      },
+      "updated_at": "2026-01-01T00:00:00.000Z",
+      "threads": 0
+    },
+    {
+      "id": "{{id}}",
+      "title": "doc.html",
+      "target": "doc.html",
+      "root": "$ROOT/repo",
+      "gitlab": false,
+      "summary": "",
+      "handoff_at": null,
+      "agent": {
+        "name": "Claude"
+      },
+      "updated_at": "2026-01-01T00:00:00.000Z",
+      "threads": 0
+    },
+    {
+      "id": "{{id}}",
+      "title": "https://example.invalid/page",
+      "target": "https://example.invalid/page",
+      "root": "$ROOT/repo",
+      "gitlab": false,
+      "summary": "",
+      "handoff_at": null,
+      "agent": {
+        "name": "Claude"
+      },
+      "updated_at": "2026-01-01T00:00:00.000Z",
+      "threads": 0
+    },
+    {
+      "id": "{{id}}",
+      "title": "main..feature",
+      "target": "main..feature",
+      "root": "$ROOT/other",
+      "gitlab": false,
+      "summary": "",
+      "handoff_at": null,
+      "agent": {
+        "name": "Claude"
+      },
+      "updated_at": "2026-01-01T00:00:00.000Z",
+      "threads": 0
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+name: the session's topology through the bridge, the Workspaces arrangement, status and pausing other browsers
+family: workspace
+description: >
+  Herdr's workspace, tab and pane methods the bridge intercepts (creation
+  with a checked path, renames, typed input), the server-wide Workspaces
+  arrangement with its push to every browser, bridge.status and
+  bridge.pause_others with its control push.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes:
+      [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/repo", focused: true }]
+steps:
+  - sh: mkdir -p repo other && cd repo && git init -q
+  - login: {}
+  - connect: {}
+  - connect: { name: second }
+  - call: workspace.list
+    normalize: [run-paths]
+    golden: workspace-list
+  - call: tab.list
+    params: { workspace_id: w1 }
+    reply: { tabs: [{ tab_id: "w1:t1", workspace_id: w1 }] }
+  - call: pane.list
+    params: { workspace_id: w1 }
+    reply: { panes: [{ pane_id: p1 }] }
+  - call: workspace.path
+    params: { path: "${ROOT}/other" }
+    normalize: [run-paths]
+    golden: path-ok
+  - call: workspace.path
+    params: { path: "${ROOT}/missing" }
+    normalize: [run-paths]
+    golden: path-missing
+  - call: workspace.create
+    params: { cwd: "${ROOT}/other", label: other, focus: false }
+    reply:
+      {
+        workspace: { workspace_id: w2, label: other },
+        root_pane: { cwd: "${ROOT}/other" },
+      }
+  - call: workspace.create
+    params: { cwd: "${ROOT}/missing", label: nope }
+    error: { message: "{{string}}" }
+  - call: tab.create
+    params: { workspace_id: w1, label: logs }
+    reply: { tab: { workspace_id: w1, label: logs } }
+    save: { tab: /result/tab/tab_id }
+  - call: tab.rename
+    params: { tab_id: "${tab}", label: renamed }
+    reply: { tab: { label: renamed } }
+  - call: pane.send_text
+    params: { pane_id: p1, text: "echo hi\r" }
+  - call: pane.send_keys
+    params: { pane_id: p1, keys: [Enter] }
+  - call: pane.send_input
+    params: { pane_id: p1, text: x }
+    any_outcome: true
+  - herdr_calls:
+      {
+        method: pane.send_text,
+        count: 1,
+        calls: [{ params: { pane_id: p1, text: "echo hi\r" }, valid: true }],
+      }
+  - herdr_calls:
+      {
+        method: workspace.create,
+        count: 1,
+        calls: [{ params: { cwd: "${ROOT}/other" }, valid: true }],
+      }
+  - call: integration.list
+    reply: { integrations: [] }
+  - call: bridge.workspace_tree.get
+    golden: tree-empty
+  - call: bridge.workspace_tree.apply
+    params:
+      {
+        ops:
+          [
+            {
+              op: create_group,
+              id: g1,
+              label: Projects,
+              parent: { root: top },
+            },
+          ],
+      }
+    reply: { tree: "{{object}}" }
+    golden: tree-group
+  - expect_push: workspace_tree
+    socket: second
+    message: { workspace_tree: "{{object}}" }
+  - call: bridge.workspace_tree.apply
+    params: { ops: [{ op: explode }] }
+    error: { message: "{{contains:needs valid ops}}" }
+  - call: bridge.status
+    normalize: [run-paths]
+    golden: status
+    reply: { clients: 2 }
+  - call: bridge.pause_others
+    reply: { ok: true, paused_clients: 1, clients: 2 }
+  - expect_push: control
+    socket: second
+    message:
+      {
+        control: { type: pause_connection, reason: "{{string}}" },
+        $exact: true,
+      }
+  - expect_no_push: control
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: bridge.workspace_tree.apply,
+      kind: mismatch,
+      reason: "an op that does not exist, sent on purpose",
+    }

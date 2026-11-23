@@ -1,0 +1,17 @@
+{
+  "connection_id": "far",
+  "connection_generation": 1,
+  "result": {
+    "forwards": [
+      {
+        "id": "far:local:45999",
+        "connection_id": "far",
+        "direction": "local",
+        "remote_port": 45999,
+        "local_port": 45999,
+        "label": "web",
+        "state": "open"
+      }
+    ]
+  }
+}

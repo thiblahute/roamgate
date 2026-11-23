@@ -1,0 +1,29 @@
+name: loopback requires login and forged forwarding headers cannot evade the login cooldown
+family: auth
+ledger:
+  - "server/src/http/auth-process.test.ts > loopback requires login and forged forwarding headers cannot evade login cooldown"
+steps:
+  - http: GET /api/health
+    expect: { status: 401 }
+  - http: GET /
+    headers: { accept: text/html }
+    expect: { status: 302, headers: { location: /login } }
+  - http: POST /api/login
+    repeat: 5
+    headers:
+      { x-forwarded-for: "192.0.2.${ROUND}", x-real-ip: "198.51.100.${ROUND}" }
+    body: { password: wrong }
+    expect: { status: 401 }
+  - http: POST /api/login
+    headers: { x-forwarded-for: 192.0.2.99, x-real-ip: 198.51.100.99 }
+    body: { password: wrong }
+    expect:
+      {
+        status: 429,
+        headers:
+          { retry-after: "{{re:^[1-9][0-9]*$}}", set-cookie: "{{absent}}" },
+      }
+  - http: POST /api/login
+    headers: { x-forwarded-for: 192.0.2.100 }
+    body: { password: "${PASSWORD}" }
+    expect: { status: 429, headers: { set-cookie: "{{absent}}" } }

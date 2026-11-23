@@ -1,0 +1,23 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "current": "refs/heads/feature",
+    "base": "refs/remotes/origin/main",
+    "near": ["refs/heads/main"],
+    "refs": [
+      {
+        "name": "refs/heads/feature",
+        "date": 1735689600
+      },
+      {
+        "name": "refs/heads/main",
+        "date": 1735689600
+      },
+      {
+        "name": "refs/remotes/origin/main",
+        "date": 1735689600
+      }
+    ]
+  }
+}

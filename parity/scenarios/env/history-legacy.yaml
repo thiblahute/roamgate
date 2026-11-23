@@ -1,0 +1,24 @@
+name: HERDR_GUI_HISTORY and HERDR_GUI_HISTORY_DIR set the settings history's state and place
+family: env
+ledger:
+  - "server/src/history/place.test.ts > history is on at <data>/history unless the settings or the environment say"
+server:
+  env:
+    {
+      HERDR_GUI_HISTORY: "off",
+      HERDR_GUI_HISTORY_DIR: "${ROOT}/legacy-history",
+    }
+steps:
+  - login: {}
+  - http: GET /api/history
+    expect:
+      {
+        status: 200,
+        json: { enabled: false, location: "${ROOT}/legacy-history" },
+      }
+  - restart:
+      { env: { ROAMGATE_HISTORY: "", ROAMGATE_HISTORY_DIR: "${ROOT}/history" } }
+  - login: {}
+  - http: GET /api/history
+    expect:
+      { status: 200, json: { enabled: true, location: "${ROOT}/history" } }

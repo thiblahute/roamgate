@@ -1,0 +1,369 @@
+name: a turn's stream reaches the browser as conversation events, in order
+family: agent_chat
+description: >
+  One turn of the headless claude with every kind of stream item the chat
+  shows: the user's line replayed, thinking and text blocks with deltas, a
+  retry that abandons a block, an API retry notice, a tool call and its
+  result, a compaction notice, a suggested next prompt, the result.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/work" }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        cwd: "${ROOT}/work"
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+    terminals:
+      p1: { args: [--model, opus] }
+  files:
+    "${ROOT}/work/.keep": ""
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2025-12-31T23:59:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message: { role: user, content: hello },
+          }
+        - {
+            type: assistant,
+            uuid: a1,
+            timestamp: "2025-12-31T23:59:01.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              {
+                id: msg_0,
+                role: assistant,
+                model: claude-opus,
+                content: [{ type: text, text: Hi there }],
+              },
+          }
+  fakes:
+    claude:
+      turns:
+        - - { $echo_user: true }
+          - {
+              type: system,
+              subtype: init,
+              session_id: "{{session_id}}",
+              cwd: /work,
+              model: claude-opus,
+            }
+          - {
+              type: stream_event,
+              event: { type: message_start, message: { id: msg_1 } },
+            }
+          - {
+              type: stream_event,
+              event:
+                {
+                  type: content_block_start,
+                  index: 0,
+                  content_block: { type: thinking, thinking: "" },
+                },
+            }
+          - { type: system, subtype: thinking_tokens, estimated_tokens: 12 }
+          - {
+              type: stream_event,
+              event: { type: content_block_stop, index: 0 },
+            }
+          - {
+              type: stream_event,
+              event:
+                {
+                  type: content_block_start,
+                  index: 1,
+                  content_block: { type: text, text: "" },
+                },
+            }
+          - {
+              type: stream_event,
+              event:
+                {
+                  type: content_block_delta,
+                  index: 1,
+                  delta: { type: text_delta, text: "First try" },
+                },
+            }
+          - {
+              type: stream_event,
+              event: { type: content_block_stop, index: 1 },
+              abandoned_blocks: { api_message_id: msg_1, from_block_index: 1 },
+            }
+          - {
+              type: system,
+              subtype: api_retry,
+              attempt: 1,
+              max_retries: 3,
+              retry_delay_ms: 500,
+              error: overloaded,
+            }
+          - {
+              type: stream_event,
+              event:
+                {
+                  type: content_block_start,
+                  index: 1,
+                  content_block: { type: text, text: "" },
+                },
+            }
+          - {
+              type: stream_event,
+              event:
+                {
+                  type: content_block_delta,
+                  index: 1,
+                  delta: { type: text_delta, text: "Checking " },
+                },
+            }
+          - {
+              type: stream_event,
+              event:
+                {
+                  type: content_block_delta,
+                  index: 1,
+                  delta: { type: text_delta, text: "the tests" },
+                },
+            }
+          - {
+              type: stream_event,
+              event: { type: content_block_stop, index: 1 },
+            }
+          - {
+              type: assistant,
+              message:
+                {
+                  id: msg_1,
+                  role: assistant,
+                  model: claude-opus,
+                  content:
+                    [
+                      { type: thinking, thinking: hmm },
+                      { type: text, text: Checking the tests },
+                    ],
+                },
+            }
+          - {
+              type: assistant,
+              message:
+                {
+                  id: msg_2,
+                  role: assistant,
+                  model: claude-opus,
+                  content:
+                    [
+                      {
+                        type: tool_use,
+                        id: toolu_1,
+                        name: Bash,
+                        input:
+                          { command: bun test, description: Run the tests },
+                      },
+                    ],
+                },
+            }
+          - {
+              type: user,
+              message:
+                {
+                  role: user,
+                  content:
+                    [
+                      {
+                        type: tool_result,
+                        tool_use_id: toolu_1,
+                        content: "12 pass",
+                      },
+                    ],
+                },
+            }
+          - {
+              type: system,
+              subtype: compact_boundary,
+              compact_metadata: { pre_tokens: 1000, post_tokens: 200 },
+            }
+          - {
+              type: assistant,
+              message:
+                {
+                  id: msg_3,
+                  role: assistant,
+                  model: claude-opus,
+                  content: [{ type: text, text: All green }],
+                },
+            }
+          - {
+              type: result,
+              subtype: success,
+              is_error: false,
+              result: All green,
+              session_id: "{{session_id}}",
+              total_cost_usd: 0.02,
+              duration_ms: 3000,
+            }
+          - {
+              type: prompt_suggestion,
+              suggestion: commit it,
+              uuid: 99999999-0000-4000-8000-000000000001,
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent_chat.handover
+    id: handover
+    no_wait: true
+    params: { pane_id: p1, to: conversation }
+  - await: handover
+    advance_every: 200
+    within_ms: 30000
+    reply: { ok: true, owner: conversation }
+  - call: agent_chat.subscribe
+    params: { pane_id: p1 }
+  - drain: {}
+  - call: agent_chat.send
+    params:
+      {
+        pane_id: p1,
+        text: run the tests,
+        uuid: 88888888-0000-4000-8000-000000000001,
+      }
+    within_ms: 30000
+  - expect_pushes:
+      - {
+          push: "event:agent_chat.status",
+          message: { data: { status: working, pane_id: p1 } },
+        }
+      - {
+          push: "event:agent_chat.user",
+          message:
+            {
+              data:
+                {
+                  uuid: 88888888-0000-4000-8000-000000000001,
+                  text: run the tests,
+                  images: 0,
+                  session_id: 11111111-2222-4333-8444-555555555555,
+                },
+            },
+        }
+      - {
+          push: "event:agent_chat.block_start",
+          message: { data: { message_id: msg_1, index: 0, block: thinking } },
+        }
+      - {
+          push: "event:agent_chat.status",
+          message: { data: { activity: thinking } },
+        }
+      - {
+          push: "event:agent_chat.block_start",
+          message: { data: { message_id: msg_1, index: 1, block: text } },
+        }
+      - {
+          push: "event:agent_chat.delta",
+          message: { data: { message_id: msg_1, index: 1, text: First try } },
+        }
+      - {
+          push: "event:agent_chat.abandoned",
+          message: { data: { message_id: msg_1, from_index: 1 } },
+        }
+      - {
+          push: "event:agent_chat.notice",
+          message:
+            { data: { kind: api_retry, text: "Retrying (1/3): overloaded" } },
+        }
+      - {
+          push: "event:agent_chat.delta",
+          message:
+            { data: { message_id: msg_1, index: 1, text: Checking the tests } },
+        }
+      - {
+          push: "event:agent_chat.block_stop",
+          message:
+            { data: { message_id: msg_1, index: 1, text: Checking the tests } },
+        }
+      - {
+          push: "event:agent_chat.tool_use",
+          message:
+            {
+              data:
+                {
+                  tool_use_id: toolu_1,
+                  name: Bash,
+                  input: { command: bun test, description: Run the tests },
+                  message_id: msg_2,
+                },
+            },
+        }
+      - {
+          push: "event:agent_chat.status",
+          message: { data: { tools_running: true, running_tools: [toolu_1] } },
+        }
+      - {
+          push: "event:agent_chat.tool_result",
+          message:
+            {
+              data: { tool_use_id: toolu_1, is_error: false, text: "12 pass" },
+            },
+        }
+      - {
+          push: "event:agent_chat.notice",
+          message:
+            { data: { kind: compact, text: Compacted 1000 tokens to 200 } },
+        }
+      - {
+          push: "event:agent_chat.block_stop",
+          message: { data: { message_id: msg_3, text: All green } },
+        }
+      - {
+          push: "event:agent_chat.result",
+          message:
+            {
+              data:
+                {
+                  subtype: success,
+                  is_error: false,
+                  interrupted: false,
+                  text: All green,
+                  cost_usd: 0.02,
+                  duration_ms: 3000,
+                },
+            },
+        }
+      - { push: "event:agent_chat.status", message: { data: { status: idle } } }
+      - {
+          push: "event:agent_chat.next_prompt",
+          message:
+            {
+              data:
+                {
+                  next_prompt:
+                    {
+                      uuid: 99999999-0000-4000-8000-000000000001,
+                      text: commit it,
+                    },
+                },
+            },
+        }
+    within_ms: 20000
+  - call: agent_chat.state
+    params: { pane_id: p1 }
+    reply:
+      {
+        owner: conversation,
+        phase: conversation,
+        status: idle,
+        queue: [],
+        interrupted: null,
+        next_prompt: { text: commit it },
+      }

@@ -874,6 +874,12 @@
         },
         "workspace_id": {
           "type": "string"
+        },
+        "connection_label": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
         }
       },
       "required": [

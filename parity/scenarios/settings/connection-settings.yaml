@@ -1,0 +1,131 @@
+name: connection settings answer, validate, persist and tell the browsers
+family: settings
+ledger:
+  - "server/src/bridge/settings-rpc.test.ts > terminal transport settings validate input, persist by connection, and reconnect only on change"
+  - "server/src/bridge/settings-rpc.test.ts > agent auto rename settings read and update successfully"
+  - "server/src/bridge/settings-rpc.test.ts > the claude start setting: validated, saved, and the change told"
+steps:
+  - login: {}
+  - connect: { name: main }
+  - connect: { name: other }
+  - call: settings.get
+    reply: { settings: "{{object}}", path: "${DATA}/settings.json" }
+  - call: settings.agent_auto_rename.get
+    reply: { enabled: true, $exact: true }
+  - call: settings.agent_auto_rename.update
+    params: { enabled: false }
+    reply: { enabled: false }
+  - call: settings.agent_auto_rename.update
+    params: { enabled: false, extra: 1 }
+    error:
+      {
+        message: settings.agent_auto_rename.update requires only a boolean enabled,
+      }
+  - call: settings.claude_start.get
+    reply: { mode: "{{re:^(terminal|conversation)$}}" }
+  - call: settings.claude_start.update
+    params: { mode: conversation }
+    reply: { mode: conversation, $exact: true }
+  - call: settings.claude_start.update
+    params: { mode: sideways }
+    error:
+      {
+        message: "settings.claude_start.update takes only mode: terminal or conversation",
+      }
+  - call: settings.conversation.get
+    reply: { idle_stop_minutes: "{{integer}}" }
+  - call: settings.conversation.update
+    params: { idle_stop_minutes: 15 }
+    reply: { idle_stop_minutes: 15, $exact: true }
+  - call: settings.conversation.update
+    params: { idle_stop_minutes: -1 }
+    error:
+      {
+        message: "{{contains:settings.conversation.update takes only idle_stop_minutes}}",
+      }
+  - call: settings.limit_resume.update
+    params: { enabled: false, message: "  go on  ", margin_seconds: 30 }
+    reply: { enabled: false, message: go on, margin_seconds: 30 }
+  - call: settings.limit_resume.update
+    params: { enabled: maybe }
+    error:
+      { message: "{{contains:limit_resume.enabled must be true or false}}" }
+  - call: settings.terminal_transport.get
+    reply: { surface_codecs: "{{bool}}" }
+    save: { codecs: /result/surface_codecs }
+  - call: settings.terminal_transport.update
+    params: { surface_codecs: false }
+    reply: { surface_codecs: false }
+  - expect_push: "event:settings.terminal_transport.updated"
+    socket: other
+    message:
+      {
+        event: settings.terminal_transport.updated,
+        data: { surface_codecs: false },
+      }
+  - call: settings.terminal_transport.update
+    params: { surface_codecs: false }
+    reply: { surface_codecs: false }
+  - expect_no_push: "event:settings.terminal_transport.updated"
+    socket: other
+  - call: settings.terminal_transport.update
+    params: { surface_codecs: "no" }
+    error:
+      {
+        message: settings.terminal_transport.update requires only a boolean surface_codecs,
+      }
+  - assert_file:
+      path: "${DATA}/settings.json"
+      mode: "0600"
+      json:
+        auto_rename_agent_tabs: false
+        claude_start_mode: conversation
+        conversation: { idle_stop_minutes: 15 }
+        limit_resume: { enabled: false, message: go on, margin_seconds: 30 }
+        terminal_transport: { legacy-default: { surface_codecs: false } }
+  - restart: {}
+  - login: {}
+  - connect: {}
+  - call: settings.claude_start.get
+    reply: { mode: conversation }
+  - call: settings.conversation.get
+    reply: { idle_stop_minutes: 15 }
+  - call: settings.terminal_transport.get
+    reply: { surface_codecs: false }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: settings.limit_resume.update,
+      kind: mismatch,
+      reason: "a refused update on purpose: enabled is not a boolean",
+    }
+  - {
+      surface: rpc.request,
+      name: settings.agent_auto_rename.update,
+      kind: unknown-field,
+      reason: "a refused update on purpose: an extra key",
+    }
+  - {
+      surface: rpc.request,
+      name: settings.agent_auto_rename.update,
+      kind: mismatch,
+      reason: "a refused update on purpose: an extra key",
+    }
+  - {
+      surface: rpc.request,
+      name: settings.claude_start.update,
+      kind: mismatch,
+      reason: "a refused update on purpose: an unknown mode",
+    }
+  - {
+      surface: rpc.request,
+      name: settings.conversation.update,
+      kind: mismatch,
+      reason: "a refused update on purpose: a negative minute count",
+    }
+  - {
+      surface: rpc.request,
+      name: settings.terminal_transport.update,
+      kind: mismatch,
+      reason: "a refused update on purpose: not a boolean",
+    }

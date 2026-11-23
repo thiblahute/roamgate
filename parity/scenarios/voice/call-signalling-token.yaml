@@ -1,0 +1,71 @@
+name: a call's signalling upgrades for its owner in generated-token mode, and refusals are 403, never 303 or 429
+family: voice
+ledger:
+  - "server/src/http/auth-process.test.ts > a call's signalling upgrades for its owner in generated-token mode, and refusals are 403, never 303 or 429"
+server:
+  password: null
+  env:
+    {
+      ROAMGATE_PASSWORD: "",
+      ROAMGATE_VOICE_DEBUG: "1",
+      HTTPS_PROXY: "http://127.0.0.1:9",
+      https_proxy: "http://127.0.0.1:9",
+    }
+  files:
+    .config/roamgate/voice.json:
+      json:
+        {
+          helper: "${BIN}/roamgate-voice",
+          whisper_model: "${BIN}/roamgate-voice",
+          kokoro_model: "${BIN}/roamgate-voice",
+          kokoro_voices: "${BIN}/roamgate-voice",
+        }
+  fakes:
+    roamgate-voice:
+      replies:
+        call_start: { rate: 48000, channels: 2, music: false }
+steps:
+  - assert_file: { path: .config/roamgate/auth-token, save_text: token }
+  - login: { password: "${token}" }
+  - connect: { name: voice, path: /api/voice/ws }
+  - send: { op: call_audio, on: true }
+    socket: voice
+  - expect_push: "event:call_audio"
+    socket: voice
+    message: { event: call_audio, webrtc: true }
+    save: { call: /call, resume: /resume }
+  - set: { next_call: 2 }
+  - connect:
+      {
+        name: signalling,
+        path: "/api/voice/call/signalling?call=${call}&call_token=${resume}",
+      }
+  - expect_push: "type:welcome"
+    socket: signalling
+    message: { type: welcome, peerId: "fake-peer-${call}" }
+  - http: GET /api/voice/call/signalling?call=${call}&call_token=wrong
+    repeat: 6
+    headers:
+      &upgrade {
+        connection: Upgrade,
+        upgrade: websocket,
+        sec-websocket-version: "13",
+        sec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==,
+      }
+    expect: { status: 403 }
+  - http: GET /api/voice/call/signalling?call=${call}&token=wrong
+    repeat: 6
+    headers: *upgrade
+    expect: { status: 403 }
+  - http: GET /api/voice/call/signalling?call=${next_call}&call_token=${resume}
+    repeat: 6
+    headers: *upgrade
+    expect: { status: 403 }
+  # Nothing counted as a failed login.
+  - login: { password: "${token}" }
+  - expect_log:
+      contains:
+        - "call ${call}: signalling refused (403): not the call's call_token"
+        - "call ${call}: signalling refused (403): no call_token"
+        - "call ${next_call}: signalling refused (403): the call going on is ${call}"
+        - a page signals on port

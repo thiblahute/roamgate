@@ -1,0 +1,124 @@
+name: the server gives the host the claude start hook, beside the user's own hooks, once
+family: settings
+description: >
+  With the claude start setting on conversation, the server runs the hook
+  installer on the connection's host (here the run's HOME): it adds the
+  SessionStart hook once next to the user's hooks and settings, creates
+  the settings file when Claude has none, leaves a file it cannot read as
+  it is, and does nothing on a host without Claude.
+ledger:
+  - "server/src/conversation/holder-script.test.ts > adds the hook once, beside the user's own hooks and settings"
+  - "server/src/conversation/holder-script.test.ts > leaves settings it cannot read alone, and a host without Claude"
+  - "server/src/conversation/holder-script.test.ts > creates the settings file when Claude has none"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1 }]
+  files:
+    .claude/settings.json:
+      json:
+        model: opus
+        hooks:
+          SessionStart:
+            [
+              {
+                matcher: "*",
+                hooks: [{ type: command, command: my-hook session }],
+              },
+            ]
+          Stop: [{ hooks: [{ type: command, command: my-stop }] }]
+steps:
+  - expect_log:
+      {
+        contains: "connection ready connection=legacy-default",
+        within_ms: 10000,
+      }
+  - login: {}
+  - connect: {}
+  - call: settings.claude_start.update
+    params: { mode: conversation }
+    reply: { mode: conversation }
+  - expect_log:
+      {
+        contains: "claude start hook connection=legacy-default outcome=installed",
+        within_ms: 20000,
+      }
+  - assert_file:
+      path: .claude/settings.json
+      json:
+        $exact: true
+        model: opus
+        hooks:
+          $exact: true
+          Stop: [{ hooks: [{ type: command, command: my-stop }] }]
+          SessionStart:
+            - {
+                matcher: "*",
+                hooks: [{ type: command, command: my-hook session }],
+              }
+            - {
+                matcher: "startup|resume",
+                hooks:
+                  [
+                    {
+                      type: command,
+                      command: "~/.cache/roamgate/bin/roamgate-review claude-start",
+                      timeout: 10,
+                      $exact: true,
+                    },
+                  ],
+              }
+  # A second run finds it present: nothing logged, nothing written twice.
+  - restart: {}
+  - expect_log:
+      {
+        contains: "connection ready connection=legacy-default",
+        within_ms: 10000,
+      }
+  - assert_file:
+      path: .claude/settings.json
+      json: { hooks: { SessionStart: { $len: 2 } } }
+  # Settings it cannot read stay as they are; a later start tries again.
+  - write: { path: .claude/settings.json, text: "{ // comment\n}" }
+  - restart: {}
+  - expect_log:
+      {
+        contains: "claude start hook not installed connection=legacy-default outcome=invalid",
+        within_ms: 20000,
+      }
+  - assert_file: { path: .claude/settings.json, text: "{ // comment\n}" }
+  # Claude with no settings file: it is created.
+  - sh: rm "${HOME}/.claude/settings.json"
+  - restart: {}
+  - expect_log:
+      {
+        matches: "(?s)outcome=invalid.*claude start hook connection=legacy-default outcome=installed",
+        within_ms: 20000,
+      }
+  - assert_file:
+      path: .claude/settings.json
+      json:
+        {
+          hooks:
+            {
+              SessionStart:
+                [
+                  {
+                    hooks:
+                      [
+                        {
+                          command: "~/.cache/roamgate/bin/roamgate-review claude-start",
+                        },
+                      ],
+                  },
+                ],
+            },
+        }
+  # No Claude on the host at all.
+  - sh: rm -r "${HOME}/.claude"
+  - restart: {}
+  - expect_log:
+      {
+        contains: "claude start hook connection=legacy-default outcome=no-claude",
+        within_ms: 20000,
+      }
+  - assert_absent: .claude

@@ -1,0 +1,16 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "configs": [
+      {
+        "key": "local:$ROOT/repo",
+        "enabled": true,
+        "interval_minutes": 10,
+        "checkout_path": "$ROOT/repo",
+        "running": true
+      }
+    ],
+    "path": "$HOME/.config/roamgate/settings.json"
+  }
+}

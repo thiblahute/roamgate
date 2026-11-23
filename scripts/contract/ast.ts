@@ -61,6 +61,53 @@ export function pattern(node: ts.Node | undefined): string | undefined {
   return undefined;
 }
 
+/**
+ * The string a constant names: `const NAME = "..."` at the top of the file
+ * the identifier is in, or of the module it is imported from (one level).
+ */
+export function constantText(
+  node: ts.Node | undefined,
+  path: string,
+): string | undefined {
+  if (!node || !ts.isIdentifier(node)) return undefined;
+  const name = node.text;
+  const declared = (file: ts.SourceFile) => {
+    for (const statement of file.statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      for (const declaration of statement.declarationList.declarations)
+        if (ts.isIdentifier(declaration.name) && declaration.name.text === name)
+          return literal(declaration.initializer);
+    }
+    return undefined;
+  };
+  const file = source(path);
+  const here = declared(file);
+  if (here !== undefined) return here;
+  for (const statement of file.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier)
+    )
+      continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (
+      !bindings ||
+      !ts.isNamedImports(bindings) ||
+      !bindings.elements.some((element) => element.name.text === name)
+    )
+      continue;
+    const specifier = statement.moduleSpecifier.text;
+    if (!specifier.startsWith(".")) return undefined;
+    const target = rel(join(REPO, path, "..", `${specifier}.ts`));
+    try {
+      return declared(source(target));
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 /** The name a function-like node is known by, when it has one. */
 export function functionName(node: ts.Node): string | undefined {
   if (

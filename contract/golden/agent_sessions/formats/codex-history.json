@@ -1,0 +1,42 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "version": 1,
+    "agent": "codex",
+    "pane_id": "codex",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "status": "ok",
+    "detail": "",
+    "updated_at": "{{file-stat}}",
+    "path": "$ROOT/codex/sessions/2026/01/01/rollout-2026-01-01T00-00-00-00000000-0000-4000-8000-000000000001.jsonl",
+    "session": {
+      "source": "codex",
+      "agent": "codex",
+      "kind": "id",
+      "value": "00000000-0000-4000-8000-000000000001"
+    },
+    "file": {
+      "path": "$ROOT/codex/sessions/2026/01/01/rollout-2026-01-01T00-00-00-00000000-0000-4000-8000-000000000001.jsonl",
+      "mtimeMs": "{{file-stat}}",
+      "size": 883,
+      "identity": "{{file-stat}}",
+      "changeToken": "{{file-stat}}"
+    },
+    "messages": [
+      {
+        "id": "rollout-2026-01-01T00-00-00-00000000-0000-4000-8000-000000000001.jsonl:1",
+        "role": "user",
+        "text": "list the files",
+        "sent_at": "2026-01-01T00:00:01.000Z"
+      },
+      {
+        "id": "rollout-2026-01-01T00-00-00-00000000-0000-4000-8000-000000000001.jsonl:4",
+        "role": "assistant",
+        "text": "One file: README.md",
+        "sent_at": "2026-01-01T00:00:04.000Z"
+      }
+    ]
+  }
+}

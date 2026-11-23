@@ -1,0 +1,72 @@
+name: a profile's Anthropic endpoint, token and model decide its model list and the model a session shows
+family: agent_profile
+description: >
+  An agent profile whose environment names ANTHROPIC_BASE_URL (fake-openai),
+  ANTHROPIC_AUTH_TOKEN and ANTHROPIC_API_KEY lists its models from that
+  endpoint, the auth token sent as both Bearer and x-api-key (it wins over
+  the key); with ANTHROPIC_MODEL, a session on that profile with nothing
+  more precise shows that model.
+covers:
+  [
+    env:ANTHROPIC_BASE_URL,
+    env:ANTHROPIC_AUTH_TOKEN,
+    env:ANTHROPIC_MODEL,
+    env:ANTHROPIC_API_KEY,
+  ]
+server:
+  openai:
+    { models: [claude-sonnet-parity, claude-opus-parity, not-a-chat-model] }
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}", agent: claude }]
+    agents:
+      - {
+          pane_id: p1,
+          agent: claude,
+          agent_status: idle,
+          agent_session:
+            {
+              source: claude,
+              agent: claude,
+              kind: id,
+              value: 22222222-2222-4222-8222-222222222222,
+            },
+        }
+steps:
+  - login: {}
+  - connect: {}
+  - call: settings.profiles.update
+    params:
+      list:
+        - name: Gateway
+          agent: claude
+          builtin: false
+          env:
+            - { name: ANTHROPIC_BASE_URL, value: "${FAKE_HTTP}" }
+            - { name: ANTHROPIC_AUTH_TOKEN, value: tok-parity }
+            - { name: ANTHROPIC_API_KEY, value: key-parity }
+            - { name: ANTHROPIC_MODEL, value: claude-sonnet-parity }
+          unset: []
+      default: Gateway
+  - call: settings.profiles.models
+    params: { name: Gateway }
+    reply: { source: server, models: { $contains: [claude-opus-parity] } }
+    save: { listed: /result/models }
+  - http_fake_calls:
+      fake: openai
+      path: /v1/models
+      count: 1
+      calls:
+        [
+          {
+            headers:
+              {
+                authorization: Bearer tok-parity,
+                x-api-key: tok-parity,
+                anthropic-version: "2023-06-01",
+              },
+          },
+        ]
+  - call: agent_profile.get
+    params: { pane_id: p1 }
+    reply: { profile: Gateway, model: claude-sonnet-parity }

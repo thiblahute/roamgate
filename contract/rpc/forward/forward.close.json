@@ -4,8 +4,22 @@
   "scope": "connection",
   "handler": "server/src/bridge/forward-rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string"
+      }
+    }
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "required": ["closed"],
+    "properties": {
+      "closed": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

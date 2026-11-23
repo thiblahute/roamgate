@@ -1,0 +1,69 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "files": [
+      {
+        "path": "f.txt",
+        "oldPath": "f.txt",
+        "hunks": [
+          {
+            "header": "@@ -1,3 +1,4 @@",
+            "lines": [
+              {
+                "kind": " ",
+                "old": 1,
+                "new": 1,
+                "text": "one"
+              },
+              {
+                "kind": "-",
+                "old": 2,
+                "new": null,
+                "text": "two"
+              },
+              {
+                "kind": "+",
+                "old": null,
+                "new": 2,
+                "text": "TWO"
+              },
+              {
+                "kind": " ",
+                "old": 3,
+                "new": 3,
+                "text": "three"
+              },
+              {
+                "kind": "+",
+                "old": null,
+                "new": 4,
+                "text": "four"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "path": "g.txt",
+        "oldPath": "g.txt",
+        "hunks": [
+          {
+            "header": "@@ -0,0 +1 @@",
+            "lines": [
+              {
+                "kind": "+",
+                "old": null,
+                "new": 1,
+                "text": "new"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "baseSha": "6192760e8364deba750727916657f2bacb3a0980",
+    "headSha": "e61953f3516571162da79c53253ac8ed13c1bea1",
+    "truncated": false
+  }
+}

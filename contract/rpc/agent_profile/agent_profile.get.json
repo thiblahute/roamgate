@@ -4,8 +4,81 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "pane_id": {
+        "type": "string"
+      }
+    },
+    "required": ["pane_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "default": {
+        "type": "string"
+      },
+      "label": {
+        "type": "string"
+      },
+      "limit": {
+        "type": ["object", "null"]
+      },
+      "owner": {
+        "type": "string"
+      },
+      "profile": {
+        "type": "string"
+      },
+      "profiles": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "agent": {
+              "type": "string"
+            },
+            "default": {
+              "type": "boolean"
+            },
+            "label": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": ["agent", "default", "label", "name"]
+        }
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "model": {
+        "type": "string",
+        "description": "the model the session runs, the profile's ANTHROPIC_MODEL when nothing more precise is known"
+      },
+      "usage": {
+        "type": "object",
+        "description": "exact context and plan usage from the session's Claude mod"
+      },
+      "returns_at": {
+        "type": ["number", "string"]
+      },
+      "returns_to": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "default",
+      "label",
+      "limit",
+      "owner",
+      "profile",
+      "profiles",
+      "session_id"
+    ]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

@@ -1,0 +1,38 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "version": 1,
+    "agent": "muse",
+    "pane_id": "muse",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "status": "ok",
+    "detail": "",
+    "updated_at": "{{file-stat}}",
+    "path": "$ROOT/xdg/muse/sessions/2026/01/01/muse-1/session.jsonl",
+    "session": {
+      "source": "muse-local",
+      "agent": "muse",
+      "kind": "id",
+      "value": "muse-1"
+    },
+    "file": {
+      "path": "$ROOT/xdg/muse/sessions/2026/01/01/muse-1/session.jsonl",
+      "mtimeMs": "{{file-stat}}",
+      "size": 1039,
+      "identity": "{{file-stat}}",
+      "changeToken": "{{file-stat}}",
+      "sessionId": "muse-1"
+    },
+    "stats": {
+      "turns": 1,
+      "records": 3,
+      "token_usage": null
+    },
+    "title": null,
+    "text": null,
+    "truncated": false,
+    "trajectory": null
+  }
+}

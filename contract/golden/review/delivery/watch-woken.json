@@ -1,0 +1,43 @@
+{
+  "status": 200,
+  "json": {
+    "outcome": "unanswered",
+    "session": {
+      "id": "{{id}}",
+      "title": "main..feature",
+      "target": "main..feature",
+      "root": "$ROOT/repo",
+      "gitlab": false,
+      "summary": "",
+      "handoff_at": null,
+      "agent": {
+        "name": "Claude",
+        "paneId": "w1:p1"
+      },
+      "updated_at": "2026-01-01T00:00:00.000Z"
+    },
+    "threads": [
+      {
+        "id": "{{id}}",
+        "session": "{{id}}",
+        "kind": "discussion",
+        "location": "f.txt:2",
+        "path": "f.txt",
+        "line": 2,
+        "end_line": 2,
+        "side": "new",
+        "code": null,
+        "resolved": false,
+        "comments": [
+          {
+            "id": "{{id}}",
+            "author": "you",
+            "text": "Please say why",
+            "created_at": "2026-01-01T00:00:00.000Z"
+          }
+        ],
+        "repo": "$ROOT/repo"
+      }
+    ]
+  }
+}

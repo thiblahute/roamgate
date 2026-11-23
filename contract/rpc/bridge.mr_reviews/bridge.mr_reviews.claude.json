@@ -4,8 +4,39 @@
   "scope": "bridge",
   "handler": "server/src/mr-reviews/module.ts",
   "params": {
+    "type": "object",
+    "properties": {
+      "key": {
+        "type": "string"
+      },
+      "session_id": {
+        "type": "string"
+      },
+      "action": {
+        "type": "string"
+      },
+      "wait": {
+        "type": "boolean"
+      },
+      "focus": {
+        "type": "string"
+      }
+    }
+  },
+  "reply": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "status": "typed",
+  "error": {
+    "type": "object",
+    "required": ["message"],
+    "properties": {
+      "message": {
+        "type": "string"
+      },
+      "code": {
+        "type": "string"
+      }
+    }
+  }
 }

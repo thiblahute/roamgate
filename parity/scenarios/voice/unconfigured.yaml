@@ -1,0 +1,154 @@
+name: without voice.json the voice routes say so, refuse what needs the helper, and keep their header guards
+family: voice
+description: >
+  No voice.json: the status says why, nothing is routed (the page sends to
+  the current session), the companion's lists are empty, speech and the
+  voice library fail with the configuration's error, and every route that
+  acts needs the x-roamgate-voice header (a custom header, so another site
+  cannot send it without a preflight).
+ledger:
+  - "server/src/http/voice.test.ts > without a router, or the voice header, it is for the agent on screen"
+server:
+  env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
+steps:
+  - login: {}
+  - http: GET /api/voice
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            available: false,
+            detail: "No voice configuration (${HOME}/.config/roamgate/voice.json)",
+            speech_rate: 1.2,
+            max_pause_ms: 8000,
+            $exact: true,
+          },
+      }
+  - http: POST /api/voice/route
+    headers: { x-roamgate-voice: "1" }
+    body: { said: hello, current: legacy-default/p1 }
+    expect: { status: 200, json: { to: current, $exact: true } }
+  - http: POST /api/voice/event
+    headers: { x-roamgate-voice: "1" }
+    body: { event: something }
+    expect: { status: 200, json: { reply: "", $exact: true } }
+  - http: GET /api/voice/research
+    expect: { status: 200, json: { jobs: [], $exact: true } }
+  - http: GET /api/voice/research?job=x
+    expect: { status: 404, json: { error: No such search. } }
+  - http: POST /api/voice/research/cancel
+    expect: { status: 403, json: { error: Voice requests need their header. } }
+  - http: POST /api/voice/research/cancel
+    headers: { x-roamgate-voice: "1" }
+    body: {}
+    expect: { status: 200, json: { cancelled: [], $exact: true } }
+  - http: GET /api/voice/tools
+    expect: { status: 200, json: { jobs: [], $exact: true } }
+  - http: GET /api/voice/tools?job=x
+    expect: { status: 404, json: { error: No such job. } }
+  - http: POST /api/voice/tools/cancel
+    expect: { status: 403 }
+  - http: POST /api/voice/tools/cancel
+    headers: { x-roamgate-voice: "1" }
+    body: { job: x }
+    expect: { status: 200, json: { cancelled: [], $exact: true } }
+  - http: POST /api/voice/tools/answer
+    expect: { status: 403 }
+  - http: POST /api/voice/tools/answer
+    headers: { x-roamgate-voice: "1" }
+    body: { job: x }
+    expect:
+      {
+        status: 400,
+        json: { error: 'A job and its answer ("yes" or "no") are needed.' },
+      }
+  - http: POST /api/voice/tools/answer
+    headers: { x-roamgate-voice: "1" }
+    body: { job: x, answer: "yes" }
+    expect: { status: 409 }
+  - http: GET /api/voice/errand?job=x
+    expect: { status: 404, json: { error: No such errand. } }
+  - http: POST /api/voice/answers/mentioned
+    headers: { x-roamgate-voice: "1" }
+    body: { jobs: [x] }
+    expect: { status: 200, json: { mentioned: 0, $exact: true } }
+  - http: POST /api/voice/answers/heard
+    body: { job: x }
+    expect: { status: 403 }
+  - http: POST /api/voice/companion/reset
+    expect: { status: 403 }
+  - http: POST /api/voice/companion/reset
+    headers: { x-roamgate-voice: "1" }
+    expect: { status: 200, json: { epoch: 1, $exact: true } }
+  - http: POST /api/voice/settings
+    body: { speech_rate: 1 }
+    expect: { status: 403 }
+  - http: POST /api/voice/settings
+    headers: { x-roamgate-voice: "1" }
+    body: { speech_rate: 9 }
+    expect:
+      {
+        status: 400,
+        json: { error: speech_rate must be a number from 0.5 to 2. },
+      }
+  - http: POST /api/voice/settings
+    headers: { x-roamgate-voice: "1" }
+    body: { max_pause_ms: 1 }
+    expect:
+      { status: 400, json: { error: max_pause_ms must be 2000 to 15000 ms. } }
+  - http: POST /api/voice/settings
+    headers: { x-roamgate-voice: "1" }
+    body: { front_mode: loud }
+    expect:
+      {
+        status: 400,
+        json: { error: 'front_mode must be "companion" or "relay".' },
+      }
+  # Bun keeps the value in a new voice.json, but answers the default: the
+  # file it made is not a valid configuration, so it is not read back.
+  - http: POST /api/voice/settings
+    headers: { x-roamgate-voice: "1" }
+    body: { speech_rate: 1 }
+    expect: { status: 200, json: { speech_rate: 1.2, $exact: true } }
+  - assert_file:
+      {
+        path: .config/roamgate/voice.json,
+        json: { speech_rate: 1, $exact: true },
+      }
+  - http: POST /api/voice/timing
+    body: {}
+    expect: { status: 403 }
+  - http: POST /api/voice/trace
+    headers: { x-roamgate-voice: "1" }
+    body: { line: not logged without debug }
+    expect: { status: 204 }
+  - expect_log: { lacks: ["not logged without debug"] }
+  - http: GET /api/voice/speak
+    expect: { status: 405 }
+  - http: POST /api/voice/speak
+    body: { text: hi }
+    expect: { status: 403 }
+  - http: POST /api/voice/speak
+    headers: { x-roamgate-voice: "1" }
+    body: {}
+    expect: { status: 400, json: { error: No text. } }
+  - http: POST /api/voice/speak
+    headers: { x-roamgate-voice: "1" }
+    body: { text: hi }
+    expect:
+      {
+        status: 502,
+        json:
+          { error: "${HOME}/.config/roamgate/voice.json: helper is required" },
+      }
+  - http: GET /api/voice/voices
+    expect:
+      {
+        status: 502,
+        json:
+          { error: "${HOME}/.config/roamgate/voice.json: helper is required" },
+      }
+  - http: POST /api/voice/voices/surprise
+    body: { on: true }
+    expect: { status: 403 }

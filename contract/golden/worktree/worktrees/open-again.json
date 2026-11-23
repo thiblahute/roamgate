@@ -1,0 +1,58 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "type": "worktree_opened",
+    "workspace": {
+      "workspace_id": "w2",
+      "number": 2,
+      "label": "feature",
+      "focused": false,
+      "pane_count": 1,
+      "tab_count": 1,
+      "active_tab_id": "w2:t1",
+      "agent_status": "idle",
+      "worktree": {
+        "repo_key": "$ROOT/repo",
+        "repo_name": "repo",
+        "repo_root": "$ROOT/repo",
+        "checkout_path": "$ROOT/wt/feature",
+        "is_linked_worktree": true
+      }
+    },
+    "tab": {
+      "tab_id": "w2:t1",
+      "workspace_id": "w2",
+      "number": 1,
+      "label": "1",
+      "focused": false,
+      "pane_count": 1,
+      "agent_status": "idle"
+    },
+    "root_pane": {
+      "pane_id": "p2",
+      "terminal_id": "term-p2",
+      "workspace_id": "w2",
+      "tab_id": "w2:t1",
+      "focused": false,
+      "cwd": "$ROOT/wt/feature",
+      "agent_status": "idle",
+      "revision": 0
+    },
+    "worktree": {
+      "path": "$ROOT/wt/feature",
+      "branch": "feature",
+      "is_bare": false,
+      "is_detached": false,
+      "is_prunable": false,
+      "is_linked_worktree": true,
+      "open_workspace_id": "w2",
+      "label": "feature"
+    },
+    "already_open": true,
+    "opened_hook": {
+      "event": "worktree.opened",
+      "status": "skipped"
+    }
+  }
+}

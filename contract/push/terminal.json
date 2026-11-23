@@ -3,10 +3,65 @@
   "x-kind": "keyed",
   "x-sent-by": ["server/src/bridge/terminal-bridge.ts"],
   "x-coalescing": "terminal:<terminal id and viewport>",
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["terminal"],
   "properties": {
-    "terminal": {}
-  }
+    "terminal": {
+      "type": "object",
+      "required": ["terminal_id", "width", "height", "full", "bytes"],
+      "properties": {
+        "terminal_id": {
+          "type": "string"
+        },
+        "width": {
+          "type": "integer"
+        },
+        "height": {
+          "type": "integer"
+        },
+        "full": {
+          "type": "boolean"
+        },
+        "link_frame": {
+          "type": "string"
+        },
+        "mouse_reporting": {
+          "type": "boolean"
+        },
+        "history": {
+          "type": "object",
+          "properties": {
+            "revision": {
+              "type": "integer"
+            },
+            "top": {
+              "type": "integer"
+            },
+            "total": {
+              "type": "integer"
+            },
+            "cols": {
+              "type": "integer"
+            },
+            "rows": {
+              "type": "integer"
+            }
+          }
+        },
+        "bytes": {
+          "type": "string",
+          "description": "base64 of the frame's ANSI bytes"
+        }
+      }
+    },
+    "connection_id": {
+      "type": "string"
+    },
+    "connection_generation": {
+      "type": "integer"
+    }
+  },
+  "description": "A terminal's frame for its viewers, coalesced per terminal and viewport.",
+  "additionalProperties": false
 }

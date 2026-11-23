@@ -1,0 +1,66 @@
+name: the inbox asks only the hosts with a login, and never a host gh is not signed in to
+family: mr_reviews
+description: >
+  With no glab or gh configuration there is no host and no forge call. gh
+  then gets a hosts.yml, but `gh auth status` says no: the host shows not
+  signed in, and nothing is asked of it. The logins are read again when the
+  settings are saved.
+ledger:
+  - "server/src/mr-reviews/hosts.test.ts > no configuration: no host"
+  - "server/src/mr-reviews/fetchers.test.ts > GitHub without a login is said so, nothing asked"
+  - "server/src/mr-reviews/inbox.test.ts > the RPC saves through the stored form"
+server:
+  fakes:
+    gh:
+      rules:
+        - {
+            args_prefix: [auth, status],
+            exit: 1,
+            stderr: "You are not logged into any GitHub hosts.\n",
+          }
+      default: { graphql: {} }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.mr_reviews.inbox
+    params: { fresh: true }
+  - call: bridge.mr_reviews.inbox
+    until: { refreshing: false }
+    reply: { hosts: [], entries: [], hidden: [] }
+  - fake_calls: { program: gh, count: 0 }
+  - fake_calls: { program: glab, count: 0 }
+  - write: { path: .config/gh/hosts.yml, text: "github.com:\n    user: me\n" }
+  # The logins are looked for again once the settings are saved.
+  - call: bridge.mr_reviews.settings.update
+    params: { settings: { staleDays: 14 } }
+    reply: { staleDays: 14, hosts: [] }
+  - advance: 60000
+  - call: bridge.mr_reviews.inbox
+    params: { fresh: true }
+  - call: bridge.mr_reviews.inbox
+    until: { refreshing: false, hosts: [{ host: github.com }] }
+    reply:
+      {
+        hosts:
+          [
+            {
+              host: github.com,
+              provider: github,
+              state: "{{re:^(error|signed_out|not_signed_in)$}}",
+              message: "{{contains:Not signed in to github.com}}",
+            },
+          ],
+        entries: [],
+      }
+  - fake_calls:
+      {
+        program: gh,
+        argv_match: "^auth status --hostname github.com$",
+        count: 1,
+      }
+  - fake_calls: { program: gh, argv_match: "^api ", count: 0 }
+  - assert_file:
+      {
+        path: .config/roamgate/settings.json,
+        json: { mr_reviews: { stale_days: 14 } },
+      }

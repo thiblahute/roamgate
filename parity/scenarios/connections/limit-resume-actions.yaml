@@ -1,0 +1,86 @@
+name: a paused session is skipped, unskipped and resumed at once on the user's word
+family: limit_resume
+description: >
+  limit_resume.skip marks a usage-limit pause not to be resumed (and back),
+  limit_resume.resume_now types the resume message before the reset; both
+  need a pane_id; the browsers see each change.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+  files:
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2025-12-31T23:59:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message: { role: user, content: keep going },
+          }
+        - type: assistant
+          uuid: a1
+          timestamp: "2025-12-31T23:59:30.000Z"
+          sessionId: 11111111-2222-4333-8444-555555555555
+          cwd: /work
+          isApiErrorMessage: true
+          apiError: usage_limit_reached
+          apiErrorParams:
+            {
+              rate_limit_info:
+                {
+                  status: rejected,
+                  resetsAt: 1767229200,
+                  rateLimitType: five_hour,
+                },
+            }
+          message:
+            {
+              role: assistant,
+              content: [{ type: text, text: "5-hour limit reached" }],
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - advance: 5000
+  - expect_push: "event:roamgate.limit_pauses"
+    message: { data: { pauses: [{ pane_id: p1 }] } }
+  - call: limit_resume.skip
+    params: { pane_id: p1 }
+    golden: skip
+  - expect_push: "event:roamgate.limit_pauses"
+    message: { data: { pauses: [{ pane_id: p1, state: skipped }] } }
+  - call: limit_resume.skip
+    params: { pane_id: p1, skip: false }
+    golden: unskip
+  - call: limit_resume.resume_now
+    params: { pane_id: p1 }
+    golden: resume-now
+  - herdr_calls:
+      {
+        method: agent.prompt,
+        count: 1,
+        calls: [{ params: { target: p1 }, valid: true }],
+      }
+  - call: limit_resume.resume_now
+    params: {}
+    error: { message: limit_resume.resume_now needs a pane_id }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: limit_resume.resume_now,
+      kind: mismatch,
+      reason: "a refused request sent on purpose",
+    }

@@ -1,0 +1,37 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "version": 1,
+    "agent": "kimi",
+    "pane_id": "kimi",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "status": "ok",
+    "detail": "",
+    "updated_at": "{{file-stat}}",
+    "path": "$HOME/.kimi-code/sessions/abc/44444444-0000-4000-8000-000000000004/agents/main/wire.jsonl",
+    "session": {
+      "source": "kimi",
+      "agent": "kimi",
+      "kind": "id",
+      "value": "44444444-0000-4000-8000-000000000004"
+    },
+    "file": {
+      "path": "$HOME/.kimi-code/sessions/abc/44444444-0000-4000-8000-000000000004/agents/main/wire.jsonl",
+      "mtimeMs": "{{file-stat}}",
+      "size": 340,
+      "identity": "{{file-stat}}",
+      "changeToken": "{{file-stat}}"
+    },
+    "stats": {
+      "turns": 0,
+      "records": 4,
+      "token_usage": null
+    },
+    "title": null,
+    "text": null,
+    "truncated": false,
+    "trajectory": null
+  }
+}

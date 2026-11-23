@@ -4,8 +4,78 @@
   "scope": "bridge",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {}
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "clients": {
+        "type": "number"
+      },
+      "connections": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "auto_connect": {
+              "type": "boolean"
+            },
+            "client_socket_path": {
+              "type": "string"
+            },
+            "control_socket_path": {
+              "type": "string"
+            },
+            "generation": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "is_default": {
+              "type": "boolean"
+            },
+            "label": {
+              "type": "string"
+            },
+            "read_only": {
+              "type": "boolean"
+            },
+            "source": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "auto_connect",
+            "client_socket_path",
+            "control_socket_path",
+            "generation",
+            "id",
+            "is_default",
+            "label",
+            "read_only",
+            "source",
+            "state",
+            "type"
+          ]
+        }
+      },
+      "default_connection_id": {
+        "type": "string"
+      },
+      "terminals": {
+        "type": "array"
+      }
+    },
+    "required": ["clients", "connections", "default_connection_id", "terminals"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

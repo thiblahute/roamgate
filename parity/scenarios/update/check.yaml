@@ -1,0 +1,60 @@
+name: the update check reads the mirror's manifest, caches it five minutes, and says what the browser may do
+family: update
+ledger:
+  - "server/src/http/update.test.ts > uses a configured release mirror"
+  - "server/src/http/update.test.ts > caches successful metadata checks across browser clients"
+  - "server/src/http/update.test.ts > checks for updates but refuses to replace a development runtime"
+  - "server/src/http/update.test.ts > Roamgate and legacy confirmation headers share the same update boundary"
+platforms: [linux, macos]
+description: >
+  The mirror is fake-models serving a manifest per platform; the server runs
+  from source, so it never offers to install itself (only the standalone
+  binary does).
+server:
+  env:
+    ROAMGATE_DISABLE_UPDATE_CHECK: "0"
+    ROAMGATE_UPDATE_BASE_URL: "${FAKE_HTTP}/files/releases"
+  served:
+    releases/roamgate-darwin-arm64.update.json: '{"schema": 1, "name": "roamgate", "version": "99.0.0", "platform": "darwin-arm64", "archive": "roamgate-darwin-arm64.tar.xz", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+    releases/roamgate-darwin-x64.update.json: '{"schema": 1, "name": "roamgate", "version": "99.0.0", "platform": "darwin-x64", "archive": "roamgate-darwin-x64.tar.xz", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+    releases/roamgate-linux-arm64.update.json: '{"schema": 1, "name": "roamgate", "version": "99.0.0", "platform": "linux-arm64", "archive": "roamgate-linux-arm64.tar.xz", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+    releases/roamgate-linux-x64.update.json: '{"schema": 1, "name": "roamgate", "version": "99.0.0", "platform": "linux-x64", "archive": "roamgate-linux-x64.tar.xz", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+steps:
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    cookie: false
+    expect: { status: 401 }
+  - login: {}
+  - http: GET /api/update/check
+    expect:
+      { status: 403, json: { error: Update confirmation header is required. } }
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      status: 200
+      headers: { cache-control: no-store }
+      json:
+        current_version: "{{string}}"
+        latest_version: 99.0.0
+        update_available: true
+        can_auto_update: false
+        reason: Auto update is only available in the standalone binary.
+        platform: "{{re:^(linux|darwin)-(x64|arm64)$}}"
+        source_url: "{{re:^${FAKE_HTTP}/files/releases/roamgate-(linux|darwin)-(x64|arm64)\\.tar\\.xz$}}"
+        metadata_url: "{{re:^${FAKE_HTTP}/files/releases/roamgate-(linux|darwin)-(x64|arm64)\\.update\\.json$}}"
+  - http_fake_calls: { fake: models, count: 1 }
+  # A newer manifest on the mirror: the cached answer holds for five minutes.
+  - sh: |
+      for p in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
+        printf '{"schema": 1, "name": "roamgate", "version": "99.0.1", "platform": "%s", "archive": "roamgate-%s.tar.xz", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}' $p $p > served/releases/roamgate-$p.update.json
+      done
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect: { status: 200, json: { latest_version: 99.0.0 } }
+  - http_fake_calls: { fake: models, count: 1 }
+  - advance: 300001
+  - http: GET /api/update/check
+    headers: { x-herdr-gui-update: "1" }
+    expect:
+      { status: 200, json: { latest_version: 99.0.1, update_available: true } }
+  - http_fake_calls: { fake: models, count: 2 }

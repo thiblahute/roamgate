@@ -4,8 +4,24 @@
   "scope": "bridge",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {}
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "clients": {
+        "type": "number"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "paused_clients": {
+        "type": "number"
+      }
+    },
+    "required": ["clients", "ok", "paused_clients"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

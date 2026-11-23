@@ -1,0 +1,190 @@
+name: archive sync copies this machine's sessions as zstd and indexes them; search, session, cat and health read them back
+family: archive
+ledger:
+  - "server/src/cli/archive.test.ts > sync writes the text repo; search, status and rebuild-text use it"
+description: >
+  The text repo's own state is left loose: whether sync commits it or
+  defers it follows GameMode, which the server asks the real host through
+  /usr/bin/host-spawn when it runs in a toolbox (no fake can stand in).
+server:
+  files:
+    .config/roamgate/settings.json:
+      { json: { version: 1, archive: { host: desk } } }
+    .claude/projects/-home-t-proj/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl: &transcript
+      jsonl:
+        - {
+            type: user,
+            timestamp: "2026-11-14T10:00:00Z",
+            cwd: /home/t/proj,
+            message: { content: where is the zebra },
+          }
+        - {
+            type: assistant,
+            timestamp: "2026-11-14T10:00:05Z",
+            cwd: /home/t/proj,
+            message:
+              {
+                role: assistant,
+                content: [{ type: text, text: the zebra is in the zoo }],
+              },
+          }
+steps:
+  - cli: [archive, sync, --local-only, --json]
+    expect:
+      exit: 0
+      stdout_json:
+        hosts:
+          [
+            {
+              host: desk,
+              status: synced,
+              agents:
+                {
+                  claude:
+                    {
+                      new: 1,
+                      grown: 0,
+                      same: 0,
+                      error: 0,
+                      docs: 2,
+                      bytes: 284,
+                    },
+                },
+            },
+          ]
+        text: { status: "{{re:^(committed|deferred)$}}" }
+  - assert_file:
+      path: .config/roamgate/archive/raw/desk/claude/-home-t-proj/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl.zst
+      zstd_contains: ["where is the zebra", "the zebra is in the zoo"]
+  - assert_rows:
+      db: .config/roamgate/archive/index.sqlite
+      sql: "select name from sqlite_master where type='table' and name in ('meta','files','docs','history','fts') order by name"
+      rows:
+        [
+          { name: docs },
+          { name: files },
+          { name: fts },
+          { name: history },
+          { name: meta },
+        ]
+  # A second sync finds nothing new.
+  - cli: [archive, sync, --local-only, --json]
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          {
+            hosts:
+              [
+                {
+                  host: desk,
+                  status: synced,
+                  agents: { claude: { new: 0, same: 1 } },
+                },
+              ],
+          },
+      }
+  - cli: [archive, search, zebra, --index, --json]
+    expect:
+      exit: 0
+      stdout_json:
+        query: zebra
+        total: 2
+        source: index
+        hits:
+          $unordered:
+            - {
+                session: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee,
+                agent: claude,
+                host: desk,
+                project: "-home-t-proj",
+                role: assistant,
+                snippet: "the [zebra] is in the zoo",
+              }
+            - {
+                session: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee,
+                agent: claude,
+                host: desk,
+                project: "-home-t-proj",
+                role: user,
+                snippet: "where is the [zebra]",
+              }
+  - cli: [archive, search, zebra, --json]
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          {
+            query: zebra,
+            source: "{{re:^(text|index)$}}",
+            hits:
+              {
+                $contains:
+                  [
+                    {
+                      session: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee,
+                      host: desk,
+                    },
+                  ],
+              },
+          },
+      }
+  - cli: [archive, search]
+    expect:
+      {
+        exit: 2,
+        stderr_contains:
+          ["search needs terms", "Run `roamgate archive --help` for usage."],
+      }
+  - cli: [archive, session, aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee, --json]
+    expect:
+      exit: 0
+      stdout_json:
+        session: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+        found: true
+        agent: claude
+        host: desk
+        project: "-home-t-proj"
+        cwd: /home/t/proj
+        first_ts: "2026-11-14T10:00:00Z"
+        last_ts: "2026-11-14T10:00:05Z"
+        files:
+          [
+            {
+              relpath: "-home-t-proj/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl",
+              archived_size: 284,
+              src_size: 284,
+              complete: true,
+            },
+          ]
+        resume: claude --resume aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+  # cat gives the session byte for byte.
+  - cli: [archive, cat, aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee]
+    expect:
+      exit: 0
+      stdout: "{\"type\":\"user\",\"timestamp\":\"2026-11-14T10:00:00Z\",\"cwd\":\"/home/t/proj\",\"message\":{\"content\":\"where is the zebra\"}}\n{\"type\":\"assistant\",\"timestamp\":\"2026-11-14T10:00:05Z\",\"cwd\":\"/home/t/proj\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"the zebra is in the zoo\"}]}}\n"
+  - cli: [archive, health, --json]
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          {
+            ok: true,
+            stale_hours: 48,
+            hosts:
+              [
+                {
+                  host: desk,
+                  files: 1,
+                  sessions: 1,
+                  stale: false,
+                  last_error: null,
+                },
+              ],
+            totals: { files: 1, sessions: 1, docs: 2 },
+            warnings: [],
+          },
+      }
+  - cli: [archive, status, --json]
+    expect:
+      { exit: 0, stdout_json: { text: { path: "${DATA}/archive/text.git" } } }

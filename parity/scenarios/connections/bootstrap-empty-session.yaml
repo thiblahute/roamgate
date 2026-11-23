@@ -1,0 +1,100 @@
+name: the first workspace is created only in a session verified empty, once when browsers compete
+family: connections
+description: >
+  workspace.create without a source (the empty-session bootstrap) refuses
+  while Herdr's workspace list cannot be verified (an untyped answer);
+  once it can, two browsers creating at once make one workspace, a
+  missing directory is refused before Herdr is asked, ~ is the run's HOME,
+  and a stale connection generation is refused.
+ledger:
+  - "server/src/connections/profile-process.test.ts > production routing bootstraps only a verified empty session and serializes competing browsers"
+server:
+  herdr:
+    responses:
+      workspace.list: { workspaces: [] }
+steps:
+  - login: {}
+  - connect: { name: a }
+  - connect: { name: b }
+  - call: connections.connect
+    socket: a
+    params: { id: legacy-default }
+    reply: { state: ready }
+  - call: workspace.create
+    socket: a
+    connection_id: legacy-default
+    params: { browser_source: null }
+    error:
+      { message: Cannot verify an empty session. Refresh and retry creation. }
+  - herdr_calls: { method: workspace.create, count: 0 }
+  - sh: mkdir "${HOME}/chosen"
+  - call: workspace.path
+    socket: a
+    connection_id: legacy-default
+    params: { path: "~/chosen" }
+    reply:
+      { path: "${HOME}/chosen", error: null, directories: [], $exact: true }
+  # Herdr's list is typed now (and empty): two browsers create at once.
+  - herdr_seed: {}
+  - call: workspace.create
+    socket: a
+    id: first
+    no_wait: true
+    connection_id: legacy-default
+    params: { browser_source: null, focus: true }
+  - call: workspace.create
+    socket: b
+    id: second
+    no_wait: true
+    connection_id: legacy-default
+    params: { browser_source: null, focus: true }
+  - await: first
+    socket: a
+    any_outcome: true
+    save: { first: "" }
+  - await: second
+    socket: b
+    any_outcome: true
+    save: { second: "" }
+  - sh: >-
+      python3 -c "import json,os; r=[json.loads(os.environ[k]) for k in ('A','B')];
+      made=[x for x in r if (x.get('result') or {}).get('type')=='workspace_created'];
+      failed=[x for x in r if 'error' in x];
+      raise SystemExit(0 if len(made)==1 and len(failed)==1 else str(r))"
+    env: { A: "${first}", B: "${second}" }
+  - herdr_calls:
+      {
+        method: workspace.create,
+        count: 1,
+        calls: [{ params: { focus: false, $exact: true } }],
+      }
+  - call: workspace.create
+    socket: a
+    connection_id: legacy-default
+    params: { browser_source: null, cwd: "${HOME}/missing" }
+    error: { message: "{{contains:Directory does not exist.}}" }
+  - herdr_calls: { method: workspace.create, count: 1 }
+  - herdr_seed: {}
+  - call: workspace.create
+    socket: a
+    connection_id: legacy-default
+    params: { browser_source: null, cwd: "~/chosen", focus: true }
+    reply: { type: workspace_created }
+  - herdr_calls:
+      {
+        method: workspace.create,
+        count: 2,
+        calls:
+          [
+            {},
+            { params: { cwd: "${HOME}/chosen", focus: false, $exact: true } },
+          ],
+      }
+  - herdr_seed: {}
+  - call: workspace.create
+    socket: a
+    connection_id: legacy-default
+    connection_generation: 99999
+    params: { browser_source: null }
+    error: "{{any}}"
+  - herdr_calls: { method: workspace.create, count: 2 }

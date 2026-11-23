@@ -1,0 +1,43 @@
+name: health probes need no login, static files answer HEAD, an unknown rendered token is refused, and PUBLIC_DIR serves another frontend
+family: http
+description: >
+  /health and /healthz answer "Ok" without a session; the app's files answer
+  HEAD; a rendered page whose token was never minted is not found (GET and
+  HEAD), and no route behind it opens; PUBLIC_DIR replaces the embedded
+  frontend.
+server:
+  env: { PUBLIC_DIR: "${ROOT}/public" }
+  files:
+    "${ROOT}/public/index.html":
+      { text: "<!doctype html><title>parity frontend</title>" }
+    "${ROOT}/public/app.js": { text: "console.log('parity');\n" }
+    "${ROOT}/public/roamgate-icon-192.png": { text: "png" }
+    "${ROOT}/public/login.html": { text: "login" }
+steps:
+  - http: GET /health
+    cookie: false
+    expect:
+      {
+        status: 200,
+        text: Ok,
+        headers: { content-type: "{{contains:text/plain}}" },
+      }
+  - http: GET /healthz
+    cookie: false
+    expect: { status: 200, text: Ok }
+  - http: GET /rendered/not-a-token/index.html
+    cookie: false
+    golden: rendered-unknown
+  - http: HEAD /rendered/not-a-token/index.html
+    cookie: false
+    golden: rendered-unknown-head
+  - login: {}
+  - http: HEAD /app.js
+    expect:
+      { status: 200, headers: { content-type: "{{contains:javascript}}" } }
+  - http: GET /app.js
+    expect: { status: 200, text: "console.log('parity');\n" }
+  - http: GET /
+    headers: { accept: text/html }
+    # PUBLIC_DIR's page, its title replaced by the instance's.
+    expect: { status: 200, text: "<!doctype html><title>Roamgate</title>" }

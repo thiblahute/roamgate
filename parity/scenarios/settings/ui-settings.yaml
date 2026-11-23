@@ -1,0 +1,49 @@
+name: a UI setting saved by one browser reaches the others and settings.json
+family: settings
+ledger:
+  - "server/src/bridge/settings-rpc.test.ts > server-wide interface preferences can be read, stored and cleared"
+steps:
+  - login: {}
+  - connect: { name: main }
+  - connect: { name: other }
+  - call: bridge.ui_settings.get
+    reply: { ui: {} }
+  - call: bridge.ui_settings.update
+    params: { key: theme.mode, value: dark }
+    reply: { key: theme.mode, value: dark, $exact: true }
+  - expect_push: ui_settings
+    socket: other
+    message: { ui_settings: { key: theme.mode, value: dark } }
+  - expect_no_push: ui_settings
+  - assert_file:
+      {
+        path: "${DATA}/settings.json",
+        json: { ui: { theme.mode: dark } },
+        mode: "0600",
+      }
+  - call: bridge.ui_settings.get
+    socket: other
+    reply: { ui: { theme.mode: dark } }
+  - call: bridge.ui_settings.update
+    params: { key: theme.mode }
+    reply: { key: theme.mode, value: null }
+  - expect_push: ui_settings
+    socket: other
+    message: { ui_settings: { key: theme.mode, value: null } }
+  - call: bridge.ui_settings.get
+    reply: { ui: { theme.mode: "{{absent}}" } }
+  - call: bridge.ui_settings.update
+    params: { key: "9bad", value: 1 }
+    error: { message: "{{contains:UI settings require key}}" }
+  - restart: {}
+  - login: {}
+  - connect: {}
+  - call: bridge.ui_settings.get
+    reply: { ui: {} }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: bridge.ui_settings.update,
+      kind: mismatch,
+      reason: "a refused update on purpose: a key that does not start with a letter",
+    }

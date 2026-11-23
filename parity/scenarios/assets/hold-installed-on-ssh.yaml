@@ -1,0 +1,46 @@
+name: an SSH host gets the same roamgate-hold the server installs locally
+family: connections
+description: >
+  When an SSH profile connects, the server installs its agent clients on
+  the host (fake-ssh runs the setup in the fake remote home): the
+  roamgate-hold there is the one installed locally, byte for byte.
+ledger:
+  - "server/src/conversation/holder-script.test.ts > is installed on SSH hosts"
+server:
+  herdr: false
+  herdrs:
+    remote: { workspaces: [{ workspace_id: w1, label: remote }] }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ALLOW_SSH: "1"
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 2
+        default_connection_id: remote
+        profiles:
+          - {
+              id: remote,
+              label: REMOTE,
+              type: ssh,
+              ssh_destination: remote-host,
+              remote_control_socket_path: "${HERDR_remote_CONTROL}",
+              remote_client_socket_path: "${HERDR_remote_CLIENT}",
+              auto_connect: true,
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    id: up
+    no_wait: true
+    params: { id: remote }
+  - await: up
+    advance_every: 50
+    reply: { state: ready, type: ssh }
+  - wait_file: "${ROOT}/remote-home/.cache/roamgate/bin/roamgate-hold"
+    within_ms: 20000
+  - wait_file: .cache/roamgate/bin/roamgate-hold
+  - sh: cmp "${HOME}/.cache/roamgate/bin/roamgate-hold" "${ROOT}/remote-home/.cache/roamgate/bin/roamgate-hold"
+  - fake_calls: { program: ssh, argv_match: "roamgate-hold", min: 1 }

@@ -1,0 +1,6 @@
+{
+  "status": 500,
+  "json": {
+    "error": "not_found: agent nope not found"
+  }
+}

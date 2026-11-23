@@ -1,0 +1,73 @@
+name: "fg refused: the pane holder says why and stops again, and fg retries"
+family: conversation
+description:
+  "A suspended roamgate-hold job brought back with fg while claude runs the session elsewhere:
+  the refusal is said and the job stops again; the next fg brings it back."
+ledger:
+  - "server/src/conversation/holder-suspend.test.ts > fg refused: it says why and stops again, fg retries"
+server:
+  herdr: false
+  files:
+    .claude/projects/elsewhere/11111111-aaaa-bbbb-cccc-000000000000.jsonl: "{}
+
+      "
+    ${ROOT}/hbin/claude:
+      text: '#!/bin/sh
+
+        echo "claude $* ran"
+
+        '
+      mode: "0755"
+    ${ROOT}/hbin/ps:
+      text: "#!/bin/sh
+
+        echo '  1 /sbin/init'
+
+        "
+      mode: "0755"
+    ${ROOT}/driver.py:
+      "import json, os, pty, select, sys, time\nlines = json.loads(sys.argv[1])\npid,\
+      \ fd = pty.fork()\nif pid == 0:\n    os.environ[\"PS1\"] = \"$ \"\n    os.execvp(\"bash\", [\"bash\"\
+      , \"--norc\", \"--noprofile\", \"-i\"])\ndef read(until, seconds):\n    out = b\"\"\n    end = time.time()\
+      \ + seconds\n    while time.time() < end:\n        ready, _, _ = select.select([fd], [], [], 0.05)\n\
+      \        if ready:\n            try:\n                out += os.read(fd, 65536)\n            except\
+      \ OSError:\n                break\n            if until and until.encode() in out:\n           \
+      \     until = None\n                end = min(end, time.time() + 0.5)\n    return out.decode(\"\
+      utf-8\", \"replace\")\nread(\"$ \", 5)\nfor line, until in lines:\n    os.write(fd, line.encode()\
+      \ + b\"\\r\")\n    sys.stdout.write(\"<<\" + line + \">>\" + read(until, 10))\n    sys.stdout.flush()\n\
+      os.write(fd, b\"exit\\r\")\n"
+steps:
+  - wait_file: .cache/roamgate/bin/roamgate-hold
+  - sh: cp ${HOME}/.cache/roamgate/bin/roamgate-hold ${ROOT}/hbin/roamgate-hold && chmod 755 ${ROOT}/hbin/roamgate-hold
+  - serve_agent_socket: job
+    replies:
+      hold:
+        - action: suspend
+          session_id: 11111111-aaaa-bbbb-cccc-000000000000
+          cwd: /
+        - action: resume
+          session_id: 11111111-aaaa-bbbb-cccc-000000000000
+          cwd: /
+          argv:
+            - claude
+            - --resume
+            - 11111111-aaaa-bbbb-cccc-000000000000
+      fg:
+        - action: refused
+          reason: claude runs the session in pane w2:p1
+        - action: hold
+          session_id: 11111111-aaaa-bbbb-cccc-000000000000
+  - sh:
+      cd ${ROOT} && env -i PATH=${ROOT}/hbin:/usr/bin:/bin HOME=${HOME} TERM=dumb HERDR_PANE_ID=w1:p1
+      ROAMGATE_REVIEW_SOCKET=${job_socket} python3 ${ROOT}/driver.py '[["${ROOT}/hbin/roamgate-hold 11111111-aaaa-bbbb-cccc-000000000000",
+      "[1]+"], ["fg", "fg brings it back"], ["fg", "ran"]]'
+    within_ms: 60000
+    expect:
+      exit: 0
+      stdout_contains:
+        - "Not brought back: claude runs the session in pane w2:p1"
+        - claude --resume 11111111-aaaa-bbbb-cccc-000000000000 ran
+  - agent_socket_requests:
+      name: job
+      command: fg
+      count: 2

@@ -1,0 +1,7 @@
+{
+  "status": 200,
+  "json": {
+    "action": "terminal",
+    "reason": "the setting says terminal"
+  }
+}

@@ -1,0 +1,463 @@
+name: every Ranger RPC answers through the bridge, from settings and login to actions, the queue and task edits
+family: assistant
+description: >
+  The bridge.assistant methods the other scenarios do not need: approval and
+  chat selection, a model connection, an API-key login through its prompt,
+  a chat action cancelled and then confirmed too late, a queued message
+  removed and the queue resumed, a stopped turn, task proposals cancelled,
+  tasks updated, stopped and deleted, and task actions refused.
+server:
+  herdr: false
+  start: false
+  herdrs:
+    healthy:
+      endpoint: true
+      workspaces:
+        - workspace_id: w1
+          label: Recovery workspace
+          worktree:
+            {
+              repo_key: workspace,
+              repo_name: workspace,
+              repo_root: "${ROOT}/workspace",
+              checkout_path: "${ROOT}/workspace",
+              is_linked_worktree: false,
+            }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ASSISTANT_DIR: "${ROOT}/ranger"
+    PI_CODING_AGENT_DIR: "${ROOT}/pi"
+  openai:
+    anthropic:
+      replies:
+        - {
+            "tools":
+              [
+                {
+                  "name": "propose_tab_create",
+                  "id": "tab-one",
+                  "input": { "connection_id": "healthy", "workspace_id": "w1" },
+                },
+              ],
+          }
+        - { "text": "Confirm the tab if you want it." }
+        - { "partial": "Still thinking", "hang": true }
+        - {
+            "tools":
+              [
+                {
+                  "name": "propose_ranger_task",
+                  "id": "proposal-two",
+                  "input":
+                    {
+                      "title": "Proposed check",
+                      "prompt": "Inspect the authorized workspace status.",
+                      "scope":
+                        [{ "connection_id": "healthy", "workspace_id": "w1" }],
+                      "schedule": { "type": "interval", "minutes": 5 },
+                    },
+                },
+              ],
+          }
+        - { "text": "Confirm or cancel the proposal." }
+      cycle:
+        - { "text": "Done." }
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 1
+        default_connection_id: healthy
+        profiles:
+          - {
+              id: healthy,
+              label: Healthy,
+              type: local,
+              control_socket_path: "${HERDR_healthy_CONTROL}",
+              client_socket_path: "${HERDR_healthy_CLIENT}",
+              auto_connect: true,
+            }
+    "${ROOT}/ranger/auth.json":
+      {
+        mode: "0600",
+        json: { anthropic: { type: api_key, key: synthetic-recovery-key } },
+      }
+    "${ROOT}/ranger/models.json":
+      {
+        mode: "0600",
+        json: { providers: { anthropic: { baseUrl: "${FAKE_HTTP}" } } },
+      }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: bridge.assistant.task.pause,
+      kind: unknown-field,
+      reason: "an extra parameter sent on purpose, refused",
+    }
+  - {
+      surface: rpc.request,
+      name: bridge.assistant.queue.resume,
+      kind: unknown-field,
+      reason: "a parameter sent on purpose, refused",
+    }
+steps:
+  - sh: chmod 700 ranger && mkdir -p workspace
+  - start: {}
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    params: { id: healthy }
+    reply: { state: ready }
+  - call: bridge.assistant.configure
+    params:
+      {
+        config:
+          {
+            provider: anthropic,
+            model: claude-haiku-4-5,
+            credential_source: assistant,
+            allowed_workspaces: [{ connection_id: healthy, workspace_id: w1 }],
+          },
+      }
+  - call: bridge.assistant.get
+    reply:
+      {
+        config:
+          {
+            provider: anthropic,
+            model: claude-haiku-4-5,
+            credential_source: assistant,
+          },
+      }
+    save: { instance: /result/instance_id }
+  - call: bridge.assistant.configure_approval
+    params: { approval_mode: manual }
+    reply: { config: { approval_mode: manual } }
+  - call: bridge.assistant.configure_approval
+    params: { approval_mode: always }
+    error: { message: Invalid approval mode }
+  - call: bridge.assistant.configure_chat
+    params:
+      {
+        provider: anthropic,
+        model: claude-fable-5,
+        thinking_level: null,
+        expected:
+          {
+            instance_id: "${instance}",
+            provider: anthropic,
+            model: claude-haiku-4-5,
+            credential_source: assistant,
+          },
+      }
+    reply: { config: { provider: anthropic, model: claude-fable-5 } }
+  - call: bridge.assistant.configure_chat
+    params:
+      {
+        provider: anthropic,
+        model: no-such-model,
+        thinking_level: null,
+        expected:
+          {
+            instance_id: "${instance}",
+            provider: anthropic,
+            model: claude-fable-5,
+            credential_source: assistant,
+          },
+      }
+    error: { message: The selected model is not configured }
+  - call: bridge.assistant.configure_chat
+    params:
+      {
+        provider: anthropic,
+        model: claude-haiku-4-5,
+        thinking_level: null,
+        expected:
+          {
+            instance_id: "${instance}",
+            provider: anthropic,
+            model: claude-fable-5,
+            credential_source: assistant,
+          },
+      }
+  # A login by API key: the provider asks for the key through a prompt.
+  - call: bridge.assistant.auth.start
+    params: { provider: anthropic, method: api_key }
+  - expect_push: assistant
+    message: { assistant: { auth: { provider: anthropic, prompt: {} } } }
+    save: { auth_id: /assistant/auth/id, prompt_id: /assistant/auth/prompt/id }
+  - call: bridge.assistant.auth.respond
+    params: { auth_id: "${auth_id}", prompt_id: wrong, value: x }
+    error: { message: This login prompt is no longer active }
+  - call: bridge.assistant.auth.respond
+    params:
+      {
+        auth_id: "${auth_id}",
+        prompt_id: "${prompt_id}",
+        value: second-synthetic-key,
+      }
+  - assert_file:
+      {
+        path: "${ROOT}/ranger/auth.json",
+        json: { anthropic: { key: second-synthetic-key } },
+        mode: "0600",
+      }
+    retry: 5000
+  - call: bridge.assistant.auth.cancel
+    params: {}
+  - call: bridge.assistant.auth.start
+    params: { provider: anthropic, method: password }
+    error: { message: Invalid login method }
+  # A custom model connection: an OpenAI-style endpoint (fake-openai).
+  - call: bridge.assistant.configure_model
+    params:
+      {
+        credential_source: assistant,
+        provider: parity-local,
+        model: parity-model,
+        base_url: "${FAKE_HTTP}/v1",
+        api: openai-completions,
+        api_key: synthetic-openai-key,
+      }
+    reply:
+      { models: { $contains: [{ provider: parity-local, id: parity-model }] } }
+  - assert_file:
+      {
+        path: "${ROOT}/ranger/models.json",
+        json:
+          {
+            providers:
+              {
+                parity-local:
+                  { baseUrl: "${FAKE_HTTP}/v1", api: openai-completions },
+              },
+          },
+      }
+  - call: bridge.assistant.configure_model
+    params:
+      {
+        credential_source: assistant,
+        provider: "bad provider",
+        model: m,
+        base_url: "${FAKE_HTTP}/v1",
+        api: openai-completions,
+      }
+    error: { message: "{{contains:The model connection could not be saved}}" }
+  - call: bridge.assistant.configure_chat
+    params:
+      {
+        provider: parity-local,
+        model: parity-model,
+        thinking_level: null,
+        expected:
+          {
+            instance_id: "${instance}",
+            provider: anthropic,
+            model: claude-haiku-4-5,
+            credential_source: assistant,
+          },
+      }
+    reply: { config: { provider: parity-local, model: parity-model } }
+  - call: bridge.assistant.send
+    params: { text: Say hello, request_id: openai-question }
+  - expect_push: assistant
+    message:
+      {
+        assistant:
+          {
+            running: false,
+            messages:
+              {
+                $contains:
+                  [
+                    { role: user, text: Say hello },
+                    { role: assistant, text: ok },
+                  ],
+              },
+          },
+      }
+  - http_fake_calls:
+      {
+        fake: openai,
+        path: /v1/chat/completions,
+        count: 1,
+        index: 0,
+        call: { body: { model: parity-model, stream: true } },
+      }
+  - call: bridge.assistant.new_session
+  - call: bridge.assistant.configure_chat
+    params:
+      {
+        provider: anthropic,
+        model: claude-haiku-4-5,
+        thinking_level: null,
+        expected:
+          {
+            instance_id: "${instance}",
+            provider: parity-local,
+            model: parity-model,
+            credential_source: assistant,
+          },
+      }
+  # A chat action: cancelled, then confirmed once it is no longer pending.
+  - call: bridge.assistant.send
+    params: { text: Propose a tab, request_id: tab-question }
+  - expect_push: assistant
+    message:
+      {
+        assistant:
+          {
+            running: false,
+            messages:
+              {
+                $contains:
+                  [{ role: assistant, actions: [{ status: pending }] }],
+              },
+          },
+      }
+    save: { action: "/assistant/messages/[role=assistant]/actions/0/id" }
+  - call: bridge.assistant.action.cancel
+    params: { action_id: "${action}" }
+    reply:
+      {
+        messages:
+          {
+            $contains:
+              [
+                {
+                  actions:
+                    [
+                      {
+                        id: "${action}",
+                        status: cancelled,
+                        detail: Cancelled. Nothing was executed.,
+                      },
+                    ],
+                },
+              ],
+          },
+      }
+  - call: bridge.assistant.action.confirm
+    params: { action_id: "${action}" }
+    reply:
+      {
+        messages:
+          {
+            $contains: [{ actions: [{ id: "${action}", status: cancelled }] }],
+          },
+      }
+  - call: bridge.assistant.action.cancel
+    params: { action_id: no-such-action }
+    error: { message: This action is no longer available. }
+  # A turn that does not end: a second message waits in the queue.
+  - call: bridge.assistant.send
+    params: { text: Think about it, request_id: long-question }
+  - http_fake_calls: { fake: anthropic, count: 3 }
+    retry: 10000
+  - call: bridge.assistant.send
+    params:
+      { text: And then this, request_id: queued-question, when_busy: queue }
+    reply: { queue: [{ text: And then this }] }
+    save: { queued: /result/queue/0/id }
+  - call: bridge.assistant.queue.remove
+    params: { id: "${queued}" }
+    reply: { queue: [] }
+  - call: bridge.assistant.queue.remove
+    params: { id: "${queued}" }
+    error: { message: This message was already sent. }
+  - call: bridge.assistant.stop
+    params: {}
+    reply: { running: false }
+  - call: bridge.assistant.queue.resume
+    params: {}
+    reply: { queue: [] }
+  - call: bridge.assistant.queue.resume
+    params: { now: true }
+    error: { message: Resuming the queue accepts no parameters. }
+  # A task proposal cancelled.
+  - call: bridge.assistant.send
+    params: { text: Propose a check, request_id: proposal-question }
+  - expect_push: assistant
+    message:
+      {
+        assistant:
+          {
+            running: false,
+            messages:
+              {
+                $contains:
+                  [
+                    {
+                      task_proposals:
+                        [{ status: pending, title: Proposed check }],
+                    },
+                  ],
+              },
+          },
+      }
+    save:
+      { proposal: "/assistant/messages/[task_proposals]/task_proposals/0/id" }
+  - call: bridge.assistant.task.cancel_proposal
+    params: { proposal_id: "${proposal}" }
+    reply:
+      {
+        messages:
+          {
+            $contains:
+              [{ task_proposals: [{ id: "${proposal}", status: cancelled }] }],
+          },
+        tasks: [],
+      }
+  - call: bridge.assistant.task.confirm_proposal
+    params: { proposal_id: no-such-proposal }
+    error: { message: This task proposal is no longer available. }
+  # Task edits.
+  - call: bridge.assistant.task.create
+    params:
+      request_id: 00000000-0000-4000-8000-0000000000e1
+      title: Edited check
+      prompt: Inspect the authorized workspace status.
+      scope: [{ connection_id: healthy, workspace_id: w1 }]
+      schedule: { type: interval, minutes: 30 }
+    save: { task: "/result/tasks/[title=Edited check]/id" }
+  - call: bridge.assistant.task.update
+    params:
+      task_id: "${task}"
+      title: Edited check, hourly
+      prompt: Inspect the authorized workspace status.
+      scope: [{ connection_id: healthy, workspace_id: w1 }]
+      schedule: { type: interval, minutes: 60 }
+    reply:
+      {
+        tasks:
+          {
+            $contains:
+              [
+                {
+                  id: "${task}",
+                  title: "Edited check, hourly",
+                  schedule: { type: interval, minutes: 60 },
+                },
+              ],
+          },
+      }
+  - call: bridge.assistant.task.stop
+    params: { task_id: "${task}" }
+  - call: bridge.assistant.task.delete
+    params: { task_id: "${task}" }
+    error: { message: "{{string}}" }
+  - call: bridge.assistant.task.cancel
+    params: { task_id: "${task}" }
+    reply: { tasks: { $contains: [{ id: "${task}", status: cancelled }] } }
+  - call: bridge.assistant.task.delete
+    params: { task_id: "${task}" }
+    reply: { tasks: { $lacks: [{ id: "${task}" }] } }
+  - call: bridge.assistant.task.action.confirm
+    params: { task_id: "${task}", run_id: none, action_id: none }
+    error: { message: "{{string}}" }
+  - call: bridge.assistant.task.action.cancel
+    params: { task_id: "${task}", run_id: none, action_id: none }
+    error: { message: "{{string}}" }
+  - call: bridge.assistant.task.pause
+    params: { task_id: "${task}", extra: 1 }
+    error: { message: Task control accepts only the task identifier. }

@@ -6,6 +6,16 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "ui": {
+        "type": "object",
+        "description": "the UI settings by key, any JSON value"
+      }
+    },
+    "additionalProperties": false,
+    "required": ["ui"]
+  },
+  "status": "typed"
 }

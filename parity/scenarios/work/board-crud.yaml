@@ -1,0 +1,75 @@
+name: the Work board's items are added, changed, done, reopened and removed from a browser, every page told
+family: work
+ledger:
+  - "server/src/work/service.test.ts > seeds the roamgate project and adds, moves, finishes and reopens items"
+  - "server/src/work/service.test.ts > the bridge RPCs route to the service and say who wrote"
+steps:
+  - login: {}
+  - connect: {}
+  - connect: { name: other }
+  - call: bridge.work.board
+    reply: { projects: [{ id: roamgate }], items: [] }
+  - call: bridge.work.add
+    params: { title: Write the parity harness, tags: [rust], state: open }
+    reply:
+      {
+        item:
+          {
+            title: Write the parity harness,
+            project: roamgate,
+            state: open,
+            tags: [rust],
+            by: user,
+            createdAt: "{{time}}",
+          },
+      }
+    save: { item: /result/item/id }
+  - expect_push: work
+    message: { work: { changed: [items], item: "${item}", by: user } }
+  - expect_push: work
+    socket: other
+    message: { work: { item: "${item}" } }
+  - call: bridge.work.update
+    params:
+      {
+        item: "${item}",
+        state: doing,
+        title: Write the parity harness and fakes,
+      }
+    reply:
+      {
+        item:
+          {
+            id: "${item}",
+            state: doing,
+            title: Write the parity harness and fakes,
+          },
+      }
+  - expect_push: work
+    message: { work: { item: "${item}", by: user } }
+  - call: bridge.work.list
+    params: { state: doing }
+    reply: { items: [{ id: "${item}", state: doing }] }
+  - call: bridge.work.done
+    params: { item: "${item}" }
+    reply: { item: { id: "${item}", state: done, doneAt: "{{time}}" } }
+  - call: bridge.work.list
+    params: { open: true }
+    reply: { items: [] }
+  - call: bridge.work.reopen
+    params: { item: "${item}" }
+    reply: { item: { id: "${item}", state: open, doneAt: "{{absent}}" } }
+  - assert_file:
+      path: .config/roamgate/work/work.json
+      json: { items: { $contains: [{ id: "${item}", state: open }] } }
+  - assert_file:
+      path: .config/roamgate/work/history.jsonl
+      text_contains: "${item}"
+  - call: bridge.work.remove
+    params: { item: "${item}" }
+    reply: { item: { id: "${item}" } }
+  - call: bridge.work.board
+    reply: { items: [] }
+  - call: bridge.work.update
+    params: { item: "${item}", state: doing }
+    error: { message: "{{string}}" }

@@ -1,0 +1,73 @@
+name: instance naming is authenticated and persistent
+family: auth
+ledger:
+  - "server/src/http/auth-process.test.ts > instance naming is authenticated, persistent, and isolated from other instances"
+server:
+  env: { ROAMGATE_SETTINGS_PATH: "${ROOT}/settings.json" }
+steps:
+  - http: GET /api/instance-settings
+    expect: { status: 401 }
+  - http: GET /manifest.json
+    expect: { status: 401 }
+  - http: PUT /api/instance-settings
+    headers: { x-roamgate-settings: "1" }
+    body: { title_suffix: Unauthorized }
+    expect: { status: 401 }
+  - login: {}
+  - http: GET /api/instance-settings
+    expect:
+      status: 200
+      headers: { cache-control: no-store }
+      json:
+        {
+          title_suffix: "",
+          rendered_sites: [],
+          rendered_site_roots: {},
+          $exact: true,
+        }
+  - http: GET /manifest.json
+    expect:
+      {
+        status: 200,
+        headers: { cache-control: "private, no-cache, must-revalidate" },
+        json: { name: Roamgate },
+      }
+  - http: PUT /api/instance-settings
+    headers: { x-roamgate-settings: "1" }
+    body: { title_suffix: "  Home  " }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            title_suffix: Home,
+            rendered_sites: [],
+            rendered_site_roots: {},
+            $exact: true,
+          },
+      }
+  - http: GET /manifest.json
+    expect:
+      {
+        status: 200,
+        json: { name: "Roamgate · Home", short_name: "Roamgate · Home" },
+      }
+  - http: GET /
+    headers: { accept: text/html }
+    expect:
+      status: 200
+      text_contains:
+        - "<title>Roamgate · Home</title>"
+        - 'name="application-name" content="Roamgate · Home"'
+        - 'name="apple-mobile-web-app-title" content="Roamgate · Home"'
+  - restart: {}
+  - login: {}
+  - http: GET /manifest.json
+    expect: { status: 200, json: { name: "Roamgate · Home" } }
+  - http: PUT /api/instance-settings
+    headers: { x-roamgate-settings: "1" }
+    body: { title_suffix: "" }
+    expect: { status: 200 }
+  - http: GET /manifest.json
+    expect: { status: 200, json: { name: Roamgate } }
+  - assert_file: { path: "${ROOT}/settings.json", json: { title_suffix: "" } }

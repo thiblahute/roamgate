@@ -4,8 +4,54 @@
   "scope": "bridge",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "required": ["query"],
+    "properties": {
+      "query": {
+        "type": "string",
+        "maxLength": 300
+      },
+      "host": {
+        "type": "string",
+        "maxLength": 64
+      },
+      "agent": {
+        "type": "string",
+        "maxLength": 40
+      },
+      "project": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "role": {
+        "type": "string",
+        "maxLength": 20
+      },
+      "since": {
+        "type": "string",
+        "maxLength": 32
+      },
+      "until": {
+        "type": "string",
+        "maxLength": 32
+      },
+      "recent": {
+        "type": "boolean"
+      },
+      "regex": {
+        "type": "boolean"
+      },
+      "tool_output": {
+        "type": "boolean"
+      },
+      "limit": {
+        "type": "integer"
+      }
+    },
+    "additionalProperties": false
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "$ref": "../../schemas/shared/archiveSearch.schema.json#/$defs/SearchResult"
+  },
+  "status": "typed"
 }

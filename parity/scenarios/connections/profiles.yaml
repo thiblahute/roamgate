@@ -1,0 +1,244 @@
+name: two local profiles stay isolated, a repointed profile gets a new generation, stale requests are refused, and profiles are created, edited and removed
+family: connections
+description: >
+  The production dispatcher with two local connection profiles (alpha,
+  beta), each its own fake Herdr: catalogs, status, agent sessions and
+  tasks across connections, a connection test, generation-bound RPC and
+  HTTP (a stale generation is refused before Herdr is asked), legacy
+  unscoped requests routed to the current generation, and the profile CRUD
+  ending with beta as the only, default connection.
+ledger:
+  - "server/src/connections/profile-process.test.ts > production dispatcher isolates two local profiles and profile CRUD"
+server:
+  herdr: false
+  herdrs:
+    alpha:
+      version: fake-alpha
+      endpoint: true
+      workspaces: [{ workspace_id: w-alpha, label: from-alpha }]
+      panes:
+        [
+          {
+            pane_id: shared-pane,
+            workspace_id: w-alpha,
+            agent: codex,
+            agent_status: working,
+          },
+        ]
+    beta:
+      version: fake-beta
+      endpoint: true
+      workspaces: [{ workspace_id: w-beta, label: from-beta }]
+      panes:
+        [
+          {
+            pane_id: shared-pane,
+            workspace_id: w-beta,
+            agent: codex,
+            agent_status: working,
+          },
+        ]
+  env: { HERDR_GUI_CONNECTIONS_PATH: "${ROOT}/connections.json" }
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 1
+        default_connection_id: alpha
+        profiles:
+          - {
+              id: alpha,
+              label: ALPHA,
+              type: local,
+              control_socket_path: "${HERDR_alpha_CONTROL}",
+              client_socket_path: "${HERDR_alpha_CLIENT}",
+              auto_connect: true,
+            }
+          - {
+              id: beta,
+              label: BETA,
+              type: local,
+              control_socket_path: "${HERDR_beta_CONTROL}",
+              client_socket_path: "${HERDR_beta_CLIENT}",
+              auto_connect: false,
+            }
+steps:
+  - login: {}
+  - connect: { name: a }
+  - connect: { name: b }
+  - call: connections.list
+    socket: a
+    normalize: [run-paths]
+    golden: catalog
+    reply:
+      {
+        default_connection_id: alpha,
+        connections: [{ id: alpha }, { id: beta }],
+      }
+  - call: connections.connect
+    socket: a
+    params: { id: alpha }
+    reply: { state: ready }
+    save: { old_alpha: /result/generation }
+  - call: bridge.status
+    socket: a
+    reply:
+      {
+        connections:
+          [{ id: alpha, state: ready }, { id: beta, state: disconnected }],
+      }
+  - call: connections.agent_sessions
+    socket: a
+    normalize: [run-paths]
+    golden: agent-sessions
+  - call: connections.agent_tasks
+    socket: a
+    any_outcome: true
+    normalize: [run-paths]
+    golden: agent-tasks
+  - call: workspace.list
+    socket: a
+    connection_id: alpha
+    connection_generation: "${old_alpha}"
+    reply: { workspaces: [{ label: from-alpha }] }
+  - call: connections.test
+    socket: a
+    params: { id: beta }
+    reply: { version: fake-beta }
+  - call: connections.connect
+    socket: a
+    params: { id: beta }
+    reply: { state: ready }
+    save: { beta_generation: /result/generation }
+  - call: workspace.list
+    socket: a
+    connection_id: beta
+    connection_generation: "${beta_generation}"
+    reply: { workspaces: [{ label: from-beta }] }
+  # Repointing alpha at beta's Herdr makes a new generation.
+  - call: connections.update
+    socket: b
+    params:
+      {
+        id: alpha,
+        profile:
+          {
+            id: alpha,
+            label: ALPHA,
+            type: local,
+            control_socket_path: "${HERDR_beta_CONTROL}",
+            client_socket_path: "${HERDR_beta_CLIENT}",
+            auto_connect: true,
+          },
+      }
+  - call: connections.list
+    socket: b
+    reply:
+      { connections: { $contains: [{ id: alpha, generation: "{{integer}}" }] } }
+    save: { new_alpha: /result/connections/0/generation }
+  - call: pane.close
+    socket: a
+    params: { pane_id: shared-pane }
+    connection_id: alpha
+    connection_generation: "${old_alpha}"
+    envelope: { connection_id: alpha, connection_generation: "${old_alpha}" }
+    error: { message: "connection generation changed: alpha" }
+  - herdr_calls: { herdr: beta, method: pane.close, count: 0 }
+  - http: GET /api/connections/alpha/herdr-info?connection_generation=${old_alpha}
+    expect:
+      {
+        status: 409,
+        headers:
+          {
+            x-herdr-connection-id: alpha,
+            x-herdr-connection-generation: "{{re:^${old_alpha}$}}",
+          },
+      }
+  - call: workspace.list
+    socket: a
+    connection_id: alpha
+    # Herdr 0.9 (protocol 22): browser-local navigation.
+    reply:
+      { workspaces: [{ label: from-beta }], navigation_mode: browser-local }
+  - http: GET /api/connections/alpha/herdr-info
+    expect:
+      {
+        status: 200,
+        json: { version: fake-beta },
+        headers: { x-herdr-connection-generation: "{{re:^${new_alpha}$}}" },
+      }
+  - call: connections.create
+    params:
+      {
+        profile:
+          {
+            id: gamma,
+            label: GAMMA,
+            type: local,
+            control_socket_path: "${HERDR_alpha_CONTROL}",
+            client_socket_path: "${HERDR_alpha_CLIENT}",
+            auto_connect: false,
+          },
+      }
+    socket: a
+  - call: connections.update
+    socket: a
+    params:
+      {
+        id: gamma,
+        profile:
+          {
+            id: gamma,
+            label: Gamma edited,
+            type: local,
+            control_socket_path: "${HERDR_alpha_CONTROL}",
+            client_socket_path: "${HERDR_alpha_CLIENT}",
+            auto_connect: false,
+          },
+      }
+  - assert_file:
+      {
+        path: "${ROOT}/connections.json",
+        json:
+          {
+            version: 2,
+            profiles: { $contains: [{ id: gamma, label: Gamma edited }] },
+          },
+        mode: "0600",
+      }
+  - call: connections.remove
+    socket: a
+    params: { id: gamma }
+  - call: connections.disconnect
+    socket: a
+    params: { id: alpha }
+  - call: connections.set_default
+    socket: a
+    params: { id: beta }
+  - call: workspace.list
+    socket: a
+    reply: { workspaces: [{ label: from-beta }] }
+  - call: connections.remove
+    socket: a
+    params: { id: alpha }
+  - call: connections.list
+    socket: a
+    reply: { default_connection_id: beta, connections: [{ id: beta }] }
+  - assert_file:
+      {
+        path: "${ROOT}/connections.json",
+        json: { default_connection_id: beta, profiles: [{ id: beta }] },
+      }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: pane.close,
+      kind: unlisted,
+      reason: "a Herdr pass-through method (rpc/herdr/passthrough.json, method *): the checkers do not map it yet",
+    }
+  - {
+      surface: rpc.reply,
+      name: pane.close,
+      kind: unlisted,
+      reason: "a Herdr pass-through method (rpc/herdr/passthrough.json, method *): the checkers do not map it yet",
+    }

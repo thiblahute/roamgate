@@ -1,0 +1,6 @@
+{
+  "status": 400,
+  "json": {
+    "error": "no last step known here yet: it ends when your turn does"
+  }
+}

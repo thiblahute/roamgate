@@ -1,0 +1,8 @@
+name: HERDR_GUI_LOG_LEVEL sets the log level when ROAMGATE_LOG_LEVEL is not set
+family: env
+server:
+  env: { HERDR_GUI_LOG_LEVEL: debug }
+steps:
+  - login: {}
+  - connect: {}
+  - expect_log: { matches: "(?m) DEBUG bridge" }

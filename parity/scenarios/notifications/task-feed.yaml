@@ -1,0 +1,157 @@
+name: an agent finishing or blocking notifies the feed, numbered across a restart and replayed from since
+family: notifications
+ledger:
+  - "server/src/notifications/notification-feed.test.ts > hello replays what came after a numeric `since`, clears included"
+  - "server/src/notifications/notification-feed.test.ts > the feed and its ids live through a restart"
+  - "server/src/notifications/notification-feed.test.ts > status lists the open sockets: kind, address, since and last seen"
+  - "server/src/notifications/task-events.test.ts > initial snapshots seed, transitions notify once, and stale snapshots cannot replay events"
+description: >
+  Roamgate's own status tracker (ROAMGATE_NOTIFICATION_SOURCE=status) turns
+  Herdr's pane.agent_status_changed events (working, then idle or blocked)
+  into notifications: kept in notifications.json, sent to the feed sockets
+  that want them, numbered on after a restart, replayed after `since`.
+server:
+  env: { ROAMGATE_NOTIFICATION_SOURCE: status }
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes:
+      [
+        {
+          pane_id: p1,
+          workspace_id: w1,
+          cwd: /work,
+          agent: claude,
+          agent_status: working,
+        },
+      ]
+steps:
+  - login: {}
+  - connect: { name: feed, path: /api/notifications/ws }
+  - send:
+      {
+        op: hello,
+        since: null,
+        client: android,
+        preferences: { completed: true, blocked: true },
+      }
+    socket: feed
+  - expect_push: "event:ready"
+    socket: feed
+    message: { event: ready, last: 0, $exact: true }
+  - herdr_emit:
+      {
+        event: pane_agent_status_changed,
+        data:
+          {
+            type: pane_agent_status_changed,
+            pane_id: p1,
+            workspace_id: w1,
+            agent_status: working,
+            agent: claude,
+          },
+      }
+  - herdr_emit:
+      {
+        event: pane_agent_status_changed,
+        data:
+          {
+            type: pane_agent_status_changed,
+            pane_id: p1,
+            workspace_id: w1,
+            agent_status: idle,
+            agent: claude,
+          },
+      }
+  - expect_push: "event:notification"
+    socket: feed
+    message:
+      {
+        event: notification,
+        id: 1,
+        kind: completed,
+        title: "{{string}}",
+        body: "{{string}}",
+        tag: "{{string}}",
+        url: "{{re:^http://127\\.0\\.0\\.1:[0-9]+/}}",
+      }
+  - send: { op: ping }
+    socket: feed
+  - expect_push: "event:pong"
+    socket: feed
+  - connect: {}
+  - call: bridge.notifications.status
+    reply:
+      last: 1
+      events: 1
+      android_connected: true
+      clients:
+        [{ client: android, preferences: { completed: true, blocked: true } }]
+  - assert_file:
+      path: "${DATA}/notifications.json"
+      mode: "0600"
+      json:
+        {
+          version: 1,
+          last: 1,
+          events:
+            [{ event: notification, id: 1, kind: completed, pref: completed }],
+        }
+  - restart: {}
+  - login: {}
+  - connect: { name: feed, path: /api/notifications/ws }
+  - send:
+      {
+        op: hello,
+        since: 0,
+        client: android,
+        preferences: { completed: true, blocked: true },
+      }
+    socket: feed
+  - expect_pushes:
+      - {
+          push: "event:notification",
+          message: { event: notification, id: 1, kind: completed },
+        }
+      - { push: "event:ready", message: { event: ready, last: 1 } }
+    socket: feed
+  - herdr_emit:
+      {
+        event: pane_agent_status_changed,
+        data:
+          {
+            type: pane_agent_status_changed,
+            pane_id: p1,
+            workspace_id: w1,
+            agent_status: working,
+            agent: claude,
+          },
+      }
+  - herdr_emit:
+      {
+        event: pane_agent_status_changed,
+        data:
+          {
+            type: pane_agent_status_changed,
+            pane_id: p1,
+            workspace_id: w1,
+            agent_status: blocked,
+            agent: claude,
+          },
+      }
+  - expect_push: "event:notification"
+    socket: feed
+    message: { event: notification, id: 2, kind: blocked }
+  # A client that knows up to 1 gets 2 and then ready.
+  - connect: { name: late, path: /api/notifications/ws }
+  - send:
+      {
+        op: hello,
+        since: 1,
+        client: android,
+        preferences: { completed: false, blocked: true },
+      }
+    socket: late
+  - expect_pushes:
+      - { push: "event:notification", message: { id: 2 } }
+      - { push: "event:ready", message: { event: ready, last: 2 } }
+    socket: late

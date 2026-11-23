@@ -1,0 +1,28 @@
+{
+  "x-inventory": "event:roamgate.limit_pauses",
+  "x-kind": "event",
+  "x-sent-by": ["server/src/index.ts"],
+  "x-status": "typed",
+  "description": "A connection's sessions paused by a usage limit, sent whenever they change; enveloped with connection_id and connection_generation.",
+  "type": "object",
+  "required": ["event", "data"],
+  "properties": {
+    "event": { "const": "roamgate.limit_pauses" },
+    "data": {
+      "type": "object",
+      "required": ["pauses"],
+      "properties": {
+        "pauses": {
+          "type": "array",
+          "items": {
+            "$ref": "../schemas/shared/limitResume.schema.json#/$defs/LimitPause"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "connection_id": { "type": "string" },
+    "connection_generation": { "type": "integer" }
+  },
+  "additionalProperties": false
+}

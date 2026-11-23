@@ -4,8 +4,55 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "kind": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["kind", "path", "workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "diff": {
+        "type": "string"
+      },
+      "kind": {
+        "type": "string"
+      },
+      "patch_size": {
+        "type": "number"
+      },
+      "path": {
+        "type": "string"
+      },
+      "root": {
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "diff",
+      "kind",
+      "patch_size",
+      "path",
+      "root",
+      "truncated",
+      "workspace_id"
+    ]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

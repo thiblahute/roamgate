@@ -1,0 +1,10 @@
+{
+  "event": "notification",
+  "url": "http://127.0.0.1:{{port}}/#roamgate-task=%7B%22connectionId%22%3A%22legacy-default%22%2C%22runtimeGeneration%22%3A1%2C%22workspaceId%22%3A%22w1%22%2C%22paneId%22%3A%22p1%22%7D",
+  "at": 1767225600000,
+  "kind": "completed",
+  "title": "Claude finished",
+  "body": "The tests pass",
+  "tag": "[\"roamgate-task\",\"legacy-default\",1,\"p1\"]",
+  "group": "w1"
+}

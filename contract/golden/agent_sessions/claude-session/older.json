@@ -1,0 +1,62 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "version": 1,
+    "agent": "claude",
+    "pane_id": "p1",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "status": "ok",
+    "detail": "",
+    "updated_at": "{{file-stat}}",
+    "path": "$HOME/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl",
+    "session": {
+      "source": "claude",
+      "agent": "claude",
+      "kind": "id",
+      "value": "11111111-2222-4333-8444-555555555555"
+    },
+    "file": {
+      "path": "$HOME/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl",
+      "mtimeMs": "{{file-stat}}",
+      "size": 2414,
+      "identity": "{{file-stat}}",
+      "changeToken": "{{file-stat}}"
+    },
+    "entries": [
+      {
+        "kind": "message",
+        "role": "user",
+        "text": "Look at this picture",
+        "sent_at": "2026-01-01T00:00:01.000Z",
+        "uuid": "u2",
+        "images": 1,
+        "id": "{{entry}}:0"
+      },
+      {
+        "kind": "message",
+        "role": "assistant",
+        "text": "Running the tests",
+        "sent_at": "2026-01-01T00:00:02.000Z",
+        "message_id": "msg_1",
+        "block_index": 0,
+        "uuid": "a1",
+        "id": "{{entry}}:0"
+      },
+      {
+        "kind": "tool_call",
+        "role": "tool",
+        "tool_name": "Bash",
+        "source_call_id": "toolu_bash",
+        "text": "",
+        "summary": "Run the tests",
+        "sent_at": "2026-01-01T00:00:02.000Z",
+        "id": "{{entry}}:0",
+        "text_bytes": 61,
+        "text_hash": "bbc9e20584b39a2d"
+      }
+    ],
+    "has_more": false
+  }
+}

@@ -1,0 +1,118 @@
+name: the standalone binary offers to update itself only under a process supervisor
+family: env
+ledger:
+  - "server/src/config/environment.test.ts > new supervisor override takes precedence over legacy settings and detection"
+  - "server/src/http/update.test.ts > detects systemd and launchd while allowing explicit overrides"
+  - "server/src/http/update.test.ts > checks for updates but requires an external supervisor to install"
+tier: T2
+description: >
+  /api/update/check of the release binary: a supervisor is ROAMGATE_RESTART_SUPERVISOR
+  (1 or 0, legacy HERDR_GUI_RESTART_SUPERVISOR), else systemd's INVOCATION_ID,
+  else launchd's XPC_SERVICE_NAME (not "0"). The mirror is
+  HERDR_GUI_UPDATE_BASE_URL, the legacy name; HERDR_GUI_DISABLE_UPDATE_CHECK
+  turns the check off when ROAMGATE_DISABLE_UPDATE_CHECK is not set.
+platforms: [linux, macos]
+server:
+  command: standalone
+  clock: false
+  env:
+    ROAMGATE_DISABLE_UPDATE_CHECK: "0"
+    HERDR_GUI_UPDATE_BASE_URL: "${FAKE_HTTP}/files/releases"
+  served:
+    releases/roamgate-darwin-arm64.update.json: '{"schema": 1, "name": "roamgate", "version": "99.0.0", "platform": "darwin-arm64", "archive": "roamgate-darwin-arm64.tar.xz", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+    releases/roamgate-darwin-x64.update.json: '{"schema": 1, "name": "roamgate", "version": "99.0.0", "platform": "darwin-x64", "archive": "roamgate-darwin-x64.tar.xz", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+    releases/roamgate-linux-arm64.update.json: '{"schema": 1, "name": "roamgate", "version": "99.0.0", "platform": "linux-arm64", "archive": "roamgate-linux-arm64.tar.xz", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+    releases/roamgate-linux-x64.update.json: '{"schema": 1, "name": "roamgate", "version": "99.0.0", "platform": "linux-x64", "archive": "roamgate-linux-x64.tar.xz", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+steps:
+  - login: {}
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            can_auto_update: false,
+            reason: "Automatic updates require an external process supervisor such as systemd or launchd.",
+          },
+      }
+  - restart: { env: { INVOCATION_ID: parity-unit } }
+  - login: {}
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      { status: 200, json: { can_auto_update: true, latest_version: 99.0.0 } }
+  - restart:
+      { env: { INVOCATION_ID: parity-unit, ROAMGATE_RESTART_SUPERVISOR: "0" } }
+  - login: {}
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            can_auto_update: false,
+            reason: "Automatic updates require an external process supervisor such as systemd or launchd.",
+          },
+      }
+  - restart:
+      {
+        env:
+          {
+            INVOCATION_ID: null,
+            ROAMGATE_RESTART_SUPERVISOR: null,
+            XPC_SERVICE_NAME: com.example.roamgate,
+          },
+      }
+  - login: {}
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      { status: 200, json: { can_auto_update: true, latest_version: 99.0.0 } }
+  - restart: { env: { XPC_SERVICE_NAME: "0" } }
+  - login: {}
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            can_auto_update: false,
+            reason: "Automatic updates require an external process supervisor such as systemd or launchd.",
+          },
+      }
+  - restart:
+      { env: { XPC_SERVICE_NAME: null, HERDR_GUI_RESTART_SUPERVISOR: "1" } }
+  - login: {}
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      { status: 200, json: { can_auto_update: true, latest_version: 99.0.0 } }
+  # An explicitly empty ROAMGATE_DISABLE_UPDATE_CHECK still wins.
+  - restart:
+      {
+        env:
+          {
+            HERDR_GUI_DISABLE_UPDATE_CHECK: "1",
+            ROAMGATE_DISABLE_UPDATE_CHECK: "",
+          },
+      }
+  - login: {}
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      { status: 200, json: { can_auto_update: true, latest_version: 99.0.0 } }
+  - restart: { env: { ROAMGATE_DISABLE_UPDATE_CHECK: null } }
+  - login: {}
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      status: 200
+      json:
+        {
+          update_available: false,
+          can_auto_update: false,
+          reason: Update checks are disabled by ROAMGATE_DISABLE_UPDATE_CHECK or HERDR_GUI_DISABLE_UPDATE_CHECK.,
+        }

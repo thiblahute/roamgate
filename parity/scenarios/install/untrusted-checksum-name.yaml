@@ -1,0 +1,20 @@
+name: a file name given by the checksum file is refused
+ledger:
+  - "scripts/install-roamgate.test.ts > rejects filenames supplied by an untrusted checksum file"
+family: install
+tier: T2
+description: >
+  The release installer (scripts/install-roamgate.sh, or the legacy
+  install-herdr-gui.sh) run with real curl and tar against a release served
+  by fake-models (fixture.sh makes it), into an install directory under the
+  run's root.
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: CHECKSUM_NAME=../../unrelated-file sh "${REPO}/parity/scenarios/install/fixture.sh" roamgate
+  - sh: sh "${REPO}/scripts/install-roamgate.sh"
+    env:
+      HERDR_GUI_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      HERDR_GUI_INSTALL_DIR: "${ROOT}/install"
+    expect: { exit_not: 0, stderr_contains: invalid package checksum file }

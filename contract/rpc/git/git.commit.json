@@ -4,8 +4,111 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "sha": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["sha", "workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "author": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": ["date", "email", "name"]
+      },
+      "base": {
+        "type": ["string", "null"]
+      },
+      "committer": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": ["date", "email", "name"]
+      },
+      "entries": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "additions": {
+              "type": "number"
+            },
+            "deletions": {
+              "type": "number"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "old_path": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": ["additions", "deletions", "kind", "path", "status"]
+        }
+      },
+      "message": {
+        "type": "string"
+      },
+      "parents": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "sha": {
+        "type": "string"
+      },
+      "shallow_boundary": {
+        "type": "boolean"
+      },
+      "subject": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "author",
+      "base",
+      "committer",
+      "entries",
+      "message",
+      "parents",
+      "sha",
+      "shallow_boundary",
+      "subject"
+    ]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

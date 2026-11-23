@@ -1,0 +1,14 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "workspace_id": "w1",
+    "key": null,
+    "enabled": true,
+    "hooks": {},
+    "config_path": null,
+    "config_source": null,
+    "paseo_path": null,
+    "error": "workspace has no worktree metadata"
+  }
+}

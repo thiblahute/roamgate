@@ -2,10 +2,20 @@
   "x-inventory": "control",
   "x-kind": "keyed",
   "x-sent-by": ["server/src/index.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
+  "description": "bridge.pause_others: every other browser of the server is asked to pause its connection.",
   "type": "object",
   "required": ["control"],
   "properties": {
-    "control": {}
-  }
+    "control": {
+      "type": "object",
+      "required": ["type", "reason"],
+      "properties": {
+        "type": { "const": "pause_connection" },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
 }

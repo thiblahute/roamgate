@@ -1,0 +1,78 @@
+name: the holder's commands on the agent socket, for a pane conversation mode does not hold
+family: conversation
+description: >
+  roamgate-hold's requests as it sends them, for a pane no lease is known
+  for: hold keeps holding after the poll interval (the server's clock),
+  handback says resume nothing, hold_output takes nothing, fg is refused,
+  launch refuses an unknown token, and claude_start lets the terminal keep
+  a session conversation mode does not know. Then the installed
+  roamgate-hold asks for a launch the server does not know.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1 }]
+    panes: [{ pane_id: "w1:p1", workspace_id: w1, cwd: / }]
+steps:
+  - expect_log:
+      {
+        contains: "connection ready connection=legacy-default",
+        within_ms: 10000,
+      }
+  - login: {}
+  - connect: {}
+  - agent: hold
+    no_wait: hold
+    body: { pane: "w1:p1", session: 11111111-2222-4333-8444-555555555555 }
+  - agent: hold_output
+    body: { pane: "w1:p1", holder_id: h1, offset: "0", end: "5", data: hello }
+    expect: { status: 200, json: { $exact: true } }
+  - agent: hold_output
+    body: { pane: "w1:p1", holder_id: h1, offset: "5", end: "2", data: "" }
+    expect: { status: 400, json: { error: invalid offsets } }
+  - advance: 25000
+  - await_http: hold
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            action: hold,
+            session_id: 11111111-2222-4333-8444-555555555555,
+            $exact: true,
+          },
+      }
+  - agent: handback
+    body: { pane: "w1:p1", session: 11111111-2222-4333-8444-555555555555 }
+    expect:
+      {
+        status: 200,
+        json: { action: resume, session_id: "", cwd: "", $exact: true },
+      }
+  - agent: hold
+    body: { session: 11111111-2222-4333-8444-555555555555 }
+    expect:
+      { status: 400, json: { error: roamgate-hold runs inside a Herdr pane } }
+  - agent: fg
+    body: { pane: "w1:p1" }
+    expect: { status: 400, json: { error: invalid stopped session } }
+  - agent: launch
+    body: { pane: "w1:p1", token: 0123456789abcdef0123 }
+    expect: { status: 404, json: { error: "{{contains:no such start}}" } }
+  - agent: launch
+    body: { pane: "w1:p1", token: nope }
+    expect: { status: 400, json: { error: invalid launch token } }
+  - agent: claude_start
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        source: startup,
+      }
+    expect: { status: 200, json: { action: "{{string}}" } }
+    golden: claude-start
+  - agent: claude_start
+    body: { pane: "w1:p1", session: "x" }
+    expect: { status: 400, json: { error: invalid session id } }
+  - wait_file: .cache/roamgate/bin/roamgate-hold
+  - sh: HERDR_PANE_ID=w1:p1 python3 "$HOME/.cache/roamgate/bin/roamgate-hold" --launch 0123456789abcdef0123
+    expect: { exit: "{{number}}" }
+    golden: hold-launch-unknown

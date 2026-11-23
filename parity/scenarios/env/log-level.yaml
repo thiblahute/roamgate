@@ -1,0 +1,12 @@
+name: ROAMGATE_LOG_LEVEL=debug adds debug lines in the server's log format
+family: env
+ledger:
+  - "server/src/config/server-config.test.ts > uses the environment and defaults to info"
+server:
+  env: { ROAMGATE_LOG_LEVEL: debug }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.ping
+  - expect_log:
+      matches: "(?m)^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z DEBUG bridge[.a-z-]* \\S"

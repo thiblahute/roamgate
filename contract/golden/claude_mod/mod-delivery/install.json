@@ -1,0 +1,13 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "min_claude": "2.1.304",
+    "sessions": 0,
+    "installed": true,
+    "enabled": true,
+    "from_roamgate": false,
+    "available": true,
+    "claude_version": "2.1.319"
+  }
+}

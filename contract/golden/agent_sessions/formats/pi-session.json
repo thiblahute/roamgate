@@ -1,0 +1,37 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "version": 1,
+    "agent": "pi",
+    "pane_id": "pi",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "status": "ok",
+    "detail": "",
+    "updated_at": "{{file-stat}}",
+    "path": "$ROOT/pi/sessions/--work--/2026-01-01T00-00-00-000Z_22222222-0000-4000-8000-000000000002.jsonl",
+    "session": {
+      "source": "pi",
+      "agent": "pi",
+      "kind": "id",
+      "value": "22222222-0000-4000-8000-000000000002"
+    },
+    "file": {
+      "path": "$ROOT/pi/sessions/--work--/2026-01-01T00-00-00-000Z_22222222-0000-4000-8000-000000000002.jsonl",
+      "mtimeMs": "{{file-stat}}",
+      "size": 885,
+      "identity": "{{file-stat}}",
+      "changeToken": "{{file-stat}}"
+    },
+    "stats": {
+      "turns": 1,
+      "records": 5,
+      "token_usage": null
+    },
+    "title": null,
+    "text": null,
+    "truncated": false,
+    "trajectory": null
+  }
+}

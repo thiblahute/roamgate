@@ -6,6 +6,28 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "required": ["target"],
+    "properties": {
+      "target": {
+        "type": "object",
+        "required": ["connectionId", "root"],
+        "properties": {
+          "connectionId": {
+            "type": ["string", "null"]
+          },
+          "root": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

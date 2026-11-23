@@ -4,8 +4,32 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
+    "properties": {
+      "pane_id": {
+        "type": "string"
+      },
+      "uuid": {
+        "type": "string"
+      },
+      "index": {
+        "type": "integer"
+      }
+    },
+    "required": ["pane_id", "uuid", "index"],
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "properties": {
+      "media_type": {
+        "type": "string"
+      },
+      "data": {
+        "type": "string"
+      }
+    },
+    "required": ["media_type", "data"],
+    "type": "object",
+    "x-inferred": "from the parity suite's recordings (agent_sessions); fields seen in every reply are required"
+  },
+  "status": "typed"
 }

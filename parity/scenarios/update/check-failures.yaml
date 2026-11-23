@@ -1,0 +1,66 @@
+name: update checks that cannot be answered say why, and a disabled check never asks the mirror
+family: update
+ledger:
+  - "server/src/http/update.test.ts > reports disabled update checks without running curl"
+  - "server/src/http/update.test.ts > returns a 502 when update checks fail"
+  - "server/src/http/update.test.ts > missing metadata fails closed without any archive fallback"
+  - "server/src/http/update.test.ts > requires an explicit browser confirmation header for update requests"
+  - "server/src/http/update.test.ts > normalizes safe update base URLs without exposing credentials"
+platforms: [linux, macos]
+server:
+  env:
+    ROAMGATE_UPDATE_BASE_URL: "${FAKE_HTTP}/files/missing"
+steps:
+  - login: {}
+  # The harness's default: ROAMGATE_DISABLE_UPDATE_CHECK=1.
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      status: 200
+      json:
+        update_available: false
+        can_auto_update: false
+        reason: Update checks are disabled by ROAMGATE_DISABLE_UPDATE_CHECK or HERDR_GUI_DISABLE_UPDATE_CHECK.
+        latest_version: "{{absent}}"
+  - http_fake_calls: { fake: models, count: 0 }
+  - restart: { env: { ROAMGATE_DISABLE_UPDATE_CHECK: "0" } }
+  - login: {}
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      {
+        status: 502,
+        json:
+          {
+            error: "{{contains:404}}",
+            source_url: "{{string}}",
+            metadata_url: "{{string}}",
+          },
+      }
+  - http: POST /api/update/install
+    headers: { x-roamgate-update: "1" }
+    expect:
+      {
+        status: 409,
+        json:
+          {
+            error: Auto update is only available in the standalone binary.,
+            current_version: "{{string}}",
+          },
+      }
+  - http: POST /api/update/install
+    expect:
+      { status: 403, json: { error: Update confirmation header is required. } }
+  - restart:
+      { env: { ROAMGATE_UPDATE_BASE_URL: "http://mirror.example/releases" } }
+  - login: {}
+  - http: GET /api/update/check
+    headers: { x-roamgate-update: "1" }
+    expect:
+      {
+        status: 502,
+        json:
+          {
+            error: ROAMGATE_UPDATE_BASE_URL must use HTTPS unless the mirror is loopback,
+          },
+      }

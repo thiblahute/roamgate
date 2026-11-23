@@ -1,0 +1,347 @@
+name: confirmed Ranger proposals schedule custom notifications and deduplicate them across a bridge restart
+family: assistant
+ledger:
+  - "server/src/assistant-recovery.integration.test.ts > confirmed Ranger proposals schedule custom notifications and deduplicate polling across bridge restart"
+server:
+  herdr: false
+  start: false
+  herdrs:
+    healthy:
+      endpoint: true
+      workspaces:
+        - workspace_id: w1
+          label: Recovery workspace
+          worktree:
+            {
+              repo_key: workspace,
+              repo_name: workspace,
+              repo_root: "${ROOT}/workspace",
+              checkout_path: "${ROOT}/workspace",
+              is_linked_worktree: false,
+            }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ASSISTANT_DIR: "${ROOT}/ranger"
+    PI_CODING_AGENT_DIR: "${ROOT}/pi"
+  openai:
+    anthropic:
+      replies:
+        - {
+            "tools":
+              [
+                {
+                  "name": "propose_ranger_task",
+                  "id": "monitor-task-proposal",
+                  "input":
+                    {
+                      "title": "Monitor Agent",
+                      "prompt": "Inspect the authorized Agent. Notify when verification finishes or the Agent needs input, and stay quiet for an unchanged outcome.",
+                      "scope":
+                        [{ "connection_id": "healthy", "workspace_id": "w1" }],
+                      "schedule":
+                        { "type": "once", "at": "2026-01-01T00:00:01.500Z" },
+                      "notification_mode": "agent",
+                    },
+                },
+              ],
+          }
+        - { "text": "Confirm the task to enable the Agent check." }
+        - {
+            "tools":
+              [{ "name": "workspace_status", "id": "status-3", "input": {} }],
+          }
+        - {
+            "tools":
+              [
+                {
+                  "name": "send_user_notification",
+                  "id": "notify-4",
+                  "input":
+                    {
+                      "event_key": "agent-turn-7-completed",
+                      "kind": "completed",
+                      "title": "Agent verification passed",
+                      "body": "The Agent's verification finished. Review the result in Ranger.",
+                    },
+                },
+              ],
+          }
+        - { "text": "Inspected Agent status and notification receipt." }
+        - {
+            "tools":
+              [{ "name": "workspace_status", "id": "status-6", "input": {} }],
+          }
+        - {
+            "tools":
+              [
+                {
+                  "name": "send_user_notification",
+                  "id": "notify-7",
+                  "input":
+                    {
+                      "event_key": "agent-turn-7-completed",
+                      "kind": "completed",
+                      "title": "Agent verification passed",
+                      "body": "The Agent's verification finished. Review the result in Ranger.",
+                    },
+                },
+              ],
+          }
+        - { "text": "Inspected Agent status and notification receipt." }
+        - {
+            "tools":
+              [{ "name": "workspace_status", "id": "status-9", "input": {} }],
+          }
+        - {
+            "tools":
+              [
+                {
+                  "name": "send_user_notification",
+                  "id": "notify-10",
+                  "input":
+                    {
+                      "event_key": "agent-turn-8-needs-input",
+                      "kind": "attention",
+                      "title": "Agent needs a decision",
+                      "body": "The Agent cannot continue until you choose an option.",
+                    },
+                },
+              ],
+          }
+        - { "text": "Inspected Agent status and notification receipt." }
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 1
+        default_connection_id: healthy
+        profiles:
+          - {
+              id: healthy,
+              label: Healthy,
+              type: local,
+              control_socket_path: "${HERDR_healthy_CONTROL}",
+              client_socket_path: "${HERDR_healthy_CLIENT}",
+              auto_connect: true,
+            }
+    "${ROOT}/ranger/auth.json":
+      {
+        mode: "0600",
+        json: { anthropic: { type: api_key, key: synthetic-recovery-key } },
+      }
+    "${ROOT}/ranger/models.json":
+      {
+        mode: "0600",
+        json: { providers: { anthropic: { baseUrl: "${FAKE_HTTP}" } } },
+      }
+steps:
+  - sh: chmod 700 ranger && mkdir -p workspace
+  - start: {}
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    params: { id: healthy }
+    reply: { state: ready }
+  - call: bridge.assistant.configure
+    params:
+      {
+        config:
+          {
+            provider: anthropic,
+            model: claude-haiku-4-5,
+            credential_source: assistant,
+            allowed_workspaces: [{ connection_id: healthy, workspace_id: w1 }],
+          },
+      }
+  - call: bridge.assistant.send
+    params:
+      {
+        text: "Check the Agent shortly. Notify me when verification finishes or the Agent needs input, and stay quiet for an unchanged outcome.",
+        request_id: propose-agent-monitor,
+      }
+  - expect_push: assistant
+    message:
+      assistant:
+        running: false
+        error: null
+        tasks: []
+        messages:
+          {
+            $contains:
+              [
+                {
+                  task_proposals:
+                    [
+                      {
+                        status: pending,
+                        notification_mode: agent,
+                        scope: [{ connection_id: healthy, workspace_id: w1 }],
+                        schedule: { type: once },
+                      },
+                    ],
+                },
+              ],
+          }
+    save:
+      {
+        proposal_id: "/assistant/messages/[role=assistant]/task_proposals/0/id",
+      }
+  - http_fake_calls:
+      {
+        fake: anthropic,
+        count: 2,
+        index: 0,
+        call:
+          { body: { tools: { $contains: [{ name: propose_ranger_task }] } } },
+      }
+  - http_fake_calls:
+      {
+        fake: anthropic,
+        index: 0,
+        call:
+          { body: { tools: { $lacks: [{ name: send_user_notification }] } } },
+      }
+  - expect_no_push: assistant_notification
+  - call: bridge.assistant.task.confirm_proposal
+    params: { proposal_id: "${proposal_id}" }
+    reply:
+      tasks:
+        [
+          {
+            title: Monitor Agent,
+            prompt: "Inspect the authorized Agent. Notify when verification finishes or the Agent needs input, and stay quiet for an unchanged outcome.",
+            scope: [{ connection_id: healthy, workspace_id: w1 }],
+            schedule: { type: once },
+            notification_mode: agent,
+            status: active,
+            next_run_at: "{{string}}",
+          },
+        ]
+      messages:
+        {
+          $contains:
+            [
+              {
+                task_proposals:
+                  [
+                    {
+                      id: "${proposal_id}",
+                      status: confirmed,
+                      task_id: "{{string}}",
+                    },
+                  ],
+              },
+            ],
+        }
+    save: { task: /result/tasks/0/id, next_run: /result/tasks/0/next_run_at }
+  # The confirmed deadline starts the first read; no run RPC is sent.
+  - advance: 2000
+  - expect_push: assistant
+    message:
+      {
+        assistant:
+          {
+            tasks:
+              {
+                $contains: [{ id: "${task}", last_run: { status: succeeded } }],
+              },
+          },
+      }
+    save: { run: "/assistant/tasks/[id=${task}]/last_run/id" }
+  - expect_push: assistant_notification
+    message:
+      assistant_notification:
+        {
+          task_id: "${task}",
+          run_id: "${run}",
+          status: succeeded,
+          title: Agent verification passed,
+          body: "The Agent's verification finished. Review the result in Ranger.",
+          $exact: true,
+        }
+  - call: bridge.assistant.task.get
+    params: { task_id: "${task}", run_id: "${run}" }
+    reply:
+      run:
+        scheduled_at: "${next_run}"
+        messages:
+          {
+            $contains:
+              [
+                {
+                  role: assistant,
+                  tools:
+                    [
+                      { name: workspace_status },
+                      { name: send_user_notification },
+                    ],
+                  sources:
+                    [
+                      {
+                        kind: status,
+                        connection_id: healthy,
+                        workspace_id: w1,
+                      },
+                    ],
+                },
+              ],
+          }
+  - http_fake_calls:
+      {
+        fake: anthropic,
+        index: 2,
+        call:
+          {
+            body: { tools: { $contains: [{ name: send_user_notification }] } },
+          },
+      }
+  - http_fake_calls:
+      { fake: anthropic, index: 4, text_contains: [notify-4, best_effort] }
+  - stop: { signal: TERM }
+  - start: {}
+  - login: {}
+  - connect: {}
+  - call: bridge.assistant.get
+    reply:
+      { tasks: { $contains: [{ id: "${task}", notification_mode: agent }] } }
+  - call: bridge.assistant.task.run_now
+    params: { task_id: "${task}" }
+  - assert_rows:
+      db: "${ROOT}/ranger/tasks.sqlite"
+      sql: "SELECT status FROM runs WHERE task_id = '${task}' ORDER BY rowid"
+      rows: [{ status: succeeded }, { status: succeeded }]
+    retry: 15000
+  - expect_no_push: assistant_notification
+  - http_fake_calls:
+      {
+        fake: anthropic,
+        count: 8,
+        index: 5,
+        text_contains: agent-turn-7-completed,
+      }
+  - http_fake_calls:
+      { fake: anthropic, index: 7, text_contains: already_notified }
+  - call: bridge.assistant.task.run_now
+    params: { task_id: "${task}" }
+  - expect_push: assistant_notification
+    message:
+      assistant_notification:
+        {
+          task_id: "${task}",
+          run_id: "{{string}}",
+          status: waiting,
+          title: Agent needs a decision,
+          body: The Agent cannot continue until you choose an option.,
+          $exact: true,
+        }
+  - http_fake_calls: { fake: anthropic, count: 11 }
+    retry: 10000
+  # One pane listing per run; the restarted bridge may reuse its first one.
+  - herdr_calls:
+      {
+        herdr: healthy,
+        method: pane.list,
+        where: { params: { workspace_id: w1 } },
+        min: 2,
+        max: 3,
+      }

@@ -2,7 +2,7 @@
   "x-inventory": "event:session.resync_required",
   "x-kind": "event",
   "x-sent-by": ["server/src/connections/runtime.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["event", "data"],
   "properties": {
@@ -10,7 +10,16 @@
       "const": "session.resync_required"
     },
     "data": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false
+    },
+    "connection_id": {
+      "type": "string"
+    },
+    "connection_generation": {
+      "type": "integer"
     }
-  }
+  },
+  "description": "The connection's runtime asks browsers to read the session again (a new subscription to Herdr's events).",
+  "additionalProperties": false
 }

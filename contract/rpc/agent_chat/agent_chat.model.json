@@ -4,8 +4,24 @@
   "scope": "connection",
   "handler": "server/src/conversation/rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "required": ["pane_id", "model"],
+    "properties": {
+      "pane_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "additionalProperties": false
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "$ref": "../../schemas/shared/agentChat.schema.json#/$defs/AgentChatModelResult"
+  },
+  "status": "typed"
 }

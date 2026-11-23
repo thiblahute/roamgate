@@ -1,0 +1,73 @@
+name: Herdr's notifications of a finished or blocked agent are relayed to the pages as task notifications
+family: agent_sessions
+description: >
+  Notifications from Herdr (the default source): the bridge's notification
+  shell on endpoint generation 1 gets Herdr's SemanticNotification, and every
+  browser socket gets a roamgate.task_notification (pages then leave their
+  own tracker off).
+server:
+  env: { ROAMGATE_NOTIFICATION_SOURCE: herdr }
+  herdr:
+    endpoint: true
+    workspaces: [{ workspace_id: w1, label: work }]
+    tabs: [{ tab_id: t1, workspace_id: w1, label: build }]
+    panes:
+      [{ pane_id: p1, workspace_id: w1, tab_id: t1, cwd: /work, agent: claude }]
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent.list
+  - expect_log:
+      { contains: listening for Herdr notifications, within_ms: 10000 }
+  - herdr_notify:
+      {
+        kind: Finished,
+        title: Claude finished,
+        body: work,
+        sound: Done,
+        agent: claude,
+        workspace_id: w1,
+        tab_id: t1,
+        pane_id: p1,
+        position: null,
+      }
+  - expect_push: "event:roamgate.task_notification"
+    within_ms: 10000
+    message:
+      event: roamgate.task_notification
+      data:
+        {
+          type: roamgate.task_notification,
+          kind: completed,
+          agent: claude,
+          title: Claude finished,
+          body: work,
+          workspace_id: w1,
+          tab_id: t1,
+          pane_id: p1,
+          $exact: true,
+        }
+  - herdr_notify:
+      {
+        kind: NeedsAttention,
+        title: Claude needs you,
+        body: null,
+        sound: Request,
+        agent: null,
+        workspace_id: w1,
+        tab_id: t1,
+        pane_id: p1,
+        position: null,
+      }
+  - expect_push: "event:roamgate.task_notification"
+    within_ms: 10000
+    message:
+      {
+        data:
+          {
+            kind: blocked,
+            agent: Agent,
+            title: Claude needs you,
+            body: "{{any}}",
+          },
+      }

@@ -1,0 +1,29 @@
+name: instance name save failures preserve the current name and permit retry
+family: auth
+ledger:
+  - "server/src/http/auth-process.test.ts > instance name save failures preserve the current name and permit retry"
+server:
+  env: { ROAMGATE_SETTINGS_PATH: "${ROOT}/blocked/settings.json" }
+steps:
+  - sh: mkdir -p blocked/settings.json
+  - login: {}
+  - http: PUT /api/instance-settings
+    headers: { x-roamgate-settings: "1" }
+    body: { title_suffix: Retry }
+    expect: { status: 500, json: { error: Unable to save instance settings } }
+  - http: GET /api/instance-settings
+    expect:
+      {
+        json: { title_suffix: "", rendered_sites: [], rendered_site_roots: {} },
+      }
+  - sh: rm -r blocked/settings.json
+  - http: PUT /api/instance-settings
+    headers: { x-roamgate-settings: "1" }
+    body: { title_suffix: Retry }
+    expect: { status: 200 }
+  - http: GET /api/instance-settings
+    expect:
+      {
+        json:
+          { title_suffix: Retry, rendered_sites: [], rendered_site_roots: {} },
+      }

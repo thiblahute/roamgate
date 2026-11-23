@@ -1,0 +1,13 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "activity": [
+      {
+        "sessionId": "{{id}}",
+        "headSha": "e61953f3516571162da79c53253ac8ed13c1bea1",
+        "newCommits": false
+      }
+    ]
+  }
+}

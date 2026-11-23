@@ -1,0 +1,33 @@
+{
+  "status": 200,
+  "json": {
+    "enabled": true,
+    "location": "$ROOT/history",
+    "defaultLocation": "$ROOT/history",
+    "exists": true,
+    "lastCommit": {
+      "sha": "{{sha}}",
+      "subject": "mr-reviews: the Reviews' settings; settings: auto_rename_agent_tabs, custom, history, repositories, terminal_transport, title_suffix, ui, version, workspace_auto_sync",
+      "at": "{{time}}",
+      "author": "Roamgate"
+    },
+    "commits": 2,
+    "sizeBytes": "{{bytes}}",
+    "files": {
+      "FORMAT": 1,
+      "README.md": 1,
+      "mr-reviews": 1,
+      "settings": 9
+    },
+    "lastPass": {
+      "at": "{{time}}",
+      "ms": 0,
+      "commits": 1
+    },
+    "blocked": [],
+    "errors": [],
+    "pending": [],
+    "running": false,
+    "deferred": null
+  }
+}

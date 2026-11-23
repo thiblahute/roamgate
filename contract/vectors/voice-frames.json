@@ -1,0 +1,40 @@
+{
+  "description": "The voice helper's frames (contract: voice/helper/src/frames.rs): a u32 little-endian length of what follows, a kind byte (0 JSON, 1 audio), the payload. Read by cargo test (parity/tests/vectors.rs, against the parity fake's codec) and by bun test (server/src/voice/voice-frames.vectors.test.ts, against encodeFrame and FrameReader).",
+  "max_frame": 16777216,
+  "frames": [
+    {
+      "name": "a JSON request",
+      "kind": 0,
+      "payload_text": "{\"op\":\"ping\",\"id\":1}",
+      "frame_hex": "15000000007b226f70223a2270696e67222c226964223a317d"
+    },
+    {
+      "name": "a JSON reply",
+      "kind": 0,
+      "payload_text": "{\"id\":1,\"ok\":true,\"rate\":48000}",
+      "frame_hex": "20000000007b226964223a312c226f6b223a747275652c2272617465223a34383030307d"
+    },
+    {
+      "name": "audio of session 7: its u32 id, then S16LE samples",
+      "kind": 1,
+      "payload_hex": "070000000000ff7f0180",
+      "frame_hex": "0b00000001070000000000ff7f0180"
+    },
+    {
+      "name": "an empty payload is a frame of length 1",
+      "kind": 0,
+      "payload_hex": "",
+      "frame_hex": "0100000000"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "a zero length",
+      "bytes_hex": "00000000"
+    },
+    {
+      "name": "a length past the 16 MiB cap",
+      "bytes_hex": "0100000100"
+    }
+  ]
+}

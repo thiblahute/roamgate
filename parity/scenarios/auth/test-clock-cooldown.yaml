@@ -1,0 +1,24 @@
+name: the test clock drives the server's time, a login cooldown ends when the harness advances
+family: auth
+ledger:
+  - "server/src/http/auth-process.test.ts > the test clock drives the server's time: a login cooldown ends when the harness advances"
+server:
+  epoch: 1904281689000
+steps:
+  - expect_now: 1904281689000
+  - http: POST /api/login
+    repeat: 5
+    body: { password: wrong }
+    expect: { status: 401 }
+  - http: POST /api/login
+    body: { password: "${PASSWORD}" }
+    expect: { status: 429, headers: { retry-after: "300" } }
+  - advance: 299000
+  - expect_now: 1904281988000
+  - http: POST /api/login
+    body: { password: "${PASSWORD}" }
+    expect: { status: 429, headers: { retry-after: "1" } }
+  - advance: 1000
+  - http: POST /api/login
+    body: { password: "${PASSWORD}" }
+    expect: { status: 200, headers: { set-cookie: "{{contains:=}}" } }

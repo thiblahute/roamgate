@@ -1,0 +1,9 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "type": "file",
+    "size": 13,
+    "mtime_ms": "{{ms}}"
+  }
+}

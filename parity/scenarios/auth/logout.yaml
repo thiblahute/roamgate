@@ -1,0 +1,48 @@
+name: logout after reauthentication closes earlier and later tabs, not other browsers
+family: auth
+ledger:
+  - "server/src/http/auth-process.test.ts > logout after reauthentication closes earlier and later tabs, not other browsers"
+steps:
+  - login: {}
+  - login: { as: other }
+  - connect: { name: a }
+  - login: { reuse: true }
+  - connect: { name: same_browser }
+  - connect: { name: other_browser, as: other }
+  - http: GET /api/health
+    expect: { status: 200, json: { auth_required: true } }
+  - http: GET /login
+    cookie: false
+    expect:
+      {
+        status: 200,
+        headers: { cache-control: no-store },
+        text_contains: /roamgate-icon-192.png,
+      }
+  - http: GET /roamgate-icon-192.png
+    cookie: false
+    expect: { status: 200, headers: { content-type: image/png } }
+  - http: GET /api/logout
+    expect: { status: 405 }
+  - http: POST /api/logout
+    expect: { status: 403 }
+  - http: POST /api/logout
+    headers: { x-roamgate-logout: "1" }
+    save_cookies: true
+    expect: { status: 204, headers: { set-cookie: "{{contains:Max-Age=0}}" } }
+  - expect_close: { code: 4001 }
+    socket: a
+  - expect_close: { code: 4001 }
+    socket: same_browser
+  - call: bridge.ping
+    socket: other_browser
+  - http: GET /api/health
+    cookie: false
+    expect: { status: 401 }
+  - http: GET /api/health
+    as: other
+    expect: { status: 200 }
+  - http: GET /
+    cookie: false
+    headers: { accept: text/html }
+    expect: { status: 302, headers: { location: /login } }

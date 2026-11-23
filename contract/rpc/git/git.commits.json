@@ -4,8 +4,53 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "commits": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "author": {
+              "type": "string"
+            },
+            "authored_at": {
+              "type": "string"
+            },
+            "sha": {
+              "type": "string"
+            },
+            "short_sha": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            }
+          },
+          "required": ["author", "authored_at", "sha", "short_sha", "subject"]
+        }
+      },
+      "has_more": {
+        "type": "boolean"
+      },
+      "head": {
+        "type": "string"
+      },
+      "shallow": {
+        "type": "boolean"
+      }
+    },
+    "required": ["commits", "has_more", "head", "shallow"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

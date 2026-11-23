@@ -6,6 +6,18 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "required": ["item"],
+    "properties": {
+      "item": {
+        "$ref": "../../schemas/shared/work.schema.json#/$defs/WorkItem"
+      },
+      "updated": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

@@ -1,0 +1,11 @@
+{
+  "status": 200,
+  "json": {
+    "workspace_id": "w1",
+    "directory": "docs",
+    "filename": "new.txt",
+    "path": "docs/new.txt",
+    "size": 13,
+    "overwritten": false
+  }
+}

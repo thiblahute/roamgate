@@ -1,0 +1,18 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "workspace_id": "w1",
+    "checkout_path": "$ROOT/repo",
+    "files": [
+      {
+        "candidate": "README.md",
+        "path": "README.md"
+      },
+      {
+        "candidate": "src",
+        "path": "src"
+      }
+    ]
+  }
+}

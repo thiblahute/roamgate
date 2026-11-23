@@ -1,0 +1,15 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "workspace_id": "w1",
+    "root": "$ROOT/repo",
+    "action": "stage_all",
+    "counts": {
+      "staged": 2,
+      "unstaged": 0,
+      "untracked": 0,
+      "conflicted": 0
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "status": 404,
+  "json": {
+    "error": "no agent session Roamgate manages is at legacy-default/nope; run `roamgate-review sessions`"
+  }
+}

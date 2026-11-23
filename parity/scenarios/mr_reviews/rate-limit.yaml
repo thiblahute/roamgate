@@ -1,0 +1,145 @@
+name: a forge asking to be left alone is not asked again before its Retry-After
+family: mr_reviews
+description: >
+  GitLab answers the first query 429 with Retry-After 120: the host shows
+  an error and keeps no request, and the forge gate holds every call to it
+  for 120 seconds of the server's clock (a refresh asked meanwhile waits);
+  once they passed, the waiting refresh asks again and lists the requests.
+ledger:
+  - "server/src/mr-reviews/inbox.test.ts > a host that fails keeps its requests"
+server:
+  files:
+    .config/glab-cli/config.yml: "host: gitlab.example.com\nhosts:\n    gitlab.example.com:\n        token: glpat-parity\n        api_host: gitlab.example.com\n"
+  fakes:
+    glab:
+      rules:
+        - { args: [config, get, host], stdout: "gitlab.example.com\n" }
+        - {
+            args: [config, get, token, --host, gitlab.example.com],
+            stdout: "glpat-parity\n",
+          }
+        - { args_prefix: [config, get, token], exit: 1 }
+        - args_match: "^api --include "
+          times: 1
+          exit: 1
+          http_status: 429
+          http_headers: { content-type: application/json, retry-after: "120" }
+          body: { message: "429 Too Many Requests" }
+          stderr: "glab: 429 Too Many Requests (HTTP 429)\n"
+      default:
+        http_headers: { content-type: application/json }
+        graphql:
+          currentUser:
+            username: me
+            rr:
+              {
+                nodes:
+                  [
+                    &mr7 {
+                      iid: "7",
+                      title: Fix the parser,
+                      webUrl: "https://gitlab.example.com/group/other/-/merge_requests/7",
+                      draft: false,
+                      state: opened,
+                      updatedAt: "2025-12-31T10:00:00Z",
+                      userNotesCount: 1,
+                      diffHeadSha: aaaaaaa7,
+                      sourceBranch: fix,
+                      targetBranch: main,
+                      project: { fullPath: group/other },
+                      author: { username: alice },
+                      headPipeline: { status: SUCCESS },
+                      diffRefs: { baseSha: bbbbbbbb },
+                      labels: { nodes: [] },
+                    },
+                  ],
+              }
+            as: { nodes: [] }
+            todos: { nodes: [] }
+            op:
+              {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes:
+                  [
+                    &mr3 {
+                      iid: "3",
+                      title: My change,
+                      webUrl: "https://gitlab.example.com/me/proj/-/merge_requests/3",
+                      draft: false,
+                      state: opened,
+                      updatedAt: "2025-12-31T09:00:00Z",
+                      userNotesCount: 0,
+                      diffHeadSha: ccccccc3,
+                      sourceBranch: mine,
+                      targetBranch: main,
+                      project: { fullPath: me/proj },
+                      author: { username: me },
+                      headPipeline: { status: RUNNING },
+                      diffRefs: { baseSha: bbbbbbbb },
+                      labels: { nodes: [] },
+                    },
+                  ],
+              }
+            mg: { nodes: [] }
+            cl: { nodes: [] }
+          p0:
+            mergeRequests:
+              nodes:
+                - iid: "3"
+                  webUrl: "https://gitlab.example.com/me/proj/-/merge_requests/3"
+                  updatedAt: "2025-12-31T09:00:00Z"
+                  diffHeadSha: ccccccc3
+                  userNotesCount: 0
+                  project: { fullPath: me/proj }
+                  headPipeline: { status: RUNNING }
+                  diffRefs: { baseSha: bbbbbbbb }
+                  conflicts: false
+                  shouldBeRebased: false
+                  approved: false
+                  detailedMergeStatus: NOT_APPROVED
+                  approvedBy: { nodes: [] }
+                  resolvableDiscussionsCount: 0
+                  resolvedDiscussionsCount: 0
+                  description: A change of mine.
+                  discussions: { nodes: [] }
+                  assignees: { nodes: [{ username: me }] }
+                  reviewers: { nodes: [{ username: bob }] }
+                  autoMergeEnabled: false
+                  mergeUser: null
+    claude:
+      rules:
+        - args_prefix: ["-p"]
+          stdout_json:
+            {
+              type: result,
+              is_error: false,
+              result: '[{"key": "gitlab:gitlab.example.com/me/proj#3", "whose": "person:bob", "next": "Waiting for bob''s review", "depends_on": [], "stale": false}]',
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.mr_reviews.inbox
+    params: { fresh: true }
+  - call: bridge.mr_reviews.inbox
+    until: { refreshing: false }
+    reply:
+      {
+        hosts:
+          [{ host: gitlab.example.com, state: error, message: "{{string}}" }],
+        entries: [],
+      }
+  - fake_calls: { program: glab, argv_match: "^api ", count: 1 }
+  # Within the pause: a refresh asked for waits in the gate, no call.
+  - advance: 61000
+  - call: bridge.mr_reviews.inbox
+    params: { fresh: true }
+    reply: { refreshing: true, hosts: [{ state: error }] }
+  - call: bridge.mr_reviews.inbox
+    reply: { refreshing: true }
+  - fake_calls: { program: glab, argv_match: "^api ", count: 1 }
+  # The pause over, the waiting refresh asks again.
+  - advance: 60000
+  - call: bridge.mr_reviews.inbox
+    until: { refreshing: false, hosts: [{ state: ok }] }
+    reply: { entries: { $len: 2 } }
+  - fake_calls: { program: glab, argv_match: "^api ", count: 4 }

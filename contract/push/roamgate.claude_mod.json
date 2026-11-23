@@ -2,7 +2,7 @@
   "x-inventory": "event:roamgate.claude_mod",
   "x-kind": "event",
   "x-sent-by": ["server/src/index.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["event", "data"],
   "properties": {
@@ -10,7 +10,24 @@
       "const": "roamgate.claude_mod"
     },
     "data": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "pane_id": {
+          "type": "string"
+        },
+        "change": {
+          "enum": ["attach", "status", "usage", "turn_complete", "detach"]
+        }
+      },
+      "required": ["pane_id", "change"],
+      "additionalProperties": false
+    },
+    "connection_id": {
+      "type": "string"
+    },
+    "connection_generation": {
+      "type": "integer"
     }
-  }
+  },
+  "additionalProperties": false
 }

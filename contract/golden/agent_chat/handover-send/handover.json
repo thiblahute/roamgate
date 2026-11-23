@@ -1,0 +1,19 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "ok": true,
+    "owner": "conversation",
+    "session_id": "11111111-2222-4333-8444-555555555555",
+    "lease": {
+      "pane_id": "p1",
+      "session_id": "11111111-2222-4333-8444-555555555555",
+      "cwd": "$ROOT/work",
+      "phase": "conversation",
+      "terminal_args": ["--model", "opus"],
+      "connection_id": "legacy-default",
+      "owner": "conversation",
+      "updated_at": "{{time}}"
+    }
+  }
+}

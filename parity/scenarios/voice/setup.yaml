@@ -1,0 +1,126 @@
+name: the voice setup assistant reports the machine and voice.json, runs a setup needing no download, and refuses bad requests
+family: voice
+description: >
+  The hardware part of the state is the host's (the server reads it from
+  /proc and /sys), so only its shape is compared. Every model choice here
+  is what voice.json already names (custom) or none: the setup has nothing
+  to download, finishes at once, and the helper not running needs no
+  reload. Downloads cannot be pointed at fake-models: the catalog's URLs
+  are fixed (Hugging Face and GitHub).
+ledger:
+  - "server/src/http/voice-setup.test.ts > GET is the assistant's state, not cached"
+  - "server/src/http/voice-setup.test.ts > changes need the voice header and valid choices"
+  - "server/src/http/voice-setup.test.ts > remove answers what it freed; cancel with nothing running is fine"
+server:
+  env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
+  files:
+    .config/roamgate/voice.json:
+      json:
+        {
+          helper: "${BIN}/roamgate-voice",
+          whisper_model: "${BIN}/roamgate-voice",
+          kokoro_model: "${BIN}/roamgate-voice",
+          kokoro_voices: "${BIN}/roamgate-voice",
+        }
+steps:
+  - login: {}
+  - http: GET /api/voice/setup
+    expect:
+      status: 200
+      headers: { cache-control: no-store }
+      json:
+        hardware:
+          {
+            platform: "{{string}}",
+            arch: "{{string}}",
+            cpu: "{{object}}",
+            gpus: "{{array}}",
+          }
+        tier: "{{re:^(light|heavy)$}}"
+        recommended: { heavy: "{{object}}", light: "{{object}}" }
+        current:
+          {
+            speech: custom,
+            tts: custom,
+            stock_voices: none,
+            speaker: none,
+            turn: none,
+            text_turn: none,
+            $exact: true,
+          }
+        components: "{{array}}"
+        configPath: "${HOME}/.config/roamgate/voice.json"
+        helper: { path: "${ROOT}/bin/roamgate-voice", found: true }
+        unused: []
+        job: null
+  - http: POST /api/voice/setup
+    body: { choices: {} }
+    expect: { status: 403, json: { error: Voice requests need their header. } }
+  - http: POST /api/voice/setup
+    headers: { x-roamgate-voice: "1" }
+    body: { choices: { speech: custom, wings: none } }
+    expect:
+      { status: 400, json: { error: choices must name a model for each part } }
+  - http: POST /api/voice/setup
+    headers: { x-roamgate-voice: "1" }
+    body:
+      {
+        choices:
+          {
+            speech: custom,
+            reread: none,
+            tts: custom,
+            stock_voices: none,
+            speaker: none,
+            turn: none,
+            text_turn: none,
+          },
+      }
+    expect:
+      status: 202
+      json:
+        {
+          job:
+            {
+              state: done,
+              files: [],
+              totalBytes: 0,
+              doneBytes: 0,
+              startedAt: 1767225600000,
+              finishedAt: 1767225600000,
+            },
+        }
+  - http: GET /api/voice/setup
+    expect: { status: 200, json: { job: { state: done, reload: not-running } } }
+  - http: POST /api/voice/setup/cancel
+    headers: { x-roamgate-voice: "1" }
+    body: {}
+    expect: { status: 200, json: { job: { state: done } } }
+  - http: POST /api/voice/setup/remove
+    headers: { x-roamgate-voice: "1" }
+    body: { ids: 3 }
+    expect:
+      {
+        status: 400,
+        json: { error: 'ids must be a list of model ids, or "all"' },
+      }
+  - http: POST /api/voice/setup/remove
+    headers: { x-roamgate-voice: "1" }
+    body: { ids: all }
+    expect: { status: 200, json: { freedBytes: 0, unused: [] } }
+  - assert_file:
+      {
+        path: .config/roamgate/voice.json,
+        json:
+          {
+            helper: "${ROOT}/bin/roamgate-voice",
+            whisper_model: "${ROOT}/bin/roamgate-voice",
+          },
+      }
+contract_exceptions:
+  - {
+      surface: http,
+      name: POST /api/voice/setup/remove,
+      kind: mismatch,
+      reason: "ids 3 is sent on purpose, refused with 400 (the only mismatch: the record check reports the request's path)",
+    }

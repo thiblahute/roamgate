@@ -1,0 +1,12 @@
+name: the PIN endpoint is disabled by default
+family: auth
+ledger:
+  - "server/src/http/auth-process.test.ts > PIN endpoint is disabled by default"
+server:
+  env: { ROAMGATE_PIN: "", HERDR_GUI_PIN: "" }
+steps:
+  - http: POST /api/login/pin
+    body: { pin: "012345" }
+    expect: { status: 404, headers: { set-cookie: "{{absent}}" } }
+  - http: GET /login
+    expect: { status: 200, text_lacks: 'inputmode="numeric"' }

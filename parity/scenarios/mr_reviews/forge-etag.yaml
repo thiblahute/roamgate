@@ -1,0 +1,103 @@
+name: a session's request list is asked again with If-None-Match, and a 304 answers with what was known
+family: forge
+description: >
+  forge.session on a checkout whose branch has a GitHub pull request reads
+  it through gh (REST, --include, ETag remembered). Asked again after the
+  list's reuse window, the same GET carries If-None-Match; fake-gh answers
+  304 with no body, and the session still names the request: the
+  remembered body answered.
+ledger:
+  - "server/src/workspace/forge-calls.test.ts > GETs come back with If-None-Match; a 304 answers with what was known"
+server:
+  files:
+    .config/gh/hosts.yml: "github.com:\n    user: me\n"
+  fakes:
+    gh:
+      rules:
+        - { args_prefix: [auth, status], stdout: "ok\n" }
+        - { args: [--version], stdout: "gh version 2.80.0 (2025-09-01)\n" }
+        - {
+            args_match: "If-None-Match",
+            http_status: 304,
+            http_headers: { etag: 'W/"same"' },
+          }
+        - args_match: "repos/me/proj/pulls"
+          http_headers:
+            {
+              content-type: application/json; charset=utf-8,
+              etag: 'W/"pulls-1"',
+            }
+          body:
+            - {
+                number: 3,
+                title: My change,
+                html_url: "https://github.com/me/proj/pull/3",
+                state: open,
+                draft: false,
+                created_at: "2025-12-30T09:00:00Z",
+                updated_at: "2025-12-31T09:00:00Z",
+                head:
+                  { ref: mine, sha: ccccccc3, repo: { full_name: me/proj } },
+                base: { ref: main, repo: { full_name: me/proj } },
+                user: { login: me },
+              }
+        - args_match: "repos/me/proj$"
+          http_headers:
+            {
+              content-type: application/json; charset=utf-8,
+              etag: 'W/"repo-1"',
+            }
+          body:
+            {
+              full_name: me/proj,
+              default_branch: main,
+              html_url: "https://github.com/me/proj",
+            }
+steps:
+  - sh: |
+      git init -q repo && cd repo && git commit -q --allow-empty -m one && git checkout -q -b mine && git remote add origin https://github.com/me/proj.git
+  - login: {}
+  - connect: {}
+  - call: forge.session
+    id: s1
+    no_wait: true
+    params: { path: "${ROOT}/repo" }
+  - await: s1
+    advance_every: 500
+    reply: &session
+      defaultProject: { provider: github, host: github.com, project: me/proj }
+      repos:
+        [
+          {
+            root: "${ROOT}/repo",
+            branch: mine,
+            project: { provider: github, host: github.com, project: me/proj },
+            request:
+              {
+                url: "https://github.com/me/proj/pull/3",
+                number: 3,
+                title: My change,
+              },
+          },
+        ]
+  - fake_calls: { program: gh, argv_match: "If-None-Match", count: 0 }
+  - advance: 600000
+  - call: forge.session
+    id: s2
+    no_wait: true
+    params: { path: "${ROOT}/repo", fresh: true }
+  - await: s2
+    advance_every: 500
+    reply: *session
+  - fake_calls:
+      program: gh
+      argv_match: "repos/me/proj/pulls"
+      count: 2
+      calls:
+        - { argv: { $lacks: ["--header"] }, rule: 3 }
+        - {
+            argv: { $contains: ["--header", 'If-None-Match: W/"pulls-1"'] },
+            rule: 2,
+          }
+  - fake_calls:
+      { program: gh, argv_match: "--method (POST|PUT|PATCH|DELETE)", count: 0 }

@@ -1,0 +1,18 @@
+name: 'the default local connection checks Herdr''s protocol "22" (Welcome same) before any other request: refused'
+family: connections
+ledger:
+  - 'server/src/connections/profile-process.test.ts > default local startup validates protocol ${JSON.stringify(protocol)} / Welcome ${welcomeProtocol ?? "same"} before background RPCs'
+server:
+  env: { ROAMGATE_NOTIFICATION_SOURCE: herdr }
+  herdr:
+    endpoint: false
+    responses: { ping: { type: pong, version: "0.9.4", protocol: "22" } }
+steps:
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    params: { id: legacy-default }
+    error: { message: "{{contains:protocol}}" }
+  # Nothing but the version check reached Herdr.
+  - herdr_calls:
+      { none_match: "^(workspace|pane|tab|agent|events|session|worktree)\\." }

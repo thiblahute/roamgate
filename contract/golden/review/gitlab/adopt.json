@@ -1,0 +1,81 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "session": {
+      "id": "{{id}}",
+      "connectionId": "legacy-default",
+      "workspaceId": "w1",
+      "root": "$ROOT/repo",
+      "title": "gitlab.example.com/g/p/-/merge_requests/1",
+      "target": {
+        "kind": "mr",
+        "url": "https://gitlab.example.com/g/p/-/merge_requests/1"
+      },
+      "gitlab": true,
+      "autoSend": true,
+      "summary": "",
+      "agent": {
+        "name": "Codex",
+        "paneId": "w1:p1",
+        "working": {
+          "at": "2026-01-01T00:00:00.000Z",
+          "message": "reviewing"
+        }
+      },
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    },
+    "threads": [
+      {
+        "id": "gldraft:501",
+        "sessionId": "{{id}}",
+        "kind": "draft",
+        "anchor": {},
+        "resolved": false,
+        "comments": [
+          {
+            "id": "gldraft:501",
+            "author": "you",
+            "body": "My words",
+            "createdAt": "1970-01-01T00:00:00.000Z",
+            "updatedAt": "1970-01-01T00:00:00.000Z"
+          }
+        ],
+        "createdAt": "1970-01-01T00:00:00.000Z",
+        "updatedAt": "1970-01-01T00:00:00.000Z",
+        "gitlab": {
+          "draftId": 501
+        }
+      },
+      {
+        "id": "gldraft:501",
+        "sessionId": "{{id}}",
+        "kind": "draft",
+        "anchor": {},
+        "resolved": false,
+        "comments": [
+          {
+            "id": "gldraft:501",
+            "author": "you",
+            "body": "My words",
+            "createdAt": "1970-01-01T00:00:00.000Z",
+            "updatedAt": "1970-01-01T00:00:00.000Z"
+          }
+        ],
+        "createdAt": "1970-01-01T00:00:00.000Z",
+        "updatedAt": "1970-01-01T00:00:00.000Z",
+        "gitlab": {
+          "draftId": 501
+        }
+      }
+    ],
+    "mergeRequest": {
+      "url": "https://gitlab.example.com/g/p/-/merge_requests/1",
+      "title": "The feature",
+      "state": "opened",
+      "headSha": "d200e92de7043a0c719298ef08282897dbb5d8e9",
+      "security": false
+    }
+  }
+}

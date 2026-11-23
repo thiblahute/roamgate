@@ -1,0 +1,370 @@
+name: the user's marks on the inbox (pins, removals, order, overrides, views, feedback) are kept in settings.json and pushed, without a forge write
+family: mr_reviews
+description: >
+  After a first refresh, every mark the page or the reviews agent makes is
+  saved under settings.json `mr_reviews`, pushed to every browser with the
+  order's new version, and taken back by undo; pinning a request no list has
+  reads it once; nothing is ever written to a forge.
+ledger:
+  - "server/src/mr-reviews/inbox.pins.test.ts > pin by URL: read from the forge, listed as Pinned, kept in the settings"
+  - "server/src/mr-reviews/inbox.pins.test.ts > pin refuses other hosts, other text, and says when a request is not found"
+  - "server/src/mr-reviews/inbox.pins.test.ts > hide: out of the view until something happens on it, restorable"
+  - "server/src/mr-reviews/order.test.ts > an operation is applied, saved with a version and pushed"
+  - "server/src/mr-reviews/order.test.ts > undo takes the change back, on the latest order"
+  - "server/src/mr-reviews/order.test.ts > two clients follow the same order, by push or by the next poll"
+  - "server/src/mr-reviews/overrides.test.ts > fields are set, capped and cleared; an empty override goes"
+server:
+  files:
+    .config/gh/hosts.yml: "github.com:\n    user: me\n    git_protocol: https\n"
+  fakes:
+    gh:
+      rules:
+        - {
+            args: [auth, status, --hostname, github.com],
+            stdout: "github.com\n  Logged in to github.com account me\n",
+          }
+      default:
+        graphql:
+          viewer: { login: me }
+          rr:
+            {
+              nodes:
+                [
+                  {
+                    number: 7,
+                    title: Fix the parser,
+                    url: "https://github.com/other/repo/pull/7",
+                    isDraft: false,
+                    state: OPEN,
+                    updatedAt: "2025-12-31T10:00:00Z",
+                    headRefOid: aaaaaaa7,
+                    baseRefOid: bbbbbbbb,
+                    headRefName: fix,
+                    baseRefName: main,
+                    repository: { nameWithOwner: other/repo },
+                    author: { login: alice },
+                    comments: { totalCount: 1 },
+                    reviewThreads: { totalCount: 0 },
+                    commits:
+                      {
+                        nodes:
+                          [
+                            {
+                              commit: { statusCheckRollup: { state: FAILURE } },
+                            },
+                          ],
+                      },
+                    reviews: { nodes: [] },
+                    labels: { nodes: [{ name: bug }] },
+                  },
+                  {
+                    number: 8,
+                    title: Tidy the docs,
+                    url: "https://github.com/other/repo/pull/8",
+                    isDraft: false,
+                    state: OPEN,
+                    updatedAt: "2025-12-30T10:00:00Z",
+                    headRefOid: aaaaaaa8,
+                    baseRefOid: bbbbbbbb,
+                    headRefName: fix,
+                    baseRefName: main,
+                    repository: { nameWithOwner: other/repo },
+                    author: { login: alice },
+                    comments: { totalCount: 1 },
+                    reviewThreads: { totalCount: 0 },
+                    commits:
+                      {
+                        nodes:
+                          [
+                            {
+                              commit: { statusCheckRollup: { state: FAILURE } },
+                            },
+                          ],
+                      },
+                    reviews: { nodes: [] },
+                    labels: { nodes: [{ name: bug }] },
+                  },
+                ],
+            }
+          as: { nodes: [] }
+          mn: { nodes: [] }
+          op:
+            {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes:
+                [
+                  {
+                    number: 3,
+                    title: My change,
+                    url: "https://github.com/me/proj/pull/3",
+                    isDraft: false,
+                    state: OPEN,
+                    updatedAt: "2025-12-31T09:00:00Z",
+                    headRefOid: ccccccc3,
+                    headRefName: mine,
+                    baseRefName: main,
+                    repository: { nameWithOwner: me/proj },
+                    author: { login: me },
+                    labels: { nodes: [] },
+                  },
+                ],
+            }
+          st: { nodes: [] }
+          repository:
+            nameWithOwner: third/lib
+            pullRequest:
+              {
+                number: 12,
+                title: Pinned one,
+                url: "https://github.com/third/lib/pull/12",
+                isDraft: false,
+                state: OPEN,
+                updatedAt: "2025-12-30T08:00:00Z",
+                headRefOid: ddddddd1,
+                baseRefOid: bbbbbbbb,
+                headRefName: feat,
+                baseRefName: main,
+                repository: { nameWithOwner: third/lib },
+                author: { login: carol },
+                comments: { totalCount: 0 },
+                reviewThreads: { totalCount: 0 },
+                commits: { nodes: [] },
+                reviews: { nodes: [] },
+                labels: { nodes: [] },
+              }
+          p0:
+            n3:
+              number: 3
+              url: "https://github.com/me/proj/pull/3"
+              updatedAt: "2025-12-31T09:00:00Z"
+              headRefOid: ccccccc3
+              baseRefOid: bbbbbbbb
+              repository: { nameWithOwner: me/proj }
+              comments: { totalCount: 2 }
+              reviewThreads: { totalCount: 1 }
+              commits:
+                {
+                  nodes:
+                    [{ commit: { statusCheckRollup: { state: SUCCESS } } }],
+                }
+              reviews: { nodes: [] }
+              mergeable: MERGEABLE
+              reviewDecision: APPROVED
+              latestOpinionatedReviews:
+                {
+                  nodes:
+                    [
+                      {
+                        state: APPROVED,
+                        submittedAt: "2025-12-31T09:30:00Z",
+                        author: { login: bob },
+                      },
+                    ],
+                }
+              openThreads: { nodes: [{ isResolved: false }] }
+              body: A change of mine.
+              lastComments: { nodes: [] }
+              lastThreads: { nodes: [] }
+    claude:
+      rules:
+        - args_prefix: ["-p"]
+          stdout_json:
+            {
+              type: result,
+              is_error: false,
+              result: '[{"key": "github:github.com/me/proj#3", "whose": "me", "next": "Resolve the open thread", "depends_on": [], "stale": false}]',
+            }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: bridge.mr_reviews.order,
+      kind: mismatch,
+      reason: "an unknown op on purpose: the refusal is checked",
+    }
+  - {
+      surface: rpc.request,
+      name: bridge.mr_reviews.feedback,
+      kind: mismatch,
+      reason: "an unknown verdict on purpose: the refusal is checked",
+    }
+steps:
+  - login: {}
+  - connect: {}
+  - connect: { name: other }
+  - call: bridge.mr_reviews.inbox
+    params: { fresh: true }
+  - call: bridge.mr_reviews.inbox
+    until: { refreshing: false, hosts: [{ state: ok }] }
+    reply: { orderVersion: 0, entries: { $len: 3 } }
+  - fake_calls: { program: gh, argv_match: "^api ", count: 3 }
+  # Order: a request moved to the top, pushed to every browser.
+  - call: bridge.mr_reviews.order
+    params: { op: top, keys: ["github:github.com/other/repo#8"] }
+    reply: { ok: true, changed: true, version: 1 }
+  - expect_push: mr_reviews
+    message:
+      {
+        mr_reviews:
+          {
+            version: 1,
+            order:
+              {
+                $contains:
+                  [
+                    "github:github.com/other/repo#8",
+                    "github:github.com/other/repo#7",
+                  ],
+              },
+            by: user,
+          },
+      }
+  - expect_push: mr_reviews
+    socket: other
+    message: { mr_reviews: { version: 1 } }
+  - call: bridge.mr_reviews.order
+    params:
+      {
+        op: before,
+        keys: ["github:github.com/other/repo#7"],
+        target: nothing-here,
+      }
+    reply:
+      {
+        ok: true,
+        changed: false,
+        version: 1,
+        unknown: [nothing-here],
+        elsewhere: [],
+      }
+  - call: bridge.mr_reviews.order
+    params: { op: sideways, keys: [x] }
+    error: { message: "{{contains:op (top, bottom, before, after, arrange)}}" }
+  # Override: whose move and the next step, by the agent (undoable).
+  - call: bridge.mr_reviews.override
+    params:
+      {
+        key: "github:github.com/other/repo#7",
+        set: { whose: reviewer, next: Wait for CI, labels: [later] },
+        by: agent,
+        summary: parked,
+      }
+    reply:
+      {
+        ok: true,
+        key: "github:github.com/other/repo#7",
+        changed: true,
+        version: "{{integer}}",
+      }
+    save: { override_version: /result/version }
+  - expect_push: mr_reviews
+    message: { mr_reviews: { by: agent, summary: parked, undo: "{{integer}}" } }
+  - call: bridge.mr_reviews.override
+    params:
+      {
+        key: "github:github.com/other/repo#7",
+        set: { whose: reviewer, next: Wait for CI, labels: [later] },
+      }
+    reply: { ok: true, changed: false }
+  - call: bridge.mr_reviews.override
+    params: { key: "github:github.com/other/repo#7", set: { nope: 1 } }
+    error: { message: "{{contains:unknown field nope}}" }
+  - call: bridge.mr_reviews.order
+    params: { op: undo, version: "${override_version}" }
+    reply: { ok: true, version: "{{integer}}" }
+  - call: bridge.mr_reviews.settings.get
+    reply: { overrides: {} }
+  # Hide: out of the view, listed apart; unhide brings it back.
+  - call: bridge.mr_reviews.hide
+    params: { key: "github:github.com/other/repo#7" }
+    reply: { ok: true, action: hidden }
+  - call: bridge.mr_reviews.inbox
+    reply:
+      {
+        entries: { $len: 2 },
+        hidden: [{ key: "github:github.com/other/repo#7" }],
+      }
+  - call: bridge.mr_reviews.unhide
+    params: { key: "github:github.com/other/repo#7" }
+    reply: { ok: true }
+  - call: bridge.mr_reviews.inbox
+    reply: { entries: { $len: 3 }, hidden: [] }
+  # Pins: another host refused; a request no list has is read once.
+  - call: bridge.mr_reviews.pin
+    params: { text: "https://elsewhere.example/a/b/pull/1" }
+    error: { message: "{{contains:not one of your forge hosts}}" }
+  - call: bridge.mr_reviews.pin
+    params: { text: "https://github.com/third/lib/pull/12" }
+    reply: { ok: true, key: "github:github.com/third/lib#12" }
+  - fake_calls: { program: gh, argv_match: "^api ", count: 4 }
+  - call: bridge.mr_reviews.inbox
+    reply:
+      {
+        entries:
+          {
+            $contains:
+              [{ key: "github:github.com/third/lib#12", section: pinned }],
+          },
+      }
+  - call: bridge.mr_reviews.pin
+    params: { text: "https://github.com/other/repo/pull/7" }
+    reply: { ok: true, key: "github:github.com/other/repo#7" }
+  # Listed already: no call.
+  - fake_calls: { program: gh, argv_match: "^api ", count: 4 }
+  - call: bridge.mr_reviews.unpin
+    params: { key: "github:github.com/third/lib#12" }
+    reply: { ok: true }
+  # Views, feedback, seen.
+  - call: bridge.mr_reviews.view
+    params: { action: save, name: Failing, query: "pipeline:failed" }
+    reply: { ok: true, name: Failing, changed: true }
+  - call: bridge.mr_reviews.view
+    params: { action: delete, name: Nothing }
+    error: { message: "{{contains:no view named Nothing}}" }
+  - call: bridge.mr_reviews.feedback
+    params: { key: "github:github.com/other/repo#7", verdict: more_like_this }
+    reply: { ok: "{{bool}}" }
+  - call: bridge.mr_reviews.feedback
+    params: { key: "github:github.com/other/repo#7", verdict: maybe }
+    error: { message: "{{contains:verdict must be}}" }
+  - call: bridge.mr_reviews.seen
+    params: { key: "github:github.com/other/repo#7" }
+    reply: { ok: "{{bool}}" }
+  - call: bridge.mr_reviews.settings.get
+    reply:
+      pinned:
+        [{ provider: github, host: github.com, project: other/repo, number: 7 }]
+      hidden: []
+      views: [{ name: Failing, query: "pipeline:failed" }]
+      order:
+        {
+          $contains:
+            [
+              "github:github.com/other/repo#8",
+              "github:github.com/other/repo#7",
+            ],
+        }
+  - assert_file:
+      path: .config/roamgate/settings.json
+      json:
+        mr_reviews:
+          views: [{ name: Failing, query: "pipeline:failed" }]
+          pinned: { $len: 1 }
+  - assert_file:
+      path: .config/roamgate/mr-reviews/state.json
+      json:
+        {
+          feedback:
+            [
+              {
+                key: "github:github.com/other/repo#7",
+                verdict: more_like_this,
+              },
+            ],
+        }
+  # None of it reached a forge.
+  - fake_calls:
+      {
+        program: gh,
+        argv_match: "--method|-X |draft_notes|query=mutation",
+        count: 0,
+      }

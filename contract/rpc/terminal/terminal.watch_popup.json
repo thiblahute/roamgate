@@ -4,8 +4,18 @@
   "scope": "connection",
   "handler": "server/src/bridge/terminal-bridge.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {}
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "popup": {
+        "type": "null"
+      }
+    },
+    "required": ["popup"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

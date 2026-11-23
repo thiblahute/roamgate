@@ -1,0 +1,80 @@
+name: a project with a branch rule is declared, items are scoped to it, and a parent's list holds its subprojects' items
+family: work
+ledger:
+  - "server/src/work/service.test.ts > declares a project with a branch rule and scopes items to it"
+  - "server/src/work/service.test.ts > a parent's list holds its subprojects' items; cycles are refused"
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.work.project.set
+    params:
+      name: gst2
+      roots:
+        [
+          /home/me/gstreamer/2.0,
+          { connectionId: desktop, path: /home/me/gstreamer/2.0/gstreamer },
+        ]
+      done:
+        { kind: branch, root: /home/me/gstreamer/2.0/gstreamer, branch: main }
+      tags: [rfc-0052]
+    reply:
+      project:
+        id: gst2
+        roots:
+          [
+            { connectionId: legacy-default, path: /home/me/gstreamer/2.0 },
+            { connectionId: desktop, path: /home/me/gstreamer/2.0/gstreamer },
+          ]
+        done:
+          {
+            kind: branch,
+            root: /home/me/gstreamer/2.0/gstreamer,
+            branch: main,
+            connectionId: desktop,
+          }
+  - expect_push: work
+    message: { work: { changed: [projects], by: user } }
+  - call: bridge.work.add
+    params:
+      project: gst2
+      title: "Phase 6: landing-review fixes"
+      tags: [rfc-0047, p6]
+      links:
+        [
+          { kind: branch, name: task/control-task-p6 },
+          {
+            kind: decision,
+            path: rfcs/0052-transactional-pipeline-edits.md,
+            id: D13,
+          },
+        ]
+    reply: { item: { project: gst2, links: { $len: 2 } } }
+    save: { item: /result/item/id }
+  - call: bridge.work.list
+    params: { project: roamgate }
+    reply: { items: [] }
+  - call: bridge.work.list
+    params: { project: gst2 }
+    reply: { items: [{ id: "${item}" }] }
+  - call: bridge.work.add
+    params: { project: nope, title: x }
+    error: { message: "{{contains:no project nope}}" }
+  - call: bridge.work.project.set
+    params: { name: gst2-elements, parent: gst2 }
+    reply: { project: { id: gst2-elements, parent: gst2 } }
+  - call: bridge.work.add
+    params: { project: gst2-elements, title: Port the elements }
+    save: { child: /result/item/id }
+  - call: bridge.work.list
+    params: { project: gst2 }
+    reply: { items: { $unordered: [{ id: "${item}" }, { id: "${child}" }] } }
+  - call: bridge.work.project.set
+    params: { name: gst2, parent: gst2-elements }
+    error: { message: "{{contains:cannot be part of it}}" }
+  - assert_file:
+      path: .config/roamgate/work/work.json
+      json:
+        {
+          projects:
+            { $contains: [{ id: gst2 }, { id: gst2-elements, parent: gst2 }] },
+        }

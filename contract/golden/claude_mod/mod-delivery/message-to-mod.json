@@ -1,0 +1,20 @@
+{
+  "status": 200,
+  "json": {
+    "sent": true,
+    "to": {
+      "address": "legacy-default/w1:p1",
+      "name": "main",
+      "title": null,
+      "workspace": "main",
+      "workspace_id": "w1",
+      "connection": "legacy-default",
+      "agent": "claude",
+      "mode": "terminal",
+      "state": "working",
+      "cwd": "/work"
+    },
+    "delivery": "mod",
+    "note": "Handed to its Claude: it reads it at once when idle, else when its turn ends."
+  }
+}

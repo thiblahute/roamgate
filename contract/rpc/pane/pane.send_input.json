@@ -5,8 +5,26 @@
   "handler": "server/src/index.ts",
   "herdr": "intercepted",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "pane_id": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": ["pane_id", "text"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "type": {
+        "type": "string"
+      }
+    },
+    "required": ["type"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

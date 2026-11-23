@@ -1,0 +1,16 @@
+name: HERDR_GUI_DISABLE_ENDPOINT=1 keeps the server off Herdr's endpoint protocol
+family: env
+description: >
+  With the endpoint protocol off, the connection never opens Herdr's
+  notification shell (no endpoint handshake, so no warning about one), and
+  the connection still comes up on the control socket.
+server:
+  env: { HERDR_GUI_DISABLE_ENDPOINT: "1" }
+steps:
+  - login: {}
+  - connect: {}
+  - call: workspace.list
+    reply: { workspaces: [] }
+  - stop: {}
+  - expect_log:
+      { contains: ["connection ready"], lacks: ["Herdr notification shell"] }

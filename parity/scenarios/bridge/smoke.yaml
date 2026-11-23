@@ -1,0 +1,14 @@
+name: a browser logs in, connects, and pings the bridge
+family: bridge
+tier: T1
+steps:
+  - http: GET /api/health
+    cookie: false
+    expect: { status: 401 }
+  - login: {}
+  - http: GET /api/health
+    expect: { status: 200, json: { auth_required: true } }
+  - connect: {}
+  - call: bridge.ping
+    reply: "{{any}}"
+  - herdr_calls: { all_valid: true, method: ping, min: 1 }

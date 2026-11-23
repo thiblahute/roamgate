@@ -1,0 +1,70 @@
+name: an import keeps its dates and its source, and the same source changes the item
+family: work
+ledger:
+  - "server/src/work/service.test.ts > an import keeps its dates and its source, and the same source changes the item"
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.work.add
+    params:
+      title: Headset muting after each turn
+      state: done
+      tags: [voice]
+      source: imported from plans/todo.md line 107
+      created_at: "2026-11-19T08:00:00Z"
+      done_at: "2026-11-19T18:30:00.000Z"
+    reply:
+      item:
+        {
+          createdAt: "2026-11-19T08:00:00.000Z",
+          doneAt: "2026-11-19T18:30:00.000Z",
+          source: imported from plans/todo.md line 107,
+          state: done,
+        }
+      updated: "{{absent}}"
+    save: { first: /result/item/id }
+  - call: bridge.work.add
+    params:
+      title: Headset muting after each turn
+      state: done
+      tags: [voice, calls]
+      source: imported from plans/todo.md line 107
+    reply:
+      {
+        item:
+          {
+            id: "${first}",
+            tags: [voice, calls],
+            doneAt: "2026-11-19T18:30:00.000Z",
+          },
+        updated: true,
+      }
+  - call: bridge.work.add
+    params:
+      {
+        title: "Headset (boom mic) muting after each turn",
+        source: imported from plans/todo.md line 107,
+      }
+    error: { message: "{{re:exists in roamgate: .* replace: true}}" }
+  - call: bridge.work.add
+    params:
+      {
+        title: "Headset (boom mic) muting after each turn",
+        source: imported from plans/todo.md line 107,
+        replace: true,
+      }
+    reply:
+      {
+        item:
+          {
+            id: "${first}",
+            title: "Headset (boom mic) muting after each turn",
+            tags: [voice, calls],
+          },
+        updated: true,
+      }
+  - call: bridge.work.board
+    reply: { items: { $len: 1 } }
+  - call: bridge.work.add
+    params: { title: x, created_at: yesterday }
+    error: { message: "{{contains:created_at}}" }

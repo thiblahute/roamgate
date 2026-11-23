@@ -1,0 +1,45 @@
+name: HERDR_GUI_ALLOW_FILE_REVEAL and HERDR_GUI_NOTIFICATION_SOURCE show in the browsers' hello
+family: env
+description: >
+  File reveal is offered to a loopback browser when it is allowed;
+  herdr_task_notifications says the task notifications come from Herdr's own.
+  The legacy names act alone, and an explicitly empty ROAMGATE_ name wins.
+server:
+  env:
+    { HERDR_GUI_ALLOW_FILE_REVEAL: "1", HERDR_GUI_NOTIFICATION_SOURCE: herdr }
+steps:
+  - login: {}
+  - connect:
+      {
+        expect_hello:
+          {
+            capabilities: { file_reveal: true, herdr_task_notifications: true },
+          },
+      }
+  - restart: { env: { HERDR_GUI_NOTIFICATION_SOURCE: status } }
+  - login: {}
+  - connect:
+      {
+        expect_hello:
+          {
+            capabilities:
+              { file_reveal: true, herdr_task_notifications: false },
+          },
+      }
+  - restart:
+      {
+        env:
+          {
+            ROAMGATE_ALLOW_FILE_REVEAL: "",
+            ROAMGATE_NOTIFICATION_SOURCE: herdr,
+          },
+      }
+  - login: {}
+  - connect:
+      {
+        expect_hello:
+          {
+            capabilities:
+              { file_reveal: false, herdr_task_notifications: true },
+          },
+      }

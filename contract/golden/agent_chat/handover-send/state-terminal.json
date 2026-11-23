@@ -1,0 +1,17 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "pane_id": "p1",
+    "owner": "terminal",
+    "phase": "terminal",
+    "session_id": null,
+    "cwd": null,
+    "status": "stopped",
+    "tools_running": false,
+    "running_tools": [],
+    "activity": null,
+    "queue": [],
+    "interrupted": null
+  }
+}

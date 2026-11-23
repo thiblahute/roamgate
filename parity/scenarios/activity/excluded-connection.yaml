@@ -1,0 +1,60 @@
+name: an excluded connection is left out of the CLI's days but not of its status; the bridge's timeline keeps it
+family: activity
+ledger:
+  - "server/src/cli/activity.test.ts > excluded connections are left out; --json gives the timeline"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work, focused: true }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, focused: true }]
+  files:
+    .config/roamgate/settings.json:
+      {
+        json:
+          {
+            activity:
+              { enabled: true, exclude: { connections: [legacy-default] } },
+          },
+      }
+steps:
+  - login: {}
+  - connect: {}
+  - advance: 600000
+  - call: bridge.activity.timeline
+    params: {}
+    # The bridge's timeline keeps the excluded connection's focus spans
+    # (readActivityTimeline passes no exclusions) but attends none of it;
+    # the CLI leaves its spans out.
+    reply:
+      {
+        recording: true,
+        days:
+          [
+            {
+              date: "2026-01-01",
+              focus: [{ connection_id: legacy-default }],
+              totals: { attended_ms: 0 },
+            },
+          ],
+      }
+  - cli: [activity, day, "2026-01-01", --json]
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          {
+            recording: true,
+            days:
+              [
+                {
+                  date: "2026-01-01",
+                  focus: [],
+                  attention: [],
+                  totals: { attended_ms: 0, workspaces: [] },
+                },
+              ],
+            workspaces: [],
+          },
+      }
+  - cli: [activity, status, --json]
+    expect:
+      { exit: 0, stdout_json: { retention_days: 90, connections: { $len: 1 } } }

@@ -1,0 +1,46 @@
+name: the Herdr status, info and setup routes with a running Herdr
+family: herdr
+ledger:
+  - "server/src/http/herdr-setup.test.ts > setup guard uses the configured profile even without a ready runtime"
+description: >
+  The run's Herdr socket is named explicitly (HERDR_SOCKET_PATH), so managed
+  setup is refused and nothing is ever downloaded or installed.
+steps:
+  - http: GET /api/herdr/status
+    cookie: false
+    expect: { status: 401 }
+  - login: {}
+  - http: GET /api/herdr/status
+    expect:
+      status: 200
+      headers: { cache-control: no-store }
+      json:
+        {
+          state: running,
+          version: 0.9.4,
+          protocol: 22,
+          can_setup: false,
+          verified_version: 0.9.4,
+          $exact: true,
+        }
+  - http: GET /api/herdr-info
+    expect:
+      { status: 200, json: { version: 0.9.4, protocol: 22, $exact: true } }
+  - http: POST /api/herdr/setup
+    expect:
+      {
+        status: 403,
+        json: { error: Herdr setup confirmation header is required. },
+      }
+  - http: POST /api/herdr/setup
+    headers: { x-roamgate-herdr-setup: "1" }
+    expect:
+      {
+        status: 500,
+        json:
+          {
+            error: "managed Herdr setup only supports the default Herdr socket paths; start `herdr server` yourself with your custom paths",
+          },
+      }
+  - fake_calls: { program: systemctl, count: 0 }
+  - fake_calls: { program: herdr, count: 0 }

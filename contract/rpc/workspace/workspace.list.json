@@ -5,8 +5,151 @@
   "handler": "server/src/index.ts",
   "herdr": "intercepted",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {}
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "endpoint_availability": {
+        "type": "object",
+        "properties": {}
+      },
+      "navigation_mode": {
+        "type": "string"
+      },
+      "tab_move_supported": {
+        "type": "boolean"
+      },
+      "type": {
+        "type": "string"
+      },
+      "workspaces": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "active_tab_id": {
+              "type": "string"
+            },
+            "agent_status": {
+              "type": "string"
+            },
+            "focused": {
+              "type": "boolean"
+            },
+            "label": {
+              "type": "string"
+            },
+            "number": {
+              "type": "number"
+            },
+            "pane_count": {
+              "type": "number"
+            },
+            "tab_count": {
+              "type": "number"
+            },
+            "workspace_id": {
+              "type": "string"
+            },
+            "worktree": {
+              "type": "object",
+              "properties": {
+                "checkout_path": {
+                  "type": "string"
+                },
+                "git_status": {
+                  "type": "object",
+                  "properties": {
+                    "ahead": {
+                      "type": "number"
+                    },
+                    "behind": {
+                      "type": "number"
+                    },
+                    "branch": {
+                      "type": "string"
+                    },
+                    "conflicted": {
+                      "type": "number"
+                    },
+                    "dirty": {
+                      "type": "boolean"
+                    },
+                    "staged": {
+                      "type": "number"
+                    },
+                    "unstaged": {
+                      "type": "number"
+                    },
+                    "untracked": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "ahead",
+                    "behind",
+                    "branch",
+                    "conflicted",
+                    "dirty",
+                    "staged",
+                    "unstaged",
+                    "untracked"
+                  ]
+                },
+                "gui_settings_key": {
+                  "type": "string"
+                },
+                "is_linked_worktree": {
+                  "type": "boolean"
+                },
+                "repo_key": {
+                  "type": "string"
+                },
+                "repo_name": {
+                  "type": "string"
+                },
+                "repo_root": {
+                  "type": "string"
+                },
+                "worktree_hooks_enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "checkout_path",
+                "git_status",
+                "gui_settings_key",
+                "is_linked_worktree",
+                "repo_key",
+                "repo_name",
+                "repo_root",
+                "worktree_hooks_enabled"
+              ]
+            }
+          },
+          "required": [
+            "active_tab_id",
+            "agent_status",
+            "focused",
+            "label",
+            "number",
+            "pane_count",
+            "tab_count",
+            "workspace_id"
+          ]
+        }
+      }
+    },
+    "required": [
+      "endpoint_availability",
+      "navigation_mode",
+      "tab_move_supported",
+      "type",
+      "workspaces"
+    ]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

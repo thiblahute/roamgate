@@ -1,0 +1,133 @@
+name: git features keep quoted and hostile paths as they are, through the shell they run in
+family: git
+tier: T2
+description:
+  "A real repository in a directory whose name has a quote, and a file whose name holds a command
+  substitution, a quote and an ampersand: history, commit, preview, commit file, diff summary and file,
+  stage, unstage and deleting an untracked file all act on that file, and nothing the names hold ever
+  runs."
+ledger:
+  - server/src/workspace/git-shell.integration.test.ts > Git features preserve quoted paths and shell routing
+    (%s)
+server:
+  herdr:
+    workspaces:
+      - workspace_id: w1
+        label: repo
+    panes:
+      - pane_id: p1
+        workspace_id: w1
+        cwd: ${ROOT}/roamgate git's shell
+        focused: true
+steps:
+  - sh:
+      'export GIT_AUTHOR_DATE=2025-01-01T00:00:00Z GIT_COMMITTER_DATE=2025-01-01T00:00:00Z
+
+      mkdir -p "$R" && cd "$R" && git init -q -b main && printf ''original\n'' > "$P" && git add -A && git
+      commit -qm ''Quoted file'''
+    env:
+      R: ${ROOT}/roamgate git's shell
+      P: file $(touch injected) 'quoted' & name.txt
+  - login: {}
+  - connect: {}
+  - call: git.commits
+    params:
+      workspace_id: w1
+    reply:
+      commits:
+        - subject: Quoted file
+    save:
+      sha: /result/head
+  - call: git.commit
+    params:
+      workspace_id: w1
+      sha: ${sha}
+    reply:
+      entries:
+        - path: file $(touch injected) 'quoted' & name.txt
+  - call: git.commit_preview
+    params:
+      workspace_id: w1
+      sha: ${sha}
+      path: file $(touch injected) 'quoted' & name.txt
+    reply:
+      text: "original
+
+        "
+  - call: git.commit_file
+    params:
+      workspace_id: w1
+      sha: ${sha}
+      base: null
+      path: file $(touch injected) 'quoted' & name.txt
+    reply:
+      diff: "{{contains:+original}}"
+  - write:
+      path: ${ROOT}/roamgate git's shell/file $(touch injected) 'quoted' & name.txt
+      text: "changed
+
+        "
+  - write:
+      path: ${ROOT}/roamgate git's shell/remove $(touch injected) 'quoted'.txt
+      text: "temporary
+
+        "
+  - call: git.diff_summary
+    params:
+      workspace_id: w1
+    reply:
+      entries:
+        $unordered:
+          - path: file $(touch injected) 'quoted' & name.txt
+            kind: unstaged
+            size: 8
+          - path: remove $(touch injected) 'quoted'.txt
+            kind: untracked
+            size: 10
+    save:
+      entries: /result/entries
+  - call: git.diff_file
+    params:
+      workspace_id: w1
+      path: file $(touch injected) 'quoted' & name.txt
+      kind: unstaged
+    reply:
+      diff: "{{contains:+changed}}"
+  - call: git.file_action
+    params:
+      workspace_id: w1
+      action: stage
+      path: file $(touch injected) 'quoted' & name.txt
+  - sh: cd "$R" && [ "$(git diff --cached --name-only)" = "$P" ]
+    env:
+      R: ${ROOT}/roamgate git's shell
+      P: file $(touch injected) 'quoted' & name.txt
+  - call: git.file_action
+    params:
+      workspace_id: w1
+      action: unstage
+      path: file $(touch injected) 'quoted' & name.txt
+  - sh: cd "$R" && [ -z "$(git diff --cached --name-only)" ]
+    env:
+      R: ${ROOT}/roamgate git's shell
+  - sh:
+      python3 -c "import json,os; e=[x for x in json.loads(os.environ['E']) if x['kind']=='untracked'][0];
+      print(json.dumps({'mtime_ms':e['mtime_ms'],'size':e['size']}),end='')"
+    env:
+      E: ${entries}
+    save:
+      mtime: /json/mtime_ms
+  - call: git.file_action
+    params:
+      workspace_id: w1
+      action: delete_untracked
+      path: remove $(touch injected) 'quoted'.txt
+      mtime_ms: ${mtime}
+      size: 10
+  - sh: cd "$R" && [ "$(ls -A | sort | tr '\n' '|')" = ".git|$P|" ]
+    env:
+      R: ${ROOT}/roamgate git's shell
+      P: file $(touch injected) 'quoted' & name.txt
+  - assert_absent: ${ROOT}/injected
+  - assert_absent: ${ROOT}/roamgate git's shell/injected
+  - assert_absent: ${HOME}/injected

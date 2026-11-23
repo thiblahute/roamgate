@@ -1,0 +1,225 @@
+name: a Claude mod attaches, gets a message through its poll, acks it, reports its turns, and leaves; the mod is installed and removed through Claude Code
+family: claude_mod
+description: >
+  The mod's side of the protocol (CLAUDE_MOD_PROTOCOL 1) as its client
+  speaks it: the first poll attaches the pane (the browsers hear of it),
+  another session's message goes to the mod instead of being typed, the
+  mod acks it, its events move the pane's status and usage, its goodbye
+  detaches it. claude_mod.status, install and uninstall run Claude Code's
+  plugin commands (fake-claude).
+ledger:
+  - "server/src/review/agent-server.claude-mod.test.ts > a message reaches the mod over the socket, once, and leaves the inbox"
+  - "server/src/agent/claude-mod-client.test.ts > messages are submitted one at a time, in order, each once"
+  - "server/src/agent/claude-mod-client.test.ts > events and the goodbye carry the session"
+server:
+  herdr:
+    workspaces:
+      [{ workspace_id: w1, label: main }, { workspace_id: w2, label: side }]
+    panes:
+      - { pane_id: "w1:p1", workspace_id: w1, cwd: /work, agent: claude }
+      - { pane_id: "w2:p1", workspace_id: w2, cwd: /side, agent: codex }
+    agents:
+      - {
+          pane_id: "w1:p1",
+          agent: claude,
+          agent_status: idle,
+          agent_session:
+            {
+              source: claude,
+              agent: claude,
+              kind: id,
+              value: 11111111-2222-4333-8444-555555555555,
+            },
+        }
+      - { pane_id: "w2:p1", agent: codex, agent_status: idle }
+  fakes:
+    claude:
+      rules:
+        - { args: [--version], stdout: "2.1.319 (Claude Code)\n" }
+        - { args_prefix: [plugin, list], times: 2, stdout: "[]\n" }
+        - {
+            args_prefix: [plugin, list],
+            times: 2,
+            stdout: "[{\"id\": \"roamgate@roamgate\", \"scope\": \"user\", \"enabled\": true, \"installPath\": \"/x\"}]\n",
+          }
+        - { args_prefix: [plugin, list], stdout: "[]\n" }
+        - { args_prefix: [plugin, install], stdout: "{}\n" }
+        - { args_prefix: [plugin, enable], stdout: "" }
+        - { args_prefix: [plugin, uninstall], stdout: "{}\n" }
+        - { args_prefix: [plugin, marketplace], stdout: "" }
+steps:
+  - expect_log:
+      {
+        contains: "connection ready connection=legacy-default",
+        within_ms: 10000,
+      }
+  - login: {}
+  - connect: {}
+  - call: claude_mod.status
+    golden: status
+  - agent: mod_poll
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c1,
+        claude: "2.1.319",
+        protocol: "1",
+        after: "0",
+        wait_ms: "0",
+      }
+    expect:
+      { status: 200, json: { protocol: 1, epoch: "{{string}}", messages: [] } }
+  - expect_push: "event:roamgate.claude_mod"
+    message:
+      { event: roamgate.claude_mod, data: { pane_id: "w1:p1", change: attach } }
+  - agent: mod_tools
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c1,
+        work: "1",
+        rules: "1",
+      }
+    expect: { status: 200, json: { ok: true } }
+  - agent: mod_event
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c1,
+        event: '{"type": "turn_start"}',
+      }
+    expect: { status: 200, json: { ok: true } }
+  - expect_push: "event:roamgate.claude_mod"
+    message: { data: { pane_id: "w1:p1", change: status } }
+  - agent: sessions
+    body: { pane: "w2:p1" }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            sessions:
+              [
+                { address: "legacy-default/w1:p1" },
+                { address: "legacy-default/w2:p1", self: true },
+              ],
+          },
+      }
+  - agent: message
+    body: { pane: "w2:p1", to: "legacy-default/w1:p1", text: First }
+    expect: { status: 200, json: { sent: true } }
+    golden: message-to-mod
+  - agent: message
+    body: { pane: "w2:p1", to: "legacy-default/w1:p1", text: Second }
+    expect: { status: 200, json: { sent: true } }
+  - herdr_calls: { method: agent.prompt, count: 0 }
+  - agent: mod_poll
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c1,
+        claude: "2.1.319",
+        protocol: "1",
+        after: "0",
+        wait_ms: "0",
+      }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            protocol: 1,
+            messages:
+              [
+                { id: "{{number}}", text: "{{contains:First}}" },
+                { id: "{{number}}", text: "{{contains:Second}}" },
+              ],
+          },
+      }
+    save: { first: /json/messages/0/id, second: /json/messages/1/id }
+  - agent: mod_ack
+    body: { pane: "w1:p1", client: c1, id: "${first}", outcome: submitted }
+    expect: { status: 200, json: { ok: true, known: true } }
+  - agent: mod_poll
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c1,
+        claude: "2.1.319",
+        protocol: "1",
+        after: "${first}",
+        wait_ms: "0",
+      }
+    expect: { status: 200, json: { messages: [{ id: "${second}" }] } }
+  - agent: mod_ack
+    body: { pane: "w1:p1", client: c1, id: "${second}", outcome: submitted }
+    expect: { status: 200, json: { ok: true, known: true } }
+  - agent: mod_ack
+    body: { pane: "w1:p1", client: c1, id: "${second}", outcome: nonsense }
+    expect: { status: 200, json: { known: false } }
+  - agent: mod_event
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c1,
+        event: '{"type": "turn_complete", "reason": "end_turn", "model": "opus"}',
+      }
+    expect: { status: 200, json: { ok: true } }
+  - agent: mod_poll
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c0,
+        claude: "2.1.319",
+        protocol: "1",
+        after: "0",
+        wait_ms: "0",
+      }
+    expect: { status: 200, json: { protocol: 1 } }
+    golden: newer-client
+    normalize: [hex-id]
+  - agent: mod_poll
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c1,
+        claude: "2.1.319",
+        protocol: "1",
+        after: "0",
+        wait_ms: "0",
+      }
+    expect: { status: 200, json: { protocol: 1, superseded: true } }
+  - agent: mod_event
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c0,
+        event: '{"type": "bye", "reason": "exit"}',
+      }
+    expect: { status: 200, json: { ok: true } }
+  - expect_push: "event:roamgate.claude_mod"
+    message: { data: { pane_id: "w1:p1", change: detach } }
+  - agent: mod_poll
+    body: { pane: "w1:p1", client: c1, protocol: "0" }
+    expect: { status: 400, json: { error: the mod sent no protocol version } }
+  - call: claude_mod.install
+    golden: install
+  - call: claude_mod.uninstall
+    golden: uninstall
+  - fake_calls:
+      { program: claude, argv_match: "^plugin install roamgate", count: 1 }
+  - fake_calls:
+      {
+        program: claude,
+        argv_match: "^plugin uninstall roamgate@roamgate",
+        count: 1,
+      }

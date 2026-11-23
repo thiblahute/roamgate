@@ -1,0 +1,116 @@
+name: a request's status is read once through gh, kept in the MR cache and pushed to every browser
+family: forge
+description: >
+  forge.status asks GitHub a pull request's state, checks, approvals and
+  threads; the answer goes to every connected browser as a forge_cache push
+  and into mr-cache/state.json. Asked again, the cached answer is given
+  without a new call.
+ledger:
+  - "server/src/mr-cache/cache.test.ts > a known answer is served without a forge call"
+server:
+  files:
+    .config/gh/hosts.yml: "github.com:\n    user: me\n"
+  fakes:
+    gh:
+      rules:
+        - { args: [auth, status, --hostname, github.com], stdout: "ok\n" }
+      default:
+        http_headers: { content-type: application/json; charset=utf-8 }
+        graphql:
+          r0:
+            nameWithOwner: me/proj
+            n3:
+              number: 3
+              title: My change
+              url: "https://github.com/me/proj/pull/3"
+              state: OPEN
+              isDraft: false
+              updatedAt: "2025-12-31T09:00:00Z"
+              baseRefName: main
+              headRefName: mine
+              author: { login: me }
+              reviewDecision: APPROVED
+              reviews: { totalCount: 1 }
+              reviewThreads:
+                { nodes: [{ isResolved: true }, { isResolved: false }] }
+              commits:
+                {
+                  nodes:
+                    [
+                      {
+                        commit:
+                          {
+                            statusCheckRollup:
+                              {
+                                state: SUCCESS,
+                                contexts:
+                                  {
+                                    nodes:
+                                      [
+                                        {
+                                          __typename: CheckRun,
+                                          name: build,
+                                          status: COMPLETED,
+                                          conclusion: SUCCESS,
+                                        },
+                                      ],
+                                  },
+                              },
+                          },
+                      },
+                    ],
+                }
+steps:
+  - login: {}
+  - connect: {}
+  - connect: { name: other }
+  - call: forge.status
+    id: first
+    params:
+      {
+        ref:
+          { provider: github, host: github.com, project: me/proj, number: 3 },
+      }
+    no_wait: true
+  # Reads are gathered for half a second, then asked in one query.
+  - await: first
+    advance_every: 500
+    reply:
+      ref: { provider: github, host: github.com, project: me/proj, number: 3 }
+      state: ready
+      fetchedAt: "{{time}}"
+  - expect_push: forge_cache
+    message: { forge_cache: "{{object}}" }
+  - expect_push: forge_cache
+    socket: other
+  - fake_calls:
+      {
+        program: gh,
+        argv_match: "^api --include --hostname github.com graphql -f query=query \\{ r0: repository\\(owner: \"me\", name: \"proj\"\\) \\{ nameWithOwner n3: pullRequest\\(number: 3\\)",
+        count: 1,
+      }
+  - call: forge.status
+    params:
+      {
+        ref:
+          { provider: github, host: github.com, project: me/proj, number: 3 },
+      }
+    reply: { state: ready, fetchedAt: "{{time}}" }
+  - fake_calls: { program: gh, argv_match: "^api ", count: 1 }
+  - fake_calls:
+      {
+        program: gh,
+        argv_match: "--method|-X |draft_notes|query=mutation",
+        count: 0,
+      }
+  # Written behind, a little after the answer.
+  - assert_absent: .config/roamgate/mr-cache/state.json
+  - advance: 5000
+  - wait_file: .config/roamgate/mr-cache/state.json
+  - assert_file:
+      {
+        path: .config/roamgate/mr-cache/state.json,
+        mode: "0600",
+        json: { version: 1, entries: { $len: 1 } },
+        text_contains: "me/proj",
+      }

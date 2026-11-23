@@ -1,0 +1,6 @@
+{
+  "status": 400,
+  "json": {
+    "error": "empty body"
+  }
+}

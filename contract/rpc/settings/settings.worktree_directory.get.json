@@ -4,8 +4,29 @@
   "scope": "connection",
   "handler": "server/src/bridge/settings-rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "key": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      },
+      "worktree_directory": {
+        "type": ["null", "string"]
+      }
+    },
+    "required": ["key", "workspace_id", "worktree_directory"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

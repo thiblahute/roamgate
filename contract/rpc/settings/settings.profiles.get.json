@@ -4,8 +4,48 @@
   "scope": "connection",
   "handler": "server/src/bridge/settings-rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {}
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "default": {
+        "type": "string"
+      },
+      "profiles": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "agent": {
+              "type": "string"
+            },
+            "builtin": {
+              "type": "boolean"
+            },
+            "env": {
+              "type": "array"
+            },
+            "label": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "unset": {
+              "type": "array"
+            }
+          },
+          "required": ["agent", "builtin", "env", "label", "name", "unset"]
+        }
+      },
+      "return_after_reset": {
+        "type": "boolean"
+      }
+    },
+    "required": ["default", "profiles", "return_after_reset"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

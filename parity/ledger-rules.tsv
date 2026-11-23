@@ -1,0 +1,125 @@
+# Ledger rules by file (see parity/src/ledger.rs Rule): prefix, mapping, note, title regex.
+# Written after reading each file's tests; a scenario's ledger claim always wins.
+server/src/activity/	rust-unit:roamgate-activity	recorder, reader and timeline internals
+server/src/time-report/	rust-unit:roamgate-activity	the time-report provider bridge
+server/src/agent/	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
+server/src/agent/claude-mod	rust-unit:roamgate-claude	the claude-mod hub and plugin install
+server/src/archive/	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/assistant/	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
+server/src/assistant/claude-	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
+server/src/assistant/pi-	internal:Pi runtime	Pi stays a sidecar at cut-over (plan 6.8); tested with it
+server/src/bridge/	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/endpoint-	rust-unit:roamgate-herdr	Herdr endpoint generation 1 client
+server/src/bridge/herdr-client	rust-unit:roamgate-herdr	Herdr control client
+server/src/bridge/thin-client	rust-unit:roamgate-herdr	Herdr legacy client socket
+server/src/bridge/ssh-	rust-unit:roamgate-exec	SSH argv, slots, masters, tunnels and forwards
+server/src/cli/	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
+server/src/config/	rust-unit:roamgate-base	data paths, environment precedence, settings store, locks
+server/src/config/service-manager	rust-unit:roamgate-cli	service manager
+server/src/config/launchd-environment	rust-unit:roamgate-cli	launchd service environment
+server/src/config/plugin-command	rust-unit:roamgate-cli	plugin commands
+server/src/config/server-config	rust-unit:roamgate-cli	server flags and their precedence
+server/src/config/auth-token	rust-unit:roamgate-http	generated login token
+server/src/connections/	rust-unit:roamgate-connections	connection manager, profiles, routing and subscriptions
+server/src/contract-record/	rust-unit:roamgate-base	record mode, which the Rust server keeps for soak diffs (plan 5.6)
+server/src/conversation/	rust-unit:roamgate-conversation	leases, handover, holder protocol, queue
+server/src/conversation/drivers/claude-	rust-unit:roamgate-claude	Claude driver internals
+server/src/herdr/	rust-unit:roamgate-herdr	local Herdr release download and service setup
+server/src/history/	rust-unit:roamgate-base	settings history repository
+server/src/http/	rust-unit:roamgate-http	HTTP front internals
+server/src/http/voice	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/call-handoff	rust-unit:roamgate-voice-server	call handoff
+server/src/http/update	rust-unit:roamgate-cli	update and rollback
+server/src/http/herdr-	rust-unit:roamgate-herdr	Herdr setup and info routes
+server/src/limit-resume/	rust-unit:roamgate-connections	limit-resume scheduler
+server/src/mr-cache/	rust-unit:roamgate-forge	the forge cache
+server/src/mr-reviews/	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/notifications/	rust-unit:roamgate-notify	feed, task events and Web Push
+server/src/profiles/	rust-unit:roamgate-connections	agent profiles
+server/src/review/	rust-unit:roamgate-review	review service, storage, delivery and agent socket
+server/src/review/forge	rust-unit:roamgate-forge	forge layer
+server/src/review/github	rust-unit:roamgate-forge	GitHub through gh
+server/src/review/gitlab	rust-unit:roamgate-forge	GitLab through glab
+server/src/utils/	rust-unit:roamgate-base	shared utilities
+server/src/utils/process-utils	rust-unit:roamgate-exec	process runner
+server/src/utils/host-spawn	rust-unit:roamgate-exec	host-spawn in a toolbox
+server/src/utils/gamemode	rust-unit:roamgate-exec	GameMode probe
+server/src/utils/test-clock	rust-unit:roamgate-base	the Clock contract (contract/wire/test-clock.md)
+server/src/voice/	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/work/	rust-unit:roamgate-work	work board store, rules and tools
+server/src/workspace/	rust-unit:roamgate-workspace	files, previews, uploads, last steps
+server/src/workspace/git-	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/default-branch	rust-unit:roamgate-git	default branch
+server/src/workspace/diff-base	rust-unit:roamgate-git	diff bases
+server/src/workspace/compare-refs	rust-unit:roamgate-git	compare refs
+server/src/workspace/review-	rust-unit:roamgate-git	review read scripts
+server/src/workspace/pull-request	rust-unit:roamgate-forge	pull request status
+server/src/workspace/forge-calls	rust-unit:roamgate-forge	forge calls of workspaces
+server/src/worktree/	rust-unit:roamgate-workspace	worktrees and hooks
+shared/	pending:S5	S5 vector
+server/src/bridge/frame-to-ansi.	pending:S5	S5 vector
+server/src/bridge/vt-input-classifier.	pending:S5	S5 vector
+server/src/bridge/ssh-command.	pending:S5	S5 vector
+server/src/review/patch.	pending:S5	S5 vector
+server/src/review/changes-anchors.	pending:S5	S5 vector
+server/src/review/commit-anchors.	pending:S5	S5 vector
+server/src/review/file-anchors.	pending:S5	S5 vector
+server/src/review/rewritten-anchors.	pending:S5	S5 vector
+server/src/workspace/remote-files.	pending:S5	S5 vector
+server/src/agent/antigravity-session.	pending:S5	S5 vector
+server/src/agent/codex-session.	pending:S5	S5 vector
+server/src/agent/grok-session.	pending:S5	S5 vector
+server/src/agent/muse-session.	pending:S5	S5 vector
+server/src/agent/session-history.	pending:S5	S5 vector
+server/src/agent/session-tasks.	pending:S5	S5 vector
+server/src/agent/session-trajectory.	pending:S5	S5 vector
+server/src/agent/session-title.	pending:S5	S5 vector
+server/src/agent/token-usage.	pending:S5	S5 vector
+server/src/agent/session-compaction.	pending:S5	S5 vector
+server/src/agent/session-commands.	pending:S5	S5 vector
+server/src/agent/session-artifacts.	pending:S5	S5 vector
+server/src/conversation/drivers/contract.	pending:S5	S5 vector
+server/src/utils/logger.	pending:S5	S5 vector
+server/src/http/terminal-path-text.	pending:S5	S5 vector
+server/src/config/service-manager.	pending:S5	S5 vector
+server/src/assistant/task-schedule.	pending:S5	S5 vector
+server/src/mr-reviews/queries.	pending:S5	S5 vector
+server/src/mr-reviews/complexity.	pending:S5	S5 vector
+server/src/assistant-recovery.integration.	todo	black-box suite, ported by another S6 slice
+server/src/assistant/mention-task.integration.	todo	black-box suite, ported by another S6 slice
+server/src/connections/profile-process.	todo	black-box suite, ported by another S6 slice
+server/src/connections/ssh-profile-process.	todo	black-box suite, ported by another S6 slice
+server/src/conversation/holder-child.	todo	black-box suite, ported by another S6 slice
+server/src/conversation/holder-script.	todo	black-box suite, ported by another S6 slice
+server/src/conversation/holder-suspend.	todo	black-box suite, ported by another S6 slice
+server/src/workspace/git-shell.integration.	todo	black-box suite, ported by another S6 slice
+server/src/herdr/integration-versions.	todo	black-box suite, ported by another S6 slice
+server/src/connections/profile-process.	internal:fixture self-test	checks the TS test's own fixture	^(RPC fixture dispatches only registered string reply IDs|fixture sockets tolerate peer shutdown but surface unexpected errors)$
+server/src/connections/ssh-profile-process.	internal:fixture self-test	checks the TS test's own fixture	^(RPC fixture dispatches only registered string reply IDs|fixture sockets tolerate peer shutdown but surface unexpected errors)$
+server/src/voice/voice-call.live.	internal:T3 live	opt-in live voice call through headless Chrome (plan 5.4 T3), run by test:voice-live
+server/src/connections/windows-ssh-live.	internal:T3 live	opt-in windows-ssh-live (plan 5.4 T3)
+scripts/brand-assets.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/check-release-assets.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/check-web-assets.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/classify-pr-label.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/codex-herdr.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/deploy-templates.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/lint.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/pages-content.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/pages-workflow.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/prepare-release.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/security-workflows.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/source-map-security.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/studio-plugin.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/tutorial-storage.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/workspaces.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/contract/	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/install-plugin.windows.	pending:windows-runner	Windows runner: install-plugin.ps1 under PowerShell (plan 5.10)
+scripts/standalone.test.ts	internal:packaging	the build pipeline's own checks (debug archive, overrides); S8 packages and inspects archives	^(debug archive retains executable permissions and embedded source maps|standalone OAuth keeps the SDK undici override aligned with the server)$
+scripts/standalone.test.ts	internal:Pi runtime	Pi stays a sidecar at cut-over (plan 6.8); its OAuth is tested with it	^standalone Ranger emits Kimi device codes
+server/src/conversation/holder-script.	rust-unit:roamgate-conversation	the text the server types into a pane (holderCommand, resumeCommand, launchCommand) is a pure builder of the conversation crate; what is typed is seen through fake Herdr's pane.send_text in agent_chat/handover-send.yaml and the holder runs it in assets/hold-*.yaml	^(the typed command checks the session id|the typed resume keeps the flags every shell reads alike|launchCommand types only a token)$
+server/src/conversation/holder-script.	internal:asset internals	drives roamgate-hold's Child class directly with a log file failing with ENOSPC: no interface of the server or of the asset takes a full disk; the asset is shipped byte for byte by both servers	^a log write that fails \(a full disk\)
+server/src/conversation/holder-child.	rust-unit:roamgate-conversation	the holder channel's read offsets and saved reader state (createHolderChannel): a reader leaving at a chosen line, or an answer lost after the holder sent an input, cannot be forced from outside; the Rust channel keeps these at unit level	^(a reader that goes mid-turn loses nothing; the next reads each line once|a reader with a saved state takes the lines after it only, each once|an input sent twice \(its answer lost\) reaches claude once)$
+server/src/conversation/holder-child.	rust-unit:roamgate-conversation	the holder start command a profile gives (program, env, unset after the key policy) is built by the server (holderStartCommand); roamgate-hold applying a program, env and unset is the same code assets/hold-launch.yaml runs	^a profile's program and environment start it, its removals after the key policy$
+server/src/conversation/holder-child.	internal:one lease per session	two holders on one session need two Roamgates holding the same session (the TS test runs two sockets); one server keeps one lease per session, so it never makes that state	^holders on one session keep their own logs$
+server/src/agent/claude-mod-client.	internal:runs inside Claude Code	unit tests of the Claude mod's client module (claude-mod/hooks/client.ts) with an injected engine and timers: it runs inside Claude Code, not the server, and ships unchanged as a plugin asset; its protocol with the server (mod_poll, mod_ack, mod_event, supersede) is covered by agent_socket/mod.yaml and mod-delivery.yaml

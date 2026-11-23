@@ -1,0 +1,13 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "ok": true,
+    "endpoint": {
+      "generation": 1,
+      "serverVersion": "0.9.4",
+      "methods": ["pane.focus", "pane.scroll"],
+      "capabilities": ["health_check"]
+    }
+  }
+}

@@ -1,0 +1,42 @@
+name: roamgate update --check reports the mirror's release, and rollback refuses without a previous executable
+family: update
+ledger:
+  - "server/src/cli/update.test.ts > --check compares against the latest manifest"
+  - "server/src/cli/update.test.ts > reports installer failures and refuses source checkouts"
+platforms: [linux, macos]
+server:
+  start: false
+  env: { ROAMGATE_UPDATE_BASE_URL: "${FAKE_HTTP}/files/releases" }
+  served:
+    releases/roamgate-darwin-arm64.update.json: '{"schema": 1, "name": "roamgate", "version": "0.0.1", "platform": "darwin-arm64", "archive": "roamgate-darwin-arm64.tar.xz", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}'
+    releases/roamgate-darwin-x64.update.json: '{"schema": 1, "name": "roamgate", "version": "0.0.1", "platform": "darwin-x64", "archive": "roamgate-darwin-x64.tar.xz", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}'
+    releases/roamgate-linux-arm64.update.json: '{"schema": 1, "name": "roamgate", "version": "0.0.1", "platform": "linux-arm64", "archive": "roamgate-linux-arm64.tar.xz", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}'
+    releases/roamgate-linux-x64.update.json: '{"schema": 1, "name": "roamgate", "version": "0.0.1", "platform": "linux-x64", "archive": "roamgate-linux-x64.tar.xz", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}'
+steps:
+  - cli: [update, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/update.txt }
+  - cli: [rollback, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/rollback.txt }
+  - cli: [update, --check]
+    expect:
+      exit: 0
+      stdout: "{{re:^Current: roamgate \\S+\\nLatest:  roamgate 0\\.0\\.1\\nUp to date\\.\\n$}}"
+  - cli: [update, --check, --json]
+    expect:
+      exit: 0
+      stdout_json:
+        {
+          current_version: "{{string}}",
+          latest_version: 0.0.1,
+          update_available: false,
+          platform: "{{re:^(linux|darwin)-(x64|arm64)$}}",
+        }
+  # Up to date: nothing to install, whatever the executable.
+  - cli: [update]
+    expect: { exit: 0, stdout: "{{re:^roamgate \\S+ is up to date\\.\\n$}}" }
+  - http_fake_calls: { fake: models, count: 3 }
+  - cli: [update, --check]
+    env: { ROAMGATE_UPDATE_BASE_URL: "${FAKE_HTTP}/files/none" }
+    expect: { exit: 1, stderr_contains: "404" }
+  - cli: [rollback]
+    expect: { exit: 1, stderr_contains: "roamgate rollback: " }

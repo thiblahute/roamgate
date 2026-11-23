@@ -2,7 +2,7 @@
   "x-inventory": "event:roamgate.agent_note",
   "x-kind": "event",
   "x-sent-by": ["server/src/index.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["event", "data"],
   "properties": {
@@ -10,7 +10,21 @@
       "const": "roamgate.agent_note"
     },
     "data": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "pane_id": {
+          "type": "string"
+        }
+      },
+      "required": ["pane_id"],
+      "additionalProperties": false
+    },
+    "connection_id": {
+      "type": "string"
+    },
+    "connection_generation": {
+      "type": "integer"
     }
-  }
+  },
+  "additionalProperties": false
 }

@@ -6,6 +6,19 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "settings": {
+        "type": "object",
+        "description": "the whole settings.json (contract/storage)"
+      },
+      "path": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "required": ["settings", "path"]
+  },
+  "status": "typed"
 }

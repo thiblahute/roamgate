@@ -1,0 +1,127 @@
+name: an owner is a session Roamgate manages; its comments and the coordinator's new items reach their panes
+family: work
+description: >
+  Herdr lists one Claude in a pane, so agent_sessions knows one session,
+  legacy-default/p1. An owner elsewhere is refused and named; a subagent's
+  task is taken as given. A comment on an owned item, and an item nobody
+  owns (the project's coordinator's), are typed into that pane through
+  Herdr's agent.prompt, naming the item and the client's work command.
+ledger:
+  - "server/src/work/service.test.ts > an owner's session must be one Roamgate manages; its task is taken as given"
+  - "server/src/work/service.test.ts > the real review service delivers an item's comment to its owner, and waits without one"
+  - "server/src/work/service.test.ts > an item nobody owns is the project's coordinator's, told of it as a review comment"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: Roamgate work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - {
+          pane_id: p1,
+          agent: claude,
+          agent_status: idle,
+          agent_session:
+            {
+              source: claude,
+              agent: claude,
+              kind: id,
+              value: 11111111-2222-4333-8444-555555555555,
+            },
+        }
+steps:
+  - login: {}
+  - connect: {}
+  - agent: sessions
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            sessions:
+              [
+                {
+                  address: legacy-default/p1,
+                  agent: claude,
+                  mode: terminal,
+                  state: idle,
+                },
+              ],
+          },
+      }
+  - call: bridge.work.add
+    params: { title: "Nobody's", owner: { session: "desktop/w99:p9" } }
+    error:
+      {
+        message: "{{re:^no agent session Roamgate manages is at desktop/w99:p9; agent_sessions .* such as legacy-default/p1}}",
+      }
+  - call: bridge.work.add
+    params:
+      {
+        title: "A subagent's",
+        owner: { session: legacy-default/p1, task: a0a5b2a0a1e034112 },
+      }
+    reply:
+      {
+        item:
+          { owner: { session: legacy-default/p1, task: a0a5b2a0a1e034112 } },
+      }
+    save: { sub: /result/item/id }
+  - call: bridge.work.update
+    params: { item: "${sub}", owner: { session: "gone/w1:p1" } }
+    error:
+      {
+        message: "{{contains:no agent session Roamgate manages is at gone/w1:p1}}",
+      }
+  - call: bridge.work.update
+    params:
+      { item: "${sub}", owner: { session: legacy-default/p1, task: ffff } }
+    reply: { item: { owner: { task: ffff } } }
+  # The user comments on an owned item: the comment goes to its pane.
+  - call: bridge.work.add
+    params: { title: Deliver me, owner: { session: legacy-default/p1 } }
+    save: { item: /result/item/id, review: /result/item/review }
+  - call: review.thread.add
+    params:
+      {
+        session_id: "${review}",
+        text: Please look,
+        anchor: { work: { item: "${item}" } },
+        kind: discussion,
+      }
+  # Comments go out 2.5 s after the last one, on the server's clock.
+  - advance: 1000
+    repeat: 5
+  # Each owned item the user added is told to its pane, with its comments.
+  - herdr_calls:
+      method: agent.prompt
+      count: 2
+      calls:
+        - {
+            valid: true,
+            params:
+              { target: p1, text: '{{contains:"A subagent''s" (yours)]}}' },
+          }
+        - {
+            valid: true,
+            params:
+              {
+                target: p1,
+                text: "{{re:^\\[Roamgate work item [0-9a-f]{8} \"Deliver me\" \\(yours\\)\\](?s).*Please look.*roamgate-review work work_list}}",
+              },
+          }
+    retry: 10000
+  # The project's coordinator gets what nobody owns, and is told of it.
+  - call: bridge.work.project.set
+    params: { name: roamgate, coordinator: { session: legacy-default/p1 } }
+    reply: { project: { coordinator: { session: legacy-default/p1 } } }
+  - call: bridge.work.add
+    params: { title: Sort me }
+    reply: { item: { owner: { session: legacy-default/p1 } } }
+  - advance: 1000
+    repeat: 5
+  - herdr_calls:
+      {
+        method: agent.prompt,
+        where: { params: { text: "{{contains:Sort me}}" } },
+        count: 1,
+      }
+    retry: 10000

@@ -1,0 +1,30 @@
+name: the plugin manifest runs the system installers and the native executable
+family: install
+tier: T2
+description: >
+  herdr-plugin.toml (kept unchanged by the move, plan section 9): Herdr
+  0.7.2 at least, sh on Linux and macOS and PowerShell on Windows as
+  installers, every action and the panel run ./server/roamgate plugin <id>.
+ledger:
+  - "scripts/install-plugin.test.ts > plugin manifest runs system installers and the native executable"
+server:
+  herdr: false
+  start: false
+steps:
+  - assert_file:
+      path: "${REPO}/herdr-plugin.toml"
+      text_contains:
+        - 'min_herdr_version = "0.7.2"'
+        - "[[build]]\nplatforms = [\"linux\", \"macos\"]\ncommand = [\"sh\", \"scripts/install-plugin.sh\"]"
+        - "[[build]]\nplatforms = [\"windows\"]\ncommand = [\"powershell.exe\""
+        - 'id = "panel"'
+        - 'command = ["./server/roamgate", "plugin", "panel"]'
+        - 'command = ["./server/roamgate", "plugin", "start"]'
+        - 'command = ["./server/roamgate", "plugin", "restart"]'
+        - 'command = ["./server/roamgate", "plugin", "status"]'
+        - 'command = ["./server/roamgate", "plugin", "url"]'
+        - 'command = ["./server/roamgate", "plugin", "version"]'
+  # Every command of the manifest's actions and panes is the native binary.
+  - sh: >-
+      awk '/^command = / && !/install-plugin/ && !/\.\/server\/roamgate", "plugin"/' "${REPO}/herdr-plugin.toml"
+    expect: { exit: 0, stdout: "" }

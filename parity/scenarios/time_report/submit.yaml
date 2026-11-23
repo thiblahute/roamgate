@@ -1,0 +1,73 @@
+name: submit needs the explicit confirmation and this bridge's own fresh preview, once
+family: time_report
+ledger:
+  - "server/src/time-report/rpc.test.ts > submit needs the explicit confirmation and this bridge's own fresh preview, once"
+server:
+  files:
+    .config/roamgate/settings.json:
+      { json: { time_report: { command: [time-report-provider] } } }
+  fakes:
+    time-report-provider:
+      rules:
+        - {
+            args_prefix: [submit-preview],
+            times: 1,
+            stdout_json: { confirm_token: tok-1 },
+          }
+        - {
+            args_prefix: [submit-preview],
+            stdout_json: { confirm_token: tok-2 },
+          }
+        - {
+            args_prefix: [submit],
+            stdin_match: "(?s)",
+            stdout_json: { submitted: [b1] },
+          }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.time_report
+    params:
+      { op: submit, date: "2026-11-02", confirm_token: tok-1, confirmed: true }
+    reply:
+      {
+        ok: false,
+        code: forbidden,
+        error: "This preview is unknown or expired: preview again.",
+      }
+  - call: bridge.time_report
+    params: { op: submit-preview, date: "2026-11-02" }
+    reply: { ok: true, value: { confirm_token: tok-1 } }
+  - call: bridge.time_report
+    params: { op: submit, date: "2026-11-02", confirm_token: tok-1 }
+    reply:
+      {
+        ok: false,
+        code: forbidden,
+        error: Submitting needs an explicit confirmation.,
+      }
+  - call: bridge.time_report
+    params: { op: submit, date: "2026-11-02", confirmed: true }
+    reply: { ok: false, code: forbidden, error: confirm_token is missing }
+  - call: bridge.time_report
+    params:
+      { op: submit, date: "2026-11-03", confirm_token: tok-1, confirmed: true }
+    reply: { ok: false, code: forbidden }
+  # Another day's attempt leaves the token to its own day.
+  - call: bridge.time_report
+    params:
+      { op: submit, date: "2026-11-02", confirm_token: tok-1, confirmed: true }
+    reply: { ok: true, value: { submitted: [b1] } }
+  # Once.
+  - call: bridge.time_report
+    params:
+      { op: submit, date: "2026-11-02", confirm_token: tok-1, confirmed: true }
+    reply: { ok: false, code: forbidden }
+  - call: bridge.time_report
+    params: { op: submit-preview, date: "2026-11-02" }
+    reply: { ok: true, value: { confirm_token: tok-2 } }
+  - fake_calls:
+      program: time-report-provider
+      argv_match: "^submit "
+      calls:
+        [{ argv: [submit, "2026-11-02"], stdin: '{"confirm_token":"tok-1"}' }]

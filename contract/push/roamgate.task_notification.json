@@ -2,7 +2,7 @@
   "x-inventory": "event:roamgate.task_notification",
   "x-kind": "event",
   "x-sent-by": ["server/src/connections/runtime.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["event", "data"],
   "properties": {
@@ -10,7 +10,52 @@
       "const": "roamgate.task_notification"
     },
     "data": {
-      "type": "object"
+      "type": "object",
+      "required": [
+        "type",
+        "kind",
+        "agent",
+        "title",
+        "body",
+        "workspace_id",
+        "tab_id",
+        "pane_id"
+      ],
+      "properties": {
+        "type": {
+          "const": "roamgate.task_notification"
+        },
+        "kind": {
+          "enum": ["completed", "blocked"]
+        },
+        "agent": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": ["string", "null"]
+        },
+        "workspace_id": {
+          "type": ["string", "null"]
+        },
+        "tab_id": {
+          "type": ["string", "null"]
+        },
+        "pane_id": {
+          "type": ["string", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "connection_id": {
+      "type": "string"
+    },
+    "connection_generation": {
+      "type": "integer"
     }
-  }
+  },
+  "description": "A task notification the bridge relays to pages (they turn their own tracker off).",
+  "additionalProperties": false
 }

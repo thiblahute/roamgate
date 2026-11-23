@@ -1,0 +1,47 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "root": "$ROOT/repo",
+    "path": "",
+    "entries": [
+      {
+        "name": "docs",
+        "path": "docs",
+        "type": "directory",
+        "size": "{{size}}",
+        "mtime_ms": "{{ms}}",
+        "hidden": false
+      },
+      {
+        "name": "src",
+        "path": "src",
+        "type": "directory",
+        "size": "{{size}}",
+        "mtime_ms": "{{ms}}",
+        "hidden": false
+      },
+      {
+        "name": "ignored.log",
+        "path": "ignored.log",
+        "type": "file",
+        "size": 6,
+        "mtime_ms": "{{ms}}",
+        "hidden": false,
+        "ignored": true
+      },
+      {
+        "name": "README.md",
+        "path": "README.md",
+        "type": "file",
+        "size": 13,
+        "mtime_ms": "{{ms}}",
+        "hidden": false
+      }
+    ],
+    "truncated": false,
+    "workspace_id": "w1",
+    "repo_name": "repo",
+    "checkout_path": "$ROOT/repo"
+  }
+}

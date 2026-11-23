@@ -1,0 +1,246 @@
+name: voices are recorded, renamed, sampled, assigned and deleted; speech and voice settings go through the helper and voice.json
+family: voice
+description: >
+  With a Kokoro reading voice and a Qwen3-TTS cloning model (a fake model
+  directory), the voice library lists, creates (the helper clones the
+  recording), renames, samples, assigns, turns Surprise on and deletes
+  voices. Speech comes from the helper as Ogg; the reading speed, the
+  longest pause and the front's mode are kept in voice.json. An image
+  the companion names is served by its absolute path.
+ledger:
+  - "server/src/http/voice.test.ts > a recording is uploaded, cloned, then removed"
+  - "server/src/http/voice.test.ts > choose, rename, delete and hear voices"
+  - "server/src/http/voice.test.ts > a refused change says why, with its status"
+  - "server/src/http/voice.test.ts > keeps the longest pause, reported with the rest"
+  - "server/src/http/voice.test.ts > keeps what the front does with answers, reported with it"
+server:
+  env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
+  files:
+    .config/roamgate/voice.json:
+      json:
+        helper: "${BIN}/roamgate-voice"
+        whisper_model: "${BIN}/roamgate-voice"
+        tts_models:
+          [
+            {
+              model: kokoro,
+              path: "${BIN}/roamgate-voice",
+              voices: "${BIN}/roamgate-voice",
+            },
+          ]
+        clone_model: "${HOME}/models/qwen"
+    models/qwen/config.json: { json: { speaker_encoder_config: { dim: 2 } } }
+    models/qwen/speech_tokenizer/model.safetensors: "x"
+  fakes:
+    roamgate-voice:
+      replies:
+        clone_voice:
+          {
+            embedding: [0.25, 0.5],
+            codes: [[1, 2]],
+            heard: hello there,
+            seconds: 2,
+          }
+        speak: { audio: T2dnUw==, language: en, nativeRate: 1 }
+steps:
+  - login: {}
+  - http: GET /api/voice/voices
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            voices: [],
+            kokoro: true,
+            surprise: false,
+            can_clone: true,
+            stock: [],
+          },
+      }
+  - http: POST /api/voice/voices
+    headers: { content-type: "multipart/form-data; boundary=parity" }
+    text: "--parity\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\nAnn\r\n--parity--\r\n"
+    expect: { status: 403 }
+  - http: POST /api/voice/voices
+    headers:
+      {
+        x-roamgate-voice: "1",
+        content-type: "multipart/form-data; boundary=parity",
+      }
+    text: "--parity\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\nAnn\r\n--parity--\r\n"
+    expect: { status: 400, json: { error: No recording. } }
+  - http: POST /api/voice/voices
+    headers:
+      {
+        x-roamgate-voice: "1",
+        content-type: "multipart/form-data; boundary=parity",
+      }
+    text: "--parity\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\nAnn\r\n--parity\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\nen\r\n--parity\r\nContent-Disposition: form-data; name=\"text\"\r\n\r\nhello there\r\n--parity\r\nContent-Disposition: form-data; name=\"audio\"; filename=\"a.wav\"\r\nContent-Type: audio/wav\r\n\r\nRIFFWAVE\r\n--parity--\r\n"
+    expect:
+      status: 201
+      json:
+        {
+          voice:
+            {
+              id: ann,
+              name: Ann,
+              languages: [en],
+              owned: true,
+              created: "{{time}}",
+            },
+          heard: hello there,
+          transcript: hello there,
+          kind: shown,
+        }
+    save: { voice_path: /json/voice/path }
+  - assert_file:
+      {
+        path: "${voice_path}",
+        json:
+          {
+            data: [0.25, 0.5],
+            shape: [2],
+            prompt: { codes: [[1, 2]], text: hello there },
+          },
+      }
+  - http: PATCH /api/voice/voices/ann
+    headers: { x-roamgate-voice: "1" }
+    body: { name: Anna }
+    expect: { status: 200, json: { id: ann, name: Anna } }
+  - http: PATCH /api/voice/voices/nobody
+    headers: { x-roamgate-voice: "1" }
+    body: { name: Nobody }
+    expect: { status: 404, json: { error: No such voice. } }
+  - http: POST /api/voice/voices/sample
+    headers: { x-roamgate-voice: "1" }
+    body: {}
+    expect: { status: 400, json: { error: Choose a voice. } }
+  - http: POST /api/voice/voices/sample
+    headers: { x-roamgate-voice: "1" }
+    body: { voice: ann }
+    expect:
+      {
+        status: 200,
+        headers: { content-type: audio/ogg, x-voice-language: en },
+        text: OggS,
+      }
+  - http: POST /api/voice/voices/surprise
+    headers: { x-roamgate-voice: "1" }
+    body: { on: yes }
+    expect: { status: 400, json: { error: on must be true or false. } }
+  - http: POST /api/voice/voices/surprise
+    headers: { x-roamgate-voice: "1" }
+    body: { on: true }
+    expect: { status: 200, json: { surprise: true } }
+  - http: POST /api/voice/voices/assign
+    headers: { x-roamgate-voice: "1" }
+    body: { voice: 3 }
+    expect: { status: 400, json: { error: Choose a voice. } }
+  - http: POST /api/voice/voices/assign
+    headers: { x-roamgate-voice: "1" }
+    body: { voice: ann, language: en }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            voices: [{ id: ann, name: Anna }],
+            assignments: { all: kokoro, languages: { en: ann } },
+            surprise: false,
+          },
+      }
+  - http: DELETE /api/voice/voices/ann
+    headers: { x-roamgate-voice: "1" }
+    expect:
+      {
+        status: 409,
+        json: { error: "Anna reads replies: choose another voice first." },
+      }
+  - http: POST /api/voice/voices/assign
+    headers: { x-roamgate-voice: "1" }
+    body: { voice: null, language: en }
+    expect: { status: 200, json: { assignments: { all: kokoro } } }
+  - http: DELETE /api/voice/voices/ann
+    headers: { x-roamgate-voice: "1" }
+    expect: { status: 204 }
+  - assert_absent: "${voice_path}"
+  # Surprise needs recorded voices.
+  - http: POST /api/voice/voices/surprise
+    headers: { x-roamgate-voice: "1" }
+    body: { on: true }
+    expect: { status: 409, json: { error: Record a voice first. } }
+  # Speech.
+  - http: POST /api/voice/speak
+    headers: { x-roamgate-voice: "1" }
+    body: { text: Hello, language: en, rate: 1 }
+    expect:
+      {
+        status: 200,
+        headers:
+          {
+            content-type: audio/ogg,
+            x-voice-language: en,
+            x-voice-native-rate: "1.2",
+            cache-control: no-store,
+          },
+        text: OggS,
+      }
+  # Settings, kept in voice.json.
+  - http: POST /api/voice/settings
+    headers: { x-roamgate-voice: "1" }
+    body: { speech_rate: 1.5 }
+    expect: { status: 200, json: { speech_rate: 1.5, $exact: true } }
+  - http: POST /api/voice/settings
+    headers: { x-roamgate-voice: "1" }
+    body: { max_pause_ms: 3000 }
+    expect: { status: 200, json: { max_pause_ms: 3000, $exact: true } }
+  - http: POST /api/voice/settings
+    headers: { x-roamgate-voice: "1" }
+    body: { front_mode: relay }
+    expect: { status: 200, json: { front_mode: relay, $exact: true } }
+  - assert_file:
+      {
+        path: .config/roamgate/voice.json,
+        json: { speech_rate: 1.5, max_pause_ms: 3000, front_mode: relay },
+      }
+  - http: GET /api/voice
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            available: true,
+            speech_rate: 1.5,
+            max_pause_ms: 3000,
+            surprise: false,
+          },
+      }
+  # An image the companion names.
+  - sh: printf '\211PNG\r\n\032\n0000' > picture.png
+  - http: GET /api/voice/image?path=${ROOT}/picture.png
+    expect:
+      {
+        status: 200,
+        headers:
+          {
+            content-type: image/png,
+            content-security-policy: "default-src 'none'",
+            x-content-type-options: nosniff,
+          },
+      }
+  - http: GET /api/voice/image?path=${ROOT}/missing.png
+    expect: { status: 404 }
+  - assert_file:
+      path: "${ROOT}/fakes/roamgate-voice.frames.jsonl"
+      jsonl:
+        $contains:
+          - { op: clone_voice, model: "${HOME}/models/qwen", language: en }
+          - { op: speak }
+          - { op: speak, text: Hello, language: en }
+contract_exceptions:
+  - {
+      surface: http,
+      name: POST /api/voice/voices/assign,
+      kind: mismatch,
+      reason: "voice 3 is sent on purpose, refused with 400",
+    }

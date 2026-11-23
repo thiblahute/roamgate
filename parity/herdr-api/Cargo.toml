@@ -1,0 +1,19 @@
+[package]
+name = "herdr-api"
+version = "0.9.4"
+description = "Herdr's control API and handshake types, vendored from Herdr at the version Roamgate verifies (vendor.sh)"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+# The vendored modules' own unit tests need the rest of Herdr.
+test = false
+doctest = false
+
+[dependencies]
+bincode = { version = "2", features = ["serde"] }
+schemars = "1.2.1"
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

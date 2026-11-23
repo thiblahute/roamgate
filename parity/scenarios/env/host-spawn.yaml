@@ -1,0 +1,62 @@
+name: ROAMGATE_HOST_SPAWN (or its legacy HERDR_GUI_ name) is the host-spawn GameMode is asked through
+family: archive
+description: >
+  In a toolbox the server asks the host's GameMode through host-spawn. The
+  legacy HERDR_GUI_HOST_SPAWN alone names it; ROAMGATE_HOST_SPAWN wins over
+  it, and empty means none (GameMode is then unknown, nothing is deferred).
+  `roamgate archive rebuild-text` waits for the game while GameMode (fake
+  gamemoded) says it runs.
+platforms: [linux]
+server:
+  herdr: false
+  start: false
+  fakes:
+    gamemoded:
+      rules: [{ args: [-s], stdout: "gamemode is active\n" }]
+  files:
+    "${ROOT}/legacy/host-spawn":
+      {
+        text: "#!/bin/sh\ntouch \"$PARITY_LEGACY_MARK\"\n[ \"$1\" = --no-pty ] && shift\nexec \"$@\"\n",
+        mode: "0755",
+      }
+steps:
+  - sh: "[ -e /run/.toolboxenv ] || { echo 'not in a toolbox: GameMode is asked directly' >&2; exit 0; }"
+  # The legacy name alone.
+  - cli: [archive, rebuild-text]
+    env:
+      {
+        ROAMGATE_HOST_SPAWN: null,
+        HERDR_GUI_HOST_SPAWN: "${ROOT}/legacy/host-spawn",
+        PARITY_LEGACY_MARK: "${ROOT}/legacy-used",
+      }
+    expect:
+      {
+        exit: 75,
+        stderr_contains: "GameMode runs: the rebuild waits for the game to end",
+      }
+  - assert_file: { path: "${ROOT}/legacy-used" }
+  - sh: rm "${ROOT}/legacy-used"
+  # ROAMGATE_HOST_SPAWN wins: the run's own fake host-spawn is asked.
+  - cli: [archive, rebuild-text]
+    env:
+      {
+        HERDR_GUI_HOST_SPAWN: "${ROOT}/legacy/host-spawn",
+        PARITY_LEGACY_MARK: "${ROOT}/legacy-used",
+      }
+    expect: { exit: 75, stderr_contains: "GameMode runs" }
+  - assert_absent: "${ROOT}/legacy-used"
+  - fake_calls:
+      { program: host-spawn, argv_match: "^--no-pty gamemoded -s$", min: 1 }
+  # Empty: no host-spawn, GameMode unknown, the rebuild does not wait.
+  - cli: [archive, rebuild-text]
+    env:
+      {
+        ROAMGATE_HOST_SPAWN: "",
+        HERDR_GUI_HOST_SPAWN: "${ROOT}/legacy/host-spawn",
+        PARITY_LEGACY_MARK: "${ROOT}/legacy-used",
+      }
+    expect: { exit: "{{number}}" }
+    save: { empty_err: /stderr }
+  - sh: 'case "$E" in *''GameMode runs''*) exit 1;; esac'
+    env: { E: "${empty_err}" }
+  - assert_absent: "${ROOT}/legacy-used"

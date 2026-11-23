@@ -1,0 +1,13 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "workspace_id": "w1",
+    "workspace_label": "repo",
+    "checkout_path": "$ROOT/repo",
+    "key": "local:$ROOT/repo",
+    "enabled": false,
+    "interval_minutes": 10,
+    "running": false
+  }
+}

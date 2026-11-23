@@ -1,0 +1,93 @@
+name: a dictation warms up, waits for the helper's models, and ends with what was heard
+family: voice
+description: >
+  warm and listen in dictation mode: the helper's listen_loading and
+  listen_ready reach the page as loading and ready (dictation mode only),
+  its partials are what was heard so far, and finishing ends the dictation
+  with the helper's final.
+ledger:
+  - "server/src/http/voice-socket.dictation.test.ts > partials show the whole dictation; finish gives the cleaned text with its timing"
+  - "server/src/http/voice-socket.dictation.test.ts > a helper loading its models hears the audio sent before, once ready"
+  - "server/src/http/voice-socket.dictation.test.ts > warm starts the dictation cleaner and says whether there is one"
+server:
+  env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
+  files:
+    .config/roamgate/voice.json:
+      json:
+        {
+          helper: "${BIN}/roamgate-voice",
+          whisper_model: "${BIN}/roamgate-voice",
+          kokoro_model: "${BIN}/roamgate-voice",
+          kokoro_voices: "${BIN}/roamgate-voice",
+        }
+  fakes:
+    roamgate-voice:
+      events:
+        listen_start:
+          - { event: listen_loading, session: $session }
+          - { event: listen_ready, session: $session }
+        listen_finish:
+          - { event: final, session: $session, text: write this down }
+      on_audio:
+        - { event: speech_start, session: $session }
+        - { event: partial, session: $session, text: write this }
+steps:
+  - login: {}
+  - connect: { name: page, path: /api/voice/ws }
+  - send: { op: warm, mode: dictation }
+    socket: page
+  - expect_push: "event:warm"
+    socket: page
+    message: { event: warm, mode: dictation, cleaner: true, $exact: true }
+  - send: { op: listen, mode: dictation, language: en }
+    socket: page
+  - expect_push: "event:listening"
+    socket: page
+    message:
+      {
+        event: listening,
+        session: "{{integer}}",
+        resume: "{{string}}",
+        mode: dictation,
+        $exact: true,
+      }
+    save: { session: /session }
+  - expect_pushes:
+      - {
+          push: "event:loading",
+          message:
+            {
+              event: loading,
+              session: "${session}",
+              mode: dictation,
+              $exact: true,
+            },
+        }
+      - {
+          push: "event:ready",
+          message:
+            {
+              event: ready,
+              session: "${session}",
+              mode: dictation,
+              $exact: true,
+            },
+        }
+    socket: page
+  - send: { $binary_hex: "00000000" }
+    socket: page
+  - expect_pushes:
+      - {
+          push: "event:speech_start",
+          message: { event: speech_start, session: "${session}" },
+        }
+      - {
+          push: "event:partial",
+          message: { event: partial, session: "${session}", text: write this },
+        }
+    socket: page
+  - send: { op: finish }
+    socket: page
+  - expect_push: "event:final"
+    socket: page
+    message: { event: final, session: "${session}", text: write this down }

@@ -1,0 +1,107 @@
+name: an item's threads, adopted and promoted threads, and where its owner, a session and a link are
+family: work
+ledger:
+  - "server/src/work/service.test.ts > adopts a thread into an existing item, once"
+  - "server/src/work/service.test.ts > an owner's session must be one Roamgate manages; its task is taken as given"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.work.add
+    params:
+      {
+        title: Fold a reviewed chunk again,
+        text: "Reviews and Files fold the chunk again",
+      }
+    save: { first: /result/item/id }
+  - call: bridge.work.threads
+    params: { item: "${first}" }
+    reply:
+      {
+        snapshot:
+          {
+            threads:
+              [
+                {
+                  comments:
+                    [{ body: "Reviews and Files fold the chunk again" }],
+                },
+              ],
+          },
+      }
+    save: { thread: /result/snapshot/threads/0/id }
+  - call: bridge.work.add
+    params: { title: Already here }
+    save: { second: /result/item/id }
+  - call: bridge.work.adopt
+    params: { item: "${second}", thread: "${thread}" }
+    reply:
+      {
+        item:
+          {
+            id: "${second}",
+            links: { $contains: [{ kind: review, thread: "${thread}" }] },
+          },
+      }
+  - call: bridge.work.threads
+    params: { item: "${second}" }
+    reply: { snapshot: { threads: { $contains: [{ id: "${thread}" }] } } }
+  - call: bridge.work.promote
+    params: { thread: "${thread}" }
+    reply: { item: { id: "${second}" } }
+  - call: bridge.work.promote
+    params: { thread: nope0000 }
+    error: { message: "{{contains:no such thread}}" }
+  - call: bridge.work.add
+    params: { title: Owned elsewhere, owner: { session: desktop/w35:p1 } }
+    error:
+      {
+        message: "{{contains:no agent session Roamgate manages is at desktop/w35:p1}}",
+      }
+  - call: bridge.work.owner_target
+    params: { item: "${first}" }
+    reply: { target: null }
+  - call: bridge.work.session_target
+    params: { session: legacy-default/p1 }
+    reply:
+      {
+        target:
+          {
+            connectionId: legacy-default,
+            workspaceId: w1,
+            paneId: p1,
+            runtimeGeneration: "{{integer}}",
+          },
+      }
+  - call: bridge.work.session_target
+    params: { session: legacy-default/nope }
+    reply: { target: null }
+  - call: bridge.work.session_target
+    params: {}
+    error: { message: "{{contains:session must be}}" }
+  - call: bridge.work.link_target
+    params: { item: "${first}", link: { kind: review, id: x } }
+    error:
+      { message: "only commit, branch and landing links have a repository" }
+  - call: bridge.work.link_target
+    params:
+      {
+        item: "${first}",
+        link: { kind: commit, sha: "0000000000000000000000000000000000000000" },
+      }
+    error:
+      { message: "This commit is not in any of the project's repositories" }

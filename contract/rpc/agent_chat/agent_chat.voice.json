@@ -4,8 +4,40 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "required": ["pane_id"],
+    "properties": {
+      "pane_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "text": {
+        "type": "string",
+        "maxLength": 200000
+      },
+      "uuid": {
+        "type": "string",
+        "pattern": "^[\\w-]{1,100}$"
+      },
+      "stop": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "$ref": "../../schemas/shared/agentChat.schema.json#/$defs/AgentChatVoiceAction"
+      },
+      "id": {
+        "type": "string"
+      }
+    },
+    "required": ["action"],
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

@@ -4,8 +4,24 @@
   "scope": "connection",
   "handler": "server/src/bridge/settings-rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "surface_codecs": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false,
+    "required": ["surface_codecs"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "surface_codecs": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false,
+    "required": ["surface_codecs"]
+  },
+  "status": "typed"
 }

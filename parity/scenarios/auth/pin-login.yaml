@@ -1,0 +1,36 @@
+name: PIN login uses a separate endpoint and keeps password recovery during the PIN cooldown
+family: auth
+ledger:
+  - "server/src/http/auth-process.test.ts > PIN login uses a separate endpoint and preserves password recovery during PIN cooldown"
+server:
+  env: { ROAMGATE_PIN: "012345" }
+steps:
+  - http: GET /login
+    expect:
+      {
+        status: 200,
+        text_contains: ['inputmode="numeric"', Use password or token instead],
+      }
+  - http: POST /api/login/pin
+    body: { pin: "012345" }
+    save_cookies: true
+    expect: { status: 200, headers: { set-cookie: "{{contains:herdr_auth=}}" } }
+  - http: GET /
+    expect: { status: 200 }
+  - http: POST /api/login/pin
+    repeat: 5
+    cookie: false
+    body: { pin: "654321" }
+    expect: { status: 401 }
+  - http: POST /api/login/pin
+    cookie: false
+    body: { pin: "012345" }
+    expect: { status: 429, headers: { retry-after: "{{re:^[1-9][0-9]*$}}" } }
+  - http: POST /api/login
+    cookie: false
+    body: { password: "${PASSWORD}" }
+    expect: { status: 200, headers: { set-cookie: "{{present}}" } }
+  - http: POST /api/login/pin
+    cookie: false
+    body: { pin: "012345" }
+    expect: { status: 429 }

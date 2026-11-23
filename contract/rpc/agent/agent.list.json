@@ -5,8 +5,26 @@
   "handler": "server/src/index.ts",
   "herdr": "intercepted",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "since": {}
+    }
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "required": ["type", "agents"],
+    "properties": {
+      "type": {
+        "const": "agent_list"
+      },
+      "agents": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "description": "Herdr's AgentInfo (contract/herdr), with the bridge's annotations (last_activity_at, seen marks, the conversation overlay)."
+        }
+      }
+    }
+  },
+  "status": "typed"
 }

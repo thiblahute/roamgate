@@ -24,3 +24,4 @@ server/roamgate.exe
 server/roamgate-*
 server/*.bun-build
 voice/helper/target
+/target

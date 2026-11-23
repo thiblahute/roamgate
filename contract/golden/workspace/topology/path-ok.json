@@ -1,0 +1,9 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "path": "$ROOT/other",
+    "error": null,
+    "directories": []
+  }
+}

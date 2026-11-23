@@ -1,0 +1,232 @@
+name: the GitLab inbox lists the requests waiting on the user and their own, with one query each, read only
+family: mr_reviews
+description: >
+  glab's configuration names one host with a login; the inbox asks it the
+  requests waiting on the user (review requested, assigned, mentions), the
+  user's own (open, recently merged and closed) and the details of the own
+  ones, each in one GraphQL query through glab, and keeps them in
+  mr-reviews/state.json. A refresh asked again within a minute makes no
+  call; the periodic one (5 minutes while watched) asks the lists again but
+  the details of a request still settling (its pipeline runs). Nothing is ever written to the forge.
+ledger:
+  - "server/src/mr-reviews/inbox.test.ts > lists the user's requests per host, says which hosts failed"
+  - "server/src/mr-reviews/inbox.own.test.ts > GitLab: the list, then status from the details"
+  - "server/src/mr-reviews/inbox.own.test.ts > a running pipeline is read again until it ends"
+  - "server/src/mr-reviews/hosts.test.ts > glab: hosts with a token, a keyring token, or the default"
+  - "server/src/mr-reviews/fetchers.test.ts > GitLab: the graphql query and draft notes are reads"
+server:
+  files:
+    .config/glab-cli/config.yml: "host: gitlab.example.com\nhosts:\n    gitlab.example.com:\n        token: glpat-parity\n        api_host: gitlab.example.com\n"
+  fakes:
+    glab:
+      rules:
+        - { args: [config, get, host], stdout: "gitlab.example.com\n" }
+        - {
+            args: [config, get, token, --host, gitlab.example.com],
+            stdout: "glpat-parity\n",
+          }
+        - { args_prefix: [config, get, token], exit: 1 }
+      default:
+        http_headers: { content-type: application/json }
+        graphql:
+          currentUser:
+            username: me
+            rr:
+              {
+                nodes:
+                  [
+                    &mr7 {
+                      iid: "7",
+                      title: Fix the parser,
+                      webUrl: "https://gitlab.example.com/group/other/-/merge_requests/7",
+                      draft: false,
+                      state: opened,
+                      updatedAt: "2025-12-31T10:00:00Z",
+                      userNotesCount: 1,
+                      diffHeadSha: aaaaaaa7,
+                      sourceBranch: fix,
+                      targetBranch: main,
+                      project: { fullPath: group/other },
+                      author: { username: alice },
+                      headPipeline: { status: SUCCESS },
+                      diffRefs: { baseSha: bbbbbbbb },
+                      labels: { nodes: [] },
+                    },
+                  ],
+              }
+            as: { nodes: [] }
+            todos: { nodes: [] }
+            op:
+              {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes:
+                  [
+                    &mr3 {
+                      iid: "3",
+                      title: My change,
+                      webUrl: "https://gitlab.example.com/me/proj/-/merge_requests/3",
+                      draft: false,
+                      state: opened,
+                      updatedAt: "2025-12-31T09:00:00Z",
+                      userNotesCount: 0,
+                      diffHeadSha: ccccccc3,
+                      sourceBranch: mine,
+                      targetBranch: main,
+                      project: { fullPath: me/proj },
+                      author: { username: me },
+                      headPipeline: { status: RUNNING },
+                      diffRefs: { baseSha: bbbbbbbb },
+                      labels: { nodes: [] },
+                    },
+                  ],
+              }
+            mg: { nodes: [] }
+            cl: { nodes: [] }
+          p0:
+            mergeRequests:
+              nodes:
+                - iid: "3"
+                  webUrl: "https://gitlab.example.com/me/proj/-/merge_requests/3"
+                  updatedAt: "2025-12-31T09:00:00Z"
+                  diffHeadSha: ccccccc3
+                  userNotesCount: 0
+                  project: { fullPath: me/proj }
+                  headPipeline: { status: RUNNING }
+                  diffRefs: { baseSha: bbbbbbbb }
+                  conflicts: false
+                  shouldBeRebased: false
+                  approved: false
+                  detailedMergeStatus: NOT_APPROVED
+                  approvedBy: { nodes: [] }
+                  resolvableDiscussionsCount: 0
+                  resolvedDiscussionsCount: 0
+                  description: A change of mine.
+                  discussions: { nodes: [] }
+                  assignees: { nodes: [{ username: me }] }
+                  reviewers: { nodes: [{ username: bob }] }
+                  autoMergeEnabled: false
+                  mergeUser: null
+    claude:
+      rules:
+        - args_prefix: ["-p"]
+          stdout_json:
+            {
+              type: result,
+              is_error: false,
+              result: '[{"key": "gitlab:gitlab.example.com/me/proj#3", "whose": "person:bob", "next": "Waiting for bob''s review", "depends_on": [], "stale": false}]',
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.mr_reviews.inbox
+    params: { fresh: true }
+    reply: { hosts: [{ host: gitlab.example.com, provider: gitlab }] }
+  - call: bridge.mr_reviews.inbox
+    until: { refreshing: false, hosts: [{ state: ok }] }
+    reply:
+      hosts:
+        [
+          {
+            host: gitlab.example.com,
+            provider: gitlab,
+            state: ok,
+            user: me,
+            fetchedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ]
+      entries:
+        - {
+            key: "gitlab:gitlab.example.com/group/other#7",
+            section: mine,
+            reasons: [review_requested],
+            author: alice,
+            pipeline: success,
+            notes: 1,
+            headSha: aaaaaaa7,
+            baseSha: bbbbbbbb,
+            state: open,
+          }
+        - {
+            key: "gitlab:gitlab.example.com/me/proj#3",
+            section: authored,
+            reasons: [authored],
+            author: me,
+            state: open,
+          }
+      hidden: []
+  - fake_calls:
+      {
+        program: glab,
+        argv_match: "--method POST graphql -f query=query \\{ currentUser \\{ username rr: ",
+        count: 1,
+      }
+  - fake_calls:
+      {
+        program: glab,
+        argv_match: "--method POST graphql -f query=query \\{ currentUser \\{ username op: ",
+        count: 1,
+      }
+  - fake_calls:
+      {
+        program: glab,
+        argv_match: "graphql -f query=query \\{ p0: project\\(fullPath: \"me/proj\"\\) \\{ mergeRequests\\(iids: \\[\"3\"\\]",
+        count: 1,
+      }
+  - fake_calls: { program: glab, argv_match: "^api ", count: 3 }
+  # Every api call names its host, and only reads (GraphQL is a POST).
+  - fake_calls:
+      {
+        program: glab,
+        argv_match: "^api --include --hostname gitlab.example.com --method POST graphql ",
+        count: 3,
+      }
+  - fake_calls:
+      {
+        program: glab,
+        argv_match: "--method (PUT|PATCH|DELETE)|--method POST [^g]|draft_notes|query=mutation",
+        count: 0,
+      }
+  - assert_file:
+      path: .config/roamgate/mr-reviews/state.json
+      mode: "0600"
+      json:
+        items:
+          $unordered:
+            - {
+                key: "gitlab:gitlab.example.com/group/other#7",
+                reasons: [review_requested],
+              }
+            - {
+                key: "gitlab:gitlab.example.com/me/proj#3",
+                reasons: [authored],
+              }
+        baselined: { gitlab.example.com: "2026-01-01T00:00:00.000Z" }
+  # Asked again within a minute: what is known, no call.
+  - call: bridge.mr_reviews.inbox
+    params: { fresh: true }
+    reply: { refreshing: false }
+  - fake_calls: { program: glab, argv_match: "^api ", count: 3 }
+  # Watched: the next refresh comes 5 minutes after the last one.
+  - advance: 300000
+  - call: bridge.mr_reviews.inbox
+    until: { refreshing: false, refreshedAt: "2026-01-01T00:05:00.000Z" }
+  - fake_calls:
+      {
+        program: glab,
+        argv_match: "query=query \\{ currentUser \\{ username rr: ",
+        count: 2,
+      }
+  - fake_calls:
+      {
+        program: glab,
+        argv_match: "query=query \\{ currentUser \\{ username op: ",
+        count: 2,
+      }
+  # Its pipeline still running, the own request is settling: read again.
+  - fake_calls: { program: glab, argv_match: "query=query \\{ p0: ", count: 2 }
+  - fake_calls:
+      {
+        program: glab,
+        argv_match: "--method (PUT|PATCH|DELETE)|--method POST [^g]|draft_notes|query=mutation",
+        count: 0,
+      }

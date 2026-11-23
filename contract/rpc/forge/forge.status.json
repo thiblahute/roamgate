@@ -4,8 +4,23 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "ref": {
+        "$ref": "../../schemas/shared/forge.schema.json#/$defs/ForgeRef"
+      },
+      "path": {
+        "type": "string"
+      },
+      "fresh": {
+        "type": "boolean"
+      }
+    },
+    "required": ["ref"],
+    "additionalProperties": false
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "$ref": "../../schemas/shared/forge.schema.json#/$defs/ForgeStatus"
+  },
+  "status": "typed"
 }

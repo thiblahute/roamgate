@@ -4,8 +4,63 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "before_remove_hook": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": ["event", "status"]
+      },
+      "forced": {
+        "type": "boolean"
+      },
+      "path": {
+        "type": "string"
+      },
+      "removed_hook": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": ["event", "status"]
+      },
+      "type": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "before_remove_hook",
+      "forced",
+      "path",
+      "removed_hook",
+      "type",
+      "workspace_id"
+    ]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

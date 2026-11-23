@@ -1,0 +1,8 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "text": "$HOME/.cache/roamgate/bin/roamgate-hold --socket $HOME/.cache/roamgate/review.sock --launch {{token}}",
+    "profile": "Work"
+  }
+}

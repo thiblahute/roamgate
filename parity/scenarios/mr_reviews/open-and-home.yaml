@@ -1,0 +1,220 @@
+name: a request opens in a review worktree of its known clone, and starts a home of its own, all through Herdr and git
+family: mr_reviews
+description: >
+  A clone of me/proj (its origin the GitLab project, fetched from a local
+  bare repository through git's insteadOf) is set for the request; opening
+  the request makes the project's review worktree next to the clone, a
+  Herdr workspace on it, and the request's review there. Starting a review
+  with a home makes a Herdr worktree of its own for the request's branch.
+  The forge is only read.
+ledger:
+  - "server/src/mr-reviews/home.test.ts > Start a review with a home: workspace made, named, placed, review shown there, Claude started and told, link recorded"
+platforms: [linux, macos]
+server:
+  env:
+    GIT_CONFIG_PARAMETERS: "'url.${ROOT}/origin.git.insteadOf=https://gitlab.example.com/me/proj.git'"
+    ROAMGATE_REVIEWS_AGENT_COMMAND: "${BIN}/claude"
+  files:
+    .config/glab-cli/config.yml: "host: gitlab.example.com\nhosts:\n    gitlab.example.com:\n        token: glpat-parity\n        api_host: gitlab.example.com\n"
+  fakes:
+    glab:
+      rules:
+        - { args: [config, get, host], stdout: "gitlab.example.com\n" }
+        - {
+            args: [config, get, token, --host, gitlab.example.com],
+            stdout: "glpat-parity\n",
+          }
+        - { args_prefix: [config, get, token], exit: 1 }
+      default:
+        http_headers: { content-type: application/json }
+        graphql:
+          currentUser:
+            username: me
+            rr:
+              {
+                nodes:
+                  [
+                    &mr7 {
+                      iid: "7",
+                      title: Fix the parser,
+                      webUrl: "https://gitlab.example.com/group/other/-/merge_requests/7",
+                      draft: false,
+                      state: opened,
+                      updatedAt: "2025-12-31T10:00:00Z",
+                      userNotesCount: 1,
+                      diffHeadSha: aaaaaaa7,
+                      sourceBranch: fix,
+                      targetBranch: main,
+                      project: { fullPath: group/other },
+                      author: { username: alice },
+                      headPipeline: { status: SUCCESS },
+                      diffRefs: { baseSha: bbbbbbbb },
+                      labels: { nodes: [] },
+                    },
+                  ],
+              }
+            as: { nodes: [] }
+            todos: { nodes: [] }
+            op:
+              {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes:
+                  [
+                    &mr3 {
+                      iid: "3",
+                      title: My change,
+                      webUrl: "https://gitlab.example.com/me/proj/-/merge_requests/3",
+                      draft: false,
+                      state: opened,
+                      updatedAt: "2025-12-31T09:00:00Z",
+                      userNotesCount: 0,
+                      diffHeadSha: ccccccc3,
+                      sourceBranch: mine,
+                      targetBranch: main,
+                      project: { fullPath: me/proj },
+                      author: { username: me },
+                      headPipeline: { status: RUNNING },
+                      diffRefs: { baseSha: bbbbbbbb },
+                      labels: { nodes: [] },
+                    },
+                  ],
+              }
+            mg: { nodes: [] }
+            cl: { nodes: [] }
+          p0:
+            mergeRequests:
+              nodes:
+                - iid: "3"
+                  webUrl: "https://gitlab.example.com/me/proj/-/merge_requests/3"
+                  updatedAt: "2025-12-31T09:00:00Z"
+                  diffHeadSha: ccccccc3
+                  userNotesCount: 0
+                  project: { fullPath: me/proj }
+                  headPipeline: { status: RUNNING }
+                  diffRefs: { baseSha: bbbbbbbb }
+                  conflicts: false
+                  shouldBeRebased: false
+                  approved: false
+                  detailedMergeStatus: NOT_APPROVED
+                  approvedBy: { nodes: [] }
+                  resolvableDiscussionsCount: 0
+                  resolvedDiscussionsCount: 0
+                  description: A change of mine.
+                  discussions: { nodes: [] }
+                  assignees: { nodes: [{ username: me }] }
+                  reviewers: { nodes: [{ username: bob }] }
+                  autoMergeEnabled: false
+                  mergeUser: null
+    claude:
+      rules:
+        - args_match: "stream-json"
+          stream:
+            - {
+                type: system,
+                subtype: init,
+                session_id: "{{session_id}}",
+                model: claude-parity,
+              }
+            - {
+                type: assistant,
+                session_id: "{{session_id}}",
+                message:
+                  {
+                    id: m1,
+                    role: assistant,
+                    content: [{ type: text, text: Reviewed the board. }],
+                  },
+              }
+            - {
+                type: result,
+                subtype: success,
+                is_error: false,
+                result: Reviewed the board.,
+                session_id: "{{session_id}}",
+              }
+        - args_prefix: ["-p"]
+          stdout_json:
+            {
+              type: result,
+              is_error: false,
+              result: '[{"key": "gitlab:gitlab.example.com/me/proj#3", "whose": "person:bob", "next": "Waiting for bob''s review", "depends_on": [], "stale": false}]',
+            }
+steps:
+  - sh: |
+      git init -q --bare origin.git && git init -q proj && cd proj && git commit -q --allow-empty -m one && git remote add origin https://gitlab.example.com/me/proj.git && git push -q ../origin.git HEAD:main && git push -q ../origin.git HEAD:refs/merge-requests/3/head
+  - login: {}
+  - connect: {}
+  - call: bridge.mr_reviews.inbox
+    params: { fresh: true }
+  - call: bridge.mr_reviews.inbox
+    until: { refreshing: false, hosts: [{ state: ok }] }
+  - call: bridge.mr_reviews.clone
+    params:
+      {
+        host: gitlab.example.com,
+        project: me/proj,
+        provider: gitlab,
+        connection_id: legacy-default,
+        path: "${ROOT}/proj",
+      }
+    reply: { ok: true, remote: origin }
+  - call: bridge.mr_reviews.open
+    params: { key: "gitlab:gitlab.example.com/me/proj#3", checkout: later }
+    within_ms: 30000
+    reply:
+      connectionId: legacy-default
+      workspaceId: "{{string}}"
+      sessionId: "{{string}}"
+      snapshot:
+        {
+          session:
+            {
+              root: "${ROOT}/proj.worktrees/review",
+              title: me/proj!3 My change,
+              target:
+                {
+                  kind: mr,
+                  url: "https://gitlab.example.com/me/proj/-/merge_requests/3",
+                },
+              gitlab: true,
+            },
+        }
+    save: { review_workspace: /result/workspaceId }
+  - assert_file: { path: "${ROOT}/proj.worktrees/review/.git" }
+  - call: bridge.mr_reviews.workspaces
+    reply:
+      {
+        workspaces:
+          [
+            {
+              connectionId: legacy-default,
+              workspaceId: "${review_workspace}",
+              project: gitlab.example.com/me/proj,
+            },
+          ],
+      }
+  - call: bridge.mr_reviews.claude
+    params: { key: "gitlab:gitlab.example.com/me/proj#3", action: status }
+    reply: { state: none }
+  - call: bridge.mr_reviews.home
+    params: { key: "gitlab:gitlab.example.com/me/proj#3" }
+    within_ms: 30000
+    reply:
+      connectionId: legacy-default
+      workspaceId: "{{string}}"
+      snapshot:
+        {
+          session:
+            {
+              root: "{{re:/proj/mine$}}",
+              title: me/proj!3 My change,
+              target: { kind: mr },
+            },
+        }
+  - herdr_calls: { all_valid: true, method: workspace.create, min: 1 }
+  - fake_calls:
+      {
+        program: glab,
+        argv_match: "--method (PUT|PATCH|DELETE)|--method POST [^g]|draft_notes|query=mutation",
+        count: 0,
+      }

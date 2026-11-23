@@ -1,0 +1,84 @@
+name: port forwards open over an SSH connection's ssh, are listed to every browser, and close; local connections have none
+family: forward
+description: >
+  forward.open on an SSH profile starts ssh -L (fake-ssh forwards for real,
+  the far host being this machine), reports it once the local port accepts
+  connections, and the forwards push goes to every browser; forward.list,
+  forward.candidates (the far host's listening ports, scanned over ssh) and
+  forward.close follow. A local connection refuses forwarding.
+server:
+  herdrs:
+    remote: { workspaces: [{ workspace_id: w1, label: remote }] }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ALLOW_SSH: "1"
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 2
+        default_connection_id: far
+        profiles:
+          - {
+              id: far,
+              label: FAR,
+              type: ssh,
+              ssh_destination: far-host,
+              remote_control_socket_path: "${HERDR_remote_CONTROL}",
+              remote_client_socket_path: "${HERDR_remote_CLIENT}",
+              auto_connect: false,
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - connect: { name: other }
+  - call: connections.connect
+    id: c1
+    no_wait: true
+    params: { id: far }
+  - await: c1
+    advance_every: 50
+    reply: { state: ready }
+    save: { generation: /result/generation }
+  - call: forward.list
+    connection_id: far
+    reply: { forwards: [] }
+  - call: forward.candidates
+    connection_id: far
+    params: { direction: local }
+    reply: { candidates: [] }
+  - call: forward.open
+    id: f1
+    no_wait: true
+    connection_id: far
+    params: { port: 45999, label: web }
+  - await: f1
+    advance_every: 50
+    any_outcome: true
+    golden: open
+    normalize: [run-paths, iso-time, timestamps-ms]
+  - fake_calls: { program: ssh, argv_match: "-L", min: 1 }
+  - expect_push: forwards
+    socket: other
+    message: { forwards: "{{array}}" }
+  - call: forward.list
+    connection_id: far
+    save: { forward: /result/forwards/0/id }
+    golden: list
+    normalize: [run-paths, iso-time, timestamps-ms]
+  - call: forward.close
+    connection_id: far
+    params: { id: "${forward}" }
+    reply: { closed: true }
+  - call: forward.close
+    connection_id: far
+    params: {}
+    error: { message: forward.close requires id }
+  - call: connections.connect
+    params: { id: legacy-default }
+    any_outcome: true
+  - call: forward.open
+    connection_id: legacy-default
+    params: { port: 45998 }
+    error:
+      { message: "{{contains:port forwarding applies to SSH connections}}" }

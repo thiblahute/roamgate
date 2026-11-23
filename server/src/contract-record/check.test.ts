@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkRecordings, unknownFields } from "./check";
+import { ContractSchemas, checkRecordings, unknownFields } from "./check";
+import type { Classified } from "./corpus";
 import { ContractRecorder } from "./recorder";
 import { listSockets, seedScenario, seedYaml } from "./seed";
 import { compareCensus } from "./shapes";
@@ -329,4 +330,57 @@ describe("contract recording seeds", () => {
       steps: seed.steps,
     });
   });
+});
+
+test("a key several anyOf branches describe is unknown only if every one lacks it", () => {
+  const branch = (kind: string, field: string) => ({
+    type: "object",
+    properties: {
+      kind: { const: kind },
+      status: { type: "object", properties: { [field]: {} } },
+    },
+  });
+  const schema = { anyOf: [branch("status", "a"), branch("card", "b")] };
+  expect(
+    unknownFields(schema, { kind: "card", status: { b: 1 } }, schema, ""),
+  ).toEqual([]);
+  expect(
+    unknownFields(schema, { kind: "card", status: { c: 1 } }, schema, ""),
+  ).toEqual(["/status/c"]);
+});
+
+test("a redacted string matches any string schema", () => {
+  const dir = mkdtempSync(join(tmpdir(), "redacted-"));
+  try {
+    mkdirSync(join(dir, "push"));
+    writeFileSync(
+      join(dir, "push", "secret.json"),
+      JSON.stringify({
+        type: "object",
+        properties: {
+          secret: { enum: ["a", "b"] },
+          auth: {
+            anyOf: [
+              { type: "object", properties: { status: { enum: ["x"] } } },
+              { type: "null" },
+            ],
+          },
+          other: { enum: ["a"] },
+        },
+      }),
+    );
+    const check = new ContractSchemas(dir);
+    const findings = check.check({
+      surface: "push",
+      name: "secret",
+      payload: {
+        secret: "[redacted:0a1b]",
+        auth: { status: "[redacted:0c]" },
+        other: "c",
+      },
+    } as Classified);
+    expect(findings?.map((finding) => finding.path)).toEqual(["message/other"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

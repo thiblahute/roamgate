@@ -1,0 +1,185 @@
+name: the GitHub inbox asks gh once per list, the details of the user's own requests, and an inference run
+family: mr_reviews
+description: >
+  gh's hosts.yml names github.com. After `gh auth status`, the inbox asks
+  the requests waiting on the user and the user's own in one GraphQL query
+  each, then the own request's details by repository. Claude infers whose
+  move it is on the user's own request. Nothing is written to the forge.
+ledger:
+  - "server/src/mr-reviews/hosts.test.ts > gh: every host of hosts.yml"
+  - "server/src/mr-reviews/fetchers.test.ts > GitHub: one graphql read; its data even with errors"
+  - "server/src/mr-reviews/inbox.own.test.ts > GitHub searches the open ones paged, the first page with the latest closed"
+  - "server/src/mr-reviews/inbox.own.test.ts > GitHub: reviews, open threads and conflicts"
+server:
+  files:
+    .config/gh/hosts.yml: "github.com:\n    user: me\n    git_protocol: https\n"
+  fakes:
+    gh:
+      rules:
+        - {
+            args: [auth, status, --hostname, github.com],
+            stdout: "github.com\n  Logged in to github.com account me\n",
+          }
+      default:
+        graphql:
+          viewer: { login: me }
+          rr:
+            {
+              nodes:
+                [
+                  {
+                    number: 7,
+                    title: Fix the parser,
+                    url: "https://github.com/other/repo/pull/7",
+                    isDraft: false,
+                    state: OPEN,
+                    updatedAt: "2025-12-31T10:00:00Z",
+                    headRefOid: aaaaaaa7,
+                    baseRefOid: bbbbbbbb,
+                    headRefName: fix,
+                    baseRefName: main,
+                    repository: { nameWithOwner: other/repo },
+                    author: { login: alice },
+                    comments: { totalCount: 1 },
+                    reviewThreads: { totalCount: 0 },
+                    commits:
+                      {
+                        nodes:
+                          [
+                            {
+                              commit: { statusCheckRollup: { state: FAILURE } },
+                            },
+                          ],
+                      },
+                    reviews: { nodes: [] },
+                    labels: { nodes: [{ name: bug }] },
+                  },
+                ],
+            }
+          as: { nodes: [] }
+          mn: { nodes: [] }
+          op:
+            {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes:
+                [
+                  {
+                    number: 3,
+                    title: My change,
+                    url: "https://github.com/me/proj/pull/3",
+                    isDraft: false,
+                    state: OPEN,
+                    updatedAt: "2025-12-31T09:00:00Z",
+                    headRefOid: ccccccc3,
+                    headRefName: mine,
+                    baseRefName: main,
+                    repository: { nameWithOwner: me/proj },
+                    author: { login: me },
+                    labels: { nodes: [] },
+                  },
+                ],
+            }
+          st: { nodes: [] }
+          p0:
+            n3:
+              number: 3
+              url: "https://github.com/me/proj/pull/3"
+              updatedAt: "2025-12-31T09:00:00Z"
+              headRefOid: ccccccc3
+              baseRefOid: bbbbbbbb
+              repository: { nameWithOwner: me/proj }
+              comments: { totalCount: 2 }
+              reviewThreads: { totalCount: 1 }
+              commits:
+                {
+                  nodes:
+                    [{ commit: { statusCheckRollup: { state: SUCCESS } } }],
+                }
+              reviews: { nodes: [] }
+              mergeable: MERGEABLE
+              reviewDecision: APPROVED
+              latestOpinionatedReviews:
+                {
+                  nodes:
+                    [
+                      {
+                        state: APPROVED,
+                        submittedAt: "2025-12-31T09:30:00Z",
+                        author: { login: bob },
+                      },
+                    ],
+                }
+              openThreads: { nodes: [{ isResolved: false }] }
+              body: A change of mine.
+              lastComments: { nodes: [] }
+              lastThreads: { nodes: [] }
+    claude:
+      rules:
+        - args_prefix: ["-p"]
+          stdout_json:
+            {
+              type: result,
+              is_error: false,
+              result: '[{"key": "github:github.com/me/proj#3", "whose": "me", "next": "Resolve the open thread", "depends_on": [], "stale": false}]',
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.mr_reviews.inbox
+    params: { fresh: true }
+  - call: bridge.mr_reviews.inbox
+    until:
+      { refreshing: false, hosts: [{ state: ok }], inference: { state: idle } }
+    reply:
+      hosts: [{ host: github.com, provider: github, state: ok, user: me }]
+      entries:
+        - {
+            key: "github:github.com/other/repo#7",
+            section: mine,
+            reasons: [review_requested],
+            author: alice,
+            pipeline: failed,
+            labels: [bug],
+          }
+        - key: "github:github.com/me/proj#3"
+          section: authored
+          reasons: [authored]
+          inferred:
+            { whose: me, next: Resolve the open thread, by: "{{string}}" }
+  - fake_calls:
+      {
+        program: gh,
+        argv_match: "^auth status --hostname github.com$",
+        count: 1,
+      }
+  - fake_calls:
+      {
+        program: gh,
+        argv_match: "^api graphql -f query=query \\{ viewer \\{ login \\} rr: ",
+        count: 1,
+      }
+  - fake_calls:
+      {
+        program: gh,
+        argv_match: "^api graphql -f query=query \\{ viewer \\{ login \\} op: ",
+        count: 1,
+      }
+  - fake_calls:
+      {
+        program: gh,
+        argv_match: "^api graphql -f query=query \\{ p0: repository\\(owner: \"me\", name: \"proj\"\\) \\{ n3: pullRequest\\(number: 3\\)",
+        count: 1,
+      }
+  - fake_calls: { program: gh, argv_match: "^api ", count: 3 }
+  - fake_calls:
+      {
+        program: gh,
+        argv_match: "--method|-X |draft_notes|query=mutation",
+        count: 0,
+      }
+  - fake_calls: { program: claude, count: 1 }
+  - assert_file:
+      path: .config/roamgate/mr-reviews/state.json
+      json:
+        items: { $len: 2 }
+        baselined: { github.com: "2026-01-01T00:00:00.000Z" }

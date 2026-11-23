@@ -1,0 +1,191 @@
+name: a merge request's review through glab, read, commented in the user's voice and pushed as draft notes
+family: review
+ledger:
+  - "server/src/review/rpc.test.ts > the browser finds a review's merge request on its own connection only"
+  - "server/src/review/rpc.test.ts > no review method submits, publishes, resolves or posts on a forge: drafts only"
+description: >
+  A GitLab merge request reviewed in Roamgate: glab answers its REST API
+  (fake-glab, glab's own config seeded). A local review of the branch finds
+  its merge request and opens its review; the user's review comment is sent
+  as a GitLab draft note (the only forge write, asked for), an agent's
+  review comment is made the user's, the review is refreshed.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes:
+      [
+        {
+          pane_id: "w1:p1",
+          workspace_id: w1,
+          cwd: "${ROOT}/repo",
+          agent: claude,
+        },
+      ]
+    agents: [{ pane_id: "w1:p1", agent: claude, agent_status: idle }]
+  files:
+    .config/glab-cli/config.yml: "host: gitlab.example.com\nhosts:\n    gitlab.example.com:\n        token: glpat-parity\n        api_host: gitlab.example.com\n"
+  fakes:
+    glab:
+      rules:
+        - { args: [config, get, host], stdout: "gitlab.example.com\n" }
+        - {
+            args: [config, get, token, --host, gitlab.example.com],
+            stdout: "glpat-parity\n",
+          }
+        - { args_prefix: [config, get, token], exit: 1 }
+        - args_match: "--method GET .*projects/g%2Fp/merge_requests/1$"
+          http_headers: { content-type: application/json }
+          body:
+            &mr {
+              iid: 1,
+              project_id: 42,
+              source_project_id: 42,
+              title: The feature,
+              state: opened,
+              web_url: "https://gitlab.example.com/g/p/-/merge_requests/1",
+              source_branch: feature,
+              target_branch: main,
+              updated_at: "2025-12-31T12:00:00Z",
+              references: { full: "g/p!1" },
+              author: { username: someone },
+              diff_refs:
+                {
+                  base_sha: cdbd5c26981692fde22fa6fa222c926daa22c573,
+                  start_sha: cdbd5c26981692fde22fa6fa222c926daa22c573,
+                  head_sha: d200e92de7043a0c719298ef08282897dbb5d8e9,
+                },
+            }
+        - args_match: "--method GET projects/g%2Fp$"
+          http_headers: { content-type: application/json }
+          body:
+            {
+              id: 42,
+              path_with_namespace: g/p,
+              web_url: "https://gitlab.example.com/g/p",
+            }
+        - args_match: "--method GET .*merge_requests/1/diffs"
+          http_headers: { content-type: application/json }
+          body:
+            [
+              {
+                old_path: f.txt,
+                new_path: f.txt,
+                new_file: false,
+                deleted_file: false,
+                diff: "@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n",
+              },
+            ]
+        - args_match: "--method GET .*merge_requests/1/(discussions|draft_notes)"
+          http_headers: { content-type: application/json }
+          body: []
+        - args_match: "--method GET .*merge_requests\\?scope="
+          http_headers: { content-type: application/json }
+          body: [*mr]
+        - args_match: "--method POST .*merge_requests/1/draft_notes"
+          http_headers: { content-type: application/json }
+          body: { id: 501, note: My words, author_id: 1 }
+steps:
+  - sh: |
+      export GIT_AUTHOR_DATE=2025-12-31T12:00:00Z GIT_COMMITTER_DATE=2025-12-31T12:00:00Z
+      git init -q repo && cd repo
+      git remote add origin https://gitlab.example.com/g/p.git
+      printf 'one\ntwo\n' > f.txt && git add f.txt && git commit -qm init
+      git update-ref refs/remotes/origin/main HEAD
+      git checkout -qb feature && printf 'one\nTWO\n' > f.txt && git commit -qam change
+      git update-ref refs/remotes/origin/feature HEAD
+    expect: { exit: 0 }
+  # The fixture's commits are fixed (dates, author), so their ids are the
+  # ones the merge request answers with.
+  - sh: cd repo && git rev-parse main feature
+    expect:
+      {
+        exit: 0,
+        stdout: "cdbd5c26981692fde22fa6fa222c926daa22c573\nd200e92de7043a0c719298ef08282897dbb5d8e9\n",
+      }
+  - login: {}
+  - connect: {}
+  - call: review.open
+    params: { workspace_id: w1, path: "${ROOT}/repo" }
+    save: { local: /result/session/id }
+  - call: review.gitlab.find
+    params: { session_id: "${local}" }
+    golden: find
+  - call: review.gitlab.open
+    params: { session_id: "${local}" }
+    save: { mr: /result/snapshot/session/id }
+    golden: open
+    normalize: [hex-id, run-paths]
+  - call: review.gitlab.refresh
+    params: { session_id: "${mr}" }
+    golden: refresh
+    normalize: [hex-id, run-paths]
+  - call: review.thread.add
+    params:
+      {
+        session_id: "${mr}",
+        kind: draft,
+        text: My words,
+        anchor: { path: f.txt, line: 2 },
+      }
+  - call: review.gitlab.push
+    params: { session_id: "${mr}" }
+    golden: push
+    normalize: [hex-id, run-paths]
+  - fake_calls:
+      {
+        program: glab,
+        argv_match: "--method (POST|PUT|PATCH|DELETE)",
+        count: 1,
+        calls: [{ argv: { $contains: ["{{contains:draft_notes}}"] } }],
+      }
+  - call: review.agent.review
+    params:
+      { session_id: "${mr}", pane_id: "w1:p1", agent: Codex, focus: the parser }
+    reply:
+      {
+        session:
+          {
+            agent:
+              { name: Codex, paneId: "w1:p1", working: { message: reviewing } },
+          },
+      }
+  - herdr_calls:
+      {
+        method: agent.prompt,
+        count: 1,
+        within_ms: 5000,
+        calls:
+          [
+            {
+              params:
+                { target: "w1:p1", text: "{{contains:Focus on: the parser}}" },
+            },
+          ],
+      }
+  - agent: add
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Codex,
+        session: "${mr}",
+        draft: "1",
+        file: f.txt,
+        line: "2",
+        text: Rename it,
+      }
+    expect: { status: 200, json: { kind: draft } }
+    save: { agent_draft: /json/id }
+  - call: review.adopt
+    params:
+      {
+        session_id: "${mr}",
+        thread_id: "${agent_draft}",
+        text: Please rename it,
+      }
+    golden: adopt
+    normalize: [hex-id, run-paths]
+  - fake_calls:
+      { program: glab, argv_match: "--method POST .*draft_notes", count: 2 }
+  - call: review.adopt
+    params: { session_id: "${local}", thread_id: nope }
+    error: { message: this is not a merge request's review }

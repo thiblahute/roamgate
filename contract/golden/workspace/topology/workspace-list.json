@@ -1,0 +1,22 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "type": "workspace_list",
+    "workspaces": [
+      {
+        "workspace_id": "w1",
+        "number": 1,
+        "label": "repo",
+        "focused": true,
+        "pane_count": 1,
+        "tab_count": 1,
+        "active_tab_id": "w1:t1",
+        "agent_status": "idle"
+      }
+    ],
+    "navigation_mode": "browser-local",
+    "tab_move_supported": true,
+    "endpoint_availability": {}
+  }
+}

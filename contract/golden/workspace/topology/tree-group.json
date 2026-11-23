@@ -1,0 +1,15 @@
+{
+  "result": {
+    "tree": {
+      "version": 1,
+      "nodes": [
+        {
+          "id": "g1",
+          "kind": "group",
+          "parent": null,
+          "label": "Projects"
+        }
+      ]
+    }
+  }
+}

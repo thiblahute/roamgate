@@ -1,0 +1,80 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "session": {
+      "id": "{{id}}",
+      "connectionId": "legacy-default",
+      "workspaceId": "w1",
+      "root": "$ROOT/repo",
+      "title": "main..feature",
+      "target": {
+        "kind": "range",
+        "base": "main",
+        "head": "feature"
+      },
+      "automaticBase": false,
+      "gitlab": false,
+      "autoSend": true,
+      "summary": "",
+      "agent": {
+        "name": "Claude",
+        "paneId": "w1:p1",
+        "update": {
+          "at": "{{time}}",
+          "message": "Answered"
+        }
+      },
+      "createdAt": "{{time}}",
+      "updatedAt": "{{time}}",
+      "deliveredAt": "{{time}}",
+      "handoffAt": "{{time}}"
+    },
+    "threads": [
+      {
+        "id": "{{id}}",
+        "sessionId": "{{id}}",
+        "kind": "discussion",
+        "anchor": {
+          "path": "f.txt",
+          "line": 2,
+          "side": "new"
+        },
+        "comments": [
+          {
+            "id": "{{id}}",
+            "author": "you",
+            "body": "Please say why",
+            "createdAt": "{{time}}",
+            "updatedAt": "{{time}}"
+          }
+        ],
+        "resolved": false,
+        "createdAt": "{{time}}",
+        "updatedAt": "{{time}}"
+      },
+      {
+        "id": "{{id}}",
+        "sessionId": "{{id}}",
+        "kind": "discussion",
+        "anchor": {
+          "path": "f.txt",
+          "line": 1,
+          "side": "new"
+        },
+        "comments": [
+          {
+            "id": "{{id}}",
+            "author": "you",
+            "body": "And this one?",
+            "createdAt": "{{time}}",
+            "updatedAt": "{{time}}"
+          }
+        ],
+        "resolved": false,
+        "createdAt": "{{time}}",
+        "updatedAt": "{{time}}"
+      }
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "workspace_id": "w2",
+    "key": "local:$ROOT/repo",
+    "enabled": true,
+    "worktree_directory": null,
+    "worktree_command": null,
+    "default_worktree_command": null,
+    "worktree_remove_command": null,
+    "default_worktree_remove_command": null,
+    "repo_name": "repo",
+    "repo_root": "$ROOT/repo",
+    "checkout_path": "$ROOT/wt/feature",
+    "source_checkout_path": "$ROOT/repo",
+    "config_path": null,
+    "config_source": null,
+    "paseo_path": null,
+    "hooks": {}
+  }
+}

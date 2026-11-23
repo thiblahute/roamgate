@@ -4,8 +4,18 @@
   "scope": "bridge",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {}
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array"
+      }
+    },
+    "required": ["results"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

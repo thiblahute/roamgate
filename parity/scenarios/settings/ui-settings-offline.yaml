@@ -1,0 +1,127 @@
+name: UI settings sync globally while the selected Herdr connection is offline
+family: settings
+ledger:
+  - "server/src/assistant.integration.test.ts > UI settings sync globally while the selected Herdr connection is offline"
+server:
+  herdr: false
+  herdrs:
+    healthy:
+      workspaces: [{ workspace_id: w1, label: Allowed workspace }]
+    broken:
+      responses:
+        workspace.list:
+          {
+            error:
+              {
+                code: error,
+                message: "api_key=PRIVATE_KEY /private/control.sock",
+              },
+          }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ASSISTANT_DIR: "${ROOT}/ranger"
+  files:
+    "${ROOT}/connections.json": &profiles
+      mode: "0600"
+      json:
+        version: 1
+        default_connection_id: offline
+        profiles:
+          - {
+              id: offline,
+              label: offline,
+              type: local,
+              control_socket_path: "${ROOT}/missing.sock",
+              client_socket_path: "${ROOT}/missing-render.sock",
+              auto_connect: false,
+            }
+          - {
+              id: healthy,
+              label: healthy,
+              type: local,
+              control_socket_path: "${HERDR_healthy_CONTROL}",
+              client_socket_path: "${HERDR_healthy_CLIENT}",
+              auto_connect: false,
+            }
+          - {
+              id: broken,
+              label: broken,
+              type: local,
+              control_socket_path: "${HERDR_broken_CONTROL}",
+              client_socket_path: "${HERDR_broken_CLIENT}",
+              auto_connect: false,
+            }
+    "${ROOT}/ranger/state.json": &ranger
+      mode: "0600"
+      json:
+        config:
+          {
+            provider: "",
+            model: "",
+            credential_source: assistant,
+            allowed_workspaces: [],
+          }
+        messages:
+          - {
+              id: saved-question,
+              role: user,
+              text: Saved Ranger question,
+              sent_at: "2026-10-04T00:00:00Z",
+              tools: [],
+              sources: [],
+            }
+          - {
+              id: saved-answer,
+              role: assistant,
+              text: Saved Ranger answer,
+              sent_at: "2026-10-04T00:00:01Z",
+              tools: [],
+              sources: [],
+            }
+        entries: []
+        entry_scope: ""
+        requests: []
+steps:
+  - login: {}
+  - connect: { name: first, expect_hello: { default_connection_id: offline } }
+  - connect: { name: second }
+  - call: bridge.ui_settings.get
+    socket: first
+    envelope: { connection_id: "{{absent}}" }
+    reply: { ui: { $exact: true } }
+  - call: bridge.ui_settings.update
+    socket: first
+    params:
+      {
+        key: keyboardShortcuts,
+        value: { version: 1, active: windows, presets: [] },
+      }
+  - expect_push: ui_settings
+    socket: second
+    message:
+      {
+        ui_settings:
+          {
+            key: keyboardShortcuts,
+            value: { version: 1, active: windows, presets: [] },
+          },
+        $exact: true,
+      }
+  - expect_no_push: ui_settings
+    socket: first
+  - call: bridge.ui_settings.get
+    socket: second
+    reply:
+      {
+        ui: { keyboardShortcuts: { version: 1, active: windows, presets: [] } },
+      }
+  - call: bridge.ui_settings.get
+    socket: first
+    connection_id: offline
+    error: { message: "{{contains:bridge-global}}" }
+  - call: bridge.ui_settings.update
+    socket: first
+    params: { key: keyboardShortcuts }
+  - call: bridge.ui_settings.get
+    socket: second
+    reply: { ui: { $exact: true } }

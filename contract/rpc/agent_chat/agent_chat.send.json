@@ -4,8 +4,45 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "required": ["pane_id"],
+    "properties": {
+      "pane_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "text": {
+        "type": "string",
+        "maxLength": 200000
+      },
+      "uuid": {
+        "type": "string",
+        "pattern": "^[\\w-]{1,100}$"
+      },
+      "images": {
+        "type": "array",
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "additionalProperties": false
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "enum": ["sent", "queued"]
+      },
+      "id": {
+        "type": "string"
+      }
+    },
+    "required": ["status", "id"],
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

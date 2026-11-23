@@ -4,8 +4,29 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string"
+      }
+    },
+    "required": ["path"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "directories": {
+        "type": "array"
+      },
+      "error": {
+        "type": ["null", "string"]
+      },
+      "path": {
+        "type": "string"
+      }
+    },
+    "required": ["directories", "error", "path"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

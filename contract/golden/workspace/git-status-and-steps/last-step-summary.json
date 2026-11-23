@@ -1,0 +1,38 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "workspace_id": "w1",
+    "repo_name": "repo",
+    "root": "$ROOT/repo",
+    "mode": "last-step",
+    "base": "ab69b4abf3bb84d4e268bd42d84e4a9a5e242bd3",
+    "branch": "main",
+    "baseline_available": true,
+    "snapshot_id": "{{uuid}}",
+    "step": {
+      "step": "{{ms}}-{{id8}}",
+      "before": "ab69b4abf3bb84d4e268bd42d84e4a9a5e242bd3",
+      "after": "b44c656b4143fb2c41a33dc73f2c83d3995b04b8",
+      "at": "{{time}}"
+    },
+    "entries": [
+      {
+        "path": "x",
+        "kind": "last-step",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "file_size": 8
+      }
+    ],
+    "counts": {
+      "staged": 0,
+      "unstaged": 0,
+      "untracked": 0,
+      "conflicted": 0,
+      "branch": 0,
+      "last-step": 1
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "commits": [
+      {
+        "sha": "e61953f3516571162da79c53253ac8ed13c1bea1",
+        "parent": "6192760e8364deba750727916657f2bacb3a0980",
+        "author": "Parity",
+        "date": "{{time}}",
+        "subject": "change",
+        "body": ""
+      }
+    ]
+  }
+}

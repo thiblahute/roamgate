@@ -1,0 +1,96 @@
+name: the legacy HERDR_GUI_ data path variables place the server's files, and the ROAMGATE_ ones win
+family: env
+description: >
+  With only the HERDR_GUI_ names, the review database, Ranger's directory,
+  the settings, the Work board, the Web Push registry, the agents' seen marks
+  and the connection registry go where they say; after a restart with the
+  ROAMGATE_ names beside them, the new ones are used.
+server:
+  herdr: false
+  start: false
+  env:
+    HERDR_GUI_REVIEW_DIR: "${ROOT}/legacy/reviews"
+    HERDR_GUI_ASSISTANT_DIR: "${ROOT}/legacy/ranger"
+    HERDR_GUI_SETTINGS_PATH: "${ROOT}/legacy/settings.json"
+    HERDR_GUI_WORK_DIR: "${ROOT}/legacy/work"
+    HERDR_GUI_WEB_PUSH_PATH: "${ROOT}/legacy/web-push.json"
+    HERDR_GUI_AGENT_SEEN_PATH: "${ROOT}/legacy/agent-seen.json"
+    HERDR_GUI_CONNECTIONS_PATH: "${ROOT}/legacy/connections.json"
+  files:
+    "${ROOT}/legacy/connections.json":
+      mode: "0600"
+      json:
+        version: 2
+        default_connection_id: legacy-local
+        profiles:
+          - {
+              id: legacy-local,
+              label: Legacy,
+              type: local,
+              control_socket_path: "${ROOT}/missing.sock",
+              client_socket_path: "${ROOT}/missing-client.sock",
+              auto_connect: false,
+            }
+    "${ROOT}/new/connections.json":
+      mode: "0600"
+      json:
+        version: 2
+        default_connection_id: new-local
+        profiles:
+          - {
+              id: new-local,
+              label: New,
+              type: local,
+              control_socket_path: "${ROOT}/missing.sock",
+              client_socket_path: "${ROOT}/missing-client.sock",
+              auto_connect: false,
+            }
+steps:
+  # A registry's directory is private, as the data root is.
+  - sh: chmod 700 legacy new
+  - start: {}
+  - wait_file: "${ROOT}/legacy/reviews/reviews.sqlite"
+  - wait_file: "${ROOT}/legacy/ranger/tasks.sqlite"
+  - wait_file: "${ROOT}/legacy/web-push.json"
+  - login: {}
+  - connect: { expect_hello: { default_connection_id: legacy-local } }
+  - call: bridge.ui_settings.update
+    params: { key: parity, value: legacy }
+  - assert_file:
+      { path: "${ROOT}/legacy/settings.json", json: { ui: { parity: legacy } } }
+  - call: bridge.work.add
+    params: { title: Placed by the legacy variable }
+  - wait_file: "${ROOT}/legacy/work/work.json"
+  - restart:
+      env:
+        ROAMGATE_REVIEW_DIR: "${ROOT}/new/reviews"
+        ROAMGATE_ASSISTANT_DIR: "${ROOT}/new/ranger"
+        ROAMGATE_SETTINGS_PATH: "${ROOT}/new/settings.json"
+        ROAMGATE_WORK_DIR: "${ROOT}/new/work"
+        ROAMGATE_WEB_PUSH_PATH: "${ROOT}/new/web-push.json"
+        ROAMGATE_AGENT_SEEN_PATH: "${ROOT}/new/agent-seen.json"
+        ROAMGATE_CONNECTIONS_PATH: "${ROOT}/new/connections.json"
+  - wait_file: "${ROOT}/new/reviews/reviews.sqlite"
+  - wait_file: "${ROOT}/new/ranger/tasks.sqlite"
+  - wait_file: "${ROOT}/new/web-push.json"
+  - login: {}
+  - connect: { expect_hello: { default_connection_id: new-local } }
+  - call: bridge.ui_settings.update
+    params: { key: parity, value: new }
+  - assert_file:
+      { path: "${ROOT}/new/settings.json", json: { ui: { parity: new } } }
+  - assert_file:
+      { path: "${ROOT}/legacy/settings.json", json: { ui: { parity: legacy } } }
+  - call: bridge.work.add
+    params: { title: Placed by the new variable }
+  - wait_file: "${ROOT}/new/work/work.json"
+  - assert_file:
+      {
+        path: "${ROOT}/new/work/work.json",
+        text_contains: Placed by the new variable,
+      }
+  - assert_file:
+      {
+        path: "${ROOT}/legacy/work/work.json",
+        text_contains: Placed by the legacy variable,
+      }

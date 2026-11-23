@@ -1,0 +1,184 @@
+{
+  "status": 200,
+  "json": {
+    "schema_version": "ATIF-v1.7",
+    "session_id": "11111111-2222-4333-8444-555555555555",
+    "trajectory_id": "11111111-2222-4333-8444-555555555555",
+    "agent": {
+      "name": "claude-code",
+      "version": "unknown"
+    },
+    "steps": [
+      {
+        "timestamp": "2026-01-01T00:00:01.000Z",
+        "source": "user",
+        "message": "Look at this picture",
+        "extra": {
+          "record_type": "user",
+          "images": 1,
+          "uuid": "u2"
+        },
+        "step_id": 1
+      },
+      {
+        "timestamp": "2026-01-01T00:00:02.000Z",
+        "source": "agent",
+        "message": "Running the tests",
+        "extra": {
+          "message_id": "msg_1",
+          "block_index": 0,
+          "uuid": "a1"
+        },
+        "step_id": 2
+      },
+      {
+        "timestamp": "2026-01-01T00:00:02.000Z",
+        "source": "agent",
+        "message": "Tool call: Bash",
+        "tool_calls": [
+          {
+            "tool_call_id": "toolu_bash",
+            "function_name": "Bash",
+            "arguments": {
+              "command": "bun test",
+              "description": "Run the tests"
+            }
+          }
+        ],
+        "metrics": {
+          "prompt_tokens": 10,
+          "completion_tokens": 5
+        },
+        "extra": {
+          "record_type": "assistant",
+          "model": "claude-opus-4"
+        },
+        "step_id": 3
+      },
+      {
+        "timestamp": "2026-01-01T00:00:03.000Z",
+        "source": "system",
+        "message": "12 pass",
+        "observation": {
+          "results": [
+            {
+              "source_call_id": "toolu_bash",
+              "content": "12 pass",
+              "extra": {}
+            }
+          ]
+        },
+        "extra": {
+          "record_type": "user"
+        },
+        "step_id": 4
+      },
+      {
+        "timestamp": "2026-01-01T00:00:04.000Z",
+        "source": "agent",
+        "message": "Tool call: Task",
+        "tool_calls": [
+          {
+            "tool_call_id": "toolu_task",
+            "function_name": "Task",
+            "arguments": {
+              "description": "Explore the code",
+              "subagent_type": "Explore",
+              "prompt": "look"
+            }
+          }
+        ],
+        "step_id": 5
+      },
+      {
+        "timestamp": "2026-01-01T00:00:04.000Z",
+        "source": "agent",
+        "message": "Tool call: Artifact",
+        "tool_calls": [
+          {
+            "tool_call_id": "toolu_art",
+            "function_name": "Artifact",
+            "arguments": {
+              "title": "Report",
+              "file_path": "/work/report.html"
+            }
+          }
+        ],
+        "extra": {
+          "record_type": "assistant",
+          "model": "claude-opus-4"
+        },
+        "step_id": 6
+      },
+      {
+        "timestamp": "2026-01-01T00:00:05.000Z",
+        "source": "system",
+        "message": "Found three modules",
+        "observation": {
+          "results": [
+            {
+              "source_call_id": "toolu_task",
+              "content": "Found three modules",
+              "extra": {}
+            }
+          ]
+        },
+        "step_id": 7
+      },
+      {
+        "timestamp": "2026-01-01T00:00:05.000Z",
+        "source": "system",
+        "message": "Created a new Artifact at https://claude.ai/code/artifact/abc-123",
+        "observation": {
+          "results": [
+            {
+              "source_call_id": "toolu_art",
+              "content": "Created a new Artifact at https://claude.ai/code/artifact/abc-123",
+              "extra": {}
+            }
+          ]
+        },
+        "extra": {
+          "record_type": "user"
+        },
+        "step_id": 8
+      },
+      {
+        "timestamp": "2026-01-01T00:00:06.000Z",
+        "source": "agent",
+        "message": "All done",
+        "extra": {
+          "record_type": "assistant",
+          "model": "claude-opus-4",
+          "message_id": "msg_3",
+          "block_index": 0,
+          "uuid": "a3"
+        },
+        "step_id": 9
+      },
+      {
+        "timestamp": "2026-01-01T00:00:07.000Z",
+        "source": "agent",
+        "message": "One more thing",
+        "extra": {
+          "record_type": "assistant",
+          "model": "claude-opus-4",
+          "message_id": "msg_4",
+          "block_index": 0,
+          "uuid": "a4"
+        },
+        "step_id": 10
+      }
+    ],
+    "final_metrics": {
+      "total_prompt_tokens": 10,
+      "total_completion_tokens": 5,
+      "total_steps": 10
+    },
+    "extra": {
+      "source_path": "$HOME/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl",
+      "source_records": 8,
+      "projection": "roamgate-lightweight"
+    }
+  }
+}

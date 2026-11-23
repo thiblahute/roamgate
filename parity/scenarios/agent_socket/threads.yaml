@@ -1,0 +1,167 @@
+name: an agent opens a review of its branch and works its threads through the agent socket
+family: review
+ledger:
+  - "server/src/review/agent-server.test.ts > the agent loop: open, discuss, watch, reply, resolve"
+  - "server/src/review/agent-server.test.ts > unknown commands and bad JSON are refused"
+  - "server/src/review/agent-server.test.ts > installs the client and links the well-known socket"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes:
+      [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/repo", agent: claude }]
+steps:
+  - sh: |
+      export GIT_AUTHOR_DATE=2025-12-31T12:00:00Z GIT_COMMITTER_DATE=2025-12-31T12:00:00Z
+      git init -q repo && cd repo
+      printf 'one\ntwo\nthree\n' > f.txt && git add f.txt && git commit -qm init
+      git checkout -qb feature
+      printf 'one\nTWO\nthree\nfour\n' > f.txt && git commit -qam change
+  - login: {}
+  - connect: {}
+  - agent: open
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        pane: p1,
+        workspace: w1,
+        range: main..feature,
+        title: The feature,
+      }
+    expect:
+      status: 200
+      json:
+        session:
+          { title: The feature, root: "${ROOT}/repo", agent: { name: Claude } }
+        threads: []
+    save: { session: /json/session/id }
+  - expect_push: review
+  - agent: add
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        session: "${session}",
+        file: f.txt,
+        line: "2",
+        text: Why upper case?,
+      }
+    expect:
+      status: 200
+      json: { session: "${session}", kind: discussion, path: f.txt, line: 2 }
+    save: { thread: /json/id }
+  - agent: get
+    body: { cwd: "${ROOT}/repo", session: "${session}" }
+    expect:
+      status: 200
+      json: { session: { id: "${session}" }, threads: [{ id: "${thread}" }] }
+    save: { comment: /json/threads/0/comments/0/id }
+  - agent: reply
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        session: "${session}",
+        comment: "${comment}",
+        text: A second word,
+      }
+    expect:
+      {
+        status: 409,
+        json:
+          { error: "{{contains:the last comment of this thread is yours}}" },
+      }
+  - call: review.reply
+    params:
+      {
+        session_id: "${session}",
+        comment_id: "${comment}",
+        text: Because it shouts,
+      }
+  - expect_push: review
+  - agent: reply
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        session: "${session}",
+        comment: "${comment}",
+        text: A second word,
+      }
+    expect: { status: 200, json: { id: "${thread}" } }
+  - agent: comments
+    body: { cwd: "${ROOT}/repo", session: "${session}" }
+    expect: { status: 200, json: { threads: [{ id: "${thread}" }] } }
+    save: { reply: /json/threads/0/comments/2/id }
+  - agent: edit
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        session: "${session}",
+        comment: "${reply}",
+        text: An edited word,
+      }
+    expect: { status: 200, json: { id: "${thread}" } }
+  - agent: delete
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        session: "${session}",
+        comment: "${reply}",
+      }
+    expect: { status: 200, json: { deleted: "{{any}}" } }
+  - agent: resolve
+    body: { cwd: "${ROOT}/repo", session: "${session}", comment: "${comment}" }
+    expect: { status: 200, json: { id: "${thread}" } }
+  - agent: reopen
+    body: { cwd: "${ROOT}/repo", session: "${session}", comment: "${comment}" }
+    expect: { status: 200, json: { id: "${thread}" } }
+  - agent: summary
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        session: "${session}",
+        text: All done here,
+      }
+    expect: { status: 200 }
+  - agent: summary
+    body: { cwd: "${ROOT}/repo", session: "${session}" }
+    expect: { status: 200, json: { summary: "{{any}}" } }
+  - agent: working
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        pane: p1,
+        session: "${session}",
+        message: On it,
+      }
+    expect: { status: 200, json: { id: "${session}" } }
+  - agent: update
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        pane: p1,
+        session: "${session}",
+        message: Pushed a fix,
+      }
+    expect: { status: 200, json: { id: "${session}" } }
+  - agent: list
+    body: { cwd: "${ROOT}/repo" }
+    expect: { status: 200, json: [{ id: "${session}", threads: 1 }] }
+  - agent: skill
+    expect: { status: 200, json: { skill: "{{string}}" } }
+  - agent: nonsense
+    body: { cwd: "${ROOT}/repo", session: "${session}" }
+    expect: { status: 404 }
+contract_exceptions:
+  - {
+      surface: agent,
+      name: nonsense,
+      kind: unlisted,
+      reason: "no such command: the case checks the 404",
+    }

@@ -2,10 +2,30 @@
   "x-inventory": "terminal_closed",
   "x-kind": "keyed",
   "x-sent-by": ["server/src/bridge/terminal-bridge.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["terminal_closed"],
   "properties": {
-    "terminal_closed": {}
-  }
+    "terminal_closed": {
+      "type": "object",
+      "required": ["terminal_id", "reason"],
+      "properties": {
+        "terminal_id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "connection_id": {
+      "type": "string"
+    },
+    "connection_generation": {
+      "type": "integer"
+    }
+  },
+  "description": "A terminal's stream closed while browsers viewed it: they attach again.",
+  "additionalProperties": false
 }

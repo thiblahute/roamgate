@@ -1,0 +1,163 @@
+name: a scheduled question starts without a browser and resumes its own run after SIGKILL
+family: assistant
+ledger:
+  - "server/src/assistant-recovery.integration.test.ts > a scheduled question starts without a browser and resumes its independent run after SIGKILL"
+server:
+  herdr: false
+  start: false
+  herdrs:
+    healthy:
+      endpoint: true
+      workspaces:
+        - workspace_id: w1
+          label: Recovery workspace
+          worktree:
+            {
+              repo_key: workspace,
+              repo_name: workspace,
+              repo_root: "${ROOT}/workspace",
+              checkout_path: "${ROOT}/workspace",
+              is_linked_worktree: false,
+            }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ASSISTANT_DIR: "${ROOT}/ranger"
+    PI_CODING_AGENT_DIR: "${ROOT}/pi"
+  openai:
+    anthropic:
+      replies:
+        - tools:
+            - { name: workspace_status, id: completed-status, input: {} }
+        - { partial: This interrupted answer must not be kept., hang: true }
+      cycle:
+        - text: Recovered the workspace status without repeating the read.
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 1
+        default_connection_id: healthy
+        profiles:
+          - {
+              id: healthy,
+              label: Healthy,
+              type: local,
+              control_socket_path: "${HERDR_healthy_CONTROL}",
+              client_socket_path: "${HERDR_healthy_CLIENT}",
+              auto_connect: true,
+            }
+    "${ROOT}/ranger/auth.json":
+      {
+        mode: "0600",
+        json: { anthropic: { type: api_key, key: synthetic-recovery-key } },
+      }
+    "${ROOT}/ranger/models.json":
+      {
+        mode: "0600",
+        json: { providers: { anthropic: { baseUrl: "${FAKE_HTTP}" } } },
+      }
+steps:
+  - sh: chmod 700 ranger && mkdir -p workspace
+  - start: {}
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    params: { id: healthy }
+    reply: { state: ready }
+  - call: bridge.assistant.configure
+    params:
+      {
+        config:
+          {
+            provider: anthropic,
+            model: claude-haiku-4-5,
+            credential_source: assistant,
+            allowed_workspaces: [{ connection_id: healthy, workspace_id: w1 }],
+          },
+      }
+  - call: bridge.assistant.task.create
+    params:
+      request_id: 00000000-0000-4000-8000-000000000001
+      title: Automatic status check
+      prompt: Inspect the authorized workspace status.
+      scope: [{ connection_id: healthy, workspace_id: w1 }]
+      schedule: { type: once, at: "2026-01-01T00:00:00.500Z" }
+    reply: { messages: [] }
+    save: { task: "/result/tasks/[title=Automatic status check]/id" }
+  - close: {}
+  # Only the scheduler can start this request: no browser, no send.
+  - advance: 1000
+  - http_fake_calls: { fake: anthropic, count: 2 }
+    retry: 15000
+  - assert_rows:
+      db: "${ROOT}/ranger/tasks.sqlite"
+      sql: "SELECT id AS run, status FROM runs WHERE task_id = '${task}'"
+      rows: [{ run: "{{string}}", status: running }]
+      save: { run: /0/run }
+    retry: 10000
+  - assert_file:
+      path: "${ROOT}/ranger/tasks/${task}/runs/${run}/state.json"
+      json:
+        active_run: { recovery_targets: [{ herdr_boot_id: parity-boot }] }
+        entries: { $contains: [{ type: ranger-durable }] }
+    retry: 10000
+  - herdr_calls:
+      {
+        herdr: healthy,
+        method: pane.list,
+        where: { params: { workspace_id: w1 } },
+        count: 1,
+      }
+  - http_fake_calls:
+      { fake: anthropic, index: 1, text_contains: completed-status }
+  - stop: { signal: KILL }
+  - start: {}
+  - advance: 500
+    repeat: 30
+  - http_fake_calls: { fake: anthropic, count: 3 }
+    retry: 25000
+  - assert_rows:
+      db: "${ROOT}/ranger/tasks.sqlite"
+      sql: "SELECT id AS run, status FROM runs WHERE task_id = '${task}'"
+      rows: [{ run: "${run}", status: succeeded }]
+    retry: 10000
+  - login: {}
+  - connect: {}
+  - call: bridge.assistant.task.get
+    params: { task_id: "${task}", run_id: "${run}" }
+    reply:
+      runs: { $len: 1 }
+      task: { next_run_at: null }
+      run:
+        status: succeeded
+        messages:
+          - { role: user }
+          - role: assistant
+            text: "{{contains:Recovered the workspace status without repeating the read.}}"
+            sources: { $len: 1 }
+            tools:
+              {
+                $contains:
+                  [
+                    {
+                      id: completed-status,
+                      name: workspace_status,
+                      status: completed,
+                      arguments: "{}",
+                      output: "{{string}}",
+                    },
+                  ],
+              }
+    reply_lacks: [This interrupted answer must not be kept.]
+    save: { source_id: "/result/run/messages/[role=assistant]/sources/0/id" }
+  - herdr_calls:
+      {
+        herdr: healthy,
+        method: pane.list,
+        where: { params: { workspace_id: w1 } },
+        count: 1,
+      }
+  - http_fake_calls:
+      { fake: anthropic, count: 3, index: 2, text_contains: "${source_id}" }
+  - call: bridge.assistant.get
+    reply: { messages: [], running: false }

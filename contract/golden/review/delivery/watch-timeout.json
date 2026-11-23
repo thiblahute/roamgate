@@ -1,0 +1,25 @@
+{
+  "status": 200,
+  "json": {
+    "outcome": "timeout",
+    "session": {
+      "id": "{{id}}",
+      "title": "main..feature",
+      "target": "main..feature",
+      "root": "$ROOT/repo",
+      "gitlab": false,
+      "summary": "",
+      "handoff_at": "{{time}}",
+      "agent": {
+        "name": "Claude",
+        "paneId": "w1:p1",
+        "update": {
+          "at": "{{time}}",
+          "message": "Answered"
+        }
+      },
+      "updated_at": "{{time}}"
+    },
+    "threads": []
+  }
+}

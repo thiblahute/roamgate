@@ -1,0 +1,97 @@
+name: worktrees are created, opened and removed through Herdr on a real repository, with their repository settings
+family: worktree
+tier: T2
+description: >
+  The fake Herdr's worktree methods run real git (git worktree add, list,
+  remove), as Herdr does. The bridge syncs the base, creates the checkout,
+  records the parent, opens it again, reads and changes the repository's
+  worktree settings, then removes it.
+ledger:
+  - "server/src/worktree/create.test.ts > a worktree base without origin is the checked out commit, in any language"
+  - "server/src/worktree/create.test.ts > refuses a branch name with shell syntax before anything runs"
+  - "server/src/worktree/create.test.ts > a checkout already open in Herdr does not rerun its setup hook"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes:
+      [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/repo", focused: true }]
+steps:
+  - sh: |
+      export GIT_AUTHOR_DATE=2025-01-01T00:00:00Z GIT_COMMITTER_DATE=2025-01-01T00:00:00Z
+      mkdir repo && cd repo && git init -q && printf 'x\n' > x && git add x && git commit -qm init
+  - login: {}
+  - connect: {}
+  - call: worktree.create
+    params: { workspace_id: w1, branch: feature, path: "${ROOT}/wt/feature" }
+    normalize: [run-paths, timestamps-ms]
+    reply:
+      {
+        type: worktree_created,
+        workspace: { workspace_id: w2 },
+        worktree: { path: "$ROOT/wt/feature", branch: feature },
+      }
+    golden: create
+  - sh: git -C repo worktree list --porcelain | grep -c '^worktree '
+    expect: { exit: 0, stdout: "2\n" }
+  - call: worktree.create
+    params: { workspace_id: w1, branch: "bad;rm -rf x" }
+    error: { message: "{{string}}" }
+  - call: worktree.open
+    params: { workspace_id: w1, path: "${ROOT}/wt/feature" }
+    normalize: [run-paths]
+    reply: { already_open: true, workspace: { workspace_id: w2 } }
+    golden: open-again
+  - call: settings.worktree_directory.get
+    params: { workspace_id: w1 }
+    normalize: [run-paths]
+    golden: worktree-directory
+    save: { key: /result/key }
+  - call: settings.update_repo
+    params:
+      {
+        key: "${key}",
+        settings:
+          {
+            worktree_directory: "${ROOT}/trees",
+            worktree_hooks_enabled: false,
+          },
+      }
+    reply:
+      {
+        key: "${key}",
+        repo:
+          {
+            worktree_directory: "${ROOT}/trees",
+            worktree_hooks_enabled: false,
+            $exact: true,
+          },
+        settings: { repositories: "{{object}}" },
+      }
+  - call: settings.update_repo
+    params: { key: "${key}", settings: { worktree_directory: relative/path } }
+    error: { message: "{{contains:absolute path}}" }
+  - call: settings.worktree_directory.get
+    params: { workspace_id: w1 }
+    reply: { worktree_directory: "${ROOT}/trees" }
+  - call: settings.worktree_hooks.get
+    params: { workspace_id: w2 }
+    normalize: [run-paths]
+    golden: hooks
+  - call: settings.worktree_hooks.get
+    params: { workspace_id: w1 }
+    normalize: [run-paths]
+    golden: hooks-not-a-worktree
+  - call: settings.worktree_command.update
+    params: { command: "" }
+    reply: { worktree_command: null }
+  - call: settings.worktree_command.update
+    params: { command: 'git worktree add "{path}" -b {branch}' }
+    error: { message: "{{string}}" }
+    golden: command-refused
+  - call: worktree.remove
+    params: { workspace_id: w2 }
+    normalize: [run-paths]
+    reply: { type: worktree_removed, workspace_id: w2 }
+    golden: remove
+  - assert_absent: "${ROOT}/wt/feature"
+  - herdr_calls: { all_valid: true, method: worktree.create, count: 1 }

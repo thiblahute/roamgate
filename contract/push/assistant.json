@@ -3,10 +3,13 @@
   "x-kind": "keyed",
   "x-sent-by": ["server/src/index.ts"],
   "x-coalescing": "assistant",
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["assistant"],
   "properties": {
-    "assistant": {}
-  }
+    "assistant": {
+      "$ref": "../schemas/shared/assistant.schema.json#/$defs/AssistantSnapshot"
+    }
+  },
+  "additionalProperties": false
 }

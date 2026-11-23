@@ -1,0 +1,29 @@
+name: generated-token login takes only page openings, sockets and API requests with a token are never failed logins
+family: auth
+ledger:
+  - "server/src/http/auth-process.test.ts > generated-token login takes only page openings: sockets and API requests with a token are never failed logins"
+server:
+  password: null
+  env: { ROAMGATE_PASSWORD: "" }
+steps:
+  - assert_file: { path: .config/roamgate/auth-token, save_text: token }
+  - http: GET /ws?token=wrong
+    repeat: 6
+    headers:
+      &upgrade {
+        connection: Upgrade,
+        upgrade: websocket,
+        sec-websocket-version: "13",
+        sec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==,
+      }
+    expect: { status: 401 }
+  - http: GET /api/health?token=wrong
+    repeat: 6
+    expect: { status: 401 }
+  - http: POST /api/login
+    body: { password: "${token}" }
+    expect: { status: 200 }
+  - http: GET /?token=${token}
+    headers: { sec-fetch-mode: navigate, accept: text/html }
+    expect:
+      { status: 303, headers: { location: /, set-cookie: "{{contains:=}}" } }

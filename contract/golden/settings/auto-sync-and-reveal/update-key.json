@@ -1,0 +1,10 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "key": "local:$ROOT/repo",
+    "enabled": false,
+    "interval_minutes": 10,
+    "checkout_path": "$ROOT/repo"
+  }
+}

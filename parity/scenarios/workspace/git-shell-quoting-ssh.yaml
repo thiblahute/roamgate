@@ -1,0 +1,174 @@
+name: over SSH, git features keep quoted and hostile paths as they are, through the host's shell
+family: git
+tier: T2
+description:
+  "The same hostile names on an SSH profile's workspace: every git script goes to the host
+  as one SSH command (fake-ssh runs it, batch mode and the master), and nothing the names hold runs there
+  either."
+ledger:
+  - server/src/workspace/git-shell.integration.test.ts > Git features preserve quoted paths and shell routing
+    (%s)
+server:
+  herdr: false
+  herdrs:
+    remote:
+      workspaces:
+        - workspace_id: w1
+          label: repo
+      panes:
+        - pane_id: p1
+          workspace_id: w1
+          cwd: ${ROOT}/roamgate git's shell
+          focused: true
+  env:
+    ROAMGATE_CONNECTIONS_PATH: ${ROOT}/connections.json
+    ROAMGATE_ALLOW_SSH: "1"
+  files:
+    ${ROOT}/connections.json:
+      mode: "0600"
+      json:
+        version: 2
+        default_connection_id: remote
+        profiles:
+          - id: remote
+            label: REMOTE
+            type: ssh
+            ssh_destination: git-test.example
+            remote_control_socket_path: ${HERDR_remote_CONTROL}
+            remote_client_socket_path: ${HERDR_remote_CLIENT}
+            auto_connect: true
+steps:
+  - sh:
+      'export GIT_AUTHOR_DATE=2025-01-01T00:00:00Z GIT_COMMITTER_DATE=2025-01-01T00:00:00Z
+
+      mkdir -p "$R" && cd "$R" && git init -q -b main && printf ''original\n'' > "$P" && git add -A && git
+      commit -qm ''Quoted file'''
+    env:
+      R: ${ROOT}/roamgate git's shell
+      P: file $(touch injected) 'quoted' & name.txt
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    id: up
+    no_wait: true
+    params:
+      id: remote
+  - await: up
+    advance_every: 50
+    reply:
+      state: ready
+      type: ssh
+  - call: git.commits
+    params:
+      workspace_id: w1
+    reply:
+      commits:
+        - subject: Quoted file
+    save:
+      sha: /result/head
+    connection_id: remote
+  - call: git.commit
+    params:
+      workspace_id: w1
+      sha: ${sha}
+    reply:
+      entries:
+        - path: file $(touch injected) 'quoted' & name.txt
+    connection_id: remote
+  - call: git.commit_preview
+    params:
+      workspace_id: w1
+      sha: ${sha}
+      path: file $(touch injected) 'quoted' & name.txt
+    reply:
+      text: "original
+
+        "
+    connection_id: remote
+  - call: git.commit_file
+    params:
+      workspace_id: w1
+      sha: ${sha}
+      base: null
+      path: file $(touch injected) 'quoted' & name.txt
+    reply:
+      diff: "{{contains:+original}}"
+    connection_id: remote
+  - write:
+      path: ${ROOT}/roamgate git's shell/file $(touch injected) 'quoted' & name.txt
+      text: "changed
+
+        "
+  - write:
+      path: ${ROOT}/roamgate git's shell/remove $(touch injected) 'quoted'.txt
+      text: "temporary
+
+        "
+  - call: git.diff_summary
+    params:
+      workspace_id: w1
+    reply:
+      entries:
+        $unordered:
+          - path: file $(touch injected) 'quoted' & name.txt
+            kind: unstaged
+            size: 8
+          - path: remove $(touch injected) 'quoted'.txt
+            kind: untracked
+            size: 10
+    save:
+      entries: /result/entries
+    connection_id: remote
+  - call: git.diff_file
+    params:
+      workspace_id: w1
+      path: file $(touch injected) 'quoted' & name.txt
+      kind: unstaged
+    reply:
+      diff: "{{contains:+changed}}"
+    connection_id: remote
+  - call: git.file_action
+    params:
+      workspace_id: w1
+      action: stage
+      path: file $(touch injected) 'quoted' & name.txt
+    connection_id: remote
+  - sh: cd "$R" && [ "$(git diff --cached --name-only)" = "$P" ]
+    env:
+      R: ${ROOT}/roamgate git's shell
+      P: file $(touch injected) 'quoted' & name.txt
+  - call: git.file_action
+    params:
+      workspace_id: w1
+      action: unstage
+      path: file $(touch injected) 'quoted' & name.txt
+    connection_id: remote
+  - sh: cd "$R" && [ -z "$(git diff --cached --name-only)" ]
+    env:
+      R: ${ROOT}/roamgate git's shell
+  - sh:
+      python3 -c "import json,os; e=[x for x in json.loads(os.environ['E']) if x['kind']=='untracked'][0];
+      print(json.dumps({'mtime_ms':e['mtime_ms'],'size':e['size']}),end='')"
+    env:
+      E: ${entries}
+    save:
+      mtime: /json/mtime_ms
+  - call: git.file_action
+    params:
+      workspace_id: w1
+      action: delete_untracked
+      path: remove $(touch injected) 'quoted'.txt
+      mtime_ms: ${mtime}
+      size: 10
+    connection_id: remote
+  - sh: cd "$R" && [ "$(ls -A | sort | tr '\n' '|')" = ".git|$P|" ]
+    env:
+      R: ${ROOT}/roamgate git's shell
+      P: file $(touch injected) 'quoted' & name.txt
+  - assert_absent: ${ROOT}/injected
+  - assert_absent: ${ROOT}/roamgate git's shell/injected
+  - assert_absent: ${HOME}/injected
+  - fake_calls:
+      program: ssh
+      argv_match: "-- git-test.example "
+      min: 5

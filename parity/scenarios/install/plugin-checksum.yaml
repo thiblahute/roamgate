@@ -1,0 +1,33 @@
+name: "the plugin installer stages a matching native release without Bun: checksum"
+family: install
+tier: T2
+description: >
+  scripts/install-plugin.sh in a plugin checkout (its scripts and a manifest
+  of version 9.8.7) downloads the versioned release from fake-models with
+  real curl, checks the binary's `plugin version`, and only then replaces
+  server/roamgate. A `bun` that fails is first on PATH: the install must not
+  need Bun.
+ledger:
+  - "scripts/install-plugin.test.ts > plugin installer stages a matching native release without Bun: ${failure}"
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: ARCHIVE_VERSION=9.8.7 DIGEST=0000000000000000000000000000000000000000000000000000000000000000 sh "${REPO}/parity/scenarios/install/fixture.sh" roamgate
+  - sh: >-
+      mkdir -p plugin/scripts plugin/server nobun &&
+      cp "${REPO}/scripts/install-plugin.sh" "${REPO}/scripts/install-roamgate.sh" plugin/scripts/ &&
+      printf 'version = "9.8.7"\n' > plugin/herdr-plugin.toml &&
+      printf 'previous binary' > plugin/server/roamgate && chmod 755 plugin/server/roamgate &&
+      printf '#!/bin/sh\nexit 99\n' > nobun/bun && chmod 755 nobun/bun
+  - sh: PATH="$PWD/nobun:/usr/bin:/bin:/usr/sbin:/sbin" sh plugin/scripts/install-plugin.sh
+    env:
+      ROAMGATE_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      ROAMGATE_VERSION: ignored
+      ROAMGATE_INSTALL_DIR: "${ROOT}/ignored"
+    expect: { exit: 1 }
+  - assert_file:
+      { path: "${ROOT}/plugin/server/roamgate", text: previous binary }
+  - sh: ls -A plugin/server
+    expect: { exit: 0, stdout: "roamgate\n" }
+  - assert_absent: "${ROOT}/ignored"

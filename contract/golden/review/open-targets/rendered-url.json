@@ -1,0 +1,19 @@
+{
+  "status": 200,
+  "json": {
+    "session": {
+      "id": "{{id}}",
+      "title": "https://example.invalid/page",
+      "target": "https://example.invalid/page",
+      "root": "$ROOT/repo",
+      "gitlab": false,
+      "summary": "",
+      "handoff_at": null,
+      "agent": {
+        "name": "Claude"
+      },
+      "updated_at": "2026-01-01T00:00:00.000Z"
+    },
+    "threads": []
+  }
+}

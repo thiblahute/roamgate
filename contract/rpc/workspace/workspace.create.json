@@ -5,8 +5,157 @@
   "handler": "server/src/index.ts",
   "herdr": "intercepted",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "cwd": {
+        "type": "string"
+      },
+      "focus": {
+        "type": "boolean"
+      },
+      "label": {
+        "type": "string"
+      },
+      "browser_source": {
+        "type": ["string", "null"],
+        "description": "the browser's workspace the new one is made from; null for the empty-session bootstrap"
+      },
+      "source_workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": []
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "root_pane": {
+        "type": "object",
+        "properties": {
+          "agent_status": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "focused": {
+            "type": "boolean"
+          },
+          "pane_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "terminal_id": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_status",
+          "focused",
+          "pane_id",
+          "revision",
+          "tab_id",
+          "terminal_id",
+          "workspace_id"
+        ]
+      },
+      "tab": {
+        "type": "object",
+        "properties": {
+          "agent_status": {
+            "type": "string"
+          },
+          "focused": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "number": {
+            "type": "number"
+          },
+          "pane_count": {
+            "type": "number"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_status",
+          "focused",
+          "label",
+          "number",
+          "pane_count",
+          "tab_id",
+          "workspace_id"
+        ]
+      },
+      "type": {
+        "type": "string"
+      },
+      "workspace": {
+        "type": "object",
+        "properties": {
+          "active_tab_id": {
+            "type": "string"
+          },
+          "agent_status": {
+            "type": "string"
+          },
+          "focused": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "number": {
+            "type": "number"
+          },
+          "pane_count": {
+            "type": "number"
+          },
+          "tab_count": {
+            "type": "number"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "active_tab_id",
+          "agent_status",
+          "focused",
+          "label",
+          "number",
+          "pane_count",
+          "tab_count",
+          "workspace_id"
+        ]
+      }
+    },
+    "required": ["root_pane", "tab", "type", "workspace"]
+  },
+  "status": "typed",
+  "error": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": ["message"]
+  },
+  "x-typed-from": "parity recordings"
 }

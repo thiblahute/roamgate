@@ -1,0 +1,115 @@
+name: a page listens through the voice socket, the helper's words come back, and a session resumes on a new socket
+family: voice
+description: >
+  voice.json names the fake helper. A listen starts a helper session
+  (listen_start); the page's audio goes to the helper as audio frames, and
+  the helper's speech_start, partial and final come back to the page. A
+  session resumes on another socket with its token only; release, finish
+  and stop reach the helper.
+ledger:
+  - "server/src/http/voice-socket.test.ts > without a context, events pass as they are"
+  - "server/src/http/voice-socket.test.ts > a session outlives its socket: a new one resumes it, missing nothing"
+  - "server/src/http/voice-socket.test.ts > a resume with the wrong token is refused"
+server:
+  env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
+  files:
+    .config/roamgate/voice.json:
+      {
+        json:
+          {
+            helper: "${BIN}/roamgate-voice",
+            whisper_model: "${BIN}/roamgate-voice",
+            kokoro_model: "${BIN}/roamgate-voice",
+            kokoro_voices: "${BIN}/roamgate-voice",
+          },
+      }
+  fakes:
+    roamgate-voice:
+      on_audio:
+        - { event: speech_start, session: $session }
+        - { event: partial, session: $session, text: hello }
+        - { event: final, session: $session, text: hello world }
+      events:
+        listen_release:
+          [{ event: error, session: $session, error: released by the page }]
+steps:
+  - login: {}
+  - http: GET /api/voice
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            available: true,
+            speech_rate: "{{number}}",
+            max_pause_ms: "{{number}}",
+          },
+      }
+  - connect: {}
+  - connect: { name: page, path: /api/voice/ws }
+  - send: { op: listen, language: en, end_silence_ms: 800 }
+    socket: page
+  - expect_push: "event:listening"
+    socket: page
+    message:
+      {
+        event: listening,
+        session: "{{integer}}",
+        resume: "{{string}}",
+        $exact: true,
+      }
+    save: { session: /session, resume: /resume }
+  - send: { $binary_hex: "0000ff7f0080" }
+    socket: page
+  - expect_pushes:
+      - {
+          push: "event:speech_start",
+          message: { event: speech_start, session: "${session}" },
+        }
+      - {
+          push: "event:partial",
+          message: { event: partial, session: "${session}", text: hello },
+        }
+      - {
+          push: "event:final",
+          message: { event: final, session: "${session}", text: hello world },
+        }
+    socket: page
+  - connect: { name: other, path: /api/voice/ws }
+  - send: { op: resume, session: "${session}", resume: wrong }
+    socket: other
+  - expect_push: "event:resume_failed"
+    socket: other
+    message: { event: resume_failed, session: "${session}", $exact: true }
+  - send: { op: resume, session: "${session}", resume: "${resume}" }
+    socket: other
+  - expect_push: "event:resumed"
+    socket: other
+    message:
+      { event: resumed, session: "${session}", received: 6, $exact: true }
+  - send: { op: release }
+    socket: other
+  - expect_push: "event:error"
+    socket: other
+    message:
+      { event: error, session: "${session}", error: released by the page }
+  - send: { op: finish }
+    socket: other
+  - send: { op: stop }
+    socket: other
+  - call: bridge.ping
+    socket: main
+  - assert_file:
+      path: "${ROOT}/fakes/roamgate-voice.frames.jsonl"
+      jsonl:
+        $contains:
+          - {
+              op: listen_start,
+              session: "${session}",
+              language: en,
+              end_silence_ms: 800,
+            }
+          - { audio: "${session}", bytes: 6 }
+          - { op: listen_release, session: "${session}" }
+          - { op: listen_finish, session: "${session}" }
+          - { op: listen_stop, session: "${session}" }

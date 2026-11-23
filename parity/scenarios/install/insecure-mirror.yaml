@@ -1,0 +1,24 @@
+name: a plain-HTTP mirror off loopback is refused
+ledger:
+  - "scripts/install-roamgate.test.ts > rejects unauthenticated non-loopback release mirrors"
+family: install
+tier: T2
+description: >
+  The release installer (scripts/install-roamgate.sh, or the legacy
+  install-herdr-gui.sh) run with real curl and tar against a release served
+  by fake-models (fixture.sh makes it), into an install directory under the
+  run's root.
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: sh "${REPO}/parity/scenarios/install/fixture.sh" roamgate
+  - sh: sh "${REPO}/scripts/install-roamgate.sh"
+    env:
+      HERDR_GUI_RELEASE_BASE_URL: http://downloads.example.com/roamgate
+      HERDR_GUI_INSTALL_DIR: "${ROOT}/install"
+    expect:
+      {
+        exit_not: 0,
+        stderr_contains: release base URL must use HTTPS unless the mirror is loopback,
+      }

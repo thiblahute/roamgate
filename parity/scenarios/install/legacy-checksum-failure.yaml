@@ -1,0 +1,24 @@
+name: a legacy checksum failure keeps the existing binary
+ledger:
+  - "scripts/install-roamgate.test.ts > legacy checksum failure preserves the existing binary"
+family: install
+tier: T2
+description: >
+  The release installer (scripts/install-roamgate.sh, or the legacy
+  install-herdr-gui.sh) run with real curl and tar against a release served
+  by fake-models (fixture.sh makes it), into an install directory under the
+  run's root.
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: DIGEST=0000000000000000000000000000000000000000000000000000000000000000 sh "${REPO}/parity/scenarios/install/fixture.sh" herdr-gui
+  - sh: mkdir -p install && printf 'keep legacy binary\n' > install/herdr-gui
+  - sh: sh "${REPO}/scripts/install-herdr-gui.sh"
+    env:
+      HERDR_GUI_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      HERDR_GUI_INSTALL_DIR: "${ROOT}/install"
+    expect: { exit_not: 0, stderr_contains: package checksum mismatch }
+  - assert_file:
+      { path: "${ROOT}/install/herdr-gui", text: "keep legacy binary\n" }
+  - assert_absent: "${ROOT}/install/herdr-gui.previous"

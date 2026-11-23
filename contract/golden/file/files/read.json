@@ -1,0 +1,16 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "root": "$ROOT/repo",
+    "path": "README.md",
+    "size": 13,
+    "mtime_ms": "{{ms}}",
+    "truncated": false,
+    "text": "hello parity\n",
+    "binary": false,
+    "workspace_id": "w1",
+    "repo_name": "repo",
+    "checkout_path": "$ROOT/repo"
+  }
+}

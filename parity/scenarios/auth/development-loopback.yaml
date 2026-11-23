@@ -1,0 +1,14 @@
+name: development loopback serves HTTP and WebSocket without credentials
+family: auth
+ledger:
+  - "server/src/http/auth-process.test.ts > development loopback serves HTTP and WebSocket without credentials"
+server:
+  password: null
+  env: { NODE_ENV: development, ROAMGATE_PASSWORD: "" }
+steps:
+  - http: GET /api/health
+    expect: { status: 200, json: { auth_required: false } }
+  - http: GET /login
+    expect: { status: 302, headers: { location: /, cache-control: no-store } }
+  - connect: {}
+  - call: bridge.ping

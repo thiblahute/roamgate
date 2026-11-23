@@ -4,8 +4,32 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
+    "properties": {
+      "pane_id": {
+        "type": "string"
+      },
+      "entry_id": {
+        "type": "string"
+      }
+    },
+    "required": ["pane_id", "entry_id"],
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "properties": {
+      "entry_id": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      },
+      "text_hash": {
+        "type": "string"
+      }
+    },
+    "required": ["entry_id", "text", "text_hash"],
+    "type": "object",
+    "x-inferred": "from the parity suite's recordings (agent_sessions); fields seen in every reply are required"
+  },
+  "status": "typed"
 }

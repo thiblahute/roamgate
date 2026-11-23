@@ -1,0 +1,10 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "results": [],
+    "truncated": false,
+    "workspace_id": "w1",
+    "root": "$ROOT/repo"
+  }
+}

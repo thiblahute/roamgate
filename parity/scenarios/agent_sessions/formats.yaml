@@ -1,0 +1,173 @@
+name: every agent's transcript format reads as the same session, history and download
+family: agent_sessions
+ledger:
+  - "server/src/agent/codex-session.test.ts > uses CODEX_HOME, exact IDs and archived sessions"
+  - "server/src/agent/muse-session.test.ts > uses XDG_DATA_HOME and foreground cwd; never invents an integration command"
+description: >
+  One pane per agent format, each transcript where its agent keeps it and
+  found through the variables that say where: Codex (CODEX_HOME), Pi
+  (PI_CODING_AGENT_DIR), Oh My Pi (PI_CONFIG_DIR), Kimi, Grok Build
+  (GROK_HOME, found by its working directory), Muse Code (XDG_DATA_HOME,
+  by its working directory) and Antigravity (ANTIGRAVITY_HOME,
+  ANTIGRAVITY_CONVERSATIONS_DIR: none there, so the reply says how to start
+  one).
+server:
+  env:
+    CODEX_HOME: "${ROOT}/codex"
+    PI_CODING_AGENT_DIR: "${ROOT}/pi"
+    PI_CONFIG_DIR: .omp-parity
+    GROK_HOME: "${ROOT}/grok"
+    XDG_DATA_HOME: "${ROOT}/xdg"
+    ANTIGRAVITY_HOME: "${ROOT}/agy"
+    ANTIGRAVITY_CONVERSATIONS_DIR: "${ROOT}/agy-conversations"
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes:
+      - { pane_id: codex, workspace_id: w1, cwd: /work }
+      - { pane_id: pi, workspace_id: w1, cwd: /work }
+      - { pane_id: omp, workspace_id: w1, cwd: /work }
+      - { pane_id: kimi, workspace_id: w1, cwd: /work }
+      - { pane_id: grok, workspace_id: w1, cwd: /work }
+      - { pane_id: muse, workspace_id: w1, cwd: "${ROOT}/work" }
+      - { pane_id: agy, workspace_id: w1, cwd: /work }
+    agents:
+      - {
+          "pane_id": "codex",
+          "agent": "codex",
+          "agent_status": "idle",
+          "cwd": "/work",
+          "agent_session":
+            {
+              "source": "codex",
+              "agent": "codex",
+              "kind": "id",
+              "value": "00000000-0000-4000-8000-000000000001",
+            },
+        }
+      - {
+          "pane_id": "pi",
+          "agent": "pi",
+          "agent_status": "idle",
+          "cwd": "/work",
+          "agent_session":
+            {
+              "source": "pi",
+              "agent": "pi",
+              "kind": "id",
+              "value": "22222222-0000-4000-8000-000000000002",
+            },
+        }
+      - {
+          "pane_id": "omp",
+          "agent": "omp",
+          "agent_status": "idle",
+          "cwd": "/work",
+          "agent_session":
+            {
+              "source": "omp",
+              "agent": "omp",
+              "kind": "id",
+              "value": "33333333-0000-4000-8000-000000000003",
+            },
+        }
+      - {
+          "pane_id": "kimi",
+          "agent": "kimi",
+          "agent_status": "idle",
+          "cwd": "/work",
+          "agent_session":
+            {
+              "source": "kimi",
+              "agent": "kimi",
+              "kind": "id",
+              "value": "44444444-0000-4000-8000-000000000004",
+            },
+        }
+      - {
+          "pane_id": "grok",
+          "agent": "grok",
+          "agent_status": "idle",
+          "cwd": "/work",
+        }
+      - { pane_id: muse, agent: muse, agent_status: idle, cwd: "${ROOT}/work" }
+      - {
+          "pane_id": "agy",
+          "agent": "agy",
+          "agent_status": "idle",
+          "cwd": "/work",
+        }
+  files:
+    "${ROOT}/work/README.md": "# README\n"
+    "${ROOT}/codex/sessions/2026/01/01/rollout-2026-01-01T00-00-00-00000000-0000-4000-8000-000000000001.jsonl": "{\"timestamp\": \"2026-01-01T00:00:00.000Z\", \"type\": \"session_meta\", \"payload\": {\"id\": \"00000000-0000-4000-8000-000000000001\", \"cwd\": \"/work\", \"timestamp\": \"2026-01-01T00:00:00.000Z\"}}\n{\"timestamp\": \"2026-01-01T00:00:01.000Z\", \"type\": \"response_item\", \"payload\": {\"type\": \"message\", \"role\": \"user\", \"content\": [{\"type\": \"input_text\", \"text\": \"list the files\"}]}}\n{\"timestamp\": \"2026-01-01T00:00:02.000Z\", \"type\": \"response_item\", \"payload\": {\"type\": \"function_call\", \"name\": \"shell\", \"call_id\": \"call\", \"arguments\": \"{\\\"command\\\":[\\\"ls\\\"]}\"}}\n{\"timestamp\": \"2026-01-01T00:00:03.000Z\", \"type\": \"response_item\", \"payload\": {\"type\": \"function_call_output\", \"call_id\": \"call\", \"output\": \"README.md\"}}\n{\"timestamp\": \"2026-01-01T00:00:04.000Z\", \"type\": \"response_item\", \"payload\": {\"type\": \"message\", \"role\": \"assistant\", \"content\": [{\"type\": \"output_text\", \"text\": \"One file: README.md\"}]}}\n"
+    "${ROOT}/pi/sessions/--work--/2026-01-01T00-00-00-000Z_22222222-0000-4000-8000-000000000002.jsonl": "{\"type\": \"session\", \"version\": 3, \"id\": \"22222222-0000-4000-8000-000000000002\", \"timestamp\": \"2026-01-01T00:00:00.000Z\", \"cwd\": \"/work\"}\n{\"type\": \"message\", \"id\": \"m1\", \"timestamp\": \"2026-01-01T00:00:01.000Z\", \"message\": {\"role\": \"user\", \"content\": [{\"type\": \"text\", \"text\": \"run it\"}]}}\n{\"type\": \"message\", \"id\": \"m2\", \"timestamp\": \"2026-01-01T00:00:02.000Z\", \"message\": {\"role\": \"assistant\", \"content\": [{\"type\": \"text\", \"text\": \"Running\"}, {\"type\": \"toolCall\", \"id\": \"call1\", \"name\": \"bash\", \"arguments\": {\"command\": \"make\"}}]}}\n{\"type\": \"message\", \"id\": \"m3\", \"timestamp\": \"2026-01-01T00:00:03.000Z\", \"message\": {\"role\": \"toolResult\", \"toolCallId\": \"call1\", \"isError\": true, \"content\": [{\"type\": \"text\", \"text\": \"exit 1\"}]}}\n{\"type\": \"message\", \"id\": \"m4\", \"timestamp\": \"2026-01-01T00:00:04.000Z\", \"message\": {\"role\": \"assistant\", \"content\": [{\"type\": \"text\", \"text\": \"Failed\"}]}}\n"
+    ".omp-parity/agent/sessions/--work--/2026-01-01T00-00-00-000Z_33333333-0000-4000-8000-000000000003.jsonl": "{\"type\": \"session\", \"version\": 3, \"id\": \"33333333-0000-4000-8000-000000000003\", \"timestamp\": \"2026-01-01T00:00:00.000Z\", \"cwd\": \"/work\"}\n{\"type\": \"message\", \"id\": \"m1\", \"timestamp\": \"2026-01-01T00:00:01.000Z\", \"message\": {\"role\": \"user\", \"content\": [{\"type\": \"text\", \"text\": \"omp run\"}]}}\n{\"type\": \"message\", \"id\": \"m2\", \"timestamp\": \"2026-01-01T00:00:02.000Z\", \"message\": {\"role\": \"assistant\", \"content\": [{\"type\": \"text\", \"text\": \"Running\"}, {\"type\": \"toolCall\", \"id\": \"call1\", \"name\": \"bash\", \"arguments\": {\"command\": \"make\"}}]}}\n{\"type\": \"message\", \"id\": \"m3\", \"timestamp\": \"2026-01-01T00:00:03.000Z\", \"message\": {\"role\": \"toolResult\", \"toolCallId\": \"call1\", \"isError\": true, \"content\": [{\"type\": \"text\", \"text\": \"exit 1\"}]}}\n{\"type\": \"message\", \"id\": \"m4\", \"timestamp\": \"2026-01-01T00:00:04.000Z\", \"message\": {\"role\": \"assistant\", \"content\": [{\"type\": \"text\", \"text\": \"Failed\"}]}}\n"
+    ".kimi-code/sessions/abc/44444444-0000-4000-8000-000000000004/agents/main/wire.jsonl": "{\"type\": \"metadata\", \"protocol_version\": \"1.2\"}\n{\"timestamp\": 1767225601, \"message\": {\"type\": \"TurnBegin\", \"payload\": {\"user_input\": \"hello kimi\"}}}\n{\"timestamp\": 1767225602, \"message\": {\"type\": \"ContentPart\", \"payload\": {\"type\": \"text\", \"text\": \"Hello from kimi\"}}}\n{\"timestamp\": 1767225603, \"message\": {\"type\": \"TurnEnd\", \"payload\": {}}}\n"
+    "${ROOT}/grok/sessions/%2Fwork/grok-session-1/chat_history.jsonl": "{\"type\": \"user\", \"content\": \"hi grok\"}\n{\"type\": \"assistant\", \"content\": \"hi there\"}\n"
+    "${ROOT}/grok/sessions/%2Fwork/grok-session-1/summary.json": '{"info": {"id": "grok-session-1", "cwd": "/work"}, "created_at": "2026-01-01T00:00:00.000Z", "updated_at": "2026-01-01T00:00:05.000Z", "current_model_id": "grok-4.5"}'
+    "${ROOT}/xdg/muse/sessions/2026/01/01/muse-1/session.jsonl": "{\"schema_version\": 1, \"stream\": {\"kind\": \"session\", \"id\": \"muse-1\"}, \"recorded_at\": 1767225600000123, \"record_type\": \"event\", \"durability\": \"durable\", \"payload_type\": \"runtime.session.metadata\", \"payload\": {\"kind\": \"metadata\", \"record\": {\"workspace_root\": \"${ROOT}/work\", \"model_id\": \"meta/muse-glimmer-30b\", \"build\": {\"semver\": \"1.3.0\"}}}}\n{\"schema_version\": 1, \"stream\": {\"kind\": \"session\", \"id\": \"muse-1\"}, \"recorded_at\": 1767225601000123, \"record_type\": \"event\", \"durability\": \"durable\", \"payload_type\": \"runtime.user_intent.accepted\", \"payload\": {\"intent_id\": \"intent-1\", \"model_messages\": [{\"content\": [{\"kind\": \"text\", \"text\": \"Read README.md\"}]}], \"refill_blocks\": [{\"kind\": \"text\", \"text\": \"Read README.md\"}]}}\n{\"schema_version\": 1, \"stream\": {\"kind\": \"session\", \"id\": \"muse-1\"}, \"recorded_at\": 1767225602000123, \"record_type\": \"event\", \"durability\": \"durable\", \"payload_type\": \"runtime.session\", \"payload\": {\"kind\": \"run\", \"run_id\": \"run-1\", \"event\": {\"kind\": \"assistant_message_committed\", \"text\": \"Read the README.\"}}}\n"
+    "${ROOT}/agy-conversations/.keep": ""
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent_session.get
+    params: { pane_id: codex }
+    normalize: [run-paths, session-file-stat]
+    golden: codex-session
+  - call: agent_history.get
+    params: { pane_id: codex }
+    normalize: [run-paths, session-file-stat]
+    golden: codex-history
+  - call: agent_session.get
+    params: { pane_id: pi }
+    normalize: [run-paths, session-file-stat]
+    golden: pi-session
+  - call: agent_history.get
+    params: { pane_id: pi }
+    normalize: [run-paths, session-file-stat]
+    golden: pi-history
+  - call: agent_session.get
+    params: { pane_id: omp }
+    normalize: [run-paths, session-file-stat]
+    golden: omp-session
+  - call: agent_history.get
+    params: { pane_id: omp }
+    normalize: [run-paths, session-file-stat]
+    golden: omp-history
+  - call: agent_session.get
+    params: { pane_id: kimi }
+    normalize: [run-paths, session-file-stat]
+    golden: kimi-session
+  - call: agent_history.get
+    params: { pane_id: kimi }
+    normalize: [run-paths, session-file-stat]
+    golden: kimi-history
+  - call: agent_session.get
+    params: { pane_id: grok }
+    normalize: [run-paths, session-file-stat]
+    golden: grok-session
+  - call: agent_history.get
+    params: { pane_id: grok }
+    normalize: [run-paths, session-file-stat]
+    golden: grok-history
+  - call: agent_session.get
+    params: { pane_id: muse }
+    normalize: [run-paths, session-file-stat]
+    golden: muse-session
+  - call: agent_history.get
+    params: { pane_id: muse }
+    normalize: [run-paths, session-file-stat]
+    golden: muse-history
+  - call: agent_session.get
+    params: { pane_id: agy }
+    normalize: [run-paths, session-file-stat]
+    golden: agy-session
+  - call: agent_history.get
+    params: { pane_id: agy }
+    normalize: [run-paths, session-file-stat]
+    golden: agy-history
+  - http: GET /api/agent-session/download?pane_id=codex
+    expect: { status: 200, text_contains: "One file: README.md" }
+  - http: GET /api/agent-session/atif?pane_id=pi
+    expect: { status: 200 }
+    normalize: [run-paths]
+    golden: pi-atif

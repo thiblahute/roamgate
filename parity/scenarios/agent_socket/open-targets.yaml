@@ -1,0 +1,121 @@
+name: an agent opens reviews of each kind of target, and of several repositories at once
+family: review
+ledger:
+  - "server/src/review/agent-server.test.ts > open --repo takes each repository's own range"
+  - "server/src/review/agent-server.test.ts > --compare opens a tree-to-tree review of two versions"
+  - "server/src/review/agent-server.test.ts > --last-step opens the review of the workspace's last step; none known says so"
+description: >
+  roamgate-review open's targets: the default branch range, a range, a
+  comparison, the worktree's changes, a rendered file and site, a merge
+  request's URL refused without its host's login, the last step when none
+  is known, and other repositories reviewed in the same workspace.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes:
+      [
+        {
+          pane_id: "w1:p1",
+          workspace_id: w1,
+          cwd: "${ROOT}/repo",
+          agent: claude,
+        },
+      ]
+steps:
+  - sh: |
+      export GIT_AUTHOR_DATE=2025-12-31T12:00:00Z GIT_COMMITTER_DATE=2025-12-31T12:00:00Z
+      for r in repo other; do
+        git init -q $r && (cd $r && printf 'one\n' > f.txt && printf '<p>Doc</p>\n' > doc.html && git add . && git commit -qm init && git checkout -qb feature && printf 'two\n' > f.txt && git commit -qam change && printf 'dirty\n' >> f.txt)
+      done
+  - login: {}
+  - connect: {}
+  - agent: open
+    body: { cwd: "${ROOT}/repo", agent: Claude, pane: "w1:p1" }
+    expect: { status: 200, json: { session: { target: main..HEAD } } }
+  - agent: open
+    body: { cwd: "${ROOT}/repo", agent: Claude, compare: main..feature }
+    expect: { status: 200 }
+    golden: compare
+    normalize: [hex-id, run-paths]
+  - agent: open
+    body: { cwd: "${ROOT}/repo", agent: Claude, worktree: "1" }
+    expect: { status: 200 }
+    golden: worktree
+    normalize: [hex-id, run-paths]
+  - agent: open
+    body: { cwd: "${ROOT}/repo", agent: Claude, file: doc.html }
+    expect: { status: 200 }
+    golden: rendered-file
+    normalize: [hex-id, run-paths]
+  - agent: open
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        url: "https://example.invalid/page",
+      }
+    expect: { status: 200 }
+    golden: rendered-url
+    normalize: [hex-id, run-paths]
+  - agent: open
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        file: doc.html,
+        url: "https://example.invalid/",
+      }
+    expect: { status: 400, json: { error: "give a file or a URL, not both" } }
+  - agent: open
+    body: { cwd: "${ROOT}/repo", agent: Claude, last_step: "1", workspace: w1 }
+    expect: { status: 400 }
+    golden: last-step-unknown
+  - agent: open
+    body: { cwd: "${ROOT}/repo", agent: Claude, range: "not a range" }
+    expect: { status: 400, json: { error: --range takes BASE..HEAD } }
+  - agent: open
+    body: { cwd: "${ROOT}/repo", agent: Claude, compare: "a..b..c" }
+    expect: { status: 400, json: { error: --compare takes OLD NEW } }
+  - agent: open
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        repo: "${ROOT}/other=main..feature",
+        range: main..feature,
+      }
+    expect:
+      {
+        status: 200,
+        json: { repos: [{ root: "${ROOT}/repo" }, { root: "${ROOT}/other" }] },
+      }
+  - agent: open
+    body: { agent: Claude }
+    expect:
+      { status: 400, json: { error: the client did not send its directory } }
+  - agent: add
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        draft: "1",
+        file: f.txt,
+        line: "1",
+        text: In my voice,
+      }
+    expect: { status: 200, json: { kind: draft } }
+  - agent: add
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: you,
+        file: f.txt,
+        line: "1",
+        text: Impostor,
+      }
+    expect: { status: 400, json: { error: "{{contains:is the user's name}}" } }
+  - agent: list
+    body: { cwd: "${ROOT}/repo", all: "1" }
+    expect: { status: 200 }
+    golden: list-all
+    normalize: [hex-id, run-paths]

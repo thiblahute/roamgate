@@ -1,0 +1,20 @@
+{
+  "status": 200,
+  "json": {
+    "sent": true,
+    "to": {
+      "address": "legacy-default/w2:p1",
+      "name": "side",
+      "title": null,
+      "workspace": "side",
+      "workspace_id": "w2",
+      "connection": "legacy-default",
+      "agent": "codex",
+      "mode": "terminal",
+      "state": "idle",
+      "cwd": "/side"
+    },
+    "delivery": "terminal",
+    "note": "Typed into its terminal: it was idle."
+  }
+}

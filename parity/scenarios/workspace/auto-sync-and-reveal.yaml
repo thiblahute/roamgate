@@ -1,0 +1,78 @@
+name: a workspace's auto-sync is read and set, per workspace and per repository key, and revealing a file needs the server's permission
+family: settings
+description: >
+  settings.workspace_auto_sync.get/list/update/update_key keep the
+  automatic sync per checkout in settings.json; file.reveal opens a file on
+  the host (xdg-open, faked) only when ROAMGATE_ALLOW_FILE_REVEAL=1 and the
+  browser is local.
+server:
+  env: { ROAMGATE_ALLOW_FILE_REVEAL: "1" }
+  herdr:
+    workspaces:
+      - workspace_id: w1
+        label: repo
+        worktree:
+          {
+            repo_key: "${ROOT}/repo",
+            repo_name: repo,
+            repo_root: "${ROOT}/repo",
+            checkout_path: "${ROOT}/repo",
+            is_linked_worktree: false,
+          }
+    panes:
+      [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/repo", focused: true }]
+steps:
+  - sh: mkdir repo && cd repo && git init -q && printf 'x\n' > x
+  - login: {}
+  - connect: {}
+  - call: settings.workspace_auto_sync.get
+    params: { workspace_id: w1 }
+    normalize: [run-paths]
+    golden: get-default
+    save: { key: /result/key }
+  - call: settings.workspace_auto_sync.update
+    params: { workspace_id: w1, enabled: true }
+    normalize: [run-paths]
+    golden: update
+  - call: settings.workspace_auto_sync.list
+    normalize: [run-paths]
+    golden: list
+  - call: settings.workspace_auto_sync.update_key
+    params: { key: "${key}", enabled: false }
+    normalize: [run-paths]
+    golden: update-key
+  - call: settings.workspace_auto_sync.update
+    params: { workspace_id: w1 }
+    error: { message: settings.workspace_auto_sync.update requires enabled }
+  - call: settings.workspace_auto_sync.get
+    params: {}
+    error: { message: settings.workspace_auto_sync.get requires workspace_id }
+  - call: file.reveal
+    params: { workspace_id: w1, path: x }
+    any_outcome: true
+    normalize: [run-paths]
+    golden: reveal
+  - fake_calls:
+      { program: xdg-open, count: 1, calls: [{ argv: ["{{contains:repo}}"] }] }
+  - call: file.reveal
+    params: { workspace_id: w1 }
+    error: { message: file.reveal requires path }
+contract_exceptions:
+  - {
+      surface: rpc.request,
+      name: settings.workspace_auto_sync.update,
+      kind: mismatch,
+      reason: "a refused request sent on purpose",
+    }
+  - {
+      surface: rpc.request,
+      name: settings.workspace_auto_sync.get,
+      kind: mismatch,
+      reason: "a refused request sent on purpose",
+    }
+  - {
+      surface: rpc.request,
+      name: file.reveal,
+      kind: mismatch,
+      reason: "a refused request sent on purpose",
+    }

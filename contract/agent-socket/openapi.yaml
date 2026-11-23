@@ -2,575 +2,4300 @@ openapi: 3.1.0
 info:
   title: Roamgate agent socket
   version: "1"
-  description: "HTTP over the per-connection unix socket (0600 in a 0700 directory) that agents, the roamgate-review client, the holder and the Claude mod call. Every command is POST /v1/<command> with an application/x-www-form-urlencoded body, at most 1 MiB (hold_output: 64 MiB); replies are JSON, {error} with 400, 404, 413 or 500 on failure. watch and hold are long polls without a server timeout."
+  description:
+    "HTTP over the per-connection unix socket (0600 in a 0700 directory) that agents, the roamgate-review
+    client, the holder and the Claude mod call. Every command is POST /v1/<command> with a flat JSON body
+    (agent-server.ts formOf reads each value as a string), at most 1 MiB (hold_output: 64 MiB); replies
+    are JSON, {error} with 400, 404, 409, 413, 429, 500 or 503 on failure. watch, hold, mod_poll, permission
+    and questions are long polls without a server timeout."
 paths:
   /v1/add:
     post:
       summary: add
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                file:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                line:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                end_line:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                side:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                quote:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                draft:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                kind:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                on_comment:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                text:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/Thread"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/claude_start:
     post:
       summary: claude_start
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                source:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pid:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  action:
+                    type: string
+                  reason:
+                    type: string
+                  session_id:
+                    type: string
+                required:
+                  - action
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/comments:
     post:
       summary: comments
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                comment:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/delete:
     post:
       summary: delete
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                comment:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: string
+                required:
+                  - deleted
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/edit:
     post:
       summary: edit
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                text:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                comment:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                message:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/Thread"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/fg:
     post:
       summary: fg
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                job_control:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                holder_pid:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                job:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                holder_id:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                applied:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                child:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                child_alive:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                child_pid:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                log_size:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                epoch_offset:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                api_key:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                shell:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                status:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                title:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                terminal_args:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/HolderReply"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/get:
     post:
       summary: get
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                comment:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/groups:
     post:
       summary: groups
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                  yours: {}
+                required:
+                  - groups
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/handback:
     post:
       summary: handback
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                job_control:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                holder_pid:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                job:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                holder_id:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                applied:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                child:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                child_alive:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                child_pid:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                log_size:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                epoch_offset:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                api_key:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                shell:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                status:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/HolderReply"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/hold:
     post:
       summary: hold
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                job_control:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                holder_pid:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                job:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                holder_id:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                applied:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                child:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                child_alive:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                child_pid:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                log_size:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                epoch_offset:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                api_key:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                shell:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                status:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/HolderReply"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/hold_output:
     post:
       summary: hold_output
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                holder_id:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                offset:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                end:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                data:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  offset:
+                    type: integer
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/launch:
     post:
       summary: launch
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                token:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  argv:
+                    type: array
+                    items:
+                      type: string
+                  env:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  unset:
+                    type: array
+                    items:
+                      type: string
+                  cwd:
+                    type: string
+                required:
+                  - argv
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/list:
     post:
       summary: list
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                all:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    title:
+                      type: string
+                    target:
+                      type: string
+                    root:
+                      type: string
+                    gitlab:
+                      type: boolean
+                    summary:
+                      type: string
+                    handoff_at:
+                      anyOf:
+                        - type: string
+                        - type: "null"
+                    agent:
+                      $ref: ../schemas/shared/review.schema.json#/$defs/ReviewAgentStatus
+                    updated_at:
+                      type: string
+                    threads:
+                      type: integer
+                  required:
+                    - id
+                    - title
+                    - target
+                    - root
+                    - gitlab
+                    - summary
+                    - handoff_at
+                    - agent
+                    - updated_at
+                    - threads
+                  additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/message:
     post:
       summary: message
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                to:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                text:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  sent:
+                    type: boolean
+                  to:
+                    $ref: "#/components/schemas/AgentSession"
+                  delivery:
+                    type: string
+                  note:
+                    type: string
+                required:
+                  - sent
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/mod_ack:
     post:
       summary: mod_ack
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                client:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                id:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                outcome:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                reason:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  ok:
+                    const: true
+                  known:
+                    type: boolean
+                required:
+                  - ok
+                  - known
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/mod_event:
     post:
       summary: mod_event
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                client:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                event:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  ok:
+                    const: true
+                  known:
+                    type: boolean
+                required:
+                  - ok
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/mod_poll:
     post:
       summary: mod_poll
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                client:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                protocol:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                after:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                wait_ms:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                anyOf:
+                  - type: object
+                    properties:
+                      protocol:
+                        type: integer
+                      epoch:
+                        type: string
+                      messages:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: integer
+                            text:
+                              type: string
+                          required:
+                            - id
+                            - text
+                          additionalProperties: false
+                    required:
+                      - protocol
+                      - epoch
+                      - messages
+                    additionalProperties: false
+                  - type: object
+                    properties:
+                      protocol:
+                        type: integer
+                      superseded:
+                        const: true
+                    required:
+                      - protocol
+                      - superseded
+                    additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/mod_tools:
     post:
       summary: mod_tools
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                client:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                headless:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                gone:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                work:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                rules:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  ok:
+                    const: true
+                required:
+                  - ok
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/notify:
     post:
       summary: notify
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                title:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                text:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  notified:
+                    const: true
+                required:
+                  - notified
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/open:
     post:
       summary: open
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                title:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                range:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                compare:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                worktree:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                last_step:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                mr:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                repo:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                file:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                url:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                message:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/permission:
     post:
       summary: permission
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                tool:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                input:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                timeout:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                can_always:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  answer:
+                    anyOf:
+                      - enum:
+                          - allow
+                          - always
+                          - deny
+                          - dismiss
+                      - type: "null"
+                required:
+                  - answer
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/place:
     post:
       summary: place
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace_id:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                path:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                group:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                create_group:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  placed:
+                    type: string
+                  under:
+                    type: string
+                  group:
+                    type: string
+                  created:
+                    type: array
+                required:
+                  - placed
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/questions:
     post:
       summary: questions
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                questions:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                timeout:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  answers:
+                    anyOf:
+                      - type: object
+                        additionalProperties:
+                          type: string
+                      - type: "null"
+                  dismissed:
+                    const: true
+                required:
+                  - answers
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/reopen:
     post:
       summary: reopen
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                comment:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/Thread"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/reply:
     post:
       summary: reply
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                text:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                comment:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                message:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/Thread"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/resolve:
     post:
       summary: resolve
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                comment:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                unresolve:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/Thread"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/reviews:
     post:
       summary: reviews
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                tool:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                params:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  tool:
+                    type: string
+                  note:
+                    type: string
+                  result: {}
+                required:
+                  - tool
+                  - result
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/sessions:
     post:
       summary: sessions
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AgentSession"
+                required:
+                  - sessions
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/skill:
     post:
       summary: skill
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  skill:
+                    type: string
+                required:
+                  - skill
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/stop_check:
     post:
       summary: stop_check
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                ended_ms_ago:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  threads:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        review:
+                          type: string
+                        title:
+                          type: string
+                      required:
+                        - id
+                        - review
+                        - title
+                      additionalProperties: false
+                  triage:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        item:
+                          type: string
+                        title:
+                          type: string
+                      required:
+                        - item
+                        - title
+                      additionalProperties: false
+                required:
+                  - threads
+                  - triage
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/summary:
     post:
       summary: summary
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                text:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                anyOf:
+                  - type: object
+                    properties:
+                      summary:
+                        type: string
+                    required:
+                      - summary
+                    additionalProperties: false
+                  - type: object
+                    properties:
+                      kept:
+                        type: boolean
+                    required:
+                      - kept
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/update:
     post:
       summary: update
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                message:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/waiting:
     post:
       summary: waiting
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  reviews:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        session:
+                          $ref: "#/components/schemas/Session"
+                        threads:
+                          type: array
+                          items:
+                            $ref: "#/components/schemas/Thread"
+                      required:
+                        - session
+                        - threads
+                      additionalProperties: false
+                required:
+                  - reviews
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/watch:
     post:
       summary: watch
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                timeout:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                mode:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                any:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  outcome:
+                    type: string
+                  session:
+                    anyOf:
+                      - $ref: "#/components/schemas/Session"
+                      - type: "null"
+                  overall_comment:
+                    type: string
+                  threads:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Thread"
+                required:
+                  - outcome
+                  - session
+                  - threads
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/work:
     post:
-      summary: work
-      x-status: inventoried
+      summary:
+        "work: one of the Work board's tools (work_list, work_add, work_update, work_done, work_reopen,
+        work_adopt, work_comment_edit, work_comment_delete, work_project), as an agent"
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON, every value a string (agent-server.ts formOf); without tool, 400.
+              properties:
+                tool:
+                  type: string
+                params:
+                  type: string
+                  description: the tool's parameters, a JSON object as text
+                pane:
+                  type: string
+                workspace:
+                  type: string
+                herdr_socket:
+                  type: string
+                cwd:
+                  type: string
+                agent:
+                  type: string
+                session:
+                  type: string
+                description:
+                  type: string
       responses:
         "200":
-          description: "The command's JSON reply."
+          description:
+            "The tool's answer: parsed JSON when it is JSON, with the line saying what in
+            it others wrote as note; else the text."
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                required:
+                  - tool
+                  - result
+                properties:
+                  tool:
+                    type: string
+                  note:
+                    type: string
+                  result: {}
+                additionalProperties: false
+        "400":
+          description: Refused parameters, or the tool's own refusal.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: string
+                additionalProperties: false
+        "404":
+          description: Refused parameters, or the tool's own refusal.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: string
+                additionalProperties: false
+        "503":
+          description: Refused parameters, or the tool's own refusal.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: string
+                additionalProperties: false
   /v1/working:
     post:
       summary: working
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                done:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                comment:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                message:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/workspace:
     post:
       summary: workspace
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                dir:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                label:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                group:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                create_group:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  workspace_id:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  label:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  path:
+                    type: string
+                  under:
+                    type: string
+                  group:
+                    type: string
+                  created:
+                    type: array
+                required:
+                  - workspace_id
+                  - label
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/worktree:
     post:
       summary: worktree
-      x-status: inventoried
+      x-status: typed
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              description: Flat JSON; the server reads every value as a string (agent-server.ts formOf).
+              properties:
+                cwd:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                agent:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                pane:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                workspace:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                herdr_socket:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                via:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                claude_session:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                description:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                repo:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                dir:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                branch:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                base:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                path:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                label:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                group:
+                  type:
+                    - string
+                    - number
+                    - boolean
+                create_group:
+                  type:
+                    - string
+                    - number
+                    - boolean
+              additionalProperties: false
       responses:
         "200":
-          description: "The command's JSON reply."
+          description: The command's JSON reply.
           content:
             application/json:
-              schema: {}
+              schema:
+                type: object
+                properties:
+                  workspace_id:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  label:
+                    anyOf:
+                      - type: string
+                      - type: "null"
+                  path:
+                    type: string
+                  under:
+                    type: string
+                  group:
+                    type: string
+                  created:
+                    type: array
+                required:
+                  - workspace_id
+                  - label
+                additionalProperties: false
+        "400":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+      additionalProperties: false
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        text:
+          type: string
+        created_at:
+          type: string
+        edited_at:
+          type: string
+        gitlab_draft:
+          type: boolean
+      required:
+        - id
+        - author
+        - text
+        - created_at
+      additionalProperties: false
+    Thread:
+      type: object
+      properties:
+        id:
+          type: string
+        session:
+          type: string
+        kind:
+          type: string
+        location:
+          type: string
+        path:
+          anyOf:
+            - type: string
+            - type: "null"
+        line:
+          anyOf:
+            - type: integer
+            - type: "null"
+        end_line:
+          anyOf:
+            - type: integer
+            - type: "null"
+        side:
+          anyOf:
+            - type: string
+            - type: "null"
+        code:
+          anyOf:
+            - type: string
+            - type: "null"
+        on_chat_message:
+          type: object
+        on_effort:
+          type: object
+        on_terminal:
+          type: object
+        on_rendered:
+          type: object
+        on_message:
+          type: object
+        resolved:
+          type: boolean
+        reply_to:
+          type: string
+        comments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Comment"
+        repo:
+          type: string
+      required:
+        - id
+        - session
+        - kind
+        - location
+        - path
+        - line
+        - end_line
+        - side
+        - code
+        - resolved
+        - comments
+      additionalProperties: false
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        target:
+          type: string
+        root:
+          type: string
+        gitlab:
+          type: boolean
+        summary:
+          type: string
+        handoff_at:
+          anyOf:
+            - type: string
+            - type: "null"
+        agent:
+          $ref: ../schemas/shared/review.schema.json#/$defs/ReviewAgentStatus
+        updated_at:
+          type: string
+      required:
+        - id
+        - title
+        - target
+        - root
+        - gitlab
+        - summary
+        - handoff_at
+        - agent
+        - updated_at
+      additionalProperties: false
+    Snapshot:
+      type: object
+      properties:
+        session:
+          $ref: "#/components/schemas/Session"
+        threads:
+          type: array
+          items:
+            $ref: "#/components/schemas/Thread"
+        repos:
+          type: array
+          items:
+            type: object
+            properties:
+              root:
+                type: string
+              session:
+                type: string
+            required:
+              - root
+              - session
+            additionalProperties: false
+      required:
+        - session
+        - threads
+      additionalProperties: false
+    AgentSession:
+      type: object
+      properties:
+        address:
+          type: string
+        name:
+          type: string
+        title:
+          anyOf:
+            - type: string
+            - type: "null"
+        workspace:
+          type: string
+        workspace_id:
+          type: string
+        connection:
+          type: string
+        agent:
+          type: string
+        mode:
+          enum:
+            - terminal
+            - conversation
+        state:
+          type: string
+        cwd:
+          anyOf:
+            - type: string
+            - type: "null"
+        self:
+          const: true
+      required:
+        - address
+        - name
+        - title
+        - workspace
+        - workspace_id
+        - connection
+        - agent
+        - mode
+        - state
+        - cwd
+      additionalProperties: false
+    HolderCommand:
+      type: object
+      properties:
+        seq:
+          type: integer
+        op:
+          enum:
+            - start
+            - input
+            - end
+            - kill
+        child:
+          type: integer
+        line:
+          type: string
+        kind:
+          type: string
+        request_id:
+          type: string
+        argv:
+          type: array
+          items:
+            type: string
+        cwd:
+          type: string
+        drop:
+          type: array
+          items:
+            type: string
+        drop_prefixes:
+          type: array
+          items:
+            type: string
+        copy:
+          type: object
+          additionalProperties:
+            type: string
+        set:
+          type: object
+          additionalProperties:
+            type: string
+        unset:
+          type: array
+          items:
+            type: string
+        api_key:
+          type: object
+          properties:
+            policy:
+              type: string
+            answer:
+              type: string
+          required:
+            - policy
+          additionalProperties: false
+      required:
+        - seq
+        - op
+      additionalProperties: false
+    HolderReply:
+      anyOf:
+        - type: object
+          properties:
+            action:
+              const: hold
+            session_id:
+              type: string
+            commands:
+              type: array
+              items:
+                $ref: "#/components/schemas/HolderCommand"
+            output_from:
+              type: number
+          required:
+            - action
+            - session_id
+          additionalProperties: false
+        - $ref: ../schemas/server.schema.json#/$defs/HolderReply
+      description:
+        HolderReply, and a hold that carries the commands to apply and where its log is read
+        from (pane-child.ts work()).

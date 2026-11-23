@@ -1,0 +1,50 @@
+name: every CLI command's help is the contract's golden, byte for byte
+family: cli
+description: >
+  `roamgate --help` and `roamgate <command> --help` print contract/cli/help/,
+  and the plugin command's usage goes to stderr. The server options
+  (help/server.txt) are part of the top-level help.
+ledger:
+  - "scripts/contract/check.test.ts > CLI help matches the goldens"
+server:
+  herdr: false
+  start: false
+steps:
+  - cli: [--help]
+    expect: { exit: 0, stdout_file: contract/cli/help/roamgate.txt }
+  - cli: [activity, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/activity.txt }
+  - cli: [archive, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/archive.txt }
+  - cli: [auth, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/auth.txt }
+  - cli: [completion, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/completion.txt }
+  - cli: [config, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/config.txt }
+  - cli: [connections, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/connections.txt }
+  - cli: [doctor, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/doctor.txt }
+  - cli: [herdr, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/herdr.txt }
+  - cli: [history, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/history.txt }
+  - cli: [push, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/push.txt }
+  - cli: [reviews, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/reviews.txt }
+  - cli: [rollback, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/rollback.txt }
+  - cli: [service, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/service.txt }
+  - cli: [setup, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/setup.txt }
+  - cli: [update, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/update.txt }
+  - cli: [url, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/url.txt }
+  - cli: [voice, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/voice.txt }
+  - cli: [plugin, --help]
+    expect: { exit: 0, stderr_file: contract/cli/help/plugin.stderr.txt }

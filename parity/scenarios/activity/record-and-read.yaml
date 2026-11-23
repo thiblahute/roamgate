@@ -1,0 +1,196 @@
+name: the activity log records Herdr's focus and a browser's presence, and reads back as a timeline and through the CLI
+family: activity
+ledger:
+  - "server/src/activity/timeline-rpc.test.ts > today by default, from the day start setting"
+  - "server/src/cli/activity.test.ts > events page in id order and resume after an id"
+  - "server/src/cli/activity.test.ts > status reports the recorder and the connections"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work, focused: true }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, focused: true }]
+  files:
+    .config/roamgate/settings.json: { json: { activity: { enabled: true } } }
+steps:
+  - login: {}
+  - connect: {}
+  - call: activity.presence
+    params:
+      {
+        client_id: parity-browser-1,
+        client_kind: desktop,
+        workspace_id: w1,
+        visible: true,
+        focused: true,
+        input_age_ms: 0,
+        cause: user_input,
+      }
+    reply: { recording: true, idle_seconds: 300, attention: true }
+  - advance: 600000
+  # Today, from the virtual clock: Herdr's focus since the recorder started,
+  # attended for idle_seconds after it.
+  - call: bridge.activity.timeline
+    params: {}
+    reply:
+      recording: true
+      day_start: "00:00"
+      now: "2026-01-01T00:10:00.000+00:00"
+      from: "2026-01-01T00:00:00.000+00:00"
+      to: "2026-01-02T00:00:00.000+00:00"
+      recorder_running: true
+      days:
+        - date: "2026-01-01"
+          focus:
+            [
+              {
+                start: "2026-01-01T00:00:00.000+00:00",
+                end: "2026-01-01T00:10:00.000+00:00",
+                open: true,
+                connection_id: legacy-default,
+                pane_id: p1,
+                source: herdr,
+                cause: recorder_start,
+              },
+            ]
+          attention:
+            [
+              {
+                start: "2026-01-01T00:00:00.000+00:00",
+                end: "2026-01-01T00:05:00.000+00:00",
+                source: herdr,
+              },
+            ]
+          gaps: []
+          totals:
+            {
+              attended_ms: 300000,
+              idle_ms: 0,
+              unrecorded_ms: 0,
+              workspaces:
+                [{ attended_ms: 300000, herdr_ms: 300000, browser_ms: 0 }],
+            }
+      workspaces:
+        [
+          {
+            connection_id: legacy-default,
+            name: work,
+            path: /work,
+            herdr_workspace_id: w1,
+            subject: null,
+            id: "{{re:^ws_[0-9a-f]{24}$}}",
+          },
+        ]
+    save: { ws: /result/workspaces/0/id }
+  - call: bridge.activity.timeline
+    params: { from: "2026-01-01", to: "2026-01-01" }
+    reply: { recording: true, days: { $len: 1 } }
+  - assert_rows:
+      db: .config/roamgate/activity.sqlite
+      sql: select seq, ts, kind, workspace_id, client_id, source, cause from events order by seq limit 3
+      rows:
+        - {
+            seq: 1,
+            ts: 1767225600000,
+            kind: workspace.focus,
+            workspace_id: "${ws}",
+            client_id: null,
+            source: herdr,
+            cause: recorder_start,
+          }
+        - {
+            seq: 2,
+            ts: 1767225600000,
+            kind: ui.visibility,
+            workspace_id: null,
+            client_id: parity-browser-1,
+            cause: user_input,
+          }
+        - {
+            seq: 3,
+            ts: 1767225600000,
+            kind: workspace.focus,
+            workspace_id: "${ws}",
+            client_id: parity-browser-1,
+            source: browser,
+            cause: user_input,
+          }
+  - assert_rows:
+      db: .config/roamgate/activity.sqlite
+      sql: select connection_id, name, path, herdr_workspace_id from workspaces
+      rows:
+        [
+          {
+            connection_id: legacy-default,
+            name: work,
+            path: /work,
+            herdr_workspace_id: w1,
+          },
+        ]
+  - assert_file: { path: .config/roamgate/activity.sqlite, mode: "0600" }
+  # The CLI reads the log without the server (on the real clock).
+  - cli: [activity, day, "2026-01-01", --json]
+    expect:
+      exit: 0
+      stdout_json:
+        {
+          recording: true,
+          days: [{ date: "2026-01-01", totals: { attended_ms: 300000 } }],
+        }
+  - cli: [activity, events, --limit, "2", --json]
+    expect:
+      exit: 0
+      stdout_json:
+        events:
+          [
+            {
+              id: "0000000000000001",
+              kind: workspace.focus,
+              source: herdr,
+              cause: recorder_start,
+            },
+            { id: "0000000000000002", kind: ui.visibility },
+          ]
+        next_cursor: "0000000000000002"
+  - cli:
+      [
+        activity,
+        events,
+        --after,
+        "0000000000000002",
+        --kind,
+        workspace.focus,
+        --json,
+      ]
+    expect:
+      exit: 0
+      stdout_json:
+        {
+          events:
+            [
+              {
+                id: "0000000000000003",
+                kind: workspace.focus,
+                source: browser,
+                client: { id: parity-browser-1, kind: desktop },
+              },
+            ],
+          next_cursor: null,
+        }
+  - cli: [activity, events, --after, "0000000000000003", --ndjson]
+    expect:
+      {
+        exit: 0,
+        stdout_contains: ['"id":"0000000000000004"', '"kind":"workspace.blur"'],
+      }
+  - cli: [activity, workspaces, --json]
+    expect:
+      {
+        exit: 0,
+        stdout_json: { workspaces: [{ id: "${ws}", name: work, path: /work }] },
+      }
+  - cli: [activity, status, --json]
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          { retention_days: 90, connections: [{ id: legacy-default }] },
+      }

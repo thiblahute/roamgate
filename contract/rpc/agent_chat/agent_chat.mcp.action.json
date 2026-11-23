@@ -4,8 +4,38 @@
   "scope": "connection",
   "handler": "server/src/conversation/rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "required": ["pane_id", "action", "server"],
+    "properties": {
+      "pane_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "action": {
+        "enum": [
+          "reconnect",
+          "enable",
+          "disable",
+          "authenticate",
+          "finish-sign-in"
+        ]
+      },
+      "server": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "url": {
+        "type": "string",
+        "maxLength": 8192
+      }
+    },
+    "additionalProperties": false
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "$ref": "../../schemas/shared/agentChat.schema.json#/$defs/AgentChatMcpResult"
+  },
+  "status": "typed",
+  "description": "An MCP server action; finish-sign-in also takes the url the browser came back to."
 }

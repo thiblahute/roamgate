@@ -1,0 +1,20 @@
+name: an empty HERDR_GUI_WEB_PUSH_SUBJECT turns Web Push off, unless ROAMGATE_WEB_PUSH_SUBJECT is set
+family: env
+server:
+  env:
+    {
+      HERDR_GUI_WEB_PUSH_SUBJECT: "",
+      ROAMGATE_WEB_PUSH_PATH: "${ROOT}/push/web-push.json",
+    }
+steps:
+  - login: {}
+  - http: GET /api/notifications/push
+    expect: { status: 200, json: { available: false, publicKey: null } }
+  - assert_absent: "${ROOT}/push/web-push.json"
+  - restart:
+      { env: { ROAMGATE_WEB_PUSH_SUBJECT: "mailto:parity@example.invalid" } }
+  - login: {}
+  - http: GET /api/notifications/push
+    expect: { status: 200, json: { available: true, publicKey: "{{string}}" } }
+  - wait_file: "${ROOT}/push/web-push.json"
+  - assert_file: { path: "${ROOT}/push/web-push.json", mode: "0600" }

@@ -1,0 +1,30 @@
+name: "an Antigravity pane with no session under GEMINI_HOME: the reply says how to start one"
+family: agent_sessions
+description: >
+  Without ANTIGRAVITY_HOME, Antigravity's home is GEMINI_HOME; nothing is
+  there for the pane's directory, so the session is missing, with the
+  directory in the detail.
+server:
+  env: { GEMINI_HOME: "${ROOT}/gemini" }
+  files:
+    "${ROOT}/gemini/conversations/.keep": ""
+  herdr:
+    workspaces: [{ workspace_id: w1 }]
+    panes: [{ pane_id: agy, workspace_id: w1, cwd: /work }]
+    agents: [{ pane_id: agy, agent: agy, agent_status: idle, cwd: /work }]
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent_session.get
+    params: { pane_id: agy }
+    reply:
+      {
+        agent: agy,
+        status: missing_session,
+        detail: "No local Antigravity session was found for /work. Start Antigravity in this directory, then refresh Session Inspect.",
+        session: null,
+        file: null,
+      }
+  - call: agent_history.get
+    params: { pane_id: agy }
+    reply: { status: missing_session, messages: [] }

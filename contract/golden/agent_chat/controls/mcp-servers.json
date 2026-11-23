@@ -1,0 +1,41 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "servers": [
+      {
+        "name": "github",
+        "status": "connected",
+        "scope": "user",
+        "transport": "http",
+        "target": "mcp.example.invalid",
+        "version": "gh-mcp 1.2",
+        "tools": [
+          {
+            "name": "list_issues",
+            "description": "List issues"
+          }
+        ],
+        "toolCount": 1,
+        "actions": ["reconnect", "disable"]
+      },
+      {
+        "name": "notes",
+        "status": "needs-auth",
+        "scope": "project",
+        "transport": "http",
+        "target": "notes.example.invalid",
+        "actions": ["authenticate", "reconnect", "disable"]
+      },
+      {
+        "name": "broken",
+        "status": "failed",
+        "scope": "local",
+        "transport": "stdio",
+        "target": "broken-mcp",
+        "error": "spawn failed",
+        "actions": ["reconnect", "disable"]
+      }
+    ]
+  }
+}

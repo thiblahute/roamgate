@@ -1,0 +1,16 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "state": "unsupported",
+    "root": "$ROOT/repo",
+    "branch": "main",
+    "remotes": [],
+    "refreshedAt": "2026-01-01T00:00:00.000Z",
+    "message": "No supported network remote found.",
+    "cached": {
+      "fetchedAt": "2026-01-01T00:00:00.000Z",
+      "stale": false
+    }
+  }
+}

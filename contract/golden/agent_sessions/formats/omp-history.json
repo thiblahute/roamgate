@@ -1,0 +1,48 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "version": 1,
+    "agent": "omp",
+    "pane_id": "omp",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "status": "ok",
+    "detail": "",
+    "updated_at": "{{file-stat}}",
+    "path": "$HOME/.omp-parity/agent/sessions/--work--/2026-01-01T00-00-00-000Z_33333333-0000-4000-8000-000000000003.jsonl",
+    "session": {
+      "source": "omp",
+      "agent": "omp",
+      "kind": "id",
+      "value": "33333333-0000-4000-8000-000000000003"
+    },
+    "file": {
+      "path": "$HOME/.omp-parity/agent/sessions/--work--/2026-01-01T00-00-00-000Z_33333333-0000-4000-8000-000000000003.jsonl",
+      "mtimeMs": "{{file-stat}}",
+      "size": 886,
+      "identity": "{{file-stat}}",
+      "changeToken": "{{file-stat}}"
+    },
+    "messages": [
+      {
+        "id": "2026-01-01T00-00-00-000Z_33333333-0000-4000-8000-000000000003.jsonl:1",
+        "role": "user",
+        "text": "omp run",
+        "sent_at": "2026-01-01T00:00:01.000Z"
+      },
+      {
+        "id": "2026-01-01T00-00-00-000Z_33333333-0000-4000-8000-000000000003.jsonl:2",
+        "role": "assistant",
+        "text": "Running",
+        "sent_at": "2026-01-01T00:00:02.000Z"
+      },
+      {
+        "id": "2026-01-01T00-00-00-000Z_33333333-0000-4000-8000-000000000003.jsonl:4",
+        "role": "assistant",
+        "text": "Failed",
+        "sent_at": "2026-01-01T00:00:04.000Z"
+      }
+    ]
+  }
+}

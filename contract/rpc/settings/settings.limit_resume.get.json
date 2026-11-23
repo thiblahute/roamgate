@@ -6,6 +6,8 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "$ref": "../../schemas/shared/limitResume.schema.json#/$defs/LimitResumeSettings"
+  },
+  "status": "typed"
 }

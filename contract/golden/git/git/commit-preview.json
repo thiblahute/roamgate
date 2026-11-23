@@ -1,0 +1,13 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "workspace_id": "w1",
+    "root": "$ROOT/repo",
+    "path": "a.txt",
+    "size": 14,
+    "truncated": false,
+    "text": "one\ntwo\nthree\n",
+    "binary": false
+  }
+}

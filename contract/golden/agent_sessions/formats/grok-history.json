@@ -1,0 +1,45 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "version": 1,
+    "agent": "grok",
+    "pane_id": "grok",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "status": "ok",
+    "detail": "",
+    "updated_at": "{{file-stat}}",
+    "path": "$ROOT/grok/sessions/%2Fwork/grok-session-1/chat_history.jsonl",
+    "session": {
+      "source": "grok-local",
+      "agent": "grok",
+      "kind": "id",
+      "value": "grok-session-1"
+    },
+    "file": {
+      "path": "$ROOT/grok/sessions/%2Fwork/grok-session-1/chat_history.jsonl",
+      "mtimeMs": "{{file-stat}}",
+      "size": 84,
+      "sessionId": "grok-session-1",
+      "createdAtMs": 1767225600000,
+      "modelName": "grok-4.5",
+      "identity": "{{file-stat}}",
+      "changeToken": "{{file-stat}}"
+    },
+    "messages": [
+      {
+        "id": "chat_history.jsonl:1",
+        "role": "user",
+        "text": "hi grok",
+        "sent_at": "2026-01-01T00:00:00.000Z"
+      },
+      {
+        "id": "chat_history.jsonl:2",
+        "role": "assistant",
+        "text": "hi there",
+        "sent_at": "2026-01-01T00:00:00.001Z"
+      }
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "exit": 0,
+  "stdout": "\r\nThis session is in conversation mode; Enter takes it back here.\r\n\r\nAsking Roamgate to hand the session back...\r\n\r\nResuming 11111111-aaaa-bbbb-cccc-000000000000 in the terminal.\r\n{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"\",\"session_id\":\"11111111-aaaa-bbbb-cccc-000000000000\"}\n",
+  "stderr": ""
+}

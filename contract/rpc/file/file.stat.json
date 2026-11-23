@@ -4,8 +4,32 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["path", "workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "mtime_ms": {
+        "type": "number"
+      },
+      "size": {
+        "type": "number"
+      },
+      "type": {
+        "type": "string"
+      }
+    },
+    "required": ["mtime_ms", "size", "type"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

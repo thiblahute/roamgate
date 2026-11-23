@@ -1,0 +1,9 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "entry_id": "{{entry}}:0",
+    "text": "Look at this picture",
+    "text_hash": "6e11faf5ef44fb27"
+  }
+}

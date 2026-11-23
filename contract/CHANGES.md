@@ -6,6 +6,63 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.2
+
+inventory: 7502f4677baf20ae3c3b0888708790b4aad9f3903f373ad9ce31068e3edb5176
+
+No inventory change; the parity suite now covers every entry.
+
+- typed from the parity suite's runs: every RPC method but `bridge.ping` and
+  the Herdr pass-through, every push but `event:workspace.git_status` and
+  `event:workspace.last_step_completed`, every socket message, the agent
+  socket's operations (requests name every field the Python client,
+  roamgate-hold and the Claude mod send; HolderReply accepts a hold carrying
+  `commands` and `output_from`) and 44 of the 78 HTTP operations.
+- schemas: `AssistantSource` carries `connection_label` and `label`
+  (reconcile.json).
+- golden/: goldens of the parity scenarios, recorded from Bun.
+- normalize.json: more normalizers (hex and short ids, git shas, tokens,
+  opaque stamps, sizes, session file stats, history entry ids).
+- the record checkers (TS check.ts and the suite's Rust one) treat a key
+  several anyOf branches describe as unknown only when every branch lacks
+  it, and ignore schema errors on values the recorder redacted.
+
+## 1.1
+
+inventory: 7502f4677baf20ae3c3b0888708790b4aad9f3903f373ad9ce31068e3edb5176
+
+Found by the parity suite (parity/), no change of the server:
+
+- pushes: `event:roamgate.limit_pauses` (limit_resume), which the inventory
+  missed because its name is a constant imported from shared/; the inventory
+  now reads such constants.
+- typed from the suite's runs (params and replies of what the scenarios
+  exercise, against the generated schemas where they exist):
+  - pushes `hello`, `event:roamgate.limit_pauses`, `ui_settings`,
+    `settings.terminal_transport.updated`;
+  - limit_resume: `limit_resume.list`;
+  - settings: `settings.get` and get and update of `limit_resume`,
+    `agent_auto_rename`, `claude_start`, `conversation` and
+    `terminal_transport`; `bridge.ui_settings.get` and `.update`;
+  - notifications: `bridge.notifications.status`, and in the HTTP document
+    `/api/notifications/push` (GET, POST, DELETE);
+  - herdr: `/api/herdr-info` (both), `/api/herdr/setup`, `/api/herdr/status`;
+  - update: `/api/update/check`, `/api/update/install`;
+  - time_report and activity: `bridge.time_report`,
+    `bridge.activity.timeline`, `activity.presence`;
+  - archive: `bridge.archive.search` and `.open`;
+  - mr_reviews and forge: `bridge.mr_reviews.inbox`, `seen`, `feedback`,
+    `pin`, `unpin`, `hide`, `unhide`, `order`, `override`, `view`,
+    `settings.get` and `settings.update`; `forge.status`;
+  - work: the fifteen `bridge.work.*` methods, and `/v1/work` on the agent
+    socket.
+- vectors: `vectors/voice-frames.json`, the voice helper's frame codec, read
+  by bun test and by the parity suite.
+- `normalize.json`: the parity suite's named normalizers.
+- http: a last `{static}` or `{path}` segment of a path stands for the rest of
+  the path (the app shell at `/`, nested static files, a rendered page's
+  files); the record checker matches them so.
+
 ## 1.0
 
 inventory: f12917316e11265ca4378b30d1f301b5886c9edeb904e002e3ea02f6e1e8d2ea

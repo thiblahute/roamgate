@@ -1,0 +1,80 @@
+name: the Claude mod's requests on the agent socket
+family: claude_mod
+ledger:
+  - "server/src/review/agent-server.claude-mod.test.ts > the mod endpoints refuse a request from no pane"
+description: >
+  What the mod's client sends (server/claude-mod/hooks/client.ts): its
+  tools, a poll for the pane's messages (a long poll on the server's clock),
+  events and acks, each refused without a pane.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1 }]
+    panes: [{ pane_id: "w1:p1", workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - pane_id: "w1:p1"
+        agent: claude
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+steps:
+  - expect_log:
+      {
+        contains: "connection ready connection=legacy-default",
+        within_ms: 10000,
+      }
+  - login: {}
+  - connect: {}
+  - call: claude_mod.status
+    golden: status
+  - agent: mod_tools
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c1,
+      }
+    expect: { status: 200 }
+    golden: tools
+    normalize: [hex-id]
+  - agent: mod_event
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c1,
+        event: '{"type": "session_start", "claude": "2.1.319"}',
+      }
+    expect: { status: 200 }
+    golden: event-start
+  - agent: mod_poll
+    no_wait: poll
+    body:
+      {
+        pane: "w1:p1",
+        session: 11111111-2222-4333-8444-555555555555,
+        client: c1,
+        claude: "2.1.319",
+        protocol: "1",
+        after: "0",
+        wait_ms: "5000",
+      }
+  - advance: 5000
+  - await_http: poll
+    expect: { status: 200 }
+    golden: poll-empty
+    normalize: [hex-id, uuid]
+  - agent: mod_ack
+    body: { pane: "w1:p1", client: c1, id: "1", outcome: submitted }
+    expect: { status: 200 }
+    golden: ack-unknown
+  - agent: mod_event
+    body: { pane: "w1:p1", client: c1, event: "not json" }
+    expect: { status: 400, json: { error: invalid event } }
+  - agent: mod_poll
+    body: { client: c1 }
+    expect:
+      { status: 400, json: { error: the Claude mod runs inside a Herdr pane } }

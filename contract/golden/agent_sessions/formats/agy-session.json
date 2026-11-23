@@ -1,0 +1,27 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "version": 1,
+    "agent": "agy",
+    "pane_id": "agy",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "status": "missing_session",
+    "detail": "No local Antigravity session was found for /work. Start Antigravity in this directory, then refresh Session Inspect.",
+    "command": "herdr integration install antigravity-cli",
+    "updated_at": "{{file-stat}}",
+    "path": "",
+    "session": null,
+    "file": null,
+    "stats": {
+      "turns": 0,
+      "records": 0,
+      "token_usage": null
+    },
+    "title": null,
+    "text": null,
+    "truncated": false,
+    "trajectory": null
+  }
+}

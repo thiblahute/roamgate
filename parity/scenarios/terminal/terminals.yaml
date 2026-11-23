@@ -1,0 +1,89 @@
+name: a terminal attaches over Herdr's endpoint, streams its screen, and takes input, resizes and scrolls
+family: terminal
+description: >
+  terminal.attach opens an endpoint generation 1 shell on Herdr's client
+  socket, focuses the pane, and Herdr's pane surfaces reach the browser as
+  terminal pushes (ANSI); input goes to the pane as semantic input, resizes
+  and scrolls go to Herdr, and a detach ends the attachment. Link resolution
+  is refused when Herdr does not advertise it.
+server:
+  herdr:
+    endpoint: true
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}", focused: true }]
+    screens: { p1: "parity shell $ " }
+steps:
+  - login: {}
+  - connect: {}
+  - call: terminal.attach
+    params: { terminal_id: term-p1, pane_id: p1, cols: 80, rows: 24 }
+    normalize: [run-paths]
+    golden: attach
+  - expect_push: terminal
+    normalize: [uuid]
+    golden: first-frame
+  - call: terminal.input
+    params: { terminal_id: term-p1, pane_id: p1, data: bHMNCg== }
+    reply: { ok: true }
+  - expect_push: terminal
+    message: { terminal: "{{any}}" }
+  - herdr_calls:
+      {
+        method: endpoint.pane_input,
+        min: 1,
+        calls: { $contains: [{ params: { pane_id: p1 } }] },
+      }
+  - call: terminal.resize
+    params: { terminal_id: term-p1, cols: 100, rows: 30 }
+    reply: { ok: true }
+  - call: terminal.scroll
+    params: { terminal_id: term-p1, direction: up, lines: 3 }
+    reply: { ok: true }
+  - call: terminal.relay_resize
+    params: { terminal_id: term-p1, pane_id: p1, cols: 100, rows: 30 }
+    any_outcome: true
+    golden: relay-resize
+  - call: terminal.focus
+    params: { terminal_id: term-p1, pane_id: p1 }
+    any_outcome: true
+    golden: focus
+  - call: terminal.link.resolve
+    params: { terminal_id: term-p1, frame: x, row: 0, col: 0 }
+    error: { message: "{{string}}" }
+    golden: link-refused
+  - call: terminal.watch_popup
+    params: {}
+    any_outcome: true
+    golden: watch-popup
+  - call: terminal.input
+    params: { terminal_id: term-p1, pane_id: p1, data: eA== }
+  # OSC 52 from the program goes to the browser that typed last.
+  - herdr_endpoint: { clipboard: aGVsbG8= }
+  - expect_push: terminal_clipboard
+    message:
+      {
+        terminal_clipboard:
+          { terminal_id: term-p1, data: aGVsbG8=, $exact: true },
+      }
+  - herdr_endpoint: { popup: { terminal_id: term-popup, title: Pick a file } }
+  - expect_push: popup
+    golden: popup-open
+  - herdr_endpoint: { popup: null }
+  - expect_push: popup
+    message: { popup: null }
+  - herdr_endpoint: { close: true }
+  - expect_push: terminal_closed
+    message:
+      {
+        terminal_closed:
+          { terminal_id: term-p1, reason: "{{string}}", $exact: true },
+      }
+  - call: terminal.detach
+    params: { terminal_id: term-p1 }
+    reply: { ok: true }
+  - herdr_calls:
+      {
+        method: endpoint.pane.focus,
+        min: 1,
+        calls: { $contains: [{ params: { pane_id: p1 } }] },
+      }

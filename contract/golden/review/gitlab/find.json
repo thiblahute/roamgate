@@ -1,0 +1,11 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "mergeRequest": {
+      "url": "https://gitlab.example.com/g/p/-/merge_requests/1",
+      "title": "The feature",
+      "number": 1
+    }
+  }
+}

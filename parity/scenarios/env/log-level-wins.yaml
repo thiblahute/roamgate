@@ -1,0 +1,10 @@
+name: ROAMGATE_LOG_LEVEL wins over HERDR_GUI_LOG_LEVEL
+family: env
+server:
+  env: { HERDR_GUI_LOG_LEVEL: debug, ROAMGATE_LOG_LEVEL: info }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.ping
+  - stop: {}
+  - expect_log: { lacks: [" DEBUG "], contains: [" INFO bridge listening"] }

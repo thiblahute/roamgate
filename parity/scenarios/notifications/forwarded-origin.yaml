@@ -1,0 +1,52 @@
+name: the notification socket's links use the origin tailscale serve forwards
+family: notifications
+ledger:
+  - "server/src/http/auth-process.test.ts > the notification socket's links use the origin tailscale serve forwards"
+server:
+  env: { ROAMGATE_NOTIFICATIONS_PATH: "${ROOT}/notifications.json" }
+steps:
+  - write:
+      path: "${ROOT}/notifications.json"
+      json:
+        version: 1
+        last: 1
+        events:
+          - {
+              event: notification,
+              id: 1,
+              at: 1767225600000,
+              kind: completed,
+              title: Done,
+              body: Agent finished,
+              tag: t,
+              group: g,
+              path: "/#roamgate-task=%7B%7D",
+              pref: completed,
+            }
+  - restart: {}
+  - login: {}
+  - connect:
+      name: feed
+      path: /api/notifications/ws
+      headers:
+        {
+          x-forwarded-proto: https,
+          x-forwarded-host: roamgate.example.ts.net,
+          x-forwarded-for: 100.64.0.7,
+        }
+  - send:
+      {
+        op: hello,
+        since: 0,
+        client: android,
+        preferences: { completed: true, blocked: true },
+      }
+    socket: feed
+  - expect_push: "event:notification"
+    socket: feed
+    message:
+      {
+        event: notification,
+        id: 1,
+        url: "https://roamgate.example.ts.net/#roamgate-task=%7B%7D",
+      }

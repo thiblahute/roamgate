@@ -1,0 +1,20 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "terminal": {
+    "terminal_id": "term-p1",
+    "width": 80,
+    "height": 24,
+    "full": true,
+    "link_frame": "{{uuid}}:1",
+    "mouse_reporting": false,
+    "history": {
+      "revision": 0,
+      "top": 0,
+      "total": 24,
+      "cols": 80,
+      "rows": 24
+    },
+    "bytes": "G1swbRtbSBtbMkobWz83bBtbMG0bWzM5OzQ5bXBhcml0eSBzaGVsbCAkG1syOzFIG1szOzFIG1s0OzFIG1s1OzFIG1s2OzFIG1s3OzFIG1s4OzFIG1s5OzFIG1sxMDsxSBtbMTE7MUgbWzEyOzFIG1sxMzsxSBtbMTQ7MUgbWzE1OzFIG1sxNjsxSBtbMTc7MUgbWzE4OzFIG1sxOTsxSBtbMjA7MUgbWzIxOzFIG1syMjsxSBtbMjM7MUgbWzI0OzFIG1s/N2gbWzBtG1sxOzE2SBtbMCBxG1s/MjVo"
+  }
+}

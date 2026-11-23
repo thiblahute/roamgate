@@ -19,6 +19,7 @@ import {
   importedFrom,
   isFunctionLike,
   literal,
+  constantText,
   pattern,
   source,
   sourceFiles,
@@ -373,7 +374,8 @@ export function pushes(): string[] {
       const event = propertyNamed(node, "event");
       if (!event || !node.properties.some((p) => p.name?.getText() === "data"))
         return;
-      const name = pattern(event.initializer);
+      const name =
+        pattern(event.initializer) ?? constantText(event.initializer, path);
       if (name === undefined) return;
       const expand = EVENT_TEMPLATES[name];
       if (name.includes("*") && !expand)

@@ -2,10 +2,77 @@
   "x-inventory": "popup",
   "x-kind": "keyed",
   "x-sent-by": ["server/src/bridge/terminal-bridge.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["popup"],
   "properties": {
-    "popup": {}
-  }
+    "popup": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": ["terminal_id", "title"],
+          "properties": {
+            "terminal_id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "width": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "required": ["kind", "value"],
+                  "properties": {
+                    "kind": {
+                      "enum": ["cells", "percent"]
+                    },
+                    "value": {
+                      "type": "integer"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "height": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "required": ["kind", "value"],
+                  "properties": {
+                    "kind": {
+                      "enum": ["cells", "percent"]
+                    },
+                    "value": {
+                      "type": "integer"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "connection_id": {
+      "type": "string"
+    },
+    "connection_generation": {
+      "type": "integer"
+    }
+  },
+  "description": "The Herdr popup shown over the panes, or null when it closes.",
+  "additionalProperties": false
 }

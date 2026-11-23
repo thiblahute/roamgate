@@ -130,362 +130,930 @@ components:
       name: action
       summary: "Received: action"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op", "id", "action"],
+          "properties":
+            {
+              "op": { "const": "action" },
+              "id": { "type": "integer" },
+              "action": { "type": "string" },
+            },
+        }
+      x-status: typed
     notifications_in_hello:
       x-inventory: notifications in hello
       name: hello
       summary: "Received: hello"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op"],
+          "properties":
+            {
+              "op": { "const": "hello" },
+              "since": { "type": ["integer", "null"], "minimum": 0 },
+              "client": { "type": "string" },
+              "preferences":
+                {
+                  "type": "object",
+                  "properties":
+                    {
+                      "completed": { "type": "boolean" },
+                      "blocked": { "type": "boolean" },
+                    },
+                },
+            },
+        }
+      x-status: typed
     notifications_in_ping:
       x-inventory: notifications in ping
       name: ping
       summary: "Received: ping"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op"],
+          "properties": { "op": { "const": "ping" } },
+          "additionalProperties": false,
+        }
+      x-status: typed
     notifications_out_action:
       x-inventory: notifications out action
       name: action
       summary: "Sent: action"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "id"],
+          "properties":
+            {
+              "event": { "const": "action" },
+              "id": { "type": ["integer", "null"] },
+              "ok": { "const": true },
+              "error": { "enum": ["unknown", "gone"] },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     notifications_out_notification:
       x-inventory: notifications out notification
       name: notification
       summary: "Sent: notification"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required":
+            [
+              "event",
+              "id",
+              "at",
+              "kind",
+              "title",
+              "body",
+              "tag",
+              "group",
+              "url",
+            ],
+          "properties":
+            {
+              "event": { "const": "notification" },
+              "id": { "type": "integer" },
+              "at": { "type": "integer" },
+              "kind": { "type": "string" },
+              "title": { "type": "string" },
+              "body": { "type": "string" },
+              "tag": { "type": "string" },
+              "group": { "type": "string" },
+              "url": { "type": "string" },
+              "actions":
+                {
+                  "type": "array",
+                  "items":
+                    {
+                      "type": "object",
+                      "properties":
+                        {
+                          "id": { "type": "string" },
+                          "label": { "type": "string" },
+                        },
+                    },
+                },
+            },
+        }
+      x-status: typed
     notifications_out_notification_clear:
       x-inventory: notifications out notification_clear
       name: notification_clear
       summary: "Sent: notification_clear"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "id", "tag"],
+          "properties":
+            {
+              "event": { "const": "notification_clear" },
+              "id": { "type": "integer" },
+              "at": { "type": "integer" },
+              "tag": { "type": "string" },
+            },
+        }
+      x-status: typed
     notifications_out_pong:
       x-inventory: notifications out pong
       name: pong
       summary: "Sent: pong"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event"],
+          "properties": { "event": { "const": "pong" } },
+          "additionalProperties": false,
+        }
+      x-status: typed
     notifications_out_ready:
       x-inventory: notifications out ready
       name: ready
       summary: "Sent: ready"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "last"],
+          "properties":
+            { "event": { "const": "ready" }, "last": { "type": "integer" } },
+          "additionalProperties": false,
+        }
+      x-status: typed
     signalling_upstream_list:
       x-inventory: signalling upstream list
       name: list
       summary: "Read from upstream: list"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties":
+            {
+              "type": { "const": "list" },
+              "producers":
+                {
+                  "type": "array",
+                  "items":
+                    {
+                      "type": "object",
+                      "required": ["id"],
+                      "properties": { "id": { "type": "string" }, "meta": {} },
+                    },
+                },
+            },
+        }
+      x-status: typed
     signalling_upstream_peerStatusChanged:
       x-inventory: signalling upstream peerStatusChanged
       name: peerStatusChanged
       summary: "Read from upstream: peerStatusChanged"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["type", "peerId"],
+          "properties":
+            {
+              "type": { "const": "peerStatusChanged" },
+              "peerId": { "type": "string" },
+              "roles": { "type": "array", "items": { "type": "string" } },
+              "meta": {},
+            },
+        }
+      x-status: typed
     signalling_upstream_welcome:
       x-inventory: signalling upstream welcome
       name: welcome
       summary: "Read from upstream: welcome"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["type", "peerId"],
+          "properties":
+            { "type": { "const": "welcome" }, "peerId": { "type": "string" } },
+        }
+      x-status: typed
     voice_in_call_audio:
       x-inventory: voice in call_audio
       name: call_audio
       summary: "Received: call_audio"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op"],
+          "properties":
+            {
+              "op": { "const": "call_audio" },
+              "on": { "type": "boolean" },
+              "call": { "type": "integer" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_call_carry:
       x-inventory: voice in call_carry
       name: call_carry
       summary: "Received: call_carry"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op", "call", "carrier"],
+          "properties":
+            {
+              "op": { "const": "call_carry" },
+              "call": { "type": "integer" },
+              "carrier": { "type": "string" },
+              "legs": { "type": "array", "items": { "type": "string" } },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_call_carry_end:
       x-inventory: voice in call_carry_end
       name: call_carry_end
       summary: "Received: call_carry_end"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op"],
+          "properties": { "op": { "const": "call_carry_end" } },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_call_handoff:
       x-inventory: voice in call_handoff
       name: call_handoff
       summary: "Received: call_handoff"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op", "call"],
+          "properties":
+            {
+              "op": { "const": "call_handoff" },
+              "call": { "type": "integer" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_call_hush:
       x-inventory: voice in call_hush
       name: call_hush
       summary: "Received: call_hush"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op"],
+          "properties": { "op": { "const": "call_hush" } },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_call_ice:
       x-inventory: voice in call_ice
       name: call_ice
       summary: "Received: call_ice"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op", "line"],
+          "properties":
+            { "op": { "const": "call_ice" }, "line": { "type": "string" } },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_call_microphone:
       x-inventory: voice in call_microphone
       name: call_microphone
       summary: "Received: call_microphone"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op", "peer"],
+          "properties":
+            {
+              "op": { "const": "call_microphone" },
+              "peer": { "type": "string" },
+              "echo": { "enum": ["here", "page"] },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_call_mute:
       x-inventory: voice in call_mute
       name: call_mute
       summary: "Received: call_mute"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op", "call", "muted"],
+          "properties":
+            {
+              "op": { "const": "call_mute" },
+              "call": { "type": "integer" },
+              "muted": { "type": "boolean" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_call_mute_state:
       x-inventory: voice in call_mute_state
       name: call_mute_state
       summary: "Received: call_mute_state"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op", "call", "muted"],
+          "properties":
+            {
+              "op": { "const": "call_mute_state" },
+              "call": { "type": "integer" },
+              "muted": { "type": "boolean" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_call_output:
       x-inventory: voice in call_output
       name: call_output
       summary: "Received: call_output"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op", "output"],
+          "properties":
+            {
+              "op": { "const": "call_output" },
+              "output": { "type": "string" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_call_output_state:
       x-inventory: voice in call_output_state
       name: call_output_state
       summary: "Received: call_output_state"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op"],
+          "properties":
+            {
+              "op": { "const": "call_output_state" },
+              "current": { "type": ["string", "null"] },
+              "outputs": { "type": "array" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_call_resume:
       x-inventory: voice in call_resume
       name: call_resume
       summary: "Received: call_resume"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op", "call", "resume"],
+          "properties":
+            {
+              "op": { "const": "call_resume" },
+              "call": { "type": "integer" },
+              "resume": { "type": "string" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_finish:
       x-inventory: voice in finish
       name: finish
       summary: "Received: finish"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op"],
+          "properties": { "op": { "const": "finish" } },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_listen:
       x-inventory: voice in listen
       name: listen
       summary: "Received: listen"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op"],
+          "properties":
+            {
+              "op": { "const": "listen" },
+              "mode": { "const": "dictation" },
+              "language": { "type": "string" },
+              "end_silence_ms": { "type": "integer" },
+              "call": { "type": "integer" },
+              "hold": { "type": "boolean" },
+              "new_speaker": { "type": "boolean" },
+              "context": { "type": "string" },
+              "target": {},
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_release:
       x-inventory: voice in release
       name: release
       summary: "Received: release"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op"],
+          "properties": { "op": { "const": "release" } },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_resume:
       x-inventory: voice in resume
       name: resume
       summary: "Received: resume"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op", "session", "resume"],
+          "properties":
+            {
+              "op": { "const": "resume" },
+              "session": { "type": "integer" },
+              "resume": { "type": "string" },
+              "mode": { "const": "dictation" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_stop:
       x-inventory: voice in stop
       name: stop
       summary: "Received: stop"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op"],
+          "properties": { "op": { "const": "stop" } },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_in_warm:
       x-inventory: voice in warm
       name: warm
       summary: "Received: warm"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["op"],
+          "properties":
+            { "op": { "const": "warm" }, "mode": { "const": "dictation" } },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_audio:
       x-inventory: voice out call_audio
       name: call_audio
       summary: "Sent: call_audio"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event"],
+          "properties":
+            {
+              "event": { "const": "call_audio" },
+              "call": { "type": "integer" },
+              "resume": { "type": "string" },
+              "music": { "type": "boolean" },
+              "waiting": { "type": "boolean" },
+              "webrtc": { "type": "boolean" },
+              "resumed": { "type": "boolean" },
+              "restarts": { "type": "integer" },
+              "error": { "type": "string" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_carrier:
       x-inventory: voice out call_carrier
       name: call_carrier
       summary: "Sent: call_carrier"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "call", "state"],
+          "properties":
+            {
+              "event": { "const": "call_carrier" },
+              "call": { "type": "integer" },
+              "state": { "enum": ["joined", "left"] },
+              "legs":
+                {
+                  "type": "array",
+                  "items": { "enum": ["microphone", "replies"] },
+                },
+              "heard": { "type": "boolean" },
+              "why": { "type": "string" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_carry:
       x-inventory: voice out call_carry
       name: call_carry
       summary: "Sent: call_carry"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "call"],
+          "properties":
+            {
+              "event": { "const": "call_carry" },
+              "call": {},
+              "ok": { "type": "boolean" },
+              "legs":
+                {
+                  "type": "array",
+                  "items": { "enum": ["microphone", "replies"] },
+                },
+              "restarts": { "type": "integer" },
+              "waiting": { "type": "boolean" },
+              "replies_peer": { "type": ["string", "null"] },
+              "error": { "type": "string" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_error:
       x-inventory: voice out call_error
       name: call_error
       summary: "Sent: call_error"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "error"],
+          "properties":
+            {
+              "event": { "const": "call_error" },
+              "error": { "type": "string" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_handoff:
       x-inventory: voice out call_handoff
       name: call_handoff
       summary: "Sent: call_handoff"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "call"],
+          "properties":
+            {
+              "event": { "const": "call_handoff" },
+              "call": {},
+              "handoff": { "type": "string" },
+              "expires_ms": { "type": "integer" },
+              "error": { "type": "string" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_microphone:
       x-inventory: voice out call_microphone
       name: call_microphone
       summary: "Sent: call_microphone"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "call"],
+          "properties":
+            {
+              "event": { "const": "call_microphone" },
+              "call": { "type": "integer" },
+              "ok": { "type": "boolean" },
+              "error": { "type": "string" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_music:
       x-inventory: voice out call_music
       name: call_music
       summary: "Sent: call_music"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "call"],
+          "properties":
+            {
+              "event": { "const": "call_music" },
+              "call": { "type": "integer" },
+              "waiting": { "type": "boolean" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_mute:
       x-inventory: voice out call_mute
       name: call_mute
       summary: "Sent: call_mute"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "call", "muted"],
+          "properties":
+            {
+              "event": { "const": "call_mute" },
+              "call": { "type": "integer" },
+              "muted": { "type": "boolean" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_output:
       x-inventory: voice out call_output
       name: call_output
       summary: "Sent: call_output"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "call", "output"],
+          "properties":
+            {
+              "event": { "const": "call_output" },
+              "call": { "type": "integer" },
+              "output": { "type": "string" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_output_state:
       x-inventory: voice out call_output_state
       name: call_output_state
       summary: "Sent: call_output_state"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "call", "current", "outputs"],
+          "properties":
+            {
+              "event": { "const": "call_output_state" },
+              "call": { "type": "integer" },
+              "current": { "type": ["string", "null"] },
+              "outputs":
+                {
+                  "type": "array",
+                  "items":
+                    {
+                      "type": "object",
+                      "required": ["id", "kind"],
+                      "properties":
+                        {
+                          "id": { "type": "string" },
+                          "kind":
+                            {
+                              "enum":
+                                [
+                                  "speaker",
+                                  "earpiece",
+                                  "bluetooth",
+                                  "bluetooth-music",
+                                  "wired",
+                                  "usb",
+                                ],
+                            },
+                          "label": { "type": "string" },
+                        },
+                      "additionalProperties": false,
+                    },
+                },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_replies_peer:
       x-inventory: voice out call_replies_peer
       name: call_replies_peer
       summary: "Sent: call_replies_peer"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "call", "peer"],
+          "properties":
+            {
+              "event": { "const": "call_replies_peer" },
+              "call": { "type": "integer" },
+              "peer": { "type": "string" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_call_restarted:
       x-inventory: voice out call_restarted
       name: call_restarted
       summary: "Sent: call_restarted"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "call", "restarts"],
+          "properties":
+            {
+              "event": { "const": "call_restarted" },
+              "call": { "type": "integer" },
+              "restarts": { "type": "integer" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_error:
       x-inventory: voice out error
       name: error
       summary: "Sent: error"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event"],
+          "properties":
+            {
+              "event": { "const": "error" },
+              "session": { "type": ["integer", "null"] },
+              "error": { "type": "string" },
+              "recoverable": { "type": "boolean" },
+              "busy": { "type": "boolean" },
+            },
+        }
+      x-status: typed
     voice_out_final:
       x-inventory: voice out final
       name: final
       summary: "Sent: final"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "session", "text"],
+          "properties":
+            {
+              "event": { "const": "final" },
+              "session": { "type": "integer" },
+              "text": { "type": "string" },
+              "raw": { "type": "string" },
+              "for_agent": { "type": "boolean" },
+              "voice": {},
+              "voice_label": { "type": "string" },
+              "mode": { "type": "string" },
+            },
+        }
+      x-status: typed
     voice_out_listening:
       x-inventory: voice out listening
       name: listening
       summary: "Sent: listening"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "session", "resume"],
+          "properties":
+            {
+              "event": { "const": "listening" },
+              "session": { "type": "integer" },
+              "resume": { "type": "string" },
+              "mode": { "const": "dictation" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_loading:
       x-inventory: voice out loading
       name: loading
       summary: "Sent: loading"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "session", "mode"],
+          "properties":
+            {
+              "event": { "const": "loading" },
+              "session": { "type": "integer" },
+              "mode": { "const": "dictation" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_partial:
       x-inventory: voice out partial
       name: partial
       summary: "Sent: partial"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "session", "text"],
+          "properties":
+            {
+              "event": { "const": "partial" },
+              "session": { "type": "integer" },
+              "text": { "type": "string" },
+              "pause": { "type": "boolean" },
+            },
+        }
+      x-status: typed
     voice_out_ready:
       x-inventory: voice out ready
       name: ready
       summary: "Sent: ready"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "session", "mode"],
+          "properties":
+            {
+              "event": { "const": "ready" },
+              "session": { "type": "integer" },
+              "mode": { "const": "dictation" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_resume_failed:
       x-inventory: voice out resume_failed
       name: resume_failed
       summary: "Sent: resume_failed"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "session"],
+          "properties":
+            { "event": { "const": "resume_failed" }, "session": {} },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_resumed:
       x-inventory: voice out resumed
       name: resumed
       summary: "Sent: resumed"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "session", "received"],
+          "properties":
+            {
+              "event": { "const": "resumed" },
+              "session": { "type": "integer" },
+              "received": { "type": "integer" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_speech_start:
       x-inventory: voice out speech_start
       name: speech_start
       summary: "Sent: speech_start"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "session"],
+          "properties":
+            {
+              "event": { "const": "speech_start" },
+              "session": { "type": "integer" },
+            },
+        }
+      x-status: typed
     voice_out_stalled:
       x-inventory: voice out stalled
       name: stalled
       summary: "Sent: stalled"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "session"],
+          "properties":
+            {
+              "event": { "const": "stalled" },
+              "session": { "type": "integer" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed
     voice_out_warm:
       x-inventory: voice out warm
       name: warm
       summary: "Sent: warm"
       payload:
-        type: object
-      x-status: inventoried
+        {
+          "type": "object",
+          "required": ["event", "mode", "cleaner"],
+          "properties":
+            {
+              "event": { "const": "warm" },
+              "mode": { "const": "dictation" },
+              "cleaner": { "type": "boolean" },
+            },
+          "additionalProperties": false,
+        }
+      x-status: typed

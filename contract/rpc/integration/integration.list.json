@@ -5,8 +5,21 @@
   "handler": "server/src/index.ts",
   "herdr": "intercepted",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {}
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "integrations": {
+        "type": "array"
+      },
+      "type": {
+        "type": "string"
+      }
+    },
+    "required": ["integrations", "type"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

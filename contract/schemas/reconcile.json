@@ -60,6 +60,15 @@
       "pointer": "/$defs/WorkBoard/properties/projects",
       "set": { "maxItems": 50 },
       "why": "server/src/work/store.ts: a project past WORK_LIMITS.projects (50) is refused."
+    },
+    {
+      "schema": "shared/assistant.schema.json",
+      "pointer": "/$defs/AssistantSource/properties",
+      "set": {
+        "connection_label": { "type": "string" },
+        "label": { "type": "string" }
+      },
+      "why": "server/src/assistant/context.ts builds a source from the AssistantWorkspace it read, so a source on the wire also carries that workspace's connection_label and label, which the AssistantSource type leaves out."
     }
   ]
 }

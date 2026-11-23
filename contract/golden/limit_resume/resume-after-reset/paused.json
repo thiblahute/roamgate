@@ -1,0 +1,20 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "pauses": [
+      {
+        "connection_id": "legacy-default",
+        "pane_id": "p1",
+        "session_id": "11111111-2222-4333-8444-555555555555",
+        "owner": "terminal",
+        "kind": "five_hour",
+        "resets_at": 1767229200000,
+        "resume_at": 1767229260000,
+        "stopped_at": 1767225570000,
+        "state": "scheduled",
+        "message": "5-hour limit reached"
+      }
+    ]
+  }
+}

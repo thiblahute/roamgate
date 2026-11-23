@@ -1,0 +1,291 @@
+name: a voice call starts, is handed to the app, which carries its legs, and moves back
+family: voice
+description: >
+  The page starts a call (the helper's call_start, its signalling server);
+  a handoff token is redeemed without login for the carrier token, the app
+  carries the microphone and the output; mute and outputs go both ways;
+  the replies' producer the server learns from the helper's signalling
+  server (list, peerStatusChanged) reaches the app; the page's microphone
+  is refused while the app carries it, the app's is taken; the app gives
+  the call back, and the page resumes it on a new socket.
+ledger:
+  - "server/src/http/call-handoff.test.ts > only the owning page gets a handoff token, single use"
+  - "server/src/http/call-handoff.test.ts > the app carries the legs it says, and the page is told"
+  - "server/src/http/call-handoff.test.ts > the app's microphone is listened to, the page's no longer"
+  - "server/src/http/call-handoff.test.ts > outputs: the app's go to the page, the page's choice to the app"
+covers:
+  - "ws:signalling upstream welcome"
+  - "ws:signalling upstream list"
+  - "ws:signalling upstream peerStatusChanged"
+server:
+  env:
+    {
+      HTTPS_PROXY: "http://127.0.0.1:9",
+      https_proxy: "http://127.0.0.1:9",
+      ROAMGATE_VOICE_DEBUG: "1",
+    }
+  files:
+    .config/roamgate/voice.json:
+      json:
+        {
+          helper: "${BIN}/roamgate-voice",
+          whisper_model: "${BIN}/roamgate-voice",
+          kokoro_model: "${BIN}/roamgate-voice",
+          kokoro_voices: "${BIN}/roamgate-voice",
+        }
+  fakes:
+    roamgate-voice:
+      replies:
+        call_start: { rate: 48000, channels: 2, music: false }
+      # The replies' producer is not listed yet when the server asks; it
+      # comes later (peerStatusChanged), once the app carries the call.
+      signalling_producers:
+        [{ id: other-peer, meta: { call: $call, role: page } }]
+      signalling_delay_ms: 1500
+      signalling_events:
+        - {
+            type: peerStatusChanged,
+            peerId: replies-peer,
+            roles: [producer],
+            meta: { call: $call, role: replies },
+          }
+      events:
+        call_hush: [{ event: call_music, call: $call, waiting: true }]
+steps:
+  - login: {}
+  - connect: { name: page, path: /api/voice/ws }
+  - send: { op: call_audio, on: true }
+    socket: page
+  - expect_push: "event:call_audio"
+    socket: page
+    message:
+      {
+        event: call_audio,
+        call: "{{integer}}",
+        resume: "{{string}}",
+        music: false,
+        waiting: "{{bool}}",
+        webrtc: true,
+      }
+    save: { call: /call, resume: /resume }
+  # The page's own signalling: welcome from the helper's server.
+  - connect:
+      {
+        name: page_signalling,
+        path: "/api/voice/call/signalling?call=${call}&call_token=${resume}",
+      }
+  - expect_push: "type:welcome"
+    socket: page_signalling
+    message: { type: welcome, peerId: "fake-peer-${call}" }
+  # Another socket gets no handoff for a call it does not own.
+  - connect: { name: intruder, path: /api/voice/ws }
+  - send: { op: call_handoff, call: "${call}" }
+    socket: intruder
+  - expect_push: "event:call_handoff"
+    socket: intruder
+    message:
+      {
+        event: call_handoff,
+        call: "${call}",
+        error: No such call,
+        $exact: true,
+      }
+  - send: { op: call_handoff, call: "${call}" }
+    socket: page
+  - expect_push: "event:call_handoff"
+    socket: page
+    message:
+      {
+        event: call_handoff,
+        call: "${call}",
+        handoff: "{{string}}",
+        expires_ms: "{{integer}}",
+        $exact: true,
+      }
+    save: { handoff: /handoff }
+  - http: POST /api/voice/call/handoff
+    cookie: false
+    body: { handoff: "${handoff}" }
+    expect:
+      {
+        status: 200,
+        json: { call: "${call}", carrier: "{{string}}", $exact: true },
+      }
+    save: { carrier: /json/carrier }
+  - http: POST /api/voice/call/handoff
+    cookie: false
+    body: { handoff: "${handoff}" }
+    expect: { status: 410 }
+  - connect: { name: app, path: /api/voice/ws }
+  - send:
+      {
+        op: call_carry,
+        call: "${call}",
+        carrier: wrong,
+        legs: [microphone, replies],
+      }
+    socket: app
+  - expect_push: "event:call_carry"
+    socket: app
+    message: { event: call_carry, call: "${call}", error: No such call }
+  - send:
+      {
+        op: call_carry,
+        call: "${call}",
+        carrier: "${carrier}",
+        legs: [microphone, replies],
+      }
+    socket: app
+  - expect_push: "event:call_carry"
+    socket: app
+    message:
+      {
+        event: call_carry,
+        call: "${call}",
+        ok: true,
+        legs: [microphone, replies],
+        restarts: 0,
+        replies_peer: null,
+      }
+  - expect_push: "event:call_mute"
+    socket: app
+    message: { event: call_mute, call: "${call}", muted: false, $exact: true }
+  - expect_push: "event:call_carrier"
+    socket: page
+    message:
+      {
+        event: call_carrier,
+        call: "${call}",
+        state: joined,
+        legs: [microphone, replies],
+        heard: false,
+        $exact: true,
+      }
+  # The server watches the helper's signalling for the replies' producer.
+  - expect_push: "event:call_replies_peer"
+    socket: app
+    message:
+      {
+        event: call_replies_peer,
+        call: "${call}",
+        peer: replies-peer,
+        $exact: true,
+      }
+  # Outputs: the app's to the page, the page's choice to the app.
+  - send:
+      {
+        op: call_output_state,
+        current: speaker,
+        outputs:
+          [
+            { id: speaker, kind: speaker, label: Speaker },
+            { id: jack, kind: wired },
+          ],
+      }
+    socket: app
+  - expect_push: "event:call_output_state"
+    socket: page
+    message:
+      {
+        event: call_output_state,
+        call: "${call}",
+        current: speaker,
+        outputs:
+          [
+            { id: speaker, kind: speaker, label: Speaker },
+            { id: jack, kind: wired, label: "" },
+          ],
+        $exact: true,
+      }
+  - send: { op: call_output, output: jack }
+    socket: page
+  - expect_push: "event:call_output"
+    socket: app
+    message: { event: call_output, call: "${call}", output: jack, $exact: true }
+  # Mute both ways.
+  - send: { op: call_mute_state, call: "${call}", muted: true }
+    socket: page
+  - expect_push: "event:call_mute"
+    socket: app
+    message: { event: call_mute, call: "${call}", muted: true }
+  - send: { op: call_mute, call: "${call}", muted: false }
+    socket: app
+  - expect_push: "event:call_mute"
+    socket: page
+    message: { event: call_mute, call: "${call}", muted: false }
+  # The microphone: the page's is refused while the app carries it.
+  - send: { op: call_microphone, peer: page-peer }
+    socket: page
+  - expect_push: "event:call_microphone"
+    socket: page
+    message:
+      {
+        event: call_microphone,
+        call: "${call}",
+        error: The Roamgate app carries the microphone,
+      }
+  - send: { op: call_microphone, peer: app-peer, echo: here }
+    socket: app
+  - expect_push: "event:call_microphone"
+    socket: app
+    message: { event: call_microphone, call: "${call}", ok: true, $exact: true }
+  - expect_push: "event:call_carrier"
+    socket: page
+    message:
+      { event: call_carrier, call: "${call}", state: joined, heard: true }
+  - send: { op: call_ice, line: "candidate a\nb" }
+    socket: page
+  # The music's state, from the helper, to both.
+  - send: { op: call_hush }
+    socket: page
+  - expect_push: "event:call_music"
+    socket: page
+    message: { event: call_music, call: "${call}", waiting: true, $exact: true }
+  - expect_push: "event:call_music"
+    socket: app
+    message: { event: call_music, call: "${call}", waiting: true, $exact: true }
+  - send: { op: call_carry_end }
+    socket: app
+  - expect_push: "event:call_carrier"
+    socket: page
+    message:
+      {
+        event: call_carrier,
+        call: "${call}",
+        state: left,
+        why: The Roamgate app gave the call back,
+        $exact: true,
+      }
+  # The page moves to a new socket: its resume token only.
+  - close: {}
+    socket: page
+  - connect: { name: page2, path: /api/voice/ws }
+  - send: { op: call_resume, call: "${call}", resume: wrong }
+    socket: page2
+  - expect_push: "event:call_audio"
+    socket: page2
+    message:
+      {
+        event: call_audio,
+        call: "${call}",
+        error: "The call's audio ended",
+        $exact: true,
+      }
+  - send: { op: call_resume, call: "${call}", resume: "${resume}" }
+    socket: page2
+  - expect_push: "event:call_audio"
+    socket: page2
+    message: { event: call_audio, call: "${call}", resumed: true, restarts: 0 }
+  - send: { op: call_audio, on: false, call: "${call}" }
+    socket: page2
+  - expect_push: "event:call_audio"
+    socket: page2
+    message: { event: call_audio, call: "${call}", error: "{{string}}" }
+  - expect_log: { contains: ["(page): candidate a | b"] }
+  - assert_file:
+      path: "${ROOT}/fakes/roamgate-voice.frames.jsonl"
+      jsonl:
+        $contains:
+          - { op: call_start, call: "${call}" }
+          - { op: call_microphone, call: "${call}", peer: app-peer }
+          - { op: call_hush, call: "${call}" }

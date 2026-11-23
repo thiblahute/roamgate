@@ -1,0 +1,255 @@
+name: the companion answers, looks things up, uses its tools, hears events, and forgets on request
+family: voice
+description: >
+  front_model makes a companion (a Claude session, fake-claude answering
+  by what it is told). A route it answers itself, one that starts a web
+  search (a research job, its own Claude process with only the web
+  tools), one that starts a tool job (companion_mcp), the NDJSON stream of
+  a route, an event told to it, the companion reset, and the debug-only
+  timing and trace lines.
+ledger:
+  - "server/src/http/voice.test.ts > a general question is answered by the front itself, nothing started"
+  - "server/src/http/voice.test.ts > fresh information starts a search at once, said in one line"
+  - "server/src/http/voice.test.ts > a search is followed to its result, or cancelled"
+  - "server/src/http/voice.test.ts > streamed, the front's words come first, then the route"
+  - "server/src/http/voice.test.ts > gives a page of an older build only routes it knows"
+  - "server/src/http/voice.test.ts > tells an event, and stays quiet without a front"
+  - "server/src/http/voice.test.ts > the button resets, only with the voice header"
+  - "server/src/http/voice.test.ts > the status tells the epoch, for a page to forget its call"
+server:
+  env:
+    {
+      HTTPS_PROXY: "http://127.0.0.1:9",
+      https_proxy: "http://127.0.0.1:9",
+      ROAMGATE_VOICE_DEBUG: "1",
+    }
+  files:
+    .config/roamgate/voice.json:
+      json:
+        helper: "${BIN}/roamgate-voice"
+        whisper_model: "${BIN}/roamgate-voice"
+        kokoro_model: "${BIN}/roamgate-voice"
+        kokoro_voices: "${BIN}/roamgate-voice"
+        front_model: parity-model
+        companion_mcp: { allow: [mcp__files], confirm: [mcp__files__delete] }
+  fakes:
+    claude:
+      rules:
+        - args_match: "WebSearch"
+          stream:
+            - {
+                type: assistant,
+                message:
+                  {
+                    role: assistant,
+                    content:
+                      [
+                        {
+                          type: tool_use,
+                          name: WebSearch,
+                          input: { query: rust editions },
+                        },
+                      ],
+                  },
+              }
+            - {
+                type: result,
+                subtype: success,
+                is_error: false,
+                result: "Rust 2024 is the latest edition.",
+              }
+      answers:
+        - match: "build finished"
+          turn:
+            - {
+                type: result,
+                subtype: success,
+                is_error: false,
+                result: '{"to":"self","reply":"The build is done."}',
+                session_id: "{{session_id}}",
+              }
+        - match: "say hello"
+          turn:
+            - {
+                type: result,
+                subtype: success,
+                is_error: false,
+                result: '{"to":"self","reply":"Hello from the companion"}',
+                session_id: "{{session_id}}",
+              }
+        - match: "look up rust"
+          turn:
+            - {
+                type: result,
+                subtype: success,
+                is_error: false,
+                result: '{"to":"web","query":"rust editions","reply":"Looking."}',
+                session_id: "{{session_id}}",
+              }
+        - match: "list the files"
+          turn:
+            - {
+                type: result,
+                subtype: success,
+                is_error: false,
+                result: "Three files.",
+                session_id: "{{session_id}}",
+              }
+        - match: "use a tool"
+          turn:
+            - {
+                type: result,
+                subtype: success,
+                is_error: false,
+                result: '{"to":"tool","task":"list the files","reply":"On it."}',
+                session_id: "{{session_id}}",
+              }
+steps:
+  - login: {}
+  - http: GET /api/voice
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            available: true,
+            route: true,
+            front: true,
+            front_mode: companion,
+            companion_epoch: 0,
+            debug: true,
+          },
+      }
+  # Without the header, nothing is routed.
+  - http: POST /api/voice/route
+    body: { said: say hello, current: "" }
+    expect: { status: 200, json: { to: current, $exact: true } }
+  - http: POST /api/voice/route
+    headers: { x-roamgate-voice: "1" }
+    body:
+      {
+        said: say hello,
+        current: "",
+        sessions: [],
+        routes: [current, self, nobody, web, tool],
+      }
+    within_ms: 20000
+    expect:
+      {
+        status: 200,
+        json: { to: self, reply: Hello from the companion, $exact: true },
+      }
+  # A page that does not know "self" gets nobody.
+  - http: POST /api/voice/route
+    headers: { x-roamgate-voice: "1" }
+    body: { said: say hello, current: "", sessions: [] }
+    within_ms: 20000
+    expect: { status: 200, json: { to: nobody, $exact: true } }
+  - http: POST /api/voice/route
+    headers: { x-roamgate-voice: "1" }
+    body:
+      {
+        said: say hello,
+        current: "",
+        sessions: [],
+        stream: true,
+        routes: [self, nobody, current],
+      }
+    within_ms: 20000
+    expect:
+      {
+        status: 200,
+        headers: { content-type: application/x-ndjson },
+        text: '{{contains:"reply":"Hello from the companion"}}',
+      }
+  - http: POST /api/voice/route
+    headers: { x-roamgate-voice: "1" }
+    body:
+      {
+        said: look up rust,
+        current: "",
+        sessions: [],
+        routes: [current, self, nobody, web, tool],
+      }
+    within_ms: 20000
+    expect:
+      {
+        status: 200,
+        json: { to: web, query: rust editions, job: w1, reply: Looking. },
+      }
+  - http: GET /api/voice/research
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            jobs:
+              [
+                {
+                  id: w1,
+                  question: rust editions,
+                  status: done,
+                  steps: ["Searching: rust editions"],
+                  answer: Rust 2024 is the latest edition.,
+                },
+              ],
+          },
+      }
+  - http: GET /api/voice/research?job=w1
+    expect: { status: 200, json: { id: w1, status: done } }
+  - http: POST /api/voice/research/cancel
+    headers: { x-roamgate-voice: "1" }
+    body: { job: w1 }
+    expect: { status: 200, json: { cancelled: [], $exact: true } }
+  - fake_calls: { program: claude, argv_match: "WebSearch", count: 1 }
+  - http: POST /api/voice/route
+    headers: { x-roamgate-voice: "1" }
+    body:
+      {
+        said: use a tool,
+        current: "",
+        sessions: [],
+        routes: [current, self, nobody, web, tool],
+      }
+    within_ms: 20000
+    expect:
+      {
+        status: 200,
+        json: { to: tool, task: list the files, job: "{{string}}" },
+      }
+    save: { tool_job: /json/job }
+  - http: GET /api/voice/tools
+    expect: { status: 200, json: { jobs: [{ id: "${tool_job}" }] } }
+  - http: GET /api/voice/tools?job=${tool_job}
+    expect: { status: 200, json: { id: "${tool_job}" } }
+  - http: POST /api/voice/tools/cancel
+    headers: { x-roamgate-voice: "1" }
+    body: {}
+    expect: { status: 200, json: { cancelled: "{{array}}" } }
+  - http: POST /api/voice/tools/answer
+    headers: { x-roamgate-voice: "1" }
+    body: { job: "${tool_job}", answer: "no" }
+    expect: { status: 409, json: { error: Nothing is waiting for a yes. } }
+  # An event told to the companion: what it says of it.
+  - http: POST /api/voice/event
+    body: { event: the build finished }
+    expect: { status: 200, json: { reply: "", $exact: true } }
+  - http: POST /api/voice/event
+    headers: { x-roamgate-voice: "1" }
+    body: { event: the build finished, kind: event, agent: claude }
+    within_ms: 20000
+    expect: { status: 200, json: { reply: The build is done., $exact: true } }
+  - http: POST /api/voice/companion/reset
+    headers: { x-roamgate-voice: "1" }
+    expect: { status: 200, json: { epoch: 1, $exact: true } }
+  - http: GET /api/voice
+    expect: { status: 200, json: { companion_epoch: 1 } }
+  - http: POST /api/voice/timing
+    headers: { x-roamgate-voice: "1" }
+    body: { first_ms: 12.4, what: reply, Said: secret, words: "two words" }
+    expect: { status: 204 }
+  - http: POST /api/voice/trace
+    headers: { x-roamgate-voice: "1" }
+    body: { line: page heard a turn }
+    expect: { status: 204 }
+  - expect_log: { contains: ["[voice-web] page heard a turn"] }

@@ -1,0 +1,66 @@
+name: the low-GPU profile is held and let go by name, and refuses bad requests
+family: voice
+description: >
+  The profile's state, a holder turning it on and off (low-gpu.json), and
+  its refusals. Without voice.json the models it would use are none.
+ledger:
+  - "server/src/http/voice-low-gpu.test.ts > GET says its status"
+  - "server/src/http/voice-low-gpu.test.ts > POST holds it or lets it go, with the voice header only"
+  - "server/src/http/voice-low-gpu.test.ts > refuses a bad request"
+server:
+  env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
+steps:
+  - login: {}
+  - http: GET /api/voice/low-gpu
+    expect:
+      status: 200
+      headers: { cache-control: no-store }
+      json:
+        {
+          active: false,
+          reason: null,
+          holders: [],
+          pending: false,
+          models: { $len: 7 },
+          path: "${HOME}/.local/share/roamgate/voice/low-gpu.json",
+        }
+  - http: PUT /api/voice/low-gpu
+    body: {}
+    expect: { status: 405, json: { error: method not allowed } }
+  - http: POST /api/voice/low-gpu
+    body: { on: true }
+    expect: { status: 403 }
+  - http: POST /api/voice/low-gpu
+    headers: { x-roamgate-voice: "1" }
+    body: {}
+    expect: { status: 400, json: { error: on must be true or false } }
+  - http: POST /api/voice/low-gpu
+    headers: { x-roamgate-voice: "1" }
+    body: { on: true, holder: "a holder" }
+    expect:
+      {
+        status: 400,
+        json:
+          { error: "holder is letters, digits, dots, dashes or underscores" },
+      }
+  - http: POST /api/voice/low-gpu
+    headers: { x-roamgate-voice: "1" }
+    body: { on: true, holder: parity }
+    expect:
+      { status: 200, json: { active: true, reason: parity, holders: [parity] } }
+  - assert_file:
+      {
+        path: .local/share/roamgate/voice/low-gpu.json,
+        json: { holders: { parity: 1767225600000 } },
+      }
+  - http: POST /api/voice/low-gpu
+    headers: { x-roamgate-voice: "1" }
+    body: { on: false, holder: parity }
+    expect: { status: 200, json: { active: false, reason: null, holders: [] } }
+contract_exceptions:
+  - {
+      surface: http,
+      name: PUT /api/voice/low-gpu,
+      kind: unlisted,
+      reason: "the 405 of a method the route does not take",
+    }

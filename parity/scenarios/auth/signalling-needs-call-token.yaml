@@ -1,0 +1,29 @@
+name: a call's signalling socket needs login, this site, and the call's own token
+family: voice
+ledger:
+  - "server/src/http/auth-process.test.ts > a call's signalling socket needs login, this site, and the call's own token"
+steps:
+  - http: GET /api/voice/call/signalling?call=1&call_token=guess
+    headers:
+      &upgrade {
+        connection: Upgrade,
+        upgrade: websocket,
+        sec-websocket-version: "13",
+        sec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==,
+      }
+    cookie: false
+    expect: { status: 401 }
+  - login: {}
+  - http: GET /api/voice/call/signalling?call=1&call_token=guess
+    headers: *upgrade
+    expect: { status: 403 }
+  - http: GET /api/voice/call/signalling?call=1&call_token=guess
+    headers:
+      {
+        connection: Upgrade,
+        upgrade: websocket,
+        sec-websocket-version: "13",
+        sec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==,
+        sec-fetch-site: cross-site,
+      }
+    expect: { status: 403 }

@@ -1,0 +1,148 @@
+name: an agent makes and places workspaces and worktrees under its own
+family: workspace
+ledger:
+  - "server/src/review/agent-server.test.ts > an agent's worktrees and workspaces go under its own workspace"
+description: >
+  roamgate-review workspace, worktree, place and groups: Herdr makes the
+  workspace or worktree (workspace.create, worktree.create), the server
+  places it under the asking agent's workspace in the Workspaces tree, and
+  the refusals say why.
+server:
+  herdr:
+    workspaces:
+      - { workspace_id: w1, label: main }
+      - { workspace_id: w2, label: side }
+    panes:
+      - { pane_id: "w1:p1", workspace_id: w1, cwd: /work }
+      - { pane_id: "w2:p1", workspace_id: w2, cwd: /side }
+    responses:
+      workspace.create:
+        type: workspace_created
+        workspace:
+          {
+            workspace_id: w3,
+            number: 3,
+            label: made,
+            focused: false,
+            pane_count: 1,
+            tab_count: 1,
+            active_tab_id: "w3:t1",
+            agent_status: idle,
+          }
+        tab:
+          {
+            tab_id: "w3:t1",
+            workspace_id: w3,
+            number: 1,
+            label: "1",
+            focused: true,
+            pane_count: 1,
+            agent_status: idle,
+          }
+        root_pane:
+          {
+            pane_id: "w3:p1",
+            terminal_id: term-w3,
+            workspace_id: w3,
+            tab_id: "w3:t1",
+            focused: true,
+            agent_status: idle,
+            revision: 0,
+          }
+      worktree.create:
+        type: worktree_created
+        workspace:
+          {
+            workspace_id: w4,
+            number: 4,
+            label: branch,
+            focused: false,
+            pane_count: 1,
+            tab_count: 1,
+            active_tab_id: "w4:t1",
+            agent_status: idle,
+          }
+        tab:
+          {
+            tab_id: "w4:t1",
+            workspace_id: w4,
+            number: 1,
+            label: "1",
+            focused: true,
+            pane_count: 1,
+            agent_status: idle,
+          }
+        root_pane:
+          {
+            pane_id: "w4:p1",
+            terminal_id: term-w4,
+            workspace_id: w4,
+            tab_id: "w4:t1",
+            focused: true,
+            agent_status: idle,
+            revision: 0,
+          }
+        worktree:
+          {
+            path: /work-branch,
+            branch: branch,
+            is_main: false,
+            checked_out: true,
+          }
+steps:
+  - expect_log:
+      {
+        contains: "connection ready connection=legacy-default",
+        within_ms: 10000,
+      }
+  - login: {}
+  - connect: {}
+  - agent: groups
+    body: { pane: "w1:p1" }
+    expect: { status: 200 }
+    golden: groups
+  - agent: workspace
+    body: { pane: "w1:p1", cwd: /work, label: made }
+    expect: { status: 200, json: { workspace_id: w3, label: made, under: w1 } }
+  - herdr_calls:
+      {
+        method: workspace.create,
+        count: 1,
+        calls:
+          [
+            {
+              params:
+                {
+                  cwd: /work,
+                  label: made,
+                  source_workspace_id: w1,
+                  focus: false,
+                },
+            },
+          ],
+      }
+  - agent: worktree
+    body: { pane: "w1:p1", repo: /work, branch: branch }
+    expect: { status: 200, json: { workspace_id: w4, under: w1 } }
+  - herdr_calls:
+      {
+        method: worktree.create,
+        count: 1,
+        calls: [{ params: { cwd: /work, branch: branch, focus: false } }],
+      }
+  - agent: place
+    body: { pane: "w1:p1", workspace_id: w2 }
+    expect: { status: 200, json: { placed: w2, under: w1 } }
+  - agent: place
+    body: { pane: "w1:p1", workspace_id: w1 }
+    expect: { status: 400, json: { error: that is your own workspace } }
+  - agent: place
+    body: { pane: "w1:p1", workspace_id: nope }
+    expect: { status: 404, json: { error: no workspace matches } }
+  - agent: workspace
+    body: { pane: "w1:p1" }
+    expect:
+      { status: 400, json: { error: the client did not send its directory } }
+  - agent: place
+    body: { workspace_id: w2 }
+    expect: { status: 400, json: { error: place runs inside a Herdr pane } }

@@ -1,0 +1,66 @@
+name: with the activity log off, the timeline and a presence say so, and the CLI finds no log
+family: activity
+ledger:
+  - "server/src/activity/timeline-rpc.test.ts > not recording: says so"
+  - "server/src/cli/activity.test.ts > errors: usage, a missing log, JSON errors for JSON readers"
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.activity.timeline
+    params: {}
+    reply: { recording: false, $exact: true }
+  - call: activity.presence
+    params:
+      {
+        client_id: parity-browser-1,
+        client_kind: desktop,
+        workspace_id: w1,
+        visible: true,
+        focused: true,
+        input_age_ms: 0,
+        cause: user_input,
+      }
+    reply: { recording: false, idle_seconds: 300, attention: false }
+  - call: activity.presence
+    params:
+      {
+        client_id: "",
+        client_kind: desktop,
+        visible: true,
+        focused: true,
+        input_age_ms: 0,
+      }
+    error: { message: invalid client_id }
+  - assert_absent: .config/roamgate/activity.sqlite
+  - cli: [activity, status, --json]
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          {
+            recording: false,
+            retention_days: 90,
+            last_alive: null,
+            gaps: [],
+            connections: [],
+          },
+      }
+  - cli: [activity, today]
+    expect:
+      {
+        exit: 1,
+        stderr_contains: "no activity log at ~/.config/roamgate/activity.sqlite; set activity.enabled in settings.json",
+      }
+  - cli: [activity, day, not-a-date]
+    expect:
+      {
+        exit: 2,
+        stderr_contains:
+          [
+            "from must be a date, YYYY-MM-DD",
+            "Run `roamgate activity --help` for usage.",
+          ],
+      }
+  - cli: [activity, bogus, --json]
+    expect:
+      { exit: 2, stderr_contains: '{"error":"unknown activity action: bogus"}' }

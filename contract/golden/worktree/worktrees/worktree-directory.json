@@ -1,0 +1,9 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "workspace_id": "w1",
+    "key": "local:$ROOT/repo/.git",
+    "worktree_directory": null
+  }
+}

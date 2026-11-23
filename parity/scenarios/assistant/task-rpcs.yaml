@@ -1,0 +1,191 @@
+name: task RPCs manage paused manual runs and keep a cancellation across a restart
+family: assistant
+ledger:
+  - "server/src/assistant-recovery.integration.test.ts > task RPCs manage paused manual runs and preserve cancellation across restart"
+server:
+  herdr: false
+  start: false
+  herdrs:
+    healthy:
+      endpoint: true
+      workspaces:
+        - workspace_id: w1
+          label: Recovery workspace
+          worktree:
+            {
+              repo_key: workspace,
+              repo_name: workspace,
+              repo_root: "${ROOT}/workspace",
+              checkout_path: "${ROOT}/workspace",
+              is_linked_worktree: false,
+            }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ASSISTANT_DIR: "${ROOT}/ranger"
+    PI_CODING_AGENT_DIR: "${ROOT}/pi"
+  openai:
+    anthropic:
+      replies:
+        - tools: [{ name: workspace_status, id: completed-status, input: {} }]
+      cycle:
+        - text: Recovered the workspace status without repeating the read.
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 1
+        default_connection_id: healthy
+        profiles:
+          - {
+              id: healthy,
+              label: Healthy,
+              type: local,
+              control_socket_path: "${HERDR_healthy_CONTROL}",
+              client_socket_path: "${HERDR_healthy_CLIENT}",
+              auto_connect: true,
+            }
+    "${ROOT}/ranger/auth.json":
+      {
+        mode: "0600",
+        json: { anthropic: { type: api_key, key: synthetic-recovery-key } },
+      }
+    "${ROOT}/ranger/models.json":
+      {
+        mode: "0600",
+        json: { providers: { anthropic: { baseUrl: "${FAKE_HTTP}" } } },
+      }
+steps:
+  - sh: chmod 700 ranger && mkdir -p workspace
+  - start: {}
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    params: { id: healthy }
+    reply: { state: ready }
+  - call: bridge.assistant.configure
+    params:
+      {
+        config:
+          {
+            provider: anthropic,
+            model: claude-haiku-4-5,
+            credential_source: assistant,
+            allowed_workspaces: [{ connection_id: healthy, workspace_id: w1 }],
+          },
+      }
+  - call: bridge.assistant.task.create
+    params:
+      request_id: 00000000-0000-4000-8000-00000000000a
+      title: Manual interval check
+      prompt: Inspect the authorized workspace status.
+      scope: [{ connection_id: healthy, workspace_id: w1 }]
+      schedule: { type: interval, minutes: 1 }
+    reply: { messages: [] }
+    save: { interval: "/result/tasks/[title=Manual interval check]/id" }
+  - call: bridge.assistant.task.pause
+    params: { task_id: "${interval}" }
+    reply:
+      {
+        messages: [],
+        tasks: { $contains: [{ id: "${interval}", status: paused }] },
+      }
+  - http_fake_calls: { fake: anthropic, count: 0 }
+  - call: bridge.assistant.task.run_now
+    params: { task_id: "${interval}" }
+  - expect_push: assistant
+    message:
+      {
+        assistant:
+          {
+            tasks:
+              {
+                $contains:
+                  [
+                    {
+                      id: "${interval}",
+                      status: paused,
+                      last_run: { status: succeeded },
+                    },
+                  ],
+              },
+          },
+      }
+    save: { run: "/assistant/tasks/[id=${interval}]/last_run/id" }
+  - expect_push: assistant_notification
+    message:
+      assistant_notification:
+        {
+          task_id: "${interval}",
+          run_id: "${run}",
+          status: succeeded,
+          title: Ranger task completed,
+          body: "Manual interval check: completed successfully.",
+          $exact: true,
+        }
+  - call: bridge.assistant.task.get
+    params: { task_id: "${interval}", run_id: "${run}" }
+    reply:
+      runs: { $len: 1 }
+      run:
+        messages:
+          {
+            $contains:
+              [
+                {
+                  role: assistant,
+                  text: "{{contains:Recovered the workspace status}}",
+                  sources: { $len: 1 },
+                },
+              ],
+          }
+  - call: bridge.assistant.task.resume
+    params: { task_id: "${interval}" }
+    reply: { tasks: { $contains: [{ id: "${interval}", status: active }] } }
+  - call: bridge.assistant.task.pause
+    params: { task_id: "${interval}" }
+    reply: { tasks: { $contains: [{ id: "${interval}", status: paused }] } }
+  - call: bridge.assistant.task.cancel
+    params: { task_id: "${interval}" }
+    reply: { tasks: { $contains: [{ id: "${interval}", status: cancelled }] } }
+  - call: bridge.assistant.task.run_now
+    params: { task_id: "${interval}" }
+    error: { message: "{{contains:cancelled}}" }
+  - call: bridge.assistant.task.create
+    params:
+      request_id: 00000000-0000-4000-8000-00000000000b
+      title: Cancelled before deadline
+      prompt: Inspect the authorized workspace status.
+      scope: [{ connection_id: healthy, workspace_id: w1 }]
+      schedule: { type: once, at: "2026-01-01T00:00:02.000Z" }
+    save: { cancelled: "/result/tasks/[title=Cancelled before deadline]/id" }
+  - call: bridge.assistant.task.cancel
+    params: { task_id: "${cancelled}" }
+    reply: { tasks: { $contains: [{ id: "${cancelled}", status: cancelled }] } }
+  - call: bridge.assistant.task.create
+    params:
+      request_id: 00000000-0000-4000-8000-00000000000c
+      title: Restart deadline sentinel
+      prompt: Inspect the authorized workspace status.
+      scope: [{ connection_id: healthy, workspace_id: w1 }]
+      schedule: { type: once, at: "2026-01-01T00:00:02.000Z" }
+    save: { sentinel: "/result/tasks/[title=Restart deadline sentinel]/id" }
+  - stop: { signal: TERM }
+  - start: {}
+  # The deadline passes on the restarted bridge's clock.
+  - advance: 3000
+  - assert_rows:
+      db: "${ROOT}/ranger/tasks.sqlite"
+      sql: "SELECT t.id AS task, r.status FROM tasks t JOIN runs r ON r.task_id = t.id WHERE t.id = '${sentinel}'"
+      rows: [{ task: "${sentinel}", status: succeeded }]
+    retry: 15000
+  - login: {}
+  - connect: {}
+  - call: bridge.assistant.task.get
+    params: { task_id: "${cancelled}" }
+    reply: { task: { status: cancelled, next_run_at: null }, runs: [] }
+  - call: bridge.assistant.task.get
+    params: { task_id: "${interval}" }
+    reply: { task: { status: cancelled }, runs: { $len: 1 } }
+  - http_fake_calls: { fake: anthropic, count: 3 }
+  - call: bridge.assistant.get
+    reply: { messages: [] }

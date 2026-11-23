@@ -1,0 +1,26 @@
+name: Roamgate variables win over the legacy ones, an empty ROAMGATE_VERSION meaning the latest
+ledger:
+  - "scripts/install-roamgate.test.ts > prefers Roamgate variables, including empty VERSION for latest"
+family: install
+tier: T2
+description: >
+  The release installer (scripts/install-roamgate.sh, or the legacy
+  install-herdr-gui.sh) run with real curl and tar against a release served
+  by fake-models (fixture.sh makes it), into an install directory under the
+  run's root.
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: sh "${REPO}/parity/scenarios/install/fixture.sh" roamgate
+  - sh: sh "${REPO}/scripts/install-roamgate.sh"
+    env:
+      HERDR_GUI_RELEASE_BASE_URL: "https://invalid.example/?rejected"
+      HERDR_GUI_INSTALL_DIR: "${ROOT}/install"
+      HERDR_GUI_VERSION: invalid-version
+      ROAMGATE_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      ROAMGATE_INSTALL_DIR: "${ROOT}/new-install"
+      ROAMGATE_VERSION: ""
+    expect: { exit: 0 }
+  - assert_file: { path: "${ROOT}/new-install/roamgate", exists: true }
+  - assert_absent: "${ROOT}/install"

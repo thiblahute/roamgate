@@ -1,0 +1,133 @@
+name: a Claude Code config the holder cannot read is left as it is; the answer still holds for this start
+family: agent_chat
+ledger:
+  - server/src/conversation/holder-child.test.ts > a config it cannot read is left as it is; the answer
+    still holds for this start
+description:
+  a Claude Code config the holder cannot read is left as it is; the answer still holds for
+  this start
+server:
+  env:
+    PARITY_FAKE_ENV_KEYS: ROAMGATE_HEADLESS,ROAMGATE_PANE_ID,ROAMGATE_HERDR_SOCKET_PATH,CLAUDE_CONFIG_DIR
+    ANTHROPIC_API_KEY: sk-ant-api03-should-not-pass-0123456789abcdefghij
+  herdr:
+    workspaces:
+      - workspace_id: w1
+        label: work
+    panes:
+      - pane_id: p1
+        workspace_id: w1
+        cwd: ${ROOT}/work
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        cwd: ${ROOT}/work
+        agent_session:
+          source: claude
+          agent: claude
+          kind: id
+          value: 11111111-2222-4333-8444-555555555555
+    terminals:
+      p1:
+        args:
+          - --model
+          - opus
+  files:
+    ${ROOT}/work/.keep: ""
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - type: user
+          uuid: u1
+          timestamp: "2025-12-31T23:59:00.000Z"
+          sessionId: 11111111-2222-4333-8444-555555555555
+          cwd: /work
+          message:
+            role: user
+            content: hello
+        - type: assistant
+          uuid: a1
+          timestamp: "2025-12-31T23:59:01.000Z"
+          sessionId: 11111111-2222-4333-8444-555555555555
+          cwd: /work
+          message:
+            id: msg_0
+            role: assistant
+            model: claude-opus
+            content:
+              - type: text
+                text: Hi there
+    .claude.json: "{ not json"
+  fakes:
+    claude:
+      default_turn:
+        - $echo_user: true
+        - type: system
+          subtype: init
+          session_id: "{{session_id}}"
+          cwd: /work
+          model: claude-opus
+        - type: assistant
+          message:
+            id: msg_n
+            role: assistant
+            model: claude-opus
+            content:
+              - type: text
+                text: "Done: {{user_text}}"
+        - type: result
+          subtype: success
+          is_error: false
+          result: "Done: {{user_text}}"
+          session_id: "{{session_id}}"
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent_chat.subscribe
+    params:
+      pane_id: p1
+  - call: agent_chat.handover
+    id: handover
+    no_wait: true
+    params:
+      pane_id: p1
+      to: conversation
+  - await: handover
+    advance_every: 200
+    within_ms: 30000
+    reply:
+      ok: true
+      owner: conversation
+  - call: agent_chat.send
+    id: send
+    no_wait: true
+    params:
+      pane_id: p1
+      text: hello again
+  - await: send
+    advance_every: 200
+    within_ms: 30000
+  - expect_push: event:agent_chat.api_key_question
+    within_ms: 20000
+    message:
+      data:
+        api_key_question:
+          asked_at: "{{time}}"
+  - call: agent_chat.api_key.answer
+    params:
+      pane_id: p1
+      use: login
+    reply:
+      ok: true
+  - expect_push: event:agent_chat.result
+    within_ms: 20000
+  - fake_calls:
+      program: claude
+      argv_match: "-p "
+      count: 1
+      calls:
+        - env:
+            ANTHROPIC_API_KEY: "{{absent}}"
+  - assert_file:
+      path: .claude.json
+      text: "{ not json"

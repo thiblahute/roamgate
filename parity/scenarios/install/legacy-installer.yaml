@@ -1,0 +1,29 @@
+name: the legacy installer installs herdr-gui and leaves Roamgate alone
+ledger:
+  - "scripts/install-roamgate.test.ts > retains the legacy installer without replacing Roamgate"
+family: install
+tier: T2
+description: >
+  The release installer (scripts/install-roamgate.sh, or the legacy
+  install-herdr-gui.sh) run with real curl and tar against a release served
+  by fake-models (fixture.sh makes it), into an install directory under the
+  run's root.
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: sh "${REPO}/parity/scenarios/install/fixture.sh" herdr-gui
+  - sh: mkdir -p install && printf 'keep Roamgate\n' > install/roamgate && printf 'previous legacy binary\n' > install/herdr-gui
+  - sh: sh "${REPO}/scripts/install-herdr-gui.sh"
+    env:
+      HERDR_GUI_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      HERDR_GUI_INSTALL_DIR: "${ROOT}/install"
+    expect: { exit: 0 }
+  - sh: ./install/herdr-gui --version
+    expect: { exit: 0, stdout: "herdr-gui 9.8.7\n" }
+  - assert_file:
+      {
+        path: "${ROOT}/install/herdr-gui.previous",
+        text: "previous legacy binary\n",
+      }
+  - assert_file: { path: "${ROOT}/install/roamgate", text: "keep Roamgate\n" }

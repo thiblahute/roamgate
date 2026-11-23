@@ -1,0 +1,92 @@
+name: managed setup starts the installed herdr as a service, waits for it, and then finds it running
+family: herdr
+description: >
+  No Herdr of the run's own: the herdr on PATH is installed but nothing
+  answers on the default socket under HOME. POST /api/herdr/setup writes the
+  user service and starts it through systemctl (fake-svc), then pings every
+  250 ms on the server's clock; the "service" comes up (a fake Herdr linked
+  at the default socket) and setup answers started. Asked again, and from
+  the CLI, it is already running. Nothing is downloaded.
+ledger:
+  - "server/src/herdr/bootstrap.test.ts > starts an installed binary as a service without downloading"
+  - "server/src/herdr/bootstrap.test.ts > does nothing when Herdr is already running"
+  - "server/src/herdr/cli.test.ts > setup prints the outcome"
+platforms: [linux]
+server:
+  herdr: false
+  herdrs:
+    service:
+      { workspaces: [{ workspace_id: w1, label: Started by the service }] }
+steps:
+  - login: {}
+  - http: GET /api/herdr/status
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            state: installed,
+            binary_path: "${ROOT}/bin/herdr",
+            can_setup: true,
+          },
+      }
+  - http: POST /api/herdr/setup
+    headers: { x-roamgate-herdr-setup: "1" }
+    no_wait: setup
+  - fake_calls:
+      {
+        program: systemctl,
+        argv_match: "restart roamgate-herdr.service",
+        count: 1,
+      }
+    retry: 10000
+  - fake_calls:
+      program: systemctl
+      calls:
+        - { argv: [--user, daemon-reload] }
+        - { argv: [--user, enable, roamgate-herdr.service] }
+        - { argv: [--user, restart, roamgate-herdr.service] }
+  - assert_file:
+      {
+        path: .config/systemd/user/roamgate-herdr.service,
+        text_contains: ["${ROOT}/bin/herdr", server],
+      }
+  # The service brings Herdr up on the default socket.
+  - sh: mkdir -p home/.config/herdr && ln -s "${HERDR_service_CONTROL}" home/.config/herdr/herdr.sock
+  - advance: 250
+    repeat: 8
+  - await_http: setup
+    expect:
+      status: 200
+      json:
+        {
+          ok: true,
+          outcome: started,
+          version: 0.9.4,
+          protocol: 22,
+          binary_path: "${ROOT}/bin/herdr",
+          $exact: true,
+        }
+  - http: GET /api/herdr/status
+    expect:
+      {
+        status: 200,
+        json: { state: running, version: 0.9.4, protocol: 22, can_setup: true },
+      }
+  - http: POST /api/herdr/setup
+    headers: { x-roamgate-herdr-setup: "1" }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            ok: true,
+            outcome: already-running,
+            version: 0.9.4,
+            protocol: 22,
+            $exact: true,
+          },
+      }
+  - cli: [herdr, setup]
+    expect: { exit: 0, stdout_contains: [already running] }
+  - http_fake_calls: { count: 0 }

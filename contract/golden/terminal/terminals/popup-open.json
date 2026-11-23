@@ -1,0 +1,16 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "popup": {
+    "terminal_id": "term-popup",
+    "title": "Pick a file",
+    "width": {
+      "kind": "percent",
+      "value": 80
+    },
+    "height": {
+      "kind": "percent",
+      "value": 60
+    }
+  }
+}

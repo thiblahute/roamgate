@@ -1,0 +1,210 @@
+name: bridge-global Ranger routes keep their global replies and pushes without a selected connection
+family: assistant
+ledger:
+  - "server/src/assistant.integration.test.ts > authenticated bridge-global assistant routes preserve global replies and pushes without a selected connection"
+server:
+  herdr: false
+  herdrs:
+    healthy:
+      workspaces: [{ workspace_id: w1, label: Allowed workspace }]
+    broken:
+      responses:
+        workspace.list:
+          {
+            error:
+              {
+                code: error,
+                message: "api_key=PRIVATE_KEY /private/control.sock",
+              },
+          }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ASSISTANT_DIR: "${ROOT}/ranger"
+  files:
+    "${ROOT}/connections.json": &profiles
+      mode: "0600"
+      json:
+        version: 1
+        default_connection_id: offline
+        profiles:
+          - {
+              id: offline,
+              label: offline,
+              type: local,
+              control_socket_path: "${ROOT}/missing.sock",
+              client_socket_path: "${ROOT}/missing-render.sock",
+              auto_connect: false,
+            }
+          - {
+              id: healthy,
+              label: healthy,
+              type: local,
+              control_socket_path: "${HERDR_healthy_CONTROL}",
+              client_socket_path: "${HERDR_healthy_CLIENT}",
+              auto_connect: false,
+            }
+          - {
+              id: broken,
+              label: broken,
+              type: local,
+              control_socket_path: "${HERDR_broken_CONTROL}",
+              client_socket_path: "${HERDR_broken_CLIENT}",
+              auto_connect: false,
+            }
+    "${ROOT}/ranger/state.json": &ranger
+      mode: "0600"
+      json:
+        config:
+          {
+            provider: "",
+            model: "",
+            credential_source: assistant,
+            allowed_workspaces: [],
+          }
+        messages:
+          - {
+              id: saved-question,
+              role: user,
+              text: Saved Ranger question,
+              sent_at: "2026-10-04T00:00:00Z",
+              tools: [],
+              sources: [],
+            }
+          - {
+              id: saved-answer,
+              role: assistant,
+              text: Saved Ranger answer,
+              sent_at: "2026-10-04T00:00:01Z",
+              tools: [],
+              sources: [],
+            }
+        entries: []
+        entry_scope: ""
+        requests: []
+steps:
+  - http: GET /api/health
+    expect: { status: 401 }
+  - connect: { name: anonymous, expect_refused: 401 }
+  - login: {}
+  - connect:
+      {
+        name: first,
+        expect_hello:
+          {
+            default_connection_id: offline,
+            capabilities: { embedded_assistant: true },
+          },
+      }
+  - connect: { name: second }
+  - call: connections.connect
+    socket: first
+    params: { id: healthy }
+    reply: { state: ready }
+  - call: connections.connect
+    socket: first
+    params: { id: broken }
+    reply: { state: ready }
+  - call: bridge.assistant.context
+    socket: first
+    envelope:
+      { connection_id: "{{absent}}", connection_generation: "{{absent}}" }
+    reply:
+      workspaces:
+        [
+          {
+            connection_id: healthy,
+            workspace_id: w1,
+            connection_label: healthy,
+            label: Allowed workspace,
+            runtime_generation: "{{number}}",
+            $exact: true,
+          },
+        ]
+      errors:
+        [
+          Connection offline is not ready,
+          Unable to list workspaces for connection broken,
+        ]
+    reply_lacks: [PRIVATE_KEY, /private/control.sock]
+  - call: bridge.assistant.context
+    socket: first
+    connection_id: healthy
+    error:
+      {
+        message: "{{contains:bridge-global method must not include connection identity}}",
+      }
+  - call: bridge.assistant.get
+    socket: first
+    reply:
+      running: false
+      config: { provider: "", model: "", allowed_workspaces: [] }
+      messages: [{ text: Saved Ranger question }, { text: Saved Ranger answer }]
+    save:
+      { saved_session: /result/session_id, saved_messages: /result/messages }
+  - call: bridge.assistant.new_session
+    socket: first
+    reply:
+      {
+        messages: [],
+        sessions:
+          {
+            $contains:
+              [
+                {
+                  id: "${saved_session}",
+                  title: Saved Ranger question,
+                  message_count: 2,
+                },
+              ],
+          },
+      }
+    save: { instance: /result/instance_id, revision: /result/revision }
+  - expect_push: assistant
+    socket: first
+    message:
+      {
+        assistant: { instance_id: "${instance}", revision: "${revision}" },
+        $exact: true,
+      }
+  - expect_push: assistant
+    socket: second
+    message:
+      {
+        assistant: { instance_id: "${instance}", revision: "${revision}" },
+        $exact: true,
+      }
+  - call: bridge.assistant.select_session
+    socket: second
+    params: { session_id: "${saved_session}" }
+    reply: { session_id: "${saved_session}", messages: "${saved_messages}" }
+  - expect_push: assistant
+    socket: first
+    message:
+      {
+        assistant:
+          { session_id: "${saved_session}", messages: "${saved_messages}" },
+      }
+  - expect_push: assistant
+    socket: second
+    message:
+      {
+        assistant:
+          { session_id: "${saved_session}", messages: "${saved_messages}" },
+      }
+  - call: bridge.assistant.select_session
+    socket: first
+    params: { session_id: ../state }
+    error: "{{any}}"
+  - call: bridge.assistant.get
+    socket: first
+    reply: { session_id: "${saved_session}" }
+  - call: bridge.assistant.send
+    socket: first
+    params: { text: Inspect work, request_id: unconfigured }
+    error: { message: "{{contains:Choose an authorized workspace scope}}" }
+  - herdr_calls:
+      {
+        herdr: healthy,
+        all_valid: true,
+        none_match: "^(pane\\.(send|focus|run|resize|split|close)|workspace\\.(create|focus|close)|terminal\\.)",
+      }

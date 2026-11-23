@@ -6,6 +6,46 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "required": ["target"],
+    "properties": {
+      "target": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "connectionId",
+              "runtimeGeneration",
+              "workspaceId",
+              "paneId"
+            ],
+            "properties": {
+              "connectionId": {
+                "type": "string"
+              },
+              "runtimeGeneration": {
+                "type": "integer"
+              },
+              "workspaceId": {
+                "type": "string"
+              },
+              "paneId": {
+                "type": "string"
+              },
+              "task": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

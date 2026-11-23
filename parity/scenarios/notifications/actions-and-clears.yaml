@@ -1,0 +1,90 @@
+name: a For you work item notifies the feed and is withdrawn once it leaves For you; an action on a notification without a prompt is refused
+family: notifications
+description: >
+  The Work board's For you items go to the notification feed (kind work,
+  the item's ask as body, its page as link). Moving the item out of For you
+  sends a notification_clear for its tag, once. An action on a notification
+  without a permission prompt, or on an unknown id, answers error unknown;
+  bad messages are ignored. The legacy HERDR_GUI_NOTIFICATION_SOURCE name
+  is read when ROAMGATE_NOTIFICATION_SOURCE is not set.
+ledger:
+  - "server/src/notifications/notification-feed.test.ts > a clear goes out only for a notification still out"
+  - "server/src/notifications/notification-feed.test.ts > notifications without a prompt take no action"
+  - "server/src/notifications/notification-feed.test.ts > bad messages are ignored"
+server:
+  env: { HERDR_GUI_NOTIFICATION_SOURCE: status }
+steps:
+  - login: {}
+  - connect: {}
+  - connect: { name: feed, path: /api/notifications/ws }
+  - send:
+      {
+        op: hello,
+        since: null,
+        client: android,
+        preferences: { completed: true, blocked: true },
+      }
+    socket: feed
+  - expect_push: "event:ready"
+    socket: feed
+    message: { event: ready, last: 0 }
+  # An agent puts an item in For you: the user is notified once.
+  - agent: work
+    body:
+      {
+        tool: work_add,
+        agent: Claude,
+        params: '{"title": "Pick a voice", "state": "you", "ask": "Choose: the bright voice or the warm one"}',
+      }
+    expect: { status: 200 }
+    save: { item: /json/result/item/id }
+  - expect_push: "event:notification"
+    socket: feed
+    message:
+      {
+        event: notification,
+        id: 1,
+        kind: work,
+        group: Work,
+        title: "For you: Pick a voice",
+        body: "Choose: the bright voice or the warm one",
+        url: "{{re:/#roamgate-work=[0-9a-f]+$}}",
+        tag: "{{string}}",
+      }
+    save: { tag: /tag }
+  - send: { op: action, id: 1, action: approve }
+    socket: feed
+  - expect_push: "event:action"
+    socket: feed
+    message: { event: action, id: 1, error: unknown, $exact: true }
+  - send: { op: action, id: 99, action: approve }
+    socket: feed
+  - expect_push: "event:action"
+    socket: feed
+    message: { event: action, id: 99, error: unknown, $exact: true }
+  - send: "not json"
+    socket: feed
+  - send: { op: shout }
+    socket: feed
+  - call: bridge.work.update
+    params: { item: "${item}", state: open }
+  - expect_push: "event:notification_clear"
+    socket: feed
+    message: { event: notification_clear, id: 2, tag: "${tag}" }
+  # Already withdrawn: no second clear.
+  - call: bridge.work.update
+    params: { item: "${item}", state: done }
+  - send: { op: ping }
+    socket: feed
+  - expect_push: "event:pong"
+    socket: feed
+    message: { event: pong, $exact: true }
+  - assert_file:
+      {
+        path: .config/roamgate/notifications.json,
+        json:
+          {
+            last: 2,
+            events: [{ event: notification_clear, id: 2, tag: "${tag}" }],
+          },
+      }

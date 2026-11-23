@@ -1,0 +1,25 @@
+name: without a running Herdr the routes say installed (the herdr on PATH) and herdr-info fails
+description: >
+  No Herdr of the run's own: the server looks at the default socket under
+  the run's HOME, so managed setup would be allowed (it is not started here:
+  it would install a service and wait for Herdr on the test clock).
+family: herdr
+server:
+  herdr: false
+steps:
+  - login: {}
+  - http: GET /api/herdr/status
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            state: installed,
+            binary_path: "${ROOT}/bin/herdr",
+            can_setup: true,
+            verified_version: 0.9.4,
+            $exact: true,
+          },
+      }
+  - http: GET /api/herdr-info
+    expect: { status: 503, json: { error: "{{string}}" } }

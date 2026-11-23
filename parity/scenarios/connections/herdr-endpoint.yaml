@@ -1,0 +1,81 @@
+name: a Herdr speaking endpoint generation 1 welcomes the bridge's passive shell and its notifications become feed notifications
+family: connections
+description: >
+  The fake Herdr serves endpoint generation 1 on its client socket: the
+  bridge's notification shell says hello, gets the welcome and the session
+  snapshot, and Herdr's semantic notifications (Finished, NeedsAttention)
+  reach the notification feed as completed and blocked tasks. The health
+  check answers on the same socket.
+ledger:
+  - "server/src/notifications/herdr-notification-listener.test.ts > maps agent transitions onto completed/blocked preferences"
+  - "server/src/notifications/herdr-notification-listener.test.ts > forwards notifications and reconnects with capped backoff"
+server:
+  herdr:
+    endpoint: true
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes:
+      [
+        {
+          pane_id: p1,
+          workspace_id: w1,
+          cwd: "${ROOT}",
+          focused: true,
+          agent: claude,
+        },
+      ]
+    agents: [{ pane_id: p1, agent: claude, agent_status: idle }]
+steps:
+  - login: {}
+  - connect: { name: feed, path: /api/notifications/ws }
+  - send:
+      {
+        op: hello,
+        since: 0,
+        client: android,
+        preferences: { completed: true, blocked: true },
+      }
+    socket: feed
+  - expect_push: "event:ready"
+    socket: feed
+  - herdr_calls:
+      {
+        method: endpoint.hello,
+        min: 1,
+        calls:
+          { $contains: [{ params: { generation: 1, surface_active: false } }] },
+      }
+  - herdr_notify:
+      {
+        kind: Finished,
+        title: Claude finished,
+        body: The tests pass,
+        sound: Done,
+        agent: claude,
+        workspace_id: w1,
+        tab_id: "w1:t1",
+        pane_id: p1,
+        position: null,
+      }
+  - expect_push: "event:notification"
+    socket: feed
+    message:
+      { event: notification, id: 1, kind: completed, title: "{{string}}" }
+    normalize: [run-paths, loopback-port]
+    golden: finished
+  - herdr_notify:
+      {
+        kind: NeedsAttention,
+        title: Claude needs you,
+        body: null,
+        sound: Request,
+        agent: claude,
+        workspace_id: w1,
+        tab_id: "w1:t1",
+        pane_id: p1,
+        position: null,
+      }
+  - expect_push: "event:notification"
+    socket: feed
+    message: { event: notification, id: 2, kind: blocked }
+    normalize: [loopback-port]
+    golden: needs-attention

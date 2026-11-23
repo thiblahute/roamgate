@@ -1,0 +1,50 @@
+name: the installed roamgate-hold holds a pane against the server, and Enter takes the session back
+family: conversation
+description: >
+  The real holder (the asset the server installs) run in a pane the server
+  holds no lease for: it says it holds, polls the agent socket, and Enter
+  on its input asks for the session back; Roamgate, knowing nothing to
+  keep, says resume, and the holder resumes claude on its session in its
+  directory (fake-claude records the argv).
+ledger:
+  - "server/src/conversation/holder-script.test.ts > execs claude --resume in the session's directory once Roamgate says so"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1 }]
+    panes: [{ pane_id: "w1:p1", workspace_id: w1, cwd: "${ROOT}/work" }]
+  files:
+    .claude/projects/-work/11111111-aaaa-bbbb-cccc-000000000000.jsonl: "{}\n"
+steps:
+  - expect_log:
+      {
+        contains: "connection ready connection=legacy-default",
+        within_ms: 10000,
+      }
+  - sh: mkdir -p work
+  - wait_file: .cache/roamgate/bin/roamgate-hold
+  - spawn: holder
+    cwd: work
+    command: exec python3 "$HOME/.cache/roamgate/bin/roamgate-hold" 11111111-aaaa-bbbb-cccc-000000000000
+    env: { HERDR_PANE_ID: "w1:p1", HERDR_WORKSPACE_ID: w1 }
+  - fake_calls: { program: claude, count: 0 }
+  - write_stdin: { name: holder, text: "\n" }
+  - wait_process: holder
+    within_ms: 20000
+    expect:
+      {
+        exit: 0,
+        stdout_contains: ["conversation mode; Enter takes it back here"],
+      }
+    golden: holder-output
+    normalize: [run-paths]
+  - fake_calls:
+      program: claude
+      count: 1
+      calls:
+        [
+          {
+            argv:
+              { $contains: [--resume, 11111111-aaaa-bbbb-cccc-000000000000] },
+            cwd: "${ROOT}/work",
+          },
+        ]

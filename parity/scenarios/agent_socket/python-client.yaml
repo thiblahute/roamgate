@@ -1,0 +1,81 @@
+name: the installed roamgate-review client speaks the agent socket
+family: review
+description: >
+  The real Python client, as the server installs it under the run's HOME,
+  with the pane's Herdr variables: it opens a review, comments, lists,
+  reads the skill, lists sessions, notifies, and fails with exit 1
+  on a refusal.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes:
+      [
+        {
+          pane_id: "w1:p1",
+          workspace_id: w1,
+          cwd: "${ROOT}/repo",
+          agent: claude,
+        },
+      ]
+    agents: [{ pane_id: "w1:p1", agent: claude, agent_status: idle }]
+steps:
+  - sh: |
+      export GIT_AUTHOR_DATE=2025-12-31T12:00:00Z GIT_COMMITTER_DATE=2025-12-31T12:00:00Z
+      git init -q repo && cd repo
+      printf 'one\ntwo\n' > f.txt && git add f.txt && git commit -qm init
+      git checkout -qb feature && printf 'one\nTWO\n' > f.txt && git commit -qam change
+  - login: {}
+  - connect: {}
+  - client:
+      [--agent, Codex, open, --range, main..feature, --title, From the client]
+    cwd: repo
+    env: { HERDR_PANE_ID: "w1:p1", HERDR_WORKSPACE_ID: w1 }
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          { session: { title: From the client, agent: { name: Codex } } },
+      }
+    save: { session: /json/session/id }
+  - client:
+      [--agent, Codex, add, --file, f.txt, --line, "2", --, Why upper case?]
+    cwd: repo
+    env: { HERDR_PANE_ID: "w1:p1", HERDR_WORKSPACE_ID: w1 }
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          {
+            kind: discussion,
+            path: f.txt,
+            line: 2,
+            comments: [{ author: Codex, text: Why upper case? }],
+          },
+      }
+  - client: [list, --all]
+    cwd: repo
+    expect: { exit: 0, stdout_json: [{ id: "${session}", threads: 1 }] }
+  - client: [get]
+    cwd: repo
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          { session: { id: "${session}" }, threads: [{ path: f.txt }] },
+      }
+  - client: [skill]
+    expect: { exit: 0, stdout_contains: roamgate-review }
+  - client: [sessions]
+    env: { HERDR_PANE_ID: "w1:p1", HERDR_WORKSPACE_ID: w1 }
+    expect:
+      {
+        exit: 0,
+        stdout_json:
+          { sessions: [{ address: "legacy-default/w1:p1", self: true }] },
+      }
+  - client: [notify, --title, Look, --, Pick the name]
+    env: { HERDR_PANE_ID: "w1:p1", HERDR_WORKSPACE_ID: w1 }
+    expect: { exit: 0, stdout_json: { notified: true } }
+  - client: [notify, --, no pane here]
+    env: { HERDR_PANE_ID: "" }
+    expect: { exit: 1, stderr_contains: notify runs inside a Herdr pane }

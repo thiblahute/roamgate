@@ -1,0 +1,86 @@
+name: the release standalone serves its embedded assets and ignores ambient configuration
+family: standalone
+tier: T2
+description: >
+  The release binary of this checkout (`bun run build:server`, built once by
+  the harness) runs from a directory holding a .env, a bunfig.toml and a
+  preload that throws: none of them is read (the login stays the generated
+  token, nothing preloads). Its embedded app shell, assets and manifest are
+  served with the cache rules the source server has; bad paths are refused.
+  A release build never runs on the test clock.
+ledger:
+  - "scripts/standalone.test.ts > release standalone serves assets without ambient config or source maps"
+platforms: [linux, macos]
+server:
+  command: standalone
+  cwd: "${ROOT}/runtime"
+  clock: false
+  password: null
+  files:
+    "${ROOT}/runtime/.env": "ROAMGATE_PASSWORD=ambient-password-0123456789\nROAMGATE_STANDALONE_TEST=ambient\n"
+    "${ROOT}/runtime/bunfig.toml": "preload = [\"./unexpected.ts\"]\n"
+    "${ROOT}/runtime/unexpected.ts": "throw new Error(\"ambient preload ran\");\n"
+steps:
+  - expect_log:
+      contains: ['mode="generated token"']
+      lacks: [ambient preload ran]
+  - assert_file: { path: .config/roamgate/auth-token, save_text: token }
+  - login: { password: "${token}" }
+  - http: GET /
+    headers: { accept: text/html }
+    expect:
+      status: 200
+      headers:
+        {
+          cache-control: "private, no-cache, must-revalidate",
+          content-type: "{{contains:text/html}}",
+        }
+      text_contains: ["<title>Roamgate</title>"]
+    save: { index: /text }
+  - http: GET /workspace
+    headers: { accept: text/html }
+    expect: { status: 200, text_contains: ["<title>Roamgate</title>"] }
+  - http: HEAD /
+    headers: { accept: text/html }
+    expect: { status: 200, body_length: 0 }
+  - http: POST /
+    headers: { accept: text/html }
+    expect: { status: 405 }
+  - http: GET /%ZZ
+    headers: { accept: text/html }
+    expect: { status: 400 }
+  - http: GET /..%2Foutside.txt
+    headers: { accept: text/html }
+    expect: { status: 404 }
+  - http: GET /missing.js
+    expect: { status: 404 }
+  - http: GET /roamgate-icon-192.png
+    expect: { status: 200, headers: { content-type: image/png } }
+  - http: GET /manifest.json
+    expect:
+      status: 200
+      headers: { cache-control: "private, no-cache, must-revalidate" }
+      json:
+        { name: Roamgate, short_name: Roamgate, id: /, start_url: /, scope: / }
+  # An embedded hashed script, found through the app shell.
+  - sh: >-
+      printf %s "$(ls "${REPO}/server/public/assets" | grep -m1 '\.js$')"
+    expect: { exit: 0 }
+    save: { script: /stdout }
+  - http: GET /assets/${script}
+    expect:
+      { status: 200, headers: { content-type: "{{contains:javascript}}" } }
+  # The binary refuses the test clock outright.
+  - sh: ROAMGATE_TEST_CLOCK="$PWD/clock.sock" "${REPO}/server/roamgate" --port 0
+    expect:
+      exit: 1
+      stderr: "roamgate: ROAMGATE_TEST_CLOCK is only honoured when the server runs from source, never by the standalone binary.\n"
+  - cli: [--version]
+    expect: { exit: 0, stdout: "{{re:^roamgate [0-9]+\\.[0-9]+\\.[0-9]+\\n$}}" }
+contract_exceptions:
+  - {
+      surface: http,
+      name: "POST /",
+      kind: unlisted,
+      reason: "the app shell takes only GET and HEAD: the case checks the 405",
+    }

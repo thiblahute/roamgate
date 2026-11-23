@@ -1,0 +1,33 @@
+{
+  "result": {
+    "default_connection_id": "alpha",
+    "connections": [
+      {
+        "id": "alpha",
+        "label": "ALPHA",
+        "source": "local-profile",
+        "is_default": true,
+        "state": "ready",
+        "generation": 1,
+        "type": "local",
+        "control_socket_path": "$ROOT/herdr-alpha/herdr.sock",
+        "client_socket_path": "$ROOT/herdr-alpha/client.sock",
+        "auto_connect": true,
+        "read_only": false
+      },
+      {
+        "id": "beta",
+        "label": "BETA",
+        "source": "local-profile",
+        "is_default": false,
+        "state": "disconnected",
+        "generation": 0,
+        "type": "local",
+        "control_socket_path": "$ROOT/herdr-beta/herdr.sock",
+        "client_socket_path": "$ROOT/herdr-beta/client.sock",
+        "auto_connect": false,
+        "read_only": false
+      }
+    ]
+  }
+}

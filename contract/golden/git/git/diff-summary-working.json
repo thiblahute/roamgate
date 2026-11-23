@@ -1,0 +1,42 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "workspace_id": "w1",
+    "repo_name": "repo",
+    "root": "$ROOT/repo",
+    "mode": "working",
+    "branch": "feature",
+    "baseline_available": true,
+    "entries": [
+      {
+        "path": "a.txt",
+        "kind": "unstaged",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "mtime_ms": "{{ms}}",
+        "size": 14,
+        "file_size": 14
+      },
+      {
+        "path": "untracked.txt",
+        "kind": "untracked",
+        "status": "untracked",
+        "additions": 1,
+        "deletions": 0,
+        "mtime_ms": "{{ms}}",
+        "size": 4,
+        "file_size": 4
+      }
+    ],
+    "counts": {
+      "staged": 0,
+      "unstaged": 1,
+      "untracked": 1,
+      "conflicted": 0,
+      "branch": 0,
+      "last-step": 0
+    }
+  }
+}

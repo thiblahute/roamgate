@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "description": "Named normalizers of the parity suite (the Rust migration plan, section 4.1). A comparison applies only the normalizers it names. A regex normalizer replaces each match in every string; path normalizers replace the run's own directories; drop replaces the values at the given keys; sort orders arrays whose order is not part of the contract.",
+  "normalizers": {
+    "iso-time": {
+      "kind": "regex",
+      "pattern": "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})",
+      "replace": "{{time}}"
+    },
+    "uuid": {
+      "kind": "regex",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+      "replace": "{{uuid}}"
+    },
+    "loopback-port": {
+      "kind": "regex",
+      "pattern": "(127\\.0\\.0\\.1|localhost):\\d+",
+      "replace": "$1:{{port}}"
+    },
+    "csp-nonce": {
+      "kind": "regex",
+      "pattern": "'nonce-[A-Za-z0-9+/=_-]+'",
+      "replace": "'nonce-{{nonce}}'"
+    },
+    "run-paths": {
+      "kind": "paths",
+      "replace": {
+        "home": "$HOME",
+        "root": "$ROOT"
+      }
+    },
+    "timestamps-ms": {
+      "kind": "drop",
+      "keys": [
+        "at",
+        "ts",
+        "time",
+        "created_at",
+        "updated_at",
+        "sent_at",
+        "started_at",
+        "finished_at",
+        "last_seen",
+        "mtime",
+        "mtime_ms"
+      ],
+      "replace": "{{ms}}",
+      "only": "number"
+    },
+    "hex-token": {
+      "kind": "regex",
+      "pattern": "\\b[0-9a-f]{32}\\b",
+      "replace": "{{token}}"
+    },
+    "git-sha": {
+      "kind": "regex",
+      "pattern": "\\b[0-9a-f]{40}\\b",
+      "replace": "{{sha}}"
+    },
+    "byte-sizes": {
+      "kind": "drop",
+      "keys": ["sizeBytes", "size_bytes"],
+      "replace": "{{bytes}}",
+      "only": "number"
+    },
+    "epoch-ms-prefix": {
+      "kind": "regex",
+      "pattern": "\\b1\\d{12}-",
+      "replace": "{{ms}}-"
+    },
+    "directory-sizes": {
+      "kind": "drop",
+      "keys": ["size"],
+      "replace": "{{size}}",
+      "when": {
+        "type": "directory"
+      }
+    },
+    "unordered-arrays": {
+      "kind": "sort"
+    },
+    "hex-id": {
+      "kind": "regex",
+      "pattern": "\\b[0-9a-f]{16}\\b",
+      "replace": "{{id}}"
+    },
+    "short-id": {
+      "kind": "regex",
+      "pattern": "\\b[0-9a-f]{8}\\b",
+      "replace": "{{id8}}"
+    },
+    "session-file-stat": {
+      "kind": "drop",
+      "keys": [
+        "mtimeMs",
+        "identity",
+        "changeToken",
+        "updated_at",
+        "last_activity_at"
+      ],
+      "replace": "{{file-stat}}"
+    },
+    "opaque-stamps": {
+      "kind": "drop",
+      "keys": ["stamps", "epoch"],
+      "replace": "{{stamp}}"
+    },
+    "history-entry-id": {
+      "kind": "regex",
+      "pattern": "\\b[0-9a-f]{24}(:\\d+)",
+      "replace": "{{entry}}$1"
+    }
+  }
+}

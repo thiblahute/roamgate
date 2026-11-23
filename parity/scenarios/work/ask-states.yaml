@@ -1,0 +1,38 @@
+name: an item in For you or Verify says what the user has to do
+family: work
+ledger:
+  - "server/src/work/service.test.ts > an item in For you or Verify says what the user has to do"
+steps:
+  - login: {}
+  - connect: {}
+  - agent: work
+    body: { tool: work_add, params: '{"title": "Car audio"}' }
+    expect: { status: 200 }
+    save: { item: /json/result/item/id }
+  - agent: work
+    body: { tool: work_update, params: '{"item": "${item}", "state": "you"}' }
+    expect: { status: 400, json: { error: "{{contains:give ask}}" } }
+  - agent: work
+    body:
+      { tool: work_add, params: '{"title": "Dictation", "state": "verify"}' }
+    expect:
+      {
+        status: 400,
+        json: { error: "{{contains:says what the user has to do}}" },
+      }
+  - call: bridge.work.list
+    params: {}
+    reply: { items: [{ id: "${item}", state: open }] }
+  - call: bridge.work.update
+    params:
+      {
+        item: "${item}",
+        state: you,
+        ask: "  Choose: media to the car\nwith the phone mic, or no music  ",
+        answers: ["Media, phone mic", " No music ", "no music", ""],
+      }
+    reply: { item: { state: you, ask: "{{string}}", answers: "{{array}}" } }
+    save: { asked: /result/item }
+  - call: bridge.work.update
+    params: { item: "${item}", state: doing }
+    reply: { item: { state: doing, ask: "{{absent}}", answers: "{{absent}}" } }

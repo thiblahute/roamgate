@@ -4,8 +4,229 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["path", "workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "already_open": {
+        "type": "boolean"
+      },
+      "opened_hook": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": ["event", "status"]
+      },
+      "root_pane": {
+        "type": "object",
+        "properties": {
+          "agent_status": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "focused": {
+            "type": "boolean"
+          },
+          "pane_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "terminal_id": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_status",
+          "cwd",
+          "focused",
+          "pane_id",
+          "revision",
+          "tab_id",
+          "terminal_id",
+          "workspace_id"
+        ]
+      },
+      "tab": {
+        "type": "object",
+        "properties": {
+          "agent_status": {
+            "type": "string"
+          },
+          "focused": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "number": {
+            "type": "number"
+          },
+          "pane_count": {
+            "type": "number"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_status",
+          "focused",
+          "label",
+          "number",
+          "pane_count",
+          "tab_id",
+          "workspace_id"
+        ]
+      },
+      "type": {
+        "type": "string"
+      },
+      "workspace": {
+        "type": "object",
+        "properties": {
+          "active_tab_id": {
+            "type": "string"
+          },
+          "agent_status": {
+            "type": "string"
+          },
+          "focused": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "number": {
+            "type": "number"
+          },
+          "pane_count": {
+            "type": "number"
+          },
+          "tab_count": {
+            "type": "number"
+          },
+          "workspace_id": {
+            "type": "string"
+          },
+          "worktree": {
+            "type": "object",
+            "properties": {
+              "checkout_path": {
+                "type": "string"
+              },
+              "is_linked_worktree": {
+                "type": "boolean"
+              },
+              "repo_key": {
+                "type": "string"
+              },
+              "repo_name": {
+                "type": "string"
+              },
+              "repo_root": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "checkout_path",
+              "is_linked_worktree",
+              "repo_key",
+              "repo_name",
+              "repo_root"
+            ]
+          }
+        },
+        "required": [
+          "active_tab_id",
+          "agent_status",
+          "focused",
+          "label",
+          "number",
+          "pane_count",
+          "tab_count",
+          "workspace_id",
+          "worktree"
+        ]
+      },
+      "worktree": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "is_bare": {
+            "type": "boolean"
+          },
+          "is_detached": {
+            "type": "boolean"
+          },
+          "is_linked_worktree": {
+            "type": "boolean"
+          },
+          "is_prunable": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "open_workspace_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "branch",
+          "is_bare",
+          "is_detached",
+          "is_linked_worktree",
+          "is_prunable",
+          "label",
+          "open_workspace_id",
+          "path"
+        ]
+      }
+    },
+    "required": [
+      "already_open",
+      "opened_hook",
+      "root_pane",
+      "tab",
+      "type",
+      "workspace",
+      "worktree"
+    ]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

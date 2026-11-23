@@ -1,0 +1,32 @@
+name: roamgate config edit runs VISUAL, else EDITOR, on the service configuration
+family: env
+tier: T2
+description: >
+  Fake editors append a setting to the file they are given; VISUAL wins
+  over EDITOR. A failing editor leaves the file as it was.
+server:
+  herdr: false
+  start: false
+  files:
+    "${ROOT}/visual.sh":
+      { text: "printf 'ROAMGATE_LOG_LEVEL=debug\\n' >> \"$1\"\n", mode: "0755" }
+    "${ROOT}/editor.sh":
+      { text: "printf 'ROAMGATE_LOG_LEVEL=warn\\n' >> \"$1\"\n", mode: "0755" }
+    "${ROOT}/broken.sh": { text: "exit 3\n", mode: "0755" }
+steps:
+  - cli: [config, edit]
+    env: { VISUAL: "sh ${ROOT}/visual.sh", EDITOR: "sh ${ROOT}/editor.sh" }
+    expect: { exit: 0 }
+  - cli: [config, get, ROAMGATE_LOG_LEVEL]
+    expect: { exit: 0, stdout: "debug\n" }
+  - cli: [config, unset, ROAMGATE_LOG_LEVEL]
+  - cli: [config, edit]
+    env: { EDITOR: "sh ${ROOT}/editor.sh" }
+    expect: { exit: 0 }
+  - cli: [config, get, ROAMGATE_LOG_LEVEL]
+    expect: { exit: 0, stdout: "warn\n" }
+  - cli: [config, edit]
+    env: { EDITOR: "sh ${ROOT}/broken.sh" }
+    expect: { exit: 1, stderr_contains: "roamgate config: editor exited 3" }
+  - cli: [config, get, ROAMGATE_LOG_LEVEL]
+    expect: { exit: 0, stdout: "warn\n" }

@@ -1,0 +1,8 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "ok": false,
+    "reason": "Herdr did not list the pane's processes: unsupported: fake herdr has no answer for pane.process_info"
+  }
+}

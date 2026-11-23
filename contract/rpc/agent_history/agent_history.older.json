@@ -4,8 +4,160 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
+    "properties": {
+      "pane_id": {
+        "type": "string"
+      },
+      "before_id": {
+        "type": "string"
+      },
+      "limit": {
+        "type": "integer"
+      }
+    },
+    "required": ["pane_id", "before_id", "limit"],
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "properties": {
+      "version": {
+        "type": "integer"
+      },
+      "agent": {
+        "type": "string"
+      },
+      "pane_id": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      },
+      "tab_id": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "detail": {
+        "type": "string"
+      },
+      "updated_at": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "session": {
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": ["source", "agent", "kind", "value"],
+        "type": "object"
+      },
+      "file": {
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "mtimeMs": {
+            "type": "number"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "identity": {
+            "type": "string"
+          },
+          "changeToken": {
+            "type": "string"
+          }
+        },
+        "required": ["path", "mtimeMs", "size", "identity", "changeToken"],
+        "type": "object"
+      },
+      "entries": {
+        "items": {
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "sent_at": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            },
+            "images": {
+              "type": "integer"
+            },
+            "id": {
+              "type": "string"
+            },
+            "message_id": {
+              "type": "string"
+            },
+            "block_index": {
+              "type": "integer"
+            },
+            "tool_name": {
+              "type": "string"
+            },
+            "source_call_id": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "text_bytes": {
+              "type": "integer"
+            },
+            "text_hash": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "role", "text", "sent_at", "id"],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "has_more": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "version",
+      "agent",
+      "pane_id",
+      "workspace_id",
+      "tab_id",
+      "status",
+      "detail",
+      "updated_at",
+      "path",
+      "session",
+      "file",
+      "entries",
+      "has_more"
+    ],
+    "type": "object",
+    "x-inferred": "from the parity suite's recordings (agent_sessions); fields seen in every reply are required"
+  },
+  "status": "typed"
 }

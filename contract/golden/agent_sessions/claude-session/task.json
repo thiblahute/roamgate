@@ -1,0 +1,17 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "task": {
+      "id": "toolu_task",
+      "kind": "agent",
+      "title": "Explore the code",
+      "detail": "Explore",
+      "status": "completed",
+      "startedAt": "2026-01-01T00:00:04.000Z",
+      "summary": "Found three modules",
+      "endedAt": "2026-01-01T00:00:05.000Z"
+    },
+    "output": ""
+  }
+}

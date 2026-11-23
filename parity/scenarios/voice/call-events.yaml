@@ -1,0 +1,105 @@
+name: a call's microphone stall, the helper's restarts, errors and end reach the page
+family: voice
+description: >
+  A listening on the call's microphone is told when its stream stalls
+  (5 s on the server's clock) and finishes 20 s later with what was heard.
+  The helper making the call again (call_restarted), a call error, and the
+  call ending in the helper reach the page.
+server:
+  env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
+  files:
+    .config/roamgate/voice.json:
+      json:
+        {
+          helper: "${BIN}/roamgate-voice",
+          whisper_model: "${BIN}/roamgate-voice",
+          kokoro_model: "${BIN}/roamgate-voice",
+          kokoro_voices: "${BIN}/roamgate-voice",
+        }
+  fakes:
+    roamgate-voice:
+      replies:
+        call_start: { rate: 48000, channels: 2, music: false }
+        speak:
+          {
+            queued: true,
+            start_ms: 10,
+            duration_ms: 900,
+            now_ms: 5,
+            language: en,
+          }
+      events:
+        listen_finish:
+          - { event: final, session: $session, text: heard on the call }
+        call_hush:
+          - { event: call_restarted, call: $call }
+          - { event: call_error, call: $call, error: the mixer failed }
+          - { event: call_ended, call: $call, error: The voice helper stopped }
+steps:
+  - login: {}
+  - connect: { name: page, path: /api/voice/ws }
+  - send: { op: call_audio, on: true }
+    socket: page
+  - expect_push: "event:call_audio"
+    socket: page
+    message: { event: call_audio, webrtc: true }
+    save: { call: /call }
+  - send: { op: listen, call: "${call}" }
+    socket: page
+  - expect_push: "event:listening"
+    socket: page
+    save: { session: /session }
+  - advance: 5000
+  - expect_push: "event:stalled"
+    socket: page
+    message: { event: stalled, session: "${session}", $exact: true }
+  - advance: 20000
+  - expect_push: "event:final"
+    socket: page
+    message: { event: final, session: "${session}", text: heard on the call }
+  # A reply said into the call: queued in its mix, not a file.
+  - http: POST /api/voice/speak
+    headers: { x-roamgate-voice: "1" }
+    body: { text: Into the call., call: "${call}" }
+    expect:
+      {
+        status: 200,
+        headers: { cache-control: no-store },
+        json:
+          {
+            queued: true,
+            call: "${call}",
+            start_ms: 10,
+            duration_ms: 900,
+            now_ms: 5,
+            language: en,
+          },
+      }
+  - send: { op: call_hush }
+    socket: page
+  - expect_pushes:
+      - {
+          push: "event:call_restarted",
+          message:
+            {
+              event: call_restarted,
+              call: "${call}",
+              restarts: 1,
+              $exact: true,
+            },
+        }
+      - {
+          push: "event:call_error",
+          message: { event: call_error, error: the mixer failed, $exact: true },
+        }
+      - {
+          push: "event:call_audio",
+          message:
+            {
+              event: call_audio,
+              call: "${call}",
+              error: The voice helper stopped,
+              $exact: true,
+            },
+        }
+    socket: page

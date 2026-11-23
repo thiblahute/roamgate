@@ -1,0 +1,82 @@
+name: agent sessions list each other and send messages through the agent socket
+family: agent
+ledger:
+  - "server/src/review/agent-messages.test.ts > sessions lists every connection's agents, the caller's own marked"
+  - "server/src/review/agent-messages.test.ts > an unknown address is refused, and nothing is sent"
+server:
+  herdr:
+    workspaces:
+      [{ workspace_id: w1, label: main }, { workspace_id: w2, label: side }]
+    panes:
+      - { pane_id: "w1:p1", workspace_id: w1, cwd: /work, agent: claude }
+      - { pane_id: "w2:p1", workspace_id: w2, cwd: /side, agent: codex }
+    agents:
+      - { pane_id: "w1:p1", agent: claude, agent_status: working }
+      - { pane_id: "w2:p1", agent: codex, agent_status: idle }
+steps:
+  - expect_log:
+      {
+        contains: "connection ready connection=legacy-default",
+        within_ms: 10000,
+      }
+  - login: {}
+  - connect: {}
+  - agent: sessions
+    body: { pane: "w1:p1" }
+    expect:
+      status: 200
+      json:
+        sessions:
+          - {
+              address: "legacy-default/w1:p1",
+              self: true,
+              agent: claude,
+              workspace: main,
+              mode: terminal,
+              state: working,
+            }
+          - {
+              address: "legacy-default/w2:p1",
+              self: "{{absent}}",
+              agent: codex,
+              workspace: side,
+              state: idle,
+            }
+  - agent: message
+    body:
+      {
+        pane: "w1:p1",
+        to: "legacy-default/w2:p1",
+        text: Please look at the tests,
+      }
+    expect: { status: 200 }
+    golden: message-sent
+  - herdr_calls:
+      {
+        method: agent.prompt,
+        min: 1,
+        calls:
+          {
+            $contains:
+              [
+                {
+                  params:
+                    {
+                      target: "w2:p1",
+                      text: "{{contains:Please look at the tests}}",
+                    },
+                },
+              ],
+          },
+      }
+  - agent: message
+    body: { to: "legacy-default/w2:p1", text: hi }
+    expect:
+      {
+        status: 400,
+        json: { error: "{{contains:a reply needs your address}}" },
+      }
+  - agent: message
+    body: { pane: "w1:p1", to: "legacy-default/nope", text: hi }
+    expect: { status: 404 }
+    golden: message-unknown

@@ -1,0 +1,142 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "version": 1,
+    "agent": "claude",
+    "pane_id": "p1",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "status": "ok",
+    "detail": "",
+    "updated_at": "{{file-stat}}",
+    "path": "$HOME/.claude/projects/-work/{{uuid}}.jsonl",
+    "session": {
+      "source": "claude",
+      "agent": "claude",
+      "kind": "id",
+      "value": "{{uuid}}"
+    },
+    "file": {
+      "path": "$HOME/.claude/projects/-work/{{uuid}}.jsonl",
+      "mtimeMs": "{{file-stat}}",
+      "size": 2414,
+      "identity": "{{file-stat}}",
+      "changeToken": "{{file-stat}}"
+    },
+    "history_version": 2,
+    "mode": "snapshot",
+    "cursor": {
+      "epoch": "{{uuid}}",
+      "revision": 1
+    },
+    "window_limit": 200,
+    "entries": [
+      {
+        "kind": "message",
+        "role": "user",
+        "text": "Look at this picture",
+        "sent_at": "2026-01-01T00:00:01.000Z",
+        "uuid": "u2",
+        "images": 1,
+        "id": "{{entry}}:0"
+      },
+      {
+        "kind": "message",
+        "role": "assistant",
+        "text": "Running the tests",
+        "sent_at": "2026-01-01T00:00:02.000Z",
+        "message_id": "msg_1",
+        "block_index": 0,
+        "uuid": "a1",
+        "id": "{{entry}}:0"
+      },
+      {
+        "kind": "tool_call",
+        "role": "tool",
+        "tool_name": "Bash",
+        "source_call_id": "toolu_bash",
+        "text": "",
+        "summary": "Run the tests",
+        "sent_at": "2026-01-01T00:00:02.000Z",
+        "id": "{{entry}}:0",
+        "text_bytes": 61,
+        "text_hash": "bbc9e20584b39a2d"
+      },
+      {
+        "kind": "tool_result",
+        "role": "tool",
+        "tool_name": "Bash",
+        "source_call_id": "toolu_bash",
+        "text": "",
+        "is_error": false,
+        "sent_at": "2026-01-01T00:00:03.000Z",
+        "id": "{{entry}}:0",
+        "text_bytes": 7,
+        "text_hash": "ae49103838734b4b"
+      },
+      {
+        "kind": "tool_call",
+        "role": "tool",
+        "tool_name": "Task",
+        "source_call_id": "toolu_task",
+        "text": "",
+        "summary": "Explore the code",
+        "sent_at": "2026-01-01T00:00:04.000Z",
+        "id": "{{entry}}:0",
+        "text_bytes": 89,
+        "text_hash": "532b55ce9e384461"
+      },
+      {
+        "kind": "tool_call",
+        "role": "tool",
+        "tool_name": "Artifact",
+        "source_call_id": "toolu_art",
+        "text": "",
+        "summary": "/work/report.html",
+        "sent_at": "2026-01-01T00:00:04.000Z",
+        "id": "{{entry}}:0",
+        "text_bytes": 59,
+        "text_hash": "f1a8ab1352cecef2"
+      },
+      {
+        "kind": "tool_result",
+        "role": "tool",
+        "tool_name": "Task",
+        "source_call_id": "toolu_task",
+        "text": "",
+        "is_error": false,
+        "sent_at": "2026-01-01T00:00:05.000Z",
+        "id": "{{entry}}:0",
+        "text_bytes": 19,
+        "text_hash": "bf103f413e671a64"
+      },
+      {
+        "kind": "tool_result",
+        "role": "tool",
+        "tool_name": "Artifact",
+        "source_call_id": "toolu_art",
+        "text": "",
+        "is_error": false,
+        "sent_at": "2026-01-01T00:00:05.000Z",
+        "artifact": {
+          "url": "https://claude.ai/code/artifact/abc-123",
+          "title": "Report"
+        },
+        "id": "{{entry}}:0",
+        "text_bytes": 65,
+        "text_hash": "08795ce24d02f0e8"
+      },
+      {
+        "kind": "message",
+        "role": "assistant",
+        "text": "All done",
+        "sent_at": "2026-01-01T00:00:06.000Z",
+        "message_id": "msg_3",
+        "block_index": 0,
+        "uuid": "a3",
+        "id": "{{entry}}:0"
+      }
+    ]
+  }
+}

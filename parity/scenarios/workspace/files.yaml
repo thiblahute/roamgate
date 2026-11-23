@@ -1,0 +1,94 @@
+name: the file explorer lists, resolves, stats, reads, searches, creates and moves a workspace's files
+family: file
+description: >
+  A workspace whose focused pane is in a checkout: every file.* read and
+  mutation from outside, the files they leave, and the refusals of a missing
+  workspace id and of paths outside the checkout.
+ledger:
+  - "server/src/workspace/files.test.ts > falls back to focused pane cwd when workspace has no checkout path"
+  - "server/src/workspace/files.test.ts > resolves existing workspace-relative files and directories in one batch"
+  - "server/src/workspace/files.test.ts > validates required workspace ids"
+  - "server/src/workspace/file-mutations.test.ts > creates root/nested folders and preserves existing entries"
+  - "server/src/workspace/file-mutations.test.ts > moves files into folders and back to root without changing their contents"
+  - "server/src/workspace/file-mutations.test.ts > never overwrites a destination file, directory or symlink"
+  - "server/src/workspace/search.test.ts > searches unloaded checkout files and content while respecting ignores and binary files"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes:
+      [{ pane_id: p1, workspace_id: w1, cwd: "${ROOT}/repo", focused: true }]
+steps:
+  - sh: |
+      mkdir -p repo/src repo/docs && cd repo && git init -q &&
+      printf 'hello parity\n' > README.md && printf 'fn main() {}\n' > src/main.rs &&
+      printf 'ignored.log\n' > .gitignore && printf 'noise\n' > ignored.log &&
+      printf '# Notes\nparity needle\n' > docs/notes.md && git add -A && git commit -qm init
+  - login: {}
+  - connect: {}
+  - call: file.list
+    params: { workspace_id: w1 }
+    normalize: [run-paths, timestamps-ms, directory-sizes]
+    golden: list-root
+  - call: file.list
+    params: { workspace_id: w1, path: src }
+    reply: { entries: [{ name: main.rs }] }
+  - call: file.list
+    params: { workspace_id: w1, show_hidden: true }
+    reply: { entries: { $contains: [{ name: .gitignore }] } }
+  - call: file.resolve
+    params: { workspace_id: w1, paths: [README.md, src, missing.txt] }
+    normalize: [run-paths]
+    golden: resolve
+  - call: file.stat
+    params: { workspace_id: w1, path: README.md }
+    normalize: [run-paths, timestamps-ms]
+    golden: stat
+  - call: file.read
+    params: { workspace_id: w1, path: README.md }
+    normalize: [run-paths, timestamps-ms]
+    golden: read
+  - call: file.search
+    params: { workspace_id: w1, mode: files, query: notes }
+    normalize: [run-paths]
+    golden: search-files
+  - call: file.search
+    params: { workspace_id: w1, mode: content, query: needle }
+    normalize: [run-paths]
+    golden: search-content
+  - call: file.search
+    params: { workspace_id: w1, mode: content, query: noise }
+    normalize: [run-paths]
+    golden: search-ignored
+  - call: file.mkdir
+    params: { workspace_id: w1, directory: "", name: build }
+    normalize: [run-paths]
+    golden: mkdir
+  - call: file.mkdir
+    params: { workspace_id: w1, directory: build, name: nested }
+  - call: file.move
+    params: { workspace_id: w1, path: docs/notes.md, directory: build }
+    normalize: [run-paths]
+    golden: move
+  - assert_file:
+      { path: "${ROOT}/repo/build/notes.md", text: "# Notes\nparity needle\n" }
+  - assert_file: { path: "${ROOT}/repo/docs/notes.md", exists: false }
+  - call: file.move
+    params: { workspace_id: w1, path: build/notes.md, directory: "" }
+  - assert_file:
+      { path: "${ROOT}/repo/notes.md", text: "# Notes\nparity needle\n" }
+  - sh: printf 'other\n' > repo/build/README.md
+  - call: file.move
+    params: { workspace_id: w1, path: README.md, directory: build }
+    error: { message: "{{string}}" }
+    normalize: [run-paths]
+    golden: move-onto-existing
+  - assert_file: { path: "${ROOT}/repo/build/README.md", text: "other\n" }
+  - call: file.list
+    params: {}
+    error: { message: "{{contains:file.list requires workspace_id}}" }
+  - call: file.read
+    params: { workspace_id: w1, path: ../../etc/passwd }
+    error: "{{any}}"
+  - call: file.mkdir
+    params: { workspace_id: w1, directory: "", name: x, scope: filesystem }
+    error: { message: "{{contains:only supports workspace scope}}" }

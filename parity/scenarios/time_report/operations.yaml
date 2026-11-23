@@ -1,0 +1,176 @@
+name: every Hours view operation runs the provider with its command line and body
+family: time_report
+ledger:
+  - "server/src/time-report/rpc.test.ts > operations map to the provider's command line"
+  - "server/src/time-report/provider.test.ts > the operation follows the command; the body goes on stdin; an empty directory"
+server:
+  files:
+    .config/roamgate/settings.json:
+      {
+        json:
+          {
+            time_report: { command: [time-report-provider, --profile, parity] },
+          },
+      }
+  fakes:
+    time-report-provider:
+      rules:
+        - {
+            args: [--profile, parity, health],
+            stdout_json: { ok: true, provider: parity, version: "1" },
+          }
+        - {
+            args: [--profile, parity, targets],
+            stdout_json: { targets: [{ id: "10", label: Roamgate }] },
+          }
+        # Every other operation: an echo, with stdin read (and logged).
+        - { args_match: ".", stdin_match: "(?s)", stdout_json: { done: true } }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.time_report
+    params: { op: health }
+    reply:
+      {
+        ok: true,
+        value: { ok: true, provider: parity, version: "1" },
+        $exact: true,
+      }
+  - call: bridge.time_report
+    params: { op: targets }
+    reply: { ok: true, value: { targets: [{ id: "10", label: Roamgate }] } }
+  - call: bridge.time_report
+    params: { op: days, from: "2026-11-01", to: "2026-11-02" }
+    reply: { ok: true, value: { done: true } }
+  - call: bridge.time_report
+    params:
+      {
+        op: block-create,
+        date: "2026-11-02",
+        body:
+          {
+            start: "2026-11-02T13:00:00+01:00",
+            end: "2026-11-02T14:00:00+01:00",
+            target: "10",
+          },
+      }
+    reply: { ok: true }
+  - call: bridge.time_report
+    params:
+      {
+        op: block-update,
+        date: "2026-11-02",
+        block: b1,
+        body: { description: x },
+      }
+    reply: { ok: true }
+  - call: bridge.time_report
+    params:
+      {
+        op: block-answer,
+        date: "2026-11-02",
+        block: b1,
+        body: { option_id: skip, remember: true },
+      }
+    reply: { ok: true }
+  - call: bridge.time_report
+    params:
+      {
+        op: block-split,
+        date: "2026-11-02",
+        block: b1,
+        at: "2026-11-02T13:30:00+01:00",
+      }
+    reply: { ok: true }
+  - call: bridge.time_report
+    params: { op: block-delete, date: "2026-11-02", block: b1 }
+    reply: { ok: true }
+  - call: bridge.time_report
+    params: { op: block-accept, date: "2026-11-02", block: b1 }
+    reply: { ok: true }
+  - call: bridge.time_report
+    params: { op: block-explain, date: "2026-11-02", block: b1 }
+    reply: { ok: true }
+  - call: bridge.time_report
+    params: { op: submit-preview, date: "2026-11-02", blocks: [b1, b2] }
+    reply: { ok: true }
+  - call: bridge.time_report
+    params: { op: mappings }
+    reply: { ok: true }
+  - call: bridge.time_report
+    params:
+      {
+        op: mapping-set,
+        body: { workspace_id: ws_gst, target: null, remember: true },
+      }
+    reply: { ok: true }
+  - call: bridge.time_report
+    params: { op: mapping-delete, body: { workspace_id: ws_gst } }
+    reply: { ok: true }
+  - fake_calls:
+      program: time-report-provider
+      calls:
+        - { argv: [--profile, parity, health], stdin: "" }
+        - { argv: [--profile, parity, targets] }
+        - {
+            argv:
+              [
+                --profile,
+                parity,
+                days,
+                --from,
+                "2026-11-01",
+                --to,
+                "2026-11-02",
+              ],
+            stdin: "",
+          }
+        - {
+            argv: [--profile, parity, block-create, "2026-11-02"],
+            stdin: '{"start":"2026-11-02T13:00:00+01:00","end":"2026-11-02T14:00:00+01:00","target":"10"}',
+          }
+        - {
+            argv: [--profile, parity, block-update, "2026-11-02", b1],
+            stdin: '{"description":"x"}',
+          }
+        - {
+            argv: [--profile, parity, block-answer, "2026-11-02", b1],
+            stdin: '{"option_id":"skip","remember":true}',
+          }
+        - {
+            argv:
+              [
+                --profile,
+                parity,
+                block-split,
+                "2026-11-02",
+                b1,
+                --at,
+                "2026-11-02T13:30:00+01:00",
+              ],
+          }
+        - { argv: [--profile, parity, block-delete, "2026-11-02", b1] }
+        - { argv: [--profile, parity, block-accept, "2026-11-02", b1] }
+        - { argv: [--profile, parity, block-explain, "2026-11-02", b1] }
+        - {
+            argv:
+              [
+                --profile,
+                parity,
+                submit-preview,
+                "2026-11-02",
+                --block,
+                b1,
+                --block,
+                b2,
+              ],
+          }
+        - { argv: [--profile, parity, mappings] }
+        - {
+            argv: [--profile, parity, mapping-set],
+            stdin: '{"workspace_id":"ws_gst","target":null,"remember":true}',
+          }
+        - {
+            argv: [--profile, parity, mapping-delete],
+            stdin: '{"workspace_id":"ws_gst"}',
+          }

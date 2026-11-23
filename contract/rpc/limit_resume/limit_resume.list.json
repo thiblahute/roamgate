@@ -6,6 +6,18 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "required": ["pauses"],
+    "properties": {
+      "pauses": {
+        "type": "array",
+        "items": {
+          "$ref": "../../schemas/shared/limitResume.schema.json#/$defs/LimitPause"
+        }
+      }
+    },
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

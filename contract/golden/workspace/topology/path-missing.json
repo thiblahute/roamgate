@@ -1,0 +1,9 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "path": "$ROOT/missing",
+    "error": "Directory does not exist.",
+    "directories": []
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "profiles": [
+      {
+        "name": "Claude",
+        "agent": "claude",
+        "builtin": true,
+        "env": [],
+        "unset": [],
+        "label": "Claude"
+      }
+    ],
+    "default": "Claude",
+    "return_after_reset": false
+  }
+}

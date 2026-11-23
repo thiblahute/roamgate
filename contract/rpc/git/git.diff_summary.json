@@ -4,8 +4,154 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "mode": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "base": {
+        "type": "string"
+      },
+      "base_branches": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "baseline_available": {
+        "type": "boolean"
+      },
+      "branch": {
+        "type": "string"
+      },
+      "commits": {
+        "type": "number"
+      },
+      "counts": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "number"
+          },
+          "conflicted": {
+            "type": "number"
+          },
+          "last-step": {
+            "type": "number"
+          },
+          "staged": {
+            "type": "number"
+          },
+          "unstaged": {
+            "type": "number"
+          },
+          "untracked": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "branch",
+          "conflicted",
+          "last-step",
+          "staged",
+          "unstaged",
+          "untracked"
+        ]
+      },
+      "entries": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "additions": {
+              "type": "number"
+            },
+            "deletions": {
+              "type": "number"
+            },
+            "file_size": {
+              "type": "number"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "mtime_ms": {
+              "type": "number"
+            },
+            "path": {
+              "type": "string"
+            },
+            "size": {
+              "type": "number"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "additions",
+            "deletions",
+            "file_size",
+            "kind",
+            "path",
+            "status"
+          ]
+        }
+      },
+      "mode": {
+        "type": "string"
+      },
+      "repo_name": {
+        "type": "string"
+      },
+      "root": {
+        "type": "string"
+      },
+      "snapshot_id": {
+        "type": "string"
+      },
+      "step": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "before": {
+            "type": "string"
+          },
+          "step": {
+            "type": "string"
+          }
+        },
+        "required": ["after", "at", "before", "step"]
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "baseline_available",
+      "branch",
+      "counts",
+      "entries",
+      "mode",
+      "repo_name",
+      "root",
+      "workspace_id"
+    ]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

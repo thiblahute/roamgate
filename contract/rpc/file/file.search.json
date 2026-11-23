@@ -4,8 +4,53 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "mode": {
+        "type": "string"
+      },
+      "query": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["mode", "query", "workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "line": {
+              "type": "number"
+            },
+            "path": {
+              "type": "string"
+            },
+            "snippet": {
+              "type": "string"
+            }
+          },
+          "required": ["path"]
+        }
+      },
+      "root": {
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["results", "root", "truncated", "workspace_id"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

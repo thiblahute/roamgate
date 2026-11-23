@@ -1,0 +1,18 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "type": "worktree_removed",
+    "workspace_id": "w2",
+    "path": "$ROOT/wt/feature",
+    "forced": false,
+    "before_remove_hook": {
+      "event": "worktree.before_remove",
+      "status": "skipped"
+    },
+    "removed_hook": {
+      "event": "worktree.removed",
+      "status": "skipped"
+    }
+  }
+}

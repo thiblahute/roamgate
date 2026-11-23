@@ -104,11 +104,15 @@ function openApiOperations(path: string): Operation[] {
   for (const [template, item] of Object.entries(
     (document?.paths ?? {}) as Record<string, Record<string, unknown>>,
   )) {
+    // A last `{static}` or `{path}` segment is the rest of the path, empty
+    // or with slashes (the app shell and its files, a rendered page's files).
+    const rest = /\/\{(static|path)\}$/.test(template);
+    const body = rest ? template.replace(/\/\{(static|path)\}$/, "") : template;
     const pattern = new RegExp(
-      `^${template
+      `^${body
         .split(/\{[^}]+\}/)
         .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-        .join("[^/]+")}$`,
+        .join("[^/]+")}${rest ? "(?:/.*)?" : ""}$`,
     );
     for (const [method, operation] of Object.entries(item))
       if (/^(get|put|post|delete|patch|head|options)$/.test(method))
@@ -302,7 +306,14 @@ export class ContractSchemas {
         instancePath?: string;
         message?: string;
       }[];
-      for (const error of Array.isArray(errors) ? errors : [])
+      let redacted = 0;
+      for (const error of Array.isArray(errors) ? errors : []) {
+        // The recorder replaced the value, or one under it (a secret): no
+        // schema can judge it (an anyOf fails above the redacted leaf).
+        if (holdsRedacted(valueAt(value, error.instancePath ?? ""))) {
+          redacted += 1;
+          continue;
+        }
         out.push({
           kind: "mismatch",
           surface,
@@ -310,7 +321,8 @@ export class ContractSchemas {
           path: `${where}${error.instancePath ?? ""}`,
           detail: error.message ?? "invalid",
         });
-      if (!out.length)
+      }
+      if (!out.length && !redacted)
         out.push({
           kind: "mismatch",
           surface,
@@ -329,6 +341,32 @@ export class ContractSchemas {
       });
     return out;
   }
+}
+
+/** A string the recorder put in place of a secret (redact.ts). */
+export function isRedacted(value: unknown): boolean {
+  return typeof value === "string" && /^\[redacted:[0-9a-f]+\]$/.test(value);
+}
+
+/** Whether a value is, or holds, a redacted string. */
+export function holdsRedacted(value: unknown): boolean {
+  if (isRedacted(value)) return true;
+  if (Array.isArray(value)) return value.some(holdsRedacted);
+  if (value && typeof value === "object")
+    return Object.values(value).some(holdsRedacted);
+  return false;
+}
+
+/** The value at a JSON pointer, or undefined. */
+function valueAt(value: unknown, pointer: string): unknown {
+  let node = value;
+  for (const part of pointer.split("/").slice(1)) {
+    if (node === null || typeof node !== "object") return undefined;
+    node = (node as Record<string, unknown>)[
+      part.replace(/~1/g, "/").replace(/~0/g, "~")
+    ];
+  }
+  return node;
 }
 
 function resolveRef(root: JsonSchema, ref: string): JsonSchema | undefined {
@@ -395,8 +433,15 @@ export function unknownFields(
       }
       const at = `${path}/${key}`;
       if (!children.length) out.push(at);
-      // The first describing branch is enough to look inside.
-      else out.push(...unknownFields(children[0], item, root, at, depth + 1));
+      else {
+        // Unknown only where no branch describing the key knows it (an
+        // anyOf of several shapes: each one has its own fields).
+        const [first, ...others] = children.map(
+          (child) => new Set(unknownFields(child, item, root, at, depth + 1)),
+        );
+        for (const unknown of first ?? [])
+          if (others.every((set) => set.has(unknown))) out.push(unknown);
+      }
     }
   } else if (Array.isArray(value)) {
     const items = all.map((branch) => branch.items).find(isObject);

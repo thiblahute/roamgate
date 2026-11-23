@@ -1,0 +1,84 @@
+name: a decision link is done once its box is ticked on the project's branch, and a tick only in the working tree says uncommitted
+family: work
+tier: T2
+ledger:
+  - "server/src/work/service.test.ts > a decision link is done once its box is ticked on the project's branch"
+  - "server/src/work/service.test.ts > a tick in the working tree of the rule's checkout counts, said uncommitted; another branch checked out does not"
+steps:
+  - sh: |
+      set -e
+      git init -q g && cd g && mkdir rfcs
+      printf '## Decisions\n\n- [x] **D1** Plain first.\n- [ ] **D13** The staged add.\n' > rfcs/0052.md
+      git add rfcs && git commit -q -m rfc
+  - login: {}
+  - connect: {}
+  - call: bridge.work.project.set
+    params:
+      {
+        name: gst2,
+        roots: ["${ROOT}/g"],
+        done: { kind: branch, root: "${ROOT}/g", branch: main },
+      }
+  - call: bridge.work.add
+    params:
+      {
+        project: gst2,
+        title: D1,
+        links: [{ kind: decision, path: "${ROOT}/g/rfcs/0052.md", id: D1 }],
+      }
+    save: { ticked: /result/item/id }
+  - call: bridge.work.add
+    params:
+      {
+        project: gst2,
+        title: D13,
+        links: [{ kind: decision, path: rfcs/0052.md, id: D13 }],
+      }
+    save: { open: /result/item/id }
+  - call: bridge.work.check
+    reply: { landed: ["${ticked}"], checked: 2 }
+  - call: bridge.work.list
+    params: { project: gst2 }
+    reply:
+      items:
+        $unordered:
+          - {
+              id: "${ticked}",
+              state: done,
+              links:
+                {
+                  $contains: [{ kind: deploy, sha: decision, branch: ticked }],
+                },
+            }
+          - { id: "${open}", state: open }
+  # Ticked, not committed: the next 10-minute check says so.
+  - sh: sed -i 's/- \[ \] \*\*D13\*\*/- [x] **D13**/' g/rfcs/0052.md
+  - advance: 600000
+  - expect_push: work
+    message: { work: { item: "${open}", by: agent } }
+  - call: bridge.work.list
+    params: { project: gst2, state: done }
+    reply:
+      {
+        items:
+          {
+            $unordered:
+              [
+                { id: "${ticked}" },
+                {
+                  id: "${open}",
+                  links:
+                    {
+                      $contains:
+                        [
+                          {
+                            kind: deploy,
+                            sha: decision,
+                            branch: "ticked, uncommitted",
+                          },
+                        ],
+                    },
+                },
+              ],
+          },
+      }

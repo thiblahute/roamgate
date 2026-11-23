@@ -1,0 +1,68 @@
+name: ROAMGATE_SSH_RUNTIME_DIR (or its legacy HERDR_GUI_ name) is where an SSH profile's master and forwards live
+family: connections
+description: >
+  An SSH profile's runtime directory (the master's control socket, the
+  forwards) is made under the legacy HERDR_GUI_SSH_RUNTIME_DIR alone, and
+  under ROAMGATE_SSH_RUNTIME_DIR when both are set (it wins); never in /tmp.
+server:
+  herdr: false
+  start: false
+  herdrs:
+    remote: { workspaces: [{ workspace_id: w1, label: remote }] }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ALLOW_SSH: "1"
+    ROAMGATE_SSH_RUNTIME_DIR: "{{unset}}"
+    HERDR_GUI_SSH_RUNTIME_DIR: "${ROOT}/legacy-ssh"
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 2
+        default_connection_id: remote
+        profiles:
+          - {
+              id: remote,
+              label: REMOTE,
+              type: ssh,
+              ssh_destination: remote-host,
+              remote_control_socket_path: "${HERDR_remote_CONTROL}",
+              remote_client_socket_path: "${HERDR_remote_CLIENT}",
+              auto_connect: true,
+            }
+steps:
+  - sh: mkdir -m 700 "${ROOT}/legacy-ssh" "${ROOT}/wins-ssh"
+  - start: {}
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    id: up
+    no_wait: true
+    params: { id: remote }
+  - await: up
+    advance_every: 50
+    reply: { state: ready, type: ssh }
+  - fake_calls:
+      {
+        program: ssh,
+        argv_match: "-S ${ROOT}/legacy-ssh/roamgate-ssh-[A-Za-z0-9]{6}/m.ctl",
+        min: 1,
+      }
+  - fake_calls: { program: ssh, argv_match: "-S /tmp/roamgate-ssh-", count: 0 }
+  - restart: { env: { ROAMGATE_SSH_RUNTIME_DIR: "${ROOT}/wins-ssh" } }
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    id: again
+    no_wait: true
+    params: { id: remote }
+  - await: again
+    advance_every: 50
+    reply: { state: ready, type: ssh }
+  - fake_calls:
+      {
+        program: ssh,
+        argv_match: "-S ${ROOT}/wins-ssh/roamgate-ssh-[A-Za-z0-9]{6}/m.ctl",
+        min: 1,
+      }
+  - fake_calls: { program: ssh, argv_match: "-S /tmp/roamgate-ssh-", count: 0 }

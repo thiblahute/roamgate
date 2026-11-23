@@ -1,0 +1,110 @@
+name: workspaces carry their git status, pushed when it changes, and an agent turn's end completes the last step
+family: workspace
+description: >
+  workspace.list is enriched with each checkout's git status; a change is
+  pushed (event workspace.git_status) once a refresh sees it. An agent's
+  working-to-idle turn on a workspace's pane completes its last step
+  (event workspace.last_step_completed), and git.diff_summary then offers
+  the last step's changes.
+ledger:
+  - "server/src/workspace/status.test.ts > with no cold budget, the first list answers at once and pushes the result"
+  - "server/src/workspace/status.test.ts > invalidation refreshes immediately, even during a refresh"
+server:
+  herdr:
+    workspaces:
+      - workspace_id: w1
+        label: repo
+        worktree:
+          {
+            repo_key: "${ROOT}/repo",
+            repo_name: repo,
+            repo_root: "${ROOT}/repo",
+            checkout_path: "${ROOT}/repo",
+            is_linked_worktree: false,
+          }
+    panes:
+      [
+        {
+          pane_id: p1,
+          workspace_id: w1,
+          cwd: "${ROOT}/repo",
+          focused: true,
+          agent: claude,
+        },
+      ]
+    agents: [{ pane_id: p1, agent: claude, agent_status: idle }]
+steps:
+  - sh: |
+      export GIT_AUTHOR_DATE=2025-01-01T00:00:00Z GIT_COMMITTER_DATE=2025-01-01T00:00:00Z
+      mkdir repo && cd repo && git init -q && printf 'x\n' > x && git add x && git commit -qm init
+  - login: {}
+  - connect: {}
+  # The first list waits up to its cold budget (300 ms on the server's
+  # clock) for the status.
+  - call: workspace.list
+    id: list
+    no_wait: true
+  - await: list
+    advance_every: 100
+    normalize: [run-paths]
+    golden: list-with-status
+  - expect_push: "event:workspace.git_status"
+    within_ms: 15000
+    normalize: [run-paths]
+    message:
+      {
+        event: workspace.git_status,
+        data: { type: workspace.git_status, statuses: "{{any}}" },
+      }
+    golden: git-status-first
+  - herdr_emit:
+      {
+        event: pane.agent_status_changed,
+        data:
+          {
+            pane_id: p1,
+            workspace_id: w1,
+            agent_status: working,
+            agent: claude,
+          },
+      }
+  # Past the 150 ms debounce of a turn's start, and of the baseline's capture.
+  - advance: 1000
+  # A last-step read waits for the turn's baseline capture.
+  - call: git.diff_summary
+    params: { workspace_id: w1, mode: last-step }
+    any_outcome: true
+  - sh: printf 'changed\n' > repo/x
+  - herdr_emit:
+      {
+        event: pane.agent_status_changed,
+        data:
+          { pane_id: p1, workspace_id: w1, agent_status: idle, agent: claude },
+      }
+  - expect_push: "event:workspace.last_step_completed"
+    within_ms: 15000
+    advance_every: 100
+    message:
+      {
+        event: workspace.last_step_completed,
+        data: { type: workspace.last_step_completed, workspace_id: w1 },
+      }
+  - expect_push: "event:workspace.git_status"
+    within_ms: 15000
+    normalize: [run-paths]
+    golden: git-status-changed
+  - call: git.diff_summary
+    params: { workspace_id: w1, mode: last-step }
+    normalize:
+      [run-paths, timestamps-ms, uuid, short-id, epoch-ms-prefix, iso-time]
+    reply: { mode: last-step, entries: [{ path: x }] }
+    golden: last-step-summary
+  - assert_refs:
+      { repo: "${ROOT}/repo", prefix: refs/roamgate/steps, refs: "{{object}}" }
+contract_exceptions:
+  - {
+      surface: push,
+      name: "event:pane.agent_status_changed",
+      kind: unlisted,
+      reason: "Herdr's own events forwarded to browsers have no contract entry yet (inventory gap reported to the coordinator)",
+    }

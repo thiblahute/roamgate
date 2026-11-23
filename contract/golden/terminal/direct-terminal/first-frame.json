@@ -1,0 +1,11 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "terminal": {
+    "terminal_id": "term-p1",
+    "width": 80,
+    "height": 24,
+    "full": true,
+    "bytes": "ZGlyZWN0ICQg"
+  }
+}

@@ -1,0 +1,113 @@
+name: an agent notifies the user, and asks which threads and items wait for it
+family: notifications
+ledger:
+  - "server/src/review/agent-server.test.ts > an agent tells the user they need to act"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: repo }]
+    panes:
+      [
+        {
+          pane_id: "w1:p1",
+          workspace_id: w1,
+          cwd: "${ROOT}/repo",
+          agent: claude,
+        },
+      ]
+  env: { ROAMGATE_NOTIFICATIONS_PATH: "${ROOT}/notifications.json" }
+steps:
+  - sh: |
+      export GIT_AUTHOR_DATE=2025-12-31T12:00:00Z GIT_COMMITTER_DATE=2025-12-31T12:00:00Z
+      git init -q repo && cd repo
+      printf 'one\n' > f.txt && git add f.txt && git commit -qm init
+      git checkout -qb feature && printf 'two\n' > f.txt && git commit -qam change
+  - login: {}
+  - connect: {}
+  - connect: { name: feed, path: /api/notifications/ws }
+  - send: { op: hello, since: null, client: android }
+    socket: feed
+  - expect_push: "event:ready"
+    socket: feed
+  - agent: notify
+    body:
+      {
+        pane: "w1:p1",
+        agent: Claude,
+        title: Pick a name,
+        text: Choose the crate's name,
+      }
+    expect: { status: 200, json: { notified: true, $exact: true } }
+  - expect_push: "event:notification"
+    socket: feed
+    message:
+      {
+        event: notification,
+        kind: review,
+        title: "repo: Pick a name",
+        body: Choose the crate's name,
+      }
+  - expect_push: "event:roamgate.agent_note"
+    message: { event: roamgate.agent_note, data: { pane_id: "w1:p1" } }
+  - agent: notify
+    body: { pane: "w1:p1", text: "  " }
+    expect: { status: 400, json: { error: say what the user needs to do } }
+  - agent: notify
+    body: { text: hi }
+    expect: { status: 400, json: { error: notify runs inside a Herdr pane } }
+  - agent: open
+    body:
+      {
+        cwd: "${ROOT}/repo",
+        agent: Claude,
+        pane: "w1:p1",
+        range: main..feature,
+      }
+    expect: { status: 200 }
+    save: { session: /json/session/id }
+  - call: review.thread.add
+    params:
+      {
+        session_id: "${session}",
+        kind: discussion,
+        text: Please rename this,
+        anchor: { path: f.txt, line: 1 },
+      }
+    save: { thread: /result/id }
+  - agent: waiting
+    body: { pane: "w1:p1" }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            reviews:
+              [
+                {
+                  session: { id: "${session}" },
+                  threads: [{ id: "${thread}" }],
+                },
+              ],
+          },
+      }
+  - agent: waiting
+    body: {}
+    expect:
+      { status: 400, json: { error: waiting runs inside an agent session } }
+  - agent: stop_check
+    body: { pane: "w1:p1" }
+    expect: { status: 200, json: { threads: "{{array}}", triage: [] } }
+    golden: stop-check
+    normalize: [hex-id, short-id]
+  - agent: stop_check
+    body: {}
+    expect:
+      { status: 400, json: { error: stop_check runs inside an agent session } }
+  - agent: reviews
+    body: { pane: "w1:p1", tool: reviews_list, params: "{}" }
+    expect: { status: 200, json: { tool: reviews_list } }
+  - agent: reviews
+    body: { pane: "w1:p1" }
+    expect: { status: 400, json: { error: tool is required } }
+  - agent: reviews
+    body: { pane: "w1:p1", tool: reviews_list, params: "[1]" }
+    expect: { status: 400, json: { error: params must be a JSON object } }

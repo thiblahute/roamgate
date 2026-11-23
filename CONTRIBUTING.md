@@ -72,6 +72,20 @@ assistant reads two more, honoured from source only, like the test clock:
 instead of Hugging Face and GitHub (`https://host/path` becomes
 `<base>/host/path`).
 
+### Parity suite
+
+`parity/` drives a server from outside only, so the same cases hold the Bun
+server and the Rust one: `cargo test -p roamgate-parity` runs every scenario
+of `parity/scenarios/` against `ROAMGATE_SERVER_CMD` (the Bun server from this
+checkout by default), each in a run of its own (HOME, data root, fake Herdr,
+fakes of ssh, glab, gh, claude and the rest on its PATH, test clock), and
+checks the recorded traffic against `contract/`. The scenario format is in
+`parity/src/scenario.rs`. `cargo run -p roamgate-parity --bin parity-ledger`
+refreshes `parity/ledger.tsv`, which maps every TS test to what replaces it;
+`PARITY_GATE_STRICT=1` makes the ledger and the contract coverage gates fail
+on gaps. `PARITY_KEEP=1` keeps a run's directory, `PARITY_JOBS` bounds the
+servers run at once.
+
 ### Manual browser checks
 
 Automated tests do not launch browsers. For affected UI, check against a real

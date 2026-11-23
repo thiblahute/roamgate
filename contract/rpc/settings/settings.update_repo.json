@@ -4,8 +4,165 @@
   "scope": "connection",
   "handler": "server/src/bridge/settings-rpc.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "key": {
+        "type": "string"
+      },
+      "settings": {
+        "type": "object",
+        "properties": {
+          "worktree_directory": {
+            "type": "string"
+          },
+          "worktree_hooks_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": ["worktree_directory"]
+      }
+    },
+    "required": ["key", "settings"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "key": {
+        "type": "string"
+      },
+      "repo": {
+        "type": "object",
+        "properties": {
+          "worktree_directory": {
+            "type": "string"
+          },
+          "worktree_hooks_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": ["worktree_directory", "worktree_hooks_enabled"]
+      },
+      "settings": {
+        "type": "object",
+        "properties": {
+          "auto_rename_agent_tabs": {
+            "type": "boolean"
+          },
+          "custom": {
+            "type": "object",
+            "properties": {
+              "worktree_parent_by_checkout": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["worktree_parent_by_checkout"]
+          },
+          "repositories": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "worktree_directory": {
+                  "type": "string"
+                },
+                "worktree_hooks_enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["worktree_directory", "worktree_hooks_enabled"]
+            }
+          },
+          "terminal_transport": {
+            "type": "object",
+            "properties": {}
+          },
+          "title_suffix": {
+            "type": "string"
+          },
+          "ui": {
+            "type": "object",
+            "properties": {}
+          },
+          "version": {
+            "type": "number"
+          },
+          "workspace_auto_sync": {
+            "type": "object",
+            "properties": {}
+          },
+          "workspace_tree": {
+            "type": "object",
+            "properties": {
+              "nodes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "parent": {
+                      "type": ["null", "string"]
+                    },
+                    "ref": {
+                      "type": "object",
+                      "properties": {
+                        "connection_id": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string"
+                        },
+                        "workspace_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["connection_id", "label", "workspace_id"]
+                    }
+                  },
+                  "required": ["id", "kind", "parent", "ref"]
+                }
+              },
+              "version": {
+                "type": "number"
+              }
+            },
+            "required": ["nodes", "version"]
+          }
+        },
+        "required": [
+          "auto_rename_agent_tabs",
+          "custom",
+          "repositories",
+          "terminal_transport",
+          "title_suffix",
+          "ui",
+          "version",
+          "workspace_auto_sync",
+          "workspace_tree"
+        ]
+      }
+    },
+    "required": ["key", "repo", "settings"]
+  },
+  "status": "typed",
+  "error": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": ["message"]
+  },
+  "x-typed-from": "parity recordings"
 }

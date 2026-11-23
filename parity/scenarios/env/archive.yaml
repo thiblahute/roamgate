@@ -1,0 +1,32 @@
+name: ROAMGATE_ARCHIVE_DIR places the session archive and ROAMGATE_ARCHIVE_HOST names this machine in it
+family: env
+ledger:
+  - "server/src/archive/dir.test.ts > an explicit directory wins and nothing is moved"
+server:
+  herdr: false
+  start: false
+  env:
+    {
+      ROAMGATE_ARCHIVE_DIR: "${ROOT}/my-archive",
+      ROAMGATE_ARCHIVE_HOST: parity-box,
+    }
+  files:
+    .claude/projects/-home-t-proj/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl:
+      jsonl:
+        - {
+            type: user,
+            timestamp: "2026-11-14T10:00:00Z",
+            cwd: /home/t/proj,
+            message: { content: where is the zebra },
+          }
+steps:
+  - cli: [archive, sync, --local-only, --json]
+    expect:
+      {
+        exit: 0,
+        stdout_json: { hosts: [{ host: parity-box, status: synced }] },
+      }
+  - assert_file:
+      path: "${ROOT}/my-archive/raw/parity-box/claude/-home-t-proj/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl.zst"
+      zstd_contains: [where is the zebra]
+  - assert_absent: "${DATA}/archive"

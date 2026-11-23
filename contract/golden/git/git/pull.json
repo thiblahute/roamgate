@@ -1,0 +1,10 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "workspace_id": "w1",
+    "root": "$ROOT/repo",
+    "stdout": "Updating 88485eb..b1b21c8\nFast-forward\n r.txt | 1 +\n 1 file changed, 1 insertion(+)\n create mode 100644 r.txt",
+    "stderr": "From $ROOT/origin\n   88485eb..b1b21c8  main       -> origin/main"
+  }
+}

@@ -1,0 +1,46 @@
+name: day and refresh hand the provider the activity log's whole day, and need the log
+family: time_report
+ledger:
+  - "server/src/time-report/rpc.test.ts > day passes the whole day with subjects, idle_seconds and the zone"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work, focused: true }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, focused: true }]
+  files:
+    .config/roamgate/settings.json:
+      {
+        json:
+          {
+            activity: { enabled: true },
+            time_report: { command: [time-report-provider] },
+          },
+      }
+  fakes:
+    time-report-provider:
+      rules:
+        - {
+            args_match: "^(day|refresh) ",
+            stdin_match: "(?s)",
+            stdout_json: { date: "2026-01-01", blocks: [] },
+          }
+steps:
+  - login: {}
+  - connect: {}
+  - advance: 600000
+  - call: bridge.time_report
+    params: { op: day, date: "2026-01-01" }
+    reply: { ok: true, value: { date: "2026-01-01", blocks: [] } }
+  - call: bridge.time_report
+    params: { op: refresh, date: "2026-01-01" }
+    reply: { ok: true }
+  - fake_calls:
+      program: time-report-provider
+      calls:
+        - { argv: [day, "2026-01-01"], stdin: '{{re:"date":"2026-01-01"}}' }
+        - { argv: [refresh, "2026-01-01"], stdin: '{{re:"idle_seconds":300}}' }
+  - fake_calls:
+      {
+        program: time-report-provider,
+        argv_match: "^day ",
+        calls: [{ stdin: '{{re:"/work"}}' }],
+      }

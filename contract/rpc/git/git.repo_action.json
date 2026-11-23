@@ -4,8 +4,50 @@
   "scope": "connection",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["action", "workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "counts": {
+        "type": "object",
+        "properties": {
+          "conflicted": {
+            "type": "number"
+          },
+          "staged": {
+            "type": "number"
+          },
+          "unstaged": {
+            "type": "number"
+          },
+          "untracked": {
+            "type": "number"
+          }
+        },
+        "required": ["conflicted", "staged", "unstaged", "untracked"]
+      },
+      "root": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["action", "counts", "root", "workspace_id"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

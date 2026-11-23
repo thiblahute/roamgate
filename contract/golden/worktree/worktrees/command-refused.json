@@ -1,0 +1,7 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "error": {
+    "message": "Remove the quotes around {path}: Roamgate quotes placeholders itself."
+  }
+}

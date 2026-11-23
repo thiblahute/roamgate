@@ -1,0 +1,108 @@
+name: a browser registers and removes its Web Push device; the registry stays private
+family: notifications
+ledger:
+  - "server/src/notifications/web-push.test.ts > authenticated, non-CSRF device mutations persist privately across restart and revoke independently"
+  - "server/src/notifications/web-push.test.ts > rejects SSRF destinations, credentials, malformed keys and oversized endpoints"
+description: >
+  Only registration: no task is notified here, so nothing is sent to the
+  push provider (and HTTPS_PROXY points at a closed port, so a send could
+  not leave the machine anyway).
+server:
+  env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
+steps:
+  - http: GET /api/notifications/push
+    cookie: false
+    expect: { status: 401 }
+  - login: {}
+  - http: GET /api/notifications/push
+    expect:
+      {
+        status: 200,
+        headers: { cache-control: no-store },
+        json: { available: true, publicKey: "{{re:^[A-Za-z0-9_-]{87}$}}" },
+      }
+    save: { vapid: /json/publicKey }
+  - assert_file:
+      {
+        path: "${DATA}/web-push.json",
+        mode: "0600",
+        json:
+          {
+            version: 1,
+            publicKey: "${vapid}",
+            privateKey: "{{string}}",
+            devices: [],
+          },
+      }
+  - http: POST /api/notifications/push
+    body: &device
+      subscription:
+        endpoint: https://fcm.googleapis.com/fcm/send/parity-device
+        keys:
+          {
+            p256dh: BOH7PfLPDfkwuXp96zDDG5ZXA_EVNTNtV4X7F1uYntHfXc_LF2LK4dlrArTNJNkeOABV6L1Q4FYB0bUdGJggeI0,
+            auth: tlzmxLZhijjM_ioHQdti4w,
+          }
+      preferences: { completed: true, blocked: true }
+    expect: { status: 403 }
+  - http: POST /api/notifications/push
+    headers: { x-roamgate-push: "1", sec-fetch-site: cross-site }
+    body: *device
+    expect: { status: 403 }
+  - http: POST /api/notifications/push
+    headers: { x-roamgate-push: "1" }
+    body:
+      subscription:
+        {
+          endpoint: "https://evil.example/push",
+          keys:
+            {
+              p256dh: BOH7PfLPDfkwuXp96zDDG5ZXA_EVNTNtV4X7F1uYntHfXc_LF2LK4dlrArTNJNkeOABV6L1Q4FYB0bUdGJggeI0,
+              auth: tlzmxLZhijjM_ioHQdti4w,
+            },
+        }
+      preferences: { completed: true, blocked: true }
+    expect:
+      { status: 400, json: { error: Invalid push subscription or preferences } }
+  - http: POST /api/notifications/push
+    headers: { x-roamgate-push: "1" }
+    body: *device
+    expect: { status: 200, json: { ok: true } }
+  - assert_file:
+      path: "${DATA}/web-push.json"
+      mode: "0600"
+      json:
+        {
+          version: 1,
+          publicKey: "${vapid}",
+          devices:
+            [
+              {
+                subscription:
+                  {
+                    endpoint: https://fcm.googleapis.com/fcm/send/parity-device,
+                  },
+                preferences: { completed: true, blocked: true },
+              },
+            ],
+        }
+  - restart: {}
+  - login: {}
+  - http: GET /api/notifications/push
+    expect: { status: 200, json: { available: true, publicKey: "${vapid}" } }
+  - http: DELETE /api/notifications/push
+    headers: { x-roamgate-push: "1" }
+    body: { endpoint: https://fcm.googleapis.com/fcm/send/parity-device }
+    expect: { status: 200, json: { ok: true } }
+  - assert_file: { path: "${DATA}/web-push.json", json: { devices: [] } }
+  - http: PUT /api/notifications/push
+    headers: { x-roamgate-push: "1" }
+    body: {}
+    expect: { status: 405 }
+contract_exceptions:
+  - {
+      surface: http,
+      name: "PUT /api/notifications/push",
+      kind: unlisted,
+      reason: "a refused method on purpose",
+    }

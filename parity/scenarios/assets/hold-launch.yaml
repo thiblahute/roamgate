@@ -1,0 +1,109 @@
+name: the installed roamgate-hold trades a launch token for a profile's program and environment
+family: agent_profile
+description: >
+  roamgate-hold --launch against scripted agent sockets: the token is all
+  it sends, the program and environment come back (its removals applied),
+  a session with no transcript is started by its id, an expired token runs
+  nothing, and a hand-back resumes with the session's profile environment.
+ledger:
+  - "server/src/conversation/holder-script.test.ts > --launch trades its token for the program and environment"
+  - "server/src/conversation/holder-script.test.ts > --launch of a session with no transcript starts it by its id"
+  - "server/src/conversation/holder-script.test.ts > an expired launch says so and runs nothing"
+  - "server/src/conversation/holder-script.test.ts > a hand-back resumes with the session's profile environment"
+server:
+  herdr: false
+  files:
+    .claude/projects/elsewhere/s-1.jsonl: "{}\n"
+    "${ROOT}/hbin/glm-claude":
+      &probe {
+        text: "#!/bin/sh\necho \"$(basename \"$0\") $* BASE=${ANTHROPIC_BASE_URL:-none} KEY=${ANTHROPIC_API_KEY:-none} START=${ROAMGATE_CLAUDE_START:-none}\"\n",
+        mode: "0755",
+      }
+    "${ROOT}/hbin/claude": *probe
+    "${ROOT}/hbin/ps":
+      { text: "#!/bin/sh\necho '  1 /sbin/init'\n", mode: "0755" }
+steps:
+  - wait_file: .cache/roamgate/bin/roamgate-hold
+  - set:
+      {
+        hold: "python3 ${HOME}/.cache/roamgate/bin/roamgate-hold",
+        base: "env -i PATH=${ROOT}/hbin:/usr/bin:/bin HOME=${HOME} HERDR_PANE_ID=w1:p1",
+      }
+  - serve_agent_socket: launch
+    replies:
+      launch:
+        {
+          argv: [glm-claude, --resume, s-1],
+          env: { ANTHROPIC_BASE_URL: "https://gateway.example" },
+          unset: [ANTHROPIC_API_KEY],
+          agent: claude,
+          terminal: true,
+        }
+      "*": { $status: 400, $body: { error: unexpected } }
+  - sh: "${base} ANTHROPIC_API_KEY=pane-key ${hold} --socket ${launch_socket} --launch 0123456789abcdef0123456789abcdef </dev/null"
+    expect:
+      {
+        exit: 0,
+        stdout: "glm-claude --resume s-1 BASE=https://gateway.example KEY=none START=terminal\n",
+      }
+  - agent_socket_requests:
+      name: launch
+      calls:
+        [
+          {
+            command: launch,
+            body:
+              {
+                pane: "w1:p1",
+                token: 0123456789abcdef0123456789abcdef,
+                $exact: true,
+              },
+          },
+        ]
+  - serve_agent_socket: fresh
+    replies:
+      {
+        "*":
+          {
+            argv: [claude, --resume, 33333333-aaaa-bbbb-cccc-000000000000],
+            env: {},
+            unset: [],
+            agent: claude,
+            terminal: false,
+          },
+      }
+  - sh: "${base} ${hold} --socket ${fresh_socket} --launch 0123456789abcdef0123456789abcdef </dev/null"
+    expect:
+      {
+        exit: 0,
+        stdout_contains:
+          [
+            "claude --session-id 33333333-aaaa-bbbb-cccc-000000000000",
+            "START=none",
+          ],
+      }
+  - serve_agent_socket: expired
+    replies: { "*": { $status: 404, $body: { error: no such start } } }
+  - sh: "${base} ${hold} --socket ${expired_socket} --launch 0123456789abcdef0123456789abcdef </dev/null"
+    expect: { exit: 1, stderr_contains: no such start }
+  - serve_agent_socket: handback
+    replies:
+      {
+        "*":
+          {
+            action: resume,
+            session_id: s-1,
+            cwd: /,
+            argv: [glm-claude, --resume, s-1],
+            args: [--resume, s-1],
+            agent: claude,
+            env: { ANTHROPIC_BASE_URL: "https://gateway.example" },
+            unset: [ANTHROPIC_API_KEY],
+          },
+      }
+  - sh: "${base} ANTHROPIC_API_KEY=pane-key ${hold} s-1 --socket ${handback_socket} </dev/null"
+    expect:
+      {
+        exit: 0,
+        stdout_contains: "glm-claude --resume s-1 BASE=https://gateway.example KEY=none START=terminal",
+      }

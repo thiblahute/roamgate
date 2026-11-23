@@ -6,6 +6,16 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "idle_stop_minutes": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "additionalProperties": false,
+    "required": ["idle_stop_minutes"]
+  },
+  "status": "typed"
 }

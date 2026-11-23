@@ -1,0 +1,13 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "min_claude": "2.1.304",
+    "sessions": 0,
+    "installed": false,
+    "enabled": false,
+    "from_roamgate": false,
+    "available": false,
+    "reason": "Claude Code's version could not be read"
+  }
+}

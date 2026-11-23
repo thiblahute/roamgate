@@ -1,0 +1,95 @@
+name: a session a usage limit stopped is paused, shown to browsers, and resumed once the limit resets
+family: limit_resume
+description: >
+  A terminal Claude (Herdr's agent list, a session id) whose transcript ends
+  on a usage-limit stop. The first scan (5 s after start) pauses it until
+  the reset; at the reset plus the margin the resume message is typed into
+  the pane through Herdr's agent.prompt, and the browsers see each state.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+  files:
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2025-12-31T23:59:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message: { role: user, content: keep going },
+          }
+        - type: assistant
+          uuid: a1
+          timestamp: "2025-12-31T23:59:30.000Z"
+          sessionId: 11111111-2222-4333-8444-555555555555
+          cwd: /work
+          isApiErrorMessage: true
+          apiError: usage_limit_reached
+          apiErrorParams:
+            {
+              rate_limit_info:
+                {
+                  status: rejected,
+                  resetsAt: 1767229200,
+                  rateLimitType: five_hour,
+                },
+            }
+          message:
+            {
+              role: assistant,
+              content: [{ type: text, text: "5-hour limit reached" }],
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - call: settings.limit_resume.get
+    reply: { enabled: true, margin_seconds: 60, message: "{{string}}" }
+    save: { message: /result/message }
+  - advance: 5000
+  - expect_push: "event:roamgate.limit_pauses"
+    message:
+      {
+        event: roamgate.limit_pauses,
+        data: { pauses: [{ pane_id: p1, resets_at: 1767229200000 }] },
+      }
+  - call: limit_resume.list
+    golden: paused
+    normalize: [run-paths]
+    reply:
+      {
+        pauses:
+          [
+            {
+              pane_id: p1,
+              session_id: 11111111-2222-4333-8444-555555555555,
+              resets_at: 1767229200000,
+              kind: five_hour,
+            },
+          ],
+      }
+  - herdr_calls: { method: agent.prompt, count: 0 }
+  # The reset (an hour after the stop) plus the 60 s margin.
+  - advance: 3655000
+  - expect_push: "event:roamgate.limit_pauses"
+    message:
+      {
+        event: roamgate.limit_pauses,
+        data: { pauses: [{ pane_id: p1, state: resumed }] },
+      }
+  - herdr_calls:
+      method: agent.prompt
+      count: 1
+      calls: [{ params: { target: p1, text: "${message}" }, valid: true }]

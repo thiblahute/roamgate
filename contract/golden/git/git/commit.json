@@ -1,0 +1,39 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "sha": "88485eb4633d2e82abff76848a20b9e847928151",
+    "parents": ["5236eaa0295ac0e726880932d821b1623b39f058"],
+    "base": "5236eaa0295ac0e726880932d821b1623b39f058",
+    "shallow_boundary": false,
+    "subject": "second",
+    "message": "second",
+    "author": {
+      "name": "Parity",
+      "email": "parity@example.invalid",
+      "date": "2025-01-01T00:00:00Z"
+    },
+    "committer": {
+      "name": "Parity",
+      "email": "parity@example.invalid",
+      "date": "2025-01-01T00:00:00Z"
+    },
+    "entries": [
+      {
+        "path": "a.txt",
+        "kind": "branch",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0
+      },
+      {
+        "path": "renamed.txt",
+        "old_path": "old.txt",
+        "kind": "branch",
+        "status": "renamed",
+        "additions": 0,
+        "deletions": 0
+      }
+    ]
+  }
+}

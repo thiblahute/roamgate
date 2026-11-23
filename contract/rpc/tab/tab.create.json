@@ -5,8 +5,96 @@
   "handler": "server/src/index.ts",
   "herdr": "intercepted",
   "params": {
-    "type": "object"
+    "type": "object",
+    "properties": {
+      "label": {
+        "type": "string"
+      },
+      "workspace_id": {
+        "type": "string"
+      }
+    },
+    "required": ["label", "workspace_id"]
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "properties": {
+      "root_pane": {
+        "type": "object",
+        "properties": {
+          "agent_status": {
+            "type": "string"
+          },
+          "focused": {
+            "type": "boolean"
+          },
+          "pane_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "terminal_id": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_status",
+          "focused",
+          "pane_id",
+          "revision",
+          "tab_id",
+          "terminal_id",
+          "workspace_id"
+        ]
+      },
+      "tab": {
+        "type": "object",
+        "properties": {
+          "agent_status": {
+            "type": "string"
+          },
+          "focused": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "number": {
+            "type": "number"
+          },
+          "pane_count": {
+            "type": "number"
+          },
+          "tab_id": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_status",
+          "focused",
+          "label",
+          "number",
+          "pane_count",
+          "tab_id",
+          "workspace_id"
+        ]
+      },
+      "type": {
+        "type": "string"
+      }
+    },
+    "required": ["root_pane", "tab", "type"]
+  },
+  "status": "typed",
+  "x-typed-from": "parity recordings"
 }

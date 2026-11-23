@@ -1,0 +1,300 @@
+name: a Claude pane's session is read from its transcript, history, tasks, artifacts, commands, images and downloads
+family: agent_sessions
+ledger:
+  - "server/src/agent/agent-sessions.test.ts > agent_commands.get lists the session's skills from its transcript"
+  - "server/src/agent/agent-sessions.test.ts > agent_artifacts.get lists the pages the session published"
+  - "server/src/agent/history-watch.test.ts > the default local watch sees appends to a real file"
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        cwd: /work
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+  files:
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2026-01-01T00:00:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            attachment:
+              {
+                type: skill_listing,
+                names: [review, deploy],
+                content: "- review: review the branch\n- deploy (ship): deploy it",
+              },
+          }
+        - {
+            type: user,
+            uuid: u2,
+            timestamp: "2026-01-01T00:00:01.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              {
+                role: user,
+                content:
+                  [
+                    { type: text, text: Look at this picture },
+                    {
+                      type: image,
+                      source:
+                        {
+                          type: base64,
+                          media_type: image/png,
+                          data: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==,
+                        },
+                    },
+                  ],
+              },
+          }
+        - {
+            type: assistant,
+            uuid: a1,
+            timestamp: "2026-01-01T00:00:02.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              {
+                id: msg_1,
+                role: assistant,
+                model: claude-opus-4,
+                content:
+                  [
+                    { type: text, text: Running the tests },
+                    {
+                      type: tool_use,
+                      id: toolu_bash,
+                      name: Bash,
+                      input: { command: bun test, description: Run the tests },
+                    },
+                  ],
+                usage: { input_tokens: 10, output_tokens: 5 },
+              },
+          }
+        - {
+            type: user,
+            uuid: u3,
+            timestamp: "2026-01-01T00:00:03.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              {
+                role: user,
+                content:
+                  [
+                    {
+                      type: tool_result,
+                      tool_use_id: toolu_bash,
+                      content: "12 pass",
+                    },
+                  ],
+              },
+          }
+        - {
+            type: assistant,
+            uuid: a2,
+            timestamp: "2026-01-01T00:00:04.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              {
+                id: msg_2,
+                role: assistant,
+                model: claude-opus-4,
+                content:
+                  [
+                    {
+                      type: tool_use,
+                      id: toolu_task,
+                      name: Task,
+                      input:
+                        {
+                          description: Explore the code,
+                          subagent_type: Explore,
+                          prompt: look,
+                        },
+                    },
+                    {
+                      type: tool_use,
+                      id: toolu_art,
+                      name: Artifact,
+                      input: { title: Report, file_path: /work/report.html },
+                    },
+                  ],
+              },
+          }
+        - {
+            type: user,
+            uuid: u4,
+            timestamp: "2026-01-01T00:00:05.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              {
+                role: user,
+                content:
+                  [
+                    {
+                      type: tool_result,
+                      tool_use_id: toolu_task,
+                      content: "Found three modules",
+                    },
+                    {
+                      type: tool_result,
+                      tool_use_id: toolu_art,
+                      content: "Created a new Artifact at https://claude.ai/code/artifact/abc-123",
+                    },
+                  ],
+              },
+          }
+        - {
+            type: assistant,
+            uuid: a3,
+            timestamp: "2026-01-01T00:00:06.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              {
+                id: msg_3,
+                role: assistant,
+                model: claude-opus-4,
+                content: [{ type: text, text: All done }],
+              },
+          }
+steps:
+  - login: {}
+  - connect: {}
+  - call: agent.list
+    normalize: [session-file-stat]
+    reply:
+      {
+        agents:
+          [{ pane_id: p1, agent: claude, last_activity_at: "{{file-stat}}" }],
+      }
+  - call: agent_session.get
+    params: { pane_id: p1 }
+    normalize: [run-paths, session-file-stat]
+    golden: session
+  - call: agent_history.get
+    params: { pane_id: p1 }
+    normalize: [run-paths, session-file-stat]
+    golden: history
+  - call: agent_history.get
+    params: { pane_id: p1, history_version: 2 }
+    normalize: [run-paths, session-file-stat, uuid, history-entry-id]
+    golden: history-v2
+    save:
+      { last_entry: /result/entries/3/id, first_entry: /result/entries/0/id }
+  - call: agent_history.older
+    params: { pane_id: p1, before_id: "${last_entry}", limit: 2 }
+    normalize: [run-paths, session-file-stat, history-entry-id]
+    golden: older
+  - call: agent_history.entry
+    params: { pane_id: p1, entry_id: "${first_entry}" }
+    normalize: [history-entry-id]
+    golden: entry
+  # Watched: what the agent writes next reaches the subscribed browser.
+  - call: agent_history.subscribe
+    params: { pane_id: p1 }
+    normalize: [run-paths]
+    reply:
+      {
+        pane_id: p1,
+        path: $HOME/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl,
+      }
+  - sh: printf '%s\n' '{"type":"assistant","uuid":"a4","timestamp":"2026-01-01T00:00:07.000Z","sessionId":"11111111-2222-4333-8444-555555555555","cwd":"/work","message":{"id":"msg_4","role":"assistant","model":"claude-opus-4","content":[{"type":"text","text":"One more thing"}]}}' >> home/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl
+  - advance: 2000
+  - expect_push: "event:agent_history.changed"
+    within_ms: 10000
+    message:
+      {
+        event: agent_history.changed,
+        data:
+          {
+            pane_id: p1,
+            path: "{{contains:/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl}}",
+          },
+      }
+  - call: agent_history.unsubscribe
+    params: { pane_id: p1 }
+    reply: { ok: true }
+  - call: agent_history.entry
+    params: { pane_id: p1, entry_id: nope }
+    error: { message: "{{contains:no longer available}}" }
+  - call: agent_commands.get
+    params: { pane_id: p1 }
+    reply:
+      {
+        commands:
+          [
+            { name: deploy, description: deploy it },
+            { name: review, description: review the branch },
+          ],
+        $exact: true,
+      }
+  - call: agent_artifacts.get
+    params: { pane_id: p1 }
+    reply:
+      {
+        artifacts:
+          [
+            {
+              url: "https://claude.ai/code/artifact/abc-123",
+              title: Report,
+              published_at: "2026-01-01T00:00:05.000Z",
+            },
+          ],
+      }
+  - call: agent_tasks.get
+    params: { pane_id: p1 }
+    golden: tasks
+  - call: agent_task.get
+    params: { pane_id: p1, task_id: toolu_task }
+    golden: task
+  - call: agent_history.image
+    params: { pane_id: p1, uuid: u2, index: 0 }
+    golden: image
+  - call: agent_history.image
+    params: { pane_id: p1, uuid: u1, index: 0 }
+    error: { message: "{{string}}" }
+  - call: agent_seen.mark
+    params: { pane_id: p1, terminal_id: term-p1, seq: 0 }
+    golden: seen
+  - http: GET /api/agent-session/atif?pane_id=p1
+    expect:
+      {
+        status: 200,
+        headers:
+          {
+            content-type: application/json; charset=utf-8,
+            content-disposition: "{{contains:attachment}}",
+          },
+      }
+    normalize: [run-paths]
+    golden: atif
+  - http: GET /api/agent-session/download?pane_id=p1
+    expect:
+      {
+        status: 200,
+        headers: { content-type: application/x-ndjson; charset=utf-8 },
+        text_contains: [Look at this picture, Created a new Artifact],
+      }
+  - http: GET /api/connections/legacy-default/agent-session/atif?pane_id=p1
+    expect: { status: 200 }
+  - http: GET /api/connections/legacy-default/agent-session/download?pane_id=p1
+    expect: { status: 200, text_contains: All done }
+  - http: GET /api/agent-session/download?pane_id=nope
+    golden: download-missing

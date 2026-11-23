@@ -1,0 +1,193 @@
+name: work said by voice goes to a session, and its answer is kept until heard
+description: >
+  A job forwarded to a terminal Claude (Herdr's agent.prompt through the
+  messenger) is watched on the session's transcript every 2 s of the
+  server's clock; once its answer has been quiet for 6 s it is the job's
+  answer and is kept for the voice chats that have not heard it yet.
+family: voice
+ledger:
+  - "server/src/http/voice.test.ts > starts the companion's work on a session, its words as said"
+  - "server/src/http/voice.test.ts > keeps a job's answer that came while the user was away, mentioned once, read or dropped"
+server:
+  env:
+    {
+      HTTPS_PROXY: "http://127.0.0.1:9",
+      https_proxy: "http://127.0.0.1:9",
+      ROAMGATE_VOICE_DEBUG: "1",
+    }
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - {
+          pane_id: p1,
+          agent: claude,
+          agent_status: idle,
+          agent_session:
+            {
+              source: claude,
+              agent: claude,
+              kind: id,
+              value: 11111111-2222-4333-8444-555555555555,
+            },
+        }
+  files:
+    .config/roamgate/voice.json:
+      json:
+        {
+          helper: "${BIN}/roamgate-voice",
+          whisper_model: "${BIN}/roamgate-voice",
+          kokoro_model: "${BIN}/roamgate-voice",
+          kokoro_voices: "${BIN}/roamgate-voice",
+        }
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2025-12-31T23:59:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message: { role: user, content: hi },
+          }
+        - {
+            type: assistant,
+            uuid: a1,
+            timestamp: "2025-12-31T23:59:30.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message:
+              { role: assistant, content: [{ type: text, text: Hello. }] },
+          }
+steps:
+  - login: {}
+  - http: POST /api/voice/forward
+    body: { pane: legacy-default/p1, words: fix the bug }
+    expect: { status: 403 }
+  - http: POST /api/voice/forward
+    headers: { x-roamgate-voice: "1" }
+    body: { pane: p1, words: fix the bug }
+    expect: { status: 400, json: { error: A session and words are needed. } }
+  - http: POST /api/voice/forward
+    headers: { x-roamgate-voice: "1" }
+    body: { pane: legacy-default/p9, words: fix the bug }
+    expect: { status: 502, json: { error: "{{contains:p9}}" } }
+  - http: POST /api/voice/forward
+    headers: { x-roamgate-voice: "1" }
+    body:
+      {
+        pane: legacy-default/p1,
+        words: fix the bug,
+        label: work,
+        question: what broke,
+      }
+    expect: { status: 200, json: { job: "{{uuid}}", $exact: true } }
+    save: { job: /json/job }
+  - herdr_calls:
+      {
+        method: agent.prompt,
+        count: 1,
+        calls:
+          [
+            {
+              params: { target: p1, text: "{{contains:fix the bug}}" },
+              valid: true,
+            },
+          ],
+      }
+  - http: GET /api/voice/errand?job=${job}
+    expect: { status: 200, json: { done: false, answer: null } }
+  - sh: |
+      printf '%s\n' '{"type":"user","uuid":"u2","timestamp":"2026-01-01T00:00:01.000Z","sessionId":"11111111-2222-4333-8444-555555555555","cwd":"/work","message":{"role":"user","content":"fix the bug"}}' '{"type":"assistant","uuid":"a2","timestamp":"2026-01-01T00:00:02.000Z","sessionId":"11111111-2222-4333-8444-555555555555","cwd":"/work","message":{"role":"assistant","content":[{"type":"text","text":"The bug was a typo; fixed."}]}}' >> home/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl
+  - advance: 2000
+  - http: GET /api/voice/errand?job=${job}
+  - advance: 2000
+  - http: GET /api/voice/errand?job=${job}
+  - advance: 2000
+  - http: GET /api/voice/errand?job=${job}
+  - advance: 2000
+  - http: GET /api/voice/errand?job=${job}
+  - advance: 2000
+  - http: GET /api/voice/errand?job=${job}
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            done: true,
+            answer: The bug was a typo; fixed.,
+            notice: null,
+            $exact: true,
+          },
+      }
+  - http: GET /api/voice/errand?job=nothing
+    expect: { status: 404, json: { error: No such errand. } }
+  - http: GET /api/voice/answers
+    expect: { status: 403 }
+  - http: GET /api/voice/answers
+    headers: { x-roamgate-voice: "1" }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            answers:
+              [
+                {
+                  job: "${job}",
+                  label: work,
+                  question: what broke,
+                  at: 1767225608000,
+                  mentioned: false,
+                  chars: 26,
+                  $exact: true,
+                },
+              ],
+          },
+      }
+  - http: GET /api/voice/answers?job=${job}
+    headers: { x-roamgate-voice: "1" }
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            job: "${job}",
+            pane: legacy-default/p1,
+            label: work,
+            question: what broke,
+            answer: The bug was a typo; fixed.,
+          },
+      }
+  - http: GET /api/voice/answers?job=other
+    headers: { x-roamgate-voice: "1" }
+    expect: { status: 404, json: { error: No such answer. } }
+  - http: POST /api/voice/answers/mentioned
+    headers: { x-roamgate-voice: "1" }
+    body: { jobs: ["${job}", other] }
+    expect: { status: 200, json: { mentioned: 1, $exact: true } }
+  - http: GET /api/voice/answers
+    headers: { x-roamgate-voice: "1" }
+    expect:
+      { status: 200, json: { answers: [{ job: "${job}", mentioned: true }] } }
+  - http: POST /api/voice/answers/heard
+    headers: { x-roamgate-voice: "1" }
+    body: { job: other }
+    expect: { status: 404 }
+  - http: POST /api/voice/answers/heard
+    headers: { x-roamgate-voice: "1" }
+    body: { job: "${job}" }
+    expect: { status: 200, json: { heard: "${job}", $exact: true } }
+  - http: GET /api/voice/answers
+    headers: { x-roamgate-voice: "1" }
+    expect: { status: 200, json: { answers: [] } }
+  - http: DELETE /api/voice/answers
+    headers: { x-roamgate-voice: "1" }
+    expect: { status: 405 }
+contract_exceptions:
+  - {
+      surface: http,
+      name: DELETE /api/voice/answers,
+      kind: unlisted,
+      reason: "the 405 of a method the route does not take",
+    }

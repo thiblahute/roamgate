@@ -1,0 +1,29 @@
+name: the notification socket needs the login cookie, then replays and logs out
+family: notifications
+ledger:
+  - "server/src/http/auth-process.test.ts > the notification socket needs the login cookie, then replays and logs out"
+steps:
+  - http: GET /api/notifications/ws
+    headers:
+      &upgrade {
+        connection: Upgrade,
+        upgrade: websocket,
+        sec-websocket-version: "13",
+        sec-websocket-key: dGhlIHNhbXBsZSBub25jZQ==,
+      }
+    expect: { status: 401 }
+  - login: {}
+  - http: GET /api/notifications/ws
+    headers: { sec-fetch-site: cross-site }
+    expect: { status: 403 }
+  - connect: { name: feed, path: /api/notifications/ws }
+  - send: { op: hello, since: null, client: android }
+    socket: feed
+  - expect_push: "event:ready"
+    socket: feed
+    message: { event: ready, last: 0, $exact: true }
+  - http: POST /api/logout
+    headers: { x-roamgate-logout: "1" }
+    expect: { status: 204 }
+  - expect_close: { code: 4001 }
+    socket: feed

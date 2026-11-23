@@ -1,0 +1,16 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "results": [
+      {
+        "path": "docs/notes.md",
+        "line": 2,
+        "snippet": "parity needle"
+      }
+    ],
+    "truncated": false,
+    "workspace_id": "w1",
+    "root": "$ROOT/repo"
+  }
+}

@@ -1,0 +1,218 @@
+name: Ranger resumes by itself after SIGKILL without replaying completed reads or pending actions
+family: assistant
+ledger:
+  - "server/src/assistant-recovery.integration.test.ts > Ranger automatically resumes after %s without replaying completed reads or pending actions"
+server:
+  herdr: false
+  start: false
+  herdrs:
+    healthy:
+      endpoint: true
+      workspaces:
+        - workspace_id: w1
+          label: Recovery workspace
+          worktree:
+            {
+              repo_key: workspace,
+              repo_name: workspace,
+              repo_root: "${ROOT}/workspace",
+              checkout_path: "${ROOT}/workspace",
+              is_linked_worktree: false,
+            }
+  env:
+    ROAMGATE_CONNECTIONS_PATH: "${ROOT}/connections.json"
+    ROAMGATE_ASSISTANT_DIR: "${ROOT}/ranger"
+    PI_CODING_AGENT_DIR: "${ROOT}/pi"
+  openai:
+    anthropic:
+      replies:
+        - tools:
+            - { name: workspace_status, id: completed-status, input: {} }
+            - {
+                name: propose_tab_create,
+                id: pending-tab,
+                input: { connection_id: healthy, workspace_id: w1 },
+              }
+        - { partial: This interrupted answer must not be kept., hang: true }
+      cycle:
+        - text: Recovered the workspace status without repeating the read.
+  files:
+    "${ROOT}/connections.json":
+      mode: "0600"
+      json:
+        version: 1
+        default_connection_id: healthy
+        profiles:
+          - {
+              id: healthy,
+              label: Healthy,
+              type: local,
+              control_socket_path: "${HERDR_healthy_CONTROL}",
+              client_socket_path: "${HERDR_healthy_CLIENT}",
+              auto_connect: true,
+            }
+    "${ROOT}/ranger/auth.json":
+      {
+        mode: "0600",
+        json: { anthropic: { type: api_key, key: synthetic-recovery-key } },
+      }
+    "${ROOT}/ranger/models.json":
+      {
+        mode: "0600",
+        json: { providers: { anthropic: { baseUrl: "${FAKE_HTTP}" } } },
+      }
+steps:
+  - sh: chmod 700 ranger && mkdir -p workspace
+  - start: {}
+  - login: {}
+  - connect: {}
+  - call: connections.connect
+    params: { id: healthy }
+    reply: { state: ready }
+  - call: bridge.assistant.configure
+    params:
+      {
+        config:
+          {
+            provider: anthropic,
+            model: claude-haiku-4-5,
+            credential_source: assistant,
+            allowed_workspaces: [{ connection_id: healthy, workspace_id: w1 }],
+          },
+      }
+  - call: bridge.assistant.send
+    params:
+      { text: Inspect workspace and propose a tab, request_id: crash-question }
+  - http_fake_calls: { fake: anthropic, count: 2 }
+    retry: 10000
+  # Streamed text reaches browsers on the bridge's publishing timer.
+  - advance: 1000
+  - expect_push: assistant
+    message:
+      assistant:
+        running: true
+        messages:
+          {
+            $contains:
+              [
+                {
+                  role: assistant,
+                  text: "{{contains:This interrupted answer must not be kept.}}",
+                },
+              ],
+          }
+    save:
+      draft: "/assistant/messages/[role=assistant]/id"
+      session: /assistant/session_id
+      sources: "/assistant/messages/[role=assistant]/sources"
+      source_id: "/assistant/messages/[role=assistant]/sources/0/id"
+      action: "/assistant/messages/[role=assistant]/actions/0/id"
+      draft_message: "/assistant/messages/[role=assistant]"
+  - call: bridge.assistant.get
+    reply:
+      messages:
+        $contains:
+          - role: assistant
+            tools:
+              {
+                $contains:
+                  [
+                    {
+                      id: completed-status,
+                      name: workspace_status,
+                      status: completed,
+                      arguments: "{}",
+                      output: "{{string}}",
+                    },
+                  ],
+              }
+            sources:
+              [
+                {
+                  kind: status,
+                  connection_id: healthy,
+                  workspace_id: w1,
+                  read_at: "{{string}}",
+                },
+              ]
+            actions: [{ status: pending }]
+  - assert_file:
+      path: "${ROOT}/ranger/state.json"
+      json:
+        active_run: { recovery_targets: [{ herdr_boot_id: parity-boot }] }
+        entries: { $contains: [{ type: ranger-durable }] }
+    retry: 10000
+  - herdr_calls:
+      {
+        herdr: healthy,
+        method: pane.list,
+        where: { params: { workspace_id: w1 } },
+        count: 1,
+      }
+  - stop: { signal: KILL }
+  # No browser, get or send takes part in resuming the saved run.
+  - start: {}
+  # The killed bridge's durable lock goes stale after 10 s of its clock.
+  - advance: 500
+    repeat: 30
+  - http_fake_calls: { fake: anthropic, count: 3 }
+    retry: 25000
+  - assert_file:
+      path: "${ROOT}/ranger/state.json"
+      json:
+        active_run: "{{absent}}"
+        messages:
+          {
+            $contains:
+              [
+                {
+                  text: "{{contains:Recovered the workspace status without repeating the read.}}",
+                },
+              ],
+          }
+    retry: 10000
+  - login: {}
+  - connect: {}
+  - call: bridge.assistant.get
+    reply:
+      running: false
+      error: null
+      session_id: "${session}"
+      messages:
+        - { role: user }
+        - id: "${draft}"
+          text: "{{contains:Recovered the workspace status without repeating the read.}}"
+          sources: "${sources}"
+          tools:
+            {
+              $contains:
+                [
+                  {
+                    id: completed-status,
+                    name: workspace_status,
+                    status: completed,
+                  },
+                ],
+            }
+          actions: [{ id: "${action}", status: cancelled }]
+    reply_lacks: [This interrupted answer must not be kept.]
+  - http_fake_calls:
+      {
+        fake: anthropic,
+        count: 3,
+        index: 2,
+        text_contains: [completed-status, "${source_id}"],
+        text_lacks: [This interrupted answer must not be kept.],
+      }
+  - herdr_calls:
+      {
+        herdr: healthy,
+        method: pane.list,
+        where: { params: { workspace_id: w1 } },
+        count: 1,
+      }
+  - herdr_calls:
+      {
+        herdr: healthy,
+        none_match: "^(tab\\.create|pane\\.(send|focus|run|resize|split|close)|workspace\\.(create|focus|close)|terminal\\.)",
+      }

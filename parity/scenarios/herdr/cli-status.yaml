@@ -1,0 +1,48 @@
+name: roamgate herdr prints its help, the state of Herdr and the managed service, and refuses setup on custom sockets
+family: herdr
+ledger:
+  - "server/src/herdr/cli.test.ts > prints help for bare or unknown herdr commands"
+  - "server/src/herdr/cli.test.ts > status reports a running server"
+  - "server/src/herdr/cli.test.ts > setup failures print the reason and exit 1"
+server:
+  start: false
+  fakes:
+    systemctl:
+      rules:
+        - { args_match: is-active, times: 2, exit: 3 }
+steps:
+  - cli: [herdr, --help]
+    expect: { exit: 0, stdout_file: contract/cli/help/herdr.txt }
+  - cli: [herdr, status]
+    expect:
+      exit: 0
+      stdout: "Herdr is running (version 0.9.4, protocol 22).\nManaged service: not installed\n"
+  - cli: [herdr, status]
+    env:
+      {
+        HERDR_SOCKET_PATH: "${ROOT}/nothing.sock",
+        HERDR_CLIENT_SOCKET_PATH: "${ROOT}/nothing-client.sock",
+      }
+    expect:
+      exit: 0
+      stdout: "Herdr is installed but not running: ${ROOT}/bin/herdr\nRun `roamgate herdr setup` to start it as a user service.\nManaged service: not installed\n"
+  - cli: [herdr, setup]
+    expect:
+      exit: 1
+      stderr_contains: "roamgate herdr: managed Herdr setup only supports the default Herdr socket paths"
+  - cli: [herdr, dance]
+    expect: { exit: 1, stderr_contains: "unknown herdr action: dance" }
+  # The managed service: the unit file, and what systemctl says of it.
+  - fake_calls:
+      program: systemctl
+      count: 2
+      calls:
+        - { argv: [--user, is-active, --quiet, roamgate-herdr.service] }
+        - { argv: [--user, is-active, --quiet, roamgate-herdr.service] }
+  - write:
+      {
+        path: .config/systemd/user/roamgate-herdr.service,
+        text: "[Service]\nExecStart=herdr server\n",
+      }
+  - cli: [herdr, status]
+    expect: { exit: 0, stdout_contains: "Managed service: installed, active\n" }

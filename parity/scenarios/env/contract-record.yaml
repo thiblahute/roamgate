@@ -1,0 +1,98 @@
+name: record mode rotates its segments at ROAMGATE_CONTRACT_RECORD_SEGMENT_MB and keeps ROAMGATE_CONTRACT_RECORD_KEEP_MB
+family: env
+ledger:
+  - "server/src/contract-record/recorder.test.ts > rotates segments and prunes the oldest files past its budget"
+description: >
+  Tiny limits (a 2 KB segment, 4 KB kept): pings flushed one by one make several
+  rec-*.jsonl segments, and the oldest are pruned so what is kept stays near
+  the limit. The legacy names act when the new ones are absent, and the
+  legacy HERDR_GUI_CONTRACT_RECORD places the recording.
+server:
+  env:
+    {
+      ROAMGATE_CONTRACT_RECORD_SEGMENT_MB: "0.002",
+      ROAMGATE_CONTRACT_RECORD_KEEP_MB: "0.004",
+    }
+steps:
+  - login: {}
+  - connect: {}
+  # Each flush (on the server's clock) is written at once.
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - stop: {}
+  - sh: test "$(ls record/rec-*.jsonl | wc -l)" -ge 2 && test "$(cat record/rec-*.jsonl | wc -c)" -le 8192
+  - restart:
+      env:
+        ROAMGATE_CONTRACT_RECORD: null
+        ROAMGATE_CONTRACT_RECORD_SEGMENT_MB: null
+        ROAMGATE_CONTRACT_RECORD_KEEP_MB: null
+        HERDR_GUI_CONTRACT_RECORD: "${ROOT}/legacy-record"
+        HERDR_GUI_CONTRACT_RECORD_SEGMENT_MB: "0.002"
+        HERDR_GUI_CONTRACT_RECORD_KEEP_MB: "0.004"
+  - login: {}
+  - connect: {}
+  # Each flush (on the server's clock) is written at once.
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - call: bridge.ping
+  - advance: 1000
+  - stop: {}
+  - sh: test "$(ls legacy-record/rec-*.jsonl | wc -l)" -ge 2 && test "$(cat legacy-record/rec-*.jsonl | wc -c)" -le 8192

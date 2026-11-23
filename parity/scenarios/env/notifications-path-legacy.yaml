@@ -1,0 +1,36 @@
+name: HERDR_GUI_NOTIFICATIONS_PATH names the notification feed's file
+family: env
+server:
+  env: { HERDR_GUI_NOTIFICATIONS_PATH: "${ROOT}/legacy-notifications.json" }
+  files:
+    "${ROOT}/legacy-notifications.json":
+      json:
+        version: 1
+        last: 1
+        events:
+          - {
+              event: notification,
+              id: 1,
+              at: 1767225600000,
+              kind: completed,
+              title: Done,
+              body: From the legacy feed,
+              tag: t,
+              group: g,
+              path: "/#x",
+              pref: completed,
+            }
+steps:
+  - login: {}
+  - connect: { name: feed, path: /api/notifications/ws }
+  - send:
+      {
+        op: hello,
+        since: 0,
+        client: android,
+        preferences: { completed: true, blocked: true },
+      }
+    socket: feed
+  - expect_push: "event:notification"
+    socket: feed
+    message: { event: notification, id: 1, body: From the legacy feed }

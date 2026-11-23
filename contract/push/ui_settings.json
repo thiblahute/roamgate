@@ -2,10 +2,23 @@
   "x-inventory": "ui_settings",
   "x-kind": "keyed",
   "x-sent-by": ["server/src/index.ts"],
-  "x-status": "inventoried",
+  "x-status": "typed",
   "type": "object",
   "required": ["ui_settings"],
   "properties": {
-    "ui_settings": {}
-  }
+    "ui_settings": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+        },
+        "value": {}
+      },
+      "additionalProperties": false,
+      "required": ["key", "value"]
+    }
+  },
+  "description": "a UI setting another browser changed (the reply of its bridge.ui_settings.update)",
+  "additionalProperties": false
 }

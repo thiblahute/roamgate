@@ -1,0 +1,29 @@
+name: the installer verifies, backs up and installs the platform's package
+ledger:
+  - "scripts/install-roamgate.test.ts > verifies, backs up, and installs the expected platform package"
+family: install
+tier: T2
+description: >
+  The release installer (scripts/install-roamgate.sh, or the legacy
+  install-herdr-gui.sh) run with real curl and tar against a release served
+  by fake-models (fixture.sh makes it), into an install directory under the
+  run's root.
+server:
+  herdr: false
+  start: false
+steps:
+  - sh: sh "${REPO}/parity/scenarios/install/fixture.sh" roamgate
+  - sh: mkdir -p install && printf 'previous binary\n' > install/roamgate && chmod 755 install/roamgate && printf 'legacy GUI binary\n' > install/herdr-gui && printf 'legacy Studio binary\n' > install/herdr-studio
+  - sh: sh "${REPO}/scripts/install-roamgate.sh"
+    env:
+      HERDR_GUI_RELEASE_BASE_URL: "${FAKE_HTTP}/files/releases"
+      HERDR_GUI_INSTALL_DIR: "${ROOT}/install"
+    expect: { exit: 0, stderr: "" }
+  - sh: ./install/roamgate --version
+    expect: { exit: 0, stdout: "roamgate 9.8.7\n" }
+  - assert_file:
+      { path: "${ROOT}/install/roamgate.previous", text: "previous binary\n" }
+  - assert_file:
+      { path: "${ROOT}/install/herdr-gui", text: "legacy GUI binary\n" }
+  - assert_file:
+      { path: "${ROOT}/install/herdr-studio", text: "legacy Studio binary\n" }

@@ -7,10 +7,17 @@
     "type": "object"
   },
   "reply": {
-    "type": "array",
-    "items": {
-      "$ref": "../../schemas/server.schema.json#/$defs/ForwardWire"
-    }
+    "type": "object",
+    "required": ["forwards"],
+    "properties": {
+      "forwards": {
+        "type": "array",
+        "items": {
+          "$ref": "../../schemas/server.schema.json#/$defs/ForwardWire"
+        }
+      }
+    },
+    "additionalProperties": false
   },
-  "status": "inventoried"
+  "status": "typed"
 }

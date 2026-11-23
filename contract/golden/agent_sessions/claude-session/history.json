@@ -1,0 +1,48 @@
+{
+  "connection_id": "legacy-default",
+  "connection_generation": 1,
+  "result": {
+    "version": 1,
+    "agent": "claude",
+    "pane_id": "p1",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "status": "ok",
+    "detail": "",
+    "updated_at": "{{file-stat}}",
+    "path": "$HOME/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl",
+    "session": {
+      "source": "claude",
+      "agent": "claude",
+      "kind": "id",
+      "value": "11111111-2222-4333-8444-555555555555"
+    },
+    "file": {
+      "path": "$HOME/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl",
+      "mtimeMs": "{{file-stat}}",
+      "size": 2414,
+      "identity": "{{file-stat}}",
+      "changeToken": "{{file-stat}}"
+    },
+    "messages": [
+      {
+        "id": "11111111-2222-4333-8444-555555555555.jsonl:1",
+        "role": "user",
+        "text": "Look at this picture",
+        "sent_at": "2026-01-01T00:00:01.000Z"
+      },
+      {
+        "id": "11111111-2222-4333-8444-555555555555.jsonl:2",
+        "role": "assistant",
+        "text": "Running the tests",
+        "sent_at": "2026-01-01T00:00:02.000Z"
+      },
+      {
+        "id": "11111111-2222-4333-8444-555555555555.jsonl:9",
+        "role": "assistant",
+        "text": "All done",
+        "sent_at": "2026-01-01T00:00:06.000Z"
+      }
+    ]
+  }
+}

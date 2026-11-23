@@ -1,0 +1,66 @@
+name: a helper that makes no speech is pinged and restarted, as stuck or as unreadable
+family: voice
+description: >
+  A sentence waits on a helper that never answers speak: past 45 s on the
+  server's clock (the first sentence, a model loading) it is pinged. This
+  helper answers the ping, so its speaker is stuck: it is restarted and
+  Kokoro reads meanwhile. A second run's helper answers no ping either:
+  its output is taken as unreadable. ROAMGATE_VOICE_HANG_DIR only matters
+  on macOS, where the stuck helper's threads are sampled there.
+server:
+  env:
+    {
+      HTTPS_PROXY: "http://127.0.0.1:9",
+      https_proxy: "http://127.0.0.1:9",
+      ROAMGATE_VOICE_HANG_DIR: "${ROOT}/hangs",
+    }
+  files:
+    .config/roamgate/voice.json:
+      json:
+        {
+          helper: "${BIN}/roamgate-voice",
+          whisper_model: "${BIN}/roamgate-voice",
+          kokoro_model: "${BIN}/roamgate-voice",
+          kokoro_voices: "${BIN}/roamgate-voice",
+        }
+  fakes:
+    roamgate-voice:
+      stall: [speak]
+steps:
+  - login: {}
+  - http: POST /api/voice/speak
+    headers: { x-roamgate-voice: "1" }
+    body: { text: A sentence that never comes. }
+    no_wait: stuck
+  - wait_file: "${ROOT}/fakes/roamgate-voice.frames.jsonl"
+  - advance: 45000
+  - expect_log:
+      contains:
+        [
+          "[voice] the voice helper made no speech in 45 s: restarting it, Kokoro reads meanwhile",
+        ]
+      within_ms: 10000
+  - assert_file:
+      path: "${ROOT}/fakes/roamgate-voice.frames.jsonl"
+      jsonl:
+        {
+          $contains:
+            [{ op: speak, text: A sentence that never comes. }, { op: ping }],
+        }
+  - write:
+      path: "${ROOT}/fakes/roamgate-voice.json"
+      json: { stall: [speak, ping] }
+  - restart: {}
+  - login: {}
+  - http: POST /api/voice/speak
+    headers: { x-roamgate-voice: "1" }
+    body: { text: Another one. }
+    no_wait: unreadable
+  - advance: 45000
+  - advance: 2000
+  - expect_log:
+      contains:
+        [
+          "[voice] the voice helper answered no ping in 2 s while a sentence waited 45 s: its output is unreadable, restarting it",
+        ]
+      within_ms: 10000

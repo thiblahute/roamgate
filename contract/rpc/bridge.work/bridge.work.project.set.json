@@ -6,6 +6,15 @@
   "params": {
     "type": "object"
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "type": "object",
+    "required": ["project"],
+    "properties": {
+      "project": {
+        "$ref": "../../schemas/shared/work.schema.json#/$defs/WorkProject"
+      }
+    },
+    "additionalProperties": false
+  },
+  "status": "typed"
 }

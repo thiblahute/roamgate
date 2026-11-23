@@ -4,8 +4,105 @@
   "scope": "bridge",
   "handler": "server/src/index.ts",
   "params": {
-    "type": "object"
+    "type": "object",
+    "required": ["op"],
+    "description": "An operation of docs/time-report.md; its arguments are checked (refusals answer ok: false, code invalid or forbidden).",
+    "properties": {
+      "op": {
+        "type": "string",
+        "x-known": [
+          "health",
+          "days",
+          "day",
+          "refresh",
+          "targets",
+          "block-create",
+          "block-update",
+          "block-delete",
+          "block-split",
+          "block-answer",
+          "block-accept",
+          "block-explain",
+          "submit-preview",
+          "submit",
+          "mappings",
+          "mapping-set",
+          "mapping-delete"
+        ]
+      },
+      "date": {
+        "type": "string"
+      },
+      "from": {
+        "type": "string"
+      },
+      "to": {
+        "type": "string"
+      },
+      "block": {
+        "type": "string"
+      },
+      "at": {
+        "type": "string"
+      },
+      "blocks": {
+        "type": "array"
+      },
+      "body": {},
+      "confirm_token": {
+        "type": "string"
+      },
+      "confirmed": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
   },
-  "reply": {},
-  "status": "inventoried"
+  "reply": {
+    "oneOf": [
+      {
+        "type": "object",
+        "required": ["ok", "value"],
+        "properties": {
+          "ok": {
+            "const": true
+          },
+          "value": {
+            "description": "The provider's JSON answer (docs/time-report.schema.json)."
+          }
+        },
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "required": ["ok", "error", "code", "partial"],
+        "properties": {
+          "ok": {
+            "const": false
+          },
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "x-known": [
+              "invalid",
+              "not_configured",
+              "forbidden",
+              "timeout",
+              "error",
+              "not_found",
+              "conflict",
+              "upstream"
+            ]
+          },
+          "partial": {
+            "description": "stdout of a failed provider run (submit's partial result), else null"
+          }
+        },
+        "additionalProperties": false
+      }
+    ]
+  },
+  "status": "typed"
 }
