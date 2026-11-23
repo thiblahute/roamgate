@@ -109,18 +109,18 @@ server/src/agent/agent-sessions.test.ts	agent_commands.get lists the session's s
 server/src/agent/agent-sessions.test.ts	agent_session.get carries the /rename name, else Claude's title	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/agent-sessions.test.ts	agent_artifacts.get lists the pages the session published	scenario:parity/scenarios/agent_sessions/claude-session.yaml	
 server/src/agent/agent-sessions.test.ts	finds the pane running a session, following a Claude session that went on under a new ID	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
-server/src/agent/antigravity-session.test.ts	finds the newest Antigravity session for the exact working directory	pending:S5	S5 vector
-server/src/agent/antigravity-session.test.ts	resolves a known session id with exact name and prefix	pending:S5	S5 vector
-server/src/agent/antigravity-session.test.ts	describes session path correctly and reads metadata	pending:S5	S5 vector
-server/src/agent/antigravity-session.test.ts	reads and normalizes session records from database	pending:S5	S5 vector
-server/src/agent/antigravity-session.test.ts	resolves Antigravity session via resolveAgentSession	pending:S5	S5 vector
-server/src/agent/antigravity-session.test.ts	resolves Antigravity session via cwd fallback when agent_session is missing	pending:S5	S5 vector
-server/src/agent/antigravity-session.test.ts	returns missing_session with integration command when session cannot be resolved	pending:S5	S5 vector
-server/src/agent/antigravity-session.test.ts	extracts nested tool result protobuf and ensures content has no control characters	pending:S5	S5 vector
-server/src/agent/antigravity-session.test.ts	fails soft with empty history on unknown tables or future schema bump	pending:S5	S5 vector
-server/src/agent/antigravity-session.test.ts	fails soft with empty records when steps table schema is altered	pending:S5	S5 vector
-server/src/agent/antigravity-session.test.ts	fails soft on individual malformed step rows while recovering valid ones	pending:S5	S5 vector
-server/src/agent/antigravity-session.test.ts	fails soft with empty records when file is corrupt or not an sqlite database	pending:S5	S5 vector
+server/src/agent/antigravity-session.test.ts	finds the newest Antigravity session for the exact working directory	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/antigravity-session.test.ts	resolves a known session id with exact name and prefix	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/antigravity-session.test.ts	describes session path correctly and reads metadata	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/antigravity-session.test.ts	reads and normalizes session records from database	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/antigravity-session.test.ts	resolves Antigravity session via resolveAgentSession	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/antigravity-session.test.ts	resolves Antigravity session via cwd fallback when agent_session is missing	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/antigravity-session.test.ts	returns missing_session with integration command when session cannot be resolved	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/antigravity-session.test.ts	extracts nested tool result protobuf and ensures content has no control characters	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/antigravity-session.test.ts	fails soft with empty history on unknown tables or future schema bump	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/antigravity-session.test.ts	fails soft with empty records when steps table schema is altered	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/antigravity-session.test.ts	fails soft on individual malformed step rows while recovering valid ones	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/antigravity-session.test.ts	fails soft with empty records when file is corrupt or not an sqlite database	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
 server/src/agent/claude-mod-client.test.ts	messages are submitted one at a time, in order, each once	scenario:parity/scenarios/agent_socket/mod-delivery.yaml	
 server/src/agent/claude-mod-client.test.ts	a stop holds the queue until the session's next turn ends	internal:runs inside Claude Code	unit tests of the Claude mod's client module (claude-mod/hooks/client.ts) with an injected engine and timers: it runs inside Claude Code, not the server, and ships unchanged as a plugin asset; its protocol with the server (mod_poll, mod_ack, mod_event, supersede) is covered by agent_socket/mod.yaml and mod-delivery.yaml
 server/src/agent/claude-mod-client.test.ts	a prompt removed from the queue by a stop is retried too	internal:runs inside Claude Code	unit tests of the Claude mod's client module (claude-mod/hooks/client.ts) with an injected engine and timers: it runs inside Claude Code, not the server, and ships unchanged as a plugin asset; its protocol with the server (mod_poll, mod_ack, mod_event, supersede) is covered by agent_socket/mod.yaml and mod-delivery.yaml
@@ -153,35 +153,35 @@ server/src/agent/claude-mod.test.ts	a terminal session has the tools while it sa
 server/src/agent/claude-mod.test.ts	a session whose system prompt holds the rules says so; a mod from before says nothing	rust-unit:roamgate-claude	the claude-mod hub and plugin install
 server/src/agent/claude-mod.test.ts	a headless session's tools outlive its process and a restart	rust-unit:roamgate-claude	the claude-mod hub and plugin install
 server/src/agent/codex-session.test.ts	uses CODEX_HOME, exact IDs and archived sessions	scenario:parity/scenarios/agent_sessions/formats.yaml	
-server/src/agent/codex-session.test.ts	remote IDs never search or stat local paths	pending:S5	S5 vector
-server/src/agent/codex-session.test.ts	executes the SSH lookup script with quoted paths and rejects invalid IDs before SSH	pending:S5	S5 vector
-server/src/agent/codex-session.test.ts	missing association explains the pane-scoped Codex launch	pending:S5	S5 vector
-server/src/agent/grok-session.test.ts	finds the newest session for the exact working directory	pending:S5	S5 vector
-server/src/agent/grok-session.test.ts	resolves a known session id without an integration-provided path	pending:S5	S5 vector
-server/src/agent/grok-session.test.ts	uses the foreground process cwd instead of the pane identity cwd	pending:S5	S5 vector
-server/src/agent/grok-session.test.ts	extracts only real user queries and reasoning summaries	pending:S5	S5 vector
+server/src/agent/codex-session.test.ts	remote IDs never search or stat local paths	vector:contract/vectors/codex-session.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/codex-session.test.ts	executes the SSH lookup script with quoted paths and rejects invalid IDs before SSH	vector:contract/vectors/codex-session.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/codex-session.test.ts	missing association explains the pane-scoped Codex launch	vector:contract/vectors/codex-session.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/grok-session.test.ts	finds the newest session for the exact working directory	rust-unit:roamgate-agents	finds sessions in directories on disk; the agents crate finds them
+server/src/agent/grok-session.test.ts	resolves a known session id without an integration-provided path	rust-unit:roamgate-agents	finds sessions in directories on disk; the agents crate finds them
+server/src/agent/grok-session.test.ts	uses the foreground process cwd instead of the pane identity cwd	rust-unit:roamgate-agents	finds sessions in directories on disk; the agents crate finds them
+server/src/agent/grok-session.test.ts	extracts only real user queries and reasoning summaries	vector:contract/vectors/grok-session.json	S5 vectors, read by bun test and the Rust crate
 server/src/agent/history-watch.test.ts	a local change reaches the pane's subscribers once, debounced	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/history-watch.test.ts	the last subscriber leaving closes the watch	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/history-watch.test.ts	a session moving to a new file is followed	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/history-watch.test.ts	a history read that resolved another file moves the watch at once	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/history-watch.test.ts	a remote connection runs one helper for all its files	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/history-watch.test.ts	the default local watch sees appends to a real file	scenario:parity/scenarios/agent_sessions/claude-session.yaml	
-server/src/agent/muse-session.test.ts	discovers the newest exact workspace, excluding subagents and other workspaces	pending:S5	S5 vector
-server/src/agent/muse-session.test.ts	caches and coalesces discovery metadata without pinning the selected session	pending:S5	S5 vector
-server/src/agent/muse-session.test.ts	preserves native run/tool errors in History and ATIF without leaking across runs	pending:S5	S5 vector
+server/src/agent/muse-session.test.ts	discovers the newest exact workspace, excluding subagents and other workspaces	rust-unit:roamgate-agents	finds sessions on disk and serves them through the handlers; the agents crate does
+server/src/agent/muse-session.test.ts	caches and coalesces discovery metadata without pinning the selected session	rust-unit:roamgate-agents	finds sessions on disk and serves them through the handlers; the agents crate does
+server/src/agent/muse-session.test.ts	preserves native run/tool errors in History and ATIF without leaking across runs	rust-unit:roamgate-agents	finds sessions on disk and serves them through the handlers; the agents crate does
 server/src/agent/muse-session.test.ts	uses XDG_DATA_HOME and foreground cwd; never invents an integration command	scenario:parity/scenarios/agent_sessions/formats.yaml	
-server/src/agent/muse-session.test.ts	serves reported paths through the shared handlers (remote: %s)	pending:S5	S5 vector
-server/src/agent/muse-session.test.ts	keeps explicit zero usage consistent in summaries and ATIF	pending:S5	S5 vector
-server/src/agent/muse-session.test.ts	counts provider-aware prompts once and keeps unknown cached totals unknown	pending:S5	S5 vector
-server/src/agent/muse-session.test.ts	keeps repeated prompts, legacy starts, malformed records and absent usage safe	pending:S5	S5 vector
-server/src/agent/session-artifacts.test.ts	a new artifact is named after its title	pending:S5	S5 vector
-server/src/agent/session-artifacts.test.ts	an update carries its version, named after the file	pending:S5	S5 vector
-server/src/agent/session-artifacts.test.ts	an index page is named after its folder	pending:S5	S5 vector
-server/src/agent/session-artifacts.test.ts	other actions, uploads and refusals publish nothing	pending:S5	S5 vector
-server/src/agent/session-artifacts.test.ts	a session lists each artifact once, at its latest publish	pending:S5	S5 vector
-server/src/agent/session-commands.test.ts	a session's skills and commands, with what they do	pending:S5	S5 vector
-server/src/agent/session-compaction.test.ts	a compaction after the time is found in Claude's, Codex's and Pi's transcripts	pending:S5	S5 vector
-server/src/agent/session-compaction.test.ts	one before the time, none at all, or a cut first line is not	pending:S5	S5 vector
+server/src/agent/muse-session.test.ts	serves reported paths through the shared handlers (remote: %s)	rust-unit:roamgate-agents	finds sessions on disk and serves them through the handlers; the agents crate does
+server/src/agent/muse-session.test.ts	keeps explicit zero usage consistent in summaries and ATIF	vector:contract/vectors/muse-session.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/muse-session.test.ts	counts provider-aware prompts once and keeps unknown cached totals unknown	vector:contract/vectors/muse-session.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/muse-session.test.ts	keeps repeated prompts, legacy starts, malformed records and absent usage safe	vector:contract/vectors/muse-session.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-artifacts.test.ts	a new artifact is named after its title	vector:contract/vectors/session-artifacts.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-artifacts.test.ts	an update carries its version, named after the file	vector:contract/vectors/session-artifacts.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-artifacts.test.ts	an index page is named after its folder	vector:contract/vectors/session-artifacts.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-artifacts.test.ts	other actions, uploads and refusals publish nothing	vector:contract/vectors/session-artifacts.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-artifacts.test.ts	a session lists each artifact once, at its latest publish	vector:contract/vectors/session-artifacts.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-commands.test.ts	a session's skills and commands, with what they do	vector:contract/vectors/session-commands.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-compaction.test.ts	a compaction after the time is found in Claude's, Codex's and Pi's transcripts	vector:contract/vectors/session-compaction.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-compaction.test.ts	one before the time, none at all, or a cut first line is not	vector:contract/vectors/session-compaction.json	S5 vectors, read by bun test and the Rust crate
 server/src/agent/session-file-access.test.ts	reads reported session files through SSH	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/session-file-access.test.ts	returns null when a remote session file is missing	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/session-file-access.test.ts	finds a remote Claude session by ID, following linked project folders	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
@@ -192,38 +192,38 @@ server/src/agent/session-file-access.test.ts	a failed stat batch fails each of i
 server/src/agent/session-file-access.test.ts	finds a Claude session in a project folder that is a link	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/session-file-access.test.ts	a remote Pi directory search names only a safe directory	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/session-file-access.test.ts	Pi names a directory's sessions after its path	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
-server/src/agent/session-history.agent-message.test.ts	a message sent to another agent session is kept on its call and result, payload redacted or not	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	Pi History includes tool arguments, associated outputs and errors in transcript order	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	Claude messages the user queued while it worked show as theirs	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	Claude Code's injected messages are notices in their place, with their uuid	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	injected messages are not the user's turns	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a message steered into a headless turn shows as the user's, with its uuid	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	`!` lines show as commands with their output, from the terminal and from conversation mode	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a Claude compaction summary is flagged, not a plain user message	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a Claude reply that ends its turn is flagged	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	an Artifact result keeps the page it published when redacted	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	Claude messages still in its queue show as queued until they land	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a hidden Claude queue item keeps its place for the next dequeue	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a Claude message that took its turn is not left queued	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a queued Claude message that lands reaches a client as one changed entry	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	Claude mixed text/tool blocks retain order and error output is not counted as a user turn	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	Pi interleaved tool and text parts remain in source order	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	Pi interleaved ATIF preserves source metadata with stop reason %s	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	Codex preserves explicit tool errors and call association	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	external call IDs with commas are hashed before order comparison	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	window counts conversation entries only; tool entries ride along	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	redaction strips tool payloads but keeps metadata for on-demand fetches	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	redacted tool payloads carry a content hash that tracks rewrites	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	content identities survive early step renumbering and disambiguate repeated messages	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	Claude entries carry the API message id, block index and record uuid	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	images a conversation-mode message sent inline are counted on its entry	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	slash commands typed in the terminal show as commands, not their tags	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a command run in Claude Code shows what it printed right after it	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a question dismissed from Roamgate shows as dismissed, even redacted	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a file edit carries its change, from Claude Code's patch once it has one, also redacted	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a tool call carries a short summary that survives redaction	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a call's summary names the agents and threads its session knows	pending:S5	S5 vector
-server/src/agent/session-history.test.ts	a call that wrote in a thread keeps what and where, redacted too	pending:S5	S5 vector
+server/src/agent/session-history.agent-message.test.ts	a message sent to another agent session is kept on its call and result, payload redacted or not	vector:contract/vectors/session-history-agent-message.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	Pi History includes tool arguments, associated outputs and errors in transcript order	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	Claude messages the user queued while it worked show as theirs	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	Claude Code's injected messages are notices in their place, with their uuid	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	injected messages are not the user's turns	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a message steered into a headless turn shows as the user's, with its uuid	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	`!` lines show as commands with their output, from the terminal and from conversation mode	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a Claude compaction summary is flagged, not a plain user message	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a Claude reply that ends its turn is flagged	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	an Artifact result keeps the page it published when redacted	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	Claude messages still in its queue show as queued until they land	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a hidden Claude queue item keeps its place for the next dequeue	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a Claude message that took its turn is not left queued	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a queued Claude message that lands reaches a client as one changed entry	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	Claude mixed text/tool blocks retain order and error output is not counted as a user turn	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	Pi interleaved tool and text parts remain in source order	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	Pi interleaved ATIF preserves source metadata with stop reason %s	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	Codex preserves explicit tool errors and call association	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	external call IDs with commas are hashed before order comparison	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	window counts conversation entries only; tool entries ride along	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	redaction strips tool payloads but keeps metadata for on-demand fetches	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	redacted tool payloads carry a content hash that tracks rewrites	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	content identities survive early step renumbering and disambiguate repeated messages	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	Claude entries carry the API message id, block index and record uuid	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	images a conversation-mode message sent inline are counted on its entry	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	slash commands typed in the terminal show as commands, not their tags	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a command run in Claude Code shows what it printed right after it	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a question dismissed from Roamgate shows as dismissed, even redacted	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a file edit carries its change, from Claude Code's patch once it has one, also redacted	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a tool call carries a short summary that survives redaction	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a call's summary names the agents and threads its session knows	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	a call that wrote in a thread keeps what and where, redacted too	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
 server/src/agent/session-images.test.ts	finds the n-th inline image of a user record by uuid	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/session-images.test.ts	nothing for a missing record, index or a type that is not an image	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/session-images.test.ts	malformed base64 is not an image	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
@@ -282,49 +282,49 @@ server/src/agent/session-tail.test.ts	reads back across lines split by chunk bou
 server/src/agent/session-tail.test.ts	leaves an unfinished last line for later	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/session-tail.test.ts	finds a record's line from the end, decoding only matches	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/session-tail.test.ts	reaches lines at the file's start	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
-server/src/agent/session-tasks.resume.test.ts	runs again until its next end notice	pending:S5	S5 vector
-server/src/agent/session-tasks.resume.test.ts	by its name, or with only the result's text	pending:S5	S5 vector
-server/src/agent/session-tasks.resume.test.ts	a message queued to one that runs changes nothing	pending:S5	S5 vector
-server/src/agent/session-tasks.resume.test.ts	a day after its resume with no notice, it is lost	pending:S5	S5 vector
-server/src/agent/session-tasks.resume.test.ts	one that grew after its end notice runs again	pending:S5	S5 vector
-server/src/agent/session-tasks.resume.test.ts	a resumed one silent for a while is taken as done	pending:S5	S5 vector
-server/src/agent/session-tasks.resume.test.ts	only subagents that may say more are looked at	pending:S5	S5 vector
-server/src/agent/session-tasks.resume.test.ts	follow the subagent's conversation file	pending:S5	S5 vector
-server/src/agent/session-tasks.sessions.test.ts	two sessions' tasks never mix	pending:S5	S5 vector
-server/src/agent/session-tasks.sessions.test.ts	the foreground command a session runs shows, apart from its tasks	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	background commands and subagents, with how they ended	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	a foreground command or subagent moved to the background becomes a task	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	a subagent in the foreground ends with its result	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	workflows, teammates, and tasks lost with their session	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	a stopped workflow or command ends, a teammate works until idle	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	request records replaying a task's call do not restart it	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	a background command the permission check refused never runs	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	a silent command runs on only while a process holds its output	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	a command that writes again stays running; a fresh one is not looked at	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	where no process list is available, silence must last an hour	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	a command with an end notice, or an unknown output, is left alone	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	still running: listed and flagged	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	an end notice after the rewind ends it, and it leaves the list	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	a day on with no end notice it is lost, and leaves the list	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	tasks on the conversation's line are unchanged	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	a teammate idle but alive stays listed, until it ends	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	ended tasks: the latest 30 of its last day, running ones all	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	the foreground command its latest message runs comes first	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	a foreground command answered, or left behind, is not running now	pending:S5	S5 vector
-server/src/agent/session-tasks.test.ts	calls of one message in several records run now together	pending:S5	S5 vector
-server/src/agent/session-title.test.ts	the latest generated title, unless the user named the session	pending:S5	S5 vector
-server/src/agent/session-title.test.ts	an emptied name gives way to the generated title	pending:S5	S5 vector
-server/src/agent/session-trajectory.test.ts	projects OMP Pi-format sessions with header identity and version semantics	pending:S5	S5 vector
-server/src/agent/session-trajectory.test.ts	preserves OMP user skill prompts with %s	pending:S5	S5 vector
-server/src/agent/session-trajectory.test.ts	projects Codex sessions without duplicating user messages	pending:S5	S5 vector
-server/src/agent/session-trajectory.test.ts	drops Codex's unreadable reasoning and keeps a summary as thinking	pending:S5	S5 vector
-server/src/agent/session-trajectory.test.ts	keeps what Codex writes in a user message out of the user's words	pending:S5	S5 vector
-server/src/agent/session-trajectory.test.ts	projects assistant messages from older Codex event-only sessions	pending:S5	S5 vector
-server/src/agent/session-trajectory.test.ts	projects Kimi loop events without standalone token messages	pending:S5	S5 vector
-server/src/agent/session-trajectory.test.ts	projects Pi messages, tools, reasoning, and token usage into ATIF	pending:S5	S5 vector
-server/src/agent/session-trajectory.test.ts	projects OMP bash and Python execution messages with output and status	pending:S5	S5 vector
-server/src/agent/session-trajectory.test.ts	projects Grok Build chat history into ATIF	pending:S5	S5 vector
-server/src/agent/session-trajectory.test.ts	projects Antigravity sessions into normalized ATIF trajectory	pending:S5	S5 vector
+server/src/agent/session-tasks.resume.test.ts	runs again until its next end notice	vector:contract/vectors/session-tasks-resume.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.resume.test.ts	by its name, or with only the result's text	vector:contract/vectors/session-tasks-resume.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.resume.test.ts	a message queued to one that runs changes nothing	vector:contract/vectors/session-tasks-resume.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.resume.test.ts	a day after its resume with no notice, it is lost	vector:contract/vectors/session-tasks-resume.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.resume.test.ts	one that grew after its end notice runs again	vector:contract/vectors/session-tasks-resume.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.resume.test.ts	a resumed one silent for a while is taken as done	vector:contract/vectors/session-tasks-resume.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.resume.test.ts	only subagents that may say more are looked at	vector:contract/vectors/session-tasks-resume.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.resume.test.ts	follow the subagent's conversation file	vector:contract/vectors/session-tasks-resume.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.sessions.test.ts	two sessions' tasks never mix	vector:contract/vectors/session-tasks-sessions.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.sessions.test.ts	the foreground command a session runs shows, apart from its tasks	vector:contract/vectors/session-tasks-sessions.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	background commands and subagents, with how they ended	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	a foreground command or subagent moved to the background becomes a task	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	a subagent in the foreground ends with its result	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	workflows, teammates, and tasks lost with their session	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	a stopped workflow or command ends, a teammate works until idle	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	request records replaying a task's call do not restart it	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	a background command the permission check refused never runs	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	a silent command runs on only while a process holds its output	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	a command that writes again stays running; a fresh one is not looked at	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	where no process list is available, silence must last an hour	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	a command with an end notice, or an unknown output, is left alone	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	still running: listed and flagged	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	an end notice after the rewind ends it, and it leaves the list	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	a day on with no end notice it is lost, and leaves the list	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	tasks on the conversation's line are unchanged	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	a teammate idle but alive stays listed, until it ends	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	ended tasks: the latest 30 of its last day, running ones all	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	the foreground command its latest message runs comes first	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	a foreground command answered, or left behind, is not running now	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	calls of one message in several records run now together	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-title.test.ts	the latest generated title, unless the user named the session	vector:contract/vectors/session-title.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-title.test.ts	an emptied name gives way to the generated title	vector:contract/vectors/session-title.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	projects OMP Pi-format sessions with header identity and version semantics	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	preserves OMP user skill prompts with %s	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	projects Codex sessions without duplicating user messages	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	drops Codex's unreadable reasoning and keeps a summary as thinking	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	keeps what Codex writes in a user message out of the user's words	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	projects assistant messages from older Codex event-only sessions	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	projects Kimi loop events without standalone token messages	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	projects Pi messages, tools, reasoning, and token usage into ATIF	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	projects OMP bash and Python execution messages with output and status	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	projects Grok Build chat history into ATIF	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	projects Antigravity sessions into normalized ATIF trajectory	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
 server/src/agent/session-utils.test.ts	normalizes agent names and integration commands	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/session-utils.test.ts	extracts text while ignoring tool and thinking payloads	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/session-utils.test.ts	cleans command wrapper noise from user messages	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
@@ -333,12 +333,12 @@ server/src/agent/task-output-holders.test.ts	a process writing a background comm
 server/src/agent/task-output-holders.test.ts	no paths asked about means nothing to look for	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/task-watcher.test.ts	a background command runs while its process writes, and is lost once it is gone	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/task-watcher.test.ts	without a process list, a silent command is lost only after an hour	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
-server/src/agent/token-usage.test.ts	normalizes OpenAI-style token usage	pending:S5	S5 vector
-server/src/agent/token-usage.test.ts	normalizes Kimi-style token usage	pending:S5	S5 vector
-server/src/agent/token-usage.test.ts	normalizes Pi-style token usage	pending:S5	S5 vector
-server/src/agent/token-usage.test.ts	prefers cumulative token count records over summed usage	pending:S5	S5 vector
-server/src/agent/token-usage.test.ts	preserves reported zeros while distinguishing absent counters	pending:S5	S5 vector
-server/src/agent/token-usage.test.ts	maps token usage into ATIF metrics	pending:S5	S5 vector
+server/src/agent/token-usage.test.ts	normalizes OpenAI-style token usage	vector:contract/vectors/token-usage.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/token-usage.test.ts	normalizes Kimi-style token usage	vector:contract/vectors/token-usage.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/token-usage.test.ts	normalizes Pi-style token usage	vector:contract/vectors/token-usage.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/token-usage.test.ts	prefers cumulative token count records over summed usage	vector:contract/vectors/token-usage.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/token-usage.test.ts	preserves reported zeros while distinguishing absent counters	vector:contract/vectors/token-usage.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/token-usage.test.ts	maps token usage into ATIF metrics	vector:contract/vectors/token-usage.json	S5 vectors, read by bun test and the Rust crate
 server/src/archive/archive.test.ts	archives, indexes, grows, handles partial lines and shrinks	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	appended frames are one valid zstd stream with a checksum	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	a crash after compressing is repaired on the next run	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
@@ -709,15 +709,15 @@ server/src/assistant/service.test.ts	one the user disconnected is skipped withou
 server/src/assistant/service.test.ts	fails, naming the connections, when none can be reached	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/service.test.ts	checks a workspace kept under an older Herdr again with the others	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/service.test.ts	names what failed instead of a generic message	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/assistant/task-schedule.test.ts	accepts exact shapes and normalizes UTC precision	pending:S5	S5 vector
-server/src/assistant/task-schedule.test.ts	rejects invalid or extra schedule fields: %j	pending:S5	S5 vector
-server/src/assistant/task-schedule.test.ts	once runs strictly after the reference time and interval preserves milliseconds	pending:S5	S5 vector
-server/src/assistant/task-schedule.test.ts	%s %s after %s	pending:S5	S5 vector
-server/src/assistant/task-schedule.test.ts	skips a nonexistent New York spring-forward wall time	pending:S5	S5 vector
-server/src/assistant/task-schedule.test.ts	a New York repeated wall time fires only at its first occurrence	pending:S5	S5 vector
-server/src/assistant/task-schedule.test.ts	handles half-hour DST transitions and a skipped calendar date	pending:S5	S5 vector
-server/src/assistant/task-schedule.test.ts	calendar calculations do not remap years below 100 to the twentieth century	pending:S5	S5 vector
-server/src/assistant/task-schedule.test.ts	rejects invalid reference instants	pending:S5	S5 vector
+server/src/assistant/task-schedule.test.ts	accepts exact shapes and normalizes UTC precision	vector:contract/vectors/task-schedule.json	S5 vectors, read by bun test and the Rust crate
+server/src/assistant/task-schedule.test.ts	rejects invalid or extra schedule fields: %j	vector:contract/vectors/task-schedule.json	S5 vectors, read by bun test and the Rust crate
+server/src/assistant/task-schedule.test.ts	once runs strictly after the reference time and interval preserves milliseconds	vector:contract/vectors/task-schedule.json	S5 vectors, read by bun test and the Rust crate
+server/src/assistant/task-schedule.test.ts	%s %s after %s	vector:contract/vectors/task-schedule.json	S5 vectors, read by bun test and the Rust crate
+server/src/assistant/task-schedule.test.ts	skips a nonexistent New York spring-forward wall time	vector:contract/vectors/task-schedule.json	S5 vectors, read by bun test and the Rust crate
+server/src/assistant/task-schedule.test.ts	a New York repeated wall time fires only at its first occurrence	vector:contract/vectors/task-schedule.json	S5 vectors, read by bun test and the Rust crate
+server/src/assistant/task-schedule.test.ts	handles half-hour DST transitions and a skipped calendar date	vector:contract/vectors/task-schedule.json	S5 vectors, read by bun test and the Rust crate
+server/src/assistant/task-schedule.test.ts	calendar calculations do not remap years below 100 to the twentieth century	vector:contract/vectors/task-schedule.json	S5 vectors, read by bun test and the Rust crate
+server/src/assistant/task-schedule.test.ts	rejects invalid reference instants	vector:contract/vectors/task-schedule.json	S5 vectors, read by bun test and the Rust crate
 server/src/assistant/task-storage.test.ts	SQLite round trips queryable plans and keeps admissions only for unfinished runs	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/task-storage.test.ts	version one migrates every table and retains the default notification behavior	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/task-storage.test.ts	agent mode and notification receipts survive reload and pruning their source run	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
@@ -988,16 +988,16 @@ server/src/bridge/forward-rpc.test.ts	lists and closes forwards in wire form	rus
 server/src/bridge/forward-rpc.test.ts	a connection without an SSH transport is refused	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/forward-rpc.test.ts	an invalid port is refused before anything starts	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/forward-rpc.test.ts	the global forward registry can be closed while a local profile is active	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/frame-to-ansi.test.ts	emits a full repaint and hides a missing cursor	pending:S5	S5 vector
-server/src/bridge/frame-to-ansi.test.ts	encodes named, indexed, and RGB colors	pending:S5	S5 vector
-server/src/bridge/frame-to-ansi.test.ts	encodes modifiers including styled underlines	pending:S5	S5 vector
-server/src/bridge/frame-to-ansi.test.ts	skips spacer cells after wide graphemes	pending:S5	S5 vector
-server/src/bridge/frame-to-ansi.test.ts	skips unmarked padding after %s without removing a real space	pending:S5	S5 vector
-server/src/bridge/frame-to-ansi.test.ts	does not skip the cell after a narrow combining grapheme	pending:S5	S5 vector
-server/src/bridge/frame-to-ansi.test.ts	trims trailing default blanks but keeps styled blanks	pending:S5	S5 vector
-server/src/bridge/frame-to-ansi.test.ts	opens and closes OSC 8 hyperlinks	pending:S5	S5 vector
-server/src/bridge/frame-to-ansi.test.ts	positions the cursor when visible=%s	pending:S5	S5 vector
-server/src/bridge/frame-to-ansi.test.ts	positions rows without wrapping the cell grid	pending:S5	S5 vector
+server/src/bridge/frame-to-ansi.test.ts	emits a full repaint and hides a missing cursor	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/frame-to-ansi.test.ts	encodes named, indexed, and RGB colors	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/frame-to-ansi.test.ts	encodes modifiers including styled underlines	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/frame-to-ansi.test.ts	skips spacer cells after wide graphemes	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/frame-to-ansi.test.ts	skips unmarked padding after %s without removing a real space	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/frame-to-ansi.test.ts	does not skip the cell after a narrow combining grapheme	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/frame-to-ansi.test.ts	trims trailing default blanks but keeps styled blanks	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/frame-to-ansi.test.ts	opens and closes OSC 8 hyperlinks	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/frame-to-ansi.test.ts	positions the cursor when visible=%s	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/frame-to-ansi.test.ts	positions rows without wrapping the cell grid	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
 server/src/bridge/herdr-client.test.ts	rechecks authorization after socket connection and sends no revoked request	rust-unit:roamgate-herdr	Herdr control client
 server/src/bridge/herdr-client.test.ts	rejects mismatched and malformed one-shot response envelopes	rust-unit:roamgate-herdr	Herdr control client
 server/src/bridge/herdr-client.test.ts	sends a request too large for one socket write	rust-unit:roamgate-herdr	Herdr control client
@@ -1035,9 +1035,9 @@ server/src/bridge/settings-rpc.test.ts	worktree commands are set globally and pe
 server/src/bridge/settings-rpc.test.ts	worktree settings of a workspace Herdr reports no repository for are its repository's	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/settings-rpc.test.ts	the claude start setting: validated, saved, and the change told	scenario:parity/scenarios/settings/connection-settings.yaml	
 server/src/bridge/settings-rpc.test.ts	agent profiles: listed with the built-in, secrets by path, validated on update	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/ssh-command.test.ts	accepts only bounded aliases and user@host destinations	pending:S5	S5 vector
-server/src/bridge/ssh-command.test.ts	places fixed policy and sentinel before destination and command	pending:S5	S5 vector
-server/src/bridge/ssh-command.test.ts	builds explicit stream-local forwards without profile options	pending:S5	S5 vector
+server/src/bridge/ssh-command.test.ts	accepts only bounded aliases and user@host destinations	vector:contract/vectors/ssh-command.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/ssh-command.test.ts	places fixed policy and sentinel before destination and command	vector:contract/vectors/ssh-command.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/ssh-command.test.ts	builds explicit stream-local forwards without profile options	vector:contract/vectors/ssh-command.json	S5 vectors, read by bun test and the Rust crate
 server/src/bridge/ssh-forward.test.ts	binds loopback locally and resolves localhost on the far host	rust-unit:roamgate-exec	SSH argv, slots, masters, tunnels and forwards
 server/src/bridge/ssh-forward.test.ts	refuses a destination that is not a plain ssh target	rust-unit:roamgate-exec	SSH argv, slots, masters, tunnels and forwards
 server/src/bridge/ssh-forward.test.ts	rejects anything outside a usable port	rust-unit:roamgate-exec	SSH argv, slots, masters, tunnels and forwards
@@ -1202,29 +1202,29 @@ server/src/bridge/thin-client.test.ts	does not open a socket when closed during 
 server/src/bridge/thin-client.test.ts	sends the one-time terminal attach transition only once	rust-unit:roamgate-herdr	Herdr legacy client socket
 server/src/bridge/thin-client.test.ts	encodes both physical page keys with the PageKey source	rust-unit:roamgate-herdr	Herdr legacy client socket
 server/src/bridge/thin-client.test.ts	decodes Herdr clipboard messages separately from terminal frames	rust-unit:roamgate-herdr	Herdr legacy client socket
-server/src/bridge/vt-input-classifier.test.ts	printable text becomes one TextCommit	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	enter, backspace, tab, escape keys	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	preserves Ctrl+J and modified Enter variants	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	preserves Ctrl+/ separately from the ambiguous legacy Ctrl+_ byte	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	does not interpret unsupported or malformed CSI-u sequences	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	ctrl+letter maps to Char with CONTROL	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	arrows and modified arrows	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	preserves every modified CSI key family emitted by xterm	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	tilde keys: delete, home, end, page up/down	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	function keys via SS3 and tilde	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	alt+char	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	alt-prefixed control bytes remain one modified key	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	bracketed paste becomes one Paste event	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	mixed text and keys keep order	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	split sequences wait for completion	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	split UTF-8 chars wait for completion	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	double ESC yields Esc then reprocesses	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	click, release, drag, motion and all wheel directions use pane-local cells	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	every split point buffers the report without leaking text; paste stays paste	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	rejects malformed fields, unsupported buttons, impossible kinds and out-of-range cells	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	encodes the frozen generation-1 mouse fields including absent geometry	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	encodes Ctrl+/ as a semantic slash press, not Ctrl+_	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.test.ts	encodes the ClientShellPaneInput frame	pending:S5	S5 vector
+server/src/bridge/vt-input-classifier.test.ts	printable text becomes one TextCommit	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	enter, backspace, tab, escape keys	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	preserves Ctrl+J and modified Enter variants	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	preserves Ctrl+/ separately from the ambiguous legacy Ctrl+_ byte	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	does not interpret unsupported or malformed CSI-u sequences	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	ctrl+letter maps to Char with CONTROL	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	arrows and modified arrows	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	preserves every modified CSI key family emitted by xterm	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	tilde keys: delete, home, end, page up/down	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	function keys via SS3 and tilde	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	alt+char	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	alt-prefixed control bytes remain one modified key	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	bracketed paste becomes one Paste event	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	mixed text and keys keep order	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	split sequences wait for completion	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	split UTF-8 chars wait for completion	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	double ESC yields Esc then reprocesses	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	click, release, drag, motion and all wheel directions use pane-local cells	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	every split point buffers the report without leaking text; paste stays paste	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	rejects malformed fields, unsupported buttons, impossible kinds and out-of-range cells	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	encodes the frozen generation-1 mouse fields including absent geometry	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	encodes Ctrl+/ as a semantic slash press, not Ctrl+_	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	encodes the ClientShellPaneInput frame	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
 server/src/bridge/websocket-send.test.ts	negotiated compression reduces wire bytes and preserves uncompressed-client compatibility	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	preserves the first cleanup snapshot until close handling completes	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	compresses only terminal frames at or above the byte threshold	rust-unit:roamgate-http	transport and RPC plumbing
@@ -1442,56 +1442,56 @@ server/src/config/server-config.test.ts	reading configuration for management com
 server/src/config/server-config.test.ts	validates ROAMGATE_PIN=%s without weakening the strong credential	rust-unit:roamgate-cli	server flags and their precedence
 server/src/config/server-config.test.ts	PIN keeps generated-token recovery and follows environment precedence	rust-unit:roamgate-cli	server flags and their precedence
 server/src/config/server-config.test.ts	prefers explicit paths, then SSH tunnels, then the session layout	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/service-manager.test.ts	Windows task queries distinguish registration from running state	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	escapes systemd paths without quoting them	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	passes launchd paths as arguments without interpolating shell code	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	renders a direct-executable Windows login task	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	isolates Windows task names by user config directory	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	installs and starts a systemd user service	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	reloads the systemd definition before restarting	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	does not restart systemd when daemon-reload fails	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	reports a missing service definition during reload	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	preserves an existing environment file during reinstall	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	generates a login token for loopback service host %s	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	rejects out-of-range passwords in %s config before migrating or changing services	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	validates the effective launchd password: %s	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	rejects invalid effective launchd password from ${identity} before mutations: %s	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	rejects unsafe launchd %s without execution or mutation	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	preserves a managed custom wrapper command	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	replaces a stale custom command that does not invoke this binary	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	refuses to overwrite an unmanaged service without force	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	validates launchd identity before writing service files	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	installs, inspects, restarts, reloads, and removes a launchd agent	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	launchd ${syntax} uses the resolved ${occupied ? "occupied" : "free"} listener	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	manages a Windows login task	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	uninstalls an inactive Windows task when its helper script is missing	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	removes a stale Windows helper when its task is already absent	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	propagates Windows task query failures without changing state	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	does not restart when task-state confirmation fails	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	loads environment for the direct Windows task process	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	does not install a development runtime as a service	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	does not bootstrap launchd when stopping the loaded job fails	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	keeps a managed systemd definition when stopping fails	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	treats uninstall without a managed definition as a no-op	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	${platform} ${action} manages the generated legacy service without migrating it	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	${platform} refuses ambiguous or unverified management: ${state}	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	${platform} preserves the legacy definition when stopping fails	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	restores the original systemd definition and permissions if daemon-reload fails	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	refuses symlinked legacy definitions without touching the target	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	keeps the legacy launchd definition on query errors during uninstall or reload	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	refuses an installed legacy ${platform} definition before ${action}, even with force	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	detects loaded legacy ${platform} service without its on-disk definition	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	launchd query error ${queryCode} blocks ${args.join(" ")} with ${existing ? "existing" : "no"} current files	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	confirmed launchd legacy absence permits ${args.join(" ")}	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	missing launchd domain blocks ${args.join(" ")} before the service query	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	unknown legacy Windows query errors refuse activation without replacing files	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	legacy Windows task hash stays tied to its old per-user config directory	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	after explicit legacy removal install preserves old env and token	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	service run honors explicit new and legacy supervisor overrides	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	rejects an invalid service PIN before installation: %s	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	reads only the job's own state, not nested endpoint states	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	reports a published legacy service that service commands manage	pending:S5	S5 vector
-server/src/config/service-manager.test.ts	ignores a customized legacy definition	pending:S5	S5 vector
+server/src/config/service-manager.test.ts	Windows task queries distinguish registration from running state	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	escapes systemd paths without quoting them	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	passes launchd paths as arguments without interpolating shell code	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	renders a direct-executable Windows login task	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	isolates Windows task names by user config directory	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	installs and starts a systemd user service	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	reloads the systemd definition before restarting	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	does not restart systemd when daemon-reload fails	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	reports a missing service definition during reload	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	preserves an existing environment file during reinstall	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	generates a login token for loopback service host %s	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	rejects out-of-range passwords in %s config before migrating or changing services	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	validates the effective launchd password: %s	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	rejects invalid effective launchd password from ${identity} before mutations: %s	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	rejects unsafe launchd %s without execution or mutation	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	preserves a managed custom wrapper command	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	replaces a stale custom command that does not invoke this binary	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	refuses to overwrite an unmanaged service without force	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	validates launchd identity before writing service files	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	installs, inspects, restarts, reloads, and removes a launchd agent	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	launchd ${syntax} uses the resolved ${occupied ? "occupied" : "free"} listener	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	manages a Windows login task	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	uninstalls an inactive Windows task when its helper script is missing	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	removes a stale Windows helper when its task is already absent	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	propagates Windows task query failures without changing state	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	does not restart when task-state confirmation fails	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	loads environment for the direct Windows task process	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	does not install a development runtime as a service	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	does not bootstrap launchd when stopping the loaded job fails	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	keeps a managed systemd definition when stopping fails	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	treats uninstall without a managed definition as a no-op	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	${platform} ${action} manages the generated legacy service without migrating it	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	${platform} refuses ambiguous or unverified management: ${state}	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	${platform} preserves the legacy definition when stopping fails	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	restores the original systemd definition and permissions if daemon-reload fails	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	refuses symlinked legacy definitions without touching the target	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	keeps the legacy launchd definition on query errors during uninstall or reload	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	refuses an installed legacy ${platform} definition before ${action}, even with force	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	detects loaded legacy ${platform} service without its on-disk definition	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	launchd query error ${queryCode} blocks ${args.join(" ")} with ${existing ? "existing" : "no"} current files	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	confirmed launchd legacy absence permits ${args.join(" ")}	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	missing launchd domain blocks ${args.join(" ")} before the service query	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	unknown legacy Windows query errors refuse activation without replacing files	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	legacy Windows task hash stays tied to its old per-user config directory	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	after explicit legacy removal install preserves old env and token	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	service run honors explicit new and legacy supervisor overrides	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	rejects an invalid service PIN before installation: %s	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	reads only the job's own state, not nested endpoint states	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	reports a published legacy service that service commands manage	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	ignores a customized legacy definition	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
 server/src/config/session-secret.test.ts	persists private independent random signing material	rust-unit:roamgate-base	data paths, environment precedence, settings store, locks
 server/src/config/session-secret.test.ts	uses the default data root and survives a separate process restart	rust-unit:roamgate-base	data paths, environment precedence, settings store, locks
 server/src/config/session-secret.test.ts	isolates signing state by the effective settings path	rust-unit:roamgate-base	data paths, environment precedence, settings store, locks
@@ -1758,17 +1758,17 @@ server/src/conversation/drivers/claude-memory.test.ts	the writer's file tools ar
 server/src/conversation/drivers/claude-models.test.ts	a list_models row: its name, label, model and whether it may be picked	rust-unit:roamgate-claude	Claude driver internals
 server/src/conversation/drivers/claude-models.test.ts	the list, or none when the CLI refuses or says nothing	rust-unit:roamgate-claude	Claude driver internals
 server/src/conversation/drivers/claude-models.test.ts	a switch: the model it runs then, or the CLI's refusal	rust-unit:roamgate-claude	Claude driver internals
-server/src/conversation/drivers/contract.test.ts	is registered under its agent and Herdr's name	pending:S5	S5 vector
-server/src/conversation/drivers/contract.test.ts	a turn decodes to the session, its reply and its result	pending:S5	S5 vector
-server/src/conversation/drivers/contract.test.ts	its state saved mid-turn reads on as one codec would	pending:S5	S5 vector
-server/src/conversation/drivers/contract.test.ts	a message is written as a user line, and read back if dropped	pending:S5	S5 vector
-server/src/conversation/drivers/contract.test.ts	a message carries its images as the driver takes them	pending:S5	S5 vector
-server/src/conversation/drivers/contract.test.ts	an interrupt is confirmed by a response with its id	pending:S5	S5 vector
-server/src/conversation/drivers/contract.test.ts	prompts are asked, answered, and noted as answers	pending:S5	S5 vector
-server/src/conversation/drivers/contract.test.ts	its own requests are answered by a response with their id	pending:S5	S5 vector
-server/src/conversation/drivers/contract.test.ts	its start command runs headless, without Herdr's pane env	pending:S5	S5 vector
-server/src/conversation/drivers/contract.test.ts	the terminal tells its TUI from the headless process	pending:S5	S5 vector
-server/src/conversation/drivers/contract.test.ts	an idle TUI is ready; a screen without its prompt box is not	pending:S5	S5 vector
+server/src/conversation/drivers/contract.test.ts	is registered under its agent and Herdr's name	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
+server/src/conversation/drivers/contract.test.ts	a turn decodes to the session, its reply and its result	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
+server/src/conversation/drivers/contract.test.ts	its state saved mid-turn reads on as one codec would	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
+server/src/conversation/drivers/contract.test.ts	a message is written as a user line, and read back if dropped	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
+server/src/conversation/drivers/contract.test.ts	a message carries its images as the driver takes them	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
+server/src/conversation/drivers/contract.test.ts	an interrupt is confirmed by a response with its id	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
+server/src/conversation/drivers/contract.test.ts	prompts are asked, answered, and noted as answers	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
+server/src/conversation/drivers/contract.test.ts	its own requests are answered by a response with their id	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
+server/src/conversation/drivers/contract.test.ts	its start command runs headless, without Herdr's pane env	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
+server/src/conversation/drivers/contract.test.ts	the terminal tells its TUI from the headless process	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
+server/src/conversation/drivers/contract.test.ts	an idle TUI is ready; a screen without its prompt box is not	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
 server/src/conversation/env.test.ts	drops outer Claude and Herdr hook variables, marks itself, keeps checkpoints	rust-unit:roamgate-conversation	leases, handover, holder protocol, queue
 server/src/conversation/env.test.ts	is set from the start command too, for a holder that does not copy	rust-unit:roamgate-conversation	leases, handover, holder protocol, queue
 server/src/conversation/env.test.ts	streams both ways, replays user messages, asks over stdio	rust-unit:roamgate-conversation	leases, handover, holder protocol, queue
@@ -2461,15 +2461,15 @@ server/src/http/static-paths.test.ts	rejects malformed encoding and NUL bytes	ru
 server/src/http/static-paths.test.ts	keeps resolved files inside the public directory	rust-unit:roamgate-http	HTTP front internals
 server/src/http/static-paths.test.ts	uses the SPA entry only for browser page navigations	rust-unit:roamgate-http	HTTP front internals
 server/src/http/static-paths.test.ts	only serves static content for read-only HTTP methods	rust-unit:roamgate-http	HTTP front internals
-server/src/http/terminal-path-text.test.ts	keeps plain POSIX paths bare	pending:S5	S5 vector
-server/src/http/terminal-path-text.test.ts	single-quotes POSIX paths with spaces or shell characters	pending:S5	S5 vector
-server/src/http/terminal-path-text.test.ts	uses forward slashes for Windows paths	pending:S5	S5 vector
-server/src/http/terminal-path-text.test.ts	quotes commas instead of treating them as PowerShell argument separators	pending:S5	S5 vector
-server/src/http/terminal-path-text.test.ts	single-quotes Windows paths with spaces	pending:S5	S5 vector
-server/src/http/terminal-path-text.test.ts	double-quotes Windows paths with apostrophes	pending:S5	S5 vector
-server/src/http/terminal-path-text.test.ts	falls back to PowerShell quoting when both quote styles expand	pending:S5	S5 vector
-server/src/http/terminal-path-text.test.ts	POSIX shell receives each supported path as one unchanged argument	pending:S5	S5 vector
-server/src/http/terminal-path-text.test.ts	PowerShell receives comma and quoted paths as one unchanged argument	pending:S5	S5 vector
+server/src/http/terminal-path-text.test.ts	keeps plain POSIX paths bare	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
+server/src/http/terminal-path-text.test.ts	single-quotes POSIX paths with spaces or shell characters	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
+server/src/http/terminal-path-text.test.ts	uses forward slashes for Windows paths	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
+server/src/http/terminal-path-text.test.ts	quotes commas instead of treating them as PowerShell argument separators	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
+server/src/http/terminal-path-text.test.ts	single-quotes Windows paths with spaces	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
+server/src/http/terminal-path-text.test.ts	double-quotes Windows paths with apostrophes	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
+server/src/http/terminal-path-text.test.ts	falls back to PowerShell quoting when both quote styles expand	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
+server/src/http/terminal-path-text.test.ts	POSIX shell receives each supported path as one unchanged argument	rust-unit:roamgate-http	runs the quoted path through a real sh; the quoting itself is vectors
+server/src/http/terminal-path-text.test.ts	PowerShell receives comma and quoted paths as one unchanged argument	pending:windows-runner	runs the quoted path through a real PowerShell, on Windows only (plan 5.10)
 server/src/http/terminal-upload.test.ts	sanitizes terminal filename %s	rust-unit:roamgate-http	HTTP front internals
 server/src/http/terminal-upload.test.ts	keeps Windows upload name %s usable	rust-unit:roamgate-http	HTTP front internals
 server/src/http/terminal-upload.test.ts	streams a file to a private directory and retains an empty file	rust-unit:roamgate-http	HTTP front internals
@@ -2659,14 +2659,14 @@ server/src/mr-reviews/claude.test.ts	conversation mode: its own switch, never /e
 server/src/mr-reviews/claude.test.ts	the claude start setting decides the mode Claude starts in	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/claude.test.ts	a Claude that is no request's is left alone	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/claude.test.ts	a request without a session: nothing started by a switch	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/complexity.test.ts	the estimate counts fields, resolvers and the items they load	pending:S5	S5 vector
-server/src/mr-reviews/complexity.test.ts	the to-review query with three followed projects goes over GitLab's default	pending:S5	S5 vector
-server/src/mr-reviews/complexity.test.ts	a refusal is read from an error or an answer	pending:S5	S5 vector
-server/src/mr-reviews/complexity.test.ts	batches stay under the budget; a refusal splits, learns and is not seen	pending:S5	S5 vector
-server/src/mr-reviews/complexity.test.ts	answers asked in parts merge into one	pending:S5	S5 vector
-server/src/mr-reviews/complexity.test.ts	the details and the followed projects arrive in more queries, without an error	pending:S5	S5 vector
-server/src/mr-reviews/complexity.test.ts	the light list is split too when its lists are too much together	pending:S5	S5 vector
-server/src/mr-reviews/complexity.test.ts	a field refusal still falls back to fewer fields	pending:S5	S5 vector
+server/src/mr-reviews/complexity.test.ts	the estimate counts fields, resolvers and the items they load	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/complexity.test.ts	the to-review query with three followed projects goes over GitLab's default	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/complexity.test.ts	a refusal is read from an error or an answer	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/complexity.test.ts	batches stay under the budget; a refusal splits, learns and is not seen	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/complexity.test.ts	answers asked in parts merge into one	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/complexity.test.ts	the details and the followed projects arrive in more queries, without an error	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
+server/src/mr-reviews/complexity.test.ts	the light list is split too when its lists are too much together	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
+server/src/mr-reviews/complexity.test.ts	a field refusal still falls back to fewer fields	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
 server/src/mr-reviews/curation.test.ts	rankings: only given keys, a reason for each pick, few picks	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/curation.test.ts	top paths count files and their directories	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/curation.test.ts	a batch: the user's own requests and dismissed ones are no candidates	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
@@ -2800,19 +2800,19 @@ server/src/mr-reviews/panel.test.ts	the panel's search and filter: kept in setti
 server/src/mr-reviews/panel.test.ts	a request's recorded home is linked as its home; open with a home shows the review there	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/prefetch.test.ts	prefetch: only the user's requests and the picks, once per head	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/prefetch.test.ts	a new project waits for the default connection; a known one does not	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/queries.test.ts	the query asks each list and each followed project	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	merges the lists with their reasons, keeps followed apart	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	a URL on another host or request is not trusted	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	no user: not signed in; errors: said	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	the query searches each list and each followed repository	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	parses lists, pending drafts and followed files	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	the forges' labels are read with the lists	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	own details carry the description and the last notes, oldest first, no system notes	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	each level asks its fields: full adds who is assigned and auto-merge	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	GitLab system notes as events	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	GitLab details: assignees, auto-merge, events and the approval time	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	GitHub details: the merge queue, auto-merge, the timeline and label times	pending:S5	S5 vector
-server/src/mr-reviews/queries.test.ts	GitLab label events: the last add of each label still on	pending:S5	S5 vector
+server/src/mr-reviews/queries.test.ts	the query asks each list and each followed project	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	merges the lists with their reasons, keeps followed apart	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	a URL on another host or request is not trusted	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	no user: not signed in; errors: said	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	the query searches each list and each followed repository	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	parses lists, pending drafts and followed files	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	the forges' labels are read with the lists	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	own details carry the description and the last notes, oldest first, no system notes	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	each level asks its fields: full adds who is assigned and auto-merge	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	GitLab system notes as events	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	GitLab details: assignees, auto-merge, events and the approval time	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	GitHub details: the merge queue, auto-merge, the timeline and label times	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/queries.test.ts	GitLab label events: the last add of each label still on	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
 server/src/mr-reviews/tree.test.ts	a set path reuses what exists, by name, case-insensitively	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/tree.test.ts	missing groups of a set path are created	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/tree.test.ts	by default: a Reviews group under the clone's workspace, else at the top	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
@@ -2992,17 +2992,17 @@ server/src/review/agent-texts.test.ts	the skill and the review_open tool say a r
 server/src/review/agent-texts.test.ts	the skill names the mod's tools, those behind tool search apart	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/agent-texts.test.ts	the client's help says it talks to the reviews in Changes	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/agent-texts.test.ts	the skill and the tools never offer to publish to a forge: drafts only	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/changes-anchors.test.ts	Changes' entry anchors move onto the combined diff by their line's text	pending:S5	S5 vector
-server/src/review/changes-anchors.test.ts	the migration runs once: a second read writes nothing, a migrated thread is not read again	pending:S5	S5 vector
-server/src/review/changes-anchors.test.ts	the migrated anchors are kept across a restart of the server	pending:S5	S5 vector
-server/src/review/changes-anchors.test.ts	a branch review's threads and a range review are left alone	pending:S5	S5 vector
-server/src/review/changes-anchors.test.ts	a review read publishes it again once its threads moved	pending:S5	S5 vector
-server/src/review/changes-anchors.test.ts	combinedAnchor: a comment on the file keeps no line, a range keeps its length	pending:S5	S5 vector
-server/src/review/changes-anchors.test.ts	a checkout not readable yet (a connection not ready, at startup) is asked again later	pending:S5	S5 vector
-server/src/review/commit-anchors.test.ts	a commit no longer among the review's is told from one still there	pending:S5	S5 vector
-server/src/review/commit-anchors.test.ts	what a rewritten commit became: its patch id first, then its subject	pending:S5	S5 vector
-server/src/review/commit-anchors.test.ts	the anchored line is found by its text, the lines after it first, else the nearest	pending:S5	S5 vector
-server/src/review/commit-anchors.test.ts	a moved anchor and its note name the new commit and line, or the whole change	pending:S5	S5 vector
+server/src/review/changes-anchors.test.ts	Changes' entry anchors move onto the combined diff by their line's text	rust-unit:roamgate-review	the review service migrating stored threads on disk; combinedAnchor is vectors
+server/src/review/changes-anchors.test.ts	the migration runs once: a second read writes nothing, a migrated thread is not read again	rust-unit:roamgate-review	the review service migrating stored threads on disk; combinedAnchor is vectors
+server/src/review/changes-anchors.test.ts	the migrated anchors are kept across a restart of the server	rust-unit:roamgate-review	the review service migrating stored threads on disk; combinedAnchor is vectors
+server/src/review/changes-anchors.test.ts	a branch review's threads and a range review are left alone	rust-unit:roamgate-review	the review service migrating stored threads on disk; combinedAnchor is vectors
+server/src/review/changes-anchors.test.ts	a review read publishes it again once its threads moved	rust-unit:roamgate-review	the review service migrating stored threads on disk; combinedAnchor is vectors
+server/src/review/changes-anchors.test.ts	combinedAnchor: a comment on the file keeps no line, a range keeps its length	vector:contract/vectors/changes-anchors.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/changes-anchors.test.ts	a checkout not readable yet (a connection not ready, at startup) is asked again later	rust-unit:roamgate-review	the review service migrating stored threads on disk; combinedAnchor is vectors
+server/src/review/commit-anchors.test.ts	a commit no longer among the review's is told from one still there	vector:contract/vectors/commit-anchors.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/commit-anchors.test.ts	what a rewritten commit became: its patch id first, then its subject	vector:contract/vectors/commit-anchors.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/commit-anchors.test.ts	the anchored line is found by its text, the lines after it first, else the nearest	vector:contract/vectors/commit-anchors.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/commit-anchors.test.ts	a moved anchor and its note name the new commit and line, or the whole change	vector:contract/vectors/commit-anchors.json	S5 vectors, read by bun test and the Rust crate
 server/src/review/feedback-migration.test.ts	each note goes to the review of what it is on	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/feedback-migration.test.ts	thread ids are 16 hexadecimal digits, the same for the same note	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/feedback-migration.test.ts	a note read back compiles word for word as it did	rust-unit:roamgate-review	review service, storage, delivery and agent socket
@@ -3018,10 +3018,10 @@ server/src/review/feedback-migration.test.ts	migration: a note with no words sta
 server/src/review/feedback-migration.test.ts	migration: a page closed mid-way loses nothing and writes nothing twice	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/feedback-migration.test.ts	migration: each note becomes a held thread of its review, a terminal's in its agent's chat review	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/feedback-migration.test.ts	the hand-off names the threads and the region's picture	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/file-anchors.test.ts	the threads of a rendered file follow its lines once the file changes, and keep that	pending:S5	S5 vector
-server/src/review/file-anchors.test.ts	the agent's update, a thread written and an open look at the file; reads only now and then	pending:S5	S5 vector
-server/src/review/file-anchors.test.ts	the checkout's review moves its Files preview threads with their files, its diff's own untouched	pending:S5	S5 vector
-server/src/review/file-anchors.test.ts	a thread an agent wrote with no line text is given its line's, and follows it	pending:S5	S5 vector
+server/src/review/file-anchors.test.ts	the threads of a rendered file follow its lines once the file changes, and keep that	rust-unit:roamgate-review	the review service moving stored threads as files change on disk
+server/src/review/file-anchors.test.ts	the agent's update, a thread written and an open look at the file; reads only now and then	rust-unit:roamgate-review	the review service moving stored threads as files change on disk
+server/src/review/file-anchors.test.ts	the checkout's review moves its Files preview threads with their files, its diff's own untouched	rust-unit:roamgate-review	the review service moving stored threads as files change on disk
+server/src/review/file-anchors.test.ts	a thread an agent wrote with no line text is given its line's, and follows it	rust-unit:roamgate-review	the review service moving stored threads as files change on disk
 server/src/review/forge-writes.test.ts	the only GitLab writes are draft notes, and their images	rust-unit:roamgate-forge	forge layer
 server/src/review/forge-writes.test.ts	the only GitHub mutations are the pending review's drafts	rust-unit:roamgate-forge	forge layer
 server/src/review/forge.test.ts	reads state, pipeline, failed jobs, approvals and open threads	rust-unit:roamgate-forge	forge layer
@@ -3086,14 +3086,14 @@ server/src/review/images.test.ts	an agent's image by its path: only image files,
 server/src/review/list-since.test.ts	a review list sends again only the reviews the page does not hold	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/list-since.test.ts	a list read in pages sends the most recent reviews first, then the rest	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/list-since.test.ts	summaries come in larger pages than whole snapshots	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/patch.test.ts	parses git diffs with renames, additions and numbered lines	pending:S5	S5 vector
-server/src/review/patch.test.ts	a mailed patch: '--- ' after a finished hunk starts the next file	pending:S5	S5 vector
-server/src/review/patch.test.ts	binary files and deletions	pending:S5	S5 vector
-server/src/review/patch.test.ts	git's quoted names with UTF-8 bytes read as the real name	pending:S5	S5 vector
-server/src/review/patch.test.ts	a quoted header without --- and +++ lines loses its prefix	pending:S5	S5 vector
-server/src/review/patch.test.ts	a header with one quoted side and one plain side	pending:S5	S5 vector
-server/src/review/patch.test.ts	a pure rename of names with spaces takes its paths from rename lines	pending:S5	S5 vector
-server/src/review/patch.test.ts	an empty line inside a hunk is a blank context line	pending:S5	S5 vector
+server/src/review/patch.test.ts	parses git diffs with renames, additions and numbered lines	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/patch.test.ts	a mailed patch: '--- ' after a finished hunk starts the next file	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/patch.test.ts	binary files and deletions	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/patch.test.ts	git's quoted names with UTF-8 bytes read as the real name	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/patch.test.ts	a quoted header without --- and +++ lines loses its prefix	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/patch.test.ts	a header with one quoted side and one plain side	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/patch.test.ts	a pure rename of names with spaces takes its paths from rename lines	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/patch.test.ts	an empty line inside a hunk is a blank context line	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
 server/src/review/prompts.test.ts	a prompt waits for the browser's answer	scenario:parity/scenarios/agent_socket/prompts.yaml	
 server/src/review/prompts.test.ts	an unanswered prompt goes back to the terminal	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/prompts.test.ts	always needs the terminal's own don't-ask-again rules	rust-unit:roamgate-review	review service, storage, delivery and agent socket
@@ -3112,9 +3112,9 @@ server/src/review/review-base.test.ts	when Automatic's base moves, the branch's 
 server/src/review/review-base.test.ts	a remote HEAD naming Entire's checkpoints is no base: the default branch is	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/review-base.test.ts	a branch's review once based on a metadata ref follows Automatic to the default branch	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/review-base.test.ts	an agent's range of the checked-out branch joins the Branch scope's review	rust-unit:roamgate-review	review service, storage, delivery and agent socket
-server/src/review/rewritten-anchors.test.ts	threads on an amended commit follow it onto the new commit and their line there	pending:S5	S5 vector
-server/src/review/rewritten-anchors.test.ts	a commit squashed away: its thread goes to its line in the whole change	pending:S5	S5 vector
-server/src/review/rewritten-anchors.test.ts	another branch's thread is not moved onto this one by its subject	pending:S5	S5 vector
+server/src/review/rewritten-anchors.test.ts	threads on an amended commit follow it onto the new commit and their line there	rust-unit:roamgate-review	the review service following threads across rewritten commits in a real git repository
+server/src/review/rewritten-anchors.test.ts	a commit squashed away: its thread goes to its line in the whole change	rust-unit:roamgate-review	the review service following threads across rewritten commits in a real git repository
+server/src/review/rewritten-anchors.test.ts	another branch's thread is not moved onto this one by its subject	rust-unit:roamgate-review	the review service following threads across rewritten commits in a real git repository
 server/src/review/rpc.test.ts	the browser opens by workspace and always writes as the user	scenario:parity/scenarios/review/browser-review.yaml	
 server/src/review/rpc.test.ts	a relative path is refused; an empty one is the workspace's own	rust-unit:roamgate-review	review service, storage, delivery and agent socket
 server/src/review/rpc.test.ts	a review is invisible from another connection	rust-unit:roamgate-review	review service, storage, delivery and agent socket
@@ -3241,14 +3241,14 @@ server/src/utils/host-spawn.test.ts	skips an empty executable one and a non-exec
 server/src/utils/host-spawn.test.ts	prefers the known paths to PATH	rust-unit:roamgate-exec	host-spawn in a toolbox
 server/src/utils/host-spawn.test.ts	null when none runs	rust-unit:roamgate-exec	host-spawn in a toolbox
 server/src/utils/host-spawn.test.ts	ROAMGATE_HOST_SPAWN overrides the search, empty for none	rust-unit:roamgate-exec	host-spawn in a toolbox
-server/src/utils/logger.test.ts	filters below the configured level and routes warnings to stderr	pending:S5	S5 vector
-server/src/utils/logger.test.ts	formats child scopes and sanitizes bounded context	pending:S5	S5 vector
-server/src/utils/logger.test.ts	formats arbitrary lines without control-character injection	pending:S5	S5 vector
-server/src/utils/logger.test.ts	accepts supported levels case-insensitively	pending:S5	S5 vector
-server/src/utils/logger.test.ts	rejects unsupported levels with the accepted values	pending:S5	S5 vector
-server/src/utils/logger.test.ts	rejects unstringifiable values without masking the error	pending:S5	S5 vector
-server/src/utils/logger.test.ts	deduplicates equivalent failures and summarizes recovery	pending:S5	S5 vector
-server/src/utils/logger.test.ts	redacts PINs and session signing material from log fields and messages	pending:S5	S5 vector
+server/src/utils/logger.test.ts	filters below the configured level and routes warnings to stderr	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
+server/src/utils/logger.test.ts	formats child scopes and sanitizes bounded context	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
+server/src/utils/logger.test.ts	formats arbitrary lines without control-character injection	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
+server/src/utils/logger.test.ts	accepts supported levels case-insensitively	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
+server/src/utils/logger.test.ts	rejects unsupported levels with the accepted values	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
+server/src/utils/logger.test.ts	rejects unstringifiable values without masking the error	rust-unit:roamgate-base	a value no JSON can carry (a circular object, a bigint): the Rust logger takes typed input
+server/src/utils/logger.test.ts	deduplicates equivalent failures and summarizes recovery	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
+server/src/utils/logger.test.ts	redacts PINs and session signing material from log fields and messages	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
 server/src/utils/loop-stall.test.ts	reports a tick that ran late past the threshold	rust-unit:roamgate-base	shared utilities
 server/src/utils/process-utils.test.ts	native spawning preserves cwd, environment and literal arguments without a shell on PATH	rust-unit:roamgate-exec	process runner
 server/src/utils/rpc-logging.test.ts	keeps successful summaries at debug	rust-unit:roamgate-base	shared utilities
@@ -4128,22 +4128,22 @@ server/src/workspace/pull-request.test.ts	browsers asking the same badge togethe
 server/src/workspace/pull-request.test.ts	a badge is reused while HEAD stays, and read again once it moves	rust-unit:roamgate-forge	pull request status
 server/src/workspace/pull-request.test.ts	a badge older than its reuse is read again	rust-unit:roamgate-forge	pull request status
 server/src/workspace/pull-request.test.ts	a card is served from the cache, a refresh reads it afresh and replaces the badges	rust-unit:roamgate-forge	pull request status
-server/src/workspace/remote-files.test.ts	parses remote directory listings	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	parses text and image previews	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	never labels a short image payload as complete	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	parses directory previews without content	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	parses resolved remote files	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	parses download, upload, and delete responses	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	rejects malformed remote protocol responses	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	remote image reads support %s (%s) within preview byte limits	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	remote downloads refuse a file over maxBytes before sending it	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	a remote file that changes size while it is sent is never sent short or long	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	remote image previews reject oversized files	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	remote resolution includes directories but rejects relative and symlink escapes	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	a sibling checkout's page reads and downloads by its path, with macOS's base64	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	a file's stat on the host compares with what its read gave, and stays in the checkout	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	a file not on the host is said plainly, not as realpath's error	pending:S5	S5 vector
-server/src/workspace/remote-files.test.ts	parses a remote stat, and refuses anything else	pending:S5	S5 vector
+server/src/workspace/remote-files.test.ts	parses remote directory listings	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
+server/src/workspace/remote-files.test.ts	parses text and image previews	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
+server/src/workspace/remote-files.test.ts	never labels a short image payload as complete	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
+server/src/workspace/remote-files.test.ts	parses directory previews without content	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
+server/src/workspace/remote-files.test.ts	parses resolved remote files	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
+server/src/workspace/remote-files.test.ts	parses download, upload, and delete responses	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
+server/src/workspace/remote-files.test.ts	rejects malformed remote protocol responses	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
+server/src/workspace/remote-files.test.ts	remote image reads support %s (%s) within preview byte limits	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	remote downloads refuse a file over maxBytes before sending it	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	a remote file that changes size while it is sent is never sent short or long	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	remote image previews reject oversized files	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
+server/src/workspace/remote-files.test.ts	remote resolution includes directories but rejects relative and symlink escapes	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	a sibling checkout's page reads and downloads by its path, with macOS's base64	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	a file's stat on the host compares with what its read gave, and stays in the checkout	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	a file not on the host is said plainly, not as realpath's error	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	parses a remote stat, and refuses anything else	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
 server/src/workspace/review-files.test.ts	a range's summary lists each file with its status and counts, between its merge base and head	rust-unit:roamgate-git	review read scripts
 server/src/workspace/review-files.test.ts	a summary's files read a few at a time are the whole patch's files	rust-unit:roamgate-git	review read scripts
 server/src/workspace/review-files.test.ts	a commit's summary is against its first parent, a root commit's against the empty tree	rust-unit:roamgate-git	review read scripts
@@ -4283,249 +4283,249 @@ server/src/worktree/worktree-hooks.test.ts	empty and partial configurations supp
 server/src/worktree/worktree-hooks.test.ts	invalid JSON, types, and unreadable files fail with their path without fallback	rust-unit:roamgate-workspace	worktrees and hooks
 server/src/worktree/worktree-hooks.test.ts	reads a UTF-8 BOM in ${filename} and runs teardown	rust-unit:roamgate-workspace	worktrees and hooks
 server/src/worktree/worktree-hooks.test.ts	runs all lifecycle hooks from ${filename} with cwd, aliases, and source after removal	rust-unit:roamgate-workspace	worktrees and hooks
-shared/agentMessage.test.ts	addresses are CONNECTION/PANE	pending:S5	S5 vector
-shared/agentMessage.test.ts	the sender's message is read back from its Bash call, however quoted	pending:S5	S5 vector
-shared/agentMessage.test.ts	a framed message reads as another session's in the chat, never the user's	pending:S5	S5 vector
-shared/agentMessage.test.ts	the sender's message is read back from its Roamgate tool call	pending:S5	S5 vector
-shared/agentMessage.test.ts	the note keeps the safety clause in every message, short, and names the receiver's way to reply	pending:S5	S5 vector
-shared/agentMessage.test.ts	the chat leaves out today's note and the older, longer one	pending:S5	S5 vector
-shared/agentModels.test.ts	alone opens the picker, with a name switches	pending:S5	S5 vector
-shared/agentModels.test.ts	anything else is not the command	pending:S5	S5 vector
-shared/agentModels.test.ts	a model name is what Claude Code takes, nothing a flag or a shell would read	pending:S5	S5 vector
-shared/agentModels.test.ts	one model whatever the case, a context tag or a release date	pending:S5	S5 vector
-shared/agentModels.test.ts	another version is another model	pending:S5	S5 vector
-shared/agentModels.test.ts	the agent's rows first, then the profile's models no row covers	pending:S5	S5 vector
-shared/agentModels.test.ts	without the agent's rows: a default, then the profile's	pending:S5	S5 vector
-shared/agentModels.test.ts	the row it runs: the one picked, else its model's first row	pending:S5	S5 vector
-shared/agentModels.test.ts	the name asked, with the model it is when another	pending:S5	S5 vector
-shared/agentModels.test.ts	a refusal, a long one cut	pending:S5	S5 vector
-shared/agentModels.test.ts	Claude's models by family and version, however spelled	pending:S5	S5 vector
-shared/agentModels.test.ts	aliases, and other backends' models as their words	pending:S5	S5 vector
-shared/agentModels.test.ts	a gateway's provider stays in front, the segment before the model	pending:S5	S5 vector
-shared/agentModels.test.ts	no prefix without a slash, nor around a lone one	pending:S5	S5 vector
-shared/agentProfiles.test.ts	the built-in Claude is offered first and is plain	pending:S5	S5 vector
-shared/agentProfiles.test.ts	a user profile named Claude replaces the built-in	pending:S5	S5 vector
-shared/agentProfiles.test.ts	invalid profiles are refused with a reason	pending:S5	S5 vector
-shared/agentProfiles.test.ts	normalizing drops what is invalid and resets an unknown default	pending:S5	S5 vector
-shared/agentProfiles.test.ts	a profile with its own token removes the pane's key and providers	pending:S5	S5 vector
-shared/agentProfiles.test.ts	a browser sees a secret file's path, never a value	pending:S5	S5 vector
-shared/agentProfiles.test.ts	the chip names the model	pending:S5	S5 vector
-shared/agentProfiles.test.ts	Claude Code's limit message, with its reset time in its zone	pending:S5	S5 vector
-shared/agentProfiles.test.ts	a reset time already past today is tomorrow's	pending:S5	S5 vector
-shared/agentProfiles.test.ts	a weekly limit names its day	pending:S5	S5 vector
-shared/agentProfiles.test.ts	older and API forms	pending:S5	S5 vector
-shared/agentProfiles.test.ts	a limit is over once its reset time has passed, read from when it was hit	pending:S5	S5 vector
-shared/agentProfiles.test.ts	a transcript's newest assistant record decides	pending:S5	S5 vector
-shared/agentProfiles.test.ts	the last answer's model; notices and API errors are no answers	pending:S5	S5 vector
-shared/agentProfiles.test.ts	Anthropic's endpoint has Claude models, a gateway its slots'	pending:S5	S5 vector
-shared/agentProfiles.test.ts	back on Claude after Kimi: the Claude model it had	pending:S5	S5 vector
-shared/agentProfiles.test.ts	onto a gateway: its own model; nothing known: nothing	pending:S5	S5 vector
-shared/agentProfiles.test.ts	the last answer, with when it came	pending:S5	S5 vector
-shared/agentProfiles.test.ts	an answer from before the choice, on another model, is not one	pending:S5	S5 vector
-shared/agentProfiles.test.ts	answered with it: by its name, or the model the agent said it is	pending:S5	S5 vector
-shared/agentProfiles.test.ts	a later answer on another model the profile serves: the session moved on	pending:S5	S5 vector
-shared/agentProfiles.test.ts	Claude, Pi and Codex transcripts, the newest record first	pending:S5	S5 vector
-shared/assistant.test.ts	tool activities accept bounded details and retain legacy summaries	pending:S5	S5 vector
-shared/assistant.test.ts	assistant messages accept bounded reasoning steps	pending:S5	S5 vector
-shared/assistant.test.ts	Ranger notification envelopes require a string status and bounded task targets	pending:S5	S5 vector
-shared/assistant.test.ts	task details bind run records to the selected task and validate stored outputs	pending:S5	S5 vector
-shared/assistant.test.ts	task management previews validate exact operations and targets while retaining legacy creation previews	pending:S5	S5 vector
-shared/assistant.test.ts	close action snapshots accept exact close kinds and reject malformed action metadata	pending:S5	S5 vector
-shared/assistant.test.ts	thinking metadata validates exact SDK levels and remains optional for old snapshots	pending:S5	S5 vector
-shared/assistant.test.ts	custom model reasoning declarations validate booleans and accept legacy metadata	pending:S5	S5 vector
-shared/assistant.test.ts	task scope uses the shared 512-workspace inventory boundary	pending:S5	S5 vector
-shared/assistant.test.ts	all-workspace consent is explicit metadata and legacy auto snapshots remain valid	pending:S5	S5 vector
-shared/assistant.test.ts	mentions validate bounded typed targets without extra private metadata	pending:S5	S5 vector
-shared/assistant.test.ts	mention ranges use exact UTF-16 markers, ordered nonoverlapping ranges and legacy messages	pending:S5	S5 vector
-shared/assistant.test.ts	task mention targets remain inside the saved workspace scope	pending:S5	S5 vector
-shared/bashMode.test.ts	a `!` first, past any spaces, makes a shell line, as in the terminal	pending:S5	S5 vector
-shared/bashMode.test.ts	Claude reads a run in Claude Code's own format: the output escaped, the command not	pending:S5	S5 vector
-shared/bashMode.test.ts	output past the cap is cut as Claude Code cuts it	pending:S5	S5 vector
-shared/bashMode.test.ts	runs read back from a transcript: the terminal's two records, and one message	pending:S5	S5 vector
-shared/fileAnchors.test.ts	a thread stays on its lines while they read as written	pending:S5	S5 vector
-shared/fileAnchors.test.ts	an item moved as it was is found by its last line's text, its lines with it	pending:S5	S5 vector
-shared/fileAnchors.test.ts	an item reworded and moved is found by its first words, its quote now as it reads	pending:S5	S5 vector
-shared/fileAnchors.test.ts	a deleted item is found nowhere: never on what its lines hold now	pending:S5	S5 vector
-shared/fileAnchors.test.ts	an item too changed is not found: most of its first words must read on	pending:S5	S5 vector
-shared/fileAnchors.test.ts	a short quote must read whole, a reworded first line keeps the lines after it	pending:S5	S5 vector
-shared/fileAnchors.test.ts	a thread on a heading follows the heading, never a sentence saying its word	pending:S5	S5 vector
-shared/fileAnchors.test.ts	a last line read on another item does not keep the thread there	pending:S5	S5 vector
-shared/fileAnchors.test.ts	a thread with no line text (an agent's) is kept where its words are, and given it	pending:S5	S5 vector
-shared/fileAnchors.test.ts	a thread off its lines is placed again once its words are back	pending:S5	S5 vector
-shared/fileAnchors.test.ts	a graphic's region, a removed line and a message part are not looked for	pending:S5	S5 vector
-shared/fileAnchors.test.ts	a moved anchor says its lines, text and words, its note too	pending:S5	S5 vector
-shared/fileAnchors.test.ts	a detached anchor keeps its words and text, off any line, its note too	pending:S5	S5 vector
-shared/fileAnchors.test.ts	anchorInFile changes nothing kept, moves or detaches the rest	pending:S5	S5 vector
-shared/fileAnchors.test.ts	renderedWords reads source lines as the preview shows them, near enough	pending:S5	S5 vector
-shared/fileEdits.test.ts	common lines stay as context, the rest removed then added	pending:S5	S5 vector
-shared/fileEdits.test.ts	a kept line in the middle of a change stays context	pending:S5	S5 vector
-shared/fileEdits.test.ts	too long to work out: all out, then all in	pending:S5	S5 vector
-shared/fileEdits.test.ts	its patch, numbered, the 'no newline' marker left out	pending:S5	S5 vector
-shared/fileEdits.test.ts	a new file: its content, created	pending:S5	S5 vector
-shared/fileEdits.test.ts	nothing it can say: none	pending:S5	S5 vector
-shared/fileEdits.test.ts	a long change is cut, its counts whole	pending:S5	S5 vector
-shared/fileEdits.test.ts	Edit, MultiEdit, Write and NotebookEdit	pending:S5	S5 vector
-shared/fileEdits.test.ts	another tool, or no file: none	pending:S5	S5 vector
-shared/fileEdits.test.ts	arguments as the chat has them, half written or whole	pending:S5	S5 vector
-shared/instanceName.test.ts	names default cleanly and normalize a short instance suffix	pending:S5	S5 vector
-shared/instanceName.test.ts	validates types, invisible controls and Unicode character length	pending:S5	S5 vector
-shared/limitResume.test.ts	reads the 5-hour stop from its structured fields	pending:S5	S5 vector
-shared/limitResume.test.ts	reads a weekly stop the same way	pending:S5	S5 vector
-shared/limitResume.test.ts	uses the fields, not the words	pending:S5	S5 vector
-shared/limitResume.test.ts	falls back on quotaLimits when the error params lack the info	pending:S5	S5 vector
-shared/limitResume.test.ts	another API error, or an allowed rate limit, is no stop	pending:S5	S5 vector
-shared/limitResume.test.ts	the user typing after the stop resumed it	pending:S5	S5 vector
-shared/limitResume.test.ts	a resume the limit stopped again is paused by the newest stop	pending:S5	S5 vector
-shared/limitResume.test.ts	meta records, subagents and local commands do not count as turns	pending:S5	S5 vector
-shared/limitResume.test.ts	a tail cut inside a record skips the broken line	pending:S5	S5 vector
-shared/limitResume.test.ts	reads conversation mode's stream-json spelling too	pending:S5	S5 vector
-shared/limitResume.test.ts	defaults: on, a minute after the reset, the message	pending:S5	S5 vector
-shared/limitResume.test.ts	validates each key	pending:S5	S5 vector
-shared/limitResume.test.ts	keeps the valid stored keys only	pending:S5	S5 vector
-shared/limitResume.test.ts	limit kinds read as the user knows them	pending:S5	S5 vector
-shared/limitResume.test.ts	parseLimitPauses keeps well-formed pauses	pending:S5	S5 vector
-shared/mrReviewsFilter.test.ts	tokens and words, negation, several values of one key	pending:S5	S5 vector
-shared/mrReviewsFilter.test.ts	waiting: an override's whose-move, unless outdated	pending:S5	S5 vector
-shared/mrReviewsFilter.test.ts	own-work filters and completions	pending:S5	S5 vector
-shared/mrReviewsFilter.test.ts	merge keys: completions, and they keep one's own work	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	reads the usual ways labels write a delay	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	refuses what is not a delay	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	says a delay as a row does	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	the default patterns recognize the common spellings	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	a project's own pattern: the delay group, else the first group	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	queue labels	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	the most specific scope wins, list by list	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	scope keys and patterns are checked	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	bot names compare without @ and [bot]	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	Marge-bot's family of messages	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	counts from the label's add time, else the approval, else the update	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	nothing for a closed request or one without either	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	a bot assigned, or a reviewer, is merging it	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	the forge's merge queue, auto-merge, or a queue label	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	a failure note after the bot was assigned, and the bot leaving	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	the bot unassigning itself without a note still says so	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	assigned again after a failure: a new attempt	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	a note of someone else that looks like a failure is not one	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	GitHub: removed from the queue, auto-merge turned off by someone else	pending:S5	S5 vector
-shared/mrReviewsMerge.test.ts	a scheduled merge with a bot: both said	pending:S5	S5 vector
-shared/mrReviewsOrder.test.ts	top and bottom act within each request's own section	pending:S5	S5 vector
-shared/mrReviewsOrder.test.ts	before and after place beside the target; other sections are reported, not moved	pending:S5	S5 vector
-shared/mrReviewsOrder.test.ts	an explicit list comes first in its order; the rest follow unchanged	pending:S5	S5 vector
-shared/mrReviewsOrder.test.ts	unknown keys are reported, never silently dropped	pending:S5	S5 vector
-shared/mrReviewsOrder.test.ts	moving what is already there changes nothing	pending:S5	S5 vector
-shared/mrReviewsOrder.test.ts	the stored order keeps the keys of removed requests after the shown ones	pending:S5	S5 vector
-shared/mrReviewsOrder.test.ts	entries not in the order come first, then the order	pending:S5	S5 vector
-shared/mrReviewsOrder.test.ts	a move made since stays, and so does the stale list's own move	pending:S5	S5 vector
-shared/mrReviewsOrder.test.ts	keys the stale list never knew are left where they are	pending:S5	S5 vector
-shared/mrReviewsOrder.test.ts	a list with no change on the base changes nothing	pending:S5	S5 vector
-shared/renderedPage.test.ts	accepts the frame's messages	pending:S5	S5 vector
-shared/renderedPage.test.ts	refuses anything else	pending:S5	S5 vector
-shared/renderedPage.test.ts	a page's root map comes with its ready, checked	pending:S5	S5 vector
-shared/renderedPage.test.ts	goes back under the token, never anywhere else	pending:S5	S5 vector
-shared/renderedPage.test.ts	is exactly a set, remove or clear within the bounds	pending:S5	S5 vector
-shared/renderedPage.test.ts	are kept as http(s) prefixes or absolute directories	pending:S5	S5 vector
-shared/renderedPage.test.ts	match URLs and paths under them only	pending:S5	S5 vector
-shared/renderedPage.test.ts	site URLs drop their fragment and refuse credentials	pending:S5	S5 vector
-shared/renderedPage.test.ts	is kept from the frame's home and found again under any token	pending:S5	S5 vector
-shared/renderedPage.test.ts	a ready message keeps a valid home only	pending:S5	S5 vector
-shared/speechRate.test.ts	accepts finite rates from 0.5 to 2 only	pending:S5	S5 vector
-shared/speechRate.test.ts	steps up through the presets, then back to 1	pending:S5	S5 vector
-shared/speechRate.test.ts	plays what was made at its own pace faster, the rest as made	pending:S5	S5 vector
-shared/speechRate.test.ts	shows as a multiplier	pending:S5	S5 vector
-shared/stateDelta.test.ts	a state's changes carry only the changed fields and list items	pending:S5	S5 vector
-shared/stateDelta.test.ts	changes to a list the base lacks an item of do not apply	pending:S5	S5 vector
-shared/stateDelta.test.ts	nested lists keyed by another id field change item by item	pending:S5	S5 vector
-shared/toolSummary.test.ts	the description comes first, then the main argument's first line	pending:S5	S5 vector
-shared/toolSummary.test.ts	a summary is clipped	pending:S5	S5 vector
-shared/toolSummary.test.ts	MCP tools read as their server and tool	pending:S5	S5 vector
-shared/toolSummary.test.ts	SendMessage says its summary and who it went to, never an agent id	pending:S5	S5 vector
-shared/toolSummary.test.ts	review_reply says the thread it answered, from its quote	pending:S5	S5 vector
-shared/toolSummary.test.ts	the other Roamgate tools say what they did	pending:S5	S5 vector
-shared/toolSummary.test.ts	a session's name comes from a message it sent	pending:S5	S5 vector
-shared/toolSummary.test.ts	built-in tools say what they did in plain words	pending:S5	S5 vector
-shared/toolSummary.test.ts	Codex's tools say what they do, out of its code-mode JavaScript too	pending:S5	S5 vector
-shared/toolSummary.test.ts	a Codex wait says the command it waits for, once a call started it	pending:S5	S5 vector
-shared/toolSummary.test.ts	a Roamgate tool's description is its summary	pending:S5	S5 vector
-shared/toolSummary.test.ts	a reply says where it went and its first words	pending:S5	S5 vector
-shared/toolSummary.test.ts	the review client's commands read as the tools they do	pending:S5	S5 vector
-shared/toolSummary.test.ts	a write says what it wrote, where, and the ids to open it at	pending:S5	S5 vector
-shared/toolSummary.test.ts	a Work board call says what it changed and links to the item	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	every language has a text to read and a sample	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	names are trimmed and bounded	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	slugs are plain file names	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	words compare without case, accents or punctuation	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	the text shown is kept only when read to its end	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	a reading stopped early keeps the start of the text, as far as read	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	a recording cut mid-speech never gets the whole text	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	something else said, or a different ending: what was heard	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	Chinese and Japanese are compared by character	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	the texts take a child 8 to 12 seconds	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	comes at the pause after the text is read	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	not at a pause in the middle of it	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	a slow reader goes on to the limit, and the recording is cut	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	silence alone never ends before the limit	pending:S5	S5 vector
-shared/voiceLibrary.test.ts	a reading takes about two words a second	pending:S5	S5 vector
-shared/work.test.ts	a provisional title: the first line with words, 80 characters at most	pending:S5	S5 vector
-shared/work.test.ts	the search names tags as #tag or tag:tag, all of them kept; the rest are words	pending:S5	S5 vector
-shared/work.test.ts	owner:ADDRESS keeps the items that session owns, its subagents' too	pending:S5	S5 vector
-shared/work.test.ts	a chat link: a message chip, and the message it came from	pending:S5	S5 vector
-shared/work.test.ts	a file link: a chip with the file's name, the detail its whole path	pending:S5	S5 vector
-shared/work.test.ts	the search's last #word completes to the tags, those it begins first	pending:S5	S5 vector
-shared/work.test.ts	a card's tag adds #tag to the search once	pending:S5	S5 vector
-shared/work.test.ts	a card's links: a chip per kind with its count, no raw ids	pending:S5	S5 vector
-shared/work.test.ts	a request's number as its forge writes it	pending:S5	S5 vector
-shared/work.test.ts	the detail's links: labels one reads, named from what the page knows	pending:S5	S5 vector
-shared/work.test.ts	a card says what the user has to do only in For you and Verify	pending:S5	S5 vector
-shared/work.test.ts	answers: one line each, short, no empty nor repeated ones, 6 at most	pending:S5	S5 vector
-shared/work.test.ts	a project's family: itself and its subprojects at any depth	pending:S5	S5 vector
-shared/work.test.ts	a path's project: the closest root	pending:S5	S5 vector
-shared/work.test.ts	a workspace's tag: its name as a slug	pending:S5	S5 vector
-shared/work.test.ts	a workspace's place: coordinator, project, the tag its items get	pending:S5	S5 vector
-shared/work.test.ts	a filter by a project's tree	pending:S5	S5 vector
-shared/work.test.ts	a link's checkouts, in order: its own root (on the connection of the project's root holding it), the project's roots, the branch rule's	pending:S5	S5 vector
-shared/work.test.ts	done when: doing and open items go done when their commit lands; verify and for you only record it	pending:S5	S5 vector
-shared/work.test.ts	an item's open questions: the agent's unresolved threads on parts of its description	pending:S5	S5 vector
-shared/work.test.ts	a description with a heading reads as a document	pending:S5	S5 vector
-shared/workspaceTree.test.ts	moves a workspace into another, across connections	pending:S5	S5 vector
-shared/workspaceTree.test.ts	groups nest at any depth and order their children	pending:S5	S5 vector
-shared/workspaceTree.test.ts	moving out returns a workspace to its usual place	pending:S5	S5 vector
-shared/workspaceTree.test.ts	refuses to move something into itself or below itself	pending:S5	S5 vector
-shared/workspaceTree.test.ts	deleting a group hands its children to its parent, in its place	pending:S5	S5 vector
-shared/workspaceTree.test.ts	deleting a top-level group sends its workspaces back to their usual place	pending:S5	S5 vector
-shared/workspaceTree.test.ts	removing a gone workspace keeps its children	pending:S5	S5 vector
-shared/workspaceTree.test.ts	renames and collapses groups, and refuses empty names	pending:S5	S5 vector
-shared/workspaceTree.test.ts	parsing drops what does not hold together	pending:S5	S5 vector
-shared/workspaceTree.test.ts	validates operations sent over RPC	pending:S5	S5 vector
-shared/workspaceTree.test.ts	a workspace moved to the top level stays placed there, unlike an unplaced one	pending:S5	S5 vector
-shared/workspaceTree.test.ts	moves out of a group to the top, in order, and back to the usual place	pending:S5	S5 vector
-shared/workspaceTree.test.ts	groups go above the list, or below it	pending:S5	S5 vector
-shared/workspaceTree.test.ts	survives a round trip through storage and RPC	pending:S5	S5 vector
-shared/workspaceTree.test.ts	set_collapsed keeps a group's place	pending:S5	S5 vector
-shared/workspaceTree.test.ts	matches by path after a Herdr restart renumbers the workspaces	pending:S5	S5 vector
-shared/workspaceTree.test.ts	a workspace whose id now belongs to another is not mistaken for it	pending:S5	S5 vector
-shared/workspaceTree.test.ts	finds a renamed workspace without a checkout by its last id	pending:S5	S5 vector
-shared/workspaceTree.test.ts	a connection that is down leaves its workspaces offline, in place	pending:S5	S5 vector
-shared/workspaceTree.test.ts	are the ones a ready connection no longer lists	pending:S5	S5 vector
-shared/workspaceTree.test.ts	leave their group, the rest in order	pending:S5	S5 vector
-shared/workspaceTree.test.ts	an empty list confirms nothing: Herdr may still be restoring	pending:S5	S5 vector
-shared/workspaceTree.test.ts	one whose name is still listed is not gone, only moved	pending:S5	S5 vector
-shared/workspaceTree.test.ts	a closed workspace takes only its own node	pending:S5	S5 vector
-shared/workspaceTree.test.ts	puts a new workspace under the one that asked, across repositories	pending:S5	S5 vector
-shared/workspaceTree.test.ts	puts a worktree made from another worktree under that worktree	pending:S5	S5 vector
-shared/workspaceTree.test.ts	leaves alone what the usual list already nests there	pending:S5	S5 vector
-shared/workspaceTree.test.ts	never overrides where the user put a workspace	pending:S5	S5 vector
-shared/workspaceTree.test.ts	never re-nests a worktree the user put at the top level	pending:S5	S5 vector
-shared/workspaceTree.test.ts	builds references from what workspace.list gives	pending:S5	S5 vector
-shared/workspaceTree.test.ts	a path splits on / or >, and empty names drop	pending:S5	S5 vector
-shared/workspaceTree.test.ts	names match case-insensitively from the top, through workspaces	pending:S5	S5 vector
-shared/workspaceTree.test.ts	a path not found from the top is tried from each base	pending:S5	S5 vector
-shared/workspaceTree.test.ts	a workspace on the preferred connection wins a level, then groups	pending:S5	S5 vector
-shared/workspaceTree.test.ts	a level with several matches takes the one the rest of the path goes on from	pending:S5	S5 vector
-shared/workspaceTree.test.ts	create makes the missing groups under the deepest match	pending:S5	S5 vector
-shared/workspaceTree.test.ts	create from a base when it reaches deeper than the top	pending:S5	S5 vector
-shared/workspaceTree.test.ts	an empty path leads nowhere	pending:S5	S5 vector
-shared/workspaceTree.test.ts	group paths list groups and workspaces holding others	pending:S5	S5 vector
-shared/workspaceTree.test.ts	ancestors go from a node to the top	pending:S5	S5 vector
+shared/agentMessage.test.ts	addresses are CONNECTION/PANE	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
+shared/agentMessage.test.ts	the sender's message is read back from its Bash call, however quoted	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
+shared/agentMessage.test.ts	a framed message reads as another session's in the chat, never the user's	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
+shared/agentMessage.test.ts	the sender's message is read back from its Roamgate tool call	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
+shared/agentMessage.test.ts	the note keeps the safety clause in every message, short, and names the receiver's way to reply	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
+shared/agentMessage.test.ts	the chat leaves out today's note and the older, longer one	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	alone opens the picker, with a name switches	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	anything else is not the command	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	a model name is what Claude Code takes, nothing a flag or a shell would read	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	one model whatever the case, a context tag or a release date	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	another version is another model	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	the agent's rows first, then the profile's models no row covers	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	without the agent's rows: a default, then the profile's	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	the row it runs: the one picked, else its model's first row	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	the name asked, with the model it is when another	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	a refusal, a long one cut	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	Claude's models by family and version, however spelled	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	aliases, and other backends' models as their words	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	a gateway's provider stays in front, the segment before the model	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	no prefix without a slash, nor around a lone one	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	the built-in Claude is offered first and is plain	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	a user profile named Claude replaces the built-in	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	invalid profiles are refused with a reason	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	normalizing drops what is invalid and resets an unknown default	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	a profile with its own token removes the pane's key and providers	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	a browser sees a secret file's path, never a value	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	the chip names the model	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	Claude Code's limit message, with its reset time in its zone	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	a reset time already past today is tomorrow's	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	a weekly limit names its day	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	older and API forms	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	a limit is over once its reset time has passed, read from when it was hit	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	a transcript's newest assistant record decides	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	the last answer's model; notices and API errors are no answers	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	Anthropic's endpoint has Claude models, a gateway its slots'	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	back on Claude after Kimi: the Claude model it had	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	onto a gateway: its own model; nothing known: nothing	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	the last answer, with when it came	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	an answer from before the choice, on another model, is not one	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	answered with it: by its name, or the model the agent said it is	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	a later answer on another model the profile serves: the session moved on	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	Claude, Pi and Codex transcripts, the newest record first	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	tool activities accept bounded details and retain legacy summaries	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	assistant messages accept bounded reasoning steps	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	Ranger notification envelopes require a string status and bounded task targets	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	task details bind run records to the selected task and validate stored outputs	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	task management previews validate exact operations and targets while retaining legacy creation previews	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	close action snapshots accept exact close kinds and reject malformed action metadata	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	thinking metadata validates exact SDK levels and remains optional for old snapshots	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	custom model reasoning declarations validate booleans and accept legacy metadata	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	task scope uses the shared 512-workspace inventory boundary	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	all-workspace consent is explicit metadata and legacy auto snapshots remain valid	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	mentions validate bounded typed targets without extra private metadata	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	mention ranges use exact UTF-16 markers, ordered nonoverlapping ranges and legacy messages	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	task mention targets remain inside the saved workspace scope	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/bashMode.test.ts	a `!` first, past any spaces, makes a shell line, as in the terminal	vector:contract/vectors/bash-mode.json	S5 vectors, read by bun test and the Rust crate
+shared/bashMode.test.ts	Claude reads a run in Claude Code's own format: the output escaped, the command not	vector:contract/vectors/bash-mode.json	S5 vectors, read by bun test and the Rust crate
+shared/bashMode.test.ts	output past the cap is cut as Claude Code cuts it	vector:contract/vectors/bash-mode.json	S5 vectors, read by bun test and the Rust crate
+shared/bashMode.test.ts	runs read back from a transcript: the terminal's two records, and one message	vector:contract/vectors/bash-mode.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	a thread stays on its lines while they read as written	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	an item moved as it was is found by its last line's text, its lines with it	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	an item reworded and moved is found by its first words, its quote now as it reads	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	a deleted item is found nowhere: never on what its lines hold now	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	an item too changed is not found: most of its first words must read on	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	a short quote must read whole, a reworded first line keeps the lines after it	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	a thread on a heading follows the heading, never a sentence saying its word	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	a last line read on another item does not keep the thread there	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	a thread with no line text (an agent's) is kept where its words are, and given it	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	a thread off its lines is placed again once its words are back	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	a graphic's region, a removed line and a message part are not looked for	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	a moved anchor says its lines, text and words, its note too	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	a detached anchor keeps its words and text, off any line, its note too	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	anchorInFile changes nothing kept, moves or detaches the rest	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	renderedWords reads source lines as the preview shows them, near enough	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileEdits.test.ts	common lines stay as context, the rest removed then added	vector:contract/vectors/file-edits.json	S5 vectors, read by bun test and the Rust crate
+shared/fileEdits.test.ts	a kept line in the middle of a change stays context	vector:contract/vectors/file-edits.json	S5 vectors, read by bun test and the Rust crate
+shared/fileEdits.test.ts	too long to work out: all out, then all in	vector:contract/vectors/file-edits.json	S5 vectors, read by bun test and the Rust crate
+shared/fileEdits.test.ts	its patch, numbered, the 'no newline' marker left out	vector:contract/vectors/file-edits.json	S5 vectors, read by bun test and the Rust crate
+shared/fileEdits.test.ts	a new file: its content, created	vector:contract/vectors/file-edits.json	S5 vectors, read by bun test and the Rust crate
+shared/fileEdits.test.ts	nothing it can say: none	vector:contract/vectors/file-edits.json	S5 vectors, read by bun test and the Rust crate
+shared/fileEdits.test.ts	a long change is cut, its counts whole	vector:contract/vectors/file-edits.json	S5 vectors, read by bun test and the Rust crate
+shared/fileEdits.test.ts	Edit, MultiEdit, Write and NotebookEdit	vector:contract/vectors/file-edits.json	S5 vectors, read by bun test and the Rust crate
+shared/fileEdits.test.ts	another tool, or no file: none	vector:contract/vectors/file-edits.json	S5 vectors, read by bun test and the Rust crate
+shared/fileEdits.test.ts	arguments as the chat has them, half written or whole	vector:contract/vectors/file-edits.json	S5 vectors, read by bun test and the Rust crate
+shared/instanceName.test.ts	names default cleanly and normalize a short instance suffix	vector:contract/vectors/instance-name.json	S5 vectors, read by bun test and the Rust crate
+shared/instanceName.test.ts	validates types, invisible controls and Unicode character length	vector:contract/vectors/instance-name.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	reads the 5-hour stop from its structured fields	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	reads a weekly stop the same way	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	uses the fields, not the words	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	falls back on quotaLimits when the error params lack the info	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	another API error, or an allowed rate limit, is no stop	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	the user typing after the stop resumed it	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	a resume the limit stopped again is paused by the newest stop	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	meta records, subagents and local commands do not count as turns	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	a tail cut inside a record skips the broken line	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	reads conversation mode's stream-json spelling too	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	defaults: on, a minute after the reset, the message	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	validates each key	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	keeps the valid stored keys only	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	limit kinds read as the user knows them	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	parseLimitPauses keeps well-formed pauses	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsFilter.test.ts	tokens and words, negation, several values of one key	vector:contract/vectors/mr-reviews-filter.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsFilter.test.ts	waiting: an override's whose-move, unless outdated	vector:contract/vectors/mr-reviews-filter.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsFilter.test.ts	own-work filters and completions	vector:contract/vectors/mr-reviews-filter.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsFilter.test.ts	merge keys: completions, and they keep one's own work	vector:contract/vectors/mr-reviews-filter.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	reads the usual ways labels write a delay	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	refuses what is not a delay	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	says a delay as a row does	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	the default patterns recognize the common spellings	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	a project's own pattern: the delay group, else the first group	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	queue labels	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	the most specific scope wins, list by list	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	scope keys and patterns are checked	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	bot names compare without @ and [bot]	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	Marge-bot's family of messages	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	counts from the label's add time, else the approval, else the update	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	nothing for a closed request or one without either	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	a bot assigned, or a reviewer, is merging it	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	the forge's merge queue, auto-merge, or a queue label	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	a failure note after the bot was assigned, and the bot leaving	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	the bot unassigning itself without a note still says so	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	assigned again after a failure: a new attempt	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	a note of someone else that looks like a failure is not one	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	GitHub: removed from the queue, auto-merge turned off by someone else	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	a scheduled merge with a bot: both said	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsOrder.test.ts	top and bottom act within each request's own section	vector:contract/vectors/mr-reviews-order.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsOrder.test.ts	before and after place beside the target; other sections are reported, not moved	vector:contract/vectors/mr-reviews-order.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsOrder.test.ts	an explicit list comes first in its order; the rest follow unchanged	vector:contract/vectors/mr-reviews-order.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsOrder.test.ts	unknown keys are reported, never silently dropped	vector:contract/vectors/mr-reviews-order.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsOrder.test.ts	moving what is already there changes nothing	vector:contract/vectors/mr-reviews-order.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsOrder.test.ts	the stored order keeps the keys of removed requests after the shown ones	vector:contract/vectors/mr-reviews-order.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsOrder.test.ts	entries not in the order come first, then the order	vector:contract/vectors/mr-reviews-order.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsOrder.test.ts	a move made since stays, and so does the stale list's own move	vector:contract/vectors/mr-reviews-order.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsOrder.test.ts	keys the stale list never knew are left where they are	vector:contract/vectors/mr-reviews-order.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsOrder.test.ts	a list with no change on the base changes nothing	vector:contract/vectors/mr-reviews-order.json	S5 vectors, read by bun test and the Rust crate
+shared/renderedPage.test.ts	accepts the frame's messages	vector:contract/vectors/rendered-page.json	S5 vectors, read by bun test and the Rust crate
+shared/renderedPage.test.ts	refuses anything else	vector:contract/vectors/rendered-page.json	S5 vectors, read by bun test and the Rust crate
+shared/renderedPage.test.ts	a page's root map comes with its ready, checked	vector:contract/vectors/rendered-page.json	S5 vectors, read by bun test and the Rust crate
+shared/renderedPage.test.ts	goes back under the token, never anywhere else	vector:contract/vectors/rendered-page.json	S5 vectors, read by bun test and the Rust crate
+shared/renderedPage.test.ts	is exactly a set, remove or clear within the bounds	vector:contract/vectors/rendered-page.json	S5 vectors, read by bun test and the Rust crate
+shared/renderedPage.test.ts	are kept as http(s) prefixes or absolute directories	vector:contract/vectors/rendered-page.json	S5 vectors, read by bun test and the Rust crate
+shared/renderedPage.test.ts	match URLs and paths under them only	vector:contract/vectors/rendered-page.json	S5 vectors, read by bun test and the Rust crate
+shared/renderedPage.test.ts	site URLs drop their fragment and refuse credentials	vector:contract/vectors/rendered-page.json	S5 vectors, read by bun test and the Rust crate
+shared/renderedPage.test.ts	is kept from the frame's home and found again under any token	vector:contract/vectors/rendered-page.json	S5 vectors, read by bun test and the Rust crate
+shared/renderedPage.test.ts	a ready message keeps a valid home only	vector:contract/vectors/rendered-page.json	S5 vectors, read by bun test and the Rust crate
+shared/speechRate.test.ts	accepts finite rates from 0.5 to 2 only	vector:contract/vectors/speech-rate.json	S5 vectors, read by bun test and the Rust crate
+shared/speechRate.test.ts	steps up through the presets, then back to 1	vector:contract/vectors/speech-rate.json	S5 vectors, read by bun test and the Rust crate
+shared/speechRate.test.ts	plays what was made at its own pace faster, the rest as made	vector:contract/vectors/speech-rate.json	S5 vectors, read by bun test and the Rust crate
+shared/speechRate.test.ts	shows as a multiplier	vector:contract/vectors/speech-rate.json	S5 vectors, read by bun test and the Rust crate
+shared/stateDelta.test.ts	a state's changes carry only the changed fields and list items	vector:contract/vectors/state-delta.json	S5 vectors, read by bun test and the Rust crate
+shared/stateDelta.test.ts	changes to a list the base lacks an item of do not apply	vector:contract/vectors/state-delta.json	S5 vectors, read by bun test and the Rust crate
+shared/stateDelta.test.ts	nested lists keyed by another id field change item by item	vector:contract/vectors/state-delta.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	the description comes first, then the main argument's first line	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	a summary is clipped	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	MCP tools read as their server and tool	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	SendMessage says its summary and who it went to, never an agent id	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	review_reply says the thread it answered, from its quote	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	the other Roamgate tools say what they did	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	a session's name comes from a message it sent	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	built-in tools say what they did in plain words	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	Codex's tools say what they do, out of its code-mode JavaScript too	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	a Codex wait says the command it waits for, once a call started it	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	a Roamgate tool's description is its summary	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	a reply says where it went and its first words	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	the review client's commands read as the tools they do	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	a write says what it wrote, where, and the ids to open it at	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	a Work board call says what it changed and links to the item	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	every language has a text to read and a sample	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	names are trimmed and bounded	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	slugs are plain file names	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	words compare without case, accents or punctuation	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	the text shown is kept only when read to its end	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	a reading stopped early keeps the start of the text, as far as read	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	a recording cut mid-speech never gets the whole text	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	something else said, or a different ending: what was heard	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	Chinese and Japanese are compared by character	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	the texts take a child 8 to 12 seconds	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	comes at the pause after the text is read	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	not at a pause in the middle of it	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	a slow reader goes on to the limit, and the recording is cut	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	silence alone never ends before the limit	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	a reading takes about two words a second	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a provisional title: the first line with words, 80 characters at most	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	the search names tags as #tag or tag:tag, all of them kept; the rest are words	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	owner:ADDRESS keeps the items that session owns, its subagents' too	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a chat link: a message chip, and the message it came from	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a file link: a chip with the file's name, the detail its whole path	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	the search's last #word completes to the tags, those it begins first	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a card's tag adds #tag to the search once	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a card's links: a chip per kind with its count, no raw ids	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a request's number as its forge writes it	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	the detail's links: labels one reads, named from what the page knows	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a card says what the user has to do only in For you and Verify	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	answers: one line each, short, no empty nor repeated ones, 6 at most	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a project's family: itself and its subprojects at any depth	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a path's project: the closest root	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a workspace's tag: its name as a slug	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a workspace's place: coordinator, project, the tag its items get	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a filter by a project's tree	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a link's checkouts, in order: its own root (on the connection of the project's root holding it), the project's roots, the branch rule's	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	done when: doing and open items go done when their commit lands; verify and for you only record it	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	an item's open questions: the agent's unresolved threads on parts of its description	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	a description with a heading reads as a document	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	moves a workspace into another, across connections	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	groups nest at any depth and order their children	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	moving out returns a workspace to its usual place	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	refuses to move something into itself or below itself	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	deleting a group hands its children to its parent, in its place	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	deleting a top-level group sends its workspaces back to their usual place	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	removing a gone workspace keeps its children	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	renames and collapses groups, and refuses empty names	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	parsing drops what does not hold together	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	validates operations sent over RPC	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	a workspace moved to the top level stays placed there, unlike an unplaced one	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	moves out of a group to the top, in order, and back to the usual place	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	groups go above the list, or below it	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	survives a round trip through storage and RPC	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	set_collapsed keeps a group's place	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	matches by path after a Herdr restart renumbers the workspaces	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	a workspace whose id now belongs to another is not mistaken for it	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	finds a renamed workspace without a checkout by its last id	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	a connection that is down leaves its workspaces offline, in place	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	are the ones a ready connection no longer lists	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	leave their group, the rest in order	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	an empty list confirms nothing: Herdr may still be restoring	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	one whose name is still listed is not gone, only moved	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	a closed workspace takes only its own node	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	puts a new workspace under the one that asked, across repositories	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	puts a worktree made from another worktree under that worktree	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	leaves alone what the usual list already nests there	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	never overrides where the user put a workspace	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	never re-nests a worktree the user put at the top level	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	builds references from what workspace.list gives	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	a path splits on / or >, and empty names drop	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	names match case-insensitively from the top, through workspaces	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	a path not found from the top is tried from each base	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	a workspace on the preferred connection wins a level, then groups	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	a level with several matches takes the one the rest of the path goes on from	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	create makes the missing groups under the deepest match	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	create from a base when it reaches deeper than the top	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	an empty path leads nowhere	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	group paths list groups and workspaces holding others	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	ancestors go from a node to the top	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
 scripts/brand-assets.test.ts	brand icons and sharing images have the declared dimensions	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/brand-assets.test.ts	legacy public image URLs serve Roamgate artwork too	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/check-release-assets.test.js	publishes exactly six Roamgate targets and no legacy discovery paths	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them

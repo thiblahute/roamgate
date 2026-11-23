@@ -12,6 +12,12 @@
 //! of the plan's subtask S5, `pending:windows-runner`), or `todo`.
 //! `parity-ledger` rewrites the file from the sources, keeping the
 //! mappings it has.
+//!
+//! A test file whose cases moved to contract/vectors calls
+//! `runVectors("<name>", ...)`: its tests are then the cases of
+//! `contract/vectors/<name>.json` (each case's `ledger` title, else its
+//! `name`) besides the `it()` and `test()` it still has, so the ledger keeps
+//! the old tests' rows once their bodies are gone.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -171,6 +177,46 @@ pub fn titles(text: &str) -> Vec<String> {
     out
 }
 
+/// The names `runVectors("<name>"` calls in a test file give.
+pub fn vector_names(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(at) = rest.find("runVectors(") {
+        rest = &rest[at + "runVectors(".len()..];
+        let bytes = rest.as_bytes();
+        let start = skip_space(bytes, 0);
+        if let Some(name) = string_at(bytes, start) {
+            out.push(name);
+        }
+    }
+    out
+}
+
+/// The old tests a vector file holds: each case's `ledger` title, else its
+/// `name`, once each, in order.
+pub fn vector_titles(root: &Path, name: &str) -> Result<Vec<String>> {
+    let path = root
+        .join("contract")
+        .join("vectors")
+        .join(format!("{name}.json"));
+    let text = std::fs::read_to_string(&path)
+        .with_context(|| format!("runVectors names {}", path.display()))?;
+    let doc: serde_json::Value =
+        serde_json::from_str(&text).with_context(|| path.display().to_string())?;
+    let mut out: Vec<String> = Vec::new();
+    for case in doc["cases"].as_array().into_iter().flatten() {
+        let title = case["ledger"]
+            .as_str()
+            .or_else(|| case["name"].as_str())
+            .with_context(|| format!("{}: a case with no name", path.display()))?
+            .replace(['\t', '\n'], " ");
+        if !out.contains(&title) {
+            out.push(title);
+        }
+    }
+    Ok(out)
+}
+
 /// Every test of the TS suite.
 pub fn discover(root: &Path) -> Result<Vec<TestId>> {
     let mut out = Vec::new();
@@ -202,15 +248,26 @@ pub fn discover(root: &Path) -> Result<Vec<TestId>> {
                 .to_string_lossy()
                 .replace('\\', "/");
             let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+            let mut found: Vec<String> = Vec::new();
             for title in titles(&text) {
                 let title = title.replace(['\t', '\n'], " ");
                 let count = seen.entry(title.clone()).or_default();
                 *count += 1;
-                let title = if *count == 1 {
+                found.push(if *count == 1 {
                     title
                 } else {
                     format!("{title}#{count}")
-                };
+                });
+            }
+            // Vector cases carry their old title, numbered already.
+            for name in vector_names(&text) {
+                for title in vector_titles(root, &name)? {
+                    if !found.contains(&title) {
+                        found.push(title);
+                    }
+                }
+            }
+            for title in found {
                 out.push(TestId {
                     file: file.clone(),
                     title,
@@ -424,7 +481,18 @@ pub fn rebuild(
 
 #[cfg(test)]
 mod tests {
-    use super::titles;
+    use super::{titles, vector_names};
+
+    #[test]
+    fn finds_the_vector_files_a_test_file_runs() {
+        let text = r#"
+            import { runVectors } from "../contract/vectors/vectors";
+            // The cases are contract/vectors/x.json.
+            runVectors("speech-rate", { speechRate });
+            runVectors( 'other', {});
+        "#;
+        assert_eq!(vector_names(text), vec!["speech-rate", "other"]);
+    }
 
     #[test]
     fn finds_titles_and_skips_lookalikes() {

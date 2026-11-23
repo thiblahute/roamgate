@@ -58,10 +58,15 @@ fn the_ledger_accounts_for_every_old_test() {
         "rows of tests that are gone ({how}): {stale:#?}"
     );
     let claims = ledger::scenario_claims().unwrap();
-    let expected = ledger::rebuild(&tests, &rows, &claims);
+    // By test, not by position: a restack may list a file's tests in
+    // another order (its vector cases after the tests it kept).
+    let expected: std::collections::BTreeMap<_, _> = ledger::rebuild(&tests, &rows, &claims)
+        .into_iter()
+        .map(|row| (row.id.clone(), row))
+        .collect();
     let outdated: Vec<String> = rows
         .iter()
-        .zip(&expected)
+        .filter_map(|row| expected.get(&row.id).map(|want| (row, want)))
         .filter(|(row, want)| row.mapping != want.mapping)
         .map(|(row, want)| {
             format!(

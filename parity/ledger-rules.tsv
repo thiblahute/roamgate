@@ -56,35 +56,66 @@ server/src/workspace/review-	rust-unit:roamgate-git	review read scripts
 server/src/workspace/pull-request	rust-unit:roamgate-forge	pull request status
 server/src/workspace/forge-calls	rust-unit:roamgate-forge	forge calls of workspaces
 server/src/worktree/	rust-unit:roamgate-workspace	worktrees and hooks
-shared/	pending:S5	S5 vector
-server/src/bridge/frame-to-ansi.	pending:S5	S5 vector
-server/src/bridge/vt-input-classifier.	pending:S5	S5 vector
-server/src/bridge/ssh-command.	pending:S5	S5 vector
-server/src/review/patch.	pending:S5	S5 vector
-server/src/review/changes-anchors.	pending:S5	S5 vector
-server/src/review/commit-anchors.	pending:S5	S5 vector
-server/src/review/file-anchors.	pending:S5	S5 vector
-server/src/review/rewritten-anchors.	pending:S5	S5 vector
-server/src/workspace/remote-files.	pending:S5	S5 vector
-server/src/agent/antigravity-session.	pending:S5	S5 vector
-server/src/agent/codex-session.	pending:S5	S5 vector
-server/src/agent/grok-session.	pending:S5	S5 vector
-server/src/agent/muse-session.	pending:S5	S5 vector
-server/src/agent/session-history.	pending:S5	S5 vector
-server/src/agent/session-tasks.	pending:S5	S5 vector
-server/src/agent/session-trajectory.	pending:S5	S5 vector
-server/src/agent/session-title.	pending:S5	S5 vector
-server/src/agent/token-usage.	pending:S5	S5 vector
-server/src/agent/session-compaction.	pending:S5	S5 vector
-server/src/agent/session-commands.	pending:S5	S5 vector
-server/src/agent/session-artifacts.	pending:S5	S5 vector
-server/src/conversation/drivers/contract.	pending:S5	S5 vector
-server/src/utils/logger.	pending:S5	S5 vector
-server/src/http/terminal-path-text.	pending:S5	S5 vector
-server/src/config/service-manager.	pending:S5	S5 vector
-server/src/assistant/task-schedule.	pending:S5	S5 vector
-server/src/mr-reviews/queries.	pending:S5	S5 vector
-server/src/mr-reviews/complexity.	pending:S5	S5 vector
+# S5: the vectors of contract/vectors, by file; what stays a TS test, by title.
+shared/agentMessage.test.ts	vector:contract/vectors/agent-message.json	S5 vectors, read by bun test and the Rust crate
+shared/agentModels.test.ts	vector:contract/vectors/agent-models.json	S5 vectors, read by bun test and the Rust crate
+shared/agentProfiles.test.ts	vector:contract/vectors/agent-profiles.json	S5 vectors, read by bun test and the Rust crate
+shared/assistant.test.ts	vector:contract/vectors/assistant.json	S5 vectors, read by bun test and the Rust crate
+shared/bashMode.test.ts	vector:contract/vectors/bash-mode.json	S5 vectors, read by bun test and the Rust crate
+shared/fileAnchors.test.ts	vector:contract/vectors/file-anchors.json	S5 vectors, read by bun test and the Rust crate
+shared/fileEdits.test.ts	vector:contract/vectors/file-edits.json	S5 vectors, read by bun test and the Rust crate
+shared/instanceName.test.ts	vector:contract/vectors/instance-name.json	S5 vectors, read by bun test and the Rust crate
+shared/limitResume.test.ts	vector:contract/vectors/limit-resume.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsFilter.test.ts	vector:contract/vectors/mr-reviews-filter.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsMerge.test.ts	vector:contract/vectors/mr-reviews-merge.json	S5 vectors, read by bun test and the Rust crate
+shared/mrReviewsOrder.test.ts	vector:contract/vectors/mr-reviews-order.json	S5 vectors, read by bun test and the Rust crate
+shared/renderedPage.test.ts	vector:contract/vectors/rendered-page.json	S5 vectors, read by bun test and the Rust crate
+shared/speechRate.test.ts	vector:contract/vectors/speech-rate.json	S5 vectors, read by bun test and the Rust crate
+shared/stateDelta.test.ts	vector:contract/vectors/state-delta.json	S5 vectors, read by bun test and the Rust crate
+shared/toolSummary.test.ts	vector:contract/vectors/tool-summary.json	S5 vectors, read by bun test and the Rust crate
+shared/voiceLibrary.test.ts	vector:contract/vectors/voice-library.json	S5 vectors, read by bun test and the Rust crate
+shared/workspaceTree.test.ts	vector:contract/vectors/workspace-tree.json	S5 vectors, read by bun test and the Rust crate
+shared/work.test.ts	vector:contract/vectors/work.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/antigravity-session.test.ts	rust-unit:roamgate-agents	reads an Antigravity SQLite database and finds sessions on disk: no JSON form; the agents crate reads it
+server/src/agent/codex-session.test.ts	vector:contract/vectors/codex-session.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/grok-session.test.ts	vector:contract/vectors/grok-session.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/grok-session.test.ts	rust-unit:roamgate-agents	finds sessions in directories on disk; the agents crate finds them	^(finds the newest session for the exact working directory|resolves a known session id without an integration-provided path|uses the foreground process cwd instead of the pane identity cwd)$
+server/src/agent/muse-session.test.ts	vector:contract/vectors/muse-session.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/muse-session.test.ts	rust-unit:roamgate-agents	finds sessions on disk and serves them through the handlers; the agents crate does	^(discovers the newest exact workspace, excluding subagents and other workspaces|caches and coalesces discovery metadata without pinning the selected session|preserves native run/tool errors in History and ATIF without leaking across runs|serves reported paths through the shared handlers \(remote: %s\))$
+server/src/agent/session-artifacts.test.ts	vector:contract/vectors/session-artifacts.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-commands.test.ts	vector:contract/vectors/session-commands.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-compaction.test.ts	vector:contract/vectors/session-compaction.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.agent-message.test.ts	vector:contract/vectors/session-history-agent-message.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-history.test.ts	vector:contract/vectors/session-history.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.resume.test.ts	vector:contract/vectors/session-tasks-resume.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.sessions.test.ts	vector:contract/vectors/session-tasks-sessions.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-tasks.test.ts	vector:contract/vectors/session-tasks.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-title.test.ts	vector:contract/vectors/session-title.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/session-trajectory.test.ts	vector:contract/vectors/session-trajectory.json	S5 vectors, read by bun test and the Rust crate
+server/src/agent/token-usage.test.ts	vector:contract/vectors/token-usage.json	S5 vectors, read by bun test and the Rust crate
+server/src/assistant/task-schedule.test.ts	vector:contract/vectors/task-schedule.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/frame-to-ansi.test.ts	vector:contract/vectors/frame-to-ansi.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/ssh-command.test.ts	vector:contract/vectors/ssh-command.json	S5 vectors, read by bun test and the Rust crate
+server/src/bridge/vt-input-classifier.test.ts	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors	^(installs and starts a systemd user service|reloads the systemd definition before restarting|does not restart systemd when daemon-reload fails|reports a missing service definition during reload|preserves an existing environment file during reinstall|generates a login token for loopback service host %s|rejects out-of-range passwords in %s config before migrating or changing services|validates the effective launchd password: %s|rejects invalid effective launchd password from \$\{identity\} before mutations: %s|rejects unsafe launchd %s without execution or mutation|preserves a managed custom wrapper command|replaces a stale custom command that does not invoke this binary|refuses to overwrite an unmanaged service without force|validates launchd identity before writing service files|installs, inspects, restarts, reloads, and removes a launchd agent|launchd \$\{syntax\} uses the resolved \$\{occupied \? "occupied" : "free"\} listener|manages a Windows login task|uninstalls an inactive Windows task when its helper script is missing|removes a stale Windows helper when its task is already absent|propagates Windows task query failures without changing state|does not restart when task-state confirmation fails|loads environment for the direct Windows task process|does not install a development runtime as a service|does not bootstrap launchd when stopping the loaded job fails|keeps a managed systemd definition when stopping fails|treats uninstall without a managed definition as a no-op|\$\{platform\} \$\{action\} manages the generated legacy service without migrating it|\$\{platform\} refuses ambiguous or unverified management: \$\{state\}|\$\{platform\} preserves the legacy definition when stopping fails|restores the original systemd definition and permissions if daemon-reload fails|refuses symlinked legacy definitions without touching the target|keeps the legacy launchd definition on query errors during uninstall or reload|refuses an installed legacy \$\{platform\} definition before \$\{action\}, even with force|detects loaded legacy \$\{platform\} service without its on-disk definition|launchd query error \$\{queryCode\} blocks \$\{args\.join\(" "\)\} with \$\{existing \? "existing" : "no"\} current files|confirmed launchd legacy absence permits \$\{args\.join\(" "\)\}|missing launchd domain blocks \$\{args\.join\(" "\)\} before the service query|unknown legacy Windows query errors refuse activation without replacing files|legacy Windows task hash stays tied to its old per-user config directory|after explicit legacy removal install preserves old env and token|service run honors explicit new and legacy supervisor overrides|rejects an invalid service PIN before installation: %s|reports a published legacy service that service commands manage|ignores a customized legacy definition)$
+server/src/conversation/drivers/contract.test.ts	vector:contract/vectors/driver-contract.json	S5 vectors, read by bun test and the Rust crate
+server/src/http/terminal-path-text.test.ts	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
+server/src/http/terminal-path-text.test.ts	pending:windows-runner	runs the quoted path through a real PowerShell, on Windows only (plan 5.10)	^(PowerShell receives comma and quoted paths as one unchanged argument)$
+server/src/http/terminal-path-text.test.ts	rust-unit:roamgate-http	runs the quoted path through a real sh; the quoting itself is vectors	^(POSIX shell receives each supported path as one unchanged argument)$
+server/src/mr-reviews/complexity.test.ts	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
+server/src/mr-reviews/complexity.test.ts	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors	^(the details and the followed projects arrive in more queries, without an error|the light list is split too when its lists are too much together|a field refusal still falls back to fewer fields)$
+server/src/mr-reviews/queries.test.ts	vector:contract/vectors/mr-queries.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/changes-anchors.test.ts	vector:contract/vectors/changes-anchors.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/changes-anchors.test.ts	rust-unit:roamgate-review	the review service migrating stored threads on disk; combinedAnchor is vectors	^(Changes' entry anchors move onto the combined diff by their line's text|the migration runs once: a second read writes nothing, a migrated thread is not read again|the migrated anchors are kept across a restart of the server|a branch review's threads and a range review are left alone|a review read publishes it again once its threads moved|a checkout not readable yet \(a connection not ready, at startup\) is asked again later)$
+server/src/review/commit-anchors.test.ts	vector:contract/vectors/commit-anchors.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/file-anchors.test.ts	rust-unit:roamgate-review	the review service moving stored threads as files change on disk
+server/src/review/patch.test.ts	vector:contract/vectors/patch.json	S5 vectors, read by bun test and the Rust crate
+server/src/review/rewritten-anchors.test.ts	rust-unit:roamgate-review	the review service following threads across rewritten commits in a real git repository
+server/src/utils/logger.test.ts	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
+server/src/utils/logger.test.ts	rust-unit:roamgate-base	a value no JSON can carry (a circular object, a bigint): the Rust logger takes typed input	^(rejects unstringifiable values without masking the error)$
+server/src/workspace/remote-files.test.ts	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
+server/src/workspace/remote-files.test.ts	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors	^(remote image reads support %s \(%s\) within preview byte limits|remote downloads refuse a file over maxBytes before sending it|a remote file that changes size while it is sent is never sent short or long|remote resolution includes directories but rejects relative and symlink escapes|a sibling checkout's page reads and downloads by its path, with macOS's base64|a file's stat on the host compares with what its read gave, and stays in the checkout|a file not on the host is said plainly, not as realpath's error)$
 server/src/assistant-recovery.integration.	todo	black-box suite, ported by another S6 slice
 server/src/assistant/mention-task.integration.	todo	black-box suite, ported by another S6 slice
 server/src/connections/profile-process.	todo	black-box suite, ported by another S6 slice
