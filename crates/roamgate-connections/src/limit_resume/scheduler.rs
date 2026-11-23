@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use futures_util::StreamExt;
 use futures_util::future::{FutureExt, Shared, join_all};
 use indexmap::IndexMap;
 use roamgate_base::clock::SharedClock;
@@ -76,7 +77,16 @@ pub struct ResumerOptions {
     pub log: Option<Log>,
     pub clock: SharedClock,
     pub timings: Timings,
+    /// Only looks: it never arms a resume, never pokes and never sends
+    /// (the core's view while Bun owns the family, for shadow reads).
+    pub observer: bool,
 }
+
+/// How many transcripts one look reads at once. Bun reads them one after
+/// the other; a connection with tens of conversation-mode panes takes
+/// seconds per pane resolution, so a first look (and the rereads every
+/// five minutes) would hold every poke behind it for tens of seconds.
+pub const READ_CONCURRENCY: usize = 4;
 
 #[derive(Debug, Clone)]
 struct Entry {
@@ -411,6 +421,9 @@ impl LimitResumer {
     }
 
     fn schedule(&self, connection_id: &str, pane_id: &str, at: i64) {
+        if self.inner.options.observer {
+            return;
+        }
         let timer_key = key(connection_id, pane_id);
         let mut state = self.state();
         if state.stopped {
@@ -470,9 +483,23 @@ impl LimitResumer {
         let previous = self.state().pauses.get(&id).cloned().unwrap_or_default();
         let mut next: IndexMap<String, Entry> = IndexMap::new();
         let mut present = HashSet::new();
-        for pane in panes {
+        // The transcripts are read a few at a time (each read is one pane's
+        // own state); what is made of them goes in the panes' order.
+        let reads: Vec<BoxFuture<Option<UsageLimitStop>>> = panes
+            .iter()
+            .map(|pane| {
+                let (this, connection, pane) = (self.clone(), connection.clone(), pane.clone());
+                Box::pin(async move { this.read_stop(&connection, &pane, false).await })
+                    as BoxFuture<Option<UsageLimitStop>>
+            })
+            .collect();
+        let stops: Vec<Option<UsageLimitStop>> = futures_util::stream::iter(reads)
+            .buffered(READ_CONCURRENCY)
+            .collect()
+            .await;
+        for (pane, stop) in panes.into_iter().zip(stops) {
             present.insert(pane.pane_id.clone());
-            let Some(stop) = self.read_stop(connection, &pane, false).await else {
+            let Some(stop) = stop else {
                 continue;
             };
             if let Some(before) = previous.get(&pane.pane_id)
@@ -576,6 +603,43 @@ impl LimitResumer {
             let _ = done.send(());
         });
         Box::pin(shared)
+    }
+
+    /// Looks at a connection, or joins the look under way without asking
+    /// for another (a read that only wants the current view).
+    pub fn look(&self, connection_id: &str) -> BoxFuture<()> {
+        if let Some(running) = self.state().scans.get(connection_id).cloned() {
+            return Box::pin(running);
+        }
+        self.scan(connection_id)
+    }
+
+    /// Takes over what `other` read of the transcripts (the core's
+    /// observer when it starts owning the family), so the first look after
+    /// a flip reads only what changed.
+    pub fn adopt_reads(&self, other: &LimitResumer) {
+        let taken: Vec<(Key, Cached)> = other
+            .state()
+            .cache
+            .iter()
+            .map(|(key, cached)| {
+                (
+                    key.clone(),
+                    Cached {
+                        session_id: cached.session_id.clone(),
+                        status: cached.status.clone(),
+                        read_at: cached.read_at,
+                        stop: cached.stop.clone(),
+                    },
+                )
+            })
+            .collect();
+        self.state().cache.extend(taken);
+    }
+
+    /// The store (an observer reads it again before each look).
+    pub fn store(&self) -> &LimitResumeStore {
+        &self.inner.options.store
     }
 
     /// Looks at every connection; those gone lose their pauses.
@@ -787,7 +851,7 @@ impl LimitResumer {
     /// Something changed in a pane (a turn ended): looked at shortly.
     pub fn poke(&self, connection_id: &str, pane_id: Option<&str>) {
         let mut state = self.state();
-        if state.stopped {
+        if state.stopped || self.inner.options.observer {
             return;
         }
         if let Some(pane_id) = pane_id {

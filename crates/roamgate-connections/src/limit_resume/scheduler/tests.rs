@@ -59,6 +59,11 @@ struct FakeState {
     failures: u32,
     down: bool,
     again: Option<i64>,
+    /// Looks asked (panes), transcripts read, and reads at once.
+    looks: usize,
+    tails: usize,
+    in_flight: usize,
+    most_at_once: usize,
 }
 
 struct Fake {
@@ -72,7 +77,8 @@ impl LimitConnection for Fake {
     }
 
     fn panes(&self) -> BoxFuture<Result<Vec<LimitPane>, String>> {
-        let state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
+        state.looks += 1;
         let answer = if state.down {
             Err("Herdr did not answer".to_owned())
         } else {
@@ -82,15 +88,26 @@ impl LimitConnection for Fake {
     }
 
     fn transcript_tail(&self, pane_id: &str) -> BoxFuture<Result<Option<String>, String>> {
-        let tail = self
-            .state
-            .lock()
-            .unwrap()
-            .panes
-            .iter()
-            .find(|each| each.pane.pane_id == pane_id)
-            .map(|each| each.tail.clone());
-        Box::pin(async move { Ok(tail) })
+        let tail = {
+            let mut state = self.state.lock().unwrap();
+            state.tails += 1;
+            state.in_flight += 1;
+            state.most_at_once = state.most_at_once.max(state.in_flight);
+            state
+                .panes
+                .iter()
+                .find(|each| each.pane.pane_id == pane_id)
+                .map(|each| each.tail.clone())
+        };
+        let state = self.state.clone();
+        Box::pin(async move {
+            // A read takes a while: others may start meanwhile.
+            for _ in 0..3 {
+                tokio::task::yield_now().await;
+            }
+            state.lock().unwrap().in_flight -= 1;
+            Ok(tail)
+        })
     }
 
     fn deliver(&self, pane: &LimitPane, text: &str) -> BoxFuture<Result<(), String>> {
@@ -185,6 +202,16 @@ fn setup(
     file: Option<std::path::PathBuf>,
     now: i64,
 ) -> Setup {
+    setup_as(connections, settings, file, now, false)
+}
+
+fn setup_as(
+    connections: Vec<Arc<dyn LimitConnection>>,
+    settings: LimitResumeSettings,
+    file: Option<std::path::PathBuf>,
+    now: i64,
+    observer: bool,
+) -> Setup {
     let clock = TestClock::new(now);
     let settings = Arc::new(Mutex::new(settings));
     let changes: Changes = Arc::default();
@@ -222,6 +249,7 @@ fn setup(
         log: None,
         clock: Arc::new(clock.clone()),
         timings: Timings::default(),
+        observer,
     });
     Setup {
         resumer,
@@ -687,4 +715,89 @@ async fn started_it_looks_after_its_first_delay_then_every_minute() {
     }
     assert_eq!(run.changes.lock().unwrap().len(), 1);
     run.resumer.stop();
+}
+
+fn many(count: usize) -> Vec<FakePane> {
+    (0..count)
+        .map(|index| paused(&format!("w{index}:p1"), Opts::default()))
+        .collect()
+}
+
+#[tokio::test]
+async fn a_look_reads_a_few_transcripts_at_once_and_keeps_the_panes_order() {
+    let (local, state) = fake("local", many(10));
+    let run = setup(vec![local], defaults(), None, T0);
+    run.resumer.scan_all().await;
+    let state = state.lock().unwrap();
+    assert_eq!(state.tails, 10);
+    assert_eq!(state.most_at_once, READ_CONCURRENCY);
+    let panes: Vec<String> = run
+        .changes
+        .lock()
+        .unwrap()
+        .last()
+        .unwrap()
+        .1
+        .iter()
+        .map(|pause| pause.pane_id.clone())
+        .collect();
+    assert_eq!(panes.len(), 10);
+    run.resumer.stop();
+}
+
+#[tokio::test]
+async fn an_observer_only_looks_it_never_arms_pokes_or_sends() {
+    // Due at once: an owner would send it on the next turn.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("limit-resume.json");
+    let (first, _) = fake("local", vec![paused("w1:p1", Opts::default())]);
+    let before = setup(vec![first], defaults(), Some(file.clone()), T0);
+    before.resumer.scan_all().await;
+    before.resumer.stop();
+    let (local, state) = fake("local", vec![paused("w1:p1", Opts::default())]);
+    let run = setup_as(vec![local], defaults(), None, RESET + 60_000, true);
+    // Reads the owner's store, writes nothing.
+    let read = LimitResumeStore::new(StoreFile::ReadOnly(Some(file.clone())), Arc::new(|| 0));
+    assert!(read.get("session-w1:p1").is_some());
+    run.resumer.look("local").await;
+    assert_eq!(run.clock.pending(), 0);
+    run.resumer.poke("local", Some("w1:p1"));
+    assert_eq!(run.clock.pending(), 0);
+    run.advance(5 * 60_000).await;
+    assert!(sent(&state).is_empty());
+    assert_eq!(run.resumer.list("local").len(), 1);
+    run.resumer.stop();
+}
+
+#[tokio::test]
+async fn a_look_joins_the_one_under_way_without_asking_for_another() {
+    let (local, state) = fake("local", many(3));
+    let run = setup_as(vec![local], defaults(), None, T0, true);
+    let first = run.resumer.look("local");
+    let second = run.resumer.look("local");
+    first.await;
+    second.await;
+    settle().await;
+    assert_eq!(state.lock().unwrap().looks, 1);
+    // Read once: the next look reads no transcript again.
+    run.resumer.look("local").await;
+    let state = state.lock().unwrap();
+    assert_eq!((state.looks, state.tails), (2, 3));
+    drop(state);
+    run.resumer.stop();
+}
+
+#[tokio::test]
+async fn an_owner_adopts_what_the_observer_read() {
+    let (local, state) = fake("local", many(3));
+    let observer = setup_as(vec![local.clone()], defaults(), None, T0, true);
+    observer.resumer.look("local").await;
+    assert_eq!(state.lock().unwrap().tails, 3);
+    let owner = setup(vec![local], defaults(), None, T0);
+    owner.resumer.adopt_reads(&observer.resumer);
+    owner.resumer.scan_all().await;
+    assert_eq!(state.lock().unwrap().tails, 3);
+    assert_eq!(owner.resumer.list("local").len(), 3);
+    observer.resumer.stop();
+    owner.resumer.stop();
 }

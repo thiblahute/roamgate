@@ -15,7 +15,11 @@
 //!
 //! The resumer runs (timers, writes of limit-resume.json) only while the
 //! core owns the family. A `limit_resume.list` while it does not (a shadow
-//! read) is answered by one look at that connection that writes nothing.
+//! read) is answered by the core's observer: a resumer that only looks
+//! (no timer, no poke, no send, no write), kept between reads so that it
+//! reads again only the transcripts that changed, as Bun's own resumer
+//! does, and handed to the owner's resumer when the core takes the
+//! family, so the first look after a flip is quick too.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -46,6 +50,8 @@ pub fn family() -> Option<Arc<dyn CoreFamily>> {
 struct LimitResumeFamily {
     /// The resumer while the core owns the family.
     running: Mutex<Option<LimitResumer>>,
+    /// The observer while it does not (made at the first shadow read).
+    observer: Mutex<Option<LimitResumer>>,
 }
 
 /// The connection generations `connections.ready` last said, for pushes.
@@ -246,12 +252,21 @@ fn resumer(cx: &FamilyContext, owned: bool) -> LimitResumer {
         log,
         clock: cx.clock.clone(),
         timings: Timings::default(),
+        observer: !owned,
     })
 }
 
 impl LimitResumeFamily {
     fn running(&self) -> Option<LimitResumer> {
         self.running.lock().unwrap().clone()
+    }
+
+    fn observer(&self, cx: &FamilyContext) -> LimitResumer {
+        self.observer
+            .lock()
+            .unwrap()
+            .get_or_insert_with(|| resumer(cx, false))
+            .clone()
     }
 }
 
@@ -262,7 +277,7 @@ impl CoreFamily for LimitResumeFamily {
 
     fn call(&self, cx: &FamilyContext, call: IncomingCall) -> BoxFuture<Result<Value, RpcError>> {
         let running = self.running();
-        let cx = cx.clone();
+        let observer = running.is_none().then(|| self.observer(cx));
         Box::pin(async move {
             let method = call.method.as_str();
             let params = &call.params;
@@ -288,12 +303,12 @@ impl CoreFamily for LimitResumeFamily {
                     let pauses = match &running {
                         Some(resumer) => resumer.list(&connection_id),
                         None => {
-                            // Not this side's to run: one look that writes
-                            // nothing (a shadow read).
-                            let once = resumer(&cx, false);
-                            once.scan(&connection_id).await;
-                            once.stop();
-                            once.list(&connection_id)
+                            // Not this side's to run (a shadow read): the
+                            // observer looks, with the owner's store.
+                            let observer = observer.expect("an observer when not owned");
+                            observer.store().reload();
+                            observer.look(&connection_id).await;
+                            observer.list(&connection_id)
                         }
                     };
                     Ok(json!({"pauses": pauses}))
@@ -323,8 +338,15 @@ impl CoreFamily for LimitResumeFamily {
         if let Some(previous) = running.take() {
             previous.stop();
         }
+        let observer = self.observer.lock().unwrap().take();
+        if let Some(observer) = &observer {
+            observer.stop();
+        }
         if owned {
             let started = resumer(cx, true);
+            if let Some(observer) = &observer {
+                started.adopt_reads(observer);
+            }
             started.start(5_000);
             *running = Some(started);
         }

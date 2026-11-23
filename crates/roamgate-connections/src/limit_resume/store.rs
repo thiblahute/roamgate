@@ -136,6 +136,12 @@ impl LimitResumeStore {
         })
     }
 
+    /// Forgets what was read: the next use reads the file again (a side
+    /// that does not own the family follows the owner's writes).
+    pub fn reload(&self) {
+        *self.sessions.lock().unwrap() = None;
+    }
+
     /// The session's record, if any.
     pub fn get(&self, session_id: &str) -> Option<Record> {
         self.with(|all| all.get(session_id).cloned())
@@ -244,5 +250,21 @@ mod tests {
         let read_only = LimitResumeStore::new(StoreFile::ReadOnly(None), Arc::new(|| 0));
         read_only.set_skip("a", true).unwrap();
         assert_eq!(read_only.get("a").unwrap()["skip"], true);
+
+        // A reader follows the owner's writes once it reloads.
+        let (owner, path) = file_store(dir.path(), true);
+        owner.seen("b", 10).unwrap();
+        let reader = LimitResumeStore::new(StoreFile::ReadOnly(Some(path)), Arc::new(|| 0));
+        assert!(reader.get("c").is_none());
+        owner.seen("c", 11).unwrap();
+        assert!(reader.get("c").is_none());
+        reader.reload();
+        assert_eq!(reader.get("c").unwrap()["seen"], 11);
+        reader.set_skip("c", true).unwrap();
+        let again = LimitResumeStore::new(
+            StoreFile::ReadOnly(Some(dir.path().join("limit-resume.json"))),
+            Arc::new(|| 0),
+        );
+        assert!(again.get("c").unwrap().get("skip").is_none());
     }
 }
