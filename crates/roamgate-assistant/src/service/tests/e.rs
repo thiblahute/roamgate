@@ -24,10 +24,6 @@ fn queue_ids(snapshot: &Value) -> Vec<Value> {
         .collect()
 }
 
-fn queue_empty(snapshot: &Value) -> bool {
-    snapshot["queue"].as_array().is_none_or(Vec::is_empty)
-}
-
 fn ids(value: &Value) -> Vec<String> {
     value
         .as_array()

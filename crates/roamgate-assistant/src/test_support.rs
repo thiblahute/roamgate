@@ -134,7 +134,6 @@ pub(crate) fn clock_at_ms(ms: i64) -> &'static JestClock {
 }
 
 /// `Promise.withResolvers<T>()`: settled once, awaited by any number.
-#[allow(dead_code)]
 pub(crate) struct Deferred<T: Clone + Send> {
     value: std::sync::Mutex<Option<Result<T, crate::errors::AssistantError>>>,
     notify: Notify,
@@ -149,7 +148,6 @@ impl<T: Clone + Send> Default for Deferred<T> {
     }
 }
 
-#[allow(dead_code)]
 impl<T: Clone + Send> Deferred<T> {
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self::default())
@@ -171,10 +169,6 @@ impl<T: Clone + Send> Deferred<T> {
         }
         drop(slot);
         self.notify.notify_waiters();
-    }
-
-    pub(crate) fn settled(&self) -> bool {
-        self.value.lock().unwrap().is_some()
     }
 
     pub(crate) async fn wait(&self) -> Result<T, crate::errors::AssistantError> {

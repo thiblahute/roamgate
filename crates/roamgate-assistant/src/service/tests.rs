@@ -4,8 +4,6 @@
 //! Bun's real timers are tokio's; `use_fake_timers` switches to the test
 //! clock of roamgate-base as `jest.useFakeTimers` does.
 
-#![allow(dead_code)]
-
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -21,7 +19,6 @@ use super::*;
 use crate::context::{CapturedScope, ContextOp, PreparedAction, Scope};
 use crate::driver::{AssistantDriver, LoginInteraction, RunEvent, RunInput, SaveModels};
 use crate::errors::{AssistantError, AssistantResult};
-#[allow(unused_imports)]
 pub(super) use crate::test_support::{Deferred, JestClock, clock_at, clock_at_ms};
 use crate::tools::{BoxFuture, ToolResult};
 
@@ -413,14 +410,6 @@ impl FakeContext {
 
     pub fn recovery_fn(&self) -> ScopeFn {
         self.recovery.lock().unwrap().clone().unwrap()
-    }
-
-    pub fn read_fn(&self) -> ReadFn {
-        self.read.lock().unwrap().clone()
-    }
-
-    pub fn prepare_fn(&self) -> PrepareFn {
-        self.prepare.lock().unwrap().clone().unwrap()
     }
 
     pub fn catalog_fn(&self) -> CatalogFn {
@@ -1124,10 +1113,6 @@ impl Fixture {
     /// `jest.advanceTimersByTime(ms)`.
     pub async fn advance(&self, ms: u64) {
         self.timers.clock().expect("fake timers").advance(ms).await;
-    }
-
-    pub fn now(&self) -> i64 {
-        self.timers.now()
     }
 
     /// The `afterEach`: every service disposed.
