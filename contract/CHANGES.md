@@ -6,6 +6,32 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.14
+
+inventory: 4ec7982bb891c13fcab1b3c7aa449e5ca572d2f0c6c4aebed87baf3ee1855a44
+
+The Work board served by the Rust core (Phase 4, S15; wire/core-channel.md,
+Families in the core), while the owners table gives the work family to
+Rust. The browser surface (`bridge.work.*`, the `work` push) is unchanged;
+the inventory too.
+
+- wire: the front's own calls `internal.work.tool` (the agent socket's
+  `work` command and the Claude Code mod's `work_*` tools),
+  `internal.work.user_tool` (the voice companion's Work tools),
+  `internal.work.questions_seen` and `internal.work.owner_pane`.
+- wire, reverse targets: `work.review` (the review service: `find`,
+  `open`, `get`, `session_of_comment`, `add_thread`, `add_image`,
+  `edit_comment`, `delete_comment`, `move_thread`, `set_anchor`), `work.notify`
+  (the For you notification), `work.git`, `work.read_file`,
+  `work.checkout`, `work.panes`, `work.workspaces`, `agents.addresses`,
+  `connections.list`, `history.changed` and `history.work_changed` (the
+  local history Bun keeps), each run by Bun's own code for the board.
+- storage: `data:work` (work.json, history.jsonl) has one writer, the
+  family's owner; the voice companion's state line only reads work.json.
+- vectors: `vectors/tool-params.json`, how every catalog tool's parameters
+  are refused, in typebox's words, for the Rust tool registry
+  (`roamgate-claude`) to say the same.
+
 ## 1.13
 
 inventory: 4ec7982bb891c13fcab1b3c7aa449e5ca572d2f0c6c4aebed87baf3ee1855a44
