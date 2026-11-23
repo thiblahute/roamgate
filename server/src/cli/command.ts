@@ -41,6 +41,17 @@ export interface CliContext {
   captureCommand: CaptureCommand;
   log: (message: string) => void;
   error: (message: string) => void;
+  /**
+   * Raw bytes to standard output (`archive cat`'s transcript through the
+   * Rust core); absent, output goes through `log` line by line.
+   */
+  write?: (chunk: Uint8Array) => Promise<void>;
+}
+
+/** Bytes to this process's standard output, waiting when it is full. */
+export async function writeStdout(chunk: Uint8Array): Promise<void> {
+  if (!process.stdout.write(chunk))
+    await new Promise<void>((resolve) => process.stdout.once("drain", resolve));
 }
 
 export interface CliCommand {
@@ -76,6 +87,7 @@ export function defaultCliContext(version: string): CliContext {
     captureCommand: defaultCaptureCommand,
     log: console.log,
     error: console.error,
+    write: writeStdout,
   };
 }
 

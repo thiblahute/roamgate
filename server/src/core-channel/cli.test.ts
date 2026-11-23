@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { passThroughToCore, type RunCore } from "./cli";
@@ -112,6 +112,40 @@ describe("CLI pass-through", () => {
     });
     expect(run.out).toEqual(["from the core"]);
     expect(run.err).toEqual(["on its stderr"]);
+  });
+
+  test("a raw standard output gets the core's bytes untouched", async () => {
+    const run = setup(undefined);
+    // An archive cat: a last line with no newline, bytes that are no UTF-8.
+    writeFileSync(
+      run.core,
+      "#!/bin/sh\nprintf 'a\\nb\\377'\necho on-stderr >&2\n",
+    );
+    chmodSync(run.core, 0o755);
+    writeFileSync(
+      join(run.home, ".config", "roamgate", "runtime", "owners.json"),
+      JSON.stringify({
+        version: 1,
+        owners: { update: "rust" },
+        core: run.core,
+      }),
+    );
+    const chunks: Uint8Array[] = [];
+    const code = await passThroughToCore(
+      "update",
+      [],
+      {
+        ...run.context,
+        write: async (chunk) => {
+          chunks.push(chunk);
+        },
+      },
+      { families },
+    );
+    expect(code).toBe(0);
+    expect([...Buffer.concat(chunks)]).toEqual([97, 10, 98, 255]);
+    expect(run.out).toEqual([]);
+    expect(run.err).toEqual(["on-stderr"]);
   });
 
   test("ROAMGATE_CORE_BIN wins, and a missing core leaves it to Bun", async () => {

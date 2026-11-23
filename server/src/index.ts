@@ -220,6 +220,7 @@ import { createTimeReport, dayInput, TimeReportError } from "./time-report/rpc";
 import { createArchiveToolHandler } from "./assistant/archive-tools";
 import { createArchivedSessionReader } from "./archive/file-access";
 import { createArchiveRpc } from "./archive/rpc";
+import { NoTextRepo, searchArchive } from "./archive/search";
 import { normalizeArchiveSettings } from "./archive/settings";
 import { useArchivedSessionFiles } from "./agent/session-file-access";
 import { dataRoot } from "./config/data-paths";
@@ -275,6 +276,7 @@ import {
 } from "./utils/logger";
 import { runProcessWithCodeTimeout, shQuote } from "./utils/process-utils";
 import { isStandaloneBinary } from "./config/standalone";
+import { ChannelError } from "./core-channel/channel";
 import {
   bunOwns,
   type CallContext,
@@ -1693,7 +1695,34 @@ const archiveDeps = {
     dataDir: dataRoot(),
   }),
 };
-const assistantArchive = createArchiveToolHandler(archiveDeps);
+// Ranger's archive search: the Rust core's while it owns the archive
+// family (a search writes the archive's scratch overlay, text-live/: one
+// writer); its session lookups and reads stay here, as readers.
+const archiveSearch: typeof searchArchive = async (
+  archiveDir,
+  query,
+  settings,
+  options = {},
+) => {
+  if (!coreFront || bunOwns("archive"))
+    return searchArchive(archiveDir, query, settings, options);
+  try {
+    return (await coreFront.callInternal(
+      "archive",
+      "search",
+      query,
+      options.signal,
+    )) as Awaited<ReturnType<typeof searchArchive>>;
+  } catch (error) {
+    if (error instanceof ChannelError && error.code === "no_text_repo")
+      throw new NoTextRepo();
+    throw error;
+  }
+};
+const assistantArchive = createArchiveToolHandler({
+  ...archiveDeps,
+  search: archiveSearch,
+});
 // The archive search view: read-only, like Ranger's tools.
 const archiveRpc = createArchiveRpc(archiveDeps);
 let assistantServiceTask: Promise<

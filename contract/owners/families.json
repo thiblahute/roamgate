@@ -34,10 +34,12 @@
     },
     "archive": {
       "phase": 3,
+      "note": "the archive's writers are its CLI's (sync, ingest, push, the text pass, rebuild-db), run in the core binary while Rust owns the family; Ranger's archive search goes to the core (internal.archive.search), its read-only lookups stay Bun's",
       "rpc": ["bridge.archive."],
       "http": [],
-      "files": [],
-      "shadow": []
+      "files": ["file:archive.sqlite", "file:index.sqlite"],
+      "shadow": [],
+      "cli": ["archive"]
     },
     "activity": {
       "phase": 3,

@@ -135,6 +135,11 @@ export type ArchiveToolDeps = {
   settings: () => Promise<GuiArchiveSettings>;
   archiveDir: (settings: GuiArchiveSettings) => string;
   runtime: () => ArchiveRuntime;
+  /**
+   * The search (default: this process's): the Rust core's while it owns
+   * the archive family, as a search writes the archive's scratch overlay.
+   */
+  search?: typeof searchArchive;
 };
 
 function clip(text: string, limit: number): string {
@@ -153,7 +158,7 @@ export function createArchiveToolHandler(
       const limit = typeof params.limit === "number" ? params.limit : 8;
       let result: Awaited<ReturnType<typeof searchArchive>>;
       try {
-        result = await searchArchive(
+        result = await (deps.search ?? searchArchive)(
           archiveDir,
           {
             terms: (str("query") ?? "").split(/\s+/).filter(Boolean),

@@ -22,12 +22,19 @@ export type PassThroughContext = {
   };
   log: (message: string) => void;
   error: (message: string) => void;
+  /** Raw standard output: the core's bytes go through untouched. */
+  write?: (chunk: Uint8Array) => Promise<void>;
 };
 
 export type RunCore = (
   argv: string[],
   env: Record<string, string | undefined>,
-  output: { out: (line: string) => void; err: (line: string) => void },
+  output: {
+    out: (line: string) => void;
+    err: (line: string) => void;
+    /** When given, standard output is forwarded as bytes, not lines. */
+    write?: (chunk: Uint8Array) => Promise<void>;
+  },
 ) => Promise<number>;
 
 /** Forwards a stream's lines; the last one even without its newline. */
@@ -50,6 +57,14 @@ async function forwardLines(
   if (buffer) line(buffer);
 }
 
+/** Forwards a stream's bytes as they come (a transcript `cat` prints). */
+async function forwardBytes(
+  stream: ReadableStream<Uint8Array>,
+  write: (chunk: Uint8Array) => Promise<void>,
+): Promise<void> {
+  for await (const chunk of stream) await write(chunk);
+}
+
 const defaultRunCore: RunCore = async (argv, env, output) => {
   const child = Bun.spawn(argv, {
     env,
@@ -58,7 +73,9 @@ const defaultRunCore: RunCore = async (argv, env, output) => {
     stderr: "pipe",
   });
   await Promise.all([
-    forwardLines(child.stdout, output.out),
+    output.write
+      ? forwardBytes(child.stdout, output.write)
+      : forwardLines(child.stdout, output.out),
     forwardLines(child.stderr, output.err),
   ]);
   return (await child.exited) ?? 1;
@@ -101,5 +118,6 @@ export async function passThroughToCore(
   return (deps.runCore ?? defaultRunCore)([bin, command, ...args], env, {
     out: context.log,
     err: context.error,
+    ...(context.write ? { write: context.write } : {}),
   });
 }
