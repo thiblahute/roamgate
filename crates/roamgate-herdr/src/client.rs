@@ -112,6 +112,25 @@ where
     read_answer(&text, id)
 }
 
+/// Why the socket at `path` could not be reached, in the TS client's words:
+/// Bun.connect's `<CODE>: Failed to connect` on Unix, node:net's
+/// `connect <CODE> <path>` on Windows' named pipes.
+pub fn connect_error(error: &std::io::Error, path: &str) -> String {
+    use std::io::ErrorKind;
+    let code = match error.kind() {
+        ErrorKind::NotFound => "ENOENT",
+        ErrorKind::ConnectionRefused => "ECONNREFUSED",
+        ErrorKind::PermissionDenied => "EACCES",
+        ErrorKind::TimedOut => "ETIMEDOUT",
+        _ => return error.to_string(),
+    };
+    if cfg!(windows) {
+        format!("connect {code} {path}")
+    } else {
+        format!("{code}: Failed to connect")
+    }
+}
+
 /// One request to the control socket at `path`, answered within
 /// `limit` (8 s for a ping).
 pub async fn request(
@@ -131,14 +150,14 @@ pub async fn request(
         {
             let stream = tokio::net::UnixStream::connect(path)
                 .await
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| connect_error(&error, path))?;
             exchange(stream, request, &id).await
         }
         #[cfg(windows)]
         {
             let stream = tokio::net::windows::named_pipe::ClientOptions::new()
                 .open(path)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| connect_error(&error, path))?;
             exchange(stream, request, &id).await
         }
     };
@@ -155,6 +174,25 @@ pub async fn ping(clock: &SharedClock, path: &str) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// As `new HerdrClient(path).call("ping")` rejects in Bun.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_socket_that_is_missing_or_refuses_fails_as_buns_client_does() {
+        let scratch = tempfile::tempdir().unwrap();
+        let clock: SharedClock = std::sync::Arc::new(roamgate_base::clock::SystemClock);
+        let missing = scratch.path().join("none");
+        assert_eq!(
+            ping(&clock, &missing.display().to_string()).await,
+            Err("ENOENT: Failed to connect".into())
+        );
+        let dead = scratch.path().join("dead");
+        drop(std::os::unix::net::UnixListener::bind(&dead).unwrap());
+        assert_eq!(
+            ping(&clock, &dead.display().to_string()).await,
+            Err("ECONNREFUSED: Failed to connect".into())
+        );
+    }
 
     #[test]
     fn reads_answers_and_refuses_what_is_not_one() {
