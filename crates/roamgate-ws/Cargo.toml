@@ -1,0 +1,33 @@
+[package]
+name = "roamgate-ws"
+version = "0.0.0"
+description = "Roamgate's browser WebSocket transport: per-message deflate chosen per message, an exact buffered amount, chunk and acknowledgement flow control"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# The yawc backend the S10 spike compared against (MPL-2.0); never shipped.
+yawc = ["dep:yawc", "dep:futures-util"]
+
+[[bin]]
+name = "ws-spike"
+path = "src/bin/ws-spike.rs"
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+bytes = "1"
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"], optional = true }
+hyper = "1"
+hyper-util = { version = "0.1", features = ["tokio"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tungstenite = { version = "0.28", default-features = false, features = ["handshake"] }
+yawc = { version = "0.5", default-features = false, features = ["axum", "zlib"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }

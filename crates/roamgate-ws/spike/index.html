@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RUNNING</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; margin: 1.5em; }
+  pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; }
+  .pass { color: #116329; } .fail { color: #a40e26; }
+  a { margin-right: 1em; }
+</style>
+</head>
+<body>
+<h1 id="state">Running...</h1>
+<p>
+  <a href="?impl=roamgate">roamgate</a><a href="?impl=roamgate&amp;slowack=1">roamgate, slow acks</a>
+  <a href="?impl=yawc">yawc</a><a href="?impl=yawc&amp;slowack=1">yawc, slow acks</a>
+  <a href="?impl=bun">bun</a><a href="?impl=bun&amp;slowack=1">bun, slow acks</a>
+</p>
+<pre id="log"></pre>
+<script>
+"use strict";
+// The client side of the Roamgate /ws transport, as web/src/api.ts does it:
+// chunk reassembly, acknowledgements every 100 ms or 32 Ki characters, and
+// flow control turned on by the hello's capability.
+const params = new URLSearchParams(location.search);
+const backend = ["yawc", "bun"].includes(params.get("impl")) ? params.get("impl") : "roamgate";
+const slowAck = params.get("slowack") === "1";
+const FLOW_ACK_DELAY_MS = slowAck ? 700 : 100;
+const FLOW_ACK_CHARS = slowAck ? Infinity : 32 * 1024;
+const CHUNK_MARKER = 1;
+const TIMEOUT_MS = 90000;
+
+const log = (line) => { document.getElementById("log").textContent += line + "\n"; };
+const fnv = (text) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return h >>> 0;
+};
+
+let flowControl = false, flowReceived = 0, flowReported = 0, flowAckTimer = null, acksSent = 0;
+const chunkParts = new Map();
+let chunkFrames = 0, frames = 0;
+const failures = [];
+const received = new Map();
+const lastSeqByCtx = new Map();
+let manifest = null;
+const echoes = new Map();
+const started = performance.now();
+let firstByteAt = null, doneAt = null, finished = false, statsAsked = false;
+
+const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/${backend === "yawc" ? "ws-yawc" : "ws"}`);
+
+function receiveFrame(data) {
+  frames++;
+  flowReceived += data.length;
+  scheduleFlowAck();
+  if (data.charCodeAt(0) !== CHUNK_MARKER) return data;
+  chunkFrames++;
+  const idEnd = data.indexOf(":", 1);
+  if (idEnd < 0 || data[idEnd + 2] !== ":") { failures.push("bad chunk frame"); return null; }
+  const id = data.slice(1, idEnd);
+  const last = data[idEnd + 1] === "1";
+  const text = data.slice(idEnd + 3);
+  const parts = chunkParts.get(id);
+  if (!last) {
+    if (parts) parts.push(text); else chunkParts.set(id, [text]);
+    return null;
+  }
+  chunkParts.delete(id);
+  return parts ? parts.join("") + text : text;
+}
+
+function scheduleFlowAck() {
+  if (!flowControl) return;
+  if (flowReceived - flowReported >= FLOW_ACK_CHARS) { sendFlowAck(); return; }
+  if (flowAckTimer) return;
+  flowAckTimer = setTimeout(() => { flowAckTimer = null; sendFlowAck(); }, FLOW_ACK_DELAY_MS);
+}
+
+function sendFlowAck() {
+  if (flowAckTimer) { clearTimeout(flowAckTimer); flowAckTimer = null; }
+  if (!flowControl || ws.readyState !== WebSocket.OPEN) return;
+  if (flowReported === flowReceived) return;
+  flowReported = flowReceived;
+  acksSent++;
+  ws.send(`{"ack":${flowReceived}}`);
+}
+
+// Messages for the server to hash: compressible, unicode, and tiny.
+const echoTexts = [
+  "x",
+  JSON.stringify({ id: "w", method: "files.write", params: { text: "fn main() { println!(\"é😀日本語\"); }\n".repeat(8000) } }),
+  "line of a long paste 0123456789 ".repeat(60000),
+];
+
+function onHello(message) {
+  flowControl = message.capabilities && message.capabilities.flow_control === true;
+  sendFlowAck();
+  log(`hello from ${message.backend}, extensions "${ws.extensions}"`);
+  ws.send(JSON.stringify({ run: "all" }));
+  echoTexts.forEach((text, id) => {
+    echoes.set(id, { n: text.length, h: fnv(text), reply: null });
+    ws.send(JSON.stringify({ echo: text, id }));
+  });
+}
+
+function check(text) {
+  let message;
+  try { message = JSON.parse(text); } catch (e) { failures.push(`not JSON: ${text.slice(0, 80)}`); return; }
+  if (message.hello) return onHello(message);
+  if (message.manifest) { manifest = message.manifest; return; }
+  if (message.stats !== undefined) return finish(message.stats);
+  if (message.echoed !== undefined) {
+    const echo = echoes.get(message.echoed);
+    if (!echo) failures.push(`unknown echo ${message.echoed}`);
+    else {
+      echo.reply = message;
+      if (message.n !== echo.n || message.h !== echo.h) failures.push(`echo ${message.echoed} differs`);
+    }
+    return;
+  }
+  if (message.seq !== undefined) {
+    if (firstByteAt === null) firstByteAt = performance.now();
+    received.set(message.seq, { n: text.length, h: fnv(text), ctx: message.ctx });
+    // Order holds per context, except for terminal frames: held repaints
+    // leave when the socket drains, after unkeyed ones sent meanwhile.
+    if (message.ctx !== "terminal-frame") {
+      const last = lastSeqByCtx.get(message.ctx);
+      if (last !== undefined && last > message.seq) failures.push(`${message.ctx} out of order: ${message.seq} after ${last}`);
+      lastSeqByCtx.set(message.ctx, message.seq);
+    }
+  }
+}
+
+function complete() {
+  if (!manifest) return false;
+  for (const entry of manifest) if (!entry.burst && !received.has(entry.seq)) return false;
+  for (const echo of echoes.values()) if (!echo.reply) return false;
+  return true;
+}
+
+function finish(stats) {
+  if (finished) return;
+  finished = true;
+  let burstReceived = 0;
+  for (const entry of manifest) {
+    const got = received.get(entry.seq);
+    if (!got) continue;
+    if (entry.burst) burstReceived++;
+    if (got.n !== entry.n || got.h !== entry.h) failures.push(`seq ${entry.seq} (${entry.ctx}) differs: ${got.n} vs ${entry.n}`);
+  }
+  if (chunkParts.size) failures.push(`${chunkParts.size} chunked messages left incomplete`);
+  // Firefox reports the extension's name only, without its parameters.
+  if (backend !== "yawc" && !["permessage-deflate; client_no_context_takeover", "permessage-deflate"].includes(ws.extensions))
+    failures.push(`extensions "${ws.extensions}"`);
+  if (backend === "roamgate" && stats && !(stats.wire.compressed_frames > 0)) failures.push("nothing was compressed");
+  const report = {
+    pass: failures.length === 0,
+    failures,
+    backend,
+    slowAck,
+    userAgent: navigator.userAgent,
+    extensions: ws.extensions,
+    messages: received.size,
+    expected: manifest.length,
+    burstReceived,
+    frames,
+    chunkFrames,
+    charsReceived: flowReceived,
+    acksSent,
+    echoesCompressed: [...echoes.values()].map((echo) => echo.reply.compressed),
+    msToFirstMessage: Math.round(firstByteAt - started),
+    msToComplete: Math.round(doneAt - started),
+    server: stats,
+  };
+  window.report = report;
+  ws.send(JSON.stringify({ report }));
+  document.title = report.pass ? "PASS" : "FAIL";
+  const state = document.getElementById("state");
+  state.textContent = `${backend}${slowAck ? ", slow acks" : ""}: ${report.pass ? "PASS" : "FAIL"}`;
+  state.className = report.pass ? "pass" : "fail";
+  log(JSON.stringify(report, null, 1));
+}
+
+function fail(reason) {
+  if (finished) return;
+  failures.push(reason);
+  finished = true;
+  const report = { pass: false, failures, backend, slowAck, userAgent: navigator.userAgent, extensions: ws.extensions,
+    messages: received.size, expected: manifest ? manifest.length : null };
+  window.report = report;
+  try { ws.send(JSON.stringify({ report })); } catch (e) { /* closed */ }
+  document.title = "FAIL";
+  document.getElementById("state").textContent = `${backend}: FAIL`;
+  document.getElementById("state").className = "fail";
+  log(JSON.stringify(report, null, 1));
+}
+
+ws.onmessage = (event) => {
+  const text = receiveFrame(String(event.data));
+  if (text === null) return;
+  check(text);
+  if (!statsAsked && complete()) {
+    statsAsked = true;
+    doneAt = performance.now();
+    // Let the last acknowledgement reach the server before its counts.
+    setTimeout(() => { sendFlowAck(); ws.send(JSON.stringify({ stats: 1 })); }, FLOW_ACK_DELAY_MS + 50);
+  }
+};
+ws.onclose = (event) => fail(`socket closed ${event.code} ${event.reason}`);
+ws.onerror = () => log("socket error");
+setTimeout(() => fail("timed out"), TIMEOUT_MS);
+</script>
+</body>
+</html>
