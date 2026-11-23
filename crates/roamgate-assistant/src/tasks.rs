@@ -2421,6 +2421,13 @@ impl AssistantTasks {
     /// `detail(taskId, runId?)`: a task, its runs, and one run's messages.
     pub fn detail(&self, task_id: &str, run_id: Option<&str>) -> AssistantResult<Value> {
         let inner = self.inner();
+        // The child's snapshot is read unlocked: the child's own state may
+        // wait on the service's, which reads the tasks'.
+        let child = run_id.and_then(|run_id| {
+            let state = inner.state.lock().unwrap();
+            state.children.get(run_id).cloned()
+        });
+        let child_messages = child.as_ref().map(|c| c.snapshot()["messages"].clone());
         let state = inner.state.lock().unwrap();
         let entry = &state.tasks[state.find(task_id)?];
         let runs: Vec<Value> = entry["runs"]
@@ -2440,7 +2447,7 @@ impl AssistantTasks {
             return Err(internal("This task run is no longer available."));
         };
         let child = state.children.get(run_id).cloned();
-        let mut messages = child.as_ref().map(|c| c.snapshot()["messages"].clone());
+        let mut messages = child.as_ref().and(child_messages);
         if messages.is_none() {
             messages = inner
                 .run_directory(task_id, Some(run_id))
