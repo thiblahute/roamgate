@@ -56,8 +56,9 @@ struct State {
 }
 
 /// Which steps of a checkout have threads: their refs are kept past the
-/// last few. Set by the review service.
-pub type Keeper = Arc<dyn Fn(&str) -> Vec<String> + Send + Sync>;
+/// last few. Set by the review service (asked across the channel while
+/// the front keeps it, hence a future).
+pub type Keeper = Arc<dyn Fn(&str) -> BoxFuture<'static, Vec<String>> + Send + Sync>;
 
 pub struct LastStepStore {
     cx: GitContext,
@@ -302,13 +303,11 @@ impl LastStepStore {
             // Under refs, so the step's review outlives a restart and gc;
             // best effort: without them it shows from memory.
             if store.refs {
-                let keep = store
-                    .keeper
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .map(|keeper| keeper(&captured.root))
-                    .unwrap_or_default();
+                let keeper = store.keeper.lock().unwrap().clone();
+                let keep = match keeper {
+                    Some(keeper) => keeper(&captured.root).await,
+                    None => Vec::new(),
+                };
                 let _ =
                     persist_last_step(&store.cx, &captured.root, &workspace, &step, &range, &keep)
                         .await;

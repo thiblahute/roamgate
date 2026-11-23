@@ -200,11 +200,12 @@ async fn only_the_last_steps_keep_their_refs_and_a_step_whose_review_has_threads
     let (keeper_root, keeper_kept) = (root.clone(), kept.clone());
     store.set_keeper(Some(Arc::new(move |at: &str| {
         let kept = keeper_kept.lock().unwrap().clone();
-        if at == keeper_root && !kept.is_empty() {
+        let keep = if at == keeper_root && !kept.is_empty() {
             vec![kept]
         } else {
             Vec::new()
-        }
+        };
+        Box::pin(async move { keep }) as futures_util::future::BoxFuture<'static, Vec<String>>
     })));
     let mut steps = Vec::new();
     for index in 0..LAST_STEPS_KEPT + 2 {
