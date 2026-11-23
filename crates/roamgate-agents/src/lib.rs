@@ -9,6 +9,7 @@
 #[macro_use]
 pub mod js;
 
+pub mod activity;
 pub mod antigravity;
 pub mod artifacts;
 pub mod codex_injected;
@@ -24,6 +25,7 @@ pub mod holders;
 pub mod images;
 pub mod index_store;
 pub mod messages;
+pub mod messenger;
 pub mod paths;
 pub mod projection;
 pub mod registry;

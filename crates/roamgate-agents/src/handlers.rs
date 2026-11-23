@@ -9,6 +9,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use regex::Regex;
 use serde_json::Value;
 
+use crate::activity::{ACTIVITY_TIMEOUT, RemoteActivity, enrich_agent_activity};
 use crate::compaction::{COMPACTION_TAIL_BYTES, compacted_since};
 use crate::files::SessionFiles;
 use crate::history::{
@@ -173,6 +174,8 @@ pub struct AgentSessionHandlers {
     pub tasks: TaskWatcher,
     pub settled: SettledTimes,
     pub now: Arc<dyn Fn() -> f64 + Send + Sync>,
+    /// The activity times a remote connection reuses (agent-activity.ts).
+    pub remote_activity: RemoteActivity,
 }
 
 fn with(mut base: Obj, extra: Obj) -> Value {
@@ -199,6 +202,7 @@ impl AgentSessionHandlers {
             cache: ProjectionCache::new(files.clone(), store),
             tasks: TaskWatcher::new(files.clone(), now.clone()),
             settled: SettledTimes::default(),
+            remote_activity: RemoteActivity::default(),
             herdr,
             files,
             resolver,
@@ -214,6 +218,26 @@ impl AgentSessionHandlers {
             &self.resolver,
         )
         .await?)
+    }
+
+    /// Herdr's `agent.list` with each agent's last activity time
+    /// (`listWithActivity`).
+    pub async fn list_with_activity(&self, params: Value) -> Result<Value> {
+        let listed = self
+            .herdr
+            .call("agent.list", params, None)
+            .await
+            .map_err(HandlerError::new)?;
+        let now = self.now.clone();
+        Ok(enrich_agent_activity(
+            listed,
+            self.files.as_ref(),
+            &self.resolver,
+            &self.remote_activity,
+            ACTIVITY_TIMEOUT,
+            &move || now(),
+        )
+        .await)
     }
 
     /// The pane's session file now, for the history watcher.

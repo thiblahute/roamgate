@@ -18,8 +18,6 @@ roamgate-forge	server/src/review/forge	S19
 roamgate-forge	server/src/review/github	S19
 roamgate-forge	server/src/review/gitlab	S19
 roamgate-forge	server/src/workspace/pull-request	S17
-roamgate-agents	server/src/agent/agent-messenger	S21
-roamgate-agents	server/src/agent/agent-activity	S21
 
 # roamgate-http was made by S13 for the settings family; the rest of its rows
 # wait for the front (S18). settings-rpc.test.ts holds the worktree, profile
