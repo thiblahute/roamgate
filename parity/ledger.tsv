@@ -389,6 +389,16 @@ server/src/archive/text-search.test.ts	the same query tests a text for the raw/ 
 server/src/archive/text-search.test.ts	host, agent and project are pathspecs; state and history excluded	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/text-search.test.ts	role, kind and the time range are checked on each line	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/text-search.test.ts	ranked by matches, then recency; or recency first	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/assets/assets.test.ts	fills values and keeps everything else byte for byte	rust-unit:roamgate-base	the template filler and the embedded contract/assets files; the files themselves are the contract
+server/src/assets/assets.test.ts	keeps a section when its flag is true, its inverse when false	rust-unit:roamgate-base	the template filler and the embedded contract/assets files; the files themselves are the contract
+server/src/assets/assets.test.ts	nests sections	rust-unit:roamgate-base	the template filler and the embedded contract/assets files; the files themselves are the contract
+server/src/assets/assets.test.ts	refuses a missing or an unused value, and a wrong kind	rust-unit:roamgate-base	the template filler and the embedded contract/assets files; the files themselves are the contract
+server/src/assets/assets.test.ts	lists a template's tags	rust-unit:roamgate-base	the template filler and the embedded contract/assets files; the files themselves are the contract
+server/src/assets/assets.test.ts	every file is embedded, and every embedded text is a file	rust-unit:roamgate-base	the template filler and the embedded contract/assets files; the files themselves are the contract
+server/src/assets/assets.test.ts	every template parses	rust-unit:roamgate-base	the template filler and the embedded contract/assets files; the files themselves are the contract
+server/src/assets/assets.test.ts	index.json says what each file is, its tags and its users	rust-unit:roamgate-base	the template filler and the embedded contract/assets files; the files themselves are the contract
+server/src/assets/assets.test.ts	the installed clients carry the server's constants	rust-unit:roamgate-base	the template filler and the embedded contract/assets files; the files themselves are the contract
+server/src/assets/assets.test.ts	the rendered helper is web/src/renderedHelper.ts as the web toolchain builds it	rust-unit:roamgate-base	the template filler and the embedded contract/assets files; the files themselves are the contract
 server/src/assistant/actions.test.ts	revocation at native %s dispatch sends nothing and does not enter lost-reply recovery	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/actions.test.ts	worktree preparation forwards live permission through its awaited shared flow	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/actions.test.ts	worktree permission revoked at %s reports whether execution actually started	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
@@ -1442,11 +1452,6 @@ server/src/config/server-config.test.ts	reading configuration for management com
 server/src/config/server-config.test.ts	validates ROAMGATE_PIN=%s without weakening the strong credential	rust-unit:roamgate-cli	server flags and their precedence
 server/src/config/server-config.test.ts	PIN keeps generated-token recovery and follows environment precedence	rust-unit:roamgate-cli	server flags and their precedence
 server/src/config/server-config.test.ts	prefers explicit paths, then SSH tunnels, then the session layout	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/service-manager.test.ts	Windows task queries distinguish registration from running state	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
-server/src/config/service-manager.test.ts	escapes systemd paths without quoting them	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
-server/src/config/service-manager.test.ts	passes launchd paths as arguments without interpolating shell code	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
-server/src/config/service-manager.test.ts	renders a direct-executable Windows login task	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
-server/src/config/service-manager.test.ts	isolates Windows task names by user config directory	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
 server/src/config/service-manager.test.ts	installs and starts a systemd user service	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
 server/src/config/service-manager.test.ts	reloads the systemd definition before restarting	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
 server/src/config/service-manager.test.ts	does not restart systemd when daemon-reload fails	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
@@ -1489,9 +1494,14 @@ server/src/config/service-manager.test.ts	legacy Windows task hash stays tied to
 server/src/config/service-manager.test.ts	after explicit legacy removal install preserves old env and token	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
 server/src/config/service-manager.test.ts	service run honors explicit new and legacy supervisor overrides	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
 server/src/config/service-manager.test.ts	rejects an invalid service PIN before installation: %s	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
-server/src/config/service-manager.test.ts	reads only the job's own state, not nested endpoint states	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
 server/src/config/service-manager.test.ts	reports a published legacy service that service commands manage	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
 server/src/config/service-manager.test.ts	ignores a customized legacy definition	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
+server/src/config/service-manager.test.ts	Windows task queries distinguish registration from running state	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	escapes systemd paths without quoting them	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	passes launchd paths as arguments without interpolating shell code	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	renders a direct-executable Windows login task	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	isolates Windows task names by user config directory	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
+server/src/config/service-manager.test.ts	reads only the job's own state, not nested endpoint states	vector:contract/vectors/service-manager.json	S5 vectors, read by bun test and the Rust crate
 server/src/config/session-secret.test.ts	persists private independent random signing material	rust-unit:roamgate-base	data paths, environment precedence, settings store, locks
 server/src/config/session-secret.test.ts	uses the default data root and survives a separate process restart	rust-unit:roamgate-base	data paths, environment precedence, settings store, locks
 server/src/config/session-secret.test.ts	isolates signing state by the effective settings path	rust-unit:roamgate-base	data paths, environment precedence, settings store, locks
@@ -2461,6 +2471,8 @@ server/src/http/static-paths.test.ts	rejects malformed encoding and NUL bytes	ru
 server/src/http/static-paths.test.ts	keeps resolved files inside the public directory	rust-unit:roamgate-http	HTTP front internals
 server/src/http/static-paths.test.ts	uses the SPA entry only for browser page navigations	rust-unit:roamgate-http	HTTP front internals
 server/src/http/static-paths.test.ts	only serves static content for read-only HTTP methods	rust-unit:roamgate-http	HTTP front internals
+server/src/http/terminal-path-text.test.ts	POSIX shell receives each supported path as one unchanged argument	rust-unit:roamgate-http	runs the quoted path through a real sh; the quoting itself is vectors
+server/src/http/terminal-path-text.test.ts	PowerShell receives comma and quoted paths as one unchanged argument	pending:windows-runner	runs the quoted path through a real PowerShell, on Windows only (plan 5.10)
 server/src/http/terminal-path-text.test.ts	keeps plain POSIX paths bare	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
 server/src/http/terminal-path-text.test.ts	single-quotes POSIX paths with spaces or shell characters	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
 server/src/http/terminal-path-text.test.ts	uses forward slashes for Windows paths	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
@@ -2468,8 +2480,6 @@ server/src/http/terminal-path-text.test.ts	quotes commas instead of treating the
 server/src/http/terminal-path-text.test.ts	single-quotes Windows paths with spaces	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
 server/src/http/terminal-path-text.test.ts	double-quotes Windows paths with apostrophes	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
 server/src/http/terminal-path-text.test.ts	falls back to PowerShell quoting when both quote styles expand	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
-server/src/http/terminal-path-text.test.ts	POSIX shell receives each supported path as one unchanged argument	rust-unit:roamgate-http	runs the quoted path through a real sh; the quoting itself is vectors
-server/src/http/terminal-path-text.test.ts	PowerShell receives comma and quoted paths as one unchanged argument	pending:windows-runner	runs the quoted path through a real PowerShell, on Windows only (plan 5.10)
 server/src/http/terminal-upload.test.ts	sanitizes terminal filename %s	rust-unit:roamgate-http	HTTP front internals
 server/src/http/terminal-upload.test.ts	keeps Windows upload name %s usable	rust-unit:roamgate-http	HTTP front internals
 server/src/http/terminal-upload.test.ts	streams a file to a private directory and retains an empty file	rust-unit:roamgate-http	HTTP front internals
@@ -2659,14 +2669,14 @@ server/src/mr-reviews/claude.test.ts	conversation mode: its own switch, never /e
 server/src/mr-reviews/claude.test.ts	the claude start setting decides the mode Claude starts in	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/claude.test.ts	a Claude that is no request's is left alone	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/claude.test.ts	a request without a session: nothing started by a switch	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/complexity.test.ts	the details and the followed projects arrive in more queries, without an error	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
+server/src/mr-reviews/complexity.test.ts	the light list is split too when its lists are too much together	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
+server/src/mr-reviews/complexity.test.ts	a field refusal still falls back to fewer fields	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
 server/src/mr-reviews/complexity.test.ts	the estimate counts fields, resolvers and the items they load	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
 server/src/mr-reviews/complexity.test.ts	the to-review query with three followed projects goes over GitLab's default	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
 server/src/mr-reviews/complexity.test.ts	a refusal is read from an error or an answer	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
 server/src/mr-reviews/complexity.test.ts	batches stay under the budget; a refusal splits, learns and is not seen	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
 server/src/mr-reviews/complexity.test.ts	answers asked in parts merge into one	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
-server/src/mr-reviews/complexity.test.ts	the details and the followed projects arrive in more queries, without an error	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
-server/src/mr-reviews/complexity.test.ts	the light list is split too when its lists are too much together	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
-server/src/mr-reviews/complexity.test.ts	a field refusal still falls back to fewer fields	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
 server/src/mr-reviews/curation.test.ts	rankings: only given keys, a reason for each pick, few picks	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/curation.test.ts	top paths count files and their directories	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/curation.test.ts	a batch: the user's own requests and dismissed ones are no candidates	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
@@ -2997,8 +3007,8 @@ server/src/review/changes-anchors.test.ts	the migration runs once: a second read
 server/src/review/changes-anchors.test.ts	the migrated anchors are kept across a restart of the server	rust-unit:roamgate-review	the review service migrating stored threads on disk; combinedAnchor is vectors
 server/src/review/changes-anchors.test.ts	a branch review's threads and a range review are left alone	rust-unit:roamgate-review	the review service migrating stored threads on disk; combinedAnchor is vectors
 server/src/review/changes-anchors.test.ts	a review read publishes it again once its threads moved	rust-unit:roamgate-review	the review service migrating stored threads on disk; combinedAnchor is vectors
-server/src/review/changes-anchors.test.ts	combinedAnchor: a comment on the file keeps no line, a range keeps its length	vector:contract/vectors/changes-anchors.json	S5 vectors, read by bun test and the Rust crate
 server/src/review/changes-anchors.test.ts	a checkout not readable yet (a connection not ready, at startup) is asked again later	rust-unit:roamgate-review	the review service migrating stored threads on disk; combinedAnchor is vectors
+server/src/review/changes-anchors.test.ts	combinedAnchor: a comment on the file keeps no line, a range keeps its length	vector:contract/vectors/changes-anchors.json	S5 vectors, read by bun test and the Rust crate
 server/src/review/commit-anchors.test.ts	a commit no longer among the review's is told from one still there	vector:contract/vectors/commit-anchors.json	S5 vectors, read by bun test and the Rust crate
 server/src/review/commit-anchors.test.ts	what a rewritten commit became: its patch id first, then its subject	vector:contract/vectors/commit-anchors.json	S5 vectors, read by bun test and the Rust crate
 server/src/review/commit-anchors.test.ts	the anchored line is found by its text, the lines after it first, else the nearest	vector:contract/vectors/commit-anchors.json	S5 vectors, read by bun test and the Rust crate
@@ -3241,12 +3251,12 @@ server/src/utils/host-spawn.test.ts	skips an empty executable one and a non-exec
 server/src/utils/host-spawn.test.ts	prefers the known paths to PATH	rust-unit:roamgate-exec	host-spawn in a toolbox
 server/src/utils/host-spawn.test.ts	null when none runs	rust-unit:roamgate-exec	host-spawn in a toolbox
 server/src/utils/host-spawn.test.ts	ROAMGATE_HOST_SPAWN overrides the search, empty for none	rust-unit:roamgate-exec	host-spawn in a toolbox
+server/src/utils/logger.test.ts	rejects unstringifiable values without masking the error	rust-unit:roamgate-base	a value no JSON can carry (a circular object, a bigint): the Rust logger takes typed input
 server/src/utils/logger.test.ts	filters below the configured level and routes warnings to stderr	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
 server/src/utils/logger.test.ts	formats child scopes and sanitizes bounded context	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
 server/src/utils/logger.test.ts	formats arbitrary lines without control-character injection	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
 server/src/utils/logger.test.ts	accepts supported levels case-insensitively	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
 server/src/utils/logger.test.ts	rejects unsupported levels with the accepted values	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
-server/src/utils/logger.test.ts	rejects unstringifiable values without masking the error	rust-unit:roamgate-base	a value no JSON can carry (a circular object, a bigint): the Rust logger takes typed input
 server/src/utils/logger.test.ts	deduplicates equivalent failures and summarizes recovery	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
 server/src/utils/logger.test.ts	redacts PINs and session signing material from log fields and messages	vector:contract/vectors/logger.json	S5 vectors, read by bun test and the Rust crate
 server/src/utils/loop-stall.test.ts	reports a tick that ran late past the threshold	rust-unit:roamgate-base	shared utilities
@@ -4128,6 +4138,13 @@ server/src/workspace/pull-request.test.ts	browsers asking the same badge togethe
 server/src/workspace/pull-request.test.ts	a badge is reused while HEAD stays, and read again once it moves	rust-unit:roamgate-forge	pull request status
 server/src/workspace/pull-request.test.ts	a badge older than its reuse is read again	rust-unit:roamgate-forge	pull request status
 server/src/workspace/pull-request.test.ts	a card is served from the cache, a refresh reads it afresh and replaces the badges	rust-unit:roamgate-forge	pull request status
+server/src/workspace/remote-files.test.ts	remote image reads support %s (%s) within preview byte limits	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	remote downloads refuse a file over maxBytes before sending it	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	a remote file that changes size while it is sent is never sent short or long	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	remote resolution includes directories but rejects relative and symlink escapes	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	a sibling checkout's page reads and downloads by its path, with macOS's base64	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	a file's stat on the host compares with what its read gave, and stays in the checkout	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
+server/src/workspace/remote-files.test.ts	a file not on the host is said plainly, not as realpath's error	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
 server/src/workspace/remote-files.test.ts	parses remote directory listings	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
 server/src/workspace/remote-files.test.ts	parses text and image previews	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
 server/src/workspace/remote-files.test.ts	never labels a short image payload as complete	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
@@ -4135,14 +4152,7 @@ server/src/workspace/remote-files.test.ts	parses directory previews without cont
 server/src/workspace/remote-files.test.ts	parses resolved remote files	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
 server/src/workspace/remote-files.test.ts	parses download, upload, and delete responses	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
 server/src/workspace/remote-files.test.ts	rejects malformed remote protocol responses	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
-server/src/workspace/remote-files.test.ts	remote image reads support %s (%s) within preview byte limits	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
-server/src/workspace/remote-files.test.ts	remote downloads refuse a file over maxBytes before sending it	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
-server/src/workspace/remote-files.test.ts	a remote file that changes size while it is sent is never sent short or long	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
 server/src/workspace/remote-files.test.ts	remote image previews reject oversized files	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
-server/src/workspace/remote-files.test.ts	remote resolution includes directories but rejects relative and symlink escapes	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
-server/src/workspace/remote-files.test.ts	a sibling checkout's page reads and downloads by its path, with macOS's base64	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
-server/src/workspace/remote-files.test.ts	a file's stat on the host compares with what its read gave, and stays in the checkout	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
-server/src/workspace/remote-files.test.ts	a file not on the host is said plainly, not as realpath's error	rust-unit:roamgate-workspace	reads and downloads through a process runner over files on disk; the protocol parsers are vectors
 server/src/workspace/remote-files.test.ts	parses a remote stat, and refuses anything else	vector:contract/vectors/remote-files.json	S5 vectors, read by bun test and the Rust crate
 server/src/workspace/review-files.test.ts	a range's summary lists each file with its status and counts, between its merge base and head	rust-unit:roamgate-git	review read scripts
 server/src/workspace/review-files.test.ts	a summary's files read a few at a time are the whole patch's files	rust-unit:roamgate-git	review read scripts
@@ -4555,6 +4565,10 @@ scripts/contract/check.test.ts	the SQL each database runs matches storage/sqlite
 scripts/contract/check.test.ts	the JSON Schemas match the TypeScript types	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/check.test.ts	every $ref leads to a definition	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/check.test.ts	${file} has only OpenAPI keys in its operations and responses	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/tools-catalog.test.ts	the catalog holds the server's tool tables as its code makes them	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/tools-catalog.test.ts	the mod's module is the catalog's claude-mod table	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/tools-catalog.test.ts	the mod runs every tool of its table, and the server knows its name	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/tools-catalog.test.ts	tool names are unique within a table	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/write.test.ts	a file that already says the same keeps its hand formatting	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/write.test.ts	a changed value is written, and reads back as itself	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/write.test.ts	JSON compares by value and Markdown tables by their cells	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates

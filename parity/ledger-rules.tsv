@@ -5,6 +5,7 @@ server/src/time-report/	rust-unit:roamgate-activity	the time-report provider bri
 server/src/agent/	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/claude-mod	rust-unit:roamgate-claude	the claude-mod hub and plugin install
 server/src/archive/	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/assets/	rust-unit:roamgate-base	the template filler and the embedded contract/assets files; the files themselves are the contract
 server/src/assistant/	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/claude-	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
 server/src/assistant/pi-	internal:Pi runtime	Pi stays a sidecar at cut-over (plan 6.8); tested with it
