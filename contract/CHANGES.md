@@ -6,6 +6,26 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.5
+
+inventory: e8d2775b8d2d0d084c05cd3b9614c25f53df62090f92d05dd69d596b212ede72
+
+Families served by the Rust core (wire/core-channel.md, Families in the
+core, CLI pass-through; the channel, no family yet):
+
+- owners: `owners/families.json` gains `cli`, the commands of a family
+  (`herdr` for herdr_setup, `update` and `rollback` for update); the owners
+  table gains `core`, written by the Rust binary's hidden `roamgate owners`.
+- exec: `spawn core-channel/cli.ts#defaultRunCore`, the core binary running
+  such a command while Rust owns its family.
+- storage: `data:runtime`, the channel's runtime directory, now named by the
+  CLI too.
+- wire: `welcome.clock` and `internal.clock.advance`, the front's test clock
+  followed by the core's families; `internal.<family>.<op>`, the front's own
+  calls to a Rust-owned family; the core's variables
+  `ROAMGATE_CORE_SERVED_LOG`, `ROAMGATE_CLI_EXEC`, `ROAMGATE_CLI_VERSION`,
+  `ROAMGATE_CLI_STANDALONE`.
+
 ## 1.4
 
 inventory: d5e5059d19561624ff411e94d84f54be73194cd192816f98f826e21ea0a5e78b

@@ -110,6 +110,13 @@
       "description": "reviews.sqlite and review images (ROAMGATE_REVIEW_DIR)",
       "status": "inventoried"
     },
+    "data:runtime": {
+      "kind": "data",
+      "used_in": ["server/src/core-channel/cli.ts"],
+      "format": "dir",
+      "description": "the core channel's runtime directory (0700): owners.json, the channel socket, shadow.jsonl (wire/core-channel.md)",
+      "status": "inventoried"
+    },
     "data:session-profiles.json": {
       "kind": "data",
       "used_in": ["server/src/profiles/profiles.ts"],
