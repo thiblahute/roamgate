@@ -24,12 +24,14 @@ use http::HeaderMap;
 use http::request::Parts;
 use roamgate_base::clock::SharedClock;
 use roamgate_base::credentials::{assert_valid_auth_password, assert_valid_auth_pin};
+use roamgate_base::revoked_sessions::RevokedSessions;
 use serde_json::{Value, json};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
 use crate::body::{BodyError, read_json_body};
 use crate::login_page::render_login_page;
+
 use crate::response::{self, Response, decode_uri_component, header};
 
 pub const AUTH_COOKIE: &str = "herdr_auth";
@@ -105,6 +107,8 @@ pub struct Auth {
     key: Vec<u8>,
     clock: SharedClock,
     state: Mutex<State>,
+    /// Cookies ended by a logout (memory only unless given a file).
+    revoked: Mutex<RevokedSessions>,
 }
 
 fn too_many_attempts(wait_ms: i64) -> Response {
@@ -268,7 +272,15 @@ impl Auth {
             key,
             clock,
             state: Mutex::new(State::default()),
+            revoked: Mutex::new(RevokedSessions::open(None, None)),
         })
+    }
+
+    /// Keeps the cookies ended by a logout in this list (its file, across
+    /// restarts) instead of memory only.
+    pub fn with_revoked(mut self, revoked: RevokedSessions) -> Self {
+        self.revoked = Mutex::new(revoked);
+        self
     }
 
     pub fn config(&self) -> &AuthConfig {
@@ -384,34 +396,44 @@ impl Auth {
         actual.len() == expected.len() && bool::from(actual.as_bytes().ct_eq(expected.as_bytes()))
     }
 
-    fn is_valid_signed_token(&self, token: &str) -> bool {
+    /// The expiry (seconds) of a cookie this server signed, still valid.
+    fn signed_token_expiry(&self, token: &str) -> Option<f64> {
         let parts: Vec<&str> = token.split('.').collect();
         let [payload, signature] = parts[..] else {
-            return false;
+            return None;
         };
         if payload.is_empty() || signature.is_empty() {
-            return false;
+            return None;
         }
         let expected = lenient_hex(&self.sign(payload));
         let actual = lenient_hex(signature);
         if actual.len() != expected.len() || !bool::from(actual.ct_eq(&expected)) {
-            return false;
+            return None;
         }
         let cleaned: String = payload
             .chars()
             .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
             .collect();
         let Ok(bytes) = LENIENT_BASE64URL.decode(cleaned) else {
-            return false;
+            return None;
         };
         let Ok(decoded) = serde_json::from_str::<Value>(&String::from_utf8_lossy(&bytes)) else {
-            return false;
+            return None;
         };
         let now = self.now().div_euclid(1000) as f64;
         decoded
             .get("exp")
             .and_then(Value::as_f64)
-            .is_some_and(|exp| exp > now)
+            .filter(|exp| *exp > now)
+    }
+
+    fn is_valid_signed_token(&self, token: &str) -> bool {
+        self.signed_token_expiry(token).is_some()
+            && !self
+                .revoked
+                .lock()
+                .unwrap()
+                .has(token, self.now().div_euclid(1000))
     }
 
     /// The session cookie's token, if any.
@@ -439,6 +461,17 @@ impl Auth {
             || header(&parts.headers, "sec-fetch-site").as_deref() == Some("cross-site")
         {
             return response::text(403, &[], "forbidden");
+        }
+        // The cookie is ended here too: a copy of it no longer logs in.
+        if self.config.auth_required
+            && let Some(token) = self.session_token(&parts.headers)
+            && let Some(expires_at) = self.signed_token_expiry(&token)
+        {
+            let now = self.now().div_euclid(1000);
+            self.revoked
+                .lock()
+                .unwrap()
+                .add(&token, expires_at as i64, now);
         }
         let cookie = format!(
             "{AUTH_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{}",

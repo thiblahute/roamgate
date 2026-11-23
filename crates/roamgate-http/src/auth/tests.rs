@@ -509,6 +509,49 @@ async fn expires_the_cookie_with_matching_attributes() {
     }
 }
 
+#[tokio::test]
+async fn ends_the_cookie_on_the_server_too_across_a_restart() {
+    use roamgate_base::paths::{DataContext, Platform};
+    use roamgate_base::revoked_sessions::RevokedSessions;
+    let home = tempfile::tempdir().unwrap();
+    let context = DataContext::new(home.path(), Platform::Unix, None);
+    let directory = home.path().join(".config/roamgate");
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("session-secret.revoked.json");
+    let clock = ManualClock::at(NOW);
+    let start = || {
+        auth_with(AuthConfig::new(SECRET, &"a".repeat(64)), &clock)
+            .with_revoked(RevokedSessions::open(Some(context.clone()), Some(&path)))
+    };
+    let auth = start();
+    let first = cookie_header(&password_login(&auth, SECRET, "127.0.0.1", "").await);
+    let second = cookie_header(&password_login(&auth, SECRET, "127.0.0.1", "").await);
+    assert!(auth.is_authed(&cookie_request(&first).headers));
+    let logout = auth.handle_logout(&parts(
+        "POST",
+        "http://example.test/api/logout",
+        &[("cookie", &first), ("x-roamgate-logout", "1")],
+    ));
+    assert_eq!(logout.status(), 204);
+    // A copy of the ended cookie no longer logs in; the other browser's does.
+    assert!(!auth.is_authed(&cookie_request(&first).headers));
+    assert!(auth.is_authed(&cookie_request(&second).headers));
+    let restarted = start();
+    assert!(!restarted.is_authed(&cookie_request(&first).headers));
+    assert!(restarted.is_authed(&cookie_request(&second).headers));
+    // The cookie itself is never written down.
+    let kept = std::fs::read_to_string(&path).unwrap();
+    assert!(!kept.contains(first.split_once('=').unwrap().1));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+}
+
 #[test]
 fn rejects_get_and_cross_site_logout_but_allows_retry_without_a_cookie() {
     let auth = auth(SECRET);
