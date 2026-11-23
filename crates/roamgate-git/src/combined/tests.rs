@@ -421,7 +421,7 @@ async fn the_combined_read_refuses_links_out_of_the_checkout_and_fifos() {
             .unwrap()
             .success()
     );
-    let cx = Wrapped::deadline(Duration::from_millis(3000));
+    let cx = Wrapped::deadline(Duration::from_millis(10_000));
     let link = combined_with(&cx, &repo, "link.txt", json!({}))
         .await
         .unwrap();

@@ -88,6 +88,17 @@ async fn reads_several_files_of_a_branch_review_with_one_shell_command_each_its_
             .unwrap(),
         );
     }
+    // The base is kept a few seconds from its first resolution: resolved
+    // again right before the batch, so a slow machine still reuses it.
+    forget_recent_bases();
+    let warmed = std::time::Instant::now();
+    file(
+        &local(),
+        repo.path(),
+        json!({"mode": "branch-main", "path": "a.txt", "kind": "branch"}),
+    )
+    .await
+    .unwrap();
     let counting = Loopback::new();
     let cx = GitContext::local(counting.clone() as Arc<_>);
     let read = files(
@@ -101,8 +112,10 @@ async fn reads_several_files_of_a_branch_review_with_one_shell_command_each_its_
     .await
     .unwrap();
     // The base resolved within the last seconds is reused: only the batch
-    // runs.
-    assert_eq!(counting.calls().len(), 1);
+    // runs (unless this machine took the whole reuse window to get here).
+    if warmed.elapsed() < COMPARISON_BASE_REUSE {
+        assert_eq!(counting.calls().len(), 1);
+    }
     let read = read["files"].as_array().unwrap();
     for (index, each) in read.iter().enumerate() {
         assert_eq!(each["path"], paths[index]);

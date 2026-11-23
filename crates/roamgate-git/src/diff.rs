@@ -117,11 +117,20 @@ pub struct DiffEntry {
     pub deletions: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generated: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::ser_js_num"
+    )]
     pub file_size: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::ser_js_num"
+    )]
     pub mtime_ms: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "crate::ser_js_num"
+    )]
     pub size: Option<f64>,
 }
 
@@ -846,6 +855,12 @@ type SharedComparison = futures_util::future::Shared<
 
 static RECENT_BASES: LazyLock<Mutex<BTreeMap<String, (Instant, SharedComparison)>>> =
     LazyLock::new(|| Mutex::new(BTreeMap::new()));
+
+/// Forgets the bases kept for reuse (tests).
+#[cfg(test)]
+pub(crate) fn forget_recent_bases() {
+    RECENT_BASES.lock().unwrap().clear();
+}
 
 async fn recent_comparison_base(
     cx: &GitContext,

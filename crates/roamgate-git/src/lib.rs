@@ -17,6 +17,7 @@ pub mod exec;
 pub mod history;
 pub mod ignore;
 pub mod patch;
+pub mod preview;
 pub mod review;
 pub mod review_files;
 pub mod review_patch;
@@ -141,4 +142,25 @@ pub fn sanitize_explorer_path(value: Option<&serde_json::Value>) -> Result<Strin
         return Err(GitError::message("invalid file explorer path"));
     }
     Ok(parts.join("/"))
+}
+
+/// A number as JS writes it: an integral value without a fraction.
+pub fn js_num(value: f64) -> serde_json::Value {
+    if value.fract() == 0.0 && value.abs() < 9_007_199_254_740_992.0 {
+        serde_json::Value::from(value as i64)
+    } else {
+        serde_json::Value::from(value)
+    }
+}
+
+/// `serialize_with` for an optional JS number.
+pub fn ser_js_num<S: serde::Serializer>(
+    value: &Option<f64>,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    use serde::Serialize as _;
+    match value {
+        Some(value) => js_num(*value).serialize(serializer),
+        None => serializer.serialize_none(),
+    }
 }

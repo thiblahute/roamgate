@@ -486,8 +486,8 @@ async fn measures_compared_blobs_independently_of_the_live_file_across_scopes() 
     for (entry, kind) in entries.iter().zip(["staged", "unstaged"]) {
         assert_eq!(entry["path"], "file.txt");
         assert_eq!(entry["kind"], kind);
-        assert_eq!(entry["file_size"], 1025.0);
-        assert_eq!(entry["size"], 5.0);
+        assert_eq!(entry["file_size"], 1025);
+        assert_eq!(entry["size"], 5);
     }
     git(root, &["commit", "-q", "-m", "feature"]);
     let branch = summary(
@@ -500,7 +500,7 @@ async fn measures_compared_blobs_independently_of_the_live_file_across_scopes() 
     .await
     .unwrap();
     assert_eq!(branch["entries"][0]["path"], "file.txt");
-    assert_eq!(branch["entries"][0]["file_size"], 1025.0);
+    assert_eq!(branch["entries"][0]["file_size"], 1025);
     baselines
         .capture_workspace("workspace", root_of(repo.path()))
         .await
@@ -511,12 +511,12 @@ async fn measures_compared_blobs_independently_of_the_live_file_across_scopes() 
         .await
         .unwrap();
     assert_eq!(step["entries"][0]["status"], "deleted");
-    assert_eq!(step["entries"][0]["file_size"], 5.0);
+    assert_eq!(step["entries"][0]["file_size"], 5);
     let deleted = summary(&cx, repo.path(), json!({}), json!({}), None)
         .await
         .unwrap();
     assert_eq!(deleted["entries"][0]["status"], "deleted");
-    assert_eq!(deleted["entries"][0]["file_size"], 1025.0);
+    assert_eq!(deleted["entries"][0]["file_size"], 1025);
     baselines.dispose().await;
 }
 
@@ -600,7 +600,7 @@ async fn defers_large_automatic_patches_before_transfer_while_explicit_requests_
         .await
         .unwrap();
     let entry = &listed["entries"][0];
-    assert_eq!(entry["file_size"], 200_001.0);
+    assert_eq!(entry["file_size"], 200_001);
     assert_eq!(entry["additions"], 1);
     assert_eq!(entry["deletions"], 1);
     let automatic = file(
@@ -988,9 +988,9 @@ async fn includes_commits_and_untracked_files_made_after_the_baseline() {
         result["entries"],
         json!([
             { "path": "tracked.txt", "kind": "last-step", "status": "modified",
-              "additions": 1, "deletions": 1, "file_size": 13.0 },
+              "additions": 1, "deletions": 1, "file_size": 13 },
             { "path": "untracked.txt", "kind": "last-step", "status": "added",
-              "additions": 1, "deletions": 0, "file_size": 9.0 },
+              "additions": 1, "deletions": 0, "file_size": 9 },
         ])
     );
     let diff = file(

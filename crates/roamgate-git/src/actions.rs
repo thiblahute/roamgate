@@ -35,8 +35,18 @@ pub struct ActionContext {
 /// A worktree file's size and modification time.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Fingerprint {
+    #[serde(serialize_with = "ser_plain_js_num")]
     pub size: f64,
+    #[serde(serialize_with = "ser_plain_js_num")]
     pub mtime_ms: f64,
+}
+
+fn ser_plain_js_num<S: serde::Serializer>(
+    value: &f64,
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error> {
+    use serde::Serialize as _;
+    crate::js_num(*value).serialize(serializer)
 }
 
 fn changed(path: &str) -> GitError {

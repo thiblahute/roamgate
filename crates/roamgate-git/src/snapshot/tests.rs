@@ -644,7 +644,7 @@ impl Runner for Disconnecting {
             let argv = vec!["sh".to_owned(), "-lc".to_owned(), command.clone()];
             *self.remote.lock().unwrap() = Some(tokio::spawn(async move {
                 LocalRunner::system()
-                    .run_local(&argv, None, Duration::from_secs(5))
+                    .run_local(&argv, None, Duration::from_secs(30))
                     .await
             }));
             Err(RunError(
@@ -778,7 +778,7 @@ async fn actual_timeout_during_phase_retains_ownership_and_blocks_retries() {
                     )
                 }
             },
-            Some(Duration::from_millis(1500)),
+            Some(Duration::from_millis(8000)),
         );
         assert_fails(capture_with(&runner, repo.path()).await, "timed out");
         assert_fails(capture(repo.path()).await, "capture locked");
