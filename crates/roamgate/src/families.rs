@@ -23,6 +23,7 @@ pub mod time_report;
 pub mod update;
 pub mod voice;
 pub mod work;
+pub mod workspace;
 
 /// Every family this build implements.
 pub fn core_families() -> Families {
@@ -43,6 +44,7 @@ pub fn core_families() -> Families {
         voice::family(),
         agent_sessions::family(),
         agent_profiles::family(),
+        workspace::family(),
     ]
     .into_iter()
     .flatten()

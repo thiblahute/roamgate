@@ -26,6 +26,7 @@ roamgate-assistant = { path = "../roamgate-assistant" }
 roamgate-connections = { path = "../roamgate-connections" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-forge = { path = "../roamgate-forge" }
+roamgate-git = { path = "../roamgate-git" }
 roamgate-herdr = { path = "../roamgate-herdr" }
 roamgate-mr-reviews = { path = "../roamgate-mr-reviews" }
 roamgate-http = { path = "../roamgate-http" }
@@ -33,6 +34,7 @@ roamgate-notify = { path = "../roamgate-notify" }
 roamgate-sidecar = { path = "../roamgate-sidecar" }
 roamgate-voice-server = { path = "../roamgate-voice-server" }
 roamgate-work = { path = "../roamgate-work" }
+roamgate-workspace = { path = "../roamgate-workspace" }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order"] }

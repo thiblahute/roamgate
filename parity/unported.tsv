@@ -12,7 +12,6 @@ roamgate-herdr	server/src/bridge/endpoint-	S18
 roamgate-forge	server/src/review/forge	S19
 roamgate-forge	server/src/review/github	S19
 roamgate-forge	server/src/review/gitlab	S19
-roamgate-forge	server/src/workspace/pull-request	S17
 
 # roamgate-http was made by S13 for the settings family; the rest of its rows
 # wait for the front (S18). settings-rpc.test.ts holds the worktree, profile
@@ -45,8 +44,6 @@ roamgate-mr-reviews	server/src/mr-reviews/board-tools.test.ts	S20
 # command templates; the rest of the workspace and worktree files are S17's
 # still (plan section 11, S17's left).
 roamgate-workspace	server/src/workspace/	S17
-roamgate-workspace	server/src/worktree/	S17
-roamgate-workspace	server/src/config/workspace-tree	S17
 
 # roamgate-claude was made by S15 for the tool registry; the Claude driver,
 # the claude-mod hub comes with its subtask (S21 ported the conversation drivers).

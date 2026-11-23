@@ -1299,6 +1299,14 @@ const coreReverseTargets = {
   },
   // The workspace family's commands on a connection's SSH host, run as the
   // workspace's own (workspace/process.ts): through the session slots.
+  // The workspace family's Last steps: those whose review has threads
+  // keep their snapshot refs.
+  "workspace.kept_steps": async (args: unknown) => {
+    const { root } = (args ?? {}) as { root?: unknown };
+    if (typeof root !== "string")
+      throw new Error("workspace.kept_steps needs a root");
+    return getReviewService().keptSteps(root);
+  },
   "workspace.ssh_run": async (args: unknown) => {
     const { command, read, tag, timeout_ms, stdin_b64 } = (args ?? {}) as {
       command?: unknown;
@@ -1349,6 +1357,7 @@ const coreReverseTargets = {
           id: status.id,
           generation: lease.generation,
           remote_platform: lease.runtime.remotePlatform ?? null,
+          ssh_host: lease.runtime.sshHost() ?? null,
         },
       ];
     }),
@@ -5582,6 +5591,8 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
       : {}),
     socket_id: socketIdOf(ws),
     lane: currentSshLane(),
+    // file.reveal opens a file manager only for a loopback browser.
+    ...(ws.remoteAddress ? { client_ip: ws.remoteAddress } : {}),
     ...(clientSessions.get(ws)
       ? { session_id: sessionIdOf(clientSessions.get(ws)) }
       : {}),
