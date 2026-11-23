@@ -329,15 +329,19 @@ export function createLegacyConnectionRuntime(args: {
   // These helper groups run Unix shell commands over SSH.
   // Set below; the session resolver asks it which sessions it owns.
   let conversation: ConversationService<ServerWebSocket<unknown>> | null = null;
+  // Herdr as the agent session readers see it: conversation mode's and the
+  // Claude mods' panes over Herdr's own answers (the Rust core's readers
+  // call it too, through the agent_sessions.herdr_call reverse target).
+  const agentHerdrCall = withOwnedSessions(
+    (...args) => herdr.call(...args),
+    () => conversation?.ownedPanes() ?? [],
+    () => claudeMod.panes(),
+  );
   const agentSessions = unixOnlyHandlers(
     remotePlatform,
     "Agent history",
     createAgentSessionHandlers({
-      herdrCall: withOwnedSessions(
-        (...args) => herdr.call(...args),
-        () => conversation?.ownedPanes() ?? [],
-        () => claudeMod.panes(),
-      ),
+      herdrCall: agentHerdrCall,
       files: agentSessionFiles,
       indexStore: createSessionIndexStore({
         dir: args.sessionIndexDir ?? null,
@@ -1343,6 +1347,7 @@ export function createLegacyConnectionRuntime(args: {
     worktreeRemovalRuntime,
     terminalBridge,
     agentSessions,
+    agentHerdrCall,
     tabAutoRenamer,
     conversation: conversation!,
     typedLaunch,

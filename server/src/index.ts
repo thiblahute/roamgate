@@ -27,7 +27,11 @@ import {
   createHerdrBootCache,
   markAgentSeen,
 } from "./agent/agent-seen";
-import { historyFilePath } from "./agent/history-watch";
+import {
+  createRemoteStatSpawner,
+  historyFilePath,
+  type WatchHandle,
+} from "./agent/history-watch";
 import {
   overlaySuspendedPanes,
   withOwnedSessions,
@@ -304,6 +308,7 @@ import {
   serverLogger,
 } from "./utils/logger";
 import { runProcessWithCodeTimeout, shQuote } from "./utils/process-utils";
+import { runBinaryProcessWithTimeout } from "./workspace/process";
 import { isStandaloneBinary } from "./config/standalone";
 import { ChannelError } from "./core-channel/channel";
 import {
@@ -529,9 +534,56 @@ watchLoopStalls({
   report: (fields) => logger.debug("event loop stalled", fields),
 });
 // Which agents' finished turns the user saw in Roamgate (agent-seen.ts).
-const agentSeen = createAgentSeenStore();
+// While the Rust core owns agent_sessions it keeps them (agent-seen.json is
+// its file then): the marks, notes and annotations go to it, and this store
+// is made again, reading the file afresh, when the family comes back.
+let agentSeen = createAgentSeenStore();
 // Seen marks hold for one Herdr server process: its boot id, per connection.
 const herdrBoots = createHerdrBootCache();
+
+/** Whether the Rust core serves the agent sessions now. */
+function agentSessionsOnCore(): boolean {
+  return !!coreFront && !bunOwns("agent_sessions");
+}
+
+/** A notice for the core's agent sessions; dropped when it is gone. */
+function tellAgentSessions(op: string, params: Record<string, unknown>) {
+  void coreFront
+    ?.callInternal("agent_sessions", op, params)
+    .catch((error: unknown) =>
+      logger.debug("agent sessions notice not delivered", {
+        op,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+}
+
+/** Herdr's agent list with each finished agent's Done, from either side. */
+async function annotateAgentSeen(
+  connectionId: string,
+  result: unknown,
+  boot: string | null,
+): Promise<unknown> {
+  if (!agentSessionsOnCore())
+    return agentSeen.annotate(connectionId, result, boot);
+  return coreFront!.callInternal("agent_sessions", "annotate", {
+    connection_id: connectionId,
+    result,
+    boot,
+  });
+}
+
+// The core takes the seen marks: Bun's last ones are written first, then
+// the core reads the file again. Back to Bun: the file as the core left it.
+let agentSeenOnCore = false;
+onOwnershipChanged(() => {
+  const onCore = agentSessionsOnCore();
+  if (onCore === agentSeenOnCore) return;
+  agentSeenOnCore = onCore;
+  if (onCore) {
+    void agentSeen.flush().then(() => tellAgentSessions("seen_reload", {}));
+  } else agentSeen = createAgentSeenStore();
+});
 /**
  * Git on a connection's host for the activity log's branches and remotes:
  * read-only, behind interactive SSH work (Bun's recorder, and the core's
@@ -1104,6 +1156,12 @@ function voicePaneOf(args: unknown): {
 }
 
 /** What the core may call in Bun (contract/wire/core-channel.md). */
+/** The remote history watch helpers the core's watchers asked for. */
+const coreRemoteWatches = new Map<
+  string,
+  { id: number; handle: WatchHandle }
+>();
+
 const coreReverseTargets = {
   // The assistant family's (Ranger, while the core runs it): Bun stops its
   // own service first, and answers the tools of what it still owns.
@@ -1245,6 +1303,127 @@ const coreReverseTargets = {
     return coreRuntime(
       args as { connection_id?: unknown },
     ).limitConnection.transcriptTail(pane_id);
+  },
+  // The agent_sessions family in the core: Herdr as its readers see it,
+  // transcripts on a connection's host, the Herdr boot ids of its seen
+  // marks, and the remote history watch (contract/wire/core-channel.md).
+  "agent_sessions.connection": async (args: unknown) => {
+    const id =
+      typeof (args as { connection_id?: unknown })?.connection_id === "string"
+        ? (args as { connection_id: string }).connection_id
+        : connectionManager.defaultId();
+    const lease = connectionManager.readyRuntimeLease(id);
+    if (!lease) throw new Error(`connection not ready: ${id}`);
+    return {
+      connection_id: id,
+      generation: lease.generation,
+      ssh: !!lease.runtime.sshHost(),
+      remote_platform: lease.runtime.remotePlatform ?? null,
+    };
+  },
+  "agent_sessions.herdr_call": async (args: unknown) => {
+    const { method, params, timeout_ms } = (args ?? {}) as {
+      method?: unknown;
+      params?: unknown;
+      timeout_ms?: unknown;
+    };
+    if (typeof method !== "string")
+      throw new Error("agent_sessions.herdr_call needs a method");
+    return coreRuntime(args as { connection_id?: unknown }).agentHerdrCall(
+      method,
+      (params ?? {}) as Record<string, unknown>,
+      typeof timeout_ms === "number" ? timeout_ms : undefined,
+    );
+  },
+  "agent_sessions.host_read": async (args: unknown) => {
+    const { argv, timeout_ms } = (args ?? {}) as {
+      argv?: unknown;
+      timeout_ms?: unknown;
+    };
+    if (
+      !Array.isArray(argv) ||
+      !argv.length ||
+      !argv.every((part) => typeof part === "string")
+    )
+      throw new Error("agent_sessions.host_read needs argv, a list of strings");
+    const host = coreRuntime(args as { connection_id?: unknown }).sshHost();
+    if (!host) throw new Error("agent_sessions.host_read needs an SSH host");
+    const result = await runBinaryProcessWithTimeout(
+      sshReadCommandArgv(
+        host,
+        (argv as string[]).map(shQuote).join(" "),
+        [],
+        "agent.session.read",
+      ),
+      typeof timeout_ms === "number" ? timeout_ms : 60_000,
+    );
+    return {
+      code: result.code,
+      stdout: Buffer.from(result.stdout).toString("base64"),
+      stderr: result.stderr,
+    };
+  },
+  "agent_sessions.herdr_boot": async (args: unknown) => {
+    const { connection_id, fresh } = (args ?? {}) as {
+      connection_id?: unknown;
+      fresh?: unknown;
+    };
+    const runtime = coreRuntime(args as { connection_id?: unknown });
+    const id =
+      typeof connection_id === "string"
+        ? connection_id
+        : connectionManager.defaultId();
+    if (fresh === true) herdrBoots.invalidate(id);
+    return herdrBoots.get(id, () =>
+      runtime.recoveryIdentity(AbortSignal.timeout(3_000)),
+    );
+  },
+  "agent_sessions.watch_remote": async (args: unknown) => {
+    const { connection_id, watch_id, paths } = (args ?? {}) as {
+      connection_id?: unknown;
+      watch_id?: unknown;
+      paths?: unknown;
+    };
+    if (typeof connection_id !== "string" || typeof watch_id !== "number")
+      throw new Error(
+        "agent_sessions.watch_remote needs a connection_id and a watch_id",
+      );
+    const list = Array.isArray(paths)
+      ? paths.filter((path): path is string => typeof path === "string")
+      : [];
+    const running = coreRemoteWatches.get(connection_id);
+    if (running && (list.length || running.id === watch_id)) {
+      coreRemoteWatches.delete(connection_id);
+      running.handle.close();
+    }
+    if (!list.length) return { ok: true };
+    const host = coreRuntime({ connection_id }).sshHost();
+    if (!host) throw new Error("agent_sessions.watch_remote needs an SSH host");
+    const handle = createRemoteStatSpawner({ host, shQuote })(
+      list,
+      (line) =>
+        tellAgentSessions("remote_stat", { connection_id, watch_id, line }),
+      () => {
+        if (coreRemoteWatches.get(connection_id)?.id === watch_id)
+          coreRemoteWatches.delete(connection_id);
+        tellAgentSessions("remote_exit", { connection_id, watch_id });
+      },
+    );
+    coreRemoteWatches.set(connection_id, { id: watch_id, handle });
+    return { ok: true };
+  },
+  "agent_sessions.seen_written": async () => {
+    // The core wrote its last marks: Bun reads them, owning them again.
+    if (!agentSessionsOnCore()) agentSeen = createAgentSeenStore();
+    return { ok: true };
+  },
+  "notifications.clear_pane": async (args: unknown) => {
+    const { pane_id } = corePaneText({ ...(args as object), text: "" });
+    const { connection_id } = (args ?? {}) as { connection_id?: unknown };
+    if (typeof connection_id !== "string")
+      throw new Error("notifications.clear_pane needs a connection_id");
+    notifications.clearPane(connection_id, pane_id);
+    return { ok: true };
   },
   "host.run": async (args: unknown) => {
     const { argv, cwd, timeout_ms } = (args ?? {}) as {
@@ -1788,7 +1967,13 @@ onGuiSettingsChanged((previous, next) => {
  * Families whose paths keep Bun's own route checks (the method, the idle
  * budget): Bun hands them to the core at their route, not before it.
  */
-const CORE_ROUTED_IN_PLACE = new Set(["update", "herdr_setup"]);
+// agent_sessions: its downloads are a connection's endpoints, routed (and
+// their connection resolved) by Bun's own connection route first.
+const CORE_ROUTED_IN_PLACE = new Set([
+  "update",
+  "herdr_setup",
+  "agent_sessions",
+]);
 
 function coreRoutedInPlace(path: string): boolean {
   const family = httpFamilyOf(path, FAMILIES);
@@ -2177,8 +2362,17 @@ const assistantContextArgs: Parameters<typeof createAssistantContext>[0] = {
     limitResumer?.list(connectionId) ?? rustLimitPauses.get(connectionId) ?? [],
   catalog: () => connectionProfiles.list(),
   // A turn Ranger starts is not one the user has to look at.
-  onAgentPrompted: ({ connectionId, paneId, terminalId, seq, status }) =>
-    agentSeen.quietTurn(connectionId, paneId, terminalId, seq, status),
+  onAgentPrompted: ({ connectionId, paneId, terminalId, seq, status }) => {
+    if (agentSessionsOnCore())
+      tellAgentSessions("quiet_turn", {
+        connection_id: connectionId,
+        pane_id: paneId,
+        terminal_id: terminalId,
+        seq,
+        status,
+      });
+    else agentSeen.quietTurn(connectionId, paneId, terminalId, seq, status);
+  },
   lease: (id) => connectionManager.readyRuntimeLease(id),
   recoveryFingerprint: (id) => {
     const profile = connectionProfiles
@@ -4125,7 +4319,15 @@ async function notifyFromAgent(input: {
   text: string;
 }) {
   const { connectionId, paneId, agent, title, text } = input;
-  agentSeen.note(connectionId, paneId, { text, ...(title ? { title } : {}) });
+  if (agentSessionsOnCore())
+    tellAgentSessions("note", {
+      connection_id: connectionId,
+      pane_id: paneId,
+      text,
+      ...(title ? { title } : {}),
+    });
+  else
+    agentSeen.note(connectionId, paneId, { text, ...(title ? { title } : {}) });
   const status = connectionManager
     .list()
     .find((each) => each.id === connectionId);
@@ -4351,6 +4553,20 @@ function composeConnectionRuntime(
     },
     onEvent: (event, eventIdentity) => {
       if (!context.isCurrent()) return;
+      // A conversation's lease changed: the pane's history may be
+      // another file now (/clear), for the core's watchers too.
+      const lease = event as {
+        event?: unknown;
+        data?: { pane_id?: unknown };
+      };
+      if (
+        lease.event === "roamgate.conversation_lease" &&
+        agentSessionsOnCore()
+      )
+        tellAgentSessions("refresh", {
+          connection_id: eventIdentity.id,
+          pane_id: lease.data?.pane_id,
+        });
       withdrawPaneNotifications(eventIdentity.id, event);
       pokeLimitResumer(eventIdentity.id, event);
       activity.herdrEvent(eventIdentity.id, event);
@@ -4979,6 +5195,9 @@ const webSocketCleanup = new WebSocketCleanupTracker<
   };
   clients.delete(ws);
   activity.socketClosed(ws);
+  // The core's history watchers drop the socket too.
+  if (coreFront?.tableOwner("agent_sessions") === "rust")
+    tellAgentSessions("socket_closed", { socket_id: socketIdOf(ws) });
   notifyBrowserClientCount();
   return snapshot;
 });
@@ -5440,7 +5659,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
               : null;
             return {
               ...snapshot,
-              agents: agentSeen.annotate(
+              agents: await annotateAgentSeen(
                 snapshot.connection_id,
                 snapshot.agents,
                 boot,
@@ -5691,7 +5910,11 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
           : connection.agentSessions.listWithActivity(params ?? {}),
         herdrBoot(),
       ]);
-      const result = agentSeen.annotate(connection.identity.id, list, boot);
+      const result = await annotateAgentSeen(
+        connection.identity.id,
+        list,
+        boot,
+      );
       sendReply(
         {
           id,
@@ -6570,6 +6793,26 @@ async function handleConnectionHttpRequest(
         req,
         url.searchParams.get("filename"),
       );
+    } else if (
+      (endpoint === "agent-session-download" ||
+        endpoint === "agent-session-atif") &&
+      agentSessionsOnCore()
+    ) {
+      // Under its legacy path: the core serves the family's own paths.
+      const legacy =
+        endpoint === "agent-session-atif"
+          ? "/api/agent-session/atif"
+          : "/api/agent-session/download";
+      response = await coreFront!.forwardHttp(
+        new Request(new URL(`${legacy}${url.search}`, url), req),
+        {
+          connection_id: connection.identity.id,
+          connection_generation: resolved.generation,
+          ...(sessionToken(req)
+            ? { session_id: sessionIdOf(sessionToken(req)) }
+            : {}),
+        },
+      );
     } else if (endpoint === "agent-session-download") {
       response = await connection.agentSessions.downloadFile({
         pane_id: url.searchParams.get("pane_id"),
@@ -7335,8 +7578,13 @@ function main() {
 
 let managerStopTask: Promise<void> | null = null;
 function stopManagerOnce(): Promise<void> {
-  // Seen marks are written in batches: keep the last ones.
-  const seenWritten = agentSeen.flush();
+  // Seen marks are written in batches: keep the last ones, the core's too.
+  const seenWritten = agentSessionsOnCore()
+    ? coreFront!.callInternal("agent_sessions", "flush", {}).then(
+        () => {},
+        () => {},
+      )
+    : agentSeen.flush();
   webPush.stop();
   notifications.stop();
   stopNetworkWatch();
@@ -7348,6 +7596,8 @@ function stopManagerOnce(): Promise<void> {
     await activity.stop();
     // The core's connections and SSH processes end before the channel does.
     await stopHostOnCore();
+    // The core's seen marks are on disk before the channel goes.
+    await seenWritten;
     // The core: what it owns stops writing before Bun's own goes.
     await coreFront?.stop();
     // Pause the harness before taking away the runtimes its reads depend on.

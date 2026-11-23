@@ -243,6 +243,13 @@ own reviews module uses (`mrReviewsHost`).
 | `assistant.workspace_tree`    | `kind`, `params`                                                                                                                                                                                                                                                                                                                                                                                                                   | `{text}`: Ranger's Workspaces arrangement tool, run by Bun (S17 takes it); errors as `assistant.host`'s                                                                                                                                                                                               |
 | `assistant.archive`           | `kind`, `params`                                                                                                                                                                                                                                                                                                                                                                                                                   | `{text, sources?}`: Ranger's archive tool, run by Bun (its search reaching the core while it owns the archive family); errors as `assistant.host`'s                                                                                                                                                   |
 | `assistant.chat_thread_reply` | `session_id`, `params` (`comment_id`, `text`)                                                                                                                                                                                                                                                                                                                                                                                      | `{text}`: the reply in that thread of the Ranger chat's comments                                                                                                                                                                                                                                      |
+| `agent_sessions.connection` | `connection_id` (optional: the default connection) | `{connection_id, generation, ssh, remote_platform}`: the ready connection the agent session readers read on (`ssh`: over its SSH host; `remote_platform`: `windows` or null) |
+| `agent_sessions.herdr_call` | `connection_id`, `method`, `params`, `timeout_ms` (optional) | Herdr's answer as the readers see it: conversation mode's and the Claude mods' panes over Herdr's own (`withOwnedSessions`) |
+| `agent_sessions.host_read` | `connection_id`, `argv`, `timeout_ms` (optional, 60000) | `{code, stdout, stderr}`, `stdout` in base64: `argv` run on the connection's SSH host in its read lane (`agent.session.read`), for transcripts too large or binary for `host.run`'s text |
+| `agent_sessions.herdr_boot` | `connection_id`, `fresh` (optional: read it again) | the connection's Herdr boot id (the front's cache of a minute), or null when unknown |
+| `agent_sessions.watch_remote` | `connection_id`, `watch_id`, `paths` | `{ok: true}`; runs the history watch's stat helper on the connection's host over `paths` (replacing that connection's), or stops helper `watch_id` when `paths` is empty. Its lines and its exit come back as `internal.agent_sessions.remote_stat` and `remote_exit` |
+| `agent_sessions.seen_written` | none | `{ok: true}`; the core wrote its last seen marks on giving the family back: the front reads agent-seen.json again |
+| `notifications.clear_pane` | `connection_id`, `pane_id` | `{ok: true}`; the user looked at the pane (`agent_seen.mark`): what its agent notified about is seen, through whichever side owns the notifications |
 
 An unknown target is an error reply with code `unknown_target`.
 
@@ -328,6 +335,15 @@ The front's internal calls by family:
 | `internal.mr_reviews.tree_changed`          | `tree`                                                                                                                                                                                                      | The Workspaces tree changed: groups deleted from it are no longer headed upstream. Answers `{ok: true}`.                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `internal.mr_reviews.agent_event`           | `turn_id`, `kind` (`delta {text}`, `message {text}`, `thinking {steps}`, `tool {id, name, status, details?}`, `error`, `checkpoint {entries}`)                                                              | What a turn run for the core reported, in order (a checkpoint is awaited before the turn goes on). Answers `{ok: true}`.                                                                                                                                                                                                                                                                                                                                                                                         |
 | `internal.mr_reviews.agent_tool`            | `turn_id`, `name`, `params`                                                                                                                                                                                 | One of the reviews agent's tools for that turn: `{text}`, or `{error: {user, message}}` (`user`: a refusal the model reads as it is).                                                                                                                                                                                                                                                                                                                                                                            |
+| `internal.agent_sessions.annotate` | `connection_id`, `result`, `boot` | Herdr's agent list (`result`, as `agent.list` or `connections.agent_sessions` gives it) with each finished agent's Done from the seen marks, as agent-seen.ts's `annotate`. |
+| `internal.agent_sessions.quiet_turn` | `connection_id`, `pane_id`, `terminal_id`, `seq`, `status` | Roamgate itself (a Ranger task) prompted the agent: the turn it starts does not make it Done. Answers `{ok: true}`. |
+| `internal.agent_sessions.note` | `connection_id`, `pane_id`, `text`, `title` (optional) | An agent said the user needs to act (`roamgate-review notify`): kept until the user looks at it. Answers `{ok: true}`. |
+| `internal.agent_sessions.seen_reload` | none | The front wrote its last seen marks on giving the family to the core: the core reads agent-seen.json again, unless it marked meanwhile. Answers `{ok: true}`. |
+| `internal.agent_sessions.flush` | none | The front stops: the core writes its pending seen marks now. Answers `{ok: true}`. |
+| `internal.agent_sessions.socket_closed` | `socket_id` | A browser socket closed: the history watchers drop it. Answers `{ok: true}`. |
+| `internal.agent_sessions.refresh` | `connection_id`, `pane_id` | A conversation lease changed: the pane's history may be another file now, its watcher resolves it again. Answers `{ok: true}`. |
+| `internal.agent_sessions.remote_stat` | `connection_id`, `watch_id`, `line` | A line of the remote history watch helper (`path<TAB>signature`). Answers `{ok}`. |
+| `internal.agent_sessions.remote_exit` | `connection_id`, `watch_id` | The remote history watch helper exited: the watcher starts it again. Answers `{ok}`. |
 
 Bun's own copy of a family stops its background work and writes while the
 core owns the family and starts again (reading its files afresh) when it
@@ -461,6 +477,31 @@ gate also requires the lease to be current. Run from source, the front
 gives the core `ROAMGATE_PI_SIDECAR` naming `server/src/assistant/pi-sidecar-main.ts`
 unless the environment names a sidecar, so the core's Ranger runs Pi as
 the Bun server's does.
+
+### The agent_sessions family
+
+While the core owns agent_sessions it reads the agents' transcripts for the
+browsers (`agent_history.*`, `agent_session.get`, `agent_artifacts.get`,
+`agent_commands.get`, `agent_tasks.get`, `agent_task.get`), keeps the
+seen marks (`agent_seen.mark`, agent-seen.json's one writer) and the
+history watchers, whose `agent_history.changed` events go to the sockets
+that subscribed, in their connection's envelope. Each connection's readers
+are made for its generation: local files, or the connection's SSH host
+through `agent_sessions.host_read`; Herdr through
+`agent_sessions.herdr_call`, so conversation mode's and the Claude mods'
+panes read as Bun's readers see them. A connection's downloads
+(`/agent-session/download`, `/agent-session/atif`, legacy or under
+`/api/connections/<id>/`) are routed in place: the front resolves the
+connection and forwards the request with its `connection_id` and
+generation. Herdr's `agent.list` and `connections.agent_sessions` stay the
+front's, which asks the core for the seen marks' Done
+(`internal.agent_sessions.annotate`).
+
+The seen marks change hands with the family: the front writes its pending
+marks, then calls `internal.agent_sessions.seen_reload`; the core writes
+its own when it gives the family back, then calls
+`agent_sessions.seen_written`. Sockets a front's history watcher already
+watched keep that watcher until they close.
 
 ## CLI pass-through
 
