@@ -50,7 +50,8 @@ from its own environment: the core runs on the real clock.
 - The core's stdout and stderr are the front's (its log lines land in the
   same journal), its stdin is closed.
 - A core that does not say `hello` within 10 s, or goes 30 s without
-  sending a frame, is killed. A core that exits or is killed is spawned
+  sending a frame while a ping has waited 20 s for its `pong`, is killed
+  (after a stalled event loop the front pings first and waits those 20 s). A core that exits or is killed is spawned
   again after 1 s, doubling up to 5 minutes, and the delay starts again at
   1 s once a core has stayed up 10 minutes. A `refused` core (wrong token or
   protocol) waits the same way, so a stale binary never spins.

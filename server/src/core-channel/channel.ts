@@ -246,6 +246,8 @@ export class Channel {
   private pingTimer: unknown = null;
   private deadTimer: unknown = null;
   private pingCount = 0;
+  /** When the first ping since the last frame received went out. */
+  private lastPing = 0;
   private readonly unknownLogged = new Set<string>();
 
   constructor(
@@ -719,25 +721,42 @@ export class Channel {
     const wait = Math.max(0, this.lastSent + after - this.timers.now());
     this.pingTimer = this.timers.setTimeout(() => {
       if (this.closed) return;
-      if (this.timers.now() - this.lastSent >= after)
-        this.send({ t: "ping", n: ++this.pingCount });
+      if (this.timers.now() - this.lastSent >= after) this.ping();
       this.armPing();
     }, wait || after);
   }
 
-  private armDead() {
+  private ping() {
+    if (this.lastPing <= this.lastReceived) this.lastPing = this.timers.now();
+    this.send({ t: "ping", n: ++this.pingCount });
+  }
+
+  private armDead(wait?: number) {
     const after = this.options.deadAfterMs;
     if (!after || this.closed) return;
-    const wait = Math.max(0, this.lastReceived + after - this.timers.now());
+    wait ??= Math.max(0, this.lastReceived + after - this.timers.now());
     this.deadTimer = this.timers.setTimeout(() => {
       if (this.closed) return;
-      if (this.timers.now() - this.lastReceived >= after) {
-        this.destroy(
-          new ChannelError(`nothing came for ${Math.round(after / 1000)} s`),
-        );
-        return;
+      const now = this.timers.now();
+      if (now - this.lastReceived < after) return this.armDead();
+      // With pings, the peer is dropped only once a ping went unanswered
+      // for the rest of the window. A stalled event loop (a busy server)
+      // sends no ping and reads nothing while it stalls, then runs this
+      // timer before the waiting data: ping now and wait again rather than
+      // drop a core that had nothing to answer.
+      const pingAfter = this.options.pingAfterMs;
+      if (pingAfter && pingAfter < after) {
+        const grace = after - pingAfter;
+        if (this.lastPing <= this.lastReceived) {
+          this.ping();
+          return this.armDead(grace);
+        }
+        if (now - this.lastPing < grace)
+          return this.armDead(grace - (now - this.lastPing));
       }
-      this.armDead();
+      this.destroy(
+        new ChannelError(`nothing came for ${Math.round(after / 1000)} s`),
+      );
     }, wait || after);
   }
 

@@ -247,6 +247,90 @@ describe("pushes and control", () => {
   });
 });
 
+describe("liveness after a stalled event loop", () => {
+  /** Timers that only move when told: advance() runs every due one at once,
+   * with no I/O in between, as a stalled event loop wakes up. */
+  function stallTimers() {
+    let now = 1_000;
+    let next = 1;
+    const due = new Map<number, { at: number; run: () => void }>();
+    return {
+      timers: {
+        now: () => now,
+        setTimeout: (run: () => void, ms: number) => {
+          const id = next++;
+          due.set(id, { at: now + ms, run });
+          return id;
+        },
+        clearTimeout: (id: unknown) => void due.delete(id as number),
+      },
+      advance(ms: number) {
+        now += ms;
+        for (;;) {
+          const ready = [...due.entries()]
+            .filter(([, timer]) => timer.at <= now)
+            .sort((a, b) => a[1].at - b[1].at || a[0] - b[0]);
+          if (!ready.length) return;
+          const [id, timer] = ready[0]!;
+          due.delete(id);
+          timer.run();
+        }
+      },
+    };
+  }
+
+  test("a core is pinged and given the rest of the window, not dropped at once", async () => {
+    let closed: Error | null | undefined;
+    const clock = stallTimers();
+    const pongs: unknown[] = [];
+    await pair(
+      {
+        control: (message) => pongs.push(message),
+        close: (error) => (closed = error),
+      },
+      {},
+      {
+        front: {
+          pingAfterMs: 10_000,
+          deadAfterMs: 30_000,
+          timers: clock.timers,
+        },
+      },
+    );
+    // 40 s without running anything: no ping went out, nothing was read.
+    clock.advance(40_000);
+    await Bun.sleep(30);
+    expect(closed).toBeUndefined();
+    expect(pongs.length).toBeGreaterThan(0);
+    clock.advance(25_000);
+    await Bun.sleep(30);
+    expect(closed).toBeUndefined();
+  });
+
+  test("a core that does not answer the ping is still dropped", async () => {
+    let closed: Error | null | undefined;
+    const clock = stallTimers();
+    const { coreSocket } = await pair(
+      { close: (error) => (closed = error) },
+      {},
+      {
+        front: {
+          pingAfterMs: 10_000,
+          deadAfterMs: 30_000,
+          timers: clock.timers,
+        },
+      },
+    );
+    coreSocket.pause();
+    clock.advance(40_000);
+    expect(closed).toBeUndefined();
+    await Bun.sleep(30);
+    clock.advance(20_000);
+    await Bun.sleep(30);
+    expect(closed?.message).toBe("nothing came for 30 s");
+  });
+});
+
 describe("http", () => {
   test("a request's body streams to the core and the response streams back", async () => {
     const { front } = await pair(
