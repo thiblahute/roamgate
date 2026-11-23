@@ -359,12 +359,12 @@ export function comparedLiterals(
 /**
  * Every source file of the server under a directory of the repository:
  * tests and their helpers (fixtures, test data, *testing.ts,
- * test-context.ts, test-environment.ts), generated files and the
+ * test-context.ts, test-environment.ts, test-owners.ts), generated files and the
  * development probes excluded.
  */
 export function sourceFiles(
   directory: string,
-  exclude: RegExp = /(\.test|\.fixture)\.ts$|\/testdata\/|\.d\.ts$|\.gen\.ts$|\/test-environment\.ts$|\/test-context\.ts$|[/-]testing\.ts$|\/probe-[^/]*\.ts$/,
+  exclude: RegExp = /(\.test|\.fixture)\.ts$|\/testdata\/|\.d\.ts$|\.gen\.ts$|\/test-environment\.ts$|\/test-context\.ts$|\/test-owners\.ts$|[/-]testing\.ts$|\/probe-[^/]*\.ts$/,
 ): string[] {
   const glob = new Bun.Glob("**/*.ts");
   return [...glob.scanSync({ cwd: join(REPO, directory) })]

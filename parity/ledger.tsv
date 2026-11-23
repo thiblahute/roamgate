@@ -4174,7 +4174,7 @@ server/src/workspace/git-diff.test.ts	does not let an older failed capture erase
 server/src/workspace/git-diff.test.ts	preserves the real index in a linked worktree	rust-unit:roamgate-git:diff::tests::preserves_the_real_index_in_a_linked_worktree	git runner and parsers
 server/src/workspace/git-diff.test.ts	snapshots an unborn repository without mutating the user index	rust-unit:roamgate-git:diff::tests::snapshots_an_unborn_repository_without_mutating_the_user_index	git runner and parsers
 server/src/workspace/git-diff.test.ts	waits for step completion before publishing its replacement	rust-unit:roamgate-git:diff::tests::waits_for_step_completion_before_publishing_its_replacement	git runner and parsers
-server/src/workspace/git-diff.test.ts	a last-step read during a turn waits for the turn's baseline	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-diff.test.ts	a last-step read during a turn waits for the turn's baseline	rust-unit:roamgate-git:diff::tests::a_last_step_read_during_a_turn_waits_for_the_turns_baseline	git runner and parsers
 server/src/workspace/git-diff.test.ts	retains the completed step when the next baseline capture fails	rust-unit:roamgate-git:diff::tests::retains_the_completed_step_when_the_next_baseline_capture_fails	git runner and parsers
 server/src/workspace/git-diff.test.ts	invalidates only one workspace sharing a repository root	rust-unit:roamgate-git:diff::tests::invalidates_only_one_workspace_sharing_a_repository_root	git runner and parsers
 server/src/workspace/git-diff.test.ts	preserves a valid baseline across transient cat-file failures	rust-unit:roamgate-git:diff::tests::preserves_a_valid_baseline_across_transient_cat_file_failures	git runner and parsers

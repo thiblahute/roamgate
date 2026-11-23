@@ -8,7 +8,7 @@ Rust owner of that family can take it over.
 
 ## 1.14
 
-inventory: 4ec7982bb891c13fcab1b3c7aa449e5ca572d2f0c6c4aebed87baf3ee1855a44
+inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b
 
 The Work board served by the Rust core (Phase 4, S15; wire/core-channel.md,
 Families in the core), while the owners table gives the work family to
@@ -34,7 +34,7 @@ the inventory too.
 
 ## 1.13
 
-inventory: 4ec7982bb891c13fcab1b3c7aa449e5ca572d2f0c6c4aebed87baf3ee1855a44
+inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b
 
 The host family served by the Rust core (Phase 5, S16; wire/core-channel.md,
 The host family), while the owners table gives it to Rust.
@@ -55,9 +55,6 @@ The host family), while the owners table gives it to Rust.
 - http: while the connections are being handed to the Rust core, an API
   request (but login and logout) waits for them to settle, 10 s at most;
   the inventory reads that `/api/` prefix check as no route of its own.
-- env: `ROAMGATE_TEST_RUST_FAMILIES`, with `ROAMGATE_CORE_BIN`, gives a test
-  server's families to the Rust core (its owners table seeded, shadow reads
-  off).
 
 ## 1.11
 
