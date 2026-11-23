@@ -19,6 +19,7 @@ use std::pin::Pin;
 
 pub mod activity;
 pub mod archive;
+mod args;
 pub mod auth_token;
 pub mod commands;
 pub mod herdr;
