@@ -53,6 +53,8 @@ pub(crate) struct Host {
     pub prompt: Option<Prompt>,
     pub session_pane: Option<SessionPane>,
     pub reply_how: Option<ReplyHow>,
+    /// What loadState answers, when the host has it.
+    pub state: Option<String>,
     pub forge: Option<Arc<dyn ReviewForge>>,
     pub tools: bool,
     pub prompts: Mutex<Vec<Prompted>>,
@@ -127,6 +129,10 @@ impl ReviewHost for Host {
         shas: Vec<String>,
     ) -> Option<Load<IndexMap<String, String>>> {
         self.patch_ids.as_ref().map(|load| load(session, shas))
+    }
+
+    fn load_state(&self, _: &ReviewSession) -> Option<Load<String>> {
+        self.state.clone().map(|state| ready(Ok(state)))
     }
 
     fn load_heads(
