@@ -7,6 +7,7 @@ pub mod config;
 pub mod download;
 pub mod hardware;
 pub mod helper;
+pub mod http;
 pub mod js;
 pub mod kokoro_language;
 pub mod library;
@@ -19,6 +20,7 @@ pub mod setup;
 pub mod speakers;
 pub mod speech_rate;
 pub mod stock;
+pub mod surprise;
 
 #[cfg(test)]
 mod testdata;

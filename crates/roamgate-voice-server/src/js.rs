@@ -3,7 +3,7 @@
 //! (roamgate-agents' [`roamgate_agents::js`], shared, not copied).
 
 pub use roamgate_agents::js::{
-    len16, number, number_text, quote, slice16, stringify, stringify_pretty, trim,
+    len16, number, number_text, parse, quote, slice16, stringify, stringify_pretty, trim,
 };
 
 /// `Math.round(value)`: halves go up, towards positive infinity.
