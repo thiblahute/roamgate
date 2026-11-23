@@ -153,6 +153,28 @@ pub struct Run {
 /// The variable naming the Rust core a Bun server runs beside it.
 pub const CORE_BIN_ENV: &str = "ROAMGATE_CORE_BIN";
 
+/// The families every server of a hybrid run gives to Rust
+/// (`PARITY_RUST_OWNERS`, comma separated families of
+/// contract/owners/families.json): written as the run's
+/// `<data>/runtime/owners.json` unless a scenario seeds its own. Empty
+/// without a core.
+pub fn rust_owners() -> Vec<String> {
+    if hybrid_core().is_none() {
+        return Vec::new();
+    }
+    std::env::var("PARITY_RUST_OWNERS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|family| !family.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The variable naming the file a debug core appends what it served to
+/// (`<family> <method or path or cli command>` per line).
+pub const CORE_SERVED_LOG_ENV: &str = "ROAMGATE_CORE_SERVED_LOG";
+
 /// How long a hybrid server's core gets to connect after the server
 /// listens (a niced first start of a debug build).
 pub const CORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -295,6 +317,25 @@ impl Run {
             }
             write_seed(&home, &file)?;
         }
+        // The families a hybrid run gives to Rust, unless the scenario
+        // seeds its own table.
+        let owners_path = data_root(&home).join("runtime").join("owners.json");
+        let rust = rust_owners();
+        if !rust.is_empty() && !owners_path.exists() {
+            std::fs::create_dir_all(owners_path.parent().unwrap())?;
+            let owners: serde_json::Map<String, Value> = rust
+                .iter()
+                .map(|family| (family.clone(), Value::String("rust".into())))
+                .collect();
+            std::fs::write(
+                &owners_path,
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "version": 1,
+                    "owners": owners,
+                    "shadow": {"enabled": false, "rate": 0},
+                }))?,
+            )?;
+        }
         // Seeds name the run's paths (${ROOT}, ${HOME}) too.
         let expand_seed = |seed: &HerdrSeed| -> Result<HerdrSeed> {
             Ok(serde_json::from_str(&expand(&serde_json::to_string(
@@ -384,6 +425,7 @@ impl Run {
         // its Rust core, when the suite is told where the core is.
         if let Some(core) = hybrid_core() {
             set(CORE_BIN_ENV, core);
+            set(CORE_SERVED_LOG_ENV, text(&root.join("core-served.log")));
         }
         for (key, value) in &options.env {
             // `{{unset}}`: a variable the run would set, left out (a
@@ -446,6 +488,11 @@ impl Run {
 
     pub fn data_root(&self) -> PathBuf {
         data_root(&self.home)
+    }
+
+    /// What the core served in this run (`<family> <what>` lines).
+    pub fn core_served(&self) -> String {
+        std::fs::read_to_string(self.root.join("core-served.log")).unwrap_or_default()
     }
 
     /// `$ROOT`, `$HOME`, `$DATA` for the normalizers and interpolation.

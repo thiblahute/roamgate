@@ -112,6 +112,9 @@ fn the_ledger_accounts_for_every_old_test() {
     }
     // A rust-unit mapping to a crate the workspace has names the test that
     // covers it, and that test exists.
+    // Rows under a prefix of parity/unported.tsv wait for a later subtask.
+    let unported = ledger::unported(&root).unwrap();
+    let mut used = vec![false; unported.len()];
     let mut unnamed = 0usize;
     let mut broken = Vec::new();
     for row in &rows {
@@ -119,7 +122,11 @@ fn the_ledger_accounts_for_every_old_test() {
             let Some(dir) = ledger::crate_dir(&root, &name) else {
                 continue;
             };
+            let later = unported
+                .iter()
+                .position(|entry| entry.krate == name && row.id.file.starts_with(&entry.prefix));
             match test {
+                None if later.is_some() => used[later.unwrap()] = true,
                 None => unnamed += 1,
                 Some(test) if !ledger::rust_test_exists(&dir, &test) => broken.push(format!(
                     "{} > {}: no test {test} in crates/{name}",
@@ -130,6 +137,17 @@ fn the_ledger_accounts_for_every_old_test() {
         }
     }
     assert!(broken.is_empty(), "{}", broken.join("\n"));
+    let stale: Vec<String> = unported
+        .iter()
+        .zip(&used)
+        .filter(|(entry, used)| !**used && ledger::crate_dir(&root, &entry.krate).is_some())
+        .map(|(entry, _)| format!("{}\t{}\t{}", entry.krate, entry.prefix, entry.subtask))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "parity/unported.tsv entries with no unnamed row left (remove them):\n{}",
+        stale.join("\n")
+    );
     let todo = rows.iter().filter(|row| row.mapping == "todo").count();
     let mut pending: std::collections::BTreeMap<&str, usize> = Default::default();
     for row in &rows {

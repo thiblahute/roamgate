@@ -2299,6 +2299,14 @@ pub fn coverage(scenario: &Scenario) -> Vec<String> {
     out
 }
 
+/// The family of contract/owners/families.json a scenario's family is in.
+pub fn owner_family(scenario_family: &str) -> &str {
+    match scenario_family {
+        "herdr" => "herdr_setup",
+        other => other,
+    }
+}
+
 /// Runs a scenario against the server `ROAMGATE_SERVER_CMD` names, then
 /// checks the recorded traffic against the contract.
 pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
@@ -2357,6 +2365,21 @@ pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
     // The hybrid build: the core was up (run.rs check_core).
     if outcome.is_ok() {
         outcome = runner.run.check_core().await;
+    }
+    // A family a hybrid run gives to Rust: the core served the scenario.
+    if outcome.is_ok() {
+        let family = owner_family(&scenario.family);
+        if crate::run::rust_owners().iter().any(|name| name == family)
+            && !runner
+                .run
+                .core_served()
+                .lines()
+                .any(|line| line.split(' ').next() == Some(family))
+        {
+            outcome = Err(anyhow::anyhow!(
+                "hybrid: {family} is Rust's (PARITY_RUST_OWNERS) but the core served nothing of it"
+            ));
+        }
     }
     let _ = runner.run.stop().await;
     if let Err(error) = outcome {

@@ -12,8 +12,10 @@
 //! | [`owners`] | the owners table, the declared families, one writer per file |
 //! | [`shadow`] | sampling shadow reads, the gaming pause, shadow.jsonl |
 //! | [`core`] | `roamgate core`, the process the Bun server spawns |
+//! | [`family`] | what a family the core serves implements |
 
 pub mod core;
+pub mod family;
 pub mod frames;
 pub mod owners;
 pub mod peer;

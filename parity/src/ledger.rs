@@ -500,6 +500,49 @@ pub fn rust_units(mapping: &str) -> Vec<(String, Option<String>)> {
         .collect()
 }
 
+/// Where a crate that exists holds code of a later subtask:
+/// `parity/unported.tsv` (`crate`, file prefix, subtask). A crate of the
+/// plan's section 6.2 is made by the first subtask that ports into it,
+/// while the rest of its rows wait for theirs: rows of an existing crate
+/// under an unported prefix may name no test yet; every other row of an
+/// existing crate names its test.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unported {
+    pub krate: String,
+    pub prefix: String,
+    pub subtask: String,
+}
+
+/// The entries of `parity/unported.tsv` (none when it is missing).
+pub fn unported(root: &Path) -> Result<Vec<Unported>> {
+    let path = root.join("parity/unported.tsv");
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error).with_context(|| path.display().to_string()),
+    };
+    let mut entries = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        if line.trim().is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let parts: Vec<&str> = line.split('\t').collect();
+        let [krate, prefix, subtask] = parts[..] else {
+            bail!(
+                "{}:{}: want crate, prefix, subtask",
+                path.display(),
+                index + 1
+            );
+        };
+        entries.push(Unported {
+            krate: krate.into(),
+            prefix: prefix.into(),
+            subtask: subtask.into(),
+        });
+    }
+    Ok(entries)
+}
+
 /// The directory of a crate the workspace has under `crates/`, if any.
 pub fn crate_dir(root: &Path, name: &str) -> Option<PathBuf> {
     let dir = root.join("crates").join(name);

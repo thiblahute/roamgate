@@ -36,6 +36,7 @@ fn welcome(_: &Message) -> Message {
         side: Side::Bun,
         owners: BTreeMap::new(),
         shadow: ShadowSettings::default(),
+        clock: None,
     }
 }
 
@@ -120,6 +121,15 @@ struct Running {
 }
 
 async fn start_core(test: bool, token: &str) -> Result<Running, (HandshakeError, u8)> {
+    start_core_with(test, token, Vec::new(), welcome).await
+}
+
+async fn start_core_with(
+    test: bool,
+    token: &str,
+    families: roamgate_sidecar::family::Families,
+    welcome: fn(&Message) -> Message,
+) -> Result<Running, (HandshakeError, u8)> {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("core.sock");
     let mut listener = Listener::bind(path.to_str().unwrap()).unwrap();
@@ -132,7 +142,7 @@ async fn start_core(test: bool, token: &str) -> Result<Running, (HandshakeError,
         ),
         ("ROAMGATE_LOG_LEVEL".into(), "error".into()),
     ]);
-    let core = tokio::spawn(async move { run_core(&env, "9.9.9").await });
+    let core = tokio::spawn(async move { run_core(&env, "9.9.9", families).await });
     let mut stream = listener.accept().await.unwrap();
     match accept_hello(&mut stream, TOKEN, welcome).await {
         Ok(hello) => {
@@ -502,4 +512,103 @@ async fn unknown_messages_are_ignored() {
         .await
         .unwrap();
     peer.closed().await;
+}
+
+/// A family that answers its calls, counts the internal ones, records its
+/// ownership changes and reads the families' clock.
+#[derive(Default)]
+struct LimitFamily {
+    owned: Mutex<Vec<bool>>,
+}
+
+impl roamgate_sidecar::family::CoreFamily for LimitFamily {
+    fn name(&self) -> &'static str {
+        "limit_resume"
+    }
+
+    fn call(
+        &self,
+        cx: &roamgate_sidecar::family::FamilyContext,
+        call: IncomingCall,
+    ) -> BoxFuture<Result<Value, RpcError>> {
+        let now = cx.clock.now();
+        Box::pin(async move { Ok(json!({"method": call.method, "now": now})) })
+    }
+
+    fn owned(&self, _cx: &roamgate_sidecar::family::FamilyContext, owned: bool) {
+        self.owned.lock().unwrap().push(owned);
+    }
+}
+
+fn welcome_on_a_test_clock(_: &Message) -> Message {
+    Message::Welcome {
+        protocol: PROTOCOL,
+        side: Side::Bun,
+        owners: BTreeMap::from([("limit_resume".into(), Side::Rust)]),
+        shadow: ShadowSettings::default(),
+        clock: Some(1_000_000),
+    }
+}
+
+#[tokio::test]
+async fn families_get_their_calls_ownership_and_the_front_s_test_clock() {
+    let family = Arc::new(LimitFamily::default());
+    let Ok(running) = start_core_with(
+        false,
+        TOKEN,
+        vec![family.clone() as Arc<dyn roamgate_sidecar::family::CoreFamily>],
+        welcome_on_a_test_clock,
+    )
+    .await
+    else {
+        panic!("refused");
+    };
+    let Message::Hello { families, .. } = &running.hello else {
+        panic!()
+    };
+    assert_eq!(families, &vec!["limit_resume".to_owned()]);
+    let call = |method: &'static str, params: Value| {
+        let front = running.front.clone();
+        async move { front.call(method, params, Ctx::default(), false).await }
+    };
+    // Owned from the welcome on.
+    let reply = call("limit_resume.list", json!({})).await.unwrap();
+    assert_eq!(reply["method"], "limit_resume.list");
+    // A debug core follows the front's test clock.
+    if cfg!(debug_assertions) {
+        assert_eq!(reply["now"], 1_000_000);
+        let moved = call("internal.clock.advance", json!({"to": 1_060_000}))
+            .await
+            .unwrap();
+        assert_eq!(moved, json!({"now": 1_060_000}));
+        let reply = call("internal.limit_resume.poke", json!({})).await.unwrap();
+        assert_eq!(
+            reply,
+            json!({"method": "internal.limit_resume.poke", "now": 1_060_000})
+        );
+    }
+    // A method or internal call of no family the core has.
+    for method in ["work.list", "internal.work.poke", "bridge.ping"] {
+        let error = call(method, json!({})).await.unwrap_err();
+        assert_eq!(error.code.as_deref(), Some("unknown_method"), "{method}");
+    }
+    assert_eq!(*family.owned.lock().unwrap(), vec![true]);
+    running
+        .front
+        .owner(BTreeMap::new(), ShadowSettings::default());
+    for _ in 0..100 {
+        if family.owned.lock().unwrap().len() == 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(*family.owned.lock().unwrap(), vec![true, false]);
+    running.front.owner(
+        BTreeMap::from([("limit_resume".into(), Side::Rust)]),
+        ShadowSettings::default(),
+    );
+    running.front.bye();
+    assert_eq!(running.core.await.unwrap(), 0);
+    // Owned again, then the channel closed: told to stop.
+    assert_eq!(family.owned.lock().unwrap().last(), Some(&false));
 }

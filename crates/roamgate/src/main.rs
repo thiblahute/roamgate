@@ -24,9 +24,24 @@ async fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Options::Core => ExitCode::from(
-            roamgate_sidecar::core::run_core(&roamgate_base::env::ProcessEnv, roamgate::VERSION)
-                .await,
+            roamgate_sidecar::core::run_core(
+                &roamgate_base::env::ProcessEnv,
+                roamgate::VERSION,
+                roamgate::core_families(),
+            )
+            .await,
         ),
+        Options::Owners(args) => {
+            let (code, out, err) =
+                roamgate::owners_cmd::run(&roamgate_base::env::ProcessEnv, &args);
+            print!("{out}");
+            eprint!("{err}");
+            ExitCode::from(code)
+        }
+        Options::Command(command, args) => ExitCode::from(match command.as_str() {
+            "herdr" => roamgate::families::herdr::cli(&args).await,
+            _ => roamgate::families::update::cli(&command, &args).await,
+        }),
         Options::Help => {
             print!("{USAGE}");
             ExitCode::SUCCESS

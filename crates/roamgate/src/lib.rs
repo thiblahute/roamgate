@@ -9,6 +9,11 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use rust_embed::RustEmbed;
 
+pub mod families;
+pub mod owners_cmd;
+
+pub use families::core_families;
+
 /// The version: `ROAMGATE_BUILD_VERSION` at build time (`cargo xtask
 /// package --version`), else the workspace's.
 pub const VERSION: &str = match option_env!("ROAMGATE_BUILD_VERSION") {
@@ -44,7 +49,17 @@ pub enum Options {
     /// (contract/wire/core-channel.md). Not in the usage: only the server
     /// runs it.
     Core,
+    /// `roamgate owners ...`: the owners table (hidden, temporary).
+    Owners(Vec<String>),
+    /// A CLI command a family answers (`update`, `rollback`, `herdr`):
+    /// its name and the arguments after it. The Bun CLI passes these
+    /// through while Rust owns the family (contract/wire/core-channel.md,
+    /// CLI pass-through).
+    Command(String, Vec<String>),
 }
+
+/// The CLI commands this binary answers itself, by family.
+pub const FAMILY_COMMANDS: &[&str] = &["update", "rollback", "herdr"];
 
 /// Reads the command line; `env` gives the environment's HOST and PORT.
 pub fn parse_args(
@@ -53,11 +68,18 @@ pub fn parse_args(
 ) -> Result<Options, String> {
     let mut host = env("HOST").unwrap_or_else(|| "127.0.0.1".into());
     let mut port = env("PORT").unwrap_or_else(|| "8787".into());
-    if args.first().map(String::as_str) == Some("core") {
-        return match args.get(1) {
-            None => Ok(Options::Core),
-            Some(extra) => Err(format!("unknown argument {extra}")),
-        };
+    match args.first().map(String::as_str) {
+        Some("core") => {
+            return match args.get(1) {
+                None => Ok(Options::Core),
+                Some(extra) => Err(format!("unknown argument {extra}")),
+            };
+        }
+        Some("owners") => return Ok(Options::Owners(args[1..].to_vec())),
+        Some(command) if FAMILY_COMMANDS.contains(&command) => {
+            return Ok(Options::Command(command.to_owned(), args[1..].to_vec()));
+        }
+        _ => {}
     }
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {

@@ -17,6 +17,7 @@ path = "src/main.rs"
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-sidecar = { path = "../roamgate-sidecar" }
+serde_json = { version = "1", features = ["preserve_order"] }
 rust-embed = { version = "8", features = ["interpolate-folder-path", "mime-guess"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
 

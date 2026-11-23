@@ -52,6 +52,7 @@ async fn says_hello_and_exits_when_the_channel_closes() {
         side: Side::Bun,
         owners: BTreeMap::new(),
         shadow: ShadowSettings::default(),
+        clock: None,
     })
     .await
     .unwrap();

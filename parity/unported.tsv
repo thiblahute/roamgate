@@ -1,0 +1,24 @@
+# Rows of an existing crate that wait for a later subtask (parity/src/ledger.rs, Unported):
+# crate, file prefix, subtask. Remove an entry when its subtask ports those files.
+roamgate-activity	server/src/activity/	S13
+roamgate-cli	server/src/cli/activity	S13
+roamgate-cli	server/src/cli/archive	S13
+roamgate-cli	server/src/cli/push	S14
+roamgate-cli	server/src/cli/reviews	S20
+roamgate-cli	server/src/cli/setup	S22
+roamgate-cli	server/src/cli/voice	S22
+roamgate-cli	server/src/cli/auth	S18
+roamgate-cli	server/src/cli/completion	S18
+roamgate-cli	server/src/cli/config	S18
+roamgate-cli	server/src/cli/connections	S18
+roamgate-cli	server/src/cli/doctor	S18
+roamgate-cli	server/src/cli/history	S18
+roamgate-cli	server/src/cli/index	S18
+roamgate-cli	server/src/cli/service-logs	S18
+roamgate-cli	server/src/cli/url	S18
+roamgate-cli	server/src/config/	S18
+roamgate-cli	server/src/contract-record/	S18
+roamgate-cli	server/src/utils/cpu-profile	S18
+roamgate-connections	server/src/connections/	S16
+roamgate-connections	server/src/profiles/	S16
+roamgate-herdr	server/src/bridge/	S16

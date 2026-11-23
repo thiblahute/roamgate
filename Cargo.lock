@@ -6337,6 +6337,7 @@ dependencies = [
  "roamgate-base",
  "roamgate-sidecar",
  "rust-embed",
+ "serde_json",
  "tempfile",
  "tokio",
 ]

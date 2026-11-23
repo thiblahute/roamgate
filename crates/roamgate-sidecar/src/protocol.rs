@@ -164,6 +164,10 @@ pub enum Message {
         owners: BTreeMap<String, Side>,
         #[serde(default)]
         shadow: ShadowSettings,
+        /// The front's test clock (epoch ms) when it runs on one: a debug
+        /// core's families follow it (`internal.clock.advance`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        clock: Option<i64>,
     },
     Refused {
         reason: String,
@@ -308,6 +312,10 @@ pub struct Family {
     pub files: Vec<String>,
     #[serde(default)]
     pub shadow: Vec<String>,
+    /// The CLI commands the family answers (`roamgate <command>`): the Bun
+    /// CLI passes them through to the core binary while Rust owns it.
+    #[serde(default)]
+    pub cli: Vec<String>,
 }
 
 /// Families by name, in the file's order.
