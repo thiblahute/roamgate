@@ -31,6 +31,16 @@ fn main() {
         );
     }
     let fake = Path::new(env!("CARGO_BIN_EXE_parity-fake")).to_path_buf();
+    let (server, _) = roamgate_parity::run::server_command();
+    let cli = std::env::var("ROAMGATE_CLI_CMD")
+        .ok()
+        .filter(|cli| !cli.trim().is_empty())
+        .unwrap_or_else(|| server.join(" "));
+    eprintln!(
+        "parity: {} front, server `{}`, CLI `{cli}`",
+        scenario::current_front(),
+        server.join(" ")
+    );
     let root = repo_root();
     let trials = scenario::all(&scenarios_dir())
         .into_iter()

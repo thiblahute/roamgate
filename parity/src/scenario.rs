@@ -97,6 +97,17 @@ pub struct Scenario {
     pub steps: Vec<Value>,
 }
 
+/// What a run is: its front and the commands its server and CLI steps run.
+pub fn run_description(run: &crate::run::Run) -> Value {
+    serde_json::json!({
+        "front": current_front(),
+        "server_command": run.command,
+        "cli_command": run.cli_command,
+        "sidecar": std::env::var("ROAMGATE_SIDECAR_BIN").ok().filter(|bin| !bin.trim().is_empty()),
+        "core": crate::run::hybrid_core(),
+    })
+}
+
 /// The front this run's servers have: `rust` when `ROAMGATE_SIDECAR_BIN`
 /// names the Bun core of a Rust front, else `bun`.
 pub fn current_front() -> &'static str {
@@ -2369,6 +2380,11 @@ pub fn owner_family(scenario_family: &str) -> &str {
 pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
     let scenario = load(path)?;
     let mut runner = Runner::new(fake_bin, &scenario).await?;
+    // Which front this run is on, kept with the run's directory.
+    let _ = std::fs::write(
+        runner.run.root.join("run.json"),
+        serde_json::to_string_pretty(&run_description(&runner.run))?,
+    );
     if scenario.server.start.unwrap_or(true) {
         runner.start().await?;
     }
@@ -2451,8 +2467,9 @@ pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
             .collect::<Vec<_>>()
             .join("\n");
         return Err(error.context(format!(
-            "{}\n--- server output (last lines) ---\n{tail}",
-            scenario.name
+            "{} [{} front]\n--- server output (last lines) ---\n{tail}",
+            scenario.name,
+            current_front()
         )));
     }
     // PARITY_RECORDINGS_DIR keeps every run's recording (to census shapes
