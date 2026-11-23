@@ -1371,7 +1371,7 @@ server/src/cli/voice.test.ts	gaming is the profile held by gaming, --now asking 
 server/src/cli/voice.test.ts	status says who holds it, even without voice.json	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/voice.test.ts	models sets parts by hand, --reset goes back	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/voice.test.ts	refuses what it does not know	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/config/auth-token.test.ts	requires 8 to 1024 Unicode characters for login secrets	rust-unit:roamgate-http	generated login token
+server/src/config/auth-token.test.ts	requires 8 to 1024 Unicode characters for login secrets	rust-unit:roamgate-cli:server_config::tests::requires_8_to_1024_unicode_characters_for_login_secrets	generated login token
 server/src/config/auth-token.test.ts	flags passwords shorter than the recommended length	rust-unit:roamgate-http	generated login token
 server/src/config/auth-token.test.ts	uses APPDATA for the Windows token	rust-unit:roamgate-http	generated login token
 server/src/config/auth-token.test.ts	prints the token without revealing the account name	rust-unit:roamgate-http	generated login token
@@ -1380,10 +1380,10 @@ server/src/config/auth-token.test.ts	handles filesystem-root HOME without losing
 server/src/config/auth-token.test.ts	prints Windows commands with trailing APPDATA or HOME separators	rust-unit:roamgate-http	generated login token
 server/src/config/auth-token.test.ts	keeps adjacent prefixes and unsafe shell paths omitted	rust-unit:roamgate-http	generated login token
 server/src/config/auth-token.test.ts	omits the token command outside the home directory	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	creates a persistent random token with private permissions	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	repairs permissions on an existing valid token	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	rejects a malformed persisted token	rust-unit:roamgate-http	generated login token
-server/src/config/auth-token.test.ts	does not follow a generated-token symlink	rust-unit:roamgate-http	generated login token
+server/src/config/auth-token.test.ts	creates a persistent random token with private permissions	rust-unit:roamgate-cli:auth_token::tests::creates_once_keeps_and_repairs_the_token	generated login token
+server/src/config/auth-token.test.ts	repairs permissions on an existing valid token	rust-unit:roamgate-cli:auth_token::tests::creates_once_keeps_and_repairs_the_token	generated login token
+server/src/config/auth-token.test.ts	rejects a malformed persisted token	rust-unit:roamgate-cli:auth_token::tests::creates_once_keeps_and_repairs_the_token	generated login token
+server/src/config/auth-token.test.ts	does not follow a generated-token symlink	rust-unit:roamgate-cli:auth_token::tests::creates_once_keeps_and_repairs_the_token	generated login token
 server/src/config/auth-token.test.ts	replaces the token atomically with private permissions	rust-unit:roamgate-http	generated login token
 server/src/config/auth-token.test.ts	refuses symlinked token paths	rust-unit:roamgate-http	generated login token
 server/src/config/data-paths.test.ts	fresh Unix and Windows data roots respect APPDATA	rust-unit:roamgate-base:paths::tests::data_roots_respect_appdata	data paths, environment precedence, settings store, locks
@@ -1428,30 +1428,30 @@ server/src/config/plugin-command.test.ts	honors exported and quoted entries and 
 server/src/config/plugin-command.test.ts	rejects configurations the service could not start with	rust-unit:roamgate-cli	plugin commands
 server/src/config/plugin-command.test.ts	plugin dispatch rejects extra arguments and leaves other CLI commands alone	rust-unit:roamgate-cli	plugin commands
 server/src/config/plugin-command.test.ts	native ${verb} preserves configuration for a ${definitionType} service with exit ${exitCode}	rust-unit:roamgate-cli	plugin commands
-server/src/config/server-config.test.ts	compiled authentication reads runtime NODE_ENV instead of the build value	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	production requires authentication and persists a token on every listen address	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	NODE_ENV=%s HOST=%s requires authentication: %s	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	rejects CLI and environment passwords outside 8..1024 characters	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	uses APPDATA on win32	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	falls back under the home directory on win32 without APPDATA	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	uses the XDG-style config dir on other platforms	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	prefers the CLI value over the environment	rust-unit:roamgate-cli	server flags and their precedence
+server/src/config/server-config.test.ts	compiled authentication reads runtime NODE_ENV instead of the build value	rust-unit:roamgate-cli:server_config::tests::compiled_authentication_reads_runtime_node_env_instead_of_the_build_value	server flags and their precedence
+server/src/config/server-config.test.ts	production requires authentication and persists a token on every listen address	rust-unit:roamgate-cli:server_config::tests::production_requires_authentication_and_persists_a_token_on_every_listen_address	server flags and their precedence
+server/src/config/server-config.test.ts	NODE_ENV=%s HOST=%s requires authentication: %s	rust-unit:roamgate-cli:server_config::tests::node_env_and_host_decide_whether_authentication_is_required	server flags and their precedence
+server/src/config/server-config.test.ts	rejects CLI and environment passwords outside 8..1024 characters	rust-unit:roamgate-cli:server_config::tests::rejects_cli_and_environment_passwords_outside_8_1024_characters	server flags and their precedence
+server/src/config/server-config.test.ts	uses APPDATA on win32	rust-unit:roamgate-cli:server_config::tests::uses_appdata_on_win32	server flags and their precedence
+server/src/config/server-config.test.ts	falls back under the home directory on win32 without APPDATA	rust-unit:roamgate-cli:server_config::tests::falls_back_under_the_home_directory_on_win32_without_appdata	server flags and their precedence
+server/src/config/server-config.test.ts	uses the XDG-style config dir on other platforms	rust-unit:roamgate-cli:server_config::tests::uses_the_xdg_style_config_dir_on_other_platforms	server flags and their precedence
+server/src/config/server-config.test.ts	prefers the CLI value over the environment	rust-unit:roamgate-cli:server_config::tests::prefers_the_cli_value_over_the_environment	server flags and their precedence
 server/src/config/server-config.test.ts	uses the environment and defaults to info	scenario:parity/scenarios/env/log-level.yaml	
-server/src/config/server-config.test.ts	is opt-in and bounds capture duration	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	loads CLI flags with precedence over environment settings	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	keeps HTTP by default and rejects incomplete or unreadable TLS settings	rust-unit:roamgate-cli	server flags and their precedence
+server/src/config/server-config.test.ts	is opt-in and bounds capture duration	rust-unit:roamgate-cli:server_config::tests::is_opt_in_and_bounds_capture_duration	server flags and their precedence
+server/src/config/server-config.test.ts	loads CLI flags with precedence over environment settings	rust-unit:roamgate-cli:server_config::tests::loads_cli_flags_with_precedence_over_environment_settings	server flags and their precedence
+server/src/config/server-config.test.ts	keeps HTTP by default and rejects incomplete or unreadable TLS settings	rust-unit:roamgate-cli:server_config::tests::keeps_http_by_default_and_rejects_incomplete_or_unreadable_tls_settings	server flags and their precedence
 server/src/config/server-config.test.ts	loads PEM files, honors CLI precedence, and serves trusted HTTPS and WSS	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	uses stable 12-hex SHA-256 identifiers for each socket kind	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	distinguishes hosts, sessions, and the default session	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	separates host and session fields before hashing	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	keeps long host and session inputs out of socket filenames	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	preserves explicit %s socket paths	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	preserves local Herdr socket paths for session %s	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	maps Herdr's Windows socket name onto its named pipe	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	reading configuration for management commands does not create or rotate session signing state	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	validates ROAMGATE_PIN=%s without weakening the strong credential	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	PIN keeps generated-token recovery and follows environment precedence	rust-unit:roamgate-cli	server flags and their precedence
-server/src/config/server-config.test.ts	prefers explicit paths, then SSH tunnels, then the session layout	rust-unit:roamgate-cli	server flags and their precedence
+server/src/config/server-config.test.ts	uses stable 12-hex SHA-256 identifiers for each socket kind	rust-unit:roamgate-cli:server_config::tests::uses_stable_12_hex_sha_256_identifiers_for_each_socket_kind	server flags and their precedence
+server/src/config/server-config.test.ts	distinguishes hosts, sessions, and the default session	rust-unit:roamgate-cli:server_config::tests::distinguishes_hosts_sessions_and_the_default_session	server flags and their precedence
+server/src/config/server-config.test.ts	separates host and session fields before hashing	rust-unit:roamgate-cli:server_config::tests::separates_host_and_session_fields_before_hashing	server flags and their precedence
+server/src/config/server-config.test.ts	keeps long host and session inputs out of socket filenames	rust-unit:roamgate-cli:server_config::tests::keeps_long_host_and_session_inputs_out_of_socket_filenames	server flags and their precedence
+server/src/config/server-config.test.ts	preserves explicit %s socket paths	rust-unit:roamgate-cli:server_config::tests::preserves_explicit_socket_paths	server flags and their precedence
+server/src/config/server-config.test.ts	preserves local Herdr socket paths for session %s	rust-unit:roamgate-cli:server_config::tests::preserves_local_herdr_socket_paths_for_session	server flags and their precedence
+server/src/config/server-config.test.ts	maps Herdr's Windows socket name onto its named pipe	rust-unit:roamgate-cli:server_config::tests::maps_herdr_s_windows_socket_name_onto_its_named_pipe	server flags and their precedence
+server/src/config/server-config.test.ts	reading configuration for management commands does not create or rotate session signing state	rust-unit:roamgate-cli:server_config::tests::reading_configuration_for_management_commands_does_not_create_or_rotate_session_signing_state	server flags and their precedence
+server/src/config/server-config.test.ts	validates ROAMGATE_PIN=%s without weakening the strong credential	rust-unit:roamgate-cli:server_config::tests::validates_roamgate_pin_without_weakening_the_strong_credential	server flags and their precedence
+server/src/config/server-config.test.ts	PIN keeps generated-token recovery and follows environment precedence	rust-unit:roamgate-cli:server_config::tests::pin_keeps_generated_token_recovery_and_follows_environment_precedence	server flags and their precedence
+server/src/config/server-config.test.ts	prefers explicit paths, then SSH tunnels, then the session layout	rust-unit:roamgate-cli:server_config::tests::prefers_explicit_paths_then_ssh_tunnels_then_the_session_layout	server flags and their precedence
 server/src/config/service-manager.test.ts	installs and starts a systemd user service	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
 server/src/config/service-manager.test.ts	reloads the systemd definition before restarting	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors
 server/src/config/service-manager.test.ts	does not restart systemd when daemon-reload fails	rust-unit:roamgate-cli	service commands driving systemctl, launchctl and schtasks over files on disk; the service text itself is vectors

@@ -6392,10 +6392,12 @@ name = "roamgate-cli"
 version = "0.0.0"
 dependencies = [
  "hex",
+ "rand 0.9.5",
  "regex",
  "roamgate-base",
  "roamgate-exec",
  "roamgate-herdr",
+ "rustls 0.23.46",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",

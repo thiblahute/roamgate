@@ -17,7 +17,11 @@ roamgate-cli	server/src/cli/history	S18
 roamgate-cli	server/src/cli/index	S18
 roamgate-cli	server/src/cli/service-logs	S18
 roamgate-cli	server/src/cli/url	S18
-roamgate-cli	server/src/config/	S18
+roamgate-cli	server/src/config/data-paths	S18
+roamgate-cli	server/src/config/launchd-environment	S18
+roamgate-cli	server/src/config/plugin-command	S18
+roamgate-cli	server/src/config/server-config	S18
+roamgate-cli	server/src/config/service-manager	S18
 roamgate-cli	server/src/contract-record/	S18
 roamgate-cli	server/src/utils/cpu-profile	S18
 roamgate-connections	server/src/connections/	S16

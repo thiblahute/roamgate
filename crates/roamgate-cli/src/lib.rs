@@ -8,14 +8,18 @@
 //! | [`commands`] | `roamgate update` and `roamgate rollback` | cli/update |
 //! | [`herdr`] | `roamgate herdr` | herdr/cli, the Herdr part of config/server-config |
 //! | [`service`] | Roamgate's own service: paths, the published legacy one, the environment file, status and restart | the parts of config/service-definitions, service-manager and launchd-environment these use |
+//! | [`server_config`] | the server's flags and environment as management commands read them, with their validation | config/server-config loadServerConfig |
+//! | [`auth_token`] | the generated login token | config/auth-token |
 //! | [`output`] | what a command prints | console.log and console.error |
 
 use std::future::Future;
 use std::pin::Pin;
 
+pub mod auth_token;
 pub mod commands;
 pub mod herdr;
 pub mod output;
+pub mod server_config;
 pub mod service;
 pub mod update;
 pub mod update_http;
