@@ -5,10 +5,11 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use roamgate_connections::manager::LEGACY_DEFAULT_CONNECTION_ID;
 use roamgate_connections::profile_test::{SocketsTest, test_connection_profile};
 use roamgate_connections::profiles::{
-    CONNECTION_PROFILE_FILE_VERSION, ConnectionProfileStore, LEGACY_DEFAULT_CONNECTION_ID, Profile,
-    Registry, profile_id, profile_type, validate_connection_profile,
+    CONNECTION_PROFILE_FILE_VERSION, ConnectionProfile as Profile, LocalConnectionProfile,
+    PersistedConnectionRegistry as Registry, validate_connection_profile,
 };
 use roamgate_exec::service::node_platform;
 use serde_json::{Map, Value, json};
@@ -19,7 +20,7 @@ use crate::args::{
 use crate::context::CliContext;
 use crate::index::{Outcome, command_help};
 use crate::service_context::{
-    ServiceAccessInfo, ServiceSetup, connection_registry_path, probe_listener, read_service_access,
+    ServiceAccessInfo, ServiceSetup, connection_profile_store, probe_listener, read_service_access,
     read_service_setup, restart_running_service, service_herdr_sockets, service_status,
 };
 
@@ -48,7 +49,7 @@ impl ConnectionsDeps {
             }),
             test: Box::new(move |profile| {
                 let env = env.clone();
-                Box::pin(async move { test_connection_profile(profile, env.as_ref()).await })
+                Box::pin(async move { test_connection_profile(profile, env).await })
             }),
         }
     }
@@ -82,14 +83,17 @@ pub(crate) fn explicit_override(setup: &ServiceSetup) -> bool {
 }
 
 fn local_profile(id: &str, label: &str, control: &str, client: &str) -> Profile {
-    let mut profile = Map::new();
-    profile.insert("id".into(), id.into());
-    profile.insert("label".into(), label.into());
-    profile.insert("type".into(), "local".into());
-    profile.insert("control_socket_path".into(), control.into());
-    profile.insert("client_socket_path".into(), client.into());
-    profile.insert("auto_connect".into(), true.into());
-    profile
+    Profile::Local(LocalConnectionProfile {
+        id: id.into(),
+        label: label.into(),
+        control_socket_path: control.into(),
+        client_socket_path: client.into(),
+        auto_connect: true,
+    })
+}
+
+fn profile_id(profile: &Profile) -> &str {
+    profile.id()
 }
 
 /// The connection the service config gives when nothing is saved.
@@ -98,23 +102,20 @@ fn implicit_default(context: &CliContext, setup: &ServiceSetup) -> Profile {
     local_profile(LEGACY_DEFAULT_CONNECTION_ID, "Default", &control, &client)
 }
 
-fn text<'a>(profile: &'a Profile, key: &str) -> &'a str {
-    profile.get(key).and_then(Value::as_str).unwrap_or_default()
-}
-
 fn describe(profile: &Profile) -> String {
-    if profile_type(profile) == "local" {
-        return format!("local  {}", text(profile, "control_socket_path"));
-    }
-    let remote = if text(profile, "remote_platform") == "windows" {
-        match text(profile, "remote_session") {
+    let ssh = match profile {
+        Profile::Local(local) => return format!("local  {}", local.control_socket_path),
+        Profile::Ssh(ssh) => ssh,
+    };
+    let remote = if ssh.remote_platform_windows {
+        match ssh.remote_session.as_deref().unwrap_or_default() {
             "" => " (Windows)".to_owned(),
             session => format!(" (Windows, session {session})"),
         }
     } else {
         String::new()
     };
-    format!("ssh    {}{remote}", text(profile, "ssh_destination"))
+    format!("ssh    {}{remote}", ssh.ssh_destination)
 }
 
 enum Decision {
@@ -254,11 +255,7 @@ pub async fn run_with(
     };
     let rest = &args[1..];
     let setup = read_service_setup(&context.runtime).map_err(Failure::Failed)?;
-    let store = ConnectionProfileStore::new(
-        connection_registry_path(&context.runtime, &setup.env).map_err(Failure::Failed)?,
-        node_platform(),
-    )
-    .map_err(Failure::Failed)?;
+    let store = connection_profile_store(&context.runtime, &setup.env).map_err(Failure::Failed)?;
     let registry = store.load().map_err(Failure::Failed)?;
     let explicit = explicit_override(&setup);
     // A copy: the explicit default is listed but never saved.
@@ -281,7 +278,10 @@ pub async fn run_with(
                 let listed: Vec<Value> = profiles
                     .iter()
                     .map(|profile| {
-                        let mut entry = profile.clone();
+                        let mut entry = match profile.to_value() {
+                            Value::Object(entry) => entry,
+                            _ => Map::new(),
+                        };
                         let id = profile_id(profile);
                         entry.insert("default".into(), (id == default_id).into());
                         entry.insert("saved".into(), (id != LEGACY_DEFAULT_CONNECTION_ID).into());
@@ -289,13 +289,13 @@ pub async fn run_with(
                     })
                     .collect();
                 context.print_json(&json!({
-                    "path": store.path.display().to_string(),
+                    "path": store.path().display().to_string(),
                     "default_connection_id": default_id,
                     "profiles": listed,
                 }));
                 return Ok(Outcome::Code(EXIT_OK));
             }
-            context.log(&context.display_path(&store.path));
+            context.log(&context.display_path(store.path()));
             if registry.is_none() {
                 context.log("No saved profiles; Roamgate uses the default local connection.");
             }
@@ -308,10 +308,7 @@ pub async fn run_with(
                 let id = profile_id(profile);
                 let flags: Vec<&str> = [
                     (id == default_id, "default"),
-                    (
-                        profile.get("auto_connect").and_then(Value::as_bool) == Some(true),
-                        "auto-connect",
-                    ),
+                    (profile.auto_connect(), "auto-connect"),
                     (id == LEGACY_DEFAULT_CONNECTION_ID, "from service config"),
                 ]
                 .into_iter()
@@ -321,7 +318,7 @@ pub async fn run_with(
                     "{} {id:width$}  {}  {}{}",
                     if id == default_id { "*" } else { " " },
                     describe(profile),
-                    text(profile, "label"),
+                    profile.label(),
                     if flags.is_empty() {
                         String::new()
                     } else {
@@ -418,12 +415,12 @@ pub async fn run_with(
                     }
                 } else {
                     // Like the web UI, keep the implicit local server saved.
-                    let implicit = implicit_default(context, &setup);
+                    let (control, client) = service_herdr_sockets(&context.runtime, &setup.env);
                     let seed = local_profile(
                         if id == "local" { "localhost" } else { "local" },
                         "Local",
-                        text(&implicit, "control_socket_path"),
-                        text(&implicit, "client_socket_path"),
+                        &control,
+                        &client,
                     );
                     Registry {
                         version: CONNECTION_PROFILE_FILE_VERSION,

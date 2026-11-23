@@ -261,7 +261,7 @@ async fn test_reports_each_profile_and_fails_when_any_is_unreachable() {
     let tested = ConnectionsDeps {
         probe: Box::new(|_| Box::pin(async { false })),
         test: Box::new(|profile| {
-            let ssh = profile_type(profile) == "ssh";
+            let ssh = profile.is_ssh();
             Box::pin(async move {
                 if ssh {
                     Err("ssh: connection refused".to_owned())

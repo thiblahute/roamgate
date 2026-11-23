@@ -8,9 +8,8 @@ use std::path::{Path, PathBuf};
 
 use roamgate_base::env::roamgate_env;
 use roamgate_connections::profile_test::{SocketsTest, test_connection_sockets};
-use roamgate_connections::profiles::ConnectionProfileStore;
 use roamgate_exec::process::ProcessRunner;
-use roamgate_exec::service::{node_platform, resolve_service_platform};
+use roamgate_exec::service::resolve_service_platform;
 use roamgate_herdr::service::{HerdrServiceDeps, herdr_service_status};
 use serde_json::{Map, Value, json};
 
@@ -21,7 +20,7 @@ use crate::index::{Outcome, command_help};
 use crate::server_config::{get_lan_ips, is_any_host};
 use crate::service::resolve_legacy_service_paths;
 use crate::service_context::{
-    ServiceAccessInfo, ServiceSetup, access_urls, connection_registry_path, probe_listener,
+    ServiceAccessInfo, ServiceSetup, access_urls, connection_profile_store, probe_listener,
     probe_url, read_service_access, read_service_setup, runtime_data_root, service_herdr_sockets,
     service_status,
 };
@@ -499,9 +498,8 @@ async fn herdr_check(context: &CliContext, setup: &ServiceSetup, deps: &DoctorDe
 }
 
 fn connections_check(context: &CliContext, setup: &ServiceSetup) -> Check {
-    let loaded = connection_registry_path(&context.runtime, &setup.env)
-        .and_then(|path| ConnectionProfileStore::new(path, node_platform()))
-        .and_then(|store| store.load());
+    let loaded =
+        connection_profile_store(&context.runtime, &setup.env).and_then(|store| store.load());
     match loaded {
         Ok(registry) => Check::new(
             "Connections",

@@ -77,6 +77,20 @@ pub fn connection_registry_path(
     }
 }
 
+/// `connections.json`'s store as the service sees it: its permissions
+/// repaired only at the default path.
+pub fn connection_profile_store(
+    runtime: &CliRuntime,
+    env: &BTreeMap<String, String>,
+) -> Result<roamgate_connections::profiles::ConnectionProfileStore, String> {
+    let default_path = roamgate_env(env, "CONNECTIONS_PATH").is_none();
+    roamgate_connections::profiles::ConnectionProfileStore::new(
+        connection_registry_path(runtime, env)?,
+        default_path,
+        Some(data_context(runtime)),
+    )
+}
+
 /// The Herdr sockets the service resolves from its environment file.
 pub fn service_herdr_sockets(
     runtime: &CliRuntime,
