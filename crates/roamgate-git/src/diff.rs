@@ -1678,3 +1678,5 @@ pub type SharedStore = Arc<LastStepStore>;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod files_tests;
