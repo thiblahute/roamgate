@@ -177,6 +177,19 @@
   overflow: hidden;
 }
 
+/* The threads on no line (a rendered page's element threads among them):
+   at most part of the height, scrolled on their own, so the page or file
+   under them keeps the rest. Unbounded, a long list took the whole column
+   (it does not shrink, the page's frame does) and was clipped with no way
+   to scroll: on a phone the page was gone. */
+.file-preview-file-content > .file-preview-detached {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 40%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
 .file-preview-pdf {
   flex: 1 1 auto;
   width: 100%;
