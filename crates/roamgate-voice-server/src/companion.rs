@@ -15,6 +15,7 @@ pub mod memory;
 pub mod memory_files;
 pub mod research;
 pub mod router;
+pub mod seam;
 pub mod taste;
 pub mod test_env;
 pub mod turn_causes;

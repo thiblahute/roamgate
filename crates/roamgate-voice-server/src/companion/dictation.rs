@@ -103,23 +103,11 @@ fn short(value: Option<&Value>) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
-static LANGUAGE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-z]{2}$").unwrap());
-
-/// A listen request's `language`, when it is a two-letter code. (The voice
-/// socket has the same check, `socket::listen_language`, on its branch:
-/// the two become one when both land.)
-fn listen_language(value: Option<&Value>) -> Option<String> {
-    value
-        .and_then(Value::as_str)
-        .filter(|l| LANGUAGE.is_match(l))
-        .map(str::to_owned)
-}
-
 /// A listen request's field and surrounding text, bounded and checked;
 /// with `context: false` (an incognito field, an app the user keeps
 /// private) nothing of it.
 pub fn dictation_target(request: &Map<String, Value>) -> DictationTarget {
-    let language = listen_language(request.get("language"));
+    let language = crate::socket::listen_language(request.get("language"));
     if request.get("context") == Some(&Value::Bool(false)) {
         return DictationTarget {
             language,
@@ -233,12 +221,7 @@ pub fn looks_cleaned(raw: &str, cleaned: &str) -> bool {
     kept as f64 >= typed.len() as f64 * 0.6
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Dictated {
-    pub text: String,
-    /// False: the words as heard (no model, failed, too slow, refused).
-    pub cleaned: bool,
-}
+pub use crate::socket::companion::Dictated;
 
 /// A dictation's end: the cleaned text, or the words as heard.
 pub async fn dictated(session: Option<&CleanSession>, raw: &str) -> Dictated {

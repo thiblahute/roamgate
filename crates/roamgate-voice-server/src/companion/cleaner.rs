@@ -59,11 +59,7 @@ pub type CleanerAsk = Arc<
         + Sync,
 >;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Cleaned {
-    pub text: String,
-    pub for_agent: bool,
-}
+pub use crate::socket::companion::Cleaned;
 
 static SENTENCE: std::sync::LazyLock<Regex> =
     std::sync::LazyLock::new(|| Regex::new(r"[^.?!…]+(?:[.?!…]+|$)").unwrap());
