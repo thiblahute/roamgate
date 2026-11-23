@@ -73,7 +73,7 @@ roamgate-http	server/src/http/terminal-path-text	S18
 roamgate-http	server/src/bridge/settings-rpc.test.ts	S18
 
 roamgate-notify	server/src/notifications/notification-feed	S18
-roamgate-notify	server/src/notifications/herdr-notification-listener	S16
+roamgate-notify	server/src/notifications/herdr-notification-listener	S18
 roamgate-connections	server/src/notifications/web-push.test.ts	S16
 
 roamgate-assistant	server/src/assistant/actions	S23
