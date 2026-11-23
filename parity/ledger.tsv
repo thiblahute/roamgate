@@ -1393,14 +1393,14 @@ server/src/cli/service-logs.test.ts	follows the systemd journal on Linux	rust-un
 server/src/cli/service-logs.test.ts	tails the LaunchAgent log files on macOS	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/service-logs.test.ts	explains that Windows tasks do not capture output	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/service-logs.test.ts	rejects invalid line counts	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/setup.test.ts	is listed among the commands	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/setup.test.ts	list shows the hardware, each part's models and the tier	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/setup.test.ts	list --json is the assistant's state	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/setup.test.ts	--yes downloads the tier's models and writes voice.json	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/setup.test.ts	questions: Enter keeps a choice, a number picks another	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/setup.test.ts	answering no changes nothing	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/setup.test.ts	bad arguments are usage errors	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/setup.test.ts	remove-unused frees what voice.json no longer uses	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
+server/src/cli/setup.test.ts	is listed among the commands	rust-unit:roamgate-cli:setup_voice::tests::is_listed_among_the_commands	CLI internals beyond its help and outputs
+server/src/cli/setup.test.ts	list shows the hardware, each part's models and the tier	rust-unit:roamgate-cli:setup_voice::tests::list_shows_the_hardware_each_part_s_models_and_the_tier	CLI internals beyond its help and outputs
+server/src/cli/setup.test.ts	list --json is the assistant's state	rust-unit:roamgate-cli:setup_voice::tests::list_json_is_the_assistant_s_state	CLI internals beyond its help and outputs
+server/src/cli/setup.test.ts	--yes downloads the tier's models and writes voice.json	rust-unit:roamgate-cli:setup_voice::tests::yes_downloads_the_tier_s_models_and_writes_voice_json	CLI internals beyond its help and outputs
+server/src/cli/setup.test.ts	questions: Enter keeps a choice, a number picks another	rust-unit:roamgate-cli:setup_voice::tests::questions_enter_keeps_a_choice_a_number_picks_another	CLI internals beyond its help and outputs
+server/src/cli/setup.test.ts	answering no changes nothing	rust-unit:roamgate-cli:setup_voice::tests::answering_no_changes_nothing	CLI internals beyond its help and outputs
+server/src/cli/setup.test.ts	bad arguments are usage errors	rust-unit:roamgate-cli:setup_voice::tests::bad_arguments_are_usage_errors	CLI internals beyond its help and outputs
+server/src/cli/setup.test.ts	remove-unused frees what voice.json no longer uses	rust-unit:roamgate-cli:setup_voice::tests::remove_unused_frees_what_voice_json_no_longer_uses	CLI internals beyond its help and outputs
 server/src/cli/update.test.ts	--check compares against the latest manifest	scenario:parity/scenarios/update/cli.yaml	
 server/src/cli/update.test.ts	uses a mirror from the service config	rust-unit:roamgate-cli:commands::tests::uses_a_mirror_from_the_service_config	CLI internals beyond its help and outputs
 server/src/cli/update.test.ts	installs over the running executable with the shared verifier	rust-unit:roamgate-cli:commands::tests::installs_over_the_running_executable_with_the_shared_verifier	CLI internals beyond its help and outputs
@@ -1415,11 +1415,11 @@ server/src/cli/url.test.ts	refuses a QR code that only this machine could open	r
 server/src/cli/url.test.ts	prints a QR code for an explicit address with a token warning	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/url.test.ts	validates options	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/url.test.ts	the loopback hint is a command that works	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/voice.test.ts	profile low-gpu on and off, by holder	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/voice.test.ts	gaming is the profile held by gaming, --now asking a call to switch	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/voice.test.ts	status says who holds it, even without voice.json	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/voice.test.ts	models sets parts by hand, --reset goes back	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/voice.test.ts	refuses what it does not know	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
+server/src/cli/voice.test.ts	profile low-gpu on and off, by holder	rust-unit:roamgate-cli:voice::tests::profile_low_gpu_on_and_off_by_holder	CLI internals beyond its help and outputs
+server/src/cli/voice.test.ts	gaming is the profile held by gaming, --now asking a call to switch	rust-unit:roamgate-cli:voice::tests::gaming_is_the_profile_held_by_gaming_now_asking_a_call_to_switch	CLI internals beyond its help and outputs
+server/src/cli/voice.test.ts	status says who holds it, even without voice.json	rust-unit:roamgate-cli:voice::tests::status_says_who_holds_it_even_without_voice_json	CLI internals beyond its help and outputs
+server/src/cli/voice.test.ts	models sets parts by hand, --reset goes back	rust-unit:roamgate-cli:voice::tests::models_sets_parts_by_hand_reset_goes_back	CLI internals beyond its help and outputs
+server/src/cli/voice.test.ts	refuses what it does not know	rust-unit:roamgate-cli:voice::tests::refuses_what_it_does_not_know	CLI internals beyond its help and outputs
 server/src/config/auth-token.test.ts	requires 8 to 1024 Unicode characters for login secrets	rust-unit:roamgate-cli:server_config::tests::requires_8_to_1024_unicode_characters_for_login_secrets	generated login token
 server/src/config/auth-token.test.ts	flags passwords shorter than the recommended length	rust-unit:roamgate-http	generated login token
 server/src/config/auth-token.test.ts	uses APPDATA for the Windows token	rust-unit:roamgate-http	generated login token
@@ -2493,8 +2493,8 @@ server/src/http/call-handoff.test.ts	a producer known later, or a new one, is to
 server/src/http/call-handoff.test.ts	a restarted helper's new server is watched again	rust-unit:roamgate-voice-server	call handoff
 server/src/http/call-handoff.test.ts	a watch whose server closed is opened again; the call's end closes it	rust-unit:roamgate-voice-server	call handoff
 server/src/http/call-handoff.test.ts	the app's two signalling sockets are each proxied on their own	rust-unit:roamgate-voice-server	call handoff
-server/src/http/call-handoff.test.ts	exchanges a valid token for the call and a login, once	rust-unit:roamgate-voice-server	call handoff
-server/src/http/call-handoff.test.ts	refuses other methods, other sites, and too many failures	rust-unit:roamgate-voice-server	call handoff
+server/src/http/call-handoff.test.ts	exchanges a valid token for the call and a login, once	rust-unit:roamgate-voice-server:http::handoff::tests::exchanges_a_valid_token_for_the_call_and_a_login_once	call handoff
+server/src/http/call-handoff.test.ts	refuses other methods, other sites, and too many failures	rust-unit:roamgate-voice-server:http::handoff::tests::refuses_other_methods_other_sites_and_too_many_failures	call handoff
 server/src/http/herdr-info.test.ts	returns only the connected server identity	rust-unit:roamgate-herdr:http::tests::returns_only_the_connected_server_identity	Herdr setup and info routes
 server/src/http/herdr-info.test.ts	does not hide connection or malformed-response failures	rust-unit:roamgate-herdr:http::tests::does_not_hide_connection_or_malformed_response_failures	Herdr setup and info routes
 server/src/http/herdr-setup.test.ts	setup guard uses the configured profile even without a ready runtime	scenario:parity/scenarios/herdr/status-routes.yaml	
@@ -2672,13 +2672,13 @@ server/src/http/update.test.ts	returns a 502 when update checks fail	scenario:pa
 server/src/http/update.test.ts	Roamgate and legacy confirmation headers share the same update boundary	scenario:parity/scenarios/update/check.yaml	
 server/src/http/voice-low-gpu.test.ts	GET says its status	scenario:parity/scenarios/voice/low-gpu.yaml	
 server/src/http/voice-low-gpu.test.ts	POST holds it or lets it go, with the voice header only	scenario:parity/scenarios/voice/low-gpu.yaml	
-server/src/http/voice-low-gpu.test.ts	now alone switches a call without holding	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice-low-gpu.test.ts	now alone switches a call without holding	rust-unit:roamgate-voice-server:http::low_gpu::tests::now_alone_switches_a_call_without_holding	voice HTTP and socket
 server/src/http/voice-low-gpu.test.ts	refuses a bad request	scenario:parity/scenarios/voice/low-gpu.yaml	
 server/src/http/voice-setup.test.ts	GET is the assistant's state, not cached	scenario:parity/scenarios/voice/setup.yaml	
-server/src/http/voice-setup.test.ts	POST starts the download, followed by GET until done	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice-setup.test.ts	POST starts the download, followed by GET until done	rust-unit:roamgate-voice-server:http::setup::tests::post_starts_the_download_followed_by_get_until_done	voice HTTP and socket
 server/src/http/voice-setup.test.ts	changes need the voice header and valid choices	scenario:parity/scenarios/voice/setup.yaml	
 server/src/http/voice-setup.test.ts	remove answers what it freed; cancel with nothing running is fine	scenario:parity/scenarios/voice/setup.yaml	
-server/src/http/voice-setup.test.ts	other paths are not its	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice-setup.test.ts	other paths are not its	rust-unit:roamgate-voice-server:http::setup::tests::other_paths_are_not_its	voice HTTP and socket
 server/src/http/voice-socket.dictation.test.ts	partials show the whole dictation; finish gives the cleaned text with its timing	scenario:parity/scenarios/voice/dictation.yaml	
 server/src/http/voice-socket.dictation.test.ts	a pause never finishes a dictation, however long	rust-unit:roamgate-voice-server	voice HTTP and socket
 server/src/http/voice-socket.dictation.test.ts	a helper that never answers finish still gives a final, as heard	rust-unit:roamgate-voice-server	voice HTTP and socket
@@ -2734,7 +2734,7 @@ server/src/http/voice.test.ts	the front hears who spoke, and its routes teach wh
 server/src/http/voice.test.ts	the front sees every voice score, and names a voice for later calls	rust-unit:roamgate-voice-server	voice HTTP and socket
 server/src/http/voice.test.ts	lists what was routed to nobody, and routes a skipped sentence when the front recovers it	rust-unit:roamgate-voice-server	voice HTTP and socket
 server/src/http/voice.test.ts	gives the front the call lately, and an errand its context	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	muted call music is not described as playing	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice.test.ts	muted call music is not described as playing	rust-unit:roamgate-voice-server:http::routes::tests::muted_call_music_is_not_described_as_playing	voice HTTP and socket
 server/src/http/voice.test.ts	keeps the words the front gives a session only when they are what was said	rust-unit:roamgate-voice-server	voice HTTP and socket
 server/src/http/voice.test.ts	gives a page of an older build only routes it knows	scenario:parity/scenarios/voice/front.yaml	
 server/src/http/voice.test.ts	tells an event, and stays quiet without a front	scenario:parity/scenarios/voice/front.yaml	
@@ -2754,15 +2754,15 @@ server/src/http/voice.test.ts	a search is followed to its result, or cancelled	s
 server/src/http/voice.test.ts	what a search found never routes, forwards or sends anything	rust-unit:roamgate-voice-server	voice HTTP and socket
 server/src/http/voice.test.ts	without searches set up, the front says it cannot look	rust-unit:roamgate-voice-server	voice HTTP and socket
 server/src/http/voice.test.ts	come back as they are, for the page to send	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	are listed, and changed only with the voice header	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice.test.ts	are listed, and changed only with the voice header	rust-unit:roamgate-voice-server:http::routes::tests::voices_are_listed_and_changed_only_with_the_voice_header	voice HTTP and socket
 server/src/http/voice.test.ts	a recording is uploaded, cloned, then removed	scenario:parity/scenarios/voice/voices-speak-settings.yaml	
 server/src/http/voice.test.ts	a refused change says why, with its status	scenario:parity/scenarios/voice/voices-speak-settings.yaml	
 server/src/http/voice.test.ts	choose, rename, delete and hear voices	scenario:parity/scenarios/voice/voices-speak-settings.yaml	
-server/src/http/voice.test.ts	a stock voice is heard in its own language, or the one asked	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	is reported, and turned on and off with the voice header	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	a reply is read by one voice, the next by another	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	off, replies are read as voice.json says	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/http/voice.test.ts	speech is made at the page's rate, else voice.json's	rust-unit:roamgate-voice-server	voice HTTP and socket
+server/src/http/voice.test.ts	a stock voice is heard in its own language, or the one asked	rust-unit:roamgate-voice-server:http::routes::tests::a_stock_voice_is_heard_in_its_own_language_or_the_one_asked	voice HTTP and socket
+server/src/http/voice.test.ts	is reported, and turned on and off with the voice header	rust-unit:roamgate-voice-server:http::routes::tests::surprise_is_reported_and_turned_on_and_off_with_the_voice_header	voice HTTP and socket
+server/src/http/voice.test.ts	a reply is read by one voice, the next by another	rust-unit:roamgate-voice-server:http::routes::tests::a_reply_is_read_by_one_voice_the_next_by_another	voice HTTP and socket
+server/src/http/voice.test.ts	off, replies are read as voice.json says	rust-unit:roamgate-voice-server:http::routes::tests::off_replies_are_read_as_voice_json_says	voice HTTP and socket
+server/src/http/voice.test.ts	speech is made at the page's rate, else voice.json's	rust-unit:roamgate-voice-server:http::routes::tests::speech_is_made_at_the_page_s_rate_else_voice_json_s	voice HTTP and socket
 server/src/limit-resume/connection.test.ts	lists terminal and conversation-mode Claude sessions, asleep ones included	rust-unit:roamgate-connections:limit_resume::connection::tests::lists_terminal_and_conversation_mode_claude_sessions_asleep_ones_included	limit-resume scheduler
 server/src/limit-resume/connection.test.ts	a conversation gets the message in its queue, a terminal has it typed	rust-unit:roamgate-connections:limit_resume::connection::tests::a_conversation_gets_the_message_in_its_queue_a_terminal_has_it_typed	limit-resume scheduler
 server/src/limit-resume/connection.test.ts	a terminal Claude running Roamgate's mod: its status and delivery	rust-unit:roamgate-connections:limit_resume::connection::tests::a_terminal_claude_running_roamgate_s_mod_its_status_and_delivery	limit-resume scheduler
@@ -3465,9 +3465,9 @@ server/src/voice/call-audio.test.ts	the call ending, or its helper restarting, c
 server/src/voice/call-audio.test.ts	call restarts reach the page even across a socket change, and a dead call is not owned	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/call-audio.test.ts	a page elsewhere is refused, this site's is not	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/call-audio.test.ts	rewrites only host UDP candidates on 127.0.0.1, in SDP too	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/call-audio.test.ts	down, up, off and on change the call's music	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/call-audio.test.ts	each change is logged, the music before and after	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/call-audio.test.ts	with no music, it says so	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/call-audio.test.ts	down, up, off and on change the call's music	rust-unit:roamgate-voice-server:http::routes::tests::down_up_off_and_on_change_the_call_s_music	voice helper driver, companion, setup and library
+server/src/voice/call-audio.test.ts	each change is logged, the music before and after	rust-unit:roamgate-voice-server:http::routes::tests::each_change_is_logged_the_music_before_and_after	voice helper driver, companion, setup and library
+server/src/voice/call-audio.test.ts	with no music, it says so	rust-unit:roamgate-voice-server:http::routes::tests::with_no_music_it_says_so	voice helper driver, companion, setup and library
 server/src/voice/call-audio.test.ts	default to no background, 0.6, 0.15, 3 s and the music off at first	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/call-audio.test.ts	brings the replies to call_reply_loudness, or leaves them on false	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/call-audio.test.ts	voice.json takes call_music_at_start as a boolean only	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
@@ -3649,10 +3649,10 @@ server/src/voice/voice-helper.test.ts	frames go through a wrapper, which ends wi
 server/src/voice/voice-helper.test.ts	the helper stops after helper_idle_exit_minutes with nothing to do	rust-unit:roamgate-voice-server:helper::tests::the_helper_stops_after_helper_idle_exit_minutes_with_nothing_to_do	voice helper driver, companion, setup and library
 server/src/voice/voice-helper.test.ts	a call or a listening keeps the helper, however quiet	rust-unit:roamgate-voice-server:helper::tests::a_call_or_a_listening_keeps_the_helper_however_quiet	voice helper driver, companion, setup and library
 server/src/voice/voice-helper.test.ts	without helper_idle_exit_minutes, the helper runs until stopped	rust-unit:roamgate-voice-server:helper::tests::without_helper_idle_exit_minutes_the_helper_runs_until_stopped	voice helper driver, companion, setup and library
-server/src/voice/voice-helper.test.ts	report whether voice is set up	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-helper.test.ts	keep a new reading speed, with their header only	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-helper.test.ts	speak text, with their header only	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-helper.test.ts	leave other paths alone	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/voice-helper.test.ts	report whether voice is set up	rust-unit:roamgate-voice-server:http::routes::tests::report_whether_voice_is_set_up	voice helper driver, companion, setup and library
+server/src/voice/voice-helper.test.ts	keep a new reading speed, with their header only	rust-unit:roamgate-voice-server:http::routes::tests::keep_a_new_reading_speed_with_their_header_only	voice helper driver, companion, setup and library
+server/src/voice/voice-helper.test.ts	speak text, with their header only	rust-unit:roamgate-voice-server:http::routes::tests::speak_text_with_their_header_only	voice helper driver, companion, setup and library
+server/src/voice/voice-helper.test.ts	leave other paths alone	rust-unit:roamgate-voice-server:http::routes::tests::leave_other_paths_alone	voice helper driver, companion, setup and library
 server/src/voice/voice-helper.test.ts	a front is a companion unless voice.json says relay	rust-unit:roamgate-voice-server:config::tests::a_front_is_a_companion_unless_voice_json_says_relay	voice helper driver, companion, setup and library
 server/src/voice/voice-helper.test.ts	voice.json refuses another mode, and keeps one with the rest	rust-unit:roamgate-voice-server:config::tests::voice_json_refuses_another_mode_and_keeps_one_with_the_rest	voice helper driver, companion, setup and library
 server/src/voice/voice-helper.test.ts	helper_wrapper is a list of arguments, a program first	rust-unit:roamgate-voice-server:config::tests::helper_wrapper_is_a_list_of_arguments_a_program_first	voice helper driver, companion, setup and library
@@ -3834,9 +3834,9 @@ server/src/voice/voice-speakers.test.ts	the page gets tags without prints, and s
 server/src/voice/voice-stock.test.ts	are the speakers of a CustomVoice model, in the model card's order	rust-unit:roamgate-voice-server:stock::tests::are_the_speakers_of_a_customvoice_model_in_the_model_card_s_order	voice helper driver, companion, setup and library
 server/src/voice/voice-stock.test.ts	the model is the one named, read with, or next to the Base	rust-unit:roamgate-voice-server:stock::tests::the_model_is_the_one_named_read_with_or_next_to_the_base	voice helper driver, companion, setup and library
 server/src/voice/voice-stock.test.ts	an entry names its speaker with voice or speaker, not with a clone	rust-unit:roamgate-voice-server:stock::tests::an_entry_names_its_speaker_with_voice_or_speaker_not_with_a_clone	voice helper driver, companion, setup and library
-server/src/voice/voice-surprise.test.ts	any voice may read a reply	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-surprise.test.ts	never the same voice twice in a row, when another may read	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-surprise.test.ts	a reply keeps its voice from one sentence to the next	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/voice-surprise.test.ts	any voice may read a reply	rust-unit:roamgate-voice-server:surprise::tests::any_voice_may_read_a_reply	voice helper driver, companion, setup and library
+server/src/voice/voice-surprise.test.ts	never the same voice twice in a row, when another may read	rust-unit:roamgate-voice-server:surprise::tests::never_the_same_voice_twice_in_a_row_when_another_may_read	voice helper driver, companion, setup and library
+server/src/voice/voice-surprise.test.ts	a reply keeps its voice from one sentence to the next	rust-unit:roamgate-voice-server:surprise::tests::a_reply_keeps_its_voice_from_one_sentence_to_the_next	voice helper driver, companion, setup and library
 server/src/voice/voice-taste.test.ts	a full answer gives a small bounded profile	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-taste.test.ts	Spotify asking to log in again keeps what came, saying what is missing	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-taste.test.ts	nothing coming gives no profile	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library

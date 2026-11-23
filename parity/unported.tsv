@@ -1,8 +1,6 @@
 # Rows of an existing crate that wait for a later subtask (parity/src/ledger.rs, Unported):
 # crate, file prefix, subtask. Remove an entry when its subtask ports those files.
 roamgate-cli	server/src/cli/reviews	S20
-roamgate-cli	server/src/cli/setup	S22
-roamgate-cli	server/src/cli/voice	S22
 roamgate-cli	server/src/cli/auth	S18
 roamgate-cli	server/src/cli/completion	S18
 roamgate-cli	server/src/cli/config	S18
@@ -109,8 +107,10 @@ roamgate-workspace	server/src/config/workspace-tree	S17
 # roamgate-voice-server holds voice.json, profiles, speakers, Kokoro's
 # languages, the helper supervisor, hardware, models, downloads, setup,
 # low-GPU, stock voices and the library (S22, landed Bun-owned); these wait.
-# voice-helper.test.ts: its voice socket and routes cases, and two launch
-# cases that spawn a process.
+# voice-helper.test.ts: its voice socket cases, and two launch cases that
+# spawn a process. The HTTP routes, call handoff's redeem route, Surprise and
+# the CLI are ported; voice.test.ts's companion cases wait for the companion
+# layer, call-handoff.test.ts's other cases for the voice socket.
 roamgate-voice-server	server/src/voice/call-audio	S22
 roamgate-voice-server	server/src/voice/turn-causes	S22
 roamgate-voice-server	server/src/voice/voice-answers	S22
@@ -123,11 +123,11 @@ roamgate-voice-server	server/src/voice/voice-images	S22
 roamgate-voice-server	server/src/voice/voice-memory	S22
 roamgate-voice-server	server/src/voice/voice-research	S22
 roamgate-voice-server	server/src/voice/voice-router	S22
-roamgate-voice-server	server/src/voice/voice-surprise	S22
 roamgate-voice-server	server/src/voice/voice-taste	S22
 roamgate-voice-server	server/src/voice/voice-test-env	S22
 roamgate-voice-server	server/src/voice/voice-tools	S22
 roamgate-voice-server	server/src/voice/voice-waiting	S22
 roamgate-voice-server	server/src/voice/voice-youtube	S22
-roamgate-voice-server	server/src/http/voice	S22
+roamgate-voice-server	server/src/http/voice.test	S22
+roamgate-voice-server	server/src/http/voice-socket	S22
 roamgate-voice-server	server/src/http/call-handoff	S22
