@@ -9,6 +9,7 @@ use roamgate_sidecar::family::Families;
 
 pub mod activity;
 pub mod archive;
+pub mod assistant;
 pub mod herdr;
 pub mod host;
 pub mod limit_resume;
@@ -31,6 +32,7 @@ pub fn core_families() -> Families {
         notifications::family(),
         activity::family(),
         archive::family(),
+        assistant::family(),
         work::family(),
         host::family(),
     ]

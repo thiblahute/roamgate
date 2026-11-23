@@ -21,6 +21,7 @@ roamgate-activity = { path = "../roamgate-activity" }
 roamgate-archive = { path = "../roamgate-archive" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-cli = { path = "../roamgate-cli" }
+roamgate-assistant = { path = "../roamgate-assistant" }
 roamgate-connections = { path = "../roamgate-connections" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-forge = { path = "../roamgate-forge" }
