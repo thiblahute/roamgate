@@ -31,6 +31,34 @@ export const WORKSPACE_TREE_MAX_BYTES = 512 * 1024;
 type Listener = (tree: WorkspaceTree) => void;
 const listeners = new Set<Listener>();
 
+/**
+ * The arrangement's store while the Rust core owns the workspace family
+ * (contract/wire/core-channel.md, `internal.workspace.tree`): reads and
+ * writes go to it, its pushes tell the listeners, and Bun prunes nothing.
+ */
+export type WorkspaceTreeCore = {
+  owned(): boolean;
+  call(params: Record<string, unknown>): Promise<unknown>;
+};
+let treeCore: WorkspaceTreeCore | null = null;
+
+export function setWorkspaceTreeCore(core: WorkspaceTreeCore | null): void {
+  treeCore = core;
+}
+
+function coreOwnsTree(): boolean {
+  return treeCore?.owned() === true;
+}
+
+async function coreTree(params: Record<string, unknown>): Promise<unknown> {
+  return treeCore!.call(params);
+}
+
+/** The core changed the arrangement: its push, told to the listeners. */
+export function notifyWorkspaceTreeChanged(tree: WorkspaceTree): void {
+  for (const listener of listeners) listener(tree);
+}
+
 /** Called with the new arrangement after every change, whoever made it. */
 export function onWorkspaceTreeChanged(listener: Listener): () => void {
   listeners.add(listener);
@@ -42,9 +70,11 @@ function treeOf(settings: Pick<GuiSettings, "workspace_tree">): WorkspaceTree {
 }
 
 export async function readWorkspaceTree(
-  read: () => Promise<GuiSettings> = readGuiSettings,
+  read?: () => Promise<GuiSettings>,
 ): Promise<WorkspaceTree> {
-  return treeOf(await read());
+  if (!read && coreOwnsTree())
+    return ((await coreTree({ op: "get" })) as { tree: WorkspaceTree }).tree;
+  return treeOf(await (read ?? readGuiSettings)());
 }
 
 /**
@@ -56,12 +86,18 @@ export async function applyWorkspaceTreeOps(
   ops: readonly WorkspaceTreeOp[],
   {
     shouldCommit = () => true,
-    update = updateGuiSettings,
+    update,
   }: {
     shouldCommit?: () => boolean;
     update?: typeof updateGuiSettings;
   } = {},
 ): Promise<WorkspaceTree> {
+  if (!update && coreOwnsTree()) {
+    if (!shouldCommit()) throw new Error("settings update cancelled");
+    return ((await coreTree({ op: "apply", ops })) as { tree: WorkspaceTree })
+      .tree;
+  }
+  update ??= updateGuiSettings;
   let changed = false;
   const settings = await update((current) => {
     const before = treeOf(current);
@@ -102,6 +138,8 @@ export async function pruneGoneWorkspaces(
     update?: typeof updateGuiSettings;
   } = {},
 ): Promise<string[]> {
+  // The core prunes from the events the front gives it.
+  if (update === updateGuiSettings && coreOwnsTree()) return [];
   let removed: string[] = [];
   const settings = await update((current) => {
     const before = treeOf(current);
@@ -233,11 +271,13 @@ export function createWorkspaceTreePruner(deps: {
   return {
     /** A Herdr event of `connectionId`: a closed workspace leaves the tree. */
     event(connectionId: string, event: unknown): Promise<void> | undefined {
+      if (coreOwnsTree()) return undefined;
       const closed = closedWorkspaceOfEvent(event);
       return closed ? closedNow(connectionId, closed) : undefined;
     },
     /** `connectionId` became ready: what it no longer has leaves, confirmed. */
     ready(connectionId: string) {
+      if (coreOwnsTree()) return;
       clearTimeout(timers.get(connectionId));
       timers.set(
         connectionId,
@@ -329,10 +369,23 @@ export async function placeCreatedWorkspace(
     parentConnectionId?: string;
     parent: HerdrWorkspace | null | undefined;
   },
-  update: typeof updateGuiSettings = updateGuiSettings,
+  update?: typeof updateGuiSettings,
 ): Promise<boolean> {
   const { workspace, parent } = input;
   if (!workspace?.workspace_id || !parent?.workspace_id) return false;
+  if (!update && coreOwnsTree())
+    return (
+      (
+        (await coreTree({
+          op: "place",
+          connection_id: input.connectionId,
+          workspace,
+          parent_connection_id: input.parentConnectionId ?? input.connectionId,
+          parent,
+        })) as { changed?: boolean }
+      ).changed === true
+    );
+  update ??= updateGuiSettings;
   let changed = false;
   const settings = await update((current) => {
     const before = treeOf(current);

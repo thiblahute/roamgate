@@ -179,10 +179,18 @@ import {
   applyWorkspaceTreeOps,
   createWorkspaceTreePruner,
   listWorkspaceIdentities,
+  notifyWorkspaceTreeChanged,
   onWorkspaceTreeChanged,
   placeCreatedWorkspace,
   readWorkspaceTree,
+  setWorkspaceTreeCore,
 } from "./config/workspace-tree";
+import { createWorkspaceFront } from "./workspace/front";
+import {
+  runBinaryProcessWithTimeout,
+  runProcessWithInputTimeout,
+} from "./workspace/process";
+import { annotateSshArgv } from "./bridge/ssh-metrics";
 import {
   parseWorkspaceTreeOp,
   WorkspaceTreeError,
@@ -657,6 +665,29 @@ const activity = createActivityFront({
   logger: logger.child("activity"),
 });
 onOwnershipChanged(() => activity.ownershipChanged());
+// The workspace family: each runtime's auto-sync, Last step turns and git
+// status, and the Workspaces arrangement, are the core's while it owns the
+// family (workspace/front.ts, contract/wire/core-channel.md).
+const workspaceFront = createWorkspaceFront({
+  core: () =>
+    coreFront && {
+      owned: () => !bunOwns("workspace"),
+      call: (op, params) => coreFront!.callInternal("workspace", op, params),
+    },
+  setTimeout: (run, ms) => {
+    const timer = realTimers.setTimeout(run, ms);
+    (timer as { unref?: () => void }).unref?.();
+    return timer;
+  },
+  clearTimeout: (timer) =>
+    realTimers.clearTimeout(timer as ReturnType<typeof setTimeout>),
+  logger: logger.child("workspace"),
+});
+setWorkspaceTreeCore({
+  owned: () => !!coreFront && workspaceFront.owned(),
+  call: (params) => workspaceFront.call("tree", params),
+});
+onOwnershipChanged(() => workspaceFront.ownershipChanged());
 // A test clock moves only once the core recorded what it was sent.
 if (coreConfigured(process.env))
   activeTestClock()?.settleBefore(() => activity.settle());
@@ -1099,6 +1130,25 @@ function deliverCorePush(push: PushMessage): void {
     );
     return;
   }
+  // The workspace family's arrangement: Bun's listeners (the browsers,
+  // MR reviews) hear it as they hear Bun's own store.
+  if (!push.connection_id && message && "workspace_tree" in message) {
+    notifyWorkspaceTreeChanged(
+      (
+        message as {
+          workspace_tree: Parameters<typeof notifyWorkspaceTreeChanged>[0];
+        }
+      ).workspace_tree,
+    );
+    return;
+  }
+  // A runtime's workspace events went to the activity log as Bun's did.
+  if (
+    push.connection_id &&
+    typeof message?.event === "string" &&
+    message.event.startsWith("workspace.")
+  )
+    activity.herdrEvent(push.connection_id, message);
   if (message?.event === LIMIT_PAUSES_EVENT && push.connection_id)
     rustLimitPauses.set(push.connection_id, parseLimitPauses(message.data));
   const line = push.connection_id
@@ -1223,18 +1273,71 @@ const coreReverseTargets = {
     });
   }),
   "herdr.call": async (args: unknown) => {
-    const { method, params, timeout_ms } = (args ?? {}) as {
+    const { method, params, timeout_ms, fresh } = (args ?? {}) as {
       method?: unknown;
       params?: unknown;
       timeout_ms?: unknown;
+      fresh?: unknown;
     };
     if (typeof method !== "string")
       throw new Error("herdr.call needs a method");
-    return coreRuntime(args as { connection_id?: unknown }).herdr.call(
+    const herdr = coreRuntime(args as { connection_id?: unknown }).herdr;
+    const callParams = (params ?? {}) as Record<string, unknown>;
+    if (fresh === true)
+      return herdr.call(
+        method,
+        callParams,
+        typeof timeout_ms === "number" ? timeout_ms : undefined,
+        undefined,
+        { fresh: true },
+      );
+    return herdr.call(
       method,
-      (params ?? {}) as Record<string, unknown>,
+      callParams,
       ...(typeof timeout_ms === "number" ? [timeout_ms] : []),
     );
+  },
+  // The workspace family's commands on a connection's SSH host, run as the
+  // workspace's own (workspace/process.ts): through the session slots.
+  "workspace.ssh_run": async (args: unknown) => {
+    const { command, read, tag, timeout_ms, stdin_b64 } = (args ?? {}) as {
+      command?: unknown;
+      read?: unknown;
+      tag?: unknown;
+      timeout_ms?: unknown;
+      stdin_b64?: unknown;
+    };
+    if (typeof command !== "string")
+      throw new Error("workspace.ssh_run needs a command");
+    const runtime = coreRuntime(args as { connection_id?: unknown });
+    const host = runtime.sshHost();
+    if (!host) throw new Error("workspace.ssh_run needs an SSH connection");
+    const name = typeof tag === "string" && tag ? tag : undefined;
+    const argv = annotateSshArgv(
+      read === true
+        ? sshReadCommandArgv(host, command, [], name)
+        : sshCommandArgv(host, command, [], name),
+      { connection: runtime.identity.id },
+    );
+    const timeoutMs = typeof timeout_ms === "number" ? timeout_ms : 60_000;
+    if (typeof stdin_b64 === "string") {
+      const ran = await runProcessWithInputTimeout(
+        argv,
+        Buffer.from(stdin_b64, "base64"),
+        timeoutMs,
+      );
+      return {
+        code: ran.code,
+        stdout_b64: Buffer.from(ran.stdout).toString("base64"),
+        stderr: ran.stderr,
+      };
+    }
+    const ran = await runBinaryProcessWithTimeout(argv, timeoutMs);
+    return {
+      code: ran.code,
+      stdout_b64: Buffer.from(ran.stdout).toString("base64"),
+      stderr: ran.stderr,
+    };
   },
   // What the limit_resume family asks of what Bun still owns.
   "connections.ready": async () =>
@@ -2034,12 +2137,14 @@ onGuiSettingsChanged((previous, next) => {
  * Families whose paths keep Bun's own route checks (the method, the idle
  * budget): Bun hands them to the core at their route, not before it.
  */
-// agent_sessions: its downloads are a connection's endpoints, routed (and
-// their connection resolved) by Bun's own connection route first.
+// agent_sessions and workspace: their downloads and file routes are a
+// connection's endpoints, routed (and their connection resolved) by Bun's
+// own connection route first.
 const CORE_ROUTED_IN_PLACE = new Set([
   "update",
   "herdr_setup",
   "agent_sessions",
+  "workspace",
 ]);
 
 function coreRoutedInPlace(path: string): boolean {
@@ -4579,6 +4684,7 @@ function composeConnectionRuntime(
     conversationKeepAwake,
     claudeMod: claudeModHub,
     sessionIndexDir: defaultSessionIndexDir(),
+    workspaceFront,
     // No terminal to fall back on: the prompt waits for a browser, and
     // its timeout denies.
     reviewRoots: (connectionId) => getReviewService().roots(connectionId),
@@ -6828,6 +6934,13 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   }
 }
 
+/** The connection file routes the workspace family serves, by endpoint. */
+const FILE_ENDPOINT_PATHS: Partial<Record<string, string>> = {
+  "file-download": "/api/file/download",
+  "file-upload": "/api/file/upload",
+  "file-delete": "/api/file/delete",
+};
+
 async function handleConnectionHttpRequest(
   route: ParsedConnectionHttpRoute,
   url: URL,
@@ -6876,6 +6989,32 @@ async function handleConnectionHttpRequest(
         { status: 501 },
       ),
     );
+  }
+  // The workspace family given to the Rust core: it serves the file routes
+  // of this connection, at their legacy path, with the connection in ctx.
+  const filePath = FILE_ENDPOINT_PATHS[endpoint];
+  if (filePath && coreFront?.routesHttp(filePath)) {
+    const forwarded = new Request(
+      new URL(`${filePath}${url.search}`, url.origin),
+      req,
+    );
+    try {
+      return publishConnectionHttpResponse(
+        resolved,
+        await coreFront.forwardHttp(forwarded, {
+          connection_id: resolved.connectionId,
+          connection_generation: resolved.generation,
+          ...(sessionToken(req)
+            ? { session_id: sessionIdOf(sessionToken(req)) }
+            : {}),
+        }),
+      );
+    } catch (error) {
+      return publishConnectionHttpResponse(
+        resolved,
+        Response.json({ error: (error as Error).message }, { status: 500 }),
+      );
+    }
   }
   try {
     let response: Response;

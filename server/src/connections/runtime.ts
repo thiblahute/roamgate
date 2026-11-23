@@ -105,6 +105,7 @@ import {
 } from "../utils/process-utils";
 import { turnCauses } from "../voice/turn-causes";
 import { createWorkspaceAutoSync } from "../workspace/auto-sync";
+import type { WorkspaceFront } from "../workspace/front";
 import { createFileHandlers } from "../workspace/files";
 import {
   createLastStepBaselineStore,
@@ -247,6 +248,12 @@ export function createLegacyConnectionRuntime(args: {
    */
   reviewRoots?: (connectionId: string) => string[];
   lastStepTransitionDebounceMs?: number;
+  /**
+   * The workspace family's handover to the Rust core: while the core owns
+   * it, this runtime's auto-sync, Last step turns and git status are the
+   * core's (workspace/front.ts).
+   */
+  workspaceFront?: WorkspaceFront;
   /** Test seam for the background git status reads. */
   runGitStatusProcess?: typeof runProcessWithCodeTimeoutBase;
   /**
@@ -617,11 +624,18 @@ export function createLegacyConnectionRuntime(args: {
     log: (message, fields) =>
       logger.debug(message, { connection: identity.id, ...fields }),
   });
-  const worktreeParents = createWorktreeParentStore({
+  const ownWorktreeParents = createWorktreeParentStore({
     connectionId: identity.id,
     herdr,
     sshHost,
   });
+  const worktreeParents: typeof ownWorktreeParents = {
+    ...ownWorktreeParents,
+    enrichWorkspaceList: async (result) =>
+      workspaceLink?.routed()
+        ? workspaceLink.call("enrich", { result, git_status: false })
+        : ownWorktreeParents.enrichWorkspaceList(result),
+  };
   const { handleHerdrInfo } = createHerdrInfoHandler({
     ping: () => herdr.ping(),
   });
@@ -635,7 +649,7 @@ export function createLegacyConnectionRuntime(args: {
       },
       { refs: true },
     );
-  const files = unixOnlyHandlers(
+  const ownFiles = unixOnlyHandlers(
     remotePlatform,
     "Workspace file and Git access",
     createFileHandlers({
@@ -650,7 +664,18 @@ export function createLegacyConnectionRuntime(args: {
       streamProcess: (argv) => spawnStreamingProcess(forConnection(argv)),
     }),
   );
-  const status = createStatusEnricher({
+  // While the core owns the workspace family it keeps the Last steps.
+  const files: typeof ownFiles = {
+    ...ownFiles,
+    readLastStep: async (root, workspaceId) =>
+      workspaceLink?.routed()
+        ? ((await workspaceLink.call("last_step", {
+            workspace_id: workspaceId,
+            root,
+          })) as Awaited<ReturnType<typeof ownFiles.readLastStep>>)
+        : ownFiles.readLastStep(root, workspaceId),
+  };
+  const ownStatus = createStatusEnricher({
     connectionId: identity.id,
     sshHost,
     runProcessWithCodeTimeout:
@@ -672,6 +697,26 @@ export function createLegacyConnectionRuntime(args: {
         error: sanitizeConnectionError(error),
       }),
   });
+  // While the core owns the workspace family its badges are the core's.
+  const status: typeof ownStatus = {
+    ...ownStatus,
+    enrichWorkspacesWithGitStatus: async (result) =>
+      workspaceLink?.routed()
+        ? workspaceLink.call("enrich", { result, git_status: true })
+        : ownStatus.enrichWorkspacesWithGitStatus(result),
+    invalidateGitStatus: (root) => {
+      if (workspaceLink?.routed())
+        void workspaceLink.call("invalidate", { root }).catch(() => undefined);
+      else ownStatus.invalidateGitStatus(root);
+    },
+    invalidateWorkspaceGitStatus: (workspaceId) => {
+      if (workspaceLink?.routed())
+        void workspaceLink
+          .call("invalidate", { workspace_id: workspaceId })
+          .catch(() => undefined);
+      else ownStatus.invalidateWorkspaceGitStatus(workspaceId);
+    },
+  };
   const workspaceAutoSync = createWorkspaceAutoSync({
     connectionId: identity.id,
     logger: logger.child("auto-sync"),
@@ -904,53 +949,78 @@ export function createLegacyConnectionRuntime(args: {
     },
   });
 
-  const lastStepTurns = createLastStepTurnTracker({
-    captureWorkspaceBaseline: async (workspaceId) => {
-      if (remotePlatform === "windows") return;
-      await lastStepBaselines.captureWorkspace(workspaceId, async () => {
-        if (args.resolveLastStepWorkspaceGitRoot) {
-          return args.resolveLastStepWorkspaceGitRoot(workspaceId);
-        }
-        const { root } = await files.resolveWorkspaceGitRoot({
-          workspace_id: workspaceId,
+  const createTurns = () =>
+    createLastStepTurnTracker({
+      captureWorkspaceBaseline: async (workspaceId) => {
+        if (remotePlatform === "windows") return;
+        await lastStepBaselines.captureWorkspace(workspaceId, async () => {
+          if (args.resolveLastStepWorkspaceGitRoot) {
+            return args.resolveLastStepWorkspaceGitRoot(workspaceId);
+          }
+          const { root } = await files.resolveWorkspaceGitRoot({
+            workspace_id: workspaceId,
+          });
+          return root;
         });
-        return root;
-      });
-    },
-    completeWorkspaceStep: async (workspaceId) => {
-      // A finished agent turn is the likeliest moment for the tree to change.
-      status.invalidateWorkspaceGitStatus(workspaceId);
-      try {
-        await lastStepBaselines.completeWorkspace(workspaceId);
-      } finally {
-        // File refresh depends on step completion, not Git snapshot availability.
-        if (!disposed) {
-          args.onEvent(
-            {
-              event: "workspace.last_step_completed",
-              data: {
-                type: "workspace.last_step_completed",
-                workspace_id: workspaceId,
+      },
+      completeWorkspaceStep: async (workspaceId) => {
+        // A finished agent turn is the likeliest moment for the tree to change.
+        status.invalidateWorkspaceGitStatus(workspaceId);
+        try {
+          await lastStepBaselines.completeWorkspace(workspaceId);
+        } finally {
+          // File refresh depends on step completion, not Git snapshot availability.
+          if (!disposed) {
+            args.onEvent(
+              {
+                event: "workspace.last_step_completed",
+                data: {
+                  type: "workspace.last_step_completed",
+                  workspace_id: workspaceId,
+                },
               },
-            },
-            identity,
-          );
+              identity,
+            );
+          }
         }
+      },
+      onCaptureError: (error, workspaceId) =>
+        logger.warn("last-step baseline failed", {
+          connection: identity.id,
+          workspace: workspaceId,
+          error: sanitizeConnectionError(error),
+        }),
+      onCompleteError: (error, workspaceId) =>
+        logger.warn("last-step completion failed", {
+          connection: identity.id,
+          workspace: workspaceId,
+          error: sanitizeConnectionError(error),
+        }),
+      transitionDebounceMs: args.lastStepTransitionDebounceMs ?? 150,
+    });
+  let lastStepTurns = createTurns();
+  /** Bun's tracker stopped (the core took the family): made again on return. */
+  let turnsStopped = false;
+  const workspaceLink = args.workspaceFront?.attach({
+    connectionId: identity.id,
+    generation: args.connectionGeneration ?? 0,
+    sshHost: config.sshHost ?? null,
+    remotePlatform: remotePlatform ?? null,
+    stopOwn: async () => {
+      await workspaceAutoSync.stop();
+      if (!turnsStopped) {
+        turnsStopped = true;
+        await lastStepTurns.stop();
       }
     },
-    onCaptureError: (error, workspaceId) =>
-      logger.warn("last-step baseline failed", {
-        connection: identity.id,
-        workspace: workspaceId,
-        error: sanitizeConnectionError(error),
-      }),
-    onCompleteError: (error, workspaceId) =>
-      logger.warn("last-step completion failed", {
-        connection: identity.id,
-        workspace: workspaceId,
-        error: sanitizeConnectionError(error),
-      }),
-    transitionDebounceMs: args.lastStepTransitionDebounceMs ?? 150,
+    startOwn: () => {
+      if (disposed) return;
+      if (turnsStopped) {
+        lastStepTurns = createTurns();
+        turnsStopped = false;
+      }
+      if (remotePlatform !== "windows") workspaceAutoSync.start();
+    },
   });
   const agentStatusRecovery = createRecoveryReporter({
     logger: logger.child("agent-status"),
@@ -1091,11 +1161,14 @@ export function createLegacyConnectionRuntime(args: {
     onPaneListStart: () => {
       paneListStartedAt = Date.now();
       taskListRevision = taskEvents.beginPaneList();
+      if (workspaceLink?.routed()) return workspaceLink.paneListStart();
       return lastStepTurns.beginPaneList();
     },
     onPaneList: (result, revision) => {
       taskEvents.reconcilePaneList(result, taskListRevision);
-      lastStepTurns.reconcilePaneList(result, revision);
+      if (workspaceLink?.routed())
+        workspaceLink.paneList(result, revision ?? 0);
+      else lastStepTurns.reconcilePaneList(result, revision);
       args.onPaneList?.(result, paneListStartedAt);
     },
     log: (message) => {
@@ -1125,7 +1198,8 @@ export function createLegacyConnectionRuntime(args: {
     if (closed === "sweep") void conversation?.sweep();
     else if (closed) conversation?.paneClosed(closed.paneId);
     taskEvents.handleHerdrEvent(event);
-    lastStepTurns.handleHerdrEvent(event);
+    if (workspaceLink?.routed()) workspaceLink.herdrEvent(event);
+    else lastStepTurns.handleHerdrEvent(event);
     agentStatusSubscriptions.handleHerdrEvent(event);
     tabAutoRenamer.handleHerdrEvent(event);
     if ((event as { event?: string })?.event === "workspace.focused")
@@ -1226,10 +1300,11 @@ export function createLegacyConnectionRuntime(args: {
     if (disposed) throw new Error("connection runtime is disposed");
     if (backgroundStarted) return;
     backgroundStarted = true;
-    if (remotePlatform !== "windows") {
+    if (remotePlatform !== "windows")
       void handleTerminalUpload.startCleanup().catch(onUploadCleanupError);
-      workspaceAutoSync.start();
-    }
+    // Auto-sync and Last step turns: this runtime's, or the core's.
+    if (workspaceLink) workspaceLink.ready();
+    else if (remotePlatform !== "windows") workspaceAutoSync.start();
     // The core subscribes while it owns the host family (hostEvents).
     if (!args.host) {
       subscriptionLoop.start();
@@ -1265,9 +1340,10 @@ export function createLegacyConnectionRuntime(args: {
     historyWatcher?.dispose();
     const subscriptionStop = subscriptionLoop.stop();
     const agentStatusStop = agentStatusSubscriptions.stop();
-    const lastStepStop = lastStepTurns
-      .stop()
-      .then(() => lastStepBaselines.dispose());
+    const lastStepStop = (
+      turnsStopped ? Promise.resolve() : lastStepTurns.stop()
+    ).then(() => lastStepBaselines.dispose());
+    const workspaceStop = workspaceLink?.stopped() ?? Promise.resolve();
     const transportCleanup =
       sshTunnel?.cleanupAutoSshTunnel() ?? Promise.resolve();
     const transportStop =
@@ -1277,6 +1353,7 @@ export function createLegacyConnectionRuntime(args: {
       subscriptionStop,
       agentStatusStop,
       lastStepStop,
+      workspaceStop,
       transportCleanup,
       transportStop,
     ]).then(() => undefined);
@@ -1306,14 +1383,19 @@ export function createLegacyConnectionRuntime(args: {
           paneListStarts.set(each.list, {
             startedAt: each.started_at,
             taskRevision: taskEvents.beginPaneList(),
-            stepRevision: lastStepTurns.beginPaneList(),
+            stepRevision: workspaceLink?.routed()
+              ? workspaceLink.paneListStart()
+              : lastStepTurns.beginPaneList(),
           });
         } else if (each.kind === "pane_list") {
           const started = paneListStarts.get(each.list);
           paneListStarts.delete(each.list);
           if (!started) continue;
           taskEvents.reconcilePaneList(each.result, started.taskRevision);
-          lastStepTurns.reconcilePaneList(each.result, started.stepRevision);
+          if (workspaceLink?.routed())
+            workspaceLink.paneList(each.result, started.stepRevision);
+          else
+            lastStepTurns.reconcilePaneList(each.result, started.stepRevision);
           args.onPaneList?.(each.result, started.startedAt);
         }
       } catch (error) {
