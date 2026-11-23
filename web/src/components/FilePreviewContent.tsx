@@ -2453,7 +2453,7 @@ export function FilePreviewContent({
   /*
    * One row, never wider than its room: the name gives way first (to its
    * tooltip), then the least used controls go behind ⋮ (OverflowRow);
-   * the comments, the source switch and Close stay.
+   * the comments, Full screen, the source switch and Close stay.
    */
   const titleRow = (
     <OverflowRow
@@ -2538,10 +2538,11 @@ export function FilePreviewContent({
           zen={zen}
           onToggle={toggleZen}
           className="file-preview-refresh"
-          label="Review only"
-          title="Review only: hide all the chrome, just the file (o, :only; o or Esc brings it back)"
+          label="Full screen"
+          title="Full screen (Review only): hide all the chrome, just the file (o, :only; o, Esc or Show all brings it back)"
           size={13}
-          overflowPriority={1}
+          // Always in the row: behind the more list a phone never found it.
+          overflowKeep
         />
       ) : null}
       {scriptsControl}

@@ -193,8 +193,8 @@ Open **Files**, **Changes**, **Commits**, **Agent History**, **Work** or
     wider than its room: the name gives way first, then the least used
     actions go behind a ⋮ button at the row's end, measured as the row is
     drawn and resized, and listed under it with their names; the comments,
-    the Preview/Source switch and Close stay. Its tabs and its tree's search
-    stay in the view;
+    Full screen (Review only), the Preview/Source switch and Close stay. Its
+    tabs and its tree's search stay in the view;
   - **Commits**: the checkout's pull or merge request, as a chip;
   - **History**: the session's name, its chips and actions.
     A view keeps controls inside its content (Work's Back, a column's head),

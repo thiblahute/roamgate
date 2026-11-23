@@ -235,6 +235,28 @@ if (
     await view.unmount();
   });
 
+  test("Full screen is always in the header row, never behind its more list, and covers the window", async () => {
+    const view = await mount();
+    const button = view.host.querySelector<HTMLButtonElement>(
+      '.file-preview-title-row button[aria-label="Full screen"]',
+    );
+    // On a phone the row is narrow: a control without the keep mark goes
+    // behind ⋮, where Full screen was never found.
+    expect(button?.hasAttribute("data-overflow-keep")).toBe(true);
+    await act(async () => button!.click());
+    const section = view.host.querySelector(".file-preview")!;
+    expect(section.classList.contains("is-zen")).toBe(true);
+    // Its way back, by touch.
+    const back = [
+      ...view.host.querySelectorAll<HTMLButtonElement>(
+        ".file-preview-zen-hint button",
+      ),
+    ].find((each) => each.textContent === "Show all");
+    await act(async () => back!.click());
+    expect(section.classList.contains("is-zen")).toBe(false);
+    await view.unmount();
+  });
+
   test("each command does what its key or button does", async () => {
     const view = await mount();
     const section = view.host.querySelector(".file-preview")!;
