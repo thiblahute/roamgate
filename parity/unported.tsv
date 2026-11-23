@@ -41,7 +41,6 @@ roamgate-agents	server/src/agent/agent-activity	S21
 # wait for the front (S18). settings-rpc.test.ts holds the worktree, profile
 # and connection-namespace handlers that stay in Bun with their families
 # (S16, S17) and the reply plumbing of the front (S18): the latest is named.
-roamgate-http	server/src/http/rendered-pages	S18
 roamgate-http	server/src/bridge/terminal-bridge	S18
 roamgate-http	server/src/contract-record/	S18
 roamgate-http	server/src/bridge/terminal-key-roundtrip	S18
