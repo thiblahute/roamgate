@@ -1514,12 +1514,18 @@ pub fn find_plan(plans: &[Value], name: &str) -> Option<usize> {
 pub type PlanAction = Value;
 
 fn plan_id(now: f64) -> String {
+    new_id("p", now)
+}
+
+/// A new plan's or effort's id: the prefix, the time in base 36 and four
+/// random base 36 digits (`p${Date.now().toString(36)}...`).
+pub fn new_id(prefix: &str, now: f64) -> String {
     use rand::Rng;
     let mut rng = rand::rng();
     let tail: String = (0..4)
         .map(|_| std::char::from_digit(rng.random_range(0..36), 36).unwrap_or('0'))
         .collect();
-    format!("p{}{tail}", base36(now as u64))
+    format!("{prefix}{}{tail}", base36(now as u64))
 }
 
 fn base36(mut n: u64) -> String {

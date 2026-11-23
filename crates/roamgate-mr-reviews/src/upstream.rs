@@ -1146,6 +1146,14 @@ impl UpstreamScanner {
         read_live_workspaces(&(self.connections)()).await
     }
 
+    /// Branches and members as a scan would leave them, for tests.
+    #[cfg(test)]
+    pub fn seed(&self, branches: Vec<UpstreamBranch>, members: Vec<UpstreamMember>) {
+        let mut state = self.state();
+        state.branches = branches;
+        state.members = members;
+    }
+
     /// The user's requests' patch ids read for linking, by key.
     pub fn patch_ids(&self) -> PatchIds {
         self.state()

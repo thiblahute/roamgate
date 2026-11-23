@@ -135,7 +135,7 @@ pub fn effort_plan_entries(
 
 #[cfg(test)]
 mod tests {
-    //! `effort-board.test.ts` (effort.get waits for effort-service.ts).
+    //! `effort-board.test.ts`.
 
     use serde_json::json;
 
@@ -335,5 +335,87 @@ mod tests {
             &PatchIds::new(),
         );
         assert!(!elsewhere.contains_key("unscanned"));
+    }
+
+    #[tokio::test]
+    async fn effort_get_gives_each_plan_its_inbox_entry_from_the_entries_computed() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex};
+
+        use roamgate_base::paths::{DataContext, Platform};
+
+        use crate::effort_service::{
+            EffortRpcDeps, EffortService, EffortServiceOptions, handle_effort_rpc,
+        };
+        use crate::order::ChangeMeta;
+        use crate::upstream::UpstreamScanner;
+
+        let dir = tempfile::tempdir().unwrap();
+        let context = DataContext::new(dir.path(), Platform::current(), None);
+        let the_effort = json!({"id": "e1", "group": "g1", "name": "Big",
+            "clone": {"connectionId": "local", "path": "/clone"},
+            "source": "refs/heads/big", "target": {"remote": "origin", "branch": "main"}, "feeders": []});
+        let settings = Arc::new(Mutex::new(obj(json!({"efforts": [the_effort]}))));
+        let settings_fn: crate::inbox::SettingsFn = {
+            let settings = settings.clone();
+            Arc::new(move || {
+                let value = settings.lock().unwrap().clone();
+                Box::pin(async move { value })
+            })
+        };
+        let upstream = Arc::new(UpstreamScanner::new(
+            Arc::new(Vec::new),
+            Arc::new(|| Box::pin(async { Ok(json!({"nodes": []})) })),
+            Arc::new(|| Box::pin(async { Ok(Obj::new()) })),
+        ));
+        upstream.seed(vec![branch("upstream/named", "/wt/named", &["p1"])], vec![]);
+        let service = EffortService::new(EffortServiceOptions {
+            context: context.clone(),
+            root: dir.path().join("efforts"),
+            settings: settings_fn.clone(),
+            connections: Arc::new(Vec::new),
+            items: Arc::new(Vec::new),
+            upstream: upstream.clone(),
+            publish: None,
+            current: Arc::new(|| Box::pin(async { (json!(0), json!([])) })),
+            now: None,
+        });
+        let mut ledger = service.store().ledger("e1");
+        let mut planned_only = plan("planned-only");
+        planned_only.as_object_mut().unwrap().shift_remove("part");
+        ledger.insert("plans".into(), json!([plan("named"), planned_only]));
+        service.store().write_ledger("e1", &ledger);
+        let asked = Arc::new(AtomicUsize::new(0));
+        let deps = EffortRpcDeps {
+            service,
+            settings: settings_fn,
+            edit: Arc::new(|change| change),
+            save: Arc::new(|value: Obj, _: ChangeMeta| Box::pin(async move { Ok(value) })),
+            upstream,
+            entries: Some({
+                let asked = asked.clone();
+                Arc::new(move || {
+                    asked.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async { vec![entry(1, json!({"sourceBranch": "upstream/named"}))] })
+                })
+            }),
+            group_label: Arc::new(|_| Box::pin(async { None })),
+            create_worktree: None,
+            place: None,
+            open_range: None,
+            effort_review: None,
+        };
+        let answer = handle_effort_rpc(
+            &deps,
+            "bridge.mr_reviews.effort.get",
+            &obj(json!({"id": "e1"})),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(asked.load(Ordering::SeqCst), 1);
+        let board = answer["board"].as_object().unwrap();
+        assert_eq!(board.keys().collect::<Vec<_>>(), vec!["named"]);
+        assert_eq!(board["named"]["number"], json!(1));
     }
 }

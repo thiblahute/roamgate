@@ -26,6 +26,7 @@
 //! | [`open`] | Opening a request: clone, review worktree and workspace, review, checkout, prefetch | mr-reviews/open.ts |
 //! | [`claude`] | The review workspace's Claude: one pane, a session per request | mr-reviews/claude.ts |
 //! | [`home`] | A request's home: its own worktree workspace, review and agent | mr-reviews/home.ts |
+//! | [`effort_service`] | The efforts' service: derived when due, cards, overlaps; their RPCs and parts | mr-reviews/effort-service.ts |
 //! | [`workspace_tree`] | The Workspaces tree's paths, ancestors and live resolution | shared/workspaceTree.ts (in part) |
 
 pub mod agent;
@@ -37,6 +38,7 @@ pub mod clones;
 pub mod connection;
 pub mod curation;
 pub mod effort_board;
+pub mod effort_service;
 pub mod efforts;
 pub mod fetchers;
 pub mod forge_ref;
