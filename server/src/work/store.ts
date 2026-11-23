@@ -91,13 +91,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-/** One line: no control characters, at most `max`. */
+/** One line: no control characters, at most `max` characters, "..." included. */
 export function oneLine(value: string, max: number): string {
   const line = value
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
     .replace(/\s*\n\s*/g, " ")
     .trim();
-  return line.length > max ? `${line.slice(0, max - 1)}...` : line;
+  return line.length > max ? `${line.slice(0, Math.max(0, max - 3))}...` : line;
 }
 
 export function parseWorkState(value: unknown): WorkState {

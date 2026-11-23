@@ -11,6 +11,7 @@ import {
 } from "../../../shared/work";
 import {
   mergeWorkLinks,
+  oneLine,
   openWorkStore,
   parseWorkLink,
   parseWorkAnswers,
@@ -250,6 +251,16 @@ describe("work store", () => {
       { kind: "commit", sha: "abcdef1" },
       { kind: "review", id: "r1", thread: "t1" },
     ]);
+  });
+});
+
+describe("oneLine", () => {
+  test("cuts to max characters, the ellipsis included", () => {
+    expect(oneLine("x".repeat(300), 300)).toBe("x".repeat(300));
+    const cut = oneLine("x".repeat(301), 300);
+    expect(cut).toHaveLength(300);
+    expect(cut).toBe(`${"x".repeat(297)}...`);
+    expect(oneLine(" a\n  b\u0007 ", 10)).toBe("a b");
   });
 });
 
