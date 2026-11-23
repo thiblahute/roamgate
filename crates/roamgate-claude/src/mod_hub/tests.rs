@@ -580,3 +580,39 @@ async fn a_headless_sessions_tools_outlive_its_process_and_a_restart() {
     second.advance(7 * 24 * 60 * 60_000);
     assert!(!second.hub.has_tools("local", "w1-2"));
 }
+
+#[tokio::test]
+async fn the_mirror_says_what_the_hubs_readers_would() {
+    let made = hub();
+    let h = &made.hub;
+    assert_eq!(h.mirror(), json!({"mods": [], "tools": []}));
+    h.poll(poll_input()).await.unwrap();
+    h.tools(ToolsInput {
+        work: true,
+        ..tools()
+    })
+    .unwrap();
+    assert_eq!(deliver(h, "hello"), Some(1));
+    let mirror = h.mirror();
+    let mods = mirror["mods"].as_array().unwrap();
+    assert_eq!(mods.len(), 1);
+    // The poll ended: live for live_ms after it.
+    assert_eq!(mods[0]["live_until"], json!(1_000_000 + 45_000));
+    assert_eq!(mods[0]["gone"], json!(false));
+    assert_eq!(mods[0]["pane"], h.pane("local", "w1-2").unwrap());
+    assert_eq!(mods[0]["pane"]["waiting"], json!(1));
+    assert_eq!(
+        mirror["tools"],
+        json!([{
+            "connection_id": "local",
+            "pane_id": "w1-2",
+            "fresh_until": 1_000_000 + 10 * 60_000,
+            "work": true,
+            "rules": false,
+        }])
+    );
+    // Past it, the tools are no longer listed, as hasTools says.
+    made.advance(11 * 60_000);
+    assert!(!h.has_tools("local", "w1-2"));
+    assert_eq!(h.mirror()["tools"], json!([]));
+}

@@ -2,10 +2,10 @@
 //! [`AgentSocket`], served while the core owns the family. What the socket
 //! asks of families Bun still owns (the connections' checkouts, the
 //! boards, notifications, the agent messenger, conversation mode's holder,
-//! prepared launches, and the Claude mod's hub with what reads it) is the
-//! `review.socket` reverse call; the `claude_mod.*` calls of the
-//! Integrations page run roamgate-claude's install on the connection's host
-//! (`host.run`).
+//! prepared launches, and the Claude mod's hub while Bun runs it:
+//! families/claude_mod.rs) is the `review.socket` reverse call; the
+//! `claude_mod.*` calls of the Integrations page run roamgate-claude's
+//! install on the connection's host (`host.run`).
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
@@ -174,9 +174,9 @@ impl AgentSocketHost for ReverseSocketHost {
     }
 }
 
-/// The Claude mod's requests, answered by Bun's hub: what reads the hub
-/// (conversation mode, the agent messenger, limit_resume, the agent list)
-/// is Bun's until S21.
+/// The Claude mod's requests, answered by Bun's hub while it runs there
+/// (the core runs it only while it owns review and conversation:
+/// families/claude_mod.rs).
 pub struct ReverseMods {
     pub cx: FamilyContext,
 }
@@ -226,7 +226,9 @@ impl Sockets {
             directory: review_directory(&ProcessEnv),
             home: home.into(),
             host: Arc::new(ReverseSocketHost { cx: cx.clone() }),
-            claude_mod: Some(Arc::new(ReverseMods { cx: cx.clone() })),
+            claude_mod: Some(Arc::new(super::claude_mod::SwitchMods {
+                reverse: ReverseMods { cx: cx.clone() },
+            })),
             // The parity suite's proof that the core served the socket.
             on_exchange: Some(Arc::new(|exchange: &AgentExchange| {
                 roamgate_sidecar::core::note_served(
@@ -323,10 +325,14 @@ pub async fn claude_mod_call(
         .find(|each| each.get("id").and_then(Value::as_str) == Some(connection_id))
         .cloned()
         .ok_or_else(|| RpcError::new("this connection is not ready"))?;
-    let panes = cx
-        .reverse("claude_mod.panes", json!({"connection_id": connection_id}))
-        .await?;
-    let sessions = panes.as_array().map_or(0, |panes| panes.len() as i64);
+    let sessions = match super::claude_mod::current() {
+        Some(hub) => hub.panes(connection_id).len() as i64,
+        None => cx
+            .reverse("claude_mod.panes", json!({"connection_id": connection_id}))
+            .await?
+            .as_array()
+            .map_or(0, |panes| panes.len() as i64),
+    };
     let remote = connection.get("remote_platform").and_then(Value::as_str);
     let unix = match remote {
         Some(platform) => platform != "windows",

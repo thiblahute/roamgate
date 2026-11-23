@@ -166,6 +166,17 @@ impl ReverseHost {
     }
 
     fn mod_tools(&self, connection_id: &str, pane_id: &str) -> Option<ModTools> {
+        // The core's own hub while it runs here (families/claude_mod.rs).
+        if let Some(hub) = super::claude_mod::current() {
+            if !hub.has_tools(connection_id, pane_id) {
+                return None;
+            }
+            return Some(ModTools {
+                fresh_until: i64::MAX,
+                work: hub.has_work_tools(connection_id, pane_id),
+                rules: hub.has_rules(connection_id, pane_id),
+            });
+        }
         let now = self.cx.clock.now();
         self.agents
             .lock()
@@ -894,6 +905,11 @@ impl CoreFamily for ReviewFamily {
         Box::pin(async move {
             let method = call.method.clone();
             match method.as_str() {
+                // The Claude mod hub (families/claude_mod.rs).
+                "internal.review.mod_take" => super::claude_mod::take(&cx),
+                "internal.review.mod_release" => Ok(super::claude_mod::release()),
+                "internal.review.mod_flush" => Ok(super::claude_mod::flush()),
+                "internal.review.mod_deliver" => super::claude_mod::deliver(&call.params),
                 "internal.review.agents" => {
                     this.set_agents(&call.params);
                     Ok(json!({}))
@@ -976,6 +992,7 @@ impl CoreFamily for ReviewFamily {
     }
 
     fn owned(&self, cx: &FamilyContext, owned: bool) {
+        super::claude_mod::family_owned(cx, FAMILY, owned);
         // Its agent socket closes at once: Bun listens again after it
         // asked internal.review.close.
         self.sockets.lock().unwrap().stop();

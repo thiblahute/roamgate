@@ -1426,6 +1426,56 @@ impl ClaudeModHub {
             .collect()
     }
 
+    /// The panes whose Claude said it has the mod's tools lately, with when
+    /// that ends (`toolsState`).
+    pub fn tools_state(&self) -> Vec<Value> {
+        let state = self.lock();
+        state
+            .tools
+            .iter()
+            .filter(|(_, entry)| self.tools_fresh(entry))
+            .map(|(at, entry)| {
+                let (connection, pane) = split_key(at);
+                let limit = if entry.headless {
+                    self.0.options.tools_headless_ms
+                } else {
+                    self.0.options.tools_live_ms
+                };
+                json!({
+                    "connection_id": connection,
+                    "pane_id": pane,
+                    "fresh_until": entry.seen_at + limit,
+                    "work": entry.work,
+                    "rules": entry.rules,
+                })
+            })
+            .collect()
+    }
+
+    /// What a front that does not run the hub needs to answer its
+    /// synchronous readers (`live`, `pane`, `panes`, `hasTools`, a delivery's
+    /// refusal) as the hub would: each attached pane's snapshot with until
+    /// when it is live (null while a poll is in flight), and the tools state.
+    pub fn mirror(&self) -> Value {
+        let mods: Vec<Value> = {
+            let state = self.lock();
+            state
+                .attachments
+                .iter()
+                .map(|(at, attachment)| {
+                    let live_until = (attachment.polls == 0)
+                        .then(|| attachment.last_seen + self.0.options.live_ms);
+                    json!({
+                        "gone": attachment.gone,
+                        "live_until": live_until,
+                        "pane": self.snapshot(&state, at, attachment),
+                    })
+                })
+                .collect()
+        };
+        json!({"mods": mods, "tools": self.tools_state()})
+    }
+
     /// Messages waiting for a pane, live mod or not.
     pub fn waiting(&self, connection_id: &str, pane_id: &str) -> usize {
         Self::pane_count(&self.lock(), &key(connection_id, pane_id)).0

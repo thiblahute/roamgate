@@ -129,6 +129,13 @@ impl LimitHost for ReverseHost {
     }
 
     fn mod_panes(&self) -> BoxFuture<Result<Vec<ModPane>, String>> {
+        // The core's own hub while it runs here (families/claude_mod.rs).
+        if let Some(hub) = super::claude_mod::current() {
+            let panes = hub.panes(&self.connection_id);
+            return Box::pin(async move {
+                serde_json::from_value(Value::Array(panes)).map_err(|error| error.to_string())
+            });
+        }
         self.call("claude_mod.panes", json!({}))
     }
 
@@ -149,6 +156,14 @@ impl LimitHost for ReverseHost {
         text: &str,
         kind: &str,
     ) -> BoxFuture<Result<bool, String>> {
+        if let Some(hub) = super::claude_mod::current() {
+            let delivered = hub
+                .deliver(&self.connection_id, pane_id, text, kind)
+                .map(|id| id.is_some())
+                .map_err(|error| error.message);
+            super::claude_mod::changed();
+            return Box::pin(async move { delivered });
+        }
         self.call(
             "claude_mod.deliver",
             json!({"pane_id": pane_id, "text": text, "kind": kind}),

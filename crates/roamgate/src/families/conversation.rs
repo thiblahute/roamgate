@@ -879,6 +879,7 @@ impl CoreFamily for ConversationFamily {
     }
 
     fn owned(&self, cx: &FamilyContext, owned: bool) {
+        super::claude_mod::family_owned(cx, FAMILY, owned);
         let shared = self.shared.clone();
         {
             let mut was = shared.owned.lock().unwrap();

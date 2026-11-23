@@ -12,6 +12,7 @@ pub mod agent_profiles;
 pub mod agent_sessions;
 pub mod archive;
 pub mod assistant;
+pub mod claude_mod;
 pub mod conversation;
 pub mod herdr;
 pub mod host;
