@@ -25,7 +25,6 @@ roamgate-notify	server/src/notifications/web-push.test.ts	S18
 roamgate-assistant	server/src/assistant/archive-tools	S13
 roamgate-assistant	server/src/assistant/workspace-tree-tools	S23
 roamgate-review	server/src/contract-record/hooks	S19
-roamgate-review	server/src/review/agent-	S19
 roamgate-review	server/src/review/rpc	S19
 roamgate-mr-reviews	server/src/mr-reviews/board-tools.test.ts	S20
 
@@ -38,3 +37,4 @@ roamgate-claude	server/src/profiles/	S21
 roamgate-conversation	server/src/profiles/	S21
 roamgate-mr-reviews	server/src/profiles/	S20
 roamgate-voice-server	server/src/profiles/	S22
+roamgate-review	server/src/review/agent-delivery	S19
