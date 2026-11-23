@@ -6,10 +6,12 @@ description: >
   The text repo's own state is left loose: whether sync commits it or
   defers it follows GameMode, which the server asks the real host through
   /usr/bin/host-spawn when it runs in a toolbox (no fake can stand in).
+  min_free_gb 0 keeps health's free-space warning off whatever the run's
+  disk holds.
 server:
   files:
     .config/roamgate/settings.json:
-      { json: { version: 1, archive: { host: desk } } }
+      { json: { version: 1, archive: { host: desk, min_free_gb: 0 } } }
     .claude/projects/-home-t-proj/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.jsonl: &transcript
       jsonl:
         - {
