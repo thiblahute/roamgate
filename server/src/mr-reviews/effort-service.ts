@@ -491,7 +491,7 @@ export async function handleEffortRpc(
       root: string;
       title: string;
       open: boolean;
-    }) => ReviewSnapshot | null;
+    }) => ReviewSnapshot | null | Promise<ReviewSnapshot | null>;
   },
   method: string,
   params: Record<string, unknown>,
@@ -1766,7 +1766,7 @@ export async function handleEffortRpc(
             "workspaceId" in head ? head.workspaceId : undefined,
           )
         : undefined;
-      const snapshot = deps.effortReview({
+      const snapshot = await deps.effortReview({
         effort: effort.id,
         connectionId: head.connectionId,
         ...(workspaceId ? { workspaceId } : {}),

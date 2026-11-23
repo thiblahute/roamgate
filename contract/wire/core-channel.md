@@ -259,7 +259,7 @@ own reviews module uses (`mrReviewsHost`).
 | `review.host`               | `op` and its arguments: `loadDiff` (`session`, `commit`, `paths`), `loadSummary` (`session`, `commit`), `loadFiles` (`session`, `ends`, `files`), `loadCommits`, `loadPatchIds` (`shas`), `loadState`, `loadFile` (`rev`, `path`) of a `session`; `loadHeads` (`connection_id`, `entries` of `{root, ref}`); `promptAgent` (`connection_id`, `pane_id`, `text`); `sessionPane` (`connection_id`, `session_id`); `paneSession`, `noteCause` (`connection_id`, `pane_id`); `agentCompactedSince` (`connection_id`, `pane_id`, `since`) | what review/service.ts's argument of that name answers (a gone checkout or commit: an error with code `checkout-gone`, `base-gone` or `head-gone`); the review family's, until the host, workspace and agent sessions families move |
 | `review.forge`              | `op` and its arguments, each with the review's `session`: `checkout`, `find` (`checkout`), `readMergeRequest` (`url`), `readThreads` (`mr`), `createDraftNote` (`mr`, `anchor`, `note`, `diff`), `updateDraftNote` (`mr`, `id`, `note`), `deleteDraftNote` (`mr`, `id`), `createDraftReply` (`mr`, `discussion`, `note`) | the review's checkout, its branch's merge request (or `null`), the merge request, its threads, or the draft made as its thread (`draftThread`) or comment (`draftReply`); `{}` for a deletion. The review family's forge, until S14's moves |
 | `review.connection`         | `op`: `id` (the default connection's id), else `connection_id` and `resolveRoot` (`workspace_id`), `readDefaultBase` (`root`), `readRoot` (`path`), `scanRepos` (`paths`, `agent_paths`), `renderedPage` (`root`, `target`, `page`, `scripts`), `renderedSvg` (`svg`, `color`, `scripts`), `renderedStorage` (`token`, `write`), `clearRenderedStorage` (`site`) | what the browser connection's `ReviewRpcConnection` answers (review/rpc.ts); a full site's storage is an error with code `quota` |
-| `review.claudeMod`          | `connection_id`, `action` (`status`, `install` or `uninstall`) | the `claude_mod.<action>` RPC's answer, Bun's until the core has the claude-mod hub |
+| `review.socket`             | `op` and its `input`: `connections`; `readRoot` (`connectionId`, `path`), `readDefaultBase` (`connectionId`, `root`), `readLastStep` (`connectionId`, `root`, `workspaceId`); `hasViewers`; `notify`, `workspaces`, `reviews`, `work`, `messagesSend`, `claudeStart`, `launch`, `holdOutput` (the agent socket's argument objects); `messagesList`; `hold` (`connectionId`, `paneId`, `sessionId`, `form`), `fg` (`connectionId`, `paneId`, `form`), `handback` (`connectionId`, `paneId`, `sessionId`); `mod` (`connectionId`, `command`, `form`: a Claude mod's `mod_poll`, `mod_ack`, `mod_event` or `mod_tools`) | what review/agent-server.ts's argument of that name answers (`connections`: `[{id, herdrSocketPath, sshHost, lastSteps}]`); `mod`: what Bun's Claude mod hub answers. A failure carries the status the socket answers in `data.status`. The review family's agent socket while the core serves it, until the families it asks move |
 
 An unknown target is an error reply with code `unknown_target`.
 
@@ -362,9 +362,10 @@ The front's internal calls by family:
 | `internal.agent_sessions.remote_stat`       | `connection_id`, `watch_id`, `line`                                                                                                                                                                         | A line of the remote history watch helper (`path<TAB>signature`). Answers `{ok}`.                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `internal.agent_sessions.remote_exit`       | `connection_id`, `watch_id`                                                                                                                                                                                 | The remote history watch helper exited: the watcher starts it again. Answers `{ok}`.                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `internal.agent_profiles.store`             | `op` (`set`, `choose_model` or `settle_model`), `session_id`, then `profile`, `back` (`{at, to}`), `model` (`set`) or `model`, `resolved` (`choose_model`)                                                  | A change Bun's store made (conversation mode's /model, a start that settled its model) while the core owns the family: applied to session-profiles.json; answers `{ok: true}` once `profiles.sessions_changed` told the result. Error `not_owner` while the core does not own the family.                                                                                                                                                                                                                        |
-| `internal.review.agents` | `channels` (`{connection_id: bool}`: whether its host runs the review client), `tools` (`[{connection_id, pane_id, fresh_until, work, rules}]`: the panes whose Claude said lately it has the mod's tools, and until when that holds) | The review family: what its service asks without waiting, sent by Bun whenever it changes while the core owns the family. Answers `{}`. |
-| `internal.review.call` | `method`, `params` | The review family: the front's own use of the service while the core owns it, as review/service.ts's method of that name: `addThread`, `replyInChat`, `requestAgentReview`, `remove`, `prompts.list`, `prompts.answer`, `roots`, `keptSteps`. `not_owner` or `not_ready` while the core does not hold reviews.sqlite. |
-| `internal.review.close` | none | The review family: before Bun opens reviews.sqlite again (the family came back), the core's service stops. Answers `{}`. |
+| `internal.archive.search` | a `SearchQuery` (`terms`, `limit`, the filters, `recent`, `history`, `regex`, `toolOutput`) | Ranger's archive search while Rust owns the archive family (a search writes the scratch overlay `text-live/`). Answers the `SearchResult`; a missing text repo is the error code `no_text_repo`. |
+| `internal.review.agents` | `channels` (`{connection_id: bool}`: whether its host runs the review client), `tools` (`[{connection_id, pane_id, fresh_until, work, rules}]`: the panes whose Claude said lately it has the mod's tools, and until when that holds), `socket_keys` (the agent sockets to serve: `@local` and each SSH connection whose host forwards to one) | The review family: what its service asks without waiting, sent by Bun whenever it changes while the core owns the family. Answers `{}`. |
+| `internal.review.call` | `method`, `params` | The review family: the front's own use of the service while the core owns it, as review/service.ts's method of that name: `addThread`, `replyInChat`, `requestAgentReview`, `remove`, `prompts.list`, `prompts.answer`, `prompts.request` (a headless claude's prompt, answered or `null`; it goes when the call is cancelled), `roots`, `keptSteps`, `open`, `list`, `moveThread`, `setThreadAnchor`, `edit`, `deleteComment`. `not_owner` or `not_ready` while the core does not hold reviews.sqlite. |
+| `internal.review.close` | none | The review family: before Bun opens reviews.sqlite again and listens on the agent sockets (the family came back), the core's service and sockets stop. Answers `{}`. |
 
 Bun's own copy of a family stops its background work and writes while the
 core owns the family and starts again (reading its files afresh) when it
@@ -576,21 +577,26 @@ history runtime, the front's.
 ### The review family
 
 While the core owns the review family it is the one writer of
-`<data>/reviews` (reviews.sqlite and the pasted images): on taking it, it
-asks `review.release`, Bun closes its review service, and only then does
-the core open the file; when the family comes back, Bun asks
-`internal.review.close` before it opens the file again. The service's
-effects that other families own (a checkout's git reads, agent panes and
-sessions, turn causes, the forge) are `review.host` and `review.forge`;
-a browser connection's reads are `review.connection`. Bun sends what the
-service asks without waiting (`internal.review.agents`), hears of each
-push it acts on (`review.published`), and reaches the service for its
-own uses with `internal.review.call`; its other uses fail while the core
-owns the family. A shadow read while Bun owns it (`review.list`,
-`review.get`) is answered from a copy of reviews.sqlite (`VACUUM INTO`),
-so nothing of Bun's file is written. The `claude_mod.*` calls stay Bun's
-(`review.claudeMod`), and so does the agent socket, until the core has
-the claude-mod hub and the agent socket server.
+`<data>/reviews` (reviews.sqlite and the pasted images) and serves the
+agent socket: on taking it, it asks `review.release`, Bun closes its
+review service and its agent sockets, and only then does the core open
+the file and listen on the sockets Bun served (`socket_keys`, the same
+paths, so an SSH host's forward keeps working). When the family comes
+back, Bun asks `internal.review.close` before it opens the file and
+listens again. The service's effects that other families own (a
+checkout's git reads, agent panes and sessions, turn causes, the forge)
+are `review.host` and `review.forge`; a browser connection's reads are
+`review.connection`; what the agent socket asks of Bun, the Claude mod's
+hub with it, is `review.socket` (the hub stays Bun's while conversation
+mode, the agent messenger, limit_resume and the agent list read it). Bun
+sends what the service asks without waiting (`internal.review.agents`),
+hears of each push it acts on (`review.published`), and reaches the
+service for its own uses with `internal.review.call`. A shadow read
+while Bun owns it (`review.list`, `review.get`) is answered from a copy
+of reviews.sqlite (`VACUUM INTO`), so nothing of Bun's file is written.
+The `claude_mod.*` calls run roamgate-claude's install on the
+connection's host (`host.run`), its live sessions counted with
+`claude_mod.panes`.
 
 ## CLI pass-through
 

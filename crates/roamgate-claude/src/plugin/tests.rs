@@ -245,3 +245,22 @@ fn install_runs_claude_codes_own_plugin_command() {
             .contains(&"plugin marketplace remove roamgate".to_owned())
     );
 }
+
+#[tokio::test]
+async fn the_integration_says_why_an_install_failed_and_needs_a_unix_host() {
+    let windows = claude_mod_integration(ClaudeModAction::Status, false, 1, |_| async {
+        String::new()
+    })
+    .await;
+    assert_eq!(windows["reason"], "The Claude mod needs a Unix host");
+    assert_eq!(windows["sessions"], 1);
+    let failed = |action| {
+        let output = host_run(action, Some(("2.1.319 (Claude Code)", "[]", 3))).output;
+        async move { output }
+    };
+    let state = claude_mod_integration(ClaudeModAction::Install, true, 0, failed).await;
+    assert_eq!(state["reason"], "claude plugin install failed: boom");
+    assert_eq!(state["available"], true);
+    let status = claude_mod_integration(ClaudeModAction::Status, true, 0, failed).await;
+    assert!(status.get("reason").is_none());
+}

@@ -375,5 +375,100 @@ pub fn claude_mod_state_of(output: &str, sessions: i64) -> Value {
     state(true, None, Some(version))
 }
 
+impl ClaudeModAction {
+    /// The action a `claude_mod.<action>` call names.
+    pub fn parse(action: &str) -> Option<Self> {
+        match action {
+            "status" => Some(Self::Status),
+            "install" => Some(Self::Install),
+            "uninstall" => Some(Self::Uninstall),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Status => "status",
+            Self::Install => "install",
+            Self::Uninstall => "uninstall",
+        }
+    }
+}
+
+/// Configuration > Integrations: the mod on a connection's host
+/// (`claudeModIntegration`). `unix`: whether the host is one (the mod
+/// needs a Unix host); `sessions`: the panes whose Claude runs a live mod;
+/// `run` runs the host script of an action and answers its output, with
+/// `ROAMGATE_SCRIPT_FAILED <stderr>` after it when it failed.
+pub async fn claude_mod_integration<F, Fut>(
+    action: ClaudeModAction,
+    unix: bool,
+    sessions: i64,
+    run: F,
+) -> Value
+where
+    F: Fn(ClaudeModAction) -> Fut,
+    Fut: std::future::Future<Output = String>,
+{
+    if !unix {
+        return json!({
+            "available": false,
+            "reason": "The Claude mod needs a Unix host",
+            "min_claude": "",
+            "installed": false,
+            "enabled": false,
+            "from_roamgate": false,
+            "sessions": sessions,
+        });
+    }
+    if action == ClaudeModAction::Status {
+        return claude_mod_state_of(&run(ClaudeModAction::Status).await, sessions);
+    }
+    let before = claude_mod_state_of(&run(ClaudeModAction::Status).await, sessions);
+    if action == ClaudeModAction::Install && before["available"] != Value::Bool(true) {
+        return before;
+    }
+    let output = run(action).await;
+    let mut state = claude_mod_state_of(&output, sessions);
+    let parsed = parse_claude_mod_host_output(&output);
+    tracing::info!(
+        action = action.as_str(),
+        exit = ?parsed.exit,
+        installed = %state["installed"],
+        enabled = %state["enabled"],
+        "claude mod {}",
+        action.as_str()
+    );
+    if parsed.exit != Some(0) {
+        let mut reason = parsed.action_output.clone();
+        let last = reason
+            .trim()
+            .split('\n')
+            .next_back()
+            .unwrap_or("")
+            .to_owned();
+        if let Ok(Value::Object(said)) = serde_json::from_str::<Value>(&last) {
+            let text = |value: &Value| match value {
+                Value::String(text) => text.clone(),
+                other => roamgate_agents::js::stringify(other),
+            };
+            if let Some(why) = said
+                .get("error")
+                .filter(|v| !v.is_null())
+                .or_else(|| said.get("message").filter(|v| !v.is_null()))
+            {
+                reason = text(why);
+            }
+        }
+        let reason = if reason.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", roamgate_agents::js::head16(&reason, 300))
+        };
+        state["reason"] = json!(format!("claude plugin {} failed{reason}", action.as_str()));
+    }
+    state
+}
+
 #[cfg(test)]
 mod tests;

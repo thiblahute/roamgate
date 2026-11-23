@@ -258,7 +258,7 @@ export function createMrHomes(deps: {
     url: string;
     title: string;
     paneId?: string;
-  }) => ReviewSnapshot;
+  }) => ReviewSnapshot | Promise<ReviewSnapshot>;
   markSeen: (key: string) => void;
   /** The claude start setting (claude_start_mode). */
   startMode?: () => Promise<"terminal" | "conversation">;
@@ -355,7 +355,7 @@ export function createMrHomes(deps: {
       if (fetched && parseFetch(fetched.stdout).missing.includes(item.number))
         logger.info("request head not fetched in its home", { mr: key });
     }
-    const snapshot = deps.openReview({
+    const snapshot = await deps.openReview({
       connectionId: conn.id,
       workspaceId: where.workspaceId,
       root: read.top,

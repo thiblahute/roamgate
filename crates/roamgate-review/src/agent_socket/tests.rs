@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use super::ClaudeMods;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper_util::rt::TokioIo;
@@ -330,7 +331,7 @@ fn setup_with(with: With) -> Setup {
         directory: dir.path().to_owned(),
         home: home.path().to_owned(),
         host: host.clone(),
-        claude_mod: hub.clone(),
+        claude_mod: hub.clone().map(|hub| Arc::new(hub) as Arc<dyn ClaudeMods>),
         on_exchange: None,
     });
     agent.install_local().unwrap();

@@ -503,13 +503,13 @@ export function threadLines(
  * description's, told to its owner when that is another session); an
  * item the source names already was changed instead: said, with what.
  */
-function addedLine(
+async function addedLine(
   service: WorkService,
   added: Awaited<ReturnType<WorkService["addOrUpdate"]>>,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const made = service.store.item(added.item.id) ?? added.item;
   const thread = workDescriptionThread(
-    service.threads({ item: made.id })?.threads ?? [],
+    (await service.threads({ item: made.id }))?.threads ?? [],
     made,
   );
   return {
@@ -592,7 +592,7 @@ export async function workTool(
       if (typeof input.item === "string" && input.item) {
         const item = service.store.find(input.item);
         if (!item) throw new WorkError("no such item", "not_found");
-        const snapshot = service.threads({ item: item.id });
+        const snapshot = await service.threads({ item: item.id });
         const description = workDescriptionThread(
           snapshot?.threads ?? [],
           item,
@@ -624,7 +624,9 @@ export async function workTool(
       });
     }
     case "work_add":
-      return answer(addedLine(service, await service.addOrUpdate(input, meta)));
+      return answer(
+        await addedLine(service, await service.addOrUpdate(input, meta)),
+      );
     case "work_update":
       return answer({ item: line(await service.update(input, meta)) });
     case "work_done":
@@ -632,7 +634,7 @@ export async function workTool(
     case "work_reopen":
       return answer({ item: line(await service.reopen(input, meta)) });
     case "work_adopt":
-      return answer({ item: line(service.adopt(input, meta)) });
+      return answer({ item: line(await service.adopt(input, meta)) });
     case "work_comment_edit": {
       const edited = await service.commentEdit(input, meta);
       return answer({
@@ -774,7 +776,7 @@ export async function workUserTool(
       { ...input, source: input.source ?? source },
       { by: "user" },
     );
-    return `${UNTRUSTED}\n${JSON.stringify(addedLine(service, added))}`;
+    return `${UNTRUSTED}\n${JSON.stringify(await addedLine(service, added))}`;
   }
   const input = params as { item: string; text?: string; answer?: string };
   const item = service.store.find(input.item);

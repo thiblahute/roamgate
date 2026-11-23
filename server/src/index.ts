@@ -8,6 +8,8 @@ import {
   profilesOf,
   sessionProfiles,
 } from "./profiles/profiles";
+import { parseHolderStatus } from "./conversation/pane-child";
+import { parseHolderShell, parseSuspendedSpec } from "./conversation/suspended";
 import { PROFILE_RPC_METHODS, returnAfterReset } from "./profiles/rpc";
 import { createUiSettingsRpcHandler } from "./bridge/settings-rpc";
 import {
@@ -61,11 +63,14 @@ import {
 import { isHtmlPath } from "../../shared/filePreview";
 import {
   type AgentPermissionPrompt,
+  type AgentPromptAnswer,
   EFFORT_SESSION_PREFIX,
   type ReviewAnchor,
   type ReviewPush,
   type ReviewSession,
+  type ReviewSnapshot,
   type ReviewTarget,
+  type ReviewThread,
   WORK_SESSION_PREFIX,
 } from "../../shared/review";
 import { agentAddress } from "../../shared/agentMessage";
@@ -443,6 +448,7 @@ import {
 } from "./review/gitlab";
 import {
   createReviewAgentServer,
+  LOCAL_SOCKET_KEY,
   type ReviewAgentServer,
 } from "./review/agent-server";
 import { setupRemoteReviewAgent as setupRemoteReviewClient } from "./review/agent-remote";
@@ -1883,10 +1889,10 @@ const coreReverseTargets = {
         await mrReviewsHost.requestReview(given as any);
         return { ok: true };
       case "remove":
-        mrReviewsHost.removeReview(String(given.sessionId ?? ""));
+        await mrReviewsHost.removeReview(String(given.sessionId ?? ""));
         return { ok: true };
       case "effort":
-        return mrReviewsHost.effortReview(given as any) ?? null;
+        return (await mrReviewsHost.effortReview(given as any)) ?? null;
       default:
         throw new Error(
           `mr_reviews.review: unknown op ${String(op).slice(0, 40)}`,
@@ -3235,64 +3241,98 @@ function workServiceDeps(): Omit<WorkServiceDeps, "store"> {
       const line = JSON.stringify({ work: push });
       for (const ws of clients) safeSend(ws, line, "work");
     },
+    // While the core owns the reviews, each is asked of it.
     reviews: {
-      find: (itemId) =>
-        review.newest(
-          (session) =>
-            session.target.kind === "work" && session.target.item === itemId,
-        ),
-      open: ({ item, connectionId, root, title }) =>
-        review.open({
+      find: (itemId) => {
+        const matches = (session: ReviewSession) =>
+          session.target.kind === "work" && session.target.item === itemId;
+        return reviewsOnCore()
+          ? coreNewestReview(matches)
+          : review.newest(matches);
+      },
+      open: ({ item, connectionId, root, title }) => {
+        const params = {
           connectionId,
           root,
           target: { kind: "work", item },
           title,
           agent: "Claude",
           raise: false,
-        }),
-      get: (reviewId) =>
-        review.newest((session) => session.id.startsWith(reviewId)),
+        };
+        return reviewsOnCore()
+          ? coreReviews<ReviewSnapshot>("open", params)
+          : review.open(params);
+      },
+      get: (reviewId) => {
+        const matches = (session: ReviewSession) =>
+          session.id.startsWith(reviewId);
+        return reviewsOnCore()
+          ? coreNewestReview(matches)
+          : review.newest(matches);
+      },
       // The review a thread (or a comment) of any connection is in.
-      sessionOfComment: (ref: string) =>
-        review
-          .list({ chats: true })
-          .find(({ threads }) =>
-            threads.some(
-              (thread) =>
-                thread.id === ref ||
-                thread.id.startsWith(ref) ||
-                thread.comments.some(
-                  (comment) => comment.id === ref || comment.id.startsWith(ref),
-                ),
-            ),
-          )?.session ?? null,
-      addThread: (input) =>
-        review.addThread({
+      sessionOfComment: async (ref: string) =>
+        (reviewsOnCore()
+          ? await coreReviews<ReviewSnapshot[]>("list", { chats: true })
+          : review.list({ chats: true })
+        ).find(({ threads }) =>
+          threads.some(
+            (thread) =>
+              thread.id === ref ||
+              thread.id.startsWith(ref) ||
+              thread.comments.some(
+                (comment) => comment.id === ref || comment.id.startsWith(ref),
+              ),
+          ),
+        )?.session ?? null,
+      addThread: (input) => {
+        const params = {
           sessionId: input.sessionId,
           author: input.author,
           text: input.text,
           anchor: input.anchor,
           kind: "discussion",
-        }),
-      moveThread: (input) =>
-        review.moveThread({
+        };
+        return reviewsOnCore()
+          ? coreReviews<ReviewThread>("addThread", params)
+          : review.addThread(params);
+      },
+      moveThread: (input) => {
+        const params = {
           sessionId: input.sessionId,
           threadId: input.threadId,
           anchor: input.anchor,
-        }),
-      setAnchor: (input) =>
-        review.setThreadAnchor({
+        };
+        return reviewsOnCore()
+          ? coreReviews<ReviewThread>("moveThread", params)
+          : review.moveThread(params);
+      },
+      setAnchor: (input) => {
+        const params = {
           sessionId: input.sessionId,
           threadId: input.threadId,
           anchor: input.anchor,
-        }),
+        };
+        return reviewsOnCore()
+          ? coreReviews<ReviewThread>("setThreadAnchor", params)
+          : review.setThreadAnchor(params);
+      },
       // An image an item is added with: stored as a pasted one is.
       addImage: (sessionId, type, data) =>
         saveReviewImage(reviewDirectory(), sessionId, type, data),
       // An agent's own comment, rewritten or deleted (the review service
       // checks the author).
-      editComment: (input) => review.edit(input),
-      deleteComment: (input) => review.deleteComment(input),
+      editComment: (input) =>
+        reviewsOnCore()
+          ? coreReviews<ReviewThread>("edit", input)
+          : review.edit(input),
+      deleteComment: (input) =>
+        reviewsOnCore()
+          ? coreReviews<{ deleted: string; thread: ReviewThread | null }>(
+              "deleteComment",
+              input,
+            )
+          : review.deleteComment(input),
     },
     // An owner must be a session Roamgate manages (agent_sessions).
     sessions: async () =>
@@ -3497,8 +3537,8 @@ const mrReviewsHost = {
         }
       : null;
   },
-  openReview: ({ connectionId, workspaceId, root, url, title, paneId }) =>
-    getReviewService().open({
+  openReview: ({ connectionId, workspaceId, root, url, title, paneId }) => {
+    const params = {
       connectionId,
       workspaceId,
       root,
@@ -3506,7 +3546,11 @@ const mrReviewsHost = {
       title,
       ...(paneId ? { paneId, agent: "Claude" } : {}),
       raise: false,
-    }),
+    };
+    return reviewsOnCore()
+      ? coreReviews<ReviewSnapshot>("open", params)
+      : getReviewService().open(params);
+  },
   openRange: ({
     connectionId,
     workspaceId,
@@ -3516,14 +3560,20 @@ const mrReviewsHost = {
     title,
     compare,
   }) => {
-    const snapshot = getReviewService().open({
+    const params = {
       connectionId,
       workspaceId,
       root,
       target: { kind: "range", base, head, ...(compare ? { compare } : {}) },
       title,
       raise: false,
-    });
+    };
+    if (reviewsOnCore())
+      return coreReviews<ReviewSnapshot>("open", params).then((snapshot) => ({
+        sessionId: snapshot.session.id,
+        snapshot,
+      }));
+    const snapshot = getReviewService().open(params);
     return { sessionId: snapshot.session.id, snapshot };
   },
   // An effort's part: the same worktree path as the workspace menu's.
@@ -3559,27 +3609,25 @@ const mrReviewsHost = {
         : {}),
     };
   },
-  requestReview: ({ sessionId, paneId, focus }) =>
-    getReviewService().requestAgentReview({
+  requestReview: ({ sessionId, paneId, focus }) => {
+    const params = {
       sessionId,
       paneId,
       agent: "Claude",
       ...(focus ? { focus } : {}),
-    }),
+    };
+    return reviewsOnCore()
+      ? coreReviews("requestAgentReview", params)
+      : getReviewService().requestAgentReview(params);
+  },
   removeReview: (sessionId) => {
+    if (reviewsOnCore()) return coreReviews("remove", { sessionId });
     getReviewService().remove({ sessionId });
   },
   effortReview: ({ effort, connectionId, workspaceId, root, title, open }) => {
-    const service = getReviewService();
-    // Wherever it was opened: its head may have moved since.
-    const found = service
-      .list({ chats: true })
-      .find(
-        ({ session }) =>
-          session.target.kind === "effort" && session.target.effort === effort,
-      );
-    if (found || !open) return found ?? null;
-    return service.open({
+    const matches = (session: ReviewSession) =>
+      session.target.kind === "effort" && session.target.effort === effort;
+    const params = {
       connectionId,
       workspaceId,
       root,
@@ -3587,7 +3635,18 @@ const mrReviewsHost = {
       title,
       agent: "Claude",
       raise: false,
-    });
+    };
+    if (reviewsOnCore())
+      return coreNewestReview(matches).then((found) =>
+        found || !open ? found : coreReviews<ReviewSnapshot>("open", params),
+      );
+    const service = getReviewService();
+    // Wherever it was opened: its head may have moved since.
+    const found = service
+      .list({ chats: true })
+      .find(({ session }) => matches(session));
+    if (found || !open) return found ?? null;
+    return service.open(params);
   },
 } satisfies Partial<Parameters<typeof createMrReviews>[0]>;
 
@@ -3689,6 +3748,8 @@ function reviewReverseTargets() {
     // The core takes the reviews: Bun's service stops and lets go of
     // reviews.sqlite before the core opens it.
     "review.release": async () => {
+      // The core listens on the agent sockets from now on.
+      reviewAgent?.stop();
       const service = reviewService;
       reviewService = null;
       reviewStorageForHistory = null;
@@ -3724,17 +3785,134 @@ function reviewReverseTargets() {
       reviewForgeCall((args ?? {}) as ReverseArgs),
     "review.connection": (args: unknown) =>
       reviewConnectionCall((args ?? {}) as ReverseArgs),
-    // The mod's install and status, Bun's until the core has the hub.
-    "review.claudeMod": async (args: unknown) => {
-      const { connection_id, action } = (args ?? {}) as ReverseArgs;
-      if (
-        typeof connection_id !== "string" ||
-        (action !== "status" && action !== "install" && action !== "uninstall")
-      )
-        throw new Error("review.claudeMod needs a connection_id and an action");
-      return claudeModIntegration(connection_id, action);
-    },
+    "review.socket": (args: unknown, _ctx: unknown, signal: AbortSignal) =>
+      reviewSocketCall((args ?? {}) as ReverseArgs, signal),
   };
+}
+
+/**
+ * What the core's agent socket asks of Bun (`review.socket`): the
+ * connections' checkouts, the boards, notifications, the agent messenger,
+ * conversation mode's holder, prepared launches, and the Claude mod's
+ * hub, as Bun's own socket gets them. A failure carries its status.
+ */
+async function reviewSocketCall(
+  args: ReverseArgs,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const input = (args.input ?? {}) as ReverseArgs;
+  const host = reviewAgentHost();
+  const connectionId = argText(input.connectionId);
+  const paneId = argText(input.paneId);
+  const form = () =>
+    new URLSearchParams(
+      Object.entries((input.form ?? {}) as Record<string, unknown>).map(
+        ([key, value]) => [key, String(value)],
+      ),
+    );
+  const connection = () => {
+    const found = host.connections().find((each) => each.id === connectionId);
+    if (!found) throw new ReviewError("this connection is not ready", 503);
+    return found;
+  };
+  try {
+    switch (args.op) {
+      case "connections":
+        return host.connections().map((each) => ({
+          id: each.id,
+          herdrSocketPath: each.herdrSocketPath,
+          sshHost: each.sshHost,
+          lastSteps: !!each.readLastStep,
+        }));
+      case "readRoot":
+        return await connection().readRoot(argText(input.path));
+      case "readDefaultBase":
+        return await connection().readDefaultBase(argText(input.root));
+      case "readLastStep":
+        return (
+          (await connection().readLastStep?.(
+            argText(input.root),
+            argText(input.workspaceId),
+          )) ?? null
+        );
+      case "hasViewers":
+        return host.hasViewers();
+      case "notify":
+        await host.notify(input as Parameters<typeof host.notify>[0]);
+        return {};
+      case "workspaces":
+        return await host.workspaces(
+          input as Parameters<typeof host.workspaces>[0],
+        );
+      case "reviews":
+        return await host.reviews(input as Parameters<typeof host.reviews>[0]);
+      case "work":
+        return await host.work(input as Parameters<typeof host.work>[0]);
+      case "messagesList":
+        return await host.messages.list();
+      case "messagesSend":
+        return await host.messages.send(
+          input as Parameters<typeof host.messages.send>[0],
+        );
+      case "claudeStart":
+        return await host.claudeStart(
+          input as Parameters<typeof host.claudeStart>[0],
+        );
+      case "launch":
+        return (
+          (await host.launch(input as Parameters<typeof host.launch>[0])) ??
+          null
+        );
+      case "hold":
+        return await host.holder.hold({
+          connectionId,
+          paneId,
+          sessionId: argText(input.sessionId),
+          signal,
+          status: parseHolderStatus(form()),
+          shell: parseHolderShell(form()),
+        });
+      case "fg": {
+        const spec = parseSuspendedSpec(form());
+        if (!spec) throw new ReviewError("invalid stopped session");
+        return await host.holder.fg({
+          connectionId,
+          paneId,
+          spec,
+          status: parseHolderStatus(form()),
+          shell: parseHolderShell(form()),
+        });
+      }
+      case "holdOutput":
+        return await host.holder.output(
+          input as Parameters<typeof host.holder.output>[0],
+        );
+      case "handback":
+        return await host.holder.handback({
+          connectionId,
+          paneId,
+          sessionId: argText(input.sessionId),
+        });
+      case "mod":
+        return await getReviewAgent().modRequest(
+          connectionId,
+          argText(input.command) as Parameters<
+            ReviewAgentServer["modRequest"]
+          >[1],
+          form(),
+          signal,
+        );
+    }
+    throw new ReviewError(`unknown review socket op ${String(args.op)}`);
+  } catch (error) {
+    const status = (error as { status?: unknown }).status;
+    const code = (error as { code?: unknown }).code;
+    throw new ChannelError(
+      error instanceof Error ? error.message : String(error),
+      typeof code === "string" ? code : undefined,
+      typeof status === "number" ? { status } : undefined,
+    );
+  }
 }
 
 /** The review service's effects, for the core's (`review.host`). */
@@ -3918,6 +4096,12 @@ async function reviewConnectionCall(args: ReverseArgs): Promise<unknown> {
  * has the mod's tools), sent whenever it changes.
  */
 let reviewAgentsTimer: ReturnType<typeof setInterval> | null = null;
+/**
+ * The agent sockets this server serves (`@local`, and each SSH connection
+ * whose host forwards to one): Bun's, or the core's while it owns the
+ * reviews.
+ */
+const reviewAgentSockets = new Set<string>();
 let reviewAgentsSent = "";
 function sendReviewAgents(): void {
   const front = coreFront;
@@ -3926,7 +4110,11 @@ function sendReviewAgents(): void {
   const channels: Record<string, boolean> = {};
   for (const status of connectionManager.list())
     channels[status.id] = host.agentChannel(status.id);
-  const state = JSON.stringify({ channels, tools: claudeModHub.toolsState() });
+  const state = JSON.stringify({
+    channels,
+    tools: claudeModHub.toolsState(),
+    socket_keys: [...reviewAgentSockets],
+  });
   if (state === reviewAgentsSent) return;
   reviewAgentsSent = state;
   front
@@ -3950,9 +4138,15 @@ onOwnershipChanged(() => {
   }
   if (reviewAgentsTimer) clearInterval(reviewAgentsTimer);
   reviewAgentsTimer = null;
-  // The core's service stops before Bun's opens reviews.sqlite again.
-  void coreFront?.callInternal("review", "close", {}).catch(() => {});
-  log.info("served by Bun again");
+  // The core's service and sockets stop before Bun opens reviews.sqlite
+  // and listens again.
+  void (coreFront?.callInternal("review", "close", {}) ?? Promise.resolve())
+    .catch(() => {})
+    .then(() => {
+      if (reviewsOnCore()) return;
+      listenReviewAgentSockets();
+      log.info("served by Bun again");
+    });
 });
 
 /** A browser connection's reads for the review calls (review/rpc.ts). */
@@ -4444,6 +4638,30 @@ const liveReviewService = new Proxy({} as ReviewService, {
   get: (_target, key) => Reflect.get(getReviewService(), key),
 });
 
+/** The core's review service, while it owns the reviews. */
+function coreReviews<T>(
+  method: string,
+  params: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!coreFront) throw new Error("no Rust core");
+  return coreFront.callInternal(
+    "review",
+    "call",
+    { method, params },
+    signal,
+  ) as Promise<T>;
+}
+
+/** The newest of the core's reviews `matches` takes (`newest`). */
+async function coreNewestReview(
+  matches: (session: ReviewSession) => boolean,
+): Promise<ReviewSnapshot | null> {
+  // Listed newest first.
+  const listed = await coreReviews<ReviewSnapshot[]>("list", { chats: true });
+  return listed.find(({ session }) => matches(session)) ?? null;
+}
+
 /**
  * A use of the review service that waits: Bun's, or the core's while it
  * owns the reviews (`internal.review.call`).
@@ -4575,15 +4793,17 @@ let reviewAgent: ReviewAgentServer | null = null;
 let reviewAgentInstalled = false;
 /** SSH connections whose host has the review client and its socket. */
 const reviewAgentHosts = new Set<string>();
-function getReviewAgent(): ReviewAgentServer {
-  reviewAgent ??= createReviewAgentServer({
-    service: liveReviewService,
-    ready: () => hostSettling,
+/**
+ * What the agent socket asks of the rest of the server besides the review
+ * service and the Claude mod's hub: Bun's socket gets it, and so does the
+ * Rust core's while it owns the reviews (the `review.socket` reverse call).
+ */
+function reviewAgentHost() {
+  return {
     hasViewers: () => clients.size > 0,
     notify: notifyFromAgent,
     workspaces: workspaceFromAgent,
     messages: getAgentMessenger(),
-    claudeMod: claudeModHub,
     // The Reviews board's tools, for any agent session.
     reviews: async ({ connectionId, workspaceId, agent, tool, params }) => {
       const caller = `${agent || "Claude"} in ${await agentWorkspaceLabel(connectionId, workspaceId)}`;
@@ -4681,8 +4901,6 @@ function getReviewAgent(): ReviewAgentServer {
         return runtime.conversation.holder.handback({ paneId });
       },
     },
-    directory: reviewDirectory(),
-    logger: logger.child("review"),
     connections: () =>
       connectionManager.list().flatMap((status) => {
         const runtime = connectionManager.readyRuntime(status.id);
@@ -4700,6 +4918,32 @@ function getReviewAgent(): ReviewAgentServer {
           },
         ];
       }),
+  } satisfies Partial<Parameters<typeof createReviewAgentServer>[0]>;
+}
+
+/** Bun listens again on the agent sockets it serves. */
+function listenReviewAgentSockets(): void {
+  for (const key of reviewAgentSockets) {
+    try {
+      if (key === LOCAL_SOCKET_KEY) getReviewAgent().installLocal();
+      else getReviewAgent().listen(key);
+    } catch (error) {
+      logger.warn("review agent socket unavailable", {
+        connection: key,
+        error: sanitizeConnectionError(error),
+      });
+    }
+  }
+}
+
+function getReviewAgent(): ReviewAgentServer {
+  reviewAgent ??= createReviewAgentServer({
+    service: liveReviewService,
+    ready: () => hostSettling,
+    claudeMod: claudeModHub,
+    directory: reviewDirectory(),
+    logger: logger.child("review"),
+    ...reviewAgentHost(),
   });
   return reviewAgent;
 }
@@ -5066,7 +5310,12 @@ function setupRemoteReviewAgent(
   if (!controlPath) return;
   let localSocket: string;
   try {
-    localSocket = getReviewAgent().listen(connectionId);
+    // While the core owns the reviews it listens there (told the key).
+    reviewAgentSockets.add(connectionId);
+    if (reviewsOnCore()) {
+      localSocket = getReviewAgent().socketPathFor(connectionId);
+      sendReviewAgents();
+    } else localSocket = getReviewAgent().listen(connectionId);
   } catch (error) {
     logger.warn("review agent socket unavailable", {
       connection: connectionId,
@@ -5160,17 +5409,31 @@ function composeConnectionRuntime(
     workspaceFront,
     // No terminal to fall back on: the prompt waits for a browser, and
     // its timeout denies.
-    reviewRoots: (connectionId) => getReviewService().roots(connectionId),
-    askAgentPrompt: ({ connectionId, paneId, signal, ...prompt }) =>
-      getReviewService().prompts.request({
+    reviewRoots: (connectionId) =>
+      reviewsOnCore()
+        ? coreReviews<string[]>("roots", { connectionId })
+        : getReviewService().roots(connectionId),
+    askAgentPrompt: ({ connectionId, paneId, signal, ...prompt }) => {
+      const asked = {
         ...prompt,
         connectionId,
         paneId,
         agent: "Claude",
         // A headless claude: there is no terminal to ask instead.
         noTerminal: true,
-        signal,
-      }),
+      };
+      // The core's prompt goes when this one stops waiting.
+      return reviewsOnCore()
+        ? coreReviews<AgentPromptAnswer | null>(
+            "prompts.request",
+            asked,
+            signal,
+          ).catch((error) => {
+            if (signal?.aborted) return null;
+            throw error;
+          })
+        : getReviewService().prompts.request({ ...asked, signal });
+    },
     onTaskEvent: (event) => {
       const connections = connectionProfiles.list();
       notifications.publish(
@@ -8212,7 +8475,9 @@ function main() {
   }
   if (process.platform !== "win32") {
     try {
-      getReviewAgent().installLocal();
+      reviewAgentSockets.add(LOCAL_SOCKET_KEY);
+      if (reviewsOnCore()) sendReviewAgents();
+      else getReviewAgent().installLocal();
       reviewAgentInstalled = true;
     } catch (error) {
       logger.warn("review agent unavailable", {

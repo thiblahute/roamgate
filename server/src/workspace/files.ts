@@ -108,7 +108,7 @@ export function createFileHandlers({
   lastStepBaselines?: LastStepBaselineStore;
   revealPath?: typeof revealLocalPath;
   /** The roots of the connection's review sessions (a review from elsewhere). */
-  reviewRoots?: () => string[];
+  reviewRoots?: () => string[] | Promise<string[]>;
   /** Runs the SSH command a whole file is downloaded by, as it comes. */
   streamProcess?: StreamProcess;
   /** The home `~/` paths are in, on this machine. */
@@ -700,7 +700,7 @@ export function createFileHandlers({
       root.startsWith(`${dir === "/" ? "" : dir}/`);
     // A review's own repository is shown in any workspace (a review from
     // elsewhere): its exact root, nothing below or above it.
-    if (!dirs.some(related) && !reviewRoots().map(trim).includes(root))
+    if (!dirs.some(related) && !(await reviewRoots()).map(trim).includes(root))
       throw new Error("root is not a repository of this workspace");
     const host = sshHost();
     const argv = host

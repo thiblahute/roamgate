@@ -1596,6 +1596,18 @@ export function createReviewAgentServer(args: {
     listen,
     installLocal,
     stop,
+    /** The socket a key listens on, here or in the Rust core. */
+    socketPathFor,
+    /**
+     * A Claude mod's request that came to the Rust core's socket: the hub
+     * is Bun's while what reads it is.
+     */
+    modRequest: (
+      connectionId: string,
+      command: "mod_poll" | "mod_ack" | "mod_event" | "mod_tools",
+      form: URLSearchParams,
+      signal: AbortSignal,
+    ) => claudeModRequest(connectionId, command, form, signal),
     socketPath: (socketKey: string) => servers.get(socketKey)?.path,
     exists: (socketKey: string) =>
       existsSync(socketPathFor(socketKey)) && servers.has(socketKey),

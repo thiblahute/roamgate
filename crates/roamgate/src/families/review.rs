@@ -13,9 +13,10 @@
 //! (`review.published`) for what Bun does with them (the notification
 //! feed's prompts, the Work board's questions, the local history).
 //!
-//! The agent socket and the claude-mod hub are the family's too; until the
-//! core serves them (roamgate-review's agent socket, roamgate-claude's
-//! hub), Bun's answer the `claude_mod.*` calls (`review.claudeMod`).
+//! The agent socket is the family's too: while the core owns the family it
+//! serves roamgate-review's on the sockets Bun served (review_socket.rs),
+//! and the `claude_mod.*` calls with roamgate-claude's install. The Claude
+//! mod's hub stays Bun's while what reads it does (`review.socket`).
 //!
 //! Hand-over: on taking the family the core first asks Bun to close its
 //! service (`review.release`), then opens reviews.sqlite; on giving it
@@ -34,6 +35,7 @@ use roamgate_review::images::image_of_query;
 use roamgate_review::model::{
     ReviewAnchor, ReviewComment, ReviewCommit, ReviewSession, ReviewTarget, ReviewThread,
 };
+use roamgate_review::prompts::PermissionRequest;
 use roamgate_review::rpc::{ReviewRpcConnection, RpcFut, handle_review_rpc, is_review_method};
 use roamgate_review::service::host::{Ask, Load};
 use roamgate_review::service::{
@@ -47,6 +49,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
+use super::review_socket::{SharedSockets, claude_mod_call};
 use super::update::path_of;
 
 pub const FAMILY: &str = "review";
@@ -91,6 +94,7 @@ struct Slot {
 struct ReviewFamily {
     slot: Arc<Mutex<Slot>>,
     agents: Arc<Mutex<Agents>>,
+    sockets: SharedSockets,
 }
 
 fn unknown(method: &str) -> RpcError {
@@ -757,6 +761,35 @@ impl ReviewFamily {
             "remove" => service.remove(&asked),
             "roots" => Ok(json!(service.roots(&text("connectionId")))),
             "keptSteps" => Ok(json!(service.kept_steps(&text("root")))),
+            "open" => value(service.open(&asked)?),
+            "list" => value(service.list(&asked)),
+            "moveThread" => value(service.move_thread(&asked)?),
+            "setThreadAnchor" => value(service.set_thread_anchor(&asked)?),
+            "edit" => value(service.edit(&asked).await?),
+            "deleteComment" => service.delete_comment(&asked).await,
+            // A headless claude's permission or question: answered by a
+            // browser, or null. The prompt goes when the front stops asking.
+            "prompts.request" => {
+                let (asking, gone) = tokio::sync::oneshot::channel::<()>();
+                let number = |name: &str| asked.get(name).and_then(Value::as_f64);
+                let request = service.prompts().request(PermissionRequest {
+                    connection_id: text("connectionId"),
+                    pane_id: text("paneId"),
+                    agent: text("agent"),
+                    tool: text("tool"),
+                    input: asked.get("input").cloned().unwrap_or(Value::Null),
+                    can_always: asked.get("canAlways") == Some(&Value::Bool(true)),
+                    questions: asked.get("questions").filter(|q| !q.is_null()).cloned(),
+                    no_terminal: asked.get("noTerminal") == Some(&Value::Bool(true)),
+                    timeout_ms: number("timeoutMs").unwrap_or(0.0).max(0.0) as u64,
+                    cancel: Some(Box::pin(async move {
+                        let _ = gone.await;
+                    })),
+                });
+                let answer = tokio::spawn(request).await;
+                drop(asking);
+                Ok(answer.ok().flatten().unwrap_or(Value::Null))
+            }
             method => Err(ReviewError::not_found(format!(
                 "unknown review service method: {method}"
             ))),
@@ -764,6 +797,15 @@ impl ReviewFamily {
     }
 
     fn set_agents(&self, params: &Value) {
+        if let Some(keys) = params.get("socket_keys").and_then(Value::as_array) {
+            let mut sockets = self.sockets.lock().unwrap();
+            sockets.wanted = keys
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            sockets.sync();
+        }
         let mut agents = self.agents.lock().unwrap();
         if let Some(channels) = params.get("channels").and_then(Value::as_object) {
             agents.channels = channels
@@ -859,6 +901,7 @@ impl CoreFamily for ReviewFamily {
                 // Bun is about to open reviews.sqlite again: the core's
                 // service stops first.
                 "internal.review.close" => {
+                    this.sockets.lock().unwrap().stop();
                     let previous = this.slot.lock().unwrap().ready.take();
                     if let Some(previous) = previous {
                         let service = previous.borrow().clone();
@@ -875,19 +918,11 @@ impl CoreFamily for ReviewFamily {
                         .await
                         .map_err(rpc_error)
                 }
-                // The mod's install and status stay Bun's until the core
-                // has the claude-mod hub (roamgate-claude).
+                // Configuration > Integrations: the mod on the host.
                 "claude_mod.status" | "claude_mod.install" | "claude_mod.uninstall" => {
                     let connection = this.connection(&cx, &call).await?;
                     roamgate_sidecar::core::note_served(&ProcessEnv, FAMILY, &method);
-                    cx.reverse(
-                        "review.claudeMod",
-                        json!({
-                            "connection_id": connection.id,
-                            "action": &method["claude_mod.".len()..],
-                        }),
-                    )
-                    .await
+                    claude_mod_call(&cx, &connection.id, &method["claude_mod.".len()..]).await
                 }
                 method if is_review_method(method) => {
                     if call.shadow && this.service_now().is_none() {
@@ -941,6 +976,9 @@ impl CoreFamily for ReviewFamily {
     }
 
     fn owned(&self, cx: &FamilyContext, owned: bool) {
+        // Its agent socket closes at once: Bun listens again after it
+        // asked internal.review.close.
+        self.sockets.lock().unwrap().stop();
         let mut slot = self.slot.lock().unwrap();
         slot.epoch += 1;
         let epoch = slot.epoch;
@@ -972,6 +1010,9 @@ impl CoreFamily for ReviewFamily {
                         service.close();
                         return;
                     }
+                    // The agents' requests come here now, on the sockets
+                    // Bun let go of.
+                    this.sockets.lock().unwrap().start(&cx, service.clone());
                     let _ = ready.send(Some(service));
                 }
                 Err(error) => {

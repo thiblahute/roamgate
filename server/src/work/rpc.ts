@@ -48,7 +48,7 @@ export async function handleWorkRpc(
     case "bridge.work.remove":
       return { item: service.remove(params, meta) };
     case "bridge.work.threads":
-      return { snapshot: service.threads(params) };
+      return { snapshot: await service.threads(params) };
     case "bridge.work.promote":
       return { item: await service.promote(params, meta) };
     case "bridge.work.owner_target":
@@ -58,7 +58,7 @@ export async function handleWorkRpc(
     case "bridge.work.link_target":
       return { target: await service.linkTarget(params) };
     case "bridge.work.adopt":
-      return { item: service.adopt(params, meta) };
+      return { item: await service.adopt(params, meta) };
     case "bridge.work.check":
       return service.check();
     default:

@@ -119,7 +119,7 @@ export function createMrReviews(options: {
     title: string;
     /** The agent pane it goes to (a home's Claude). */
     paneId?: string;
-  }) => ReviewSnapshot;
+  }) => ReviewSnapshot | Promise<ReviewSnapshot>;
   /** The review pane's "review with the agent" for a request's review. */
   requestReview?: (params: {
     sessionId: string;
@@ -144,8 +144,8 @@ export function createMrReviews(options: {
     automatic: () => string;
     list: () => Promise<string[]>;
   };
-  /** Drops a request's review (lifecycle). */
-  removeReview?: (sessionId: string) => void;
+  /** Drops a request's review (lifecycle); may answer once it did. */
+  removeReview?: (sessionId: string) => unknown;
   /** The reviews agent (tests: one on a fake driver). */
   agent?: (deps: Parameters<typeof createMrAgent>[0]) => MrAgent;
   more?: MrReviewsRpcDeps["more"];
@@ -172,7 +172,9 @@ export function createMrReviews(options: {
     head: string;
     title: string;
     compare?: boolean;
-  }) => { sessionId: string; snapshot?: ReviewSnapshot };
+  }) =>
+    | { sessionId: string; snapshot?: ReviewSnapshot }
+    | Promise<{ sessionId: string; snapshot?: ReviewSnapshot }>;
   /** The review of an effort's view (`effort.threads`). */
   effortReview?: NonNullable<
     Parameters<typeof handleEffortRpc>[0]["effortReview"]
@@ -537,7 +539,10 @@ export function createMrReviews(options: {
     if (!gone.length) return;
     for (const [, review] of gone) {
       try {
-        options.removeReview?.(review.sessionId);
+        // The Rust core's review service answers later.
+        void Promise.resolve(options.removeReview?.(review.sessionId)).catch(
+          () => {},
+        );
       } catch {}
     }
     store.update((state) => {

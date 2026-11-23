@@ -19,6 +19,7 @@ pub mod mr_cache;
 pub mod mr_reviews;
 pub mod notifications;
 pub mod review;
+pub mod review_socket;
 pub mod settings;
 pub mod time_report;
 pub mod update;

@@ -95,7 +95,7 @@ export type MrOpenerDeps = {
     root: string;
     url: string;
     title: string;
-  }) => ReviewSnapshot;
+  }) => ReviewSnapshot | Promise<ReviewSnapshot>;
   logger?: Logger;
 };
 
@@ -383,7 +383,7 @@ export function createMrOpener(deps: MrOpenerDeps) {
           error: String(error),
         }),
       );
-      const snapshot = deps.openReview({
+      const snapshot = await deps.openReview({
         connectionId: conn.id,
         workspaceId: record.workspaceId!,
         root: record.worktree,

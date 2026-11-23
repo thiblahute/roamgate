@@ -246,7 +246,7 @@ export function createLegacyConnectionRuntime(args: {
    * show such a review in any workspace ("from elsewhere"), so its
    * repository is a root the workspace's Git reads accept.
    */
-  reviewRoots?: (connectionId: string) => string[];
+  reviewRoots?: (connectionId: string) => string[] | Promise<string[]>;
   lastStepTransitionDebounceMs?: number;
   /**
    * The workspace family's handover to the Rust core: while the core owns

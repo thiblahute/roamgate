@@ -1138,7 +1138,7 @@ describe("work service", () => {
       },
       { by: "agent", caller: "Claude in roamgate", address: "desktop/w35:p1" },
     );
-    const sessionId = service.threads({ item: item.id })!.session.id;
+    const sessionId = (await service.threads({ item: item.id }))!.session.id;
     const mine = reviews.sessions.get(sessionId)!.threads[0]!.comments[0]!;
     expect(mine.author).toBe("Claude");
     const users = await reviews.addThread({
@@ -1199,8 +1199,8 @@ describe("work service", () => {
       { title: "Data history", text: "Keep everything in git" },
       { by: "user" },
     );
-    const sessionId = service.threads({ item: item.id })!.session.id;
-    const users = service.threads({ item: item.id })!.threads[0]!;
+    const sessionId = (await service.threads({ item: item.id }))!.session.id;
+    const users = (await service.threads({ item: item.id }))!.threads[0]!;
     // A comment of the user's on a part of their words.
     await kit.service.addThread({
       sessionId,
@@ -1226,7 +1226,7 @@ describe("work service", () => {
     };
     const set = await service.update({ item: item.id, text: doc }, meta);
     expect(set.questions).toBeUndefined();
-    let threads = service.threads({ item: item.id })!.threads;
+    let threads = (await service.threads({ item: item.id }))!.threads;
     // The user's words stay theirs, an ordinary thread now; the doc is the
     // agent's description.
     const description = workDescriptionThread(threads, set)!;
@@ -1276,7 +1276,10 @@ describe("work service", () => {
       }),
     });
     // Its card counts them, as the review's changes reach the board.
-    service.questionsSeen(item.id, service.threads({ item: item.id })!.threads);
+    service.questionsSeen(
+      item.id,
+      (await service.threads({ item: item.id }))!.threads,
+    );
     expect(service.store.item(item.id)!.questions).toBe(2);
     // The user answers the first; the agent writes the decision into the
     // text and resolves the thread.
@@ -1286,9 +1289,12 @@ describe("work service", () => {
     );
     const ticked = await service.update({ item: item.id, text: decided }, meta);
     kit.service.resolve({ sessionId, commentId: asked.id, resolved: true });
-    service.questionsSeen(item.id, service.threads({ item: item.id })!.threads);
+    service.questionsSeen(
+      item.id,
+      (await service.threads({ item: item.id }))!.threads,
+    );
     expect(service.store.item(item.id)!.questions).toBe(1);
-    threads = service.threads({ item: item.id })!.threads;
+    threads = (await service.threads({ item: item.id }))!.threads;
     const same = workDescriptionThread(threads, ticked)!;
     // Its own description: rewritten in place, its id kept.
     expect(same.id).toBe(description.id);
@@ -1329,14 +1335,14 @@ describe("work service", () => {
       { title: "Mine", owner: "desktop/w35:p1" },
       { by: "agent", caller: "Claude in roamgate", address: "desktop/w35:p1" },
     );
-    expect(service.threads({ item: own.id })).toBeNull();
+    expect(await service.threads({ item: own.id })).toBeNull();
     // The user's item for a session: its review, with the item as a thread
     // by the user, so that the session hears of it.
     const item = await service.add(
       { title: "Talk", owner: { session: "desktop/w35:p1", task: "a1b2c3" } },
       { by: "user" },
     );
-    const snapshot = service.threads({ item: item.id })!;
+    const snapshot = (await service.threads({ item: item.id }))!;
     expect(snapshot.session.target).toEqual({ kind: "work", item: item.id });
     expect(snapshot.session.connectionId).toBe("desktop");
     expect(service.store.item(item.id)!.review).toBe(snapshot.session.id);
@@ -1345,9 +1351,9 @@ describe("work service", () => {
     ]);
     expect(snapshot.threads[0]!.anchor.work).toEqual({ item: item.id });
     // The same review again.
-    expect(service.threads({ item: item.id, open: true })!.session.id).toBe(
-      snapshot.session.id,
-    );
+    expect(
+      (await service.threads({ item: item.id, open: true }))!.session.id,
+    ).toBe(snapshot.session.id);
     expect(await service.ownerPane(item.id, "desktop")).toBe("w35:p1");
     expect(await service.ownerPane(item.id, "mac")).toBeNull();
     const thread = await service.comment(
@@ -1405,8 +1411,8 @@ describe("work service", () => {
       { item: item.id, owner: "desktop/w35:p1" },
       { by: "user" },
     );
-    const sessionId = service.threads({ item: item.id, open: true })!.session
-      .id;
+    const sessionId = (await service.threads({ item: item.id, open: true }))!
+      .session.id;
     const parent = await kit.service.addThread({
       sessionId,
       author: "you",
@@ -1536,7 +1542,7 @@ describe("work service", () => {
       ownRoot: () => "/home/me/roamgate",
     });
     const item = await service.add({ title: "Deliver me" }, { by: "user" });
-    const snapshot = service.threads({ item: item.id, open: true })!;
+    const snapshot = (await service.threads({ item: item.id, open: true }))!;
     // The user comments: no owner yet, the comment waits and says why.
     await kit.service.addThread({
       sessionId: snapshot.session.id,
@@ -1615,7 +1621,7 @@ describe("work service", () => {
     expect(item.links).toEqual([
       { kind: "review", id: "d22a2f86bc540f34", thread: "b057f8a2129c74bc" },
     ]);
-    const own = reviews.find(item.id)!;
+    const own = (await reviews.find(item.id))!;
     expect(own.threads.map((t) => t.id)).toEqual(["b057f8a2129c74bc"]);
     expect(
       own.threads[0]!.comments.map((c) => [c.id, c.author, c.createdAt]),
@@ -1651,19 +1657,19 @@ describe("work service", () => {
     const todo = todoReview();
     reviews.sessions.set(todo.session.id, todo);
     const item = await service.add({ title: "Already here" }, { by: "user" });
-    const adopted = service.adopt(
+    const adopted = await service.adopt(
       { item: item.id, thread: "c2c2c2c2" },
       { by: "agent", caller: "Claude" },
     );
     expect(adopted.links).toEqual([
       { kind: "review", id: "d22a2f86bc540f34", thread: "b057f8a2129c74bc" },
     ]);
-    expect(reviews.find(item.id)!.threads.map((t) => t.id)).toEqual([
+    expect((await reviews.find(item.id))!.threads.map((t) => t.id)).toEqual([
       "b057f8a2129c74bc",
     ]);
     expect(pushes.at(-1)?.summary).toMatch(/took thread b057f8a2/);
     const before = pushes.length;
-    service.adopt(
+    await service.adopt(
       { item: item.id, thread: "b057f8a2129c74bc" },
       { by: "user" },
     );
@@ -1674,7 +1680,7 @@ describe("work service", () => {
       { title: "Imported", adopt_thread: "b057f8a2129c74bc" },
       { by: "agent" },
     );
-    expect(reviews.find(added.id)!.threads.length).toBe(1);
+    expect((await reviews.find(added.id))!.threads.length).toBe(1);
   });
 });
 
@@ -1873,7 +1879,7 @@ test("the real review service tells the coordinator of the user's new item, and 
     { title: "Orphan", owner: "desktop/w9:p1" },
     { by: "agent", caller: "Claude in roamgate", address: "desktop/w9:p1" },
   );
-  const snapshot = service.threads({ item: orphan.id, open: true })!;
+  const snapshot = (await service.threads({ item: orphan.id, open: true }))!;
   await kit.service.addThread({
     sessionId: snapshot.session.id,
     author: "you",
@@ -1891,7 +1897,7 @@ test("the real review service tells the coordinator of the user's new item, and 
     { title: "Remember", state: "you" },
     { by: "user" },
   );
-  const own = service.threads({ item: mine.id, open: true })!;
+  const own = (await service.threads({ item: mine.id, open: true }))!;
   await kit.service.addThread({
     sessionId: own.session.id,
     author: "you",
@@ -2389,7 +2395,7 @@ describe("work tools and rpc", () => {
       { title: "Other", text: "Adopt me" },
       { by: "user" },
     );
-    const adoptable = service.threads({ item: other.id })!.threads[0]!;
+    const adoptable = (await service.threads({ item: other.id }))!.threads[0]!;
     const adopted = JSON.parse(
       (
         await workTool(
@@ -2856,7 +2862,8 @@ test("with the rules and the work tools, a triage, a task and a comment each end
   );
   expect(triage).not.toContain("yours to sort");
   // Left unanswered at the turn's end: the check names the item to triage.
-  const freeReview = service.threads({ item: free.id, open: true })!.session.id;
+  const freeReview = (await service.threads({ item: free.id, open: true }))!
+    .session.id;
   expect(kit.service.agentDue(freeReview)).toMatchObject({
     triageItem: free.id,
   });
@@ -2873,7 +2880,7 @@ test("with the rules and the work tools, a triage, a task and a comment each end
       `Take it: mcp__roamgate__work_update item=${task.id.slice(0, 8)} state=doing owner=<your address or subagent>; or give it to another session\\. Answer: mcp__roamgate__review_reply comment_id=[0-9a-f]{8}\\.$`,
     ),
   );
-  const snapshot = service.threads({ item: task.id, open: true })!;
+  const snapshot = (await service.threads({ item: task.id, open: true }))!;
   await kit.service.addThread({
     sessionId: snapshot.session.id,
     author: "you",

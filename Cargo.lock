@@ -6981,6 +6981,7 @@ dependencies = [
  "roamgate-archive",
  "roamgate-assistant",
  "roamgate-base",
+ "roamgate-claude",
  "roamgate-cli",
  "roamgate-connections",
  "roamgate-exec",

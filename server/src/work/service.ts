@@ -94,20 +94,23 @@ export type WorkGit = (
   connectionId?: string,
 ) => Promise<{ code: number | null; stdout: string }>;
 
+/** Bun's review service answers at once; the Rust core's, later. */
+type MaybePromise<T> = T | Promise<T>;
+
 export type WorkReviews = {
   /** The item's review, wherever it was opened; null when it has none. */
-  find(itemId: string): ReviewSnapshot | null;
+  find(itemId: string): MaybePromise<ReviewSnapshot | null>;
   /** Makes the item's review (target `work`), or answers the existing one. */
   open(input: {
     item: string;
     connectionId: string;
     root: string;
     title: string;
-  }): ReviewSnapshot;
+  }): MaybePromise<ReviewSnapshot>;
   /** A review and its threads, by id (a prefix is enough). */
-  get(reviewId: string): ReviewSnapshot | null;
+  get(reviewId: string): MaybePromise<ReviewSnapshot | null>;
   /** The review a thread or comment id belongs to. */
-  sessionOfComment(id: string): ReviewSession | null;
+  sessionOfComment(id: string): MaybePromise<ReviewSession | null>;
   /** A new thread on a review, by an author (an agent's name, or the user). */
   addThread(input: {
     sessionId: string;
@@ -123,7 +126,7 @@ export type WorkReviews = {
     sessionId: string;
     threadId: string;
     anchor: Record<string, unknown>;
-  }): ReviewThread;
+  }): MaybePromise<ReviewThread>;
   /**
    * A thread's anchor replaced in its own review: the item's old
    * description, unmarked when another thread becomes its description.
@@ -132,7 +135,7 @@ export type WorkReviews = {
     sessionId: string;
     threadId: string;
     anchor: Record<string, unknown>;
-  }): ReviewThread;
+  }): MaybePromise<ReviewThread>;
   /** Stores an image of the review (as a pasted one is); its path. */
   addImage?(sessionId: string, type: string, data: Uint8Array): string;
   /** Rewrites a comment, as its author (the review service checks). */
@@ -765,7 +768,7 @@ export function createWorkService(deps: WorkServiceDeps) {
         : own
           ? (meta.caller ?? "Claude").split(" in ")[0] || "Claude"
           : (meta.caller ?? "Claude");
-    const snapshot = threads({ item: item.id, open: true });
+    const snapshot = await threads({ item: item.id, open: true });
     if (!snapshot) throw new WorkError("the item's review could not be opened");
     let text = given.text ?? (what === "added" ? item.title : "Reopened.");
     for (const image of given.images) {
@@ -923,7 +926,7 @@ export function createWorkService(deps: WorkServiceDeps) {
     );
     let adopted: string | undefined;
     if (given(params.adopt_thread))
-      adopted = adopt(made, String(params.adopt_thread), meta).thread;
+      adopted = (await adopt(made, String(params.adopt_thread), meta)).thread;
     // An adopted thread is the item's words already; an imported done item
     // is history, nobody's to do.
     else if (item.state !== "done") await announce(made, meta, text, "added");
@@ -1060,7 +1063,8 @@ export function createWorkService(deps: WorkServiceDeps) {
       );
     let adopted: string | undefined;
     if (given(params.adopt_thread))
-      adopted = adopt(written, String(params.adopt_thread), meta).thread;
+      adopted = (await adopt(written, String(params.adopt_thread), meta))
+        .thread;
     return {
       item: store.item(written.id) ?? written,
       changed: change,
@@ -1085,7 +1089,7 @@ export function createWorkService(deps: WorkServiceDeps) {
   ): Promise<{ text: string; previous: string | null } | null> {
     if (!deps.reviews)
       throw new WorkError("reviews are unavailable", "unavailable");
-    const snapshot = threads({ item: item.id, open: true });
+    const snapshot = await threads({ item: item.id, open: true });
     if (!snapshot) throw new WorkError("the item's review could not be opened");
     const current = workDescriptionThread(snapshot.threads, item);
     const old = current?.comments[0] ?? null;
@@ -1122,7 +1126,7 @@ export function createWorkService(deps: WorkServiceDeps) {
             "the description cannot be replaced here",
             "unavailable",
           );
-        deps.reviews.setAnchor({
+        await deps.reviews.setAnchor({
           sessionId: snapshot.session.id,
           threadId: current.id,
           anchor: {
@@ -1296,14 +1300,16 @@ export function createWorkService(deps: WorkServiceDeps) {
   }
 
   /** The item's review: its threads, for the board (made when `open`). */
-  function threads(params: Record<string, unknown>): ReviewSnapshot | null {
+  async function threads(
+    params: Record<string, unknown>,
+  ): Promise<ReviewSnapshot | null> {
     const item = itemOf(params.item);
     if (!deps.reviews)
       throw new WorkError("reviews are unavailable", "unavailable");
-    const found = deps.reviews.find(item.id);
+    const found = await deps.reviews.find(item.id);
     if (found || params.open !== true) return found;
     const home = reviewHome(item);
-    const snapshot = deps.reviews.open({
+    const snapshot = await deps.reviews.open({
       item: item.id,
       connectionId: home.connectionId,
       root: home.root,
@@ -1326,7 +1332,7 @@ export function createWorkService(deps: WorkServiceDeps) {
       throw new WorkError("reviews are unavailable", "unavailable");
     const text = typeof params.text === "string" ? params.text.trim() : "";
     if (!text) throw new WorkError("text is empty");
-    const snapshot = threads({ item: item.id, open: true });
+    const snapshot = await threads({ item: item.id, open: true });
     if (!snapshot) throw new WorkError("the item's review could not be opened");
     return deps.reviews.addThread({
       sessionId: snapshot.session.id,
@@ -1337,17 +1343,17 @@ export function createWorkService(deps: WorkServiceDeps) {
   }
 
   /** A thread by its id (or a comment's), with the review it is in. */
-  function threadRef(ref: string): {
+  async function threadRef(ref: string): Promise<{
     session: ReviewSession;
     thread: ReviewThread;
-  } {
+  }> {
     if (!deps.reviews)
       throw new WorkError("reviews are unavailable", "unavailable");
     const key = ref.trim();
     if (!key) throw new WorkError("thread is required");
-    const session = deps.reviews.sessionOfComment(key);
+    const session = await deps.reviews.sessionOfComment(key);
     if (!session) throw new WorkError("no such thread", "not_found");
-    const snapshot = deps.reviews.get(session.id);
+    const snapshot = await deps.reviews.get(session.id);
     const thread = snapshot?.threads.find(
       (each) =>
         each.id === key ||
@@ -1375,7 +1381,7 @@ export function createWorkService(deps: WorkServiceDeps) {
   }> {
     const ref = typeof params.comment === "string" ? params.comment.trim() : "";
     if (!ref) throw new WorkError("comment is required");
-    const { session, thread } = threadRef(ref);
+    const { session, thread } = await threadRef(ref);
     if (session.target.kind !== "work")
       throw new WorkError(
         "that comment is not on a work item: review_edit works on it",
@@ -1426,18 +1432,18 @@ export function createWorkService(deps: WorkServiceDeps) {
    * review link added. A thread the item already has changes nothing.
    * Answers the item and the thread's id (the same, moved or not).
    */
-  function adopt(
+  async function adopt(
     item: WorkItem,
     ref: string,
     meta: WorkMeta,
-  ): { item: WorkItem; thread: string } {
-    const { session: from, thread } = threadRef(ref);
-    const own = threads({ item: item.id, open: true });
+  ): Promise<{ item: WorkItem; thread: string }> {
+    const { session: from, thread } = await threadRef(ref);
+    const own = await threads({ item: item.id, open: true });
     if (!own) throw new WorkError("the item's review could not be opened");
     if (thread.sessionId === own.session.id)
       return { item: store.item(item.id) ?? item, thread: thread.id };
     const quote = thread.anchor.work?.quote ?? thread.anchor.render?.quote;
-    deps.reviews!.moveThread({
+    await deps.reviews!.moveThread({
       sessionId: own.session.id,
       threadId: thread.id,
       anchor: {
@@ -1557,7 +1563,7 @@ export function createWorkService(deps: WorkServiceDeps) {
     meta: WorkMeta,
   ): Promise<WorkItem> {
     seed();
-    const { session, thread } = threadRef(
+    const { session, thread } = await threadRef(
       typeof params.thread === "string" ? params.thread : "",
     );
     // Its own item already (the thread was adopted): that item.
@@ -2073,8 +2079,9 @@ export function createWorkService(deps: WorkServiceDeps) {
     commentDelete: (params: Record<string, unknown>, meta: WorkMeta) =>
       commentEdit(params, meta, "delete"),
     /** An item takes an existing review thread as its own. */
-    adopt: (params: Record<string, unknown>, meta: WorkMeta) =>
-      adopt(itemOf(params.item), String(params.thread ?? ""), meta).item,
+    adopt: async (params: Record<string, unknown>, meta: WorkMeta) =>
+      (await adopt(itemOf(params.item), String(params.thread ?? ""), meta))
+        .item,
     ownerPane,
     ownerTarget,
     sessionTarget,

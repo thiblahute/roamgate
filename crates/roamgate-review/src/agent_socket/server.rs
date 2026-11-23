@@ -55,8 +55,8 @@ pub struct AgentSocketOptions {
     pub home: PathBuf,
     pub host: Arc<dyn AgentSocketHost>,
     /// Roamgate's Claude Code mod: `mod_poll`, `mod_ack`, `mod_event`,
-    /// `mod_tools`.
-    pub claude_mod: Option<ClaudeModHub>,
+    /// `mod_tools` (its hub, or what answers for it).
+    pub claude_mod: Option<Arc<dyn ClaudeMods>>,
     /// Each exchange, as record mode keeps them.
     pub on_exchange: Option<ExchangeFn>,
 }
@@ -69,7 +69,7 @@ struct Listening {
 struct Inner {
     service: ReviewService,
     host: Arc<dyn AgentSocketHost>,
-    claude_mod: Option<ClaudeModHub>,
+    claude_mod: Option<Arc<dyn ClaudeMods>>,
     on_exchange: Option<ExchangeFn>,
     home: PathBuf,
     socket_directory: PathBuf,
@@ -1450,69 +1450,14 @@ impl AgentSocket {
         command: &str,
         form: &Form,
     ) -> ReviewResult<Value> {
-        let pane = form
-            .non_empty("pane")
-            .ok_or_else(|| ReviewError::new("the Claude mod runs inside a Herdr pane"))?
-            .to_owned();
-        let Some(hub) = &self.0.claude_mod else {
+        if form.non_empty("pane").is_none() {
+            return Err(ReviewError::new("the Claude mod runs inside a Herdr pane"));
+        }
+        let Some(mods) = &self.0.claude_mod else {
             return Err(ReviewError::status("the Claude mod is unavailable", 503));
         };
-        let session = form.get("session").unwrap_or("");
-        let session_id = if session_id_ok(session) { session } else { "" }.to_owned();
-        let client = crate::js::head16(form.get("client").unwrap_or(""), 64);
-        let connection_id = connection_id.to_owned();
-        match command {
-            "mod_tools" => hub
-                .tools(ToolsInput {
-                    connection_id,
-                    pane_id: pane,
-                    session_id,
-                    client,
-                    headless: form.get("headless") == Some("1"),
-                    gone: form.get("gone") == Some("1"),
-                    work: form.get("work") == Some("1"),
-                    rules: form.get("rules") == Some("1"),
-                })
-                .map_err(mod_error),
-            "mod_poll" => hub
-                .poll(PollInput {
-                    connection_id,
-                    pane_id: pane,
-                    session_id,
-                    client,
-                    claude: form.get("claude").unwrap_or("").to_owned(),
-                    protocol: number_of(form, "protocol"),
-                    after: number(form, "after", Some("0")),
-                    wait_ms: number(form, "wait_ms", Some("0")),
-                })
-                .await
-                .map_err(mod_error),
-            "mod_ack" => hub
-                .ack(AckInput {
-                    connection_id,
-                    pane_id: pane,
-                    client,
-                    id: number_of(form, "id"),
-                    outcome: form.get("outcome").unwrap_or("").to_owned(),
-                    reason: form.get("reason").unwrap_or("").to_owned(),
-                })
-                .map_err(mod_error),
-            _ => {
-                let Ok(Value::Object(event)) =
-                    serde_json::from_str::<Value>(form.get("event").unwrap_or(""))
-                else {
-                    return Err(ReviewError::new("invalid event"));
-                };
-                hub.event(EventInput {
-                    connection_id,
-                    pane_id: pane,
-                    client,
-                    session_id,
-                    event,
-                })
-                .map_err(mod_error)
-            }
-        }
+        mods.request(connection_id.to_owned(), command.to_owned(), form.clone())
+            .await
     }
 
     /// Links `link` to `target` when its directory exists and it is free.
@@ -1622,6 +1567,98 @@ impl AgentSocket {
                 entry.task.abort();
                 let _ = std::fs::remove_file(&entry.path);
             }
+        }
+    }
+}
+
+/// Where the Claude mod's requests go (`mod_poll`, `mod_ack`, `mod_event`,
+/// `mod_tools`): roamgate-claude's hub, or what answers for it while the
+/// hub is elsewhere.
+pub trait ClaudeMods: Send + Sync + 'static {
+    fn request(
+        &self,
+        connection_id: String,
+        command: String,
+        form: Form,
+    ) -> crate::service::BoxFut<ReviewResult<Value>>;
+}
+
+impl ClaudeMods for ClaudeModHub {
+    fn request(
+        &self,
+        connection_id: String,
+        command: String,
+        form: Form,
+    ) -> crate::service::BoxFut<ReviewResult<Value>> {
+        let hub = self.clone();
+        Box::pin(async move { hub_request(&hub, &connection_id, &command, &form).await })
+    }
+}
+
+async fn hub_request(
+    hub: &ClaudeModHub,
+    connection_id: &str,
+    command: &str,
+    form: &Form,
+) -> ReviewResult<Value> {
+    let pane = form
+        .non_empty("pane")
+        .ok_or_else(|| ReviewError::new("the Claude mod runs inside a Herdr pane"))?
+        .to_owned();
+    let session = form.get("session").unwrap_or("");
+    let session_id = if session_id_ok(session) { session } else { "" }.to_owned();
+    let client = crate::js::head16(form.get("client").unwrap_or(""), 64);
+    let connection_id = connection_id.to_owned();
+    match command {
+        "mod_tools" => hub
+            .tools(ToolsInput {
+                connection_id,
+                pane_id: pane,
+                session_id,
+                client,
+                headless: form.get("headless") == Some("1"),
+                gone: form.get("gone") == Some("1"),
+                work: form.get("work") == Some("1"),
+                rules: form.get("rules") == Some("1"),
+            })
+            .map_err(mod_error),
+        "mod_poll" => hub
+            .poll(PollInput {
+                connection_id,
+                pane_id: pane,
+                session_id,
+                client,
+                claude: form.get("claude").unwrap_or("").to_owned(),
+                protocol: number_of(form, "protocol"),
+                after: number(form, "after", Some("0")),
+                wait_ms: number(form, "wait_ms", Some("0")),
+            })
+            .await
+            .map_err(mod_error),
+        "mod_ack" => hub
+            .ack(AckInput {
+                connection_id,
+                pane_id: pane,
+                client,
+                id: number_of(form, "id"),
+                outcome: form.get("outcome").unwrap_or("").to_owned(),
+                reason: form.get("reason").unwrap_or("").to_owned(),
+            })
+            .map_err(mod_error),
+        _ => {
+            let Ok(Value::Object(event)) =
+                serde_json::from_str::<Value>(form.get("event").unwrap_or(""))
+            else {
+                return Err(ReviewError::new("invalid event"));
+            };
+            hub.event(EventInput {
+                connection_id,
+                pane_id: pane,
+                client,
+                session_id,
+                event,
+            })
+            .map_err(mod_error)
         }
     }
 }
