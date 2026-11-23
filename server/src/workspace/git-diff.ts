@@ -232,6 +232,8 @@ type WorkspaceActivityCycle = {
   capture: Promise<{ root: string; baseline: string; skipped: string[] }>;
   completion?: Promise<boolean>;
   nextCapture?: Promise<{ root: string; baseline: string; skipped: string[] }>;
+  /** The previous turn's end, when this turn started before it was done. */
+  priorCompletion?: Promise<boolean>;
 };
 
 type GitCommandContext = {
@@ -806,6 +808,22 @@ export function createLastStepBaselineStore(
     );
   }
 
+  /**
+   * Lets a read see the workspace's steps as of its call: the current
+   * turn's baseline captured (so the turn's edits are not in it, however
+   * soon they follow the read), and any turn's end that is still being
+   * recorded. A failed capture or end keeps the previous step.
+   */
+  async function settleWorkspace(workspaceId: string) {
+    const cycle = activityCycles.get(workspaceId);
+    if (!cycle) return;
+    await Promise.allSettled([
+      cycle.capture,
+      cycle.completion,
+      cycle.priorCompletion,
+    ]);
+  }
+
   return {
     captureWorkspace(workspaceId, resolveRoot) {
       if (disposed) return Promise.reject(lastStepStoreDisposedError());
@@ -821,7 +839,13 @@ export function createLastStepBaselineStore(
           return { root, baseline, skipped };
         })(),
       );
-      const cycle = { version, capture };
+      const cycle: WorkspaceActivityCycle = {
+        version,
+        capture,
+        ...(priorCycle?.completion
+          ? { priorCompletion: priorCycle.completion }
+          : {}),
+      };
       activityCycles.set(workspaceId, cycle);
       if (priorCycle?.completion) priorCycle.nextCapture = capture;
       return capture.then((result) => result.baseline);
@@ -898,28 +922,14 @@ export function createLastStepBaselineStore(
     },
     async resolveCompleted(workspaceId, root) {
       if (disposed) return undefined;
-      const completion = activityCycles.get(workspaceId)?.completion;
-      if (completion) {
-        try {
-          await completion;
-        } catch {
-          // Preserve the previous completed range when finalization fails.
-        }
-      }
+      await settleWorkspace(workspaceId);
       const range = completedRanges.get(workspaceId);
       if (!range || range.root !== root) return undefined;
       return { baseline: range.baseline, current: range.current };
     },
     async completedStep(workspaceId, root) {
       if (disposed) return undefined;
-      const completion = activityCycles.get(workspaceId)?.completion;
-      if (completion) {
-        try {
-          await completion;
-        } catch {
-          // Preserve the previous completed range when finalization fails.
-        }
-      }
+      await settleWorkspace(workspaceId);
       const range = completedRanges.get(workspaceId);
       if (range && range.root === root) {
         const step: LastStepRange = { ...range };

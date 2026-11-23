@@ -1640,6 +1640,99 @@ describe("last-step worktree snapshots", () => {
     }
   });
 
+  test("a last-step read during a turn waits for the turn's baseline", async () => {
+    const root = await initRepository();
+    let holdCapture = false;
+    let readsDuringCapture = 0;
+    let captureStarted: () => void = () => undefined;
+    let releaseCapture: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      captureStarted = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      releaseCapture = resolve;
+    });
+    const runner: RunProcessWithCodeTimeout = async (argv, timeoutMs) => {
+      if (holdCapture) {
+        if (argv.join(" ").includes("roamgate-last-step-capture")) {
+          captureStarted();
+          await gate;
+          holdCapture = false;
+        } else {
+          readsDuringCapture += 1;
+        }
+      }
+      return runProcessWithCodeTimeout(argv, timeoutMs);
+    };
+    const summary = () =>
+      readDiffSummary({
+        workspaceId: "workspace",
+        workspace: {},
+        root,
+        params: { mode: "last-step" },
+        shQuote,
+        runProcessWithCodeTimeout: runner,
+        lastStepBaselines: baselines,
+      });
+    const baselines = createLastStepBaselineStore({
+      shQuote,
+      runProcessWithCodeTimeout: runner,
+    });
+    try {
+      await writeFile(join(root, "tracked.txt"), "initial\n");
+      await baselines.captureWorkspace("workspace", async () => root);
+      await writeFile(join(root, "tracked.txt"), "first turn\n");
+      await baselines.completeWorkspace("workspace");
+
+      // The next turn starts; its baseline's snapshot is still running
+      // when Changes reads the last step.
+      holdCapture = true;
+      const capture = baselines.captureWorkspace("workspace", async () => root);
+      await started;
+      let answered = false;
+      const read = summary().then((result) => {
+        answered = true;
+        return result;
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(readsDuringCapture).toBe(0);
+      expect(answered).toBe(false);
+
+      releaseCapture();
+      await capture;
+      expect((await read).entries.map((entry) => entry.path)).toEqual([
+        "tracked.txt",
+      ]);
+
+      // The turn's edit, made once the read answered, is the turn's own.
+      await writeFile(join(root, "tracked.txt"), "second turn\n");
+      expect(await baselines.completeWorkspace("workspace")).toBe(true);
+      const completed = await summary();
+      expect(completed.entries.map((entry) => entry.path)).toEqual([
+        "tracked.txt",
+      ]);
+      const file = await readDiffFile({
+        workspaceId: "workspace",
+        root,
+        params: {
+          mode: "last-step",
+          path: "tracked.txt",
+          snapshot_id: completed.snapshot_id,
+        },
+        shQuote,
+        runProcessWithCodeTimeout: runner,
+        lastStepBaselines: baselines,
+      });
+      expect(file.diff).toContain("-first turn");
+      expect(file.diff).toContain("+second turn");
+    } finally {
+      releaseCapture();
+      await baselines.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("retains the completed step when the next baseline capture fails", async () => {
     const root = await initRepository();
     let failNextSnapshot = false;
