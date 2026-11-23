@@ -55,11 +55,9 @@ roamgate-mr-reviews	server/src/mr-reviews/effort-service.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/home.gitdir.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/home.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/inbox.merge.test.ts	S20
-roamgate-mr-reviews	server/src/mr-reviews/links.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/module.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/panel.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/prefetch.test.ts	S20
-roamgate-mr-reviews	server/src/mr-reviews/tree.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/upstream.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/worktree.test.ts	S20
 
