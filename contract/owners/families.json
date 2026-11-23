@@ -110,7 +110,8 @@
       ],
       "http": [],
       "files": ["data:connections.json"],
-      "shadow": []
+      "shadow": [],
+      "cli": ["connections"]
     },
     "workspace": {
       "phase": 6,
@@ -152,7 +153,16 @@
         "data:rendered-storage.json",
         "data:profiles"
       ],
-      "shadow": []
+      "shadow": [],
+      "cli": [
+        "service",
+        "doctor",
+        "url",
+        "config",
+        "auth",
+        "plugin",
+        "completion"
+      ]
     },
     "review": {
       "phase": 8,

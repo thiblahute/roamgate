@@ -44,42 +44,55 @@ async fn main() -> ExitCode {
             "push" => roamgate::families::notifications::cli(&args).await,
             "activity" => roamgate::families::activity::cli(&args),
             "archive" => roamgate::families::archive::cli(&args).await,
-            _ => roamgate::families::update::cli(&command, &args).await,
+            "update" | "rollback" => roamgate::families::update::cli(&command, &args).await,
+            _ => match roamgate::cli::run(&command, &args).await {
+                roamgate::cli::Done::Exit(code) => code,
+                roamgate::cli::Done::Serve(entries) => {
+                    let env = |name: &str| roamgate::cli::serve_env(&entries, name);
+                    return match parse_args(&[], env) {
+                        Ok(Options::Serve { host, port }) => serve(host, port).await,
+                        _ => ExitCode::FAILURE,
+                    };
+                }
+            },
         }),
         Options::Help => {
             print!("{USAGE}");
             ExitCode::SUCCESS
         }
-        Options::Serve { host, port } => {
-            let listener = match tokio::net::TcpListener::bind((host.as_str(), port)).await {
-                Ok(listener) => listener,
-                Err(error) => {
-                    eprintln!("roamgate: cannot listen on {host}:{port}: {error}");
-                    return ExitCode::FAILURE;
-                }
-            };
-            let address: SocketAddr = listener.local_addr().expect("listener address");
-            println!("{} listening on http://{address}", version_line());
-            let shutdown = async {
-                #[cfg(unix)]
-                {
-                    use tokio::signal::unix::{SignalKind, signal};
-                    let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
-                    tokio::select! {
-                        _ = tokio::signal::ctrl_c() => {}
-                        _ = term.recv() => {}
-                    }
-                }
-                #[cfg(not(unix))]
-                let _ = tokio::signal::ctrl_c().await;
-            };
-            match roamgate::serve(listener, shutdown).await {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(error) => {
-                    eprintln!("roamgate: {error}");
-                    ExitCode::FAILURE
-                }
+        Options::Serve { host, port } => serve(host, port).await,
+    }
+}
+
+/// Serves the web app on `host:port` until a signal.
+async fn serve(host: String, port: u16) -> ExitCode {
+    let listener = match tokio::net::TcpListener::bind((host.as_str(), port)).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            eprintln!("roamgate: cannot listen on {host}:{port}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let address: SocketAddr = listener.local_addr().expect("listener address");
+    println!("{} listening on http://{address}", version_line());
+    let shutdown = async {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{SignalKind, signal};
+            let mut term = signal(SignalKind::terminate()).expect("SIGTERM handler");
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = term.recv() => {}
             }
+        }
+        #[cfg(not(unix))]
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    match roamgate::serve(listener, shutdown).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("roamgate: {error}");
+            ExitCode::FAILURE
         }
     }
 }

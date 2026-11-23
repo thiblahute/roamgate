@@ -35,13 +35,10 @@ url = "2"
 x509-parser = "0.17"
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1", features = ["termios"] }
+rustix = { version = "1", features = ["process", "termios"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
-
-[target.'cfg(unix)'.dependencies]
-rustix = { version = "1", features = ["process"] }
 
 [dev-dependencies]
 roamgate-voice-server = { path = "../roamgate-voice-server", features = ["testing"] }

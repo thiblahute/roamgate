@@ -9,6 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use rust_embed::RustEmbed;
 
+pub mod cli;
 pub mod families;
 pub mod front;
 pub mod owners_cmd;
@@ -64,8 +65,22 @@ pub enum Options {
 }
 
 /// The CLI commands this binary answers itself, by family.
-pub const FAMILY_COMMANDS: &[&str] =
-    &["update", "rollback", "herdr", "push", "activity", "archive"];
+pub const FAMILY_COMMANDS: &[&str] = &[
+    "update",
+    "rollback",
+    "herdr",
+    "push",
+    "activity",
+    "archive",
+    "service",
+    "doctor",
+    "url",
+    "config",
+    "auth",
+    "connections",
+    "plugin",
+    "completion",
+];
 
 /// Reads the command line; `env` gives the environment's HOST and PORT.
 pub fn parse_args(
@@ -253,7 +268,14 @@ mod tests {
             parse_args(&args(&["rollback"]), |_| None),
             Ok(Options::Command("rollback".into(), vec![]))
         );
-        assert!(parse_args(&args(&["service", "install"]), |_| None).is_err());
+        assert_eq!(
+            parse_args(&args(&["service", "install"]), |_| None),
+            Ok(Options::Command("service".into(), args(&["install"])))
+        );
+        assert!(parse_args(&args(&["setup", "voice"]), |_| None).is_err());
+        for command in roamgate_cli::index::RUST_COMMANDS {
+            assert!(FAMILY_COMMANDS.contains(command), "{command}");
+        }
         assert!(matches!(
             parse_args(&args(&[]), |_| None),
             Ok(Options::Serve { .. })
