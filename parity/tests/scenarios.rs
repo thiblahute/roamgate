@@ -42,8 +42,13 @@ fn main() {
                 .replace('\\', "/");
             let ignored = match scenario::load(&path) {
                 Ok(loaded) => {
-                    !loaded.platforms.is_empty()
-                        && !loaded.platforms.iter().any(|name| name == platform())
+                    (!loaded.platforms.is_empty()
+                        && !loaded.platforms.iter().any(|name| name == platform()))
+                        || (!loaded.fronts.is_empty()
+                            && !loaded
+                                .fronts
+                                .iter()
+                                .any(|name| name == scenario::current_front()))
                 }
                 Err(_) => false,
             };

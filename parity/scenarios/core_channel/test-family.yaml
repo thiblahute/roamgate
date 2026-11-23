@@ -7,6 +7,9 @@ description: >
   core only), given to Rust by <data>/runtime/owners.json, answers a browser
   call with what the front knew of it, calls back into Bun, and streams an
   HTTP body both ways through the core; a method of no family stays with Bun.
+# Stage 1: the Bun server holds the port and spawns the Rust core. A Rust
+# front's Bun core never runs a core of its own.
+fronts: [bun]
 covers:
   - env:ROAMGATE_CORE_BIN
   - env:ROAMGATE_CORE_TEST

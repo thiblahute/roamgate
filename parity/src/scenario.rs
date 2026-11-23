@@ -90,7 +90,20 @@ pub struct Scenario {
     /// Platforms it runs on (linux, macos, windows); all when empty.
     #[serde(default)]
     pub platforms: Vec<String>,
+    /// Fronts it runs on (`bun`, `rust`: a run with `ROAMGATE_SIDECAR_BIN`
+    /// set is on the Rust front); all when empty.
+    #[serde(default)]
+    pub fronts: Vec<String>,
     pub steps: Vec<Value>,
+}
+
+/// The front this run's servers have: `rust` when `ROAMGATE_SIDECAR_BIN`
+/// names the Bun core of a Rust front, else `bun`.
+pub fn current_front() -> &'static str {
+    match std::env::var("ROAMGATE_SIDECAR_BIN") {
+        Ok(bin) if !bin.trim().is_empty() => "rust",
+        _ => "bun",
+    }
 }
 
 fn default_tier() -> String {
