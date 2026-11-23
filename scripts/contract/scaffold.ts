@@ -28,7 +28,12 @@ import {
   whereFound,
 } from "./inventory";
 import { writeSchemas } from "./schemas";
-import { writeContractFile, yamlText } from "./write";
+import {
+  alignMarkdownTables,
+  formattedJson,
+  writeContractFile,
+  yamlFileText,
+} from "./write";
 import { cliGoldens, inventoryDigest, SQL_FILES, sqlFile } from "./generated";
 
 type Json = Record<string, unknown>;
@@ -38,12 +43,14 @@ function write(path: string, text: string): void {
   writeContractFile(join(CONTRACT, path), text);
 }
 
+/** JSON as the formatter writes it, so a scaffold run leaves no churn. */
 function writeJson(path: string, value: unknown): void {
-  write(path, `${JSON.stringify(value, null, 2)}\n`);
+  write(path, formattedJson(path, value));
 }
 
+/** Only what `value` adds goes into an existing file (write.ts). */
 function writeYaml(path: string, value: unknown): void {
-  write(path, yamlText(value));
+  write(path, yamlFileText(join(CONTRACT, path), value));
 }
 
 function missing(surface: keyof Inventory, found: Inventory, have: Inventory) {
@@ -440,7 +447,10 @@ function configDescriptions(): Map<string, string> {
 function appendRows(path: string, header: string, rows: string[]): void {
   const full = join(CONTRACT, path);
   const text = existsSync(full) ? readFileSync(full, "utf8") : header;
-  write(path, `${text.trimEnd()}\n${rows.join("\n")}\n`);
+  write(
+    path,
+    alignMarkdownTables(`${text.trimEnd()}\n${rows.join("\n")}\n`),
+  );
 }
 
 function files(name: string): string {

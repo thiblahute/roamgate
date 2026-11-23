@@ -722,5 +722,9 @@ impl Drop for Run {
         if let Some(server) = self.server.as_mut() {
             let _ = server.child.start_kill();
         }
+        // A kept run keeps what its server wrote too.
+        if self._dir.is_none() {
+            let _ = std::fs::write(self.root.join("server.log"), self.log_text());
+        }
     }
 }

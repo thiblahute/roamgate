@@ -1,0 +1,219 @@
+{
+  "method": "bridge.mr_reviews.effort.get",
+  "family": "bridge.mr_reviews",
+  "scope": "bridge",
+  "handler": "server/src/mr-reviews/effort-service.ts",
+  "params": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "effort": {
+        "type": "string",
+        "description": "the effort, by id or name, when id is not given"
+      },
+      "by": {
+        "enum": ["user", "agent"]
+      },
+      "summary": {
+        "type": "string"
+      }
+    }
+  },
+  "reply": {
+    "type": "object",
+    "properties": {
+      "board": {
+        "type": "object",
+        "properties": {}
+      },
+      "changes": {
+        "type": "object",
+        "properties": {
+          "feeders": {
+            "type": "array"
+          },
+          "inReview": {
+            "type": "array"
+          },
+          "landed": {
+            "type": "array"
+          },
+          "partsMerged": {
+            "type": "array"
+          },
+          "proposals": {
+            "type": "array"
+          },
+          "since": {
+            "type": "null"
+          },
+          "unsorted": {
+            "type": "array"
+          },
+          "upstreamAnyway": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "feeders",
+          "inReview",
+          "landed",
+          "partsMerged",
+          "proposals",
+          "since",
+          "unsorted",
+          "upstreamAnyway"
+        ]
+      },
+      "commits": {
+        "type": "array"
+      },
+      "daily": {
+        "type": "array"
+      },
+      "effort": {
+        "type": "object",
+        "properties": {
+          "clone": {
+            "type": "object",
+            "properties": {
+              "connectionId": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": ["connectionId", "path"]
+          },
+          "feeders": {
+            "type": "array"
+          },
+          "group": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "branch": {
+                "type": "string"
+              },
+              "remote": {
+                "type": "string"
+              }
+            },
+            "required": ["branch", "remote"]
+          }
+        },
+        "required": [
+          "clone",
+          "feeders",
+          "group",
+          "id",
+          "name",
+          "source",
+          "target"
+        ]
+      },
+      "feeders": {
+        "type": "array"
+      },
+      "journal": {
+        "type": "array"
+      },
+      "plans": {
+        "type": "array"
+      },
+      "proposals": {
+        "type": "object",
+        "properties": {}
+      },
+      "summary": {
+        "type": "object",
+        "properties": {
+          "changed": {
+            "type": "number"
+          },
+          "counts": {
+            "type": "object",
+            "properties": {}
+          },
+          "group": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notReady": {
+            "type": "number"
+          },
+          "overlaps": {
+            "type": "array"
+          },
+          "proposals": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "changed",
+          "counts",
+          "group",
+          "id",
+          "name",
+          "notReady",
+          "overlaps",
+          "proposals",
+          "source",
+          "target",
+          "total"
+        ]
+      }
+    },
+    "required": [
+      "board",
+      "changes",
+      "commits",
+      "daily",
+      "effort",
+      "feeders",
+      "journal",
+      "plans",
+      "proposals",
+      "summary"
+    ]
+  },
+  "status": "typed",
+  "error": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": ["message"]
+  },
+  "x-typed-from": "parity recordings (mr_reviews/efforts-surface.yaml), params from effort-service.ts handleEffortRpc; replies of the refusal-only paths not typed yet"
+}

@@ -33,6 +33,7 @@ pub mod loop_stall;
 pub mod paths;
 pub mod private;
 pub mod record;
+pub mod revoked_sessions;
 pub mod secrets;
 pub mod session_secret;
 pub mod settings;

@@ -3084,3 +3084,51 @@ paths:
       responses:
         default:
           description: See the handler.
+  /api/voice/companion/memories:
+    get:
+      summary: The voice companion's memories (companion-memories/), the index's titles first, most recently changed first
+      x-status: typed
+      parameters:
+        - { name: x-roamgate-voice, in: header, required: true, schema: { const: "1" } }
+      responses:
+        "200":
+          description: The memories.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [memories]
+                properties:
+                  memories:
+                    type: array
+                    items:
+                      type: object
+                      required: [file, name, description, type, body, updated]
+                      properties:
+                        file: { type: string }
+                        name: { type: string }
+                        description: { type: string }
+                        type: { type: string }
+                        body: { type: string }
+                        updated: { type: number, description: "mtime, epoch milliseconds" }
+        "403": { description: "Voice requests need their header." }
+        "405": { description: "Any other method." }
+  "/api/voice/companion/memories/{file}":
+    delete:
+      summary: Deletes one memory file and its line in MEMORY.md
+      x-status: typed
+      parameters:
+        - { name: file, in: path, required: true, schema: { type: string } }
+        - { name: x-roamgate-voice, in: header, required: true, schema: { const: "1" } }
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties: { deleted: { type: string } }
+                additionalProperties: false
+        "403": { description: "Voice requests need their header." }
+        "404": { description: "No such memory (MEMORY.md itself included)." }

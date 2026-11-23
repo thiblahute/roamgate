@@ -1,0 +1,97 @@
+name: a test server's voice setup reports the hardware it is given and downloads from the model mirror
+family: voice
+tier: T1
+description: >
+  ROAMGATE_TEST_VOICE_HARDWARE gives GET /api/voice/setup its hardware
+  (the tier and recommendation follow it), and
+  ROAMGATE_TEST_VOICE_MODELS_URL sends the catalog's downloads to
+  fake-models instead of Hugging Face: the turn model is asked for at
+  <mirror>/huggingface.co/<its path>. fake-models serves a file of the
+  wrong size, so the job fails and nothing is installed.
+ledger:
+  - "server/src/voice/voice-test-env.test.ts > model downloads go to the mirror, the catalog otherwise unchanged"
+  - "server/src/voice/voice-test-env.test.ts > the hardware comes from the file, read on each request"
+server:
+  env:
+    HTTPS_PROXY: "http://127.0.0.1:9"
+    https_proxy: "http://127.0.0.1:9"
+    NO_PROXY: "127.0.0.1,localhost"
+    no_proxy: "127.0.0.1,localhost"
+    ROAMGATE_TEST_VOICE_HARDWARE: "${ROOT}/hardware.json"
+    ROAMGATE_TEST_VOICE_MODELS_URL: "${FAKE_HTTP}/files"
+  files:
+    "${ROOT}/hardware.json":
+      json:
+        {
+          platform: linux,
+          arch: x64,
+          osName: Parity Linux,
+          cpu: { model: Parity CPU, cores: 8 },
+          ramBytes: 17179869184,
+          gpus: [],
+          acceleration: cpu,
+          gpuBytes: 0,
+        }
+    "${ROOT}/served/huggingface.co/pipecat-ai/smart-turn-v3/resolve/f766f81d3cfdf7737ac64aad813d91bbfd56bf93/smart-turn-v3.2-cpu.onnx":
+      text: not the turn model
+    .config/roamgate/voice.json:
+      json:
+        {
+          helper: "${BIN}/roamgate-voice",
+          whisper_model: "${BIN}/roamgate-voice",
+          kokoro_model: "${BIN}/roamgate-voice",
+          kokoro_voices: "${BIN}/roamgate-voice",
+        }
+steps:
+  - login: {}
+  - http: GET /api/voice/setup
+    expect:
+      status: 200
+      json:
+        hardware:
+          {
+            platform: linux,
+            arch: x64,
+            osName: Parity Linux,
+            cpu: { model: Parity CPU, cores: 8 },
+            ramBytes: 17179869184,
+            gpus: [],
+            acceleration: cpu,
+            gpuBytes: 0,
+            $exact: true,
+          }
+        tier: light
+  - http: POST /api/voice/setup
+    headers: { x-roamgate-voice: "1" }
+    body:
+      {
+        choices:
+          {
+            speech: custom,
+            reread: none,
+            tts: custom,
+            stock_voices: none,
+            speaker: none,
+            turn: smart-turn,
+            text_turn: none,
+          },
+      }
+    expect: { status: 202, json: { job: { state: downloading } } }
+  - sh: sleep 2
+  - advance: 600000
+  - sh: sleep 1
+  - advance: 600000
+  - sh: sleep 1
+  - http: GET /api/voice/setup
+    expect:
+      {
+        status: 200,
+        json: { job: { state: failed, error: "{{string}}" } },
+      }
+  - http_fake_calls:
+      {
+        fake: models,
+        path: /files/huggingface.co/pipecat-ai/smart-turn-v3/resolve/f766f81d3cfdf7737ac64aad813d91bbfd56bf93/smart-turn-v3.2-cpu.onnx,
+        min: 1,
+      }
+  - assert_absent: .local/share/roamgate/voice/models/smart-turn-v3.2-cpu.onnx

@@ -339,7 +339,12 @@ impl Inner {
             return Ok(json!({"recording": false}));
         };
         reader
-            .timeline(range, &settings.day_start, &[], Some(settings.idle_seconds))
+            .timeline(
+                range,
+                &settings.day_start,
+                &settings.exclude_connections,
+                Some(settings.idle_seconds),
+            )
             .map_err(|error| RpcError::new(error.to_string()))
     }
 }

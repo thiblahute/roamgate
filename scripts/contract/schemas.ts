@@ -13,7 +13,7 @@ import { basename, dirname, join, relative } from "node:path";
 import { createGenerator, type Config } from "ts-json-schema-generator";
 import ts from "typescript-api";
 import { REPO, source } from "./ast";
-import { writeContractFile } from "./write";
+import { formattedJson, writeContractFile } from "./write";
 
 const SCHEMAS = "contract/schemas";
 /** The server-local wire and storage types, exported for the generator. */
@@ -225,7 +225,7 @@ export function writeSchemas(schemas = generateSchemas()): void {
   for (const [file, schema] of Object.entries(schemas)) {
     writeContractFile(
       join(REPO, SCHEMAS, file),
-      `${JSON.stringify(schema, null, 2)}\n`,
+      formattedJson(file, schema),
     );
   }
 }

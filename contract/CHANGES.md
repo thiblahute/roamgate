@@ -6,6 +6,44 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.7
+
+inventory: beaa6c8e30e1e195d37c215f9c22042011d91a18725d752047f2bc0ab37a5c15
+
+Bugs the parity suite found in the Bun server, fixed in the server and the
+contract together (Work item a7b37023):
+
+- rpc, activity: `bridge.activity.timeline` leaves out the connections in
+  `activity.exclude.connections`, as `roamgate activity` does (it kept their
+  focus spans).
+- http, auth: `POST /api/logout` ends the cookie on the server too: a copy
+  of it no longer logs in, even after a restart. storage:
+  `data:session-secret.revoked.json` and `data:session-secret-*.revoked.json`
+  (version 1, the SHA-256 of each ended cookie with its expiry in epoch
+  seconds, dropped once expired, 10000 at most, 0600).
+  `roamgate-base::revoked_sessions` reads and writes it (for the front's
+  port, Phase 7).
+- ws: a reply made after its browser left is skipped (debug log `send after
+  close skipped`) instead of logged as `websocket send dropped during
+  <context>`.
+- http, voice: `POST /api/voice/settings` with no usable voice.json answers
+  the `speech_rate` or `max_pause_ms` it kept, and `GET /api/voice` reports
+  them, instead of the defaults.
+- push, agent_chat: `agent_chat.session` carries the new `session_id` (the
+  lease's old one before).
+- http: `GET /api/voice/companion/memories` and `DELETE
+  /api/voice/companion/memories/{file}`, served but missing, are listed;
+  the inventory reads routes told apart by `pathname.match`.
+- rpc: `bridge.mr_reviews.effort.*` and `bridge.mr_reviews.ledger.*` (16
+  methods handed to `handleEffortRpc`), served but missing, are listed.
+- env: `ROAMGATE_TEST_VOICE_HARDWARE` and `ROAMGATE_TEST_VOICE_MODELS_URL`,
+  a test server's voice hardware and model download mirror, honoured from
+  source only.
+- `scripts/contract/scaffold.ts` writes only what it adds into an existing
+  YAML file (anchors, flow mappings, quoting and comments kept; any other
+  change is refused), pads appended Markdown rows to the table, and writes
+  JSON as biome formats it, so `--regenerate` leaves no churn.
+
 ## 1.6
 
 inventory: e8d2775b8d2d0d084c05cd3b9614c25f53df62090f92d05dd69d596b212ede72

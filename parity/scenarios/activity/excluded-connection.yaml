@@ -1,7 +1,8 @@
-name: an excluded connection is left out of the CLI's days but not of its status; the bridge's timeline keeps it
+name: an excluded connection is left out of the bridge's timeline and the CLI's days, not of its status
 family: activity
 ledger:
   - "server/src/cli/activity.test.ts > excluded connections are left out; --json gives the timeline"
+  - "server/src/activity/timeline-rpc.test.ts > connections in exclude.connections are left out, as by the CLI"
 server:
   herdr:
     workspaces: [{ workspace_id: w1, label: work, focused: true }]
@@ -21,9 +22,8 @@ steps:
   - advance: 600000
   - call: bridge.activity.timeline
     params: {}
-    # The bridge's timeline keeps the excluded connection's focus spans
-    # (readActivityTimeline passes no exclusions) but attends none of it;
-    # the CLI leaves its spans out.
+    # The bridge's timeline leaves the excluded connection's spans out, as
+    # the CLI does (contract 1.7; it kept them before).
     reply:
       {
         recording: true,
@@ -31,10 +31,12 @@ steps:
           [
             {
               date: "2026-01-01",
-              focus: [{ connection_id: legacy-default }],
-              totals: { attended_ms: 0 },
+              focus: [],
+              attention: [],
+              totals: { attended_ms: 0, workspaces: [] },
             },
           ],
+        workspaces: [],
       }
   - cli: [activity, day, "2026-01-01", --json]
     expect:

@@ -139,6 +139,18 @@ pub fn session_secret_path(settings_path: Option<&str>, root: &Path) -> PathBuf 
     resolve(&root.join(name))
 }
 
+/// Where the cookies ended by a logout are kept (`revoked_sessions`), next
+/// to the signing secret of the same instance: [`session_secret_path`]
+/// with `.revoked.json` for `.json`.
+pub fn revoked_sessions_path(settings_path: Option<&str>, root: &Path) -> PathBuf {
+    let secret = session_secret_path(settings_path, root);
+    let name = secret
+        .file_name()
+        .map(|name| name.to_string_lossy().replace(".json", ".revoked.json"))
+        .unwrap_or_default();
+    secret.with_file_name(name)
+}
+
 /// [`session_secret_path`] with the settings path the environment gives
 /// (`ROAMGATE_SETTINGS_PATH` over `HERDR_GUI_SETTINGS_PATH`), as startup
 /// keys it.

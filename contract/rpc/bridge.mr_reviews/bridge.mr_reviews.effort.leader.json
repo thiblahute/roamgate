@@ -1,0 +1,36 @@
+{
+  "method": "bridge.mr_reviews.effort.leader",
+  "family": "bridge.mr_reviews",
+  "scope": "bridge",
+  "handler": "server/src/mr-reviews/effort-service.ts",
+  "params": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "effort": {
+        "type": "string",
+        "description": "the effort, by id or name, when id is not given"
+      },
+      "by": {
+        "enum": ["user", "agent"]
+      },
+      "summary": {
+        "type": "string"
+      }
+    }
+  },
+  "reply": {},
+  "status": "typed",
+  "error": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": ["message"]
+  },
+  "x-typed-from": "parity recordings (mr_reviews/efforts-surface.yaml), params from effort-service.ts handleEffortRpc; replies of the refusal-only paths not typed yet"
+}

@@ -1,0 +1,57 @@
+{
+  "method": "bridge.mr_reviews.effort.preview",
+  "family": "bridge.mr_reviews",
+  "scope": "bridge",
+  "handler": "server/src/mr-reviews/effort-service.ts",
+  "params": {
+    "type": "object",
+    "properties": {
+      "group": {
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string",
+        "description": "the effort changed; absent: a new one"
+      },
+      "name": {
+        "type": "string"
+      },
+      "clone": {
+        "type": "string"
+      },
+      "target": {
+        "type": "string"
+      },
+      "head": {
+        "type": "string"
+      },
+      "feeders": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "by": {
+        "enum": ["user", "agent"]
+      },
+      "summary": {
+        "type": "string"
+      }
+    }
+  },
+  "reply": {},
+  "status": "typed",
+  "error": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    },
+    "required": ["message"]
+  },
+  "x-typed-from": "parity recordings (mr_reviews/efforts-surface.yaml), params from effort-service.ts handleEffortRpc; replies of the refusal-only paths not typed yet"
+}

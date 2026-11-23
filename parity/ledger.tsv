@@ -348,8 +348,6 @@ server/src/archive/archive.test.ts	archives, indexes, grows, handles partial lin
 server/src/archive/archive.test.ts	appended frames are one valid zstd stream with a checksum	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	a crash after compressing is repaired on the next run	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	index rules, hide and exclude	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	words level and none level	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	rebuild-index restores the same search results	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	history prompts are searched	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	codex and pi sessions are archived, indexed and round-trip	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
 server/src/archive/archive.test.ts	restores only what is missing, maps the project and appends a note	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
@@ -464,7 +462,6 @@ server/src/assistant/archive-tools.test.ts	search, session and a bounded read	ru
 server/src/assistant/archive-tools.test.ts	hidden projects are never shown	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/archive-tools.test.ts	invalid parameters are refused	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/archive-tools.test.ts	search finds what was said since the last pass, and regexes	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/assistant/archive-tools.test.ts	without a text repo the old index answers, saying so	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/claude-driver.test.ts	lists Claude models, with Claude Code's effort levels	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
 server/src/assistant/claude-driver.test.ts	runs a turn in a new session with only Ranger's tools	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
 server/src/assistant/claude-driver.test.ts	resumes the session the last turn left, at the chosen effort	rust-unit:roamgate-claude	assistant Claude driver and loopback MCP
@@ -3669,8 +3666,8 @@ server/src/voice/voice-low-gpu.test.ts	GameMode at a call's start turns it on, a
 server/src/voice/voice-low-gpu.test.ts	GameMode gone at the next call, the full set comes back	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-low-gpu.test.ts	a voice.json in error is left as it is	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-memory-files.test.ts	parses frontmatter, and a file without it	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-memory-files.test.ts	lists memories, never the index or stray names	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
-server/src/voice/voice-memory-files.test.ts	removes a memory and its index line only	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/voice-memory-files.test.ts	lists memories, never the index or stray names	scenario:parity/scenarios/voice/companion-memories.yaml	voice helper driver, companion, setup and library
+server/src/voice/voice-memory-files.test.ts	removes a memory and its index line only	scenario:parity/scenarios/voice/companion-memories.yaml	voice helper driver, companion, setup and library
 server/src/voice/voice-memory-files.test.ts	refuses paths out of the directory and the index	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-memory-files.test.ts	a corrupted file is listed by its name, harmlessly	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
 server/src/voice/voice-memory-files.test.ts	sweep drops a file that lost its line, not a new one	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
@@ -4747,3 +4744,25 @@ scripts/workspaces.test.ts	development bridge and Vite proxies stay off the prod
 scripts/workspaces.test.ts	CI keeps the complete non-browser validation gate	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/workspaces.test.ts	CI and release jobs install once from the workspace root	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/workspaces.test.ts	all workflows use the pinned Bun runtime and matching types	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+server/src/activity/timeline-rpc.test.ts	connections in exclude.connections are left out, as by the CLI	scenario:parity/scenarios/activity/excluded-connection.yaml	
+server/src/archive/archive.test.ts	the none level archives a session but keeps it out of search	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	rebuild-db restores the bookkeeping; the text repo carries on	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/archive/store.test.ts	an old index.sqlite is read as is, then migrated by a writer and deleted	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/archive/store.test.ts	a fresh archive gets a database of the current version	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/archive/text-render.test.ts	the day is fixed at the first line: undated when no time came first	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/assistant/archive-tools.test.ts	without a text repo there is no archive to search yet	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
+server/src/bridge/websocket-send.test.ts	a reply made after the browser left is skipped quietly	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/config/revoked-sessions.test.ts	sits next to the signing secret	rust-unit:roamgate-base:revoked_sessions::tests::sits_next_to_the_signing_secret	data paths, environment precedence, settings store, locks
+server/src/config/revoked-sessions.test.ts	an ended cookie is forgotten once it would have expired anyway	rust-unit:roamgate-base:revoked_sessions::tests::an_ended_cookie_is_forgotten_once_it_would_have_expired_anyway	data paths, environment precedence, settings store, locks
+server/src/config/revoked-sessions.test.ts	keeps the latest to expire past its bound	rust-unit:roamgate-base:revoked_sessions::tests::keeps_the_latest_to_expire_past_its_bound	data paths, environment precedence, settings store, locks
+server/src/config/revoked-sessions.test.ts	an unreadable file is ignored	rust-unit:roamgate-base:revoked_sessions::tests::an_unreadable_file_is_ignored	data paths, environment precedence, settings store, locks
+server/src/http/auth.test.ts	ends the cookie on the server too, across a restart	scenario:parity/scenarios/auth/logout.yaml	
+server/src/voice/voice-helper.test.ts	a voice.json kept before the setup answers with the settings it holds	scenario:parity/scenarios/voice/unconfigured.yaml	
+server/src/voice/voice-test-env.test.ts	nothing without the variables	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/voice-test-env.test.ts	the standalone binary refuses them	rust-unit:roamgate-voice-server	voice helper driver, companion, setup and library
+server/src/voice/voice-test-env.test.ts	model downloads go to the mirror, the catalog otherwise unchanged	scenario:parity/scenarios/voice/setup-mirror.yaml	
+server/src/voice/voice-test-env.test.ts	the hardware comes from the file, read on each request	scenario:parity/scenarios/voice/setup-mirror.yaml	
+scripts/contract/write.test.ts	an addition goes into a YAML file as it is: anchors, flow mappings and quotes kept	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/write.test.ts	a YAML change other than an addition is refused, not rewritten	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/write.test.ts	appended Markdown rows are padded like the table's	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/write.test.ts	JSON is written as the formatter writes it	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates

@@ -191,6 +191,11 @@ const RPC_DELEGATES: Record<string, Delegate | "inline"> = {
     scopes: () => [
       source(`${SERVER}/mr-reviews/rpc.ts`),
       source(`${SERVER}/mr-reviews/module.ts`),
+      // `bridge.mr_reviews.effort.*` and `ledger.*`, which module.ts hands on.
+      ...functionsNamed(
+        source(`${SERVER}/mr-reviews/effort-service.ts`),
+        "handleEffortRpc",
+      ),
     ],
     subjects: { method: "" },
     family: ["bridge.mr_reviews."],
@@ -404,6 +409,18 @@ const HTTP_PREFIX_DELEGATES: Record<string, () => ts.Node[]> = {
   ],
 };
 
+/**
+ * Routes told apart by `pathname.match(<regex>)`, by the regex's source: the
+ * `METHOD path` pairs each serves. A new regex fails the inventory until it
+ * is listed here.
+ */
+const HTTP_PATTERNS: Record<string, string[]> = {
+  "^\\/api\\/voice\\/companion\\/memories(?:\\/([^/]+))?$": [
+    "GET /api/voice/companion/memories",
+    "DELETE /api/voice/companion/memories/{file}",
+  ],
+};
+
 /** Whether a node compares `<x>.method` with a literal; gives the literal. */
 function methodTest(node: ts.Node): string | undefined {
   if (!ts.isBinaryExpression(node)) return undefined;
@@ -451,6 +468,19 @@ function pathsIn(
       ) {
         const call = node.expression.name.text;
         const arg = node.arguments[0];
+        if (call === "match" && arg && ts.isRegularExpressionLiteral(arg)) {
+          const regex = arg.text.slice(1, arg.text.lastIndexOf("/"));
+          const routes = HTTP_PATTERNS[regex];
+          if (!routes)
+            throw new Error(
+              `${node.getSourceFile().fileName}: a route matched by ${arg.text} the contract inventory does not know: add it to HTTP_PATTERNS`,
+            );
+          for (const route of routes) {
+            const [method, path] = route.split(" ") as [string, string];
+            paths.add(path);
+            pairs.add(`${method} ${path}`);
+          }
+        }
         if (call === "startsWith" && arg) {
           const prefix = stringConst(arg);
           if (prefix !== undefined) prefixes.add(prefix);

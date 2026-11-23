@@ -8,6 +8,7 @@ description: >
   cannot send it without a preflight).
 ledger:
   - "server/src/http/voice.test.ts > without a router, or the voice header, it is for the agent on screen"
+  - "server/src/voice/voice-helper.test.ts > speech rate > a voice.json kept before the setup answers with the settings it holds"
 server:
   env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
 steps:
@@ -105,16 +106,33 @@ steps:
         status: 400,
         json: { error: 'front_mode must be "companion" or "relay".' },
       }
-  # Bun keeps the value in a new voice.json, but answers the default: the
-  # file it made is not a valid configuration, so it is not read back.
+  # The value is kept in a new voice.json, not a configuration yet, and
+  # answered and reported as kept (contract 1.7; the default before).
   - http: POST /api/voice/settings
     headers: { x-roamgate-voice: "1" }
     body: { speech_rate: 1 }
-    expect: { status: 200, json: { speech_rate: 1.2, $exact: true } }
+    expect: { status: 200, json: { speech_rate: 1, $exact: true } }
+  - http: POST /api/voice/settings
+    headers: { x-roamgate-voice: "1" }
+    body: { max_pause_ms: 5000 }
+    expect: { status: 200, json: { max_pause_ms: 5000, $exact: true } }
   - assert_file:
       {
         path: .config/roamgate/voice.json,
-        json: { speech_rate: 1, $exact: true },
+        json: { speech_rate: 1, max_pause_ms: 5000, $exact: true },
+      }
+  - http: GET /api/voice
+    expect:
+      {
+        status: 200,
+        json:
+          {
+            available: false,
+            detail: "${HOME}/.config/roamgate/voice.json: helper is required",
+            speech_rate: 1,
+            max_pause_ms: 5000,
+            $exact: true,
+          },
       }
   - http: POST /api/voice/timing
     body: {}

@@ -137,7 +137,8 @@
         "status",
         "rebuild-text",
         "fetch-text",
-        "rebuild-index"
+        "rebuild-index",
+        "rebuild-db"
       ],
       "flags": [
         "--json",

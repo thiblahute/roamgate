@@ -131,11 +131,25 @@
       "description": "the same, per settings file when ROAMGATE_SETTINGS_PATH is set: session-secret-<sha256 of its resolved path>.json",
       "status": "inventoried"
     },
+    "data:session-secret-*.revoked.json": {
+      "kind": "data",
+      "used_in": ["server/src/config/session-secret.ts"],
+      "format": "json",
+      "description": "the same, per settings file when ROAMGATE_SETTINGS_PATH is set",
+      "status": "inventoried"
+    },
     "data:session-secret.json": {
       "kind": "data",
       "used_in": ["server/src/config/session-secret.ts"],
       "format": "json",
       "description": "cookie signing material, rotated when the login credentials change",
+      "status": "inventoried"
+    },
+    "data:session-secret.revoked.json": {
+      "kind": "data",
+      "used_in": ["server/src/config/session-secret.ts"],
+      "format": "json",
+      "description": "cookies ended by a logout, version 1: {version, revoked: {<sha256 of the cookie>: <its expiry, epoch seconds>}}, an entry dropped once expired, 10000 at most; 0600",
       "status": "inventoried"
     },
     "data:settings.json": {

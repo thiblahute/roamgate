@@ -1,0 +1,124 @@
+name: the Reviews board's effort and ledger RPCs answer for a declared effort and refuse what they cannot do
+family: mr_reviews
+description: >
+  bridge.mr_reviews.effort.* and ledger.*, which the mr-reviews module hands
+  to handleEffortRpc. An effort declared in settings.json (its clone not a
+  checkout here, so nothing is derived from git) is read, marked seen,
+  refreshed, given its history and deleted; every call naming no effort is
+  refused with not_found, and each one's own checks refuse bad parameters
+  before git or a forge is asked. A declaration needs a group headed
+  upstream.
+server:
+  env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
+  files:
+    .config/roamgate/settings.json:
+      json:
+        mr_reviews:
+          upstream_groups: [g1]
+          efforts:
+            - id: e1
+              group: g1
+              name: Parity effort
+              clone: { connection_id: legacy-default, path: "${ROOT}/clone" }
+              source: refs/heads/feature
+              target: { remote: origin, branch: main }
+steps:
+  - login: {}
+  - connect: {}
+  - call: bridge.mr_reviews.effort.get
+    params: { id: e1 }
+    normalize: [run-paths]
+    reply:
+      {
+        effort:
+          {
+            id: e1,
+            group: g1,
+            name: Parity effort,
+            clone: { connectionId: legacy-default, path: "$ROOT/clone" },
+            source: refs/heads/feature,
+            target: { remote: origin, branch: main },
+            feeders: [],
+            $exact: true,
+          },
+        summary:
+          {
+            id: e1,
+            name: Parity effort,
+            group: g1,
+            source: feature,
+            target: origin/main,
+            total: 0,
+          },
+        commits: [],
+        feeders: [],
+        daily: [],
+        journal: [],
+        proposals: {},
+        plans: [],
+      }
+  - call: bridge.mr_reviews.effort.history
+    params: { id: e1, key: k }
+    reply: { versions: [], $exact: true }
+  - call: bridge.mr_reviews.effort.seen
+    params: { effort: e1 }
+    reply: { ok: true, $exact: true }
+  - call: bridge.mr_reviews.effort.refresh
+    params: { id: e1 }
+    reply: { ok: true, $exact: true }
+  - call: bridge.mr_reviews.effort.threads
+    params: { id: e1 }
+    reply: { snapshot: null, $exact: true }
+  - call: bridge.mr_reviews.ledger.undo
+    params: { id: e1 }
+    error: { message: nothing to undo }
+  - call: bridge.mr_reviews.ledger.set
+    params: { id: e1, disposition: nope }
+    error:
+      {
+        message: "disposition: not_for_upstream, superseded, planned, upstream, in_review or unsorted",
+      }
+  - call: bridge.mr_reviews.ledger.match
+    params: { id: e1, decisions: [] }
+    error: { message: "decisions: [{commit, match, accept}] (commit and match shas)" }
+  - call: bridge.mr_reviews.ledger.plans
+    params: { id: e1, action: dance }
+    error: { message: "action: propose, accept, edit, split or drop" }
+  - call: bridge.mr_reviews.effort.part
+    params: { id: e1, plan: nothing }
+    error: { message: no such planned request }
+  - call: bridge.mr_reviews.effort.open_commit
+    params: { id: e1, sha: xyz }
+    error: { message: "sha: a commit id" }
+  - call: bridge.mr_reviews.effort.diff
+    params: { id: e1, from: a, to: b }
+    error: { message: "from and to: commit ids" }
+  - call: bridge.mr_reviews.effort.leader
+    params: { id: e1 }
+    error: { message: "its head workspace is not open: open it, or set head" }
+  - call: bridge.mr_reviews.effort.set
+    params: { group: nowhere, source: feature }
+    error:
+      {
+        message: an effort is declared on a group or a workspace headed upstream,
+      }
+  - call: bridge.mr_reviews.effort.preview
+    params: { group: g1, source: feature }
+    error:
+      {
+        message: "no clone: put a workspace of the source's clone in the group, or give clone",
+      }
+  - call: bridge.mr_reviews.effort.delete
+    params: { id: e1 }
+    reply: { ok: true, effort: { id: e1, name: Parity effort }, version: 1 }
+  - assert_file:
+      {
+        path: .config/roamgate/settings.json,
+        json: { mr_reviews: { efforts: "{{absent}}" } },
+      }
+  - call: bridge.mr_reviews.effort.get
+    params: { id: e1 }
+    error: { message: no such effort }
+  - call: bridge.mr_reviews.ledger.undo
+    params: { id: e1 }
+    error: { message: no such effort }

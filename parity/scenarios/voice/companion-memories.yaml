@@ -1,0 +1,78 @@
+name: the voice companion's memories are listed and deleted one by one, behind the voice header
+family: voice
+description: >
+  The companion keeps its memories as files of companion-memories/ with a
+  MEMORY.md index. GET /api/voice/companion/memories lists them (the
+  index's titles first), DELETE /api/voice/companion/memories/<file>
+  removes one and its index line, 404 for a name that is no memory, 405
+  for any other method; both need the x-roamgate-voice header.
+ledger:
+  - "server/src/voice/voice-memory-files.test.ts > CompanionMemoryFiles > lists memories, never the index or stray names"
+  - "server/src/voice/voice-memory-files.test.ts > CompanionMemoryFiles > removes a memory and its index line only"
+server:
+  env: { HTTPS_PROXY: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9" }
+  files:
+    .config/roamgate/companion-memories/cat.md:
+      text: "---\nname: Cat\ndescription: about the cat\ntype: user\n---\nThe cat is called Tom.\n"
+    .config/roamgate/companion-memories/dog.md:
+      text: "---\nname: Dog\ndescription: about the dog\ntype: user\n---\nThe dog is called Rex.\n"
+    .config/roamgate/companion-memories/MEMORY.md:
+      text: "- [The cat](cat.md) - c\n- [Dog](dog.md) - d\n"
+    .config/roamgate/companion-memories/notes.txt: { text: x }
+steps:
+  - login: {}
+  - http: GET /api/voice/companion/memories
+    expect: { status: 403, json: { error: Voice requests need their header. } }
+  - http: GET /api/voice/companion/memories
+    headers: { x-roamgate-voice: "1" }
+    expect:
+      status: 200
+      json:
+        memories:
+          $unordered:
+            - {
+                file: cat.md,
+                name: The cat,
+                description: about the cat,
+                type: user,
+                body: "{{contains:Tom}}",
+                updated: "{{number}}",
+              }
+            - {
+                file: dog.md,
+                name: Dog,
+                description: about the dog,
+                type: user,
+                body: "{{contains:Rex}}",
+                updated: "{{number}}",
+              }
+  - http: DELETE /api/voice/companion/memories/cat.md
+    expect: { status: 403 }
+  - http: DELETE /api/voice/companion/memories/cat.md
+    headers: { x-roamgate-voice: "1" }
+    expect: { status: 200, json: { deleted: cat.md, $exact: true } }
+  - http: DELETE /api/voice/companion/memories/cat.md
+    headers: { x-roamgate-voice: "1" }
+    expect: { status: 404, json: { error: No such memory. } }
+  - http: DELETE /api/voice/companion/memories/MEMORY.md
+    headers: { x-roamgate-voice: "1" }
+    expect: { status: 404 }
+  - http: POST /api/voice/companion/memories
+    headers: { x-roamgate-voice: "1" }
+    expect: { status: 405 }
+  - assert_absent: .config/roamgate/companion-memories/cat.md
+  - assert_file:
+      {
+        path: .config/roamgate/companion-memories/MEMORY.md,
+        text: "{{re:^- \\[Dog\\]\\(dog.md\\) - d\\n?$}}",
+      }
+  - http: GET /api/voice/companion/memories
+    headers: { x-roamgate-voice: "1" }
+    expect: { status: 200, json: { memories: [{ file: dog.md }] } }
+contract_exceptions:
+  - {
+      surface: http,
+      name: POST /api/voice/companion/memories,
+      kind: unlisted,
+      reason: "sent on purpose to see the 405 any other method gets",
+    }

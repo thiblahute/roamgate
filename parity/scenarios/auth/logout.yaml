@@ -1,7 +1,8 @@
-name: logout after reauthentication closes earlier and later tabs, not other browsers
+name: logout after reauthentication closes earlier and later tabs, not other browsers, and ends the cookie for good
 family: auth
 ledger:
   - "server/src/http/auth-process.test.ts > logout after reauthentication closes earlier and later tabs, not other browsers"
+  - "server/src/http/auth.test.ts > ends the cookie on the server too, across a restart"
 steps:
   - login: {}
   - login: { as: other }
@@ -26,9 +27,9 @@ steps:
     expect: { status: 405 }
   - http: POST /api/logout
     expect: { status: 403 }
+  # The browser's jar keeps the cookie it logged out with: a copy of it.
   - http: POST /api/logout
     headers: { x-roamgate-logout: "1" }
-    save_cookies: true
     expect: { status: 204, headers: { set-cookie: "{{contains:Max-Age=0}}" } }
   - expect_close: { code: 4001 }
     socket: a
@@ -36,6 +37,25 @@ steps:
     socket: same_browser
   - call: bridge.ping
     socket: other_browser
+  # The copy no longer logs in (contract 1.7: logout ends the cookie on the
+  # server), not even after a restart; the other browser's still does.
+  - http: GET /api/health
+    expect: { status: 401 }
+  - assert_file:
+      {
+        path: .config/roamgate/session-secret.revoked.json,
+        mode: "0600",
+        json: { version: 1, revoked: "{{object}}" },
+      }
+  - restart: {}
+  - http: GET /api/health
+    expect: { status: 401 }
+  - http: GET /api/health
+    as: other
+    expect: { status: 200 }
+  - connect: { name: other_again, as: other }
+  - call: bridge.ping
+    socket: other_again
   - http: GET /api/health
     cookie: false
     expect: { status: 401 }

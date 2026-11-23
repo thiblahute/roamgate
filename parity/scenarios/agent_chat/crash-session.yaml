@@ -152,13 +152,18 @@ steps:
   - call: agent_chat.send
     params: { pane_id: p1, text: clear the context }
     within_ms: 20000
-  # The event's own session_id is the envelope's: the lease's, still the
-  # old one when it is sent (server/src/conversation/service.ts emit).
+  # The push names the new session (contract 1.7; it carried the lease's,
+  # still the old one, before).
   - expect_push: "event:agent_chat.session"
     within_ms: 20000
     message:
       {
-        data: { type: session, previous: 11111111-2222-4333-8444-555555555555 },
+        data:
+          {
+            type: session,
+            session_id: 33333333-2222-4333-8444-555555555555,
+            previous: 11111111-2222-4333-8444-555555555555,
+          },
       }
   - expect_push: "event:agent_chat.lease"
     message: { data: { session_id: 33333333-2222-4333-8444-555555555555 } }
