@@ -40,6 +40,19 @@ wire/core-channel.md), each while the owners table gives it to Rust.
   403 (`Forbidden`, text), which a recording now captures when the core
   answers. notifications.json, web-push.json and the feed's messages are
   unchanged.
+- activity (S13): `owners/families.json` gives the family its CLI
+  (`activity`, `roamgate activity` passed through to the core while Rust
+  owns it). wire: the front's `internal.activity.start`,
+  `internal.activity.signals` (what only the front sees in stage 1, each
+  stamped with its arrival time: connection states, the Herdr events and
+  listings the recorder reads, the agents conversation mode runs, closed
+  browser sockets) and `internal.activity.stop`, the handover of
+  activity.sqlite without two writers, and the signals held while the
+  table names Rust and the core has not connected (15 s at most); the
+  reverse target `activity.hostScript` (the recorder's read-only git
+  script on a connection's host); `activity.dayInput` is asked only while
+  Bun owns the activity family (the core builds the day itself while it
+  owns it). At shutdown the activity log stops before the core.
 
 ## 1.5
 

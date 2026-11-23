@@ -1,70 +1,75 @@
 file	test	mapping	note
-server/src/activity/reader.test.ts	no log: no reader	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/reader.test.ts	the timeline reads spans, states before the range, and gaps	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/reader.test.ts	pages are in id order and resume after an id	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/reader.test.ts	status tells a running recorder from a stopped one	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/reader.test.ts	a log whose recorder stopped can still be read, and is not written	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/reader.test.ts	old rows written just after a recorder start read as its start, everywhere	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	agent states are recorded once per change, with done as idle	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	agent titles are recorded only when asked for	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	pane listings catch missed changes but never undo a newer event	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	an agent Roamgate runs itself is recorded as Roamgate knows it, not as Herdr says	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	a closed pane's agent ends as unknown, and the state restarts after a gap	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	unknown is recorded once, and not for an agent never seen in a state	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	connection gaps cover the periods a connection was not ready	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	presence becomes focus spans that end on a switch or when hidden	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	a page that loads is no attention until an input follows	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	a page reconnecting to a restarted bridge is no attention until an input after it	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	a view that follows Herdr or moves by itself ends the span and opens none	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	input after idle is session.active, caused by input	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	Herdr's focus says where it came from: start, event, listing, reconnect	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	Herdr's focus at a recorder start is recorder_start, never null	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	reading counts as attention until the idle threshold	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	a span ends with timeout when the reports stop	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	a span ends at once when the socket closes	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	a browser moving to another connection switches, and phones count	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	Herdr's own focus is a low-confidence span of its own	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	a stop ends every span; a restart closes a crashed recorder's at its last sign of life	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	events past the retention period are deleted every day	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	with recording off nothing is recorded, not even a file	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	presence reports are checked	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	stored events, workspaces and a page conform to activity.schema.json	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	branches and remotes are read from the host, now and then, and kept	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/recorder.test.ts	a failing host read leaves the log as Herdr says	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/repo-info.test.ts	reads root, branch and remote of checkouts and linked worktrees	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/repo-info.test.ts	a worktree of a repository with its git directory apart keeps no root	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/repo-info.test.ts	a detached head has no branch; no remote is null	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/repo-info.test.ts	credentials never leave a remote URL	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/repo-info.test.ts	output for unknown indexes or without markers is ignored	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/store.test.ts	the log is a private WAL database with incremental vacuum	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/store.test.ts	a database from a newer Roamgate is refused	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/store.test.ts	a symlinked log is refused	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/store.test.ts	event ids keep their order across reopening and deletion	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/store.test.ts	a vacuum returns the space retention freed	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/store.test.ts	times read back in local time with their offset	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/store.test.ts	a log from before the git columns gains them, and readers cope	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/subjects.test.ts	the first folder under a root is the subject, on any host's home	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/subjects.test.ts	worktrees are grouped by folder, never by their repository	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/subjects.test.ts	a root itself, a path outside every root or no path has no subject	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/subjects.test.ts	the deepest root wins when roots nest	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/subjects.test.ts	a group of the Workspaces tree wins over the folder	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/subjects.test.ts	settings.json gives both sources	rust-unit:roamgate-activity	recorder, reader and timeline internals
+server/src/activity/front.test.ts	without a core, calls go to Bun's recorder as they come	internal:core channel	the Bun side of the activity family's handover (plan 8.2), deleted at cut-over; the core's family and the activity data tests (crates/roamgate-activity/tests/data_compat.rs) run both sides
+server/src/activity/front.test.ts	held signals go to the core in order once it takes the family, with the time they came	internal:core channel	the Bun side of the activity family's handover (plan 8.2), deleted at cut-over; the core's family and the activity data tests (crates/roamgate-activity/tests/data_compat.rs) run both sides
+server/src/activity/front.test.ts	held signals go to Bun's recorder when no core takes the family in time	internal:core channel	the Bun side of the activity family's handover (plan 8.2), deleted at cut-over; the core's family and the activity data tests (crates/roamgate-activity/tests/data_compat.rs) run both sides
+server/src/activity/front.test.ts	a handover stops Bun's recorder before the core's starts, which hears the connections as they are	internal:core channel	the Bun side of the activity family's handover (plan 8.2), deleted at cut-over; the core's family and the activity data tests (crates/roamgate-activity/tests/data_compat.rs) run both sides
+server/src/activity/front.test.ts	a stop ends recording where it runs	internal:core channel	the Bun side of the activity family's handover (plan 8.2), deleted at cut-over; the core's family and the activity data tests (crates/roamgate-activity/tests/data_compat.rs) run both sides
+server/src/activity/reader.test.ts	no log: no reader	rust-unit:roamgate-activity:reader::tests::no_log_no_reader	recorder, reader and timeline internals
+server/src/activity/reader.test.ts	the timeline reads spans, states before the range, and gaps	rust-unit:roamgate-activity:reader::tests::the_timeline_reads_spans_states_before_the_range_and_gaps	recorder, reader and timeline internals
+server/src/activity/reader.test.ts	pages are in id order and resume after an id	rust-unit:roamgate-activity:reader::tests::pages_are_in_id_order_and_resume_after_an_id	recorder, reader and timeline internals
+server/src/activity/reader.test.ts	status tells a running recorder from a stopped one	rust-unit:roamgate-activity:reader::tests::status_tells_a_running_recorder_from_a_stopped_one	recorder, reader and timeline internals
+server/src/activity/reader.test.ts	a log whose recorder stopped can still be read, and is not written	rust-unit:roamgate-activity:reader::tests::a_log_whose_recorder_stopped_can_still_be_read_and_is_not_written	recorder, reader and timeline internals
+server/src/activity/reader.test.ts	old rows written just after a recorder start read as its start, everywhere	rust-unit:roamgate-activity:reader::tests::old_rows_written_just_after_a_recorder_start_read_as_its_start_everywhere	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	agent states are recorded once per change, with done as idle	rust-unit:roamgate-activity:recorder::tests::agent_states_are_recorded_once_per_change_with_done_as_idle	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	agent titles are recorded only when asked for	rust-unit:roamgate-activity:recorder::tests::agent_titles_are_recorded_only_when_asked_for	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	pane listings catch missed changes but never undo a newer event	rust-unit:roamgate-activity:recorder::tests::pane_listings_catch_missed_changes_but_never_undo_a_newer_event	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	an agent Roamgate runs itself is recorded as Roamgate knows it, not as Herdr says	rust-unit:roamgate-activity:recorder::tests::an_agent_roamgate_runs_itself_is_recorded_as_roamgate_knows_it_not_as_herdr_says	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	a closed pane's agent ends as unknown, and the state restarts after a gap	rust-unit:roamgate-activity:recorder::tests::a_closed_panes_agent_ends_as_unknown_and_the_state_restarts_after_a_gap	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	unknown is recorded once, and not for an agent never seen in a state	rust-unit:roamgate-activity:recorder::tests::unknown_is_recorded_once_and_not_for_an_agent_never_seen_in_a_state	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	connection gaps cover the periods a connection was not ready	rust-unit:roamgate-activity:recorder::tests::connection_gaps_cover_the_periods_a_connection_was_not_ready	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	presence becomes focus spans that end on a switch or when hidden	rust-unit:roamgate-activity:recorder::tests::presence_becomes_focus_spans_that_end_on_a_switch_or_when_hidden	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	a page that loads is no attention until an input follows	rust-unit:roamgate-activity:recorder::tests::a_page_that_loads_is_no_attention_until_an_input_follows	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	a page reconnecting to a restarted bridge is no attention until an input after it	rust-unit:roamgate-activity:recorder::tests::a_page_reconnecting_to_a_restarted_bridge_is_no_attention_until_an_input_after_it	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	a view that follows Herdr or moves by itself ends the span and opens none	rust-unit:roamgate-activity:recorder::tests::a_view_that_follows_herdr_or_moves_by_itself_ends_the_span_and_opens_none	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	input after idle is session.active, caused by input	rust-unit:roamgate-activity:recorder::tests::input_after_idle_is_session_active_caused_by_input	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	Herdr's focus says where it came from: start, event, listing, reconnect	rust-unit:roamgate-activity:recorder::tests::herdrs_focus_says_where_it_came_from_start_event_listing_reconnect	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	Herdr's focus at a recorder start is recorder_start, never null	rust-unit:roamgate-activity:recorder::tests::herdrs_focus_at_a_recorder_start_is_recorder_start_never_null	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	reading counts as attention until the idle threshold	rust-unit:roamgate-activity:recorder::tests::reading_counts_as_attention_until_the_idle_threshold	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	a span ends with timeout when the reports stop	rust-unit:roamgate-activity:recorder::tests::a_span_ends_with_timeout_when_the_reports_stop	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	a span ends at once when the socket closes	rust-unit:roamgate-activity:recorder::tests::a_span_ends_at_once_when_the_socket_closes	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	a browser moving to another connection switches, and phones count	rust-unit:roamgate-activity:recorder::tests::a_browser_moving_to_another_connection_switches_and_phones_count	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	Herdr's own focus is a low-confidence span of its own	rust-unit:roamgate-activity:recorder::tests::herdrs_own_focus_is_a_low_confidence_span_of_its_own	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	a stop ends every span; a restart closes a crashed recorder's at its last sign of life	rust-unit:roamgate-activity:recorder::tests::a_stop_ends_every_span_a_restart_closes_a_crashed_recorders_at_its_last_sign_of_life	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	events past the retention period are deleted every day	rust-unit:roamgate-activity:recorder::tests::events_past_the_retention_period_are_deleted_every_day	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	with recording off nothing is recorded, not even a file	rust-unit:roamgate-activity:recorder::tests::with_recording_off_nothing_is_recorded_not_even_a_file	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	presence reports are checked	rust-unit:roamgate-activity:recorder::tests::presence_reports_are_checked	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	stored events, workspaces and a page conform to activity.schema.json	rust-unit:roamgate-activity:recorder::tests::stored_events_workspaces_and_a_page_conform_to_activity_schema_json	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	branches and remotes are read from the host, now and then, and kept	rust-unit:roamgate-activity:recorder::tests::branches_and_remotes_are_read_from_the_host_now_and_then_and_kept	recorder, reader and timeline internals
+server/src/activity/recorder.test.ts	a failing host read leaves the log as Herdr says	rust-unit:roamgate-activity:recorder::tests::a_failing_host_read_leaves_the_log_as_herdr_says	recorder, reader and timeline internals
+server/src/activity/repo-info.test.ts	reads root, branch and remote of checkouts and linked worktrees	rust-unit:roamgate-activity:repo_info::tests::reads_root_branch_and_remote_of_checkouts_and_linked_worktrees	recorder, reader and timeline internals
+server/src/activity/repo-info.test.ts	a worktree of a repository with its git directory apart keeps no root	rust-unit:roamgate-activity:repo_info::tests::a_worktree_of_a_repository_with_its_git_directory_apart_keeps_no_root	recorder, reader and timeline internals
+server/src/activity/repo-info.test.ts	a detached head has no branch; no remote is null	rust-unit:roamgate-activity:repo_info::tests::a_detached_head_has_no_branch_no_remote_is_null	recorder, reader and timeline internals
+server/src/activity/repo-info.test.ts	credentials never leave a remote URL	rust-unit:roamgate-activity:repo_info::tests::credentials_never_leave_a_remote_url	recorder, reader and timeline internals
+server/src/activity/repo-info.test.ts	output for unknown indexes or without markers is ignored	rust-unit:roamgate-activity:repo_info::tests::output_for_unknown_indexes_or_without_markers_is_ignored	recorder, reader and timeline internals
+server/src/activity/store.test.ts	the log is a private WAL database with incremental vacuum	rust-unit:roamgate-activity:store::tests::the_log_is_a_private_wal_database_with_incremental_vacuum	recorder, reader and timeline internals
+server/src/activity/store.test.ts	a database from a newer Roamgate is refused	rust-unit:roamgate-activity:store::tests::a_database_from_a_newer_roamgate_is_refused	recorder, reader and timeline internals
+server/src/activity/store.test.ts	a symlinked log is refused	rust-unit:roamgate-activity:store::tests::a_symlinked_log_is_refused	recorder, reader and timeline internals
+server/src/activity/store.test.ts	event ids keep their order across reopening and deletion	rust-unit:roamgate-activity:store::tests::event_ids_keep_their_order_across_reopening_and_deletion	recorder, reader and timeline internals
+server/src/activity/store.test.ts	a vacuum returns the space retention freed	rust-unit:roamgate-activity:store::tests::a_vacuum_returns_the_space_retention_freed	recorder, reader and timeline internals
+server/src/activity/store.test.ts	times read back in local time with their offset	rust-unit:roamgate-activity:store::tests::times_read_back_in_local_time_with_their_offset	recorder, reader and timeline internals
+server/src/activity/store.test.ts	a log from before the git columns gains them, and readers cope	rust-unit:roamgate-activity:store::tests::a_log_from_before_the_git_columns_gains_them_and_readers_cope	recorder, reader and timeline internals
+server/src/activity/subjects.test.ts	the first folder under a root is the subject, on any host's home	rust-unit:roamgate-activity:subjects::tests::the_first_folder_under_a_root_is_the_subject_on_any_hosts_home	recorder, reader and timeline internals
+server/src/activity/subjects.test.ts	worktrees are grouped by folder, never by their repository	rust-unit:roamgate-activity:subjects::tests::worktrees_are_grouped_by_folder_never_by_their_repository	recorder, reader and timeline internals
+server/src/activity/subjects.test.ts	a root itself, a path outside every root or no path has no subject	rust-unit:roamgate-activity:subjects::tests::a_root_itself_a_path_outside_every_root_or_no_path_has_no_subject	recorder, reader and timeline internals
+server/src/activity/subjects.test.ts	the deepest root wins when roots nest	rust-unit:roamgate-activity:subjects::tests::the_deepest_root_wins_when_roots_nest	recorder, reader and timeline internals
+server/src/activity/subjects.test.ts	a group of the Workspaces tree wins over the folder	rust-unit:roamgate-activity:subjects::tests::a_group_of_the_workspaces_tree_wins_over_the_folder	recorder, reader and timeline internals
+server/src/activity/subjects.test.ts	settings.json gives both sources	rust-unit:roamgate-activity:subjects::tests::settings_json_gives_both_sources	recorder, reader and timeline internals
 server/src/activity/timeline-rpc.test.ts	not recording: says so	scenario:parity/scenarios/activity/not-recording.yaml	
 server/src/activity/timeline-rpc.test.ts	today by default, from the day start setting	scenario:parity/scenarios/activity/record-and-read.yaml	
-server/src/activity/timeline.test.ts	days follow the day start, in local time	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	focus spans carry their source and reason; open ones end now	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	spans are clipped to the range and split across days	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	browser and phone attention wins; Herdr only fills the holes	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	an overnight Herdr span with no sign of a person is not attended	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	Herdr time counts after input, a page brought to the front or a switch	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	idle runs from session.idle to the client's next sign of life	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	agent lanes are built from consecutive states, cut by gaps	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	a stopped recorder ends open spans at its last stamp and leaves a gap	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	an open gap spanning days ends at midnight on the earlier day	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	an invalid range is refused	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	a request's range is whole local days, today by default	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	totals per subject add up its workspaces; agents overlap once	rust-unit:roamgate-activity	recorder, reader and timeline internals
-server/src/activity/timeline.test.ts	only a person's causes are signs: loads, reconnects, follows and listings are not	rust-unit:roamgate-activity	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	days follow the day start, in local time	rust-unit:roamgate-activity:timeline::tests::days_follow_the_day_start_in_local_time	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	focus spans carry their source and reason; open ones end now	rust-unit:roamgate-activity:timeline::tests::focus_spans_carry_their_source_and_reason_open_ones_end_now	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	spans are clipped to the range and split across days	rust-unit:roamgate-activity:timeline::tests::spans_are_clipped_to_the_range_and_split_across_days	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	browser and phone attention wins; Herdr only fills the holes	rust-unit:roamgate-activity:timeline::tests::browser_and_phone_attention_wins_herdr_only_fills_the_holes	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	an overnight Herdr span with no sign of a person is not attended	rust-unit:roamgate-activity:timeline::tests::an_overnight_herdr_span_with_no_sign_of_a_person_is_not_attended	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	Herdr time counts after input, a page brought to the front or a switch	rust-unit:roamgate-activity:timeline::tests::herdr_time_counts_after_input_a_page_brought_to_the_front_or_a_switch	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	idle runs from session.idle to the client's next sign of life	rust-unit:roamgate-activity:timeline::tests::idle_runs_from_session_idle_to_the_clients_next_sign_of_life	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	agent lanes are built from consecutive states, cut by gaps	rust-unit:roamgate-activity:timeline::tests::agent_lanes_are_built_from_consecutive_states_cut_by_gaps	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	a stopped recorder ends open spans at its last stamp and leaves a gap	rust-unit:roamgate-activity:timeline::tests::a_stopped_recorder_ends_open_spans_at_its_last_stamp_and_leaves_a_gap	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	an open gap spanning days ends at midnight on the earlier day	rust-unit:roamgate-activity:timeline::tests::an_open_gap_spanning_days_ends_at_midnight_on_the_earlier_day	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	an invalid range is refused	rust-unit:roamgate-activity:timeline::tests::an_invalid_range_is_refused	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	a request's range is whole local days, today by default	rust-unit:roamgate-activity:timeline::tests::a_requests_range_is_whole_local_days_today_by_default	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	totals per subject add up its workspaces; agents overlap once	rust-unit:roamgate-activity:timeline::tests::totals_per_subject_add_up_its_workspaces_agents_overlap_once	recorder, reader and timeline internals
+server/src/activity/timeline.test.ts	only a person's causes are signs: loads, reconnects, follows and listings are not	rust-unit:roamgate-activity:timeline::tests::only_a_persons_causes_are_signs_loads_reconnects_follows_and_listings_are_not	recorder, reader and timeline internals
 server/src/agent/agent-activity.test.ts	stats current files across refreshes and fresh bridge instances despite sequence churn	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/agent-activity.test.ts	keeps missing, failed, and unsupported sessions without fabricated activity	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/agent-activity.test.ts	uses connection-specific file access and never resolves remote IDs against local sessions	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
@@ -1265,8 +1270,8 @@ server/src/bridge/websocket-send.test.ts	holds terminal repaints while the windo
 server/src/bridge/websocket-send.test.ts	replaces a queued large snapshot with a newer one that has the same key	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	a large snapshot sent while the window has room still leaves in chunks	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	closes a browser that stops reading past the queue limit	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/cli/activity.test.ts	durations read as hours and minutes	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/activity.test.ts	today prints attended and agent time per workspace	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
+server/src/cli/activity.test.ts	durations read as hours and minutes	rust-unit:roamgate-cli:activity::tests::durations_read_as_hours_and_minutes	CLI internals beyond its help and outputs
+server/src/cli/activity.test.ts	today prints attended and agent time per workspace	rust-unit:roamgate-cli:activity::tests::today_prints_attended_and_agent_time_per_workspace	CLI internals beyond its help and outputs
 server/src/cli/activity.test.ts	excluded connections are left out; --json gives the timeline	scenario:parity/scenarios/activity/excluded-connection.yaml	
 server/src/cli/activity.test.ts	events page in id order and resume after an id	scenario:parity/scenarios/activity/record-and-read.yaml	
 server/src/cli/activity.test.ts	status reports the recorder and the connections	scenario:parity/scenarios/activity/record-and-read.yaml	
@@ -3331,7 +3336,7 @@ server/src/time-report/provider.test.ts	errors carry the provider's message and 
 server/src/time-report/provider.test.ts	a missing command says so	scenario:parity/scenarios/time_report/errors.yaml	
 server/src/time-report/provider.test.ts	only a runnable command is a provider setting	scenario:parity/scenarios/time_report/errors.yaml	
 server/src/time-report/rpc.test.ts	day passes the whole day with subjects, idle_seconds and the zone	scenario:parity/scenarios/time_report/day.yaml	
-server/src/time-report/rpc.test.ts	excluded connections and subjects leave as anonymous excluded gaps	rust-unit:roamgate-activity	the time-report provider bridge
+server/src/time-report/rpc.test.ts	excluded connections and subjects leave as anonymous excluded gaps	rust-unit:roamgate-activity:day_input::tests::excluded_connections_and_subjects_leave_as_anonymous_excluded_gaps	the day input the time-report provider gets, built by the core while it owns the activity family
 server/src/time-report/rpc.test.ts	operations map to the provider's command line	scenario:parity/scenarios/time_report/operations.yaml	
 server/src/time-report/rpc.test.ts	arguments are checked before anything runs	scenario:parity/scenarios/time_report/errors.yaml	
 server/src/time-report/rpc.test.ts	one provider process at a time per day	rust-unit:roamgate-activity:time_report::tests::one_provider_process_at_a_time_per_day	the time-report provider bridge

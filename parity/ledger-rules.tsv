@@ -1,6 +1,7 @@
 # Ledger rules by file (see parity/src/ledger.rs Rule): prefix, mapping, note, title regex.
 # Written after reading each file's tests; a scenario's ledger claim always wins.
 server/src/activity/	rust-unit:roamgate-activity	recorder, reader and timeline internals
+server/src/activity/front.test.ts	internal:core channel	the Bun side of the activity family's handover (plan 8.2), deleted at cut-over; the core's family and the activity data tests (crates/roamgate-activity/tests/data_compat.rs) run both sides
 server/src/time-report/	rust-unit:roamgate-activity	the time-report provider bridge
 server/src/agent/	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/claude-mod	rust-unit:roamgate-claude	the claude-mod hub and plugin install

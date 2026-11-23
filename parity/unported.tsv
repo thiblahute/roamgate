@@ -1,8 +1,5 @@
 # Rows of an existing crate that wait for a later subtask (parity/src/ledger.rs, Unported):
 # crate, file prefix, subtask. Remove an entry when its subtask ports those files.
-roamgate-activity	server/src/activity/	S13
-roamgate-activity	server/src/time-report/rpc.test.ts	S13
-roamgate-cli	server/src/cli/activity	S13
 roamgate-cli	server/src/cli/archive	S13
 roamgate-cli	server/src/cli/reviews	S20
 roamgate-cli	server/src/cli/setup	S22
