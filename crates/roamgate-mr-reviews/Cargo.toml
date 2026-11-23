@@ -17,6 +17,7 @@ roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
 serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["sync"] }
 tracing = "0.1"
 url = "2"
 
