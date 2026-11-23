@@ -7,6 +7,7 @@
 //! | Module | Role | Replaces |
 //! |---|---|---|
 //! | [`shared`] | Order, search filter, merge bots and scheduled merges, keys and unread marks | shared/mrReviews*.ts |
+//! | [`settings`] | The settings in effect and as settings.json keeps them | mr-reviews/settings.ts |
 
 pub mod connection;
 pub mod curation;
@@ -17,6 +18,7 @@ pub mod inference;
 pub mod lanes;
 pub mod overrides;
 pub mod queries;
+pub mod settings;
 pub mod shared;
 pub mod store;
 
