@@ -12,6 +12,7 @@
 //! | [`session_secret`] | the session signing state under that lock | config/session-secret |
 //! | [`settings`] | `SettingsStore`, the one owner of settings.json | config/gui-settings, ui-settings, overlay-tabs |
 //! | [`assets`] | the embedded `contract/assets` files and the template filler | assets/ |
+//! | [`credentials`] | the password and PIN rules | config/auth-token's checks |
 //! | [`clock`] | `Clock`, `SystemClock`, `TestClock` and its control socket | utils/test-clock |
 //! | [`loop_stall`] | late ticks of the runtime, logged | utils/loop-stall |
 //! | [`error`] | `UserError` | AssistantUserError as a user error |
@@ -23,6 +24,7 @@
 
 pub mod assets;
 pub mod clock;
+pub mod credentials;
 pub mod env;
 pub mod error;
 pub mod json;

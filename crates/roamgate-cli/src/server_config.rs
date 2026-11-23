@@ -12,7 +12,7 @@ use roamgate_base::paths::{DataContext, DataFile, Platform};
 use roamgate_herdr::client::native_socket_path;
 use sha2::{Digest, Sha256};
 
-use crate::auth_token::{MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, load_or_create_auth_token};
+use crate::auth_token::load_or_create_auth_token;
 use crate::output::Printed;
 
 /// `roamgate --help`'s server part as printed (contract/cli/help/server.txt).
@@ -397,23 +397,7 @@ pub fn parse_task_notification_source(value: Option<&str>) -> Result<String, Str
     ))
 }
 
-pub fn assert_valid_auth_password(password: &str) -> Result<(), String> {
-    let length = password.chars().count();
-    if !(MIN_PASSWORD_LENGTH..=MAX_PASSWORD_LENGTH).contains(&length) {
-        return Err(format!(
-            "Login password must contain at least {MIN_PASSWORD_LENGTH} characters and at most {MAX_PASSWORD_LENGTH} characters (--password or ROAMGATE_PASSWORD)."
-        ));
-    }
-    Ok(())
-}
-
-pub fn assert_valid_auth_pin(pin: &str) -> Result<(), String> {
-    let valid = (6..=12).contains(&pin.len()) && pin.bytes().all(|byte| byte.is_ascii_digit());
-    if !valid {
-        return Err("ROAMGATE_PIN must contain 6 to 12 ASCII digits.".into());
-    }
-    Ok(())
-}
+pub use roamgate_base::credentials::{assert_valid_auth_password, assert_valid_auth_pin};
 
 /// Where the process runs: what `homedir()`, `tmpdir()` and
 /// `process.platform` give the TS code.

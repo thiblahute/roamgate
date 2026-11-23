@@ -9,8 +9,7 @@ use std::path::Path;
 use roamgate_base::paths::DataContext;
 use roamgate_base::private::{OpenMode, open_nofollow, set_file_mode};
 
-pub const MIN_PASSWORD_LENGTH: usize = 8;
-pub const MAX_PASSWORD_LENGTH: usize = 1024;
+pub use roamgate_base::credentials::{MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH};
 
 fn is_token(text: &str) -> bool {
     text.len() == 64
