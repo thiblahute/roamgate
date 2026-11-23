@@ -1,0 +1,18 @@
+name: The Rust front runs the Bun server as its portless core, which serves the forwarded routes and sockets
+family: core_channel
+description: >
+  Stage 2 (contract/wire/core-channel.md): the front holds the port and
+  spawns the Bun server with ROAMGATE_CORE_CHANNEL and ROAMGATE_CORE_TOKEN;
+  the core connects, says hello with the token, and answers what the front
+  forwards: an HTTP route behind the gate and a browser socket's call.
+fronts: [rust]
+covers:
+  - env:ROAMGATE_CORE_CHANNEL
+  - env:ROAMGATE_CORE_TOKEN
+steps:
+  - login: {}
+  - http: GET /api/health
+    expect: { status: 200, json: { ok: true, auth_required: true } }
+  - connect: {}
+  - call: bridge.ping
+    reply: { ok: true }
