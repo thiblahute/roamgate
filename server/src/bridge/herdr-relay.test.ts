@@ -12,6 +12,7 @@ import { join } from "node:path";
 import {
   HERDR_RELAY_READY,
   HERDR_RELAY_SCRIPT,
+  HERDR_RELAY_SOCKET_PREFIX,
   herdrRelay,
 } from "./herdr-relay";
 
@@ -19,6 +20,11 @@ describe("herdrRelay", () => {
   test("quotes alike in sh and fish", () => {
     // fish reads \\ and \' as escapes inside single quotes.
     expect(HERDR_RELAY_SCRIPT).not.toMatch(/['\\]/);
+  });
+
+  test("the script prints the ready line and owns the socket prefix", () => {
+    expect(HERDR_RELAY_SCRIPT).toContain(`"${HERDR_RELAY_READY}"`);
+    expect(HERDR_RELAY_SCRIPT).toContain(`"${HERDR_RELAY_SOCKET_PREFIX}"`);
   });
 
   test("listens in the host's Roamgate cache under its token", () => {

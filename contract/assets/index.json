@@ -98,6 +98,13 @@
       "server/src/workspace/atomic-file-move.ts"
     ]
   },
+  "python/herdr-relay.py": {
+    "kind": "Python 3 run on a host (the clients are installed there as files)",
+    "tags": [],
+    "used_by": [
+      "server/src/bridge/herdr-relay.ts"
+    ]
+  },
   "python/roamgate-hold.py": {
     "kind": "Python 3 run on a host (the clients are installed there as files)",
     "tags": [],

@@ -36,6 +36,9 @@ import CODEX_SESSION_FIND_PY from "../../../contract/assets/python/codex-session
 import EXCLUSIVE_RENAME_PY from "../../../contract/assets/python/exclusive-rename.py" with {
   type: "text",
 };
+import HERDR_RELAY_PY from "../../../contract/assets/python/herdr-relay.py" with {
+  type: "text",
+};
 import ROAMGATE_HOLD_PY from "../../../contract/assets/python/roamgate-hold.py" with {
   type: "text",
 };
@@ -176,6 +179,7 @@ export {
   CLAUDE_START_HOOK_INSTALL_PY,
   CODEX_SESSION_FIND_PY,
   EXCLUSIVE_RENAME_PY,
+  HERDR_RELAY_PY,
   ROAMGATE_HOLD_PY,
   ROAMGATE_REVIEW_PY,
   BATCH_BLOCK_SH,
@@ -229,6 +233,7 @@ export const ASSET_TEXTS: Record<string, string> = {
   "python/claude-start-hook-install.py": CLAUDE_START_HOOK_INSTALL_PY,
   "python/codex-session-find.py": CODEX_SESSION_FIND_PY,
   "python/exclusive-rename.py": EXCLUSIVE_RENAME_PY,
+  "python/herdr-relay.py": HERDR_RELAY_PY,
   "python/roamgate-hold.py": ROAMGATE_HOLD_PY,
   "python/roamgate-review.py": ROAMGATE_REVIEW_PY,
   "sh/batch-block.sh": BATCH_BLOCK_SH,
