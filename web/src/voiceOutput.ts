@@ -188,3 +188,16 @@ export async function playInContext(
     source.start();
   });
 }
+
+/**
+ * Let go of the call's context and every hold: the module is shared by every
+ * test file of a serial `bun test` run, so a file starts from here.
+ */
+export function __resetVoiceOutputForTests() {
+  if (closing) clearTimeout(closing);
+  closing = null;
+  shared = null;
+  users = 0;
+  chosen = null;
+  traceOutput = () => {};
+}

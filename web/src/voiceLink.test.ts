@@ -5,7 +5,7 @@ import {
   takeParkedVoiceLink,
   VoiceLink,
 } from "./voiceChat";
-import { holdVoiceContext } from "./voiceOutput";
+import { __resetVoiceOutputForTests, holdVoiceContext } from "./voiceOutput";
 import {
   activeCall,
   RELEASE_MS,
@@ -112,6 +112,9 @@ beforeAll(() => {
     }
     disconnect() {}
   };
+  // Other files of a serial run leave the call's context held, made with
+  // their own AudioContext.
+  __resetVoiceOutputForTests();
 });
 afterAll(() => {
   // A call let go by its link waits for another: none comes, it ends now

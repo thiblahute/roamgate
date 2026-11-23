@@ -1,5 +1,14 @@
-import { afterAll, beforeAll, describe, expect, jest, test } from "bun:test";
 import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test,
+} from "bun:test";
+import {
+  __resetVoiceOutputForTests,
   holdVoiceContext,
   setVoiceOutputMode,
   voiceContext,
@@ -28,6 +37,8 @@ beforeAll(() => {
 afterAll(() => {
   globals.AudioContext = saved;
 });
+// Other files of a serial run leave the call's context held.
+beforeEach(() => __resetVoiceOutputForTests());
 
 describe("voice output", () => {
   test("plays with the microphone's audio unless set otherwise", () => {

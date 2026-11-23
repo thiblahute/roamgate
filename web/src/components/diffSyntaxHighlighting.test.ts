@@ -44,8 +44,20 @@ describe("Changes syntax highlighting", () => {
   test("covers every language registered by Files Preview", async () => {
     // Loading Preview also registers its extra R grammar.
     await highlightCodeTokens("x <- 1", "test.r");
+    // Preview's own languages: highlight.js's registry is shared by every
+    // module of the process (the Pi agent adds its own in a full run).
+    const slim = await Bun.file(
+      new URL(import.meta.resolve("diff2html/lib-esm/ui/js/highlight.js-slim")),
+    ).text();
+    const preview = [
+      ...[...slim.matchAll(/registerLanguage\('([^']+)'/g)].map(
+        (match) => match[1]!,
+      ),
+      "r",
+    ];
+    expect(preview.length).toBeGreaterThan(40);
     for (const language of hljs.listLanguages()) {
-      if (language === "plaintext") continue;
+      if (language === "plaintext" || !preview.includes(language)) continue;
       for (const name of [
         language,
         ...(hljs.getLanguage(language)?.aliases ?? []),

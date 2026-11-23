@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { AssistantTask } from "../../shared/assistant";
 import type { ForgeStatus } from "../../shared/forge";
 import {
@@ -401,6 +401,8 @@ describe("frontContext", () => {
 });
 
 describe("voice events", () => {
+  // Other files of a serial run leave events behind.
+  beforeEach(() => __resetVoiceEventsForTests());
   afterEach(() => __resetVoiceEventsForTests());
 
   test("are kept, told to listeners, once", () => {

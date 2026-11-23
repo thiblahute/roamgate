@@ -1,5 +1,6 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import {
+  __resetTerminalComposerForTests,
   activateTerminalComposerDraftScope,
   appendToPaneComposerDraft,
   beginTerminalComposerSubmission,
@@ -35,6 +36,9 @@ import { roamgateLocalStorage } from "./browserStorage";
 
 // A pane running oh-my-pi, the agent the stored choices name.
 const omp = (paneId: string) => ({ paneId, agent: "omp" });
+
+// Other files of a serial run leave a connection scope and drafts behind.
+beforeEach(() => __resetTerminalComposerForTests());
 
 describe("terminal composer drafts", () => {
   test("scopes drafts by connection, generation, and pane", () => {

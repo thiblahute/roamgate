@@ -708,3 +708,27 @@ export function terminalComposerInsertAtCaret(
     caret: before.length + inserted.length,
   };
 }
+
+/**
+ * Forget every draft, scope and pending operation: the module is shared by
+ * every test file of a serial `bun test` run, so a file starts from here.
+ */
+export function __resetTerminalComposerForTests(): void {
+  for (const map of [
+    drafts,
+    draftStorageKeys,
+    savedDrafts,
+    lastLocalWrites,
+    selections,
+    draftListeners,
+    submissionListeners,
+    pendingUploads,
+    uploadListeners,
+  ])
+    map.clear();
+  retiredDraftKeys.clear();
+  recoveredUploadKeys.clear();
+  pendingSubmissions.clear();
+  activeDraftScopePrefix = null;
+  draftLogoutEpoch = roamgateLocalStorage.getItem(DRAFT_LOGOUT_KEY) ?? "";
+}
