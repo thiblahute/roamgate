@@ -28,10 +28,7 @@ roamgate-mr-reviews	server/src/mr-reviews/board-tools.test.ts	S20
 
 # roamgate-claude was made by S15 for the tool registry; the Claude driver,
 # the claude-mod hub comes with its subtask (S21 ported the conversation drivers).
-roamgate-conversation	server/src/conversation/	S21
 # profiles.test.ts checks each spawn site follows the profile: those rows go with the sites.
-roamgate-claude	server/src/profiles/	S21
-roamgate-conversation	server/src/profiles/	S21
 roamgate-mr-reviews	server/src/profiles/	S20
 roamgate-voice-server	server/src/profiles/	S22
 # the conversation drivers come with their subtasks (S19 ported the claude-mod hub).

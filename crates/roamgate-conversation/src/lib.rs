@@ -24,6 +24,8 @@ pub mod lease;
 pub mod pane_child;
 pub mod prompt_pane;
 pub mod rewind_scan;
+pub mod rpc;
+pub mod service;
 pub mod session;
 pub mod shared;
 pub mod shell;
