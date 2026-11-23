@@ -48,10 +48,6 @@ roamgate-review	server/src/review/rpc	S19
 roamgate-review	server/src/review/service	S19
 roamgate-review	server/src/review/step-review	S19
 roamgate-mr-reviews	server/src/mr-reviews/board-tools.test.ts	S20
-roamgate-mr-reviews	server/src/mr-reviews/effort-service.test.ts	S20
-roamgate-mr-reviews	server/src/mr-reviews/module.test.ts	S20
-roamgate-mr-reviews	server/src/mr-reviews/panel.test.ts	S20
-roamgate-mr-reviews	server/src/mr-reviews/upstream.test.ts	S20
 
 # roamgate-workspace was made by S17 with the HTML preview and the worktree
 # command templates; the rest of the workspace and worktree files are S17's
