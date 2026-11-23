@@ -13,10 +13,19 @@
 //! | [`inbox`] | The inbox: refresh, merge, own requests, pins, snapshot | mr-reviews/inbox.ts |
 //! | [`order`] | The user's order as the server keeps it, versions and Undo | mr-reviews/order.ts |
 //! | [`rpc`] | `bridge.mr_reviews.*`: checks and the inbox, order and settings methods | mr-reviews/rpc.ts |
+//! | [`clones`] | The user's clones of a project, found from their workspaces' folders | mr-reviews/clones.ts |
+//! | [`worktree`] | The review worktree's scripts: create, prefetch, status, checkout | mr-reviews/worktree.ts |
+//! | [`tree`] | Where a review workspace goes in the Workspaces tree | mr-reviews/tree.ts |
+//! | [`links`] | The workspaces that are a request's | mr-reviews/links.ts |
+//! | [`upstream`] | Branches headed upstream, read from their checkouts | mr-reviews/upstream.ts |
+//! | [`effort_board`] | The inbox entry of each planned request of an effort | mr-reviews/effort-board.ts |
+//! | [`workspace_tree`] | The Workspaces tree's paths, ancestors and live resolution | shared/workspaceTree.ts (in part) |
 
 pub mod agent_search;
+pub mod clones;
 pub mod connection;
 pub mod curation;
+pub mod effort_board;
 pub mod efforts;
 pub mod fetchers;
 pub mod forge_ref;
@@ -24,6 +33,7 @@ pub mod fuzzy;
 pub mod inbox;
 pub mod inference;
 pub mod lanes;
+pub mod links;
 pub mod order;
 pub mod overrides;
 pub mod queries;
@@ -31,6 +41,10 @@ pub mod rpc;
 pub mod settings;
 pub mod shared;
 pub mod store;
+pub mod tree;
+pub mod upstream;
+pub mod workspace_tree;
+pub mod worktree;
 
 #[cfg(test)]
 mod vectors_tests;
