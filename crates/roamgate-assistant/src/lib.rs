@@ -7,6 +7,7 @@
 pub mod context;
 pub mod driver;
 pub mod errors;
+pub mod ranger_driver;
 pub mod saved;
 pub mod schema;
 pub mod task_schedule;

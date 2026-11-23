@@ -581,11 +581,11 @@ server/src/assistant/pi-driver.test.ts	Pi durable forwards selected effort to th
 server/src/assistant/pi-driver.test.ts	Pi durable resolves an unsupported off default using the SDK's model capability map	internal:Pi runtime	Pi stays a sidecar at cut-over (plan 6.8); tested with it
 server/src/assistant/pi-driver.test.ts	custom model reasoning edits preserve mixed batches, imported maps and overriding declarations	internal:Pi runtime	Pi stays a sidecar at cut-over (plan 6.8); tested with it
 server/src/assistant/pi-driver.test.ts	configured custom thinking efforts reach the %s request	internal:Pi runtime	Pi stays a sidecar at cut-over (plan 6.8); tested with it
-server/src/assistant/ranger-driver.test.ts	offers Claude Code next to Pi's providers	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/assistant/ranger-driver.test.ts	Pi failing to load does not hide Claude Code, unless it is missing too	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/assistant/ranger-driver.test.ts	each turn goes to its provider's driver, with only its own context	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/assistant/ranger-driver.test.ts	only a running Pi turn takes steering; a Claude turn queues it	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
-server/src/assistant/ranger-driver.test.ts	Claude Code has no model connection or sign-in of its own	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
+server/src/assistant/ranger-driver.test.ts	offers Claude Code next to Pi's providers	rust-unit:roamgate-assistant:ranger_driver::tests::offers_claude_code_next_to_pi_s_providers	Ranger service, tasks, tools and context
+server/src/assistant/ranger-driver.test.ts	Pi failing to load does not hide Claude Code, unless it is missing too	rust-unit:roamgate-assistant:ranger_driver::tests::pi_failing_to_load_does_not_hide_claude_code_unless_it_is_missing_too	Ranger service, tasks, tools and context
+server/src/assistant/ranger-driver.test.ts	each turn goes to its provider's driver, with only its own context	rust-unit:roamgate-assistant:ranger_driver::tests::each_turn_goes_to_its_provider_s_driver_with_only_its_own_context	Ranger service, tasks, tools and context
+server/src/assistant/ranger-driver.test.ts	only a running Pi turn takes steering; a Claude turn queues it	rust-unit:roamgate-assistant:ranger_driver::tests::only_a_running_pi_turn_takes_steering_a_claude_turn_queues_it	Ranger service, tasks, tools and context
+server/src/assistant/ranger-driver.test.ts	Claude Code has no model connection or sign-in of its own	rust-unit:roamgate-assistant:ranger_driver::tests::claude_code_has_no_model_connection_or_sign_in_of_its_own	Ranger service, tasks, tools and context
 server/src/assistant/service.test.ts	comments on a Ranger chat come as a message in it, answered in their threads	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/service.test.ts	a turn without chat threads offers Ranger no thread tool	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
 server/src/assistant/service.test.ts	live tool details persist while repeated call IDs explicitly clear stale details	rust-unit:roamgate-assistant	Ranger service, tasks, tools and context
