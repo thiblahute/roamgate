@@ -148,6 +148,7 @@ scripts/lint.	internal:repository tooling	tests the repository's own scripts and
 scripts/pages-content.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/pages-workflow.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/prepare-release.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/test-home.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/security-workflows.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/source-map-security.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/studio-plugin.	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
