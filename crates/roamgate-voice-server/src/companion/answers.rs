@@ -103,21 +103,26 @@ fn write_private(file: &Path, text: &str) -> std::io::Result<()> {
 
 /// What the front is given of an agent's answer: the answer itself, or,
 /// past [`LONG_ANSWER_CHARS`], its start and where it is whole (`file`).
-/// The same answer told twice keeps its file.
-pub fn answer_for_front(answer: &str, dir: &Path, now: f64) -> FrontAnswer {
+/// The same answer told twice keeps its file, written (and the old ones
+/// swept) off the async runtime's threads, before the front is told it.
+pub async fn answer_for_front(answer: &str, dir: &Path, now: f64) -> FrontAnswer {
     let text = slice16(answer, 0, Some(MAX_ANSWER_CHARS as i64));
     let length = len16(&text);
     if length <= LONG_ANSWER_CHARS {
         return FrontAnswer { text, file: None };
     }
-    let written = (|| -> std::io::Result<PathBuf> {
-        ensure_answers_dir(dir)?;
-        sweep(dir, now);
-        let digest = hex::encode(Sha256::digest(text.as_bytes()));
+    let (dir, whole) = (dir.to_owned(), text.clone());
+    let written = tokio::task::spawn_blocking(move || -> std::io::Result<PathBuf> {
+        ensure_answers_dir(&dir)?;
+        sweep(&dir, now);
+        let digest = hex::encode(Sha256::digest(whole.as_bytes()));
         let file = dir.join(format!("answer-{}.md", &digest[..16]));
-        write_private(&file, &text)?;
+        write_private(&file, &whole)?;
         Ok(file)
-    })();
+    })
+    .await
+    .map_err(std::io::Error::other)
+    .and_then(|written| written);
     match written {
         Ok(file) => FrontAnswer {
             text: format!(

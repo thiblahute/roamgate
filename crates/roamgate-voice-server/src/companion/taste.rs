@@ -23,6 +23,7 @@ use futures_util::future::{BoxFuture, Shared};
 use indexmap::IndexMap;
 use regex::Regex;
 use roamgate_base::clock::{Clock, SystemClock};
+use roamgate_base::json_store::WriteBehindFile;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use unicode_normalization::UnicodeNormalization;
@@ -637,6 +638,30 @@ pub fn memory_avoids(dir: Option<&Path>) -> Vec<String> {
         .collect()
 }
 
+/// taste.json as stored; the default when it is missing, unreadable or
+/// of another version.
+fn read_taste_file(path: &Path) -> TasteFile {
+    if !std::fs::metadata(path).is_ok_and(|m| m.is_file()) {
+        return TasteFile::default();
+    }
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return TasteFile::default();
+    };
+    let Ok(Value::Object(mut parsed)) = serde_json::from_str::<Value>(&text) else {
+        return TasteFile::default();
+    };
+    if parsed.get("version") != Some(&json!(1)) {
+        return TasteFile::default();
+    }
+    let mut full = serde_json::to_value(TasteFile::default()).unwrap_or_default();
+    if let Some(object) = full.as_object_mut() {
+        for (key, value) in std::mem::take(&mut parsed) {
+            object.insert(key, value);
+        }
+    }
+    serde_json::from_value(full).unwrap_or_default()
+}
+
 fn marked(each: &Mark) -> String {
     match &each.label {
         Some(label) => format!("{label} ({})", each.what),
@@ -649,6 +674,10 @@ struct TasteInner {
     memories_dir: Option<PathBuf>,
     clock: Arc<dyn Clock>,
     refreshing: Mutex<Option<Shared<BoxFuture<'static, ()>>>>,
+    /// The file as last read or changed: what is read back, the file
+    /// being written behind.
+    kept: Mutex<Option<TasteFile>>,
+    file: WriteBehindFile,
 }
 
 /// What the taste job's gather gives: the calls, or why none came.
@@ -666,11 +695,14 @@ impl VoiceTaste {
     }
 
     pub fn with(path: PathBuf, memories_dir: Option<PathBuf>, clock: Arc<dyn Clock>) -> Self {
+        let file = crate::companion::written_behind(&path, clock.clone());
         Self(Arc::new(TasteInner {
             path,
             memories_dir,
             clock,
             refreshing: Mutex::new(None),
+            kept: Mutex::new(None),
+            file,
         }))
     }
 
@@ -682,51 +714,35 @@ impl VoiceTaste {
         self.0.clock.now()
     }
 
+    /// The file, read once, then as this changed it.
     pub fn read(&self) -> TasteFile {
-        if !std::fs::metadata(&self.0.path).is_ok_and(|m| m.is_file()) {
-            return TasteFile::default();
-        }
-        let Ok(text) = std::fs::read_to_string(&self.0.path) else {
-            return TasteFile::default();
-        };
-        let Ok(Value::Object(mut parsed)) = serde_json::from_str::<Value>(&text) else {
-            return TasteFile::default();
-        };
-        if parsed.get("version") != Some(&json!(1)) {
-            return TasteFile::default();
-        }
-        let mut full = serde_json::to_value(TasteFile::default()).unwrap_or_default();
-        if let Some(object) = full.as_object_mut() {
-            for (key, value) in std::mem::take(&mut parsed) {
-                object.insert(key, value);
-            }
-        }
-        serde_json::from_value(full).unwrap_or_default()
+        self.0
+            .kept
+            .lock()
+            .unwrap()
+            .get_or_insert_with(|| read_taste_file(&self.0.path))
+            .clone()
     }
 
-    fn write(&self, file: &TasteFile) {
-        let path = &self.0.path;
-        let _ = (|| -> std::io::Result<()> {
-            if let Some(parent) = path.parent() {
-                roamgate_base::private::create_dir_all_mode(parent)?;
-            }
-            let mut text = Vec::new();
-            let formatter = serde_json::ser::PrettyFormatter::with_indent(b" ");
-            let mut serializer = serde_json::Serializer::with_formatter(&mut text, formatter);
-            file.serialize(&mut serializer)
-                .map_err(std::io::Error::other)?;
-            text.push(b'\n');
-            let temp = PathBuf::from(format!("{}.{}.tmp", path.display(), std::process::id()));
-            std::fs::write(&temp, text)?;
-            roamgate_base::private::set_mode(&temp, 0o600)?;
-            std::fs::rename(&temp, path)
-        })();
-    }
-
+    /// Changes the file: kept here, written behind and off the runtime's
+    /// threads; a file that cannot be written is skipped.
     fn change(&self, update: impl FnOnce(&mut TasteFile)) {
-        let mut file = self.read();
-        update(&mut file);
-        self.write(&file);
+        let mut kept = self.0.kept.lock().unwrap();
+        let file = kept.get_or_insert_with(|| read_taste_file(&self.0.path));
+        update(file);
+        let mut text = Vec::new();
+        let formatter = serde_json::ser::PrettyFormatter::with_indent(b" ");
+        let mut serializer = serde_json::Serializer::with_formatter(&mut text, formatter);
+        if file.serialize(&mut serializer).is_ok() {
+            text.push(b'\n');
+            self.0.file.schedule(text);
+        }
+    }
+
+    /// Writes the changes not written yet, now (at shutdown, or before
+    /// reading the file).
+    pub fn flush(&self) -> std::io::Result<()> {
+        self.0.file.flush()
     }
 
     pub fn profile(&self) -> Option<TasteProfile> {

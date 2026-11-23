@@ -84,6 +84,7 @@ async fn a_calls_words_come_back_after_a_restart() {
     setup
         .memory
         .record(Note::new(MemoryKind::Said, "Je lance les tests."));
+    setup.memory.flush().unwrap();
     let back = setup.make();
     assert_eq!(back.entries().len(), 3);
     assert!(back.block().contains(r#"the user: "lance les tests""#));
@@ -124,6 +125,7 @@ async fn the_end_of_a_call_folds_the_log_into_the_summary() {
         "Ils ont lancé les tests de roamgate."
     );
     assert!(setup.memory.entries().is_empty());
+    setup.memory.flush().unwrap();
     assert_eq!(
         setup.make().summary(),
         "Ils ont lancé les tests de roamgate."
@@ -188,8 +190,17 @@ async fn a_corrupted_file_starts_fresh_kept_aside() {
     assert_eq!(memory.block(), "");
     assert!(PathBuf::from(format!("{}.corrupt", path.display())).exists());
     memory.record(said("ça marche encore"));
+    memory.flush().unwrap();
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(saved["log"].as_array().unwrap().len(), 1);
+    // Bun's bytes: JSON.stringify, no newline.
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.starts_with(
+            r#"{"version":1,"epoch":0,"summary":"","summarized_at":0,"log":[{"seq":1,"#
+        )
+    );
+    assert!(text.ends_with("}]}"));
 }
 
 #[tokio::test]
@@ -243,6 +254,7 @@ async fn reset_forgets_all_keeps_counting_drops_a_summary_in_progress() {
         .unwrap();
     settle().await;
     assert_eq!(setup.memory.block(), "");
+    setup.memory.flush().unwrap();
     let back = setup.make();
     assert_eq!(back.epoch(), 1);
     assert_eq!(back.block(), "");

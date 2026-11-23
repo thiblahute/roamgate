@@ -101,13 +101,14 @@ fn the_same_job_answered_again_keeps_one_entry_the_oldest_go_past_the_cap() {
     assert!(waiting.get("job-24").is_some());
 }
 
-#[test]
-fn kept_in_a_file_so_a_restart_each_deploy_loses_nothing() {
+#[tokio::test]
+async fn kept_in_a_file_so_a_restart_each_deploy_loses_nothing() {
     let home = tempfile::tempdir().unwrap();
     let file = waiting_answers_file(&home.path().join("uploads"));
     let first = WaitingAnswers::new(Some(file.clone()), Arc::new(TestClock::new(7)));
     first.keep(gst());
     first.mention(&["b01a370e"]);
+    first.flush().unwrap();
     assert!(file.exists());
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(saved, json!([kept(gst(), 7.0, true).to_json()]));
@@ -118,6 +119,7 @@ fn kept_in_a_file_so_a_restart_each_deploy_loses_nothing() {
     let second = WaitingAnswers::new(Some(file.clone()), Arc::new(TestClock::new(8)));
     assert_eq!(second.list(), vec![kept(gst(), 7.0, true)]);
     second.heard("b01a370e");
+    second.flush().unwrap();
     assert_eq!(WaitingAnswers::open(Some(file)).list(), vec![]);
     // A file that is not a list of answers is taken as none.
     let broken = waiting_answers_file(&home.path().join("broken"));

@@ -198,71 +198,191 @@ impl<T: Versioned> AtomicJsonStore<T> {
     }
 }
 
-struct Pending<T> {
-    value: Option<T>,
+#[derive(Default)]
+struct Pending {
+    contents: Option<Vec<u8>>,
     scheduled: bool,
 }
 
-/// An [`AtomicJsonStore`] written behind: [`Self::schedule`] keeps the
-/// newest value and writes it `delay` after the first unwritten change;
-/// [`Self::flush`] writes it now (at shutdown).
-pub struct WriteBehind<T: Versioned + Clone> {
-    store: Arc<AtomicJsonStore<T>>,
+#[derive(Default)]
+struct Behind {
+    pending: Mutex<Pending>,
+    /// Held across a write: one at a time, each taking the newest
+    /// contents, so an older write never lands after a newer one.
+    writing: Mutex<()>,
+}
+
+/// One private file written behind and off the async runtime's threads:
+/// [`Self::schedule`] keeps the newest contents and writes them through
+/// [`DataContext::replace_data_file`] on a blocking thread, `delay` after
+/// the first unwritten change (at once with a zero delay); changes made
+/// while a write runs are written once, after it. [`Self::flush`] writes
+/// what is kept now, and so does dropping it (at shutdown). The owner
+/// keeps its value in memory: what it reads back is its own, not the
+/// file.
+pub struct WriteBehindFile {
+    context: DataContext,
+    path: PathBuf,
+    mode: u32,
     clock: SharedClock,
     delay: Duration,
-    pending: Arc<Mutex<Pending<T>>>,
+    behind: Arc<Behind>,
+}
+
+impl WriteBehindFile {
+    pub fn new(
+        context: DataContext,
+        path: impl Into<PathBuf>,
+        mode: u32,
+        clock: SharedClock,
+        delay: Duration,
+    ) -> Self {
+        Self {
+            context,
+            path: path.into(),
+            mode,
+            clock,
+            delay,
+            behind: Arc::default(),
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Keeps `contents` to be written. Outside a tokio runtime they are
+    /// written now.
+    pub fn schedule(&self, contents: Vec<u8>) {
+        let mut pending = self.behind.pending.lock().expect("pending");
+        pending.contents = Some(contents);
+        if pending.scheduled {
+            return;
+        }
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            drop(pending);
+            self.write_now();
+            return;
+        };
+        pending.scheduled = true;
+        let sleep = (!self.delay.is_zero()).then(|| self.clock.sleep(self.delay));
+        let write = self.writer();
+        runtime.spawn(async move {
+            if let Some(sleep) = sleep {
+                sleep.await;
+            }
+            let _ = tokio::task::spawn_blocking(write).await;
+        });
+    }
+
+    /// Writes the contents kept, if any, now.
+    pub fn flush(&self) -> std::io::Result<()> {
+        write_newest(&self.context, &self.path, self.mode, &self.behind)
+    }
+
+    /// [`Self::flush`] off the async runtime's threads.
+    pub async fn flush_async(&self) -> std::io::Result<()> {
+        let (context, path, mode, behind) = (
+            self.context.clone(),
+            self.path.clone(),
+            self.mode,
+            self.behind.clone(),
+        );
+        tokio::task::spawn_blocking(move || write_newest(&context, &path, mode, &behind))
+            .await
+            .map_err(std::io::Error::other)?
+    }
+
+    fn writer(&self) -> impl FnOnce() + Send + 'static {
+        let (context, path, mode, behind) = (
+            self.context.clone(),
+            self.path.clone(),
+            self.mode,
+            self.behind.clone(),
+        );
+        move || {
+            if let Err(error) = write_newest(&context, &path, mode, &behind) {
+                tracing::warn!(path = %path.display(), %error, "write-behind save failed");
+            }
+        }
+    }
+
+    fn write_now(&self) {
+        (self.writer())();
+    }
+}
+
+impl Drop for WriteBehindFile {
+    fn drop(&mut self) {
+        let pending = self
+            .behind
+            .pending
+            .lock()
+            .expect("pending")
+            .contents
+            .is_some();
+        if pending {
+            self.write_now();
+        }
+    }
+}
+
+fn write_newest(
+    context: &DataContext,
+    path: &Path,
+    mode: u32,
+    behind: &Behind,
+) -> std::io::Result<()> {
+    let _writing = behind.writing.lock().expect("writing");
+    let contents = {
+        let mut pending = behind.pending.lock().expect("pending");
+        pending.scheduled = false;
+        pending.contents.take()
+    };
+    match contents {
+        Some(contents) => context.replace_data_file(path, &contents, mode),
+        None => Ok(()),
+    }
+}
+
+/// An [`AtomicJsonStore`] written behind, through a [`WriteBehindFile`]:
+/// [`Self::schedule`] keeps the newest value and writes it `delay` after
+/// the first unwritten change; [`Self::flush`] writes it now (at shutdown).
+pub struct WriteBehind<T: Versioned + Clone> {
+    store: AtomicJsonStore<T>,
+    file: WriteBehindFile,
 }
 
 impl<T: Versioned + Clone> WriteBehind<T> {
     pub fn new(store: AtomicJsonStore<T>, clock: SharedClock, delay: Duration) -> Self {
-        Self {
-            store: Arc::new(store),
+        let file = WriteBehindFile::new(
+            store.context.clone(),
+            store.path.clone(),
+            0o600,
             clock,
             delay,
-            pending: Arc::new(Mutex::new(Pending {
-                value: None,
-                scheduled: false,
-            })),
-        }
+        );
+        Self { store, file }
     }
 
     pub fn store(&self) -> &AtomicJsonStore<T> {
         &self.store
     }
 
-    /// Keeps `value` to be written; needs a tokio runtime.
+    /// Keeps `value` to be written; outside a tokio runtime it is written
+    /// now.
     pub fn schedule(&self, value: T) {
-        let mut pending = self.pending.lock().expect("pending");
-        pending.value = Some(value);
-        if pending.scheduled {
-            return;
-        }
-        pending.scheduled = true;
-        let sleep = self.clock.sleep(self.delay);
-        let store = self.store.clone();
-        let shared = self.pending.clone();
-        tokio::spawn(async move {
-            sleep.await;
-            let value = {
-                let mut pending = shared.lock().expect("pending");
-                pending.scheduled = false;
-                pending.value.take()
-            };
-            if let Some(value) = value
-                && let Err(error) = store.save_async(&value).await
-            {
-                tracing::warn!(path = %store.path().display(), %error, "write-behind save failed");
+        match to_js_json(&value, self.store.format) {
+            Ok(text) => self.file.schedule(text.into_bytes()),
+            Err(error) => {
+                tracing::warn!(path = %self.store.path().display(), %error, "write-behind value not serialisable");
             }
-        });
+        }
     }
 
     /// Writes the value kept, if any, now.
     pub fn flush(&self) -> Result<(), StoreError> {
-        let value = self.pending.lock().expect("pending").value.take();
-        match value {
-            Some(value) => self.store.save(&value),
-            None => Ok(()),
-        }
+        Ok(self.file.flush()?)
     }
 }
 
@@ -394,5 +514,53 @@ mod tests {
         });
         behind.flush().unwrap();
         assert_eq!(behind.store().load().unwrap().unwrap().names, vec!["d"]);
+    }
+
+    fn behind_file(dir: &Path, clock: SharedClock) -> WriteBehindFile {
+        let context = DataContext::new(dir, Platform::Unix, None);
+        WriteBehindFile::new(
+            context,
+            dir.join("roamgate/raw.json"),
+            0o600,
+            clock,
+            Duration::ZERO,
+        )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_file_behind_ends_with_the_newest_bytes_written_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = behind_file(dir.path(), Arc::new(TokioClock::starting_at(0)));
+        for at in 0..50 {
+            file.schedule(format!("[{at}]").into_bytes());
+            if at % 7 == 0 {
+                tokio::task::yield_now().await;
+            }
+        }
+        file.flush_async().await.unwrap();
+        assert_eq!(std::fs::read_to_string(file.path()).unwrap(), "[49]");
+        // The writes still queued find nothing newer to write.
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(std::fs::read_to_string(file.path()).unwrap(), "[49]");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_file_behind_is_written_when_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = behind_file(dir.path(), Arc::new(TokioClock::starting_at(0)));
+        let path = file.path().to_owned();
+        file.schedule(b"last".to_vec());
+        drop(file);
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "last");
+    }
+
+    #[test]
+    fn a_file_behind_is_written_at_once_outside_a_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = behind_file(dir.path(), Arc::new(crate::clock::SystemClock));
+        file.schedule(b"now".to_vec());
+        assert_eq!(std::fs::read_to_string(file.path()).unwrap(), "now");
     }
 }

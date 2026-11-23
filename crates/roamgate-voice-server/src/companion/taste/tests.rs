@@ -476,3 +476,20 @@ fn an_unreadable_file_starts_empty() {
     assert_eq!(taste.profile(), None);
     assert!(taste.due());
 }
+
+#[tokio::test]
+async fn written_behind_as_bun_writes_it_and_read_back_after_a_restart() {
+    let Setup {
+        _dir, root, taste, ..
+    } = setup();
+    taste.picked("spotify:playlist:run", Some("Run"));
+    taste.avoid("spotify:playlist:run", Some("Run"));
+    assert_eq!(taste.read().picks.len(), 1);
+    taste.flush().unwrap();
+    let text = std::fs::read_to_string(root.join("taste.json")).unwrap();
+    // `JSON.stringify(file, null, 1)` and a newline.
+    assert!(text.starts_with("{\n \"version\": 1,\n"));
+    assert!(text.ends_with("}\n"));
+    let again = VoiceTaste::new(root.join("taste.json"), None);
+    assert_eq!(again.read(), taste.read());
+}

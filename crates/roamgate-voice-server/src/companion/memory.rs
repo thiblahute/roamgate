@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use futures_util::future::BoxFuture;
 use roamgate_base::clock::{Clock, SystemClock, timeout};
+use roamgate_base::json_store::WriteBehindFile;
 use serde_json::{Value, json};
 
 use crate::companion::claude::{
@@ -268,6 +269,7 @@ struct State {
 struct Inner {
     options: MemoryOptions,
     state: Mutex<State>,
+    file: WriteBehindFile,
 }
 
 /// Never fails into a turn: a file that cannot be read or written gives a
@@ -302,8 +304,10 @@ impl CompanionMemory {
     /// Loads the file; its idle compaction armed when it holds entries
     /// (which needs a tokio runtime).
     pub fn new(options: MemoryOptions) -> Self {
+        let file = crate::companion::written_behind(&options.path, options.clock.clone());
         let memory = Self(Arc::new(Inner {
             options,
+            file,
             state: Mutex::new(State {
                 next_seq: 1,
                 ..State::default()
@@ -602,8 +606,8 @@ impl CompanionMemory {
                 let _ =
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| on_compacted(reason)));
             }
-            if writes && let Some(files) = &memory.0.options.files {
-                files.sweep(started);
+            if writes && let Some(files) = memory.0.options.files.clone() {
+                let _ = tokio::task::spawn_blocking(move || files.sweep(started)).await;
             }
             let next = {
                 let mut state = memory.0.state.lock().unwrap();
@@ -656,9 +660,9 @@ impl CompanionMemory {
         lines.join("\n")
     }
 
-    /// The state written whole (a temporary file renamed over it).
+    /// The state written whole (a temporary file renamed over it), behind
+    /// and off the runtime's threads.
     fn save(&self, state: &State) {
-        let path = &self.0.options.path;
         let body = json!({
             "version": 1,
             "epoch": state.epoch,
@@ -666,17 +670,13 @@ impl CompanionMemory {
             "summarized_at": js::number(state.summarized_at),
             "log": state.entries.iter().map(MemoryEntry::to_json).collect::<Vec<_>>(),
         });
-        let _ = (|| -> std::io::Result<()> {
-            if let Some(dir) = path.parent()
-                && !dir.exists()
-            {
-                std::fs::create_dir_all(dir)?;
-            }
-            let tmp = PathBuf::from(format!("{}.tmp", path.display()));
-            std::fs::write(&tmp, js::stringify(&body))?;
-            roamgate_base::private::set_mode(&tmp, 0o600)?;
-            std::fs::rename(&tmp, path)
-        })();
+        self.0.file.schedule(js::stringify(&body).into_bytes());
+    }
+
+    /// Writes the state not written yet, now (at shutdown, or before
+    /// reading the file).
+    pub fn flush(&self) -> std::io::Result<()> {
+        self.0.file.flush()
     }
 
     #[cfg(test)]

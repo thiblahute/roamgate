@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use roamgate_base::clock::{Clock, SystemClock};
+use roamgate_base::json_store::WriteBehindFile;
 use serde_json::{Value, json};
 
 use crate::companion::images::upload_root;
@@ -89,7 +90,7 @@ pub fn default_waiting_answers_file() -> PathBuf {
 
 pub struct WaitingAnswers {
     answers: Mutex<Vec<WaitingAnswer>>,
-    file: Option<PathBuf>,
+    file: Option<WriteBehindFile>,
     clock: Arc<dyn Clock>,
 }
 
@@ -99,7 +100,7 @@ impl WaitingAnswers {
         let answers = file.as_deref().map(load).unwrap_or_default();
         Self {
             answers: Mutex::new(answers),
-            file,
+            file: file.map(|file| crate::companion::written_behind(&file, clock.clone())),
             clock,
         }
     }
@@ -208,21 +209,20 @@ impl WaitingAnswers {
         }
     }
 
+    /// The list written whole, behind and off the runtime's threads; kept
+    /// here, at least, when it fails.
     fn save(&self, answers: &[WaitingAnswer]) {
         let Some(file) = &self.file else {
             return;
         };
-        // Kept here, at least, when it fails.
-        let _ = (|| -> std::io::Result<()> {
-            if let Some(parent) = file.parent() {
-                roamgate_base::private::create_dir_all_mode(parent)?;
-            }
-            let tmp = PathBuf::from(format!("{}.{}.tmp", file.display(), std::process::id()));
-            let list = Value::Array(answers.iter().map(WaitingAnswer::to_json).collect());
-            std::fs::write(&tmp, js::stringify(&list))?;
-            roamgate_base::private::set_mode(&tmp, 0o600)?;
-            std::fs::rename(&tmp, file)
-        })();
+        let list = Value::Array(answers.iter().map(WaitingAnswer::to_json).collect());
+        file.schedule(js::stringify(&list).into_bytes());
+    }
+
+    /// Writes the answers not written yet, now (at shutdown, or before
+    /// reading the file).
+    pub fn flush(&self) -> std::io::Result<()> {
+        self.file.as_ref().map_or(Ok(()), WriteBehindFile::flush)
     }
 }
 

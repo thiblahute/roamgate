@@ -10,20 +10,20 @@ fn now_ms() -> f64 {
         * 1000.0
 }
 
-#[test]
-fn a_short_one_is_given_whole_as_it_is() {
+#[tokio::test]
+async fn a_short_one_is_given_whole_as_it_is() {
     let home = tempfile::tempdir().unwrap();
     let dir = home.path().join("voice-answers");
     let text = "x".repeat(LONG_ANSWER_CHARS);
     assert_eq!(
-        answer_for_front(&text, &dir, now_ms()),
+        answer_for_front(&text, &dir, now_ms()).await,
         FrontAnswer { text, file: None }
     );
     assert!(!dir.exists());
 }
 
-#[test]
-fn a_long_one_is_its_start_and_the_file_where_it_is_whole() {
+#[tokio::test]
+async fn a_long_one_is_its_start_and_the_file_where_it_is_whole() {
     let home = tempfile::tempdir().unwrap();
     let dir = home.path().join("voice-answers");
     // The answer of the 2026-11-20 call: 21k characters, cut at 12000.
@@ -33,7 +33,7 @@ fn a_long_one_is_its_start_and_the_file_where_it_is_whole() {
         .collect::<Vec<_>>()
         .join("\n\n");
     assert!(len16(&text) > 20_000);
-    let given = answer_for_front(&text, &dir, now_ms());
+    let given = answer_for_front(&text, &dir, now_ms()).await;
     let file = given.file.clone().unwrap();
     assert!(
         file.to_string_lossy()
@@ -60,7 +60,10 @@ fn a_long_one_is_its_start_and_the_file_where_it_is_whole() {
         file.display()
     )));
     // The same answer told again keeps its file.
-    assert_eq!(answer_for_front(&text, &dir, now_ms()).file, Some(file));
+    assert_eq!(
+        answer_for_front(&text, &dir, now_ms()).await.file,
+        Some(file)
+    );
 }
 
 #[test]
@@ -75,11 +78,12 @@ fn its_start_ends_with_a_paragraph_or_a_sentence() {
     assert!(answer_start(&"Phrase un. ".repeat(400), START_CHARS).ends_with("un."));
 }
 
-#[test]
-fn files_older_than_a_day_go_when_another_is_written() {
+#[tokio::test]
+async fn files_older_than_a_day_go_when_another_is_written() {
     let home = tempfile::tempdir().unwrap();
     let dir = home.path().join("voice-answers");
     let old = answer_for_front(&"o".repeat(5000), &dir, now_ms())
+        .await
         .file
         .unwrap();
     let stale = SystemTime::now() - Duration::from_millis(ANSWER_FILE_MS as u64 + 60_000);
@@ -90,7 +94,7 @@ fn files_older_than_a_day_go_when_another_is_written() {
         .set_modified(stale)
         .unwrap();
     std::fs::write(dir.join("kept.md"), "recent").unwrap();
-    answer_for_front(&"n".repeat(5000), &dir, now_ms());
+    answer_for_front(&"n".repeat(5000), &dir, now_ms()).await;
     assert!(!old.exists());
     assert!(dir.join("kept.md").exists());
 }
