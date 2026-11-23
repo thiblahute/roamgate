@@ -993,8 +993,9 @@ Parakeet has no language setting, and on some French speech (a voice it
 knows less, music under it, an English word in it) it drifts to English
 words that sound alike ("Mets un peu de musique et baisse le volume" came
 out "Well put the music and best of the volume"). With `whisper_model` set
-too, Whisper (loaded beside Parakeet once something was heard, about 1 GB)
-hears again a final that reads as English while the conversation is in
+too, Whisper (about 1 GB, loaded for that utterance and freed after it,
+so that Qwen3-TTS keeps the GPU's memory; on macOS, loaded beside Parakeet
+once something was heard and kept) hears again a final that reads as English while the conversation is in
 another language (the last reply read, or the last thing said): when it
 hears that language more than English, it reads the utterance again in it,
 about a second more, and the log says `said in fr, not English`. Speech
@@ -1132,7 +1133,9 @@ language; `"model"` names each, the other fields are the element's for it:
 of its stock speakers (`"speaker"` or the element's `"voice"`, such as
 `"ryan"`, with a CustomVoice model) or a cloned one (`"voice_embedding"`, a
 Base model and a voice saved with any-tts). A model that fails to load is
-left out.
+left out. Kokoro's entries run on the CPU unless they name a `"device"`
+(`"cuda"`, `"metal"`): on the GPU it takes memory Qwen3-TTS beside it needs
+to read on an 8 GB card.
 
 With `kokoro_model` and `kokoro_voices` too, a sentence only Kokoro reads
 (Kokoro's entries alone, as when a sentence another model failed is said
@@ -1149,7 +1152,9 @@ streaming its first audio in about 0.2 s: one entry per language, its
 and a `voice` of its `embeddings/` (or a voice state's `.safetensors`
 path). A sentence goes to Pocket TTS when the first entry reading its
 language is one of its own; after Qwen3-TTS, they are the light voice its
-failures fall back on (below):
+failures fall back on (below). Its models read words, not digits: in French
+and English, a sentence's numbers, times, dates, percentages, units and
+versions are written out in its language before it reads them:
 
 ```json
 {
