@@ -6,6 +6,31 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.22
+
+inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075
+
+The review family served by the Rust core (Phase 8, S19; wire/core-channel.md,
+The review family), while the owners table gives the review family to
+Rust. The browser surface (`review.*`, `claude_mod.*`,
+`/api/review/image`, the `review` push) and the agent socket's requests are
+unchanged; the inventory too.
+
+- wire: the front's own calls `internal.review.agents` (which hosts run the
+  review client, the panes whose mod has its tools, the agent socket keys),
+  `internal.review.call` (the front's own use of the service: Work board
+  links, MR reviews, conversation mode's roots and prompts, Ranger's
+  thread replies) and `internal.review.close` (before the front opens
+  reviews.sqlite again).
+- wire, reverse targets: `review.release` (Bun closes its service and lets
+  go of reviews.sqlite), `review.socketsTaken` (the core listens on the
+  agent sockets, renamed over Bun's paths), `review.published` (the core's
+  pushes Bun acts on), `review.host`, `review.forge`, `review.connection`
+  and `review.socket` (what the service and the agent socket ask of what
+  Bun still owns, by `op`).
+- agent socket: while the core owns the family it serves Bun's socket
+  paths; the Claude mod's requests on it still reach Bun's hub until S21.
+
 ## 1.21
 
 inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075
