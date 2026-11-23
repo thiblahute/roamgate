@@ -6,6 +6,7 @@
 //!
 //! [`GitContext`]: roamgate_git::GitContext
 
+pub mod connection;
 pub mod html_preview;
 pub mod html_preview_files;
 pub mod worktree;

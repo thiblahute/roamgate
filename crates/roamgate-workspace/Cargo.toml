@@ -9,6 +9,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# The fake connection of `connection::testing`, for other crates' tests.
+testing = []
+
 [dependencies]
 base64 = "0.22"
 lightningcss = { version = "1.0.0-alpha.72", default-features = false, features = ["visitor"] }
