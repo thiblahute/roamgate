@@ -1,7 +1,7 @@
 [package]
 name = "roamgate-activity"
 version = "0.0.0"
-description = "Roamgate's activity log: for now the time-report provider bridge (the Hours view's bridge.time_report); the recorder, reader and timeline follow in Phase 3"
+description = "Roamgate's activity log: recorder, store, readers, timeline, subjects and the time-report provider bridge"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
@@ -10,13 +10,20 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+hex = "0.4"
+indexmap = "2"
 jiff = "0.2"
+rand = "0.9"
 regex = "1"
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
+rusqlite = { version = "0.37", features = ["bundled"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
 tempfile = "3"
+thiserror = "2"
 tokio = { version = "1", features = ["fs", "macros", "rt", "sync", "time"] }
+url = "2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }

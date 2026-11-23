@@ -6409,13 +6409,20 @@ dependencies = [
 name = "roamgate-activity"
 version = "0.0.0"
 dependencies = [
+ "hex",
+ "indexmap",
  "jiff",
+ "rand 0.9.5",
  "regex",
  "roamgate-base",
  "roamgate-exec",
+ "rusqlite",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
+ "thiserror 2.0.21",
  "tokio",
+ "url",
 ]
 
 [[package]]
@@ -6468,8 +6475,10 @@ name = "roamgate-cli"
 version = "0.0.0"
 dependencies = [
  "hex",
+ "jiff",
  "rand 0.9.5",
  "regex",
+ "roamgate-activity",
  "roamgate-base",
  "roamgate-exec",
  "roamgate-herdr",
