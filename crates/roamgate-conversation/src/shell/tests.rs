@@ -41,10 +41,9 @@ fn runner(remote: bool, directory: &Path) -> ProcessShellRunner {
     }
 }
 
-fn seen() -> (
-    Arc<Mutex<Vec<ShellOutput>>>,
-    Arc<dyn Fn(ShellOutput) + Send + Sync>,
-) {
+type Sink = Arc<dyn Fn(ShellOutput) + Send + Sync>;
+
+fn seen() -> (Arc<Mutex<Vec<ShellOutput>>>, Sink) {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let sink = seen.clone();
     (

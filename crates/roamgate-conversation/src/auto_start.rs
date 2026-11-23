@@ -12,7 +12,7 @@ use regex::Regex;
 use roamgate_agents::obj;
 
 use crate::driver::BoxFuture;
-use crate::shared::{Obj, is_ok, reason, refuse};
+use crate::shared::{LogFn, Obj, is_ok, reason, refuse};
 use crate::time::{SharedClock, sleep_ms};
 
 /// What a refusal means for a claude that just started.
@@ -72,7 +72,7 @@ pub struct AutoStartDeps {
     pub owned: Arc<dyn Fn(&str) -> bool + Send + Sync>,
     /// The connection is going away.
     pub closed: Arc<dyn Fn() -> bool + Send + Sync>,
-    pub log: Option<Arc<dyn Fn(&str, Obj) + Send + Sync>>,
+    pub log: Option<LogFn>,
     pub clock: SharedClock,
     /// Before the first try: Claude draws its prompt box.
     pub first_delay_ms: i64,

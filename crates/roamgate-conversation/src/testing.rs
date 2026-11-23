@@ -791,7 +791,7 @@ pub struct FakeHerdrOptions {
     /// /exit asks first (background work runs): Stay or Escape puts the
     /// prompt back, the other answers end Claude.
     pub exit_asks: bool,
-    pub on_holder: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+    pub on_holder: Option<crate::shared::PaneFn>,
 }
 
 pub struct FakeHerdrState {

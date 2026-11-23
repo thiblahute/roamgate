@@ -20,7 +20,10 @@ use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::driver::{BoxFuture, HeadlessProcess, HolderPosition, InputKind};
-use crate::shared::Obj;
+use crate::shared::{LogFn, Obj};
+
+/// Roamgate has read a holder's log this far: (holder id, offset).
+pub type OffsetFn = Arc<dyn Fn(&str, u64) + Send + Sync>;
 use crate::time::{SharedClock, sleep_ms};
 
 /// What Roamgate asks of a pane's holder, numbered (`HolderCommand`):
@@ -97,6 +100,25 @@ impl Form {
                 .map(|(key, value)| (key.into_owned(), value.into_owned()))
                 .collect(),
         }
+    }
+
+    /// The agent socket's JSON body (`formOf`): an object's scalars as
+    /// strings, nulls left out; None when it is not one.
+    pub fn from_json(body: &str) -> Option<Self> {
+        let parsed = if body.is_empty() {
+            Value::Object(Obj::new())
+        } else {
+            js::parse(body)?
+        };
+        let mut pairs = Vec::new();
+        for (key, value) in parsed.as_object()? {
+            match value {
+                Value::Null => continue,
+                Value::Object(_) | Value::Array(_) => return None,
+                other => pairs.push((key.clone(), js::to_text(other))),
+            }
+        }
+        Some(Self { pairs })
     }
 
     pub fn from_pairs(pairs: &[(&str, &str)]) -> Self {
@@ -370,13 +392,13 @@ pub struct HolderChannelOptions {
     /// New commands wait: the holder's poll is answered now.
     pub on_work: Arc<dyn Fn() + Send + Sync>,
     /// Roamgate has read the holder's log this far.
-    pub on_offset: Option<Arc<dyn Fn(&str, u64) + Send + Sync>>,
+    pub on_offset: Option<OffsetFn>,
     /// A command was added: what is unconfirmed should be saved now.
     pub on_pending: Option<Arc<dyn Fn() + Send + Sync>>,
     /// What the holder notes of a line written to a child (the agent's
     /// protocol driver's `input_kind`).
     pub input_kind: Arc<dyn Fn(&str) -> InputKind + Send + Sync>,
-    pub log: Option<Arc<dyn Fn(&str, Obj) + Send + Sync>>,
+    pub log: Option<LogFn>,
     pub clock: SharedClock,
 }
 
@@ -854,9 +876,7 @@ impl HolderChannel {
     pub fn receive(&self, input: HolderOutput<'_>) -> Option<i64> {
         let (answer, offset_note) = {
             let mut state = self.inner.state.lock().unwrap();
-            let Some(expected) = state.expected else {
-                return None;
-            };
+            let expected = state.expected?;
             if state.id.as_deref() != Some(input.holder_id) {
                 return None;
             }
@@ -1257,3 +1277,6 @@ impl HeadlessProcess for HolderProcess {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, unix))]
+mod holder_tests;

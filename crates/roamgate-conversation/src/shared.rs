@@ -8,6 +8,13 @@ use serde_json::{Map, Value};
 /// A JavaScript object.
 pub type Obj = Map<String, Value>;
 
+/// A callback with a pane (or another name).
+pub type PaneFn = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+/// A log line's callback: its message and fields.
+pub type LogFn = std::sync::Arc<dyn Fn(&str, Obj) + Send + Sync>;
+/// An answer about a pane (its exact status...).
+pub type PaneQuery<T> = std::sync::Arc<dyn Fn(&str) -> Option<T> + Send + Sync>;
+
 /// The variable that keeps an agent in the terminal (`CLAUDE_START_ENV`).
 pub const CLAUDE_START_ENV: &str = "ROAMGATE_CLAUDE_START";
 

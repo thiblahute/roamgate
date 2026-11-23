@@ -128,10 +128,13 @@ pub type HoldSession = Arc<
         + Sync,
 >;
 
+/// A run's command line: (cwd, command) to argv.
+pub type ShellArgv = Arc<dyn Fn(&str, &str) -> Vec<String> + Send + Sync>;
+
 /// Runs `!` lines with `argv` (cwd, command) as the command line, through
 /// `hold` when given (an SSH session of the interactive lane).
 pub struct ProcessShellRunner {
-    pub argv: Arc<dyn Fn(&str, &str) -> Vec<String> + Send + Sync>,
+    pub argv: ShellArgv,
     pub hold: Option<HoldSession>,
 }
 

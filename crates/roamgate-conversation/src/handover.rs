@@ -20,8 +20,9 @@ use crate::holder::{HolderRegistry, resume_reply, suspend_reply};
 use crate::holder_script::resume_command as default_resume_command;
 use crate::lease::LeaseStore;
 use crate::shared::{
-    AgentCommand, LaunchSpec, Lease, Obj, accepted, is_ok, lease_headless_ids, lease_str,
-    lease_terminal_args, other_writer_doing, other_writer_place, reason, refuse, with_model,
+    AgentCommand, LaunchSpec, Lease, Obj, PaneFn, PaneQuery, accepted, is_ok, lease_headless_ids,
+    lease_str, lease_terminal_args, other_writer_doing, other_writer_place, reason, refuse,
+    with_model,
 };
 use crate::time::{SharedClock, sleep_ms};
 
@@ -77,6 +78,9 @@ impl Default for HandoverTimes {
     }
 }
 
+pub type DriverFor = Arc<dyn Fn(&Value) -> Option<ConversationDriver> + Send + Sync>;
+pub type LaunchCommand = Arc<dyn Fn(&str, LaunchSpec) -> String + Send + Sync>;
+pub type ExitDialogFn = Arc<dyn Fn(&str, Option<&str>) + Send + Sync>;
 pub type ResumeCommand = Arc<dyn Fn(&str, &[String], &dyn TerminalDriver) -> String + Send + Sync>;
 pub type TerminalTasks =
     Arc<dyn Fn(String, String) -> BoxFuture<'static, Result<usize, String>> + Send + Sync>;
@@ -97,28 +101,28 @@ pub struct HandoverDeps {
     pub resume_command: Option<ResumeCommand>,
     /// The driver of the agent Herdr names in a pane; None when
     /// conversation mode cannot drive it (default: the drivers').
-    pub driver_for: Option<Arc<dyn Fn(&Value) -> Option<ConversationDriver> + Send + Sync>>,
+    pub driver_for: Option<DriverFor>,
     /// A pane's lease changed (each phase): the browsers are told.
-    pub on_lease: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+    pub on_lease: Option<PaneFn>,
     /// The connection is going away: nothing more is changed; a handover
     /// still running gives up where it is.
     pub closed: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     /// The profile a session resumes with (absent or plain: the driver's
     /// own program, typed as before profiles).
-    pub resume_profile: Option<Arc<dyn Fn(&str) -> Option<AgentCommand> + Send + Sync>>,
+    pub resume_profile: Option<PaneQuery<AgentCommand>>,
     /// Typed to start a launch roamgate-hold fetches (a profile's agent).
-    pub launch_command: Option<Arc<dyn Fn(&str, LaunchSpec) -> String + Send + Sync>>,
+    pub launch_command: Option<LaunchCommand>,
     /// A lease's pane is gone: its lease and process go too.
-    pub on_pane_gone: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+    pub on_pane_gone: Option<PaneFn>,
     /// The background commands the pane's session still runs, from its
     /// transcript, asked when the footer cannot say: (pane, Herdr agent).
     pub terminal_tasks: Option<TerminalTasks>,
     /// Someone should know (the log): the exit asked first and was
     /// answered Stay.
-    pub on_exit_dialog: Option<Arc<dyn Fn(&str, Option<&str>) + Send + Sync>>,
+    pub on_exit_dialog: Option<ExitDialogFn>,
     /// The pane agent's exact status when something better than Herdr's
     /// screen detection knows it (a Claude mod inside it).
-    pub exact_status: Option<Arc<dyn Fn(&str) -> Option<String> + Send + Sync>>,
+    pub exact_status: Option<PaneQuery<String>>,
     /// Whether the pane session's transcript has `command` as an ordinary
     /// user message since `since_ms`: (pane, command, since_ms).
     pub exit_swallowed: Option<ExitSwallowed>,
@@ -621,6 +625,7 @@ impl Handover {
     /// A TUI that missed the exit deadline (slow hooks, an exit queued
     /// behind a turn) may still exit: it is watched a while longer and, if
     /// it does, the agent is resumed in the shell it leaves.
+    #[allow(clippy::too_many_arguments)]
     fn watch_late_exit(
         &self,
         pane_id: &str,
