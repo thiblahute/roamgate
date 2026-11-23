@@ -8780,6 +8780,15 @@ function main() {
     reverseTargets: { ...coreReverseTargets, ...hostReverseTargets },
   });
   setMrCacheCore(coreFront);
+  // Bun's review service opens reviews.sqlite at start, as it did before
+  // the review family could move, unless the owners table gives the
+  // reviews to the core (which then opens it; Bun takes them back through
+  // review.release and its ownership changes).
+  if (
+    !coreFront ||
+    readOwners(join(dataRoot(), "runtime")).owners.review !== "rust"
+  )
+    getReviewService();
   if (config.authRequired) {
     if (config.generatedAuthTokenPath) {
       logger.info("authentication required", {
