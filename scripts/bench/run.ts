@@ -12,13 +12,27 @@
  * and gh) under ~/.claude/tmp, measures the server named by BENCH_SERVER_CMD
  * (default: this checkout's Bun server from source), and deletes the world.
  * On Linux it waits while GameMode reports a game (results would be noise).
+ *
+ * The hybrid (a Rust core behind the Bun front, contract/wire/
+ * core-channel.md): ROAMGATE_CORE_BIN names the core binary, passed to the
+ * server, and BENCH_RUST_FAMILIES (comma separated, families of
+ * contract/owners/families.json) the families the world's owners table
+ * gives to Rust. The run records both, and compare prints them.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus, hostname, loadavg, platform, release, totalmem } from "node:os";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
-import { createEnv, destroyEnv, FIXTURE_TAG, REPO, serverCommand } from "./env";
+import {
+  coreBin,
+  createEnv,
+  destroyEnv,
+  FIXTURE_TAG,
+  REPO,
+  rustFamilies,
+  serverCommand,
+} from "./env";
 import {
   measureArchive,
   measureConversation,
@@ -121,6 +135,8 @@ function machine() {
     source_commit: sh(["git", "-C", REPO, "rev-parse", "HEAD"]),
     source_dirty: sh(["git", "-C", REPO, "status", "--short"]) !== "",
     fixture: FIXTURE_TAG,
+    ...(coreBin() ? { core_bin: coreBin() } : {}),
+    rust_families: rustFamilies(),
     ...(platform() === "darwin"
       ? { power: sh(["pmset", "-g", "batt"]).split("\n")[0] ?? "" }
       : {}),
@@ -247,6 +263,16 @@ function storeBaseline(
   } else baseline.machines[machine] = result;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(baseline, null, 2)}\n`);
+}
+
+/** Which server a run measured: its command, and the families Rust owned. */
+function describe(label: string, machine: Record<string, any> | undefined) {
+  if (!machine) return `${label}: unknown server`;
+  const core = machine.core_bin ? `, core ${machine.core_bin}` : "";
+  const rust = machine.rust_families?.length
+    ? `, Rust owns ${machine.rust_families.join(", ")}`
+    : ", every family Bun's";
+  return `${label}: ${machine.server_command} on ${machine.hostname} (${machine.source_commit?.slice(0, 10) ?? "?"})${core}${rust}`;
 }
 
 /** Checks a run against a stored baseline's gates; exit 1 on a failed gate. */
@@ -420,6 +446,8 @@ function compare(
   for (const metric of Object.keys(base))
     if (now[metric]?.error)
       check(metric, false, `failed in the run: ${now[metric].error}`);
+  console.log(describe("baseline", baseline.machines[name].machine));
+  console.log(describe("run", result.machine));
   console.log(checks.join("\n"));
   if (failures.length) process.exit(1);
 }

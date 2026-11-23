@@ -610,6 +610,64 @@ export type ServerOptions = {
   label?: string;
 };
 
+/** The Rust core of the hybrid (ROAMGATE_CORE_BIN), or none. */
+export function coreBin(): string | undefined {
+  return process.env.ROAMGATE_CORE_BIN || undefined;
+}
+
+/**
+ * The families the world's owners table gives to Rust
+ * (BENCH_RUST_FAMILIES, comma separated): known to
+ * contract/owners/families.json, and only with a core to run them.
+ */
+export function rustFamilies(): string[] {
+  const families = (process.env.BENCH_RUST_FAMILIES ?? "")
+    .split(",")
+    .map((family) => family.trim())
+    .filter(Boolean);
+  if (!families.length) return [];
+  const known = Object.keys(
+    JSON.parse(
+      readFileSync(join(REPO, "contract/owners/families.json"), "utf8"),
+    ).families,
+  );
+  for (const family of families)
+    if (!known.includes(family))
+      throw new Error(`BENCH_RUST_FAMILIES: unknown family ${family}`);
+  if (!coreBin())
+    throw new Error("BENCH_RUST_FAMILIES needs ROAMGATE_CORE_BIN");
+  return families;
+}
+
+/**
+ * The world's owners table (<data>/runtime/owners.json,
+ * contract/wire/core-channel.md): the families of BENCH_RUST_FAMILIES are
+ * Rust's, shadow reads off (they would add work the run does not measure).
+ */
+function writeOwners(env: BenchEnv) {
+  const families = rustFamilies();
+  const path = join(env.home, ".config/roamgate/runtime/owners.json");
+  if (!families.length) {
+    rmSync(path, { force: true });
+    return;
+  }
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writeFileSync(
+    path,
+    `${JSON.stringify(
+      {
+        version: 1,
+        owners: Object.fromEntries(families.map((family) => [family, "rust"])),
+        shadow: { enabled: false, rate: 0 },
+        core: coreBin(),
+      },
+      null,
+      2,
+    )}\n`,
+    { mode: 0o600 },
+  );
+}
+
 export function serverCommand(): string[] {
   const custom = process.env.BENCH_SERVER_CMD;
   if (custom) return custom.split(" ").filter(Boolean);
@@ -627,6 +685,8 @@ export async function startServer(
     `server-${options.label ?? "run"}-${port}.log`,
   );
   const command = options.command ?? serverCommand();
+  writeOwners(env);
+  const core = coreBin();
   const start = performance.now();
   const child = Bun.spawn([...command, "--port", String(port)], {
     cwd: join(REPO, "server"),
@@ -649,6 +709,7 @@ export async function startServer(
       HERDR_SOCKET_PATH: env.herdrSockets.control,
       HERDR_CLIENT_SOCKET_PATH: env.herdrSockets.client,
       ...(options.testClock ? { ROAMGATE_TEST_CLOCK: options.testClock } : {}),
+      ...(core ? { ROAMGATE_CORE_BIN: core } : {}),
       ...options.extraEnv,
     },
     stdout: Bun.file(logPath),

@@ -85,9 +85,16 @@ bun scripts/bench/run.ts --baseline contract/perf/baseline.json --machine deskto
 # Another server in the same world, then its gates against the baseline:
 BENCH_SERVER_CMD="path/to/roamgate" bun scripts/bench/run.ts --out run.json
 bun scripts/bench/run.ts compare contract/perf/baseline.json run.json --machine desktop
+# The hybrid: a Rust core owning some families behind the Bun front.
+ROAMGATE_CORE_BIN=target/release/roamgate BENCH_RUST_FAMILIES=archive \
+  bun scripts/bench/run.ts --out hybrid.json
 # Some metrics again (--only), replacing only those of the machine's baseline:
 bun scripts/bench/run.ts --only voice --baseline contract/perf/baseline.json --machine desktop
 ```
+
+`BENCH_RUST_FAMILIES` (families of `owners/families.json`) is written to the
+world's owners table, shadow reads off; a run records its server command,
+core and Rust families, and `compare` prints them for both sides.
 
 Compare only runs of the same machine, under the same conditions (each
 metric records the load average around it and whether a game ran).
