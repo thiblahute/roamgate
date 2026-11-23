@@ -6,6 +6,26 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.25
+
+inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075
+
+The Claude mod hub runs in the Rust core while it owns both the review and
+the conversation families (S21; wire/core-channel.md, The Claude mod hub),
+Bun's otherwise. The browser surface, the agent socket and the mod's
+requests are unchanged; the inventory too.
+
+- wire, reverse targets: `claude_mod.mirror {mods: [{gone, live_until,
+  pane}], tools}` (what Bun's synchronous readers read while the core runs
+  the hub), `claude_mod.changed {connection_id, pane_id, change}`,
+  `claude_mod.released`.
+- wire: the front's own calls `internal.review.mod_take`, `.mod_release`,
+  `.mod_flush` (at the front's shutdown) and `.mod_deliver {connection_id,
+  pane_id, text, kind}` (the message id, null when the mod is gone, or the
+  error `claude_mod_refused`).
+- storage: claude-mod-inbox.json changes hands through the file between
+  Bun's hub and the core's: the side giving the hub up writes it first.
+
 ## 1.24
 
 inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075
