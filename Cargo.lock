@@ -6393,6 +6393,7 @@ dependencies = [
  "roamgate-connections",
  "roamgate-exec",
  "roamgate-herdr",
+ "roamgate-http",
  "roamgate-sidecar",
  "rust-embed",
  "serde",
@@ -6457,6 +6458,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -6524,6 +6526,18 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "roamgate-http"
+version = "0.0.0"
+dependencies = [
+ "roamgate-base",
+ "roamgate-connections",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

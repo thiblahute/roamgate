@@ -1,0 +1,106 @@
+name: both servers read the same settings.json, real-shaped and older, alike
+family: settings
+description: >
+  Forward data test of the settings family (plan 5.7): a sanitised file of
+  the dogfood's shape with every section set, as the Bun server and the
+  Rust core (with PARITY_RUST_OWNERS=settings) read it. The same exact
+  answers on both runs are the proof; contract/vectors/settings.json holds
+  the normaliser to every value case.
+server:
+  files:
+    ".config/roamgate/settings.json":
+      mode: "0600"
+      json:
+        version: 1
+        title_suffix: "desk"
+        auto_rename_agent_tabs: false
+        worktree_command: "git worktree add {path} -b {branch}"
+        worktree_remove_command: "git worktree remove {path}"
+        repositories:
+          "connection:laptop:ssh:mac:/srv/notes/.git":
+            { worktree_directory: "/srv/notes.worktrees" }
+          "connection:desktop:local:/home/user/src/app.git":
+            { worktree_directory: "/home/user/src/app.worktrees/" }
+        workspace_auto_sync: {}
+        terminal_transport: { legacy-default: { surface_codecs: false } }
+        claude_start_mode: conversation
+        conversation: { idle_stop_minutes: 45 }
+        limit_resume: { enabled: false, message: "  carry on  ", extra: 1 }
+        archive: { agents: [claude], stale_hours: 0 }
+        profiles:
+          list: [{ name: " Work ", agent: claude, env: { A: "1" } }]
+          default: work
+        mr_reviews: { checkout: on_demand, order: [a, a, b], retention_days: "30" }
+        ui: { theme: black, "9bad": 1 }
+        rendered_sites: ["https://docs.example.test/guide/index.html"]
+        rendered_site_roots:
+          { "https://docs.example.test/guide/": "https://docs.example.test/" }
+        unknown_key: dropped
+steps:
+  - login: {}
+  - connect: {}
+  - call: settings.get
+    reply:
+      path: "${DATA}/settings.json"
+      settings:
+        $exact: true
+        version: 1
+        title_suffix: desk
+        auto_rename_agent_tabs: false
+        worktree_command: "git worktree add {path} -b {branch}"
+        worktree_remove_command: "git worktree remove {path}"
+        repositories:
+          "connection:laptop:ssh:mac:/srv/notes/.git":
+            { worktree_directory: "/srv/notes.worktrees" }
+          "connection:desktop:local:/home/user/src/app.git":
+            { worktree_directory: "/home/user/src/app.worktrees" }
+        workspace_auto_sync: {}
+        terminal_transport: { legacy-default: { surface_codecs: false } }
+        archive:
+          {
+            agents: [claude],
+            hosts: {},
+            stale_hours: 48,
+            thinking: false,
+            index: { default: full, rules: [] },
+            exclude: [],
+            hide: [],
+            min_free_gb: 20,
+          }
+        claude_start_mode: conversation
+        conversation: { idle_stop_minutes: 45 }
+        limit_resume: { enabled: false, message: carry on }
+        profiles:
+          {
+            list: [{ name: Work, agent: claude, env: { A: "1" } }],
+            default: Work,
+            return_after_reset: false,
+          }
+        mr_reviews:
+          { checkout: on_demand, retention_days: 30, order: [a, b] }
+        custom: {}
+        ui: { theme: black }
+        rendered_sites: ["https://docs.example.test/guide/"]
+        rendered_site_roots:
+          { "https://docs.example.test/guide/": "https://docs.example.test/" }
+  - call: settings.agent_auto_rename.get
+    reply: { enabled: false, $exact: true }
+  - call: settings.claude_start.get
+    reply: { mode: conversation, $exact: true }
+  - call: settings.conversation.get
+    reply: { idle_stop_minutes: 45, $exact: true }
+  - call: settings.limit_resume.get
+    reply: { enabled: false, message: carry on, margin_seconds: 60, $exact: true }
+  - call: settings.terminal_transport.get
+    reply: { surface_codecs: false, $exact: true }
+  - call: bridge.ui_settings.get
+    reply: { ui: { theme: black, $exact: true }, $exact: true }
+  - http: GET /api/instance-settings
+    expect:
+      status: 200
+      json:
+        $exact: true
+        title_suffix: desk
+        rendered_sites: ["https://docs.example.test/guide/"]
+        rendered_site_roots:
+          { "https://docs.example.test/guide/": "https://docs.example.test/" }

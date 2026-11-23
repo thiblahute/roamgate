@@ -9,6 +9,7 @@ use roamgate_sidecar::family::Families;
 
 pub mod herdr;
 pub mod limit_resume;
+pub mod settings;
 pub mod time_report;
 pub mod update;
 
@@ -19,6 +20,7 @@ pub fn core_families() -> Families {
         time_report::family(),
         herdr::family(),
         update::family(),
+        settings::family(),
     ]
     .into_iter()
     .flatten()

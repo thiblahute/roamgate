@@ -40,3 +40,25 @@ roamgate-agents	server/src/agent/antigravity-session	S21
 roamgate-agents	server/src/agent/muse-session	S21
 roamgate-agents	server/src/agent/grok-session	S21
 roamgate-agents	server/src/agent/task-watcher	S21
+
+# roamgate-http was made by S13 for the settings family; the rest of its rows
+# wait for the front (S18). settings-rpc.test.ts holds the worktree, profile
+# and connection-namespace handlers that stay in Bun with their families
+# (S16, S17) and the reply plumbing of the front (S18): the latest is named.
+roamgate-http	server/src/http/rendered-pages	S18
+roamgate-http	server/src/bridge/websocket-send	S18
+roamgate-http	server/src/http/auth	S18
+roamgate-http	server/src/bridge/terminal-bridge	S18
+roamgate-http	server/src/bridge/forward-rpc	S18
+roamgate-http	server/src/http/login-page-pin	S18
+roamgate-http	server/src/http/terminal-upload	S18
+roamgate-http	server/src/config/auth-token	S18
+roamgate-http	server/src/http/image-upload	S18
+roamgate-http	server/src/http/static-	S18
+roamgate-http	server/src/http/public-origin	S18
+roamgate-http	server/src/http/history	S18
+roamgate-http	server/src/contract-record/	S18
+roamgate-http	server/src/bridge/terminal-key-roundtrip	S18
+roamgate-http	server/src/bridge/list-delta	S18
+roamgate-http	server/src/http/terminal-path-text	S18
+roamgate-http	server/src/bridge/settings-rpc.test.ts	S18

@@ -1,0 +1,136 @@
+name: Rust writes settings.json, Bun reads and writes it after a flip and back, nothing lost
+family: settings
+description: >
+  Backward and coexistence data tests of the settings family (plan 5.7).
+  The core owns the family: its handlers and Bun's (which write through it,
+  compare-and-set on its revision) change settings.json at the same time and
+  every change lands. The owners table then gives the family back to Bun,
+  which reads what Rust wrote and writes on it; given to Rust again, the
+  core reads Bun's file. Last, a Bun server without a core opens the file.
+server:
+  env:
+    ROAMGATE_CORE_BIN: "${CORE}"
+  files:
+    ".config/roamgate/runtime/owners.json":
+      mode: "0600"
+      json:
+        version: 1
+        owners: { settings: rust }
+        shadow: { enabled: false, rate: 0 }
+steps:
+  - login: {}
+  - connect: {}
+  - http: PUT /api/instance-settings
+    headers: { x-roamgate-settings: "1" }
+    body: { title_suffix: " Rust  side " }
+    expect: { status: 200, json: { title_suffix: Rust side } }
+  # Bun's manifest has the core's title as soon as the core answered.
+  - http: GET /manifest.json
+    expect: { status: 200, json: { name: "Roamgate · Rust side" } }
+  - call: settings.claude_start.update
+    params: { mode: conversation }
+    reply: { mode: conversation }
+  # Both writers at once: the core's handlers (ui preferences) and Bun's
+  # (profiles, written through the core).
+  - call: bridge.ui_settings.update
+    id: u1
+    params: { key: a.one, value: 1 }
+    no_wait: true
+  - call: settings.profiles.update
+    id: p1
+    params:
+      list: [{ name: Work, agent: claude, env: [], unset: [], builtin: false }]
+      default: Work
+      return_after_reset: true
+    no_wait: true
+  - call: bridge.ui_settings.update
+    id: u2
+    params: { key: a.two, value: 2 }
+    no_wait: true
+  - call: bridge.ui_settings.update
+    id: u3
+    params: { key: a.three, value: 3 }
+    no_wait: true
+  - await: u1
+  - await: p1
+  - await: u2
+  - await: u3
+  - assert_file:
+      path: "${DATA}/settings.json"
+      mode: "0600"
+      json:
+        title_suffix: Rust side
+        claude_start_mode: conversation
+        ui: { a.one: 1, a.two: 2, a.three: 3, $exact: true }
+        profiles: { default: Work, return_after_reset: true }
+  - call: settings.profiles.get
+    reply: { default: Work, return_after_reset: true }
+  # The family goes back to Bun.
+  - write:
+      path: "${DATA}/runtime/owners.json"
+      mode: "0600"
+      json:
+        version: 1
+        owners: { settings: bun }
+        shadow: { enabled: false, rate: 0 }
+  - expect_log: { contains: settings.json written by Bun again, within_ms: 10000 }
+  - call: settings.get
+    reply:
+      settings:
+        title_suffix: Rust side
+        claude_start_mode: conversation
+        ui: { a.one: 1, a.two: 2, a.three: 3, $exact: true }
+        profiles: { default: Work, return_after_reset: true }
+  - call: bridge.ui_settings.update
+    params: { key: b.bun, value: bun }
+    reply: { key: b.bun, value: bun }
+  - call: settings.conversation.update
+    params: { idle_stop_minutes: 5 }
+    reply: { idle_stop_minutes: 5 }
+  # And to Rust again: the core reads Bun's file.
+  - write:
+      path: "${DATA}/runtime/owners.json"
+      mode: "0600"
+      json:
+        version: 1
+        owners: { settings: rust }
+        shadow: { enabled: false, rate: 0 }
+  - expect_log:
+      matches: "(?s)written by Bun again.*handed to the Rust core"
+      within_ms: 10000
+  - call: settings.conversation.get
+    reply: { idle_stop_minutes: 5 }
+  - call: bridge.ui_settings.get
+    reply: { ui: { a.one: 1, a.two: 2, a.three: 3, b.bun: bun, $exact: true } }
+  - call: bridge.ui_settings.update
+    params: { key: c.rust, value: rust }
+    reply: { key: c.rust, value: rust }
+  # A Bun server without a core opens what the core wrote last.
+  - restart: { env: { ROAMGATE_CORE_BIN: null } }
+  - login: {}
+  - connect: {}
+  - call: bridge.ui_settings.get
+    reply:
+      {
+        ui:
+          {
+            a.one: 1,
+            a.two: 2,
+            a.three: 3,
+            b.bun: bun,
+            c.rust: rust,
+            $exact: true,
+          },
+      }
+  - call: settings.get
+    reply:
+      settings:
+        title_suffix: Rust side
+        claude_start_mode: conversation
+        conversation: { idle_stop_minutes: 5 }
+        profiles:
+          {
+            list: [{ name: Work, agent: claude }],
+            default: Work,
+            return_after_reset: true,
+          }

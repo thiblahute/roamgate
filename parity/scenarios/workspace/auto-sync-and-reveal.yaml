@@ -1,5 +1,5 @@
 name: a workspace's auto-sync is read and set, per workspace and per repository key, and revealing a file needs the server's permission
-family: settings
+family: workspace
 description: >
   settings.workspace_auto_sync.get/list/update/update_key keep the
   automatic sync per checkout in settings.json; file.reveal opens a file on

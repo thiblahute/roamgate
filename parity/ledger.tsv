@@ -1031,8 +1031,8 @@ server/src/bridge/herdr-client.test.ts	logs method, sizes and round-trip timings
 server/src/bridge/herdr-client.test.ts	logs failures without a first byte	rust-unit:roamgate-herdr	Herdr control client
 server/src/bridge/list-delta.test.ts	a list read with the stamp the socket was given answers the changes	rust-unit:roamgate-http	transport and RPC plumbing
 server/src/bridge/list-delta.test.ts	an unknown stamp, another socket or another list gets the whole list	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/settings-rpc.conversation.test.ts	idle stop: 30 minutes by default, a whole number from 0 (off) to a day	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/settings-rpc.limit-resume.test.ts	usage limit resume: on, a minute after the reset, the message; each key checked	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/settings-rpc.conversation.test.ts	idle stop: 30 minutes by default, a whole number from 0 (off) to a day	rust-unit:roamgate-http:settings::tests::idle_stop_is_30_minutes_by_default_and_a_whole_number_up_to_a_day	the settings family (S13)
+server/src/bridge/settings-rpc.limit-resume.test.ts	usage limit resume: on, a minute after the reset, the message; each key checked	rust-unit:roamgate-http:settings::tests::limit_resume_is_on_a_minute_after_the_reset_and_each_key_is_checked	the settings family (S13)
 server/src/bridge/settings-rpc.test.ts	terminal transport settings validate input, persist by connection, and reconnect only on change	scenario:parity/scenarios/settings/connection-settings.yaml	
 server/src/bridge/settings-rpc.test.ts	agent auto rename settings read and update successfully	scenario:parity/scenarios/settings/connection-settings.yaml	
 server/src/bridge/settings-rpc.test.ts	settings RPC errors carry their runtime connection identity	rust-unit:roamgate-http	transport and RPC plumbing
@@ -1405,6 +1405,11 @@ server/src/config/data-paths.test.ts	follows a symlinked user config root but no
 server/src/config/environment.test.ts	new names override legacy names without mutating the environment	scenario:parity/scenarios/env/password-legacy.yaml	
 server/src/config/environment.test.ts	new supervisor override takes precedence over legacy settings and detection	scenario:parity/scenarios/env/update-supervisor.yaml	
 server/src/config/gui-settings.conversation.test.ts	idle stop defaults to 30 minutes; bad values in the file are dropped	rust-unit:roamgate-base:settings::tests::idle_stop_defaults_to_30_minutes_and_bad_values_are_dropped	data paths, environment precedence, settings store, locks
+server/src/config/gui-settings.remote.test.ts	reads and writes go through the remote writer against its revision	internal:core channel	the Bun side of the settings family's channel client (plan 8.2), deleted at cut-over; roamgate-http's settings tests hold the writer's side
+server/src/config/gui-settings.remote.test.ts	a stale write is made again on what the writer has now, losing nothing	internal:core channel	the Bun side of the settings family's channel client (plan 8.2), deleted at cut-over; roamgate-http's settings tests hold the writer's side
+server/src/config/gui-settings.remote.test.ts	concurrent updates from both sides keep every change	internal:core channel	the Bun side of the settings family's channel client (plan 8.2), deleted at cut-over; roamgate-http's settings tests hold the writer's side
+server/src/config/gui-settings.remote.test.ts	the writer's own changes reach the listeners; older and front ones do not	internal:core channel	the Bun side of the settings family's channel client (plan 8.2), deleted at cut-over; roamgate-http's settings tests hold the writer's side
+server/src/config/gui-settings.remote.test.ts	without a remote writer, a told change is ignored	internal:core channel	the Bun side of the settings family's channel client (plan 8.2), deleted at cut-over; roamgate-http's settings tests hold the writer's side
 server/src/config/gui-settings.test.ts	terminal codec preferences survive a fresh process and default to enabled	rust-unit:roamgate-base:settings::tests::terminal_codecs_survive_a_fresh_store_and_default_to_enabled	data paths, environment precedence, settings store, locks
 server/src/config/gui-settings.test.ts	explicit settings paths isolate writes and bypass legacy migration	rust-unit:roamgate-base:settings::tests::explicit_settings_paths_isolate_writes_and_skip_migration	data paths, environment precedence, settings store, locks
 server/src/config/gui-settings.test.ts	settings keys preserve legacy format and isolate connection identities	rust-unit:roamgate-base:settings::tests::settings_keys_keep_the_legacy_format_and_isolate_connections	data paths, environment precedence, settings store, locks
@@ -1415,6 +1420,40 @@ server/src/config/gui-settings.test.ts	activity settings default to off and keep
 server/src/config/gui-settings.test.ts	activity settings survive other settings writes, and are not added	rust-unit:roamgate-base:settings::tests::activity_settings_survive_other_writes_and_are_not_added	data paths, environment precedence, settings store, locks
 server/src/config/gui-settings.test.ts	a claude started by hand stays in the terminal unless set; bad values are dropped	rust-unit:roamgate-base:settings::tests::a_claude_started_by_hand_stays_in_the_terminal_unless_set	data paths, environment precedence, settings store, locks
 server/src/config/gui-settings.test.ts	mr_cache keeps each valid field in settings.json and falls back to defaults	rust-unit:roamgate-base:settings::tests::mr_cache_keeps_each_valid_field_and_falls_back_to_defaults	data paths, environment precedence, settings store, locks
+server/src/config/gui-settings.vectors.test.ts	null gives the defaults	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	an array gives the defaults	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	a string gives the defaults	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	an empty object gives the defaults	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	a sanitised real-shaped file	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	keys the type does not have are dropped, nulls ignored	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	an older shape without version and with legacy fields	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	title suffix with spaces and too long	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	title suffix over 32 characters is dropped	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	worktree commands: NUL, long, blank	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	workspace auto sync entries	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	ui preferences: invalid keys and large values dropped	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	activity, time report, conversation, claude start, mr cache, history	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	invalid claude start and conversation	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	an empty archive section gets the defaults	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	a non-object archive section gets the defaults	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	every archive field	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	archive push without a target and text chars in range	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	valid limit resume settings, message trimmed	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	invalid limit resume fields dropped	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	a non-object limit resume section is dropped	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	profiles normalised	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	an unknown default resets to the built-in	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	a non-object profiles section gives the defaults	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	a profile name in UTF-16 units	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	a non-object mr_reviews section is dropped	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	an empty mr_reviews section is kept	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	every mr_reviews field	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	mr_reviews numbers and odd values	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	a workspace tree normalised	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	an empty workspace tree is dropped	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	a tree of unplaced workspaces only is dropped	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	sites and their roots	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
+server/src/config/gui-settings.vectors.test.ts	roots without listed sites are dropped	vector:contract/vectors/settings.json	S13 vectors, read by bun test and roamgate-base
 server/src/config/launchd-environment.test.ts	${fixture.name} matches ${shellName} sourcing	rust-unit:roamgate-cli	launchd service environment
 server/src/config/launchd-environment.test.ts	rejects unsupported input without exposing its contents (%#)	rust-unit:roamgate-cli	launchd service environment
 server/src/config/launchd-environment.test.ts	rejects shell-managed variable %s	rust-unit:roamgate-cli	launchd service environment
@@ -2414,9 +2453,9 @@ server/src/http/image-upload.test.ts	a folder swapped for a link is not followed
 server/src/http/image-upload.test.ts	a staging root whose permissions were loosened is refused	rust-unit:roamgate-http	HTTP front internals
 server/src/http/image-upload.test.ts	unsafe extension characters are dropped from the file name	rust-unit:roamgate-http	HTTP front internals
 server/src/http/image-upload.test.ts	empty image uploads are rejected without retaining a folder	rust-unit:roamgate-http	HTTP front internals
-server/src/http/instance-settings.test.ts	instance settings reject cross-site and simple browser writes	rust-unit:roamgate-http	HTTP front internals
-server/src/http/instance-settings.test.ts	invalid or oversized settings never reach persistence	rust-unit:roamgate-http	HTTP front internals
-server/src/http/instance-settings.test.ts	the sites we work on are kept apart from the title, normalized	rust-unit:roamgate-http	HTTP front internals
+server/src/http/instance-settings.test.ts	instance settings reject cross-site and simple browser writes	rust-unit:roamgate-http:settings::tests::instance_settings_refuse_cross_site_and_simple_browser_writes_and_keep_roots_of_listed_sites	the settings family (S13)
+server/src/http/instance-settings.test.ts	invalid or oversized settings never reach persistence	rust-unit:roamgate-http:settings::tests::invalid_or_oversized_instance_settings_never_reach_the_file	the settings family (S13)
+server/src/http/instance-settings.test.ts	the sites we work on are kept apart from the title, normalized	rust-unit:roamgate-http:settings::tests::instance_settings_refuse_cross_site_and_simple_browser_writes_and_keep_roots_of_listed_sites	the settings family (S13)
 server/src/http/login-page-pin.test.ts	disabled PIN preserves password-only markup, validation and endpoint	rust-unit:roamgate-http	HTTP front internals
 server/src/http/login-page-pin.test.ts	enabled PIN starts masked with numeric keyboard and accessible constraints	rust-unit:roamgate-http	HTTP front internals
 server/src/http/login-page-pin.test.ts	rejects invalid PIN %j before fetch	rust-unit:roamgate-http	HTTP front internals

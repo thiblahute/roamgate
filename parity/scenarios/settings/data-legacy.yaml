@@ -1,0 +1,39 @@
+name: a settings.json left at the herdr-gui path is read by both servers alike
+family: settings
+description: >
+  Forward data test of the settings family (plan 5.7) on the oldest shape:
+  only the legacy herdr-gui file, without a version, with fields since
+  renamed or dropped. Both servers migrate it to the Roamgate path once and
+  answer the same.
+server:
+  files:
+    ".config/herdr-gui/settings.json":
+      mode: "0600"
+      json:
+        auto_rename_agent_tabs: "yes"
+        repositories: { "local:/src/tool": { worktree_hooks_enabled: false } }
+        workspace_auto_sync:
+          "local:/src/tool": { enabled: true, interval_minutes: 2.6 }
+        terminal_transport: { legacy-default: { surface_codecs: "off" } }
+        ui: { overlayTabs: { version: 1, connections: {} } }
+steps:
+  - login: {}
+  - connect: {}
+  - call: settings.get
+    reply:
+      path: "${DATA}/settings.json"
+      settings:
+        $exact: true
+        version: 1
+        title_suffix: ""
+        auto_rename_agent_tabs: true
+        repositories: { "local:/src/tool": { worktree_hooks_enabled: false } }
+        workspace_auto_sync:
+          "local:/src/tool": { enabled: true, interval_minutes: 3 }
+        terminal_transport: {}
+        custom: {}
+        ui: { overlayTabs: { version: 1, connections: {} } }
+  - call: settings.terminal_transport.get
+    reply: { surface_codecs: true, $exact: true }
+  - call: bridge.ui_settings.get
+    reply: { ui: { overlayTabs: { version: 1, connections: {} } } }

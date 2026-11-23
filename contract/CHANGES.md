@@ -6,6 +6,24 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.6
+
+inventory: e8d2775b8d2d0d084c05cd3b9614c25f53df62090f92d05dd69d596b212ede72
+
+The data families served by the Rust core (Phase 3, S13 and S14;
+wire/core-channel.md), each while the owners table gives it to Rust.
+
+- settings (S13): the core is settings.json's one writer while it owns the
+  family; the front reads and writes through it. owners: the family's `rpc`
+  names the methods whose answer is settings.json alone (`settings.get`, the
+  agent auto rename, claude start, conversation, limit resume and terminal
+  transport settings, `bridge.ui_settings.*`), no longer the `settings.`
+  prefix: the profile, worktree, repository and workspace auto-sync settings
+  stay with their families. wire: `internal.settings.get`,
+  `internal.settings.update` (error code `stale`), the reverse target
+  `settings.changed`, and The settings family. vectors: `settings.json`,
+  `normalizeGuiSettings` for every section.
+
 ## 1.5
 
 inventory: e8d2775b8d2d0d084c05cd3b9614c25f53df62090f92d05dd69d596b212ede72

@@ -21,6 +21,7 @@ roamgate-cli = { path = "../roamgate-cli" }
 roamgate-connections = { path = "../roamgate-connections" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-herdr = { path = "../roamgate-herdr" }
+roamgate-http = { path = "../roamgate-http" }
 roamgate-sidecar = { path = "../roamgate-sidecar" }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order"] }

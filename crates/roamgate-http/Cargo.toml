@@ -1,0 +1,21 @@
+[package]
+name = "roamgate-http"
+version = "0.0.0"
+description = "Roamgate's HTTP and RPC surface: for now the settings RPCs and /api/instance-settings on the one settings.json writer; the axum app, auth and the /ws transport follow in Phase 7"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+roamgate-base = { path = "../roamgate-base" }
+roamgate-connections = { path = "../roamgate-connections" }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["sync"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }
