@@ -11,11 +11,13 @@ workspace = true
 
 [dependencies]
 futures-util = "0.3"
-roamgate-base = { path = "../roamgate-base" }
 regex = "1"
+roamgate-base = { path = "../roamgate-base" }
+roamgate-git = { path = "../roamgate-git" }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["fs", "macros", "rt", "sync", "time"] }
 tracing = "0.1"
+url = "2"
 
 [dev-dependencies]
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }

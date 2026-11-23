@@ -7254,11 +7254,13 @@ dependencies = [
  "futures-util",
  "regex",
  "roamgate-base",
+ "roamgate-git",
  "roamgate-protocol",
  "serde_json",
  "tempfile",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -7578,6 +7580,7 @@ dependencies = [
  "regex",
  "roamgate-base",
  "roamgate-exec",
+ "roamgate-forge",
  "roamgate-git",
  "roamgate-protocol",
  "rustix",
