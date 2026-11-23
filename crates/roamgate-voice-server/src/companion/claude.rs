@@ -5,9 +5,11 @@
 //!
 //! A session is a [`ClaudeProcess`]: lines in, lines out, a kill. The
 //! production one is [`spawn_claude`] (a local process); tests give fakes.
-//! When `roamgate-claude` lands (S15/S23), its process type plugs in here
-//! through [`ClaudeProcess::from_parts`] and the argv and environment
-//! helpers move there.
+//!
+//! TODO(S22, after S23's ClaudeProcess lands on rust/main): move
+//! `spawn_claude`, `spawn_process` and the argv and environment helpers to
+//! `roamgate-claude`, and build sessions from its process through
+//! [`ClaudeProcess::from_parts`]: one Claude runner in the workspace.
 
 use std::future::Future;
 use std::path::PathBuf;
