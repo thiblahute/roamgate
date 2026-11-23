@@ -10,7 +10,10 @@
 
 pub mod limit_resume;
 pub mod manager;
+pub mod network_watch;
 pub mod profiles;
+pub mod ssh_guard;
+pub mod ssh_profile_runtime;
 pub mod usage_limit;
 
 /// A boxed future, as the effects traits return.

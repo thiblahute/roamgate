@@ -12,15 +12,20 @@ workspace = true
 [dependencies]
 fancy-regex = "0.17"
 hex = "0.4"
+if-addrs = "0.13"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 indexmap = { version = "2", features = ["serde"] }
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-herdr = { path = "../roamgate-herdr" }
 sha2 = "0.10"
+tempfile = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["rt", "sync", "macros", "time", "net", "io-util"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process"] }
 
 [dev-dependencies]
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
