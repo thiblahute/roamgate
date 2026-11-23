@@ -2240,6 +2240,8 @@ server/src/core-channel/channel.test.ts	pushes arrive in order; a queued one is 
 server/src/core-channel/channel.test.ts	control messages go to the control handler; unknown ones are ignored	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/channel.test.ts	a frame that is not one closes the channel	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/channel.test.ts	pings after a silence, and a peer that says nothing for long is dropped	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
+server/src/core-channel/channel.test.ts	a core is pinged and given the rest of the window, not dropped at once	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
+server/src/core-channel/channel.test.ts	a core that does not answer the ping is still dropped	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/channel.test.ts	a request's body streams to the core and the response streams back	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/channel.test.ts	a handler's failure before its head is an error	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/channel.test.ts	a slow reader holds the sender to the window	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
@@ -3934,6 +3936,7 @@ server/src/work/store.test.ts	a broken file reads as empty and is not overwritte
 server/src/work/store.test.ts	parses states, owners and links, refusing what is not one	rust-unit:roamgate-work	work board store, rules and tools
 server/src/work/store.test.ts	a file link: its path in its root, a line and a label; never out of its root	rust-unit:roamgate-work	work board store, rules and tools
 server/src/work/store.test.ts	merges links by place: one commit per sha, one review thread each	rust-unit:roamgate-work	work board store, rules and tools
+server/src/work/store.test.ts	cuts to max characters, the ellipsis included	rust-unit:roamgate-work	work board store, rules and tools
 server/src/work/store.test.ts	reads the TODO title line: **state** Title	rust-unit:roamgate-work	work board store, rules and tools
 server/src/work/store.test.ts	normalizes tags and filters items by project, tags and state	rust-unit:roamgate-work	work board store, rules and tools
 server/src/work/tags.test.ts	the project's own tags, named by their words, in the order the text names them	rust-unit:roamgate-work	work board store, rules and tools
@@ -4040,6 +4043,7 @@ server/src/workspace/git-actions.test.ts	unstages while preserving the worktree	
 server/src/workspace/git-actions.test.ts	unstages a rename using both paths	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-actions.test.ts	unstages on an unborn HEAD	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-actions.test.ts	marks conflicted files resolved by staging	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-actions.test.ts	reads local fingerprints in process as the stat script does	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-actions.test.ts	discards unstaged changes and preserves the staged version	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-actions.test.ts	restores a deleted file when discarding	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-actions.test.ts	refuses to discard when the file changed after the refresh	rust-unit:roamgate-git	git runner and parsers
@@ -4099,7 +4103,9 @@ server/src/workspace/git-diff.test.ts	lets Git apply nested generated overrides 
 server/src/workspace/git-diff.test.ts	measures compared blobs independently of the live file across scopes	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-diff.test.ts	bounds patch transport and UTF-8 bytes while reporting the full patch size	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-diff.test.ts	defers large automatic patches before transfer while explicit requests return content	rust-unit:roamgate-git	git runner and parsers
-server/src/workspace/git-diff.test.ts	counts untracked files with one command per batch	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-diff.test.ts	counts untracked files with one command per batch over SSH	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-diff.test.ts	spreads a few local untracked files over the commands that run at once	rust-unit:roamgate-git	git runner and parsers
+server/src/workspace/git-diff.test.ts	a local summary runs no login shell and no per-file stat script	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-diff.test.ts	keeps a batch's counts when one of its files cannot be read	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-diff.test.ts	lists untracked files without line counts past the cap	rust-unit:roamgate-git	git runner and parsers
 server/src/workspace/git-diff.test.ts	overlapping refreshes each return complete untracked counts	rust-unit:roamgate-git	git runner and parsers
@@ -4682,6 +4688,8 @@ scripts/contract/check.test.ts	the SQL each database runs matches storage/sqlite
 scripts/contract/check.test.ts	the JSON Schemas match the TypeScript types	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/check.test.ts	every $ref leads to a definition	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/check.test.ts	${file} has only OpenAPI keys in its operations and responses	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/tool-params.test.ts	the refusal vectors are what typebox says for each tool's calls	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
+scripts/contract/tool-params.test.ts	the catalog's JSON schemas refuse as the work tools' own schemas do	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/tools-catalog.test.ts	the catalog holds the server's tool tables as its code makes them	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/tools-catalog.test.ts	the mod's module is the catalog's claude-mod table	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
 scripts/contract/tools-catalog.test.ts	the mod runs every tool of its table, and the server knows its name	internal:TS contract inventory	reads the TS server's code; the Rust server's inventory check comes with its crates
@@ -4760,6 +4768,10 @@ scripts/targets.test.ts	the Bun build compiles every target	internal:repository 
 scripts/targets.test.ts	the updater serves exactly the update targets	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/targets.test.ts	package-release.sh, release.yml and the installers name targets.toml's platforms	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/targets.test.ts	the Rust workflow takes its matrix from targets.toml and pins its actions	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/test-home.test.ts	a test run has a home of its own, for itself and the processes it starts	todo	
+scripts/test-home.test.ts	a store whose variable a test restored falls back into that home, not the user's	todo	
+scripts/test-home.test.ts	the Roamgate and Herdr paths of the shell that runs the tests are dropped	todo	
+scripts/test-home.test.ts	inherited	todo	
 scripts/tutorial-storage.test.ts	tutorial copies legacy progress once and preserves the original	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/tutorial-storage.test.ts	tutorial reads legacy progress despite write failure and retries later	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/workspaces.test.ts	workspaces share one lockfile and root development tooling	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
