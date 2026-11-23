@@ -27,6 +27,7 @@
 //! | [`claude`] | The review workspace's Claude: one pane, a session per request | mr-reviews/claude.ts |
 //! | [`home`] | A request's home: its own worktree workspace, review and agent | mr-reviews/home.ts |
 //! | [`effort_service`] | The efforts' service: derived when due, cards, overlaps; their RPCs and parts | mr-reviews/effort-service.ts |
+//! | [`history`] | What the Reviews authored: export, import preview, apply | history/mr-reviews.ts (export and import), history/format.ts stableJson |
 //! | [`workspace_tree`] | The Workspaces tree's paths, ancestors and live resolution | shared/workspaceTree.ts (in part) |
 
 pub mod agent;
@@ -43,6 +44,7 @@ pub mod efforts;
 pub mod fetchers;
 pub mod forge_ref;
 pub mod fuzzy;
+pub mod history;
 pub mod home;
 pub mod inbox;
 pub mod inference;
