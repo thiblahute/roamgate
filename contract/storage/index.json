@@ -222,6 +222,12 @@
       "description": "see data:mr-reviews/agent.json",
       "status": "inventoried"
     },
+    "file:archive.sqlite": {
+      "kind": "file",
+      "used_in": ["server/src/archive/store.ts"],
+      "status": "inventoried",
+      "description": "the session archive's bookkeeping (what each raw/ file holds, when each host synced), DB_VERSION 2; search is the text repo's"
+    },
     "file:chat_history.jsonl": {
       "kind": "file",
       "used_in": ["server/src/agent/grok-session.ts"],
@@ -320,13 +326,9 @@
     },
     "file:index.sqlite": {
       "kind": "file",
-      "used_in": [
-        "server/src/archive/file-access.ts",
-        "server/src/archive/store.ts",
-        "server/src/cli/archive.ts"
-      ],
-      "description": "the session archive's FTS5 index, INDEX_VERSION 1",
-      "status": "inventoried"
+      "used_in": ["server/src/archive/store.ts"],
+      "status": "inventoried",
+      "description": "the archive's database before DB_VERSION 2 (with FTS5 tables): read as is, migrated into archive.sqlite by a writer, then deleted"
     },
     "file:ledger.json": {
       "kind": "file",
@@ -378,6 +380,21 @@
       "description": "see data:notifications.json",
       "status": "inventoried"
     },
+    "file:owner.pid": {
+      "kind": "file",
+      "used_in": [
+        "server/src/bridge/ssh-master.ts",
+        "server/src/connections/ssh-profile-runtime.ts"
+      ],
+      "status": "inventoried",
+      "description": "the pid of the process that owns an SSH master"
+    },
+    "file:owners.json": {
+      "kind": "file",
+      "used_in": ["server/src/core-channel/owners.ts"],
+      "status": "inventoried",
+      "description": "see data:runtime: the families' owners table"
+    },
     "file:rendered-storage.json": {
       "kind": "file",
       "used_in": ["server/src/http/rendered-storage.ts"],
@@ -395,6 +412,18 @@
       "used_in": ["server/src/herdr/service.ts"],
       "description": "the systemd user unit of the local Herdr server",
       "status": "inventoried"
+    },
+    "file:roamgate-pass.lock": {
+      "kind": "file",
+      "used_in": ["server/src/history/repo.ts"],
+      "status": "inventoried",
+      "description": "the history repo's pass lock, in its .git"
+    },
+    "file:roamgate-status.json": {
+      "kind": "file",
+      "used_in": ["server/src/history/repo.ts"],
+      "status": "inventoried",
+      "description": "the history repo's last pass status, in its .git"
     },
     "file:roamgate.env": {
       "kind": "file",
@@ -432,6 +461,12 @@
       ],
       "description": "see data:settings.json (the CLI resolves it on its own)",
       "status": "inventoried"
+    },
+    "file:shadow.jsonl": {
+      "kind": "file",
+      "used_in": ["server/src/core-channel/shadow.ts"],
+      "status": "inventoried",
+      "description": "see data:runtime: shadow read differences, paths and kinds only"
     },
     "file:snapshot.db": {
       "kind": "file",
@@ -554,42 +589,7 @@
       "description": "a table; its DDL and PRAGMAs in the sql file",
       "status": "inventoried"
     },
-    "sqlite:archive/store.ts:docs": {
-      "kind": "sqlite",
-      "used_in": ["server/src/archive/store.ts"],
-      "sql": "sqlite/archive-index.sql",
-      "description": "a table; its DDL and PRAGMAs in the sql file",
-      "status": "inventoried"
-    },
     "sqlite:archive/store.ts:files": {
-      "kind": "sqlite",
-      "used_in": ["server/src/archive/store.ts"],
-      "sql": "sqlite/archive-index.sql",
-      "description": "a table; its DDL and PRAGMAs in the sql file",
-      "status": "inventoried"
-    },
-    "sqlite:archive/store.ts:fts": {
-      "kind": "sqlite",
-      "used_in": ["server/src/archive/store.ts"],
-      "sql": "sqlite/archive-index.sql",
-      "description": "a table; its DDL and PRAGMAs in the sql file",
-      "status": "inventoried"
-    },
-    "sqlite:archive/store.ts:fts_words": {
-      "kind": "sqlite",
-      "used_in": ["server/src/archive/store.ts"],
-      "sql": "sqlite/archive-index.sql",
-      "description": "a table; its DDL and PRAGMAs in the sql file",
-      "status": "inventoried"
-    },
-    "sqlite:archive/store.ts:hist_fts": {
-      "kind": "sqlite",
-      "used_in": ["server/src/archive/store.ts"],
-      "sql": "sqlite/archive-index.sql",
-      "description": "a table; its DDL and PRAGMAs in the sql file",
-      "status": "inventoried"
-    },
-    "sqlite:archive/store.ts:history": {
       "kind": "sqlite",
       "used_in": ["server/src/archive/store.ts"],
       "sql": "sqlite/archive-index.sql",

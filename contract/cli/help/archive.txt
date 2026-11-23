@@ -6,7 +6,7 @@ Usage:
   roamgate archive search <terms...> [--agent A] [--host H] [--project P]
                           [--role R] [--kind K] [--since D] [--until D]
                           [--recent] [--history] [--regex] [--tool-output]
-                          [--index] [-n N] [--json]
+                          [-n N] [--json]
   roamgate archive session <id> [--agent A] [--host H] [--json]
   roamgate archive cat <id> [--agent A] [--host H] [--file RELPATH]
                        [--from-line N --limit N]
@@ -16,23 +16,23 @@ Usage:
   roamgate archive status [--json]
   roamgate archive rebuild-text [--now] [--json]
   roamgate archive fetch-text [--remote SSH] [--json]
-  roamgate archive rebuild-index
+  roamgate archive rebuild-db
 
 sync copies, compresses and indexes this machine's agent sessions, then
 pulls every configured ssh host (unreachable hosts are recorded and skipped).
 With --push (or archive.push in settings) it sends this machine's files to the
 archive home and has it index them. Files under raw/ are the source of truth
-and are never deleted; the index (index.sqlite) is rebuilt from them. After
+and are never deleted; archive.sqlite (what each file holds, when each host
+synced) is rebuilt from them by rebuild-db. After
 each sync the conversation text goes into text.git (one commit, deferred while
 GameMode runs); rebuild-text builds it again from raw/, status shows it.
 search greps that text: substrings, case-insensitive, every word in one
 message ("phrases", OR, NOT), or a Perl regex with --regex; one line per
 session, most matching messages first (--recent: newest first), including
 this machine's sessions grown since the last commit. Tool output is only
-searched with --tool-output, which reads all of raw/ (slow). --index searches
-the old SQLite index instead. fetch-text copies the archive home's text repo
-(archive.remote) for local search. cat prints a
-session byte-identical to the original. resume restores a session into this
+searched with --tool-output, which reads all of raw/ (slow). fetch-text
+copies the archive home's text repo (archive.remote) for local search. cat
+prints a session byte-identical to the original. resume restores a session into this
 machine's agent directory only where it does not exist, never overwriting.
 health reports the last sync per host and agent and warns when stale
 (--check exits 1 on any warning). Settings live under "archive" in

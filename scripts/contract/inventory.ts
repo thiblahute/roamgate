@@ -848,7 +848,9 @@ export function storageNames(): string[] {
         ts.isIdentifier(node.expression) &&
         node.expression.text === "join"
       ) {
-        const last = literal(node.arguments.at(-1));
+        // A literal, or a string constant (followed through imports).
+        const at = node.arguments.at(-1);
+        const last = at && stringConst(at);
         if (last && DATA_FILE.test(last)) add(out, path, `file:${last}`);
       }
       // SQLite tables.
@@ -1072,7 +1074,7 @@ export const PINNED_CONSTANTS = [
   "server/src/bridge/protocol-compat.ts#MAXIMUM_HERDR_PROTOCOL",
   "server/src/activity/store.ts#SCHEMA_VERSION",
   "server/src/review/storage.ts#SCHEMA_VERSION",
-  "server/src/archive/store.ts#INDEX_VERSION",
+  "server/src/archive/store.ts#DB_VERSION",
 ] as const;
 
 export function constants(): Record<string, string> {

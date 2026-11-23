@@ -137,7 +137,6 @@
         "status",
         "rebuild-text",
         "fetch-text",
-        "rebuild-index",
         "rebuild-db"
       ],
       "flags": [
@@ -151,8 +150,7 @@
         "--recent",
         "--history",
         "--regex",
-        "--tool-output",
-        "--index"
+        "--tool-output"
       ]
     },
     "update": {

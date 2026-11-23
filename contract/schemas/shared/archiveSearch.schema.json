@@ -236,7 +236,7 @@
         },
         "source": {
           "type": "string",
-          "enum": ["text", "raw", "index"],
+          "enum": ["text", "raw"],
           "description": "Where the results come from."
         }
       },

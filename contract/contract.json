@@ -1,7 +1,7 @@
 {
   "name": "roamgate-server",
   "version": "1.7",
-  "inventory_sha256": "beaa6c8e30e1e195d37c215f9c22042011d91a18725d752047f2bc0ab37a5c15",
+  "inventory_sha256": "7a9f4c37bd29ddf5c043740889e556fd1781240a2b911221336c08bed223a3a3",
   "surfaces": {
     "rpc": "rpc/<family>/<method>.json",
     "push": "push/<name>.json",
@@ -44,6 +44,6 @@
     "server/src/bridge/protocol-compat.ts#MAXIMUM_HERDR_PROTOCOL": "22",
     "server/src/activity/store.ts#SCHEMA_VERSION": "1",
     "server/src/review/storage.ts#SCHEMA_VERSION": "1",
-    "server/src/archive/store.ts#INDEX_VERSION": "1"
+    "server/src/archive/store.ts#DB_VERSION": "2"
   }
 }

@@ -8,7 +8,7 @@ Rust owner of that family can take it over.
 
 ## 1.7
 
-inventory: beaa6c8e30e1e195d37c215f9c22042011d91a18725d752047f2bc0ab37a5c15
+inventory: 7a9f4c37bd29ddf5c043740889e556fd1781240a2b911221336c08bed223a3a3
 
 Bugs the parity suite found in the Bun server, fixed in the server and the
 contract together (Work item a7b37023):
@@ -43,6 +43,16 @@ contract together (Work item a7b37023):
   YAML file (anchors, flow mappings, quoting and comments kept; any other
   change is refused), pads appended Markdown rows to the table, and writes
   JSON as biome formats it, so `--regenerate` leaves no churn.
+- cli, storage, archive: the contract follows the archive as the server
+  keeps it since its search moved to the text repo: `roamgate archive`
+  lost `--index` and `rebuild-index` (`rebuild-db` remains); its database is
+  `archive.sqlite` (`DB_VERSION` 2, pinned in place of `INDEX_VERSION`, the
+  `files` and `meta` tables only), the old `index.sqlite` with its FTS5
+  tables is read as is and migrated by a writer, then deleted; the search
+  results' `source` is `text` or `raw`. The inventory follows string
+  constants through imports in `join(...)` storage paths, which adds
+  `owner.pid`, `owners.json`, `roamgate-pass.lock`, `roamgate-status.json`
+  and `shadow.jsonl`, served but missing.
 
 ## 1.6
 
