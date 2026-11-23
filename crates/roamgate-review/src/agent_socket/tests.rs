@@ -2449,3 +2449,20 @@ fn the_installed_scripts_are_the_bun_builds() {
         )
     );
 }
+
+#[tokio::test]
+async fn a_staged_socket_moves_over_the_path_another_server_listens_on() {
+    let s = setup();
+    let key = "ssh-1";
+    let path = s.agent.socket_path_for(key);
+    // Another server's socket at the key's path.
+    let _other = std::os::unix::net::UnixListener::bind(&path).unwrap();
+    let staged = s.agent.listen_staged(key).unwrap();
+    assert_ne!(staged, path);
+    assert!(path.exists());
+    assert_eq!(s.agent.commit(key).unwrap(), path);
+    assert!(!staged.exists());
+    assert_eq!(s.agent.socket_path(key), Some(path.clone()));
+    let (status, _) = post_json(&path, "skill", json!({})).await;
+    assert_eq!(status, 200);
+}
