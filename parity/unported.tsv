@@ -5,7 +5,6 @@ roamgate-connections	server/src/connections/http-routing	S18
 roamgate-connections	server/src/connections/protocol	S18
 roamgate-connections	server/src/connections/runtime	S21
 roamgate-notify	server/src/connections/runtime	S18
-roamgate-workspace	server/src/connections/runtime	S17
 roamgate-connections	server/src/connections/shutdown	S18
 roamgate-connections	server/src/connections/startup	S18
 roamgate-herdr	server/src/bridge/endpoint-	S18
@@ -27,7 +26,7 @@ roamgate-notify	server/src/notifications/herdr-notification-listener	S18
 roamgate-notify	server/src/notifications/web-push.test.ts	S18
 
 roamgate-assistant	server/src/assistant/archive-tools	S13
-roamgate-assistant	server/src/assistant/workspace-tree-tools	S17
+roamgate-assistant	server/src/assistant/workspace-tree-tools	S23
 roamgate-review	server/src/contract-record/hooks	S19
 roamgate-review	server/src/review/agent-	S19
 roamgate-review	server/src/review/changes-anchors	S19
@@ -39,11 +38,6 @@ roamgate-review	server/src/review/rpc	S19
 roamgate-review	server/src/review/service	S19
 roamgate-review	server/src/review/step-review	S19
 roamgate-mr-reviews	server/src/mr-reviews/board-tools.test.ts	S20
-
-# roamgate-workspace was made by S17 with the HTML preview and the worktree
-# command templates; the rest of the workspace and worktree files are S17's
-# still (plan section 11, S17's left).
-roamgate-workspace	server/src/workspace/	S17
 
 # roamgate-claude was made by S15 for the tool registry; the Claude driver,
 # the claude-mod hub comes with its subtask (S21 ported the conversation drivers).
