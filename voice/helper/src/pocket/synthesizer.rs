@@ -235,7 +235,7 @@ impl PocketSynthesizer {
             .language
             .clone()
             .unwrap_or_else(|| DEFAULT_LANGUAGE.to_string());
-        let (loaded, mut pts) = {
+        let (loaded, mut pts, code) = {
             let state = self.state.lock().unwrap();
             let code = state.tag_language.clone().unwrap_or(default);
             let Some(loaded) = state
@@ -259,8 +259,11 @@ impl PocketSynthesizer {
                 (Some(pts), None) => pts,
                 (None, next) => next.unwrap_or(start),
             };
-            (loaded, pts)
+            (loaded, pts, code)
         };
+        // Its numbers in words, in its language: the model reads digits
+        // badly.
+        let text = super::spoken::spell_out(&text, &code);
         gst::debug!(
             CAT,
             imp = self,

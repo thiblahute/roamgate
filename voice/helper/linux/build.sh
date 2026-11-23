@@ -100,6 +100,9 @@ cap=${CUDA_COMPUTE_CAP:-$(nvidia-smi --query-gpu=compute_cap --format=csv,nohead
 
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
+# The cases some tests read (contract/vectors), where /src/../../ finds
+# them in the container.
+vectors=$(cd "$helper/../../contract/vectors" && pwd)
 $yield podman build -t "$image" "$here"
 podman volume exists "$cache" || podman volume create "$cache" >/dev/null
 
@@ -108,6 +111,7 @@ podman volume exists "$cache" || podman volume create "$cache" >/dev/null
 # manifest (the bundle, the plugins) is. Cargo runs in voice/helper, so it
 # builds only the helper, with voice/helper/.cargo/config.toml's link flags.
 $yield podman run --rm --security-opt label=disable \
+    -v "$vectors:/contract/vectors:ro" \
     ${test:+--device nvidia.com/gpu=all} \
     ${jobs:+-e CARGO_BUILD_JOBS=$jobs -e RUST_TEST_THREADS=$jobs} \
     -v "$repo:/src:ro" -v "$cache:/cache" -v "$out:/out" \

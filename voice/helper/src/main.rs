@@ -395,6 +395,12 @@ struct Config {
     tts_models: Option<String>,
 }
 
+/// The models any-tts loads on the CPU unless their entry names a
+/// `device`: Kokoro is small and fast there, and on the GPU it took memory
+/// Qwen3-TTS beside it then lacked (every sentence out of GPU memory, on an
+/// 8 GB card).
+const CPU_MODELS: &[&str] = &["kokoro"];
+
 /// anyttssynthesizer's models from `--tts-models`.
 fn tts_models(json: &str) -> Result<gst::Array, String> {
     let models: Vec<serde_json::Map<String, Value>> =
@@ -406,6 +412,9 @@ fn tts_models(json: &str) -> Result<gst::Array, String> {
                 return Err("--tts-models: each model needs a \"model\" name".to_string());
             };
             let mut structure = gst::Structure::new_empty(name.as_str());
+            if CPU_MODELS.contains(&name.as_str()) && !fields.contains_key("device") {
+                structure.set("device", "cpu");
+            }
             for (field, value) in &fields {
                 // JSON's snake case, GStreamer's dashes.
                 let field = field.replace('_', "-");
@@ -1829,6 +1838,30 @@ mod tests {
         let seek = youtube_request(&seek);
         assert_eq!((seek.action.as_str(), seek.position), ("seek", Some(42.5)));
         assert!(seek.headers.is_empty());
+    }
+
+    /// any-tts reads Kokoro on the CPU unless its entry names a device;
+    /// Qwen3-TTS keeps the GPU.
+    #[test]
+    fn kokoro_reads_on_the_cpu_unless_told_otherwise() {
+        gst::init().unwrap();
+        let models = tts_models(
+            r#"[{"model": "qwen3-tts", "path": "/m/qwen"},
+                {"model": "kokoro", "path": "/m/kokoro"},
+                {"model": "kokoro", "path": "/m/kokoro", "device": "cuda"}]"#,
+        )
+        .unwrap();
+        let devices: Vec<Option<String>> = models
+            .iter()
+            .map(|model| {
+                model
+                    .get::<gst::Structure>()
+                    .unwrap()
+                    .get::<String>("device")
+                    .ok()
+            })
+            .collect();
+        assert_eq!(devices, [None, Some("cpu".into()), Some("cuda".into())]);
     }
 
     /// Kokoro's ONNX speaker reads in place of any-tts's Kokoro entries

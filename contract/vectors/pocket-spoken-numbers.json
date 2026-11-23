@@ -1,0 +1,1496 @@
+{
+  "description": "Pocket TTS's numbers in words: a sentence with its numbers, times, dates, percentages, units and versions written out in its language (French, English; others left as they are) before Pocket TTS reads it. Read by cargo test in voice/helper/src/pocket/spoken.rs (spoken_vectors).",
+  "modules": {
+    "spoken": "voice/helper/src/pocket/spoken.rs"
+  },
+  "cases": [
+    {
+      "name": "leaves a text without digits as it is",
+      "group": [
+        "spoken numbers"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "Bonjour, ça va ?",
+            "fr"
+          ],
+          "result": "Bonjour, ça va ?"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "Hello there.",
+            "en"
+          ],
+          "result": "Hello there."
+        }
+      ]
+    },
+    {
+      "name": "leaves the languages it does not write out",
+      "group": [
+        "spoken numbers"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "Son las 12:30.",
+            "es"
+          ],
+          "result": "Son las 12:30."
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "Es ist 3,5 %.",
+            "de"
+          ],
+          "result": "Es ist 3,5 %."
+        }
+      ]
+    },
+    {
+      "name": "reads the language's primary code",
+      "group": [
+        "spoken numbers"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "J'ai 3 chats.",
+            "fr-FR"
+          ],
+          "result": "J'ai trois chats."
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "I have 3 cats.",
+            "en_US"
+          ],
+          "result": "I have three cats."
+        }
+      ]
+    },
+    {
+      "name": "writes French integers out",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "0",
+            "fr"
+          ],
+          "result": "zéro"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1",
+            "fr"
+          ],
+          "result": "un"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "16",
+            "fr"
+          ],
+          "result": "seize"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "17",
+            "fr"
+          ],
+          "result": "dix-sept"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "21",
+            "fr"
+          ],
+          "result": "vingt et un"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "22",
+            "fr"
+          ],
+          "result": "vingt-deux"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "30",
+            "fr"
+          ],
+          "result": "trente"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "61",
+            "fr"
+          ],
+          "result": "soixante et un"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "70",
+            "fr"
+          ],
+          "result": "soixante-dix"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "71",
+            "fr"
+          ],
+          "result": "soixante et onze"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "77",
+            "fr"
+          ],
+          "result": "soixante-dix-sept"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "80",
+            "fr"
+          ],
+          "result": "quatre-vingts"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "81",
+            "fr"
+          ],
+          "result": "quatre-vingt-un"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "91",
+            "fr"
+          ],
+          "result": "quatre-vingt-onze"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "99",
+            "fr"
+          ],
+          "result": "quatre-vingt-dix-neuf"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "100",
+            "fr"
+          ],
+          "result": "cent"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "101",
+            "fr"
+          ],
+          "result": "cent un"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "200",
+            "fr"
+          ],
+          "result": "deux cents"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "280",
+            "fr"
+          ],
+          "result": "deux cent quatre-vingts"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "201",
+            "fr"
+          ],
+          "result": "deux cent un"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1000",
+            "fr"
+          ],
+          "result": "mille"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1001",
+            "fr"
+          ],
+          "result": "mille un"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "2000",
+            "fr"
+          ],
+          "result": "deux mille"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "80000",
+            "fr"
+          ],
+          "result": "quatre-vingt mille"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "200000",
+            "fr"
+          ],
+          "result": "deux cent mille"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1990",
+            "fr"
+          ],
+          "result": "mille neuf cent quatre-vingt-dix"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "2026",
+            "fr"
+          ],
+          "result": "deux mille vingt-six"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "3060",
+            "fr"
+          ],
+          "result": "trois mille soixante"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1000000",
+            "fr"
+          ],
+          "result": "un million"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "2000000",
+            "fr"
+          ],
+          "result": "deux millions"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "80000000",
+            "fr"
+          ],
+          "result": "quatre-vingts millions"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1500000000",
+            "fr"
+          ],
+          "result": "un milliard cinq cents millions"
+        }
+      ]
+    },
+    {
+      "name": "reads French thousands grouped with spaces or dots",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "Il y a 1 000 fichiers.",
+            "fr"
+          ],
+          "result": "Il y a mille fichiers."
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1 234 567 lignes",
+            "fr"
+          ],
+          "result": "un million deux cent trente-quatre mille cinq cent soixante-sept lignes"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "12 500 euros",
+            "fr"
+          ],
+          "result": "douze mille cinq cents euros"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1.000.000 de vues",
+            "fr"
+          ],
+          "result": "un million de vues"
+        }
+      ]
+    },
+    {
+      "name": "reads French decimals with their comma",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "3,5",
+            "fr"
+          ],
+          "result": "trois virgule cinq"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "0,25",
+            "fr"
+          ],
+          "result": "zéro virgule vingt-cinq"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "0,05",
+            "fr"
+          ],
+          "result": "zéro virgule zéro cinq"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "3,14159",
+            "fr"
+          ],
+          "result": "trois virgule un quatre un cinq neuf"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "12,50",
+            "fr"
+          ],
+          "result": "douze virgule cinquante"
+        }
+      ]
+    },
+    {
+      "name": "reads a dotted number in French with point",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "Opus 4.5",
+            "fr"
+          ],
+          "result": "Opus quatre point cinq"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "la version 0.9.5",
+            "fr"
+          ],
+          "result": "la version zéro point neuf point cinq"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "herdr 0.10.2 est sorti",
+            "fr"
+          ],
+          "result": "herdr zéro point dix point deux est sorti"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "v1.2.3",
+            "fr"
+          ],
+          "result": "version un point deux point trois"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "Qwen2.5 tourne",
+            "fr"
+          ],
+          "result": "Qwen deux point cinq tourne"
+        }
+      ]
+    },
+    {
+      "name": "reads French ordinals",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 1er janvier",
+            "fr"
+          ],
+          "result": "le premier janvier"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "la 1re fois",
+            "fr"
+          ],
+          "result": "la première fois"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "la 1ère fois",
+            "fr"
+          ],
+          "result": "la première fois"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 2e essai",
+            "fr"
+          ],
+          "result": "le deuxième essai"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 3ème",
+            "fr"
+          ],
+          "result": "le troisième"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 5e",
+            "fr"
+          ],
+          "result": "le cinquième"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 9e",
+            "fr"
+          ],
+          "result": "le neuvième"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 21e siècle",
+            "fr"
+          ],
+          "result": "le vingt et unième siècle"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 80e",
+            "fr"
+          ],
+          "result": "le quatre-vingtième"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 100e",
+            "fr"
+          ],
+          "result": "le centième"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "les 2es",
+            "fr"
+          ],
+          "result": "les deuxièmes"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 2nd tour",
+            "fr"
+          ],
+          "result": "le second tour"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "la 2nde",
+            "fr"
+          ],
+          "result": "la seconde"
+        }
+      ]
+    },
+    {
+      "name": "reads French times",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "à 12h30",
+            "fr"
+          ],
+          "result": "à douze heures trente"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "à 8h",
+            "fr"
+          ],
+          "result": "à huit heures"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "à 1h05",
+            "fr"
+          ],
+          "result": "à une heure cinq"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "vers 21 h",
+            "fr"
+          ],
+          "result": "vers vingt et une heures"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "à 12 h 30",
+            "fr"
+          ],
+          "result": "à douze heures trente"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "à 0h15",
+            "fr"
+          ],
+          "result": "à zéro heure quinze"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "à 14:00",
+            "fr"
+          ],
+          "result": "à quatorze heures"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "à 9:41",
+            "fr"
+          ],
+          "result": "à neuf heures quarante et une"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "en 1:02:03",
+            "fr"
+          ],
+          "result": "en une heure deux minutes et trois secondes"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "pause jusqu'à 12h30.",
+            "fr"
+          ],
+          "result": "pause jusqu'à douze heures trente."
+        }
+      ]
+    },
+    {
+      "name": "reads French dates",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 2026-11-23",
+            "fr"
+          ],
+          "result": "le vingt-trois novembre deux mille vingt-six"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 01/05/2026",
+            "fr"
+          ],
+          "result": "le premier mai deux mille vingt-six"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 23/11/2026.",
+            "fr"
+          ],
+          "result": "le vingt-trois novembre deux mille vingt-six."
+        }
+      ]
+    },
+    {
+      "name": "reads French percentages",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "50%",
+            "fr"
+          ],
+          "result": "cinquante pour cent"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "3,5 %",
+            "fr"
+          ],
+          "result": "trois virgule cinq pour cent"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "un taux de 48 % d'erreurs",
+            "fr"
+          ],
+          "result": "un taux de quarante-huit pour cent d'erreurs"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "+5 %",
+            "fr"
+          ],
+          "result": "plus cinq pour cent"
+        }
+      ]
+    },
+    {
+      "name": "reads French signs, ranges, dimensions and fractions",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "il fait -5 dehors",
+            "fr"
+          ],
+          "result": "il fait moins cinq dehors"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "entre 10-20 secondes",
+            "fr"
+          ],
+          "result": "entre dix à vingt secondes"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "de 2024–2026",
+            "fr"
+          ],
+          "result": "de deux mille vingt-quatre à deux mille vingt-six"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "en 1920x1080",
+            "fr"
+          ],
+          "result": "en mille neuf cent vingt par mille quatre-vingts"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "8/10",
+            "fr"
+          ],
+          "result": "huit sur dix"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "2x plus vite",
+            "fr"
+          ],
+          "result": "deux fois plus vite"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "~5 min",
+            "fr"
+          ],
+          "result": "environ cinq minutes"
+        }
+      ]
+    },
+    {
+      "name": "reads French units in their gender and number",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "5 km",
+            "fr"
+          ],
+          "result": "cinq kilomètres"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1 km",
+            "fr"
+          ],
+          "result": "un kilomètre"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1,5 km",
+            "fr"
+          ],
+          "result": "un virgule cinq kilomètre"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "3 Go",
+            "fr"
+          ],
+          "result": "trois gigaoctets"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "5624 MiB",
+            "fr"
+          ],
+          "result": "cinq mille six cent vingt-quatre mébioctets"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1 s",
+            "fr"
+          ],
+          "result": "une seconde"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "21 s",
+            "fr"
+          ],
+          "result": "vingt et une secondes"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "200 ms",
+            "fr"
+          ],
+          "result": "deux cents millisecondes"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "30 min",
+            "fr"
+          ],
+          "result": "trente minutes"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "21 °C",
+            "fr"
+          ],
+          "result": "vingt et un degrés Celsius"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "100 Mb/s",
+            "fr"
+          ],
+          "result": "cent mégabits par seconde"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "130 km/h",
+            "fr"
+          ],
+          "result": "cent trente kilomètres par heure"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "60 fps",
+            "fr"
+          ],
+          "result": "soixante images par seconde"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "5 m'a dit",
+            "fr"
+          ],
+          "result": "cinq m'a dit"
+        }
+      ]
+    },
+    {
+      "name": "reads French money",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "5 €",
+            "fr"
+          ],
+          "result": "cinq euros"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1€",
+            "fr"
+          ],
+          "result": "un euro"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "5,50 €",
+            "fr"
+          ],
+          "result": "cinq euros cinquante"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "€20",
+            "fr"
+          ],
+          "result": "vingt euros"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "$3",
+            "fr"
+          ],
+          "result": "trois dollars"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "2 £",
+            "fr"
+          ],
+          "result": "deux livres"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1 £",
+            "fr"
+          ],
+          "result": "une livre"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "10,00 €",
+            "fr"
+          ],
+          "result": "dix euros"
+        }
+      ]
+    },
+    {
+      "name": "reads numbers in French words and codes",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "la 5G à Santa Cruz",
+            "fr"
+          ],
+          "result": "la cinq G à Santa Cruz"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "Qwen3-TTS",
+            "fr"
+          ],
+          "result": "Qwen trois-TTS"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "une RTX 3060 Ti",
+            "fr"
+          ],
+          "result": "une RTX trois mille soixante Ti"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "en MP3",
+            "fr"
+          ],
+          "result": "en MP trois"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "x86",
+            "fr"
+          ],
+          "result": "x quatre-vingt-six"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "COVID-19",
+            "fr"
+          ],
+          "result": "COVID-dix-neuf"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le 06 12 34 56 78",
+            "fr"
+          ],
+          "result": "le zéro six douze trente-quatre cinquante-six soixante-dix-huit"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le code 007",
+            "fr"
+          ],
+          "result": "le code zéro zéro sept"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "la MR #42",
+            "fr"
+          ],
+          "result": "la MR numéro quarante-deux"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "le n°3",
+            "fr"
+          ],
+          "result": "le numéro trois"
+        }
+      ]
+    },
+    {
+      "name": "keeps a sentence's punctuation around its numbers",
+      "group": [
+        "French"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "Il reste 3 tests, puis 2.",
+            "fr"
+          ],
+          "result": "Il reste trois tests, puis deux."
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "Sept corrections serveur (7), dont 2 urgentes !",
+            "fr"
+          ],
+          "result": "Sept corrections serveur (sept), dont deux urgentes !"
+        }
+      ]
+    },
+    {
+      "name": "writes English integers out",
+      "group": [
+        "English"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "0",
+            "en"
+          ],
+          "result": "zero"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "13",
+            "en"
+          ],
+          "result": "thirteen"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "21",
+            "en"
+          ],
+          "result": "twenty-one"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "40",
+            "en"
+          ],
+          "result": "forty"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "100",
+            "en"
+          ],
+          "result": "one hundred"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "105",
+            "en"
+          ],
+          "result": "one hundred five"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1000",
+            "en"
+          ],
+          "result": "one thousand"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "2026",
+            "en"
+          ],
+          "result": "two thousand twenty-six"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1,234,567",
+            "en"
+          ],
+          "result": "one million two hundred thirty-four thousand five hundred sixty-seven"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "3000000000",
+            "en"
+          ],
+          "result": "three billion"
+        }
+      ]
+    },
+    {
+      "name": "reads English decimals and versions",
+      "group": [
+        "English"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "3.5",
+            "en"
+          ],
+          "result": "three point five"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "0.25",
+            "en"
+          ],
+          "result": "zero point two five"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "version 0.9.5",
+            "en"
+          ],
+          "result": "version zero point nine point five"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "v2.1.0",
+            "en"
+          ],
+          "result": "version two point one point zero"
+        }
+      ]
+    },
+    {
+      "name": "reads English ordinals",
+      "group": [
+        "English"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "the 1st",
+            "en"
+          ],
+          "result": "the first"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "the 2nd",
+            "en"
+          ],
+          "result": "the second"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "the 3rd",
+            "en"
+          ],
+          "result": "the third"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "the 4th",
+            "en"
+          ],
+          "result": "the fourth"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "the 11th",
+            "en"
+          ],
+          "result": "the eleventh"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "the 12th",
+            "en"
+          ],
+          "result": "the twelfth"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "the 21st",
+            "en"
+          ],
+          "result": "the twenty-first"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "the 22nd",
+            "en"
+          ],
+          "result": "the twenty-second"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "the 30th",
+            "en"
+          ],
+          "result": "the thirtieth"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "the 100th",
+            "en"
+          ],
+          "result": "the one hundredth"
+        }
+      ]
+    },
+    {
+      "name": "reads English times and dates",
+      "group": [
+        "English"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "at 12:30",
+            "en"
+          ],
+          "result": "at twelve thirty"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "at 8:05",
+            "en"
+          ],
+          "result": "at eight oh five"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "at 8:00",
+            "en"
+          ],
+          "result": "at eight o'clock"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "at 14:00",
+            "en"
+          ],
+          "result": "at fourteen hundred"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "on 2026-11-23",
+            "en"
+          ],
+          "result": "on November twenty-third, two thousand twenty-six"
+        }
+      ]
+    },
+    {
+      "name": "reads English percentages, signs, units and money",
+      "group": [
+        "English"
+      ],
+      "calls": [
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "50%",
+            "en"
+          ],
+          "result": "fifty percent"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "-5",
+            "en"
+          ],
+          "result": "minus five"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1 km",
+            "en"
+          ],
+          "result": "one kilometer"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1.5 km",
+            "en"
+          ],
+          "result": "one point five kilometers"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "3 GB",
+            "en"
+          ],
+          "result": "three gigabytes"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "$5",
+            "en"
+          ],
+          "result": "five dollars"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "$3.50",
+            "en"
+          ],
+          "result": "three dollars and fifty cents"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "$1.01",
+            "en"
+          ],
+          "result": "one dollar and one cent"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "2x faster",
+            "en"
+          ],
+          "result": "two times faster"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "10-20 seconds",
+            "en"
+          ],
+          "result": "ten to twenty seconds"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "1920x1080",
+            "en"
+          ],
+          "result": "one thousand nine hundred twenty by one thousand eighty"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "the 5G network",
+            "en"
+          ],
+          "result": "the five G network"
+        },
+        {
+          "fn": "spoken.spell_out",
+          "args": [
+            "issue #7",
+            "en"
+          ],
+          "result": "issue number seven"
+        }
+      ]
+    }
+  ]
+}
