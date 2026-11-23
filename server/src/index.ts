@@ -8759,23 +8759,26 @@ function main() {
       websocket: "/ws",
       log_level: config.logLevel,
     });
-  // The Rust core, when ROAMGATE_CORE_BIN names one; nothing otherwise,
-  // nor in a Rust front's core.
-  coreFront = frontChannel
-    ? null
-    : startCoreFront({
-        // The front's executable, which the update family replaces.
-        env: {
-          ...process.env,
-          ROAMGATE_CLI_EXEC: process.execPath,
-          ROAMGATE_CLI_VERSION: APP_VERSION,
-          ROAMGATE_CLI_STANDALONE: isStandaloneBinary(process) ? "1" : "0",
-        },
-        dataDir: dataRoot(),
-        fromSource: !isStandaloneBinary(process),
-        deliverPush: deliverCorePush,
-        reverseTargets: { ...coreReverseTargets, ...hostReverseTargets },
-      });
+  // The Rust core, when ROAMGATE_CORE_BIN names one; nothing otherwise.
+  // A Rust front's core runs it too, as stage 1 does: the owners table
+  // gives it its families behind either front.
+  coreFront = startCoreFront({
+    // The front's executable, which the update family replaces: a Rust
+    // front names its own.
+    env: {
+      ...process.env,
+      ROAMGATE_CLI_EXEC:
+        (frontChannel && process.env.ROAMGATE_CLI_EXEC) || process.execPath,
+      ROAMGATE_CLI_VERSION: APP_VERSION,
+      ROAMGATE_CLI_STANDALONE:
+        (frontChannel && process.env.ROAMGATE_CLI_STANDALONE) ||
+        (isStandaloneBinary(process) ? "1" : "0"),
+    },
+    dataDir: dataRoot(),
+    fromSource: !isStandaloneBinary(process),
+    deliverPush: deliverCorePush,
+    reverseTargets: { ...coreReverseTargets, ...hostReverseTargets },
+  });
   setMrCacheCore(coreFront);
   if (config.authRequired) {
     if (config.generatedAuthTokenPath) {

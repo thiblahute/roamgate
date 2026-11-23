@@ -6,6 +6,19 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.26
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+The Rust front's Bun core runs the Rust core (Phase 7, S18;
+wire/core-channel.md, Stage 2): with `ROAMGATE_CORE_BIN`, which the front
+passes on, the Bun core spawns the Rust core and routes the families the
+owners table gives it as behind the Bun front, handovers included.
+
+- env: `ROAMGATE_CLI_EXEC` and `ROAMGATE_CLI_STANDALONE`, set by the Rust
+  front for its Bun core: the front's executable, which the update family
+  replaces (front).
+
 ## 1.25
 
 inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075

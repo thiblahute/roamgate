@@ -262,6 +262,20 @@ pub async fn run(args: &[String]) -> u8 {
         SidecarCommand::resolve(env.var("ROAMGATE_SIDECAR_BIN").as_deref(), &own_exe, args);
     let mut clock_server = None;
     let mut core_env: Vec<(String, String)> = Vec::new();
+    // The Bun core runs the Rust core ROAMGATE_CORE_BIN names, as it does
+    // behind the Bun front (stage 1): its owners table and handovers are
+    // unchanged. The update family replaces this front's executable.
+    core_env.push((
+        "ROAMGATE_CLI_EXEC".into(),
+        own_exe.to_string_lossy().into_owned(),
+    ));
+    let from_source = env
+        .var("ROAMGATE_SIDECAR_BIN")
+        .is_some_and(|bin| bin.ends_with(".ts"));
+    core_env.push((
+        "ROAMGATE_CLI_STANDALONE".into(),
+        if from_source { "0" } else { "1" }.into(),
+    ));
     let core_clock_path = runtime_dir.join(format!("core-clock-{}.sock", std::process::id()));
     if let (Some(found), Some(test)) = (&test_clock, &virtual_clock) {
         #[cfg(unix)]

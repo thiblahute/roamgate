@@ -113,8 +113,6 @@ async fn run_once(
         .args(&config.command.args)
         .env("ROAMGATE_CORE_CHANNEL", &config.channel)
         .env("ROAMGATE_CORE_TOKEN", &token)
-        // Never a core of its own: it is the core.
-        .env_remove("ROAMGATE_CORE_BIN")
         .envs((config.env)())
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);

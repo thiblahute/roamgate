@@ -7,9 +7,6 @@ description: >
   every change lands. The owners table then gives the family back to Bun,
   which reads what Rust wrote and writes on it; given to Rust again, the
   core reads Bun's file. Last, a Bun server without a core opens the file.
-# Stage 1: the families' flip runs between the Bun server and the Rust core
-# it spawns; a Rust front's Bun core runs no core of its own.
-fronts: [bun]
 server:
   env:
     ROAMGATE_CORE_BIN: "${CORE}"
