@@ -49,6 +49,25 @@ impl RangerDriver {
             running: Arc::default(),
         }
     }
+
+    /// `createRangerDriver(directory, credentialDirectory)`: Pi in the
+    /// server's sidecar, Claude Code with the default profile's command.
+    pub fn for_directory(
+        directory: &std::path::Path,
+        credential_directory: &std::path::Path,
+        data: roamgate_base::paths::DataContext,
+    ) -> Self {
+        let pi = crate::pi_driver::RangerPi::for_directory(
+            &directory.to_string_lossy(),
+            &credential_directory.to_string_lossy(),
+        );
+        let claude = crate::claude_driver::RangerClaude::new(
+            directory.to_path_buf(),
+            data,
+            roamgate_claude::CommandSource::default(),
+        );
+        Self::new(Arc::new(pi), Arc::new(claude))
+    }
 }
 
 fn providers(catalog: &Value) -> Vec<Value> {
