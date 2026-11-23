@@ -2,14 +2,15 @@ import { parseSessionTasks } from "./session-tasks";
 import { parseSessionTitle } from "./session-title";
 import { parseSessionCommands } from "./session-commands";
 import { parseSessionArtifacts } from "./session-artifacts";
-import { randomUUID } from "node:crypto";
 import type { AgentSessionFileAccess } from "./session-file-access";
 import type { AgentSessionResolved, SessionFile } from "./session-types";
 import { conversationMessagesFromTrajectory } from "./session-messages";
 import { projectAgentTrajectory } from "./session-trajectory";
 import {
   allHistoryEntries,
+  appendOnlyHistory,
   HISTORY_WINDOW_LIMIT,
+  historyEpoch,
   historyEntriesFromTrajectory,
   historyUpdate,
   type HistoryEntry,
@@ -276,8 +277,12 @@ function withoutTrajectory(projection: FullProjection): Projection {
 type Cached = {
   projection: Projection;
   signature: string;
+  /** historyEpoch's: the same in every process reading this file. */
   epoch: string;
+  /** The transcript's size plus one: its prefix is the earlier revision. */
   revision: number;
+  /** Set once this file was seen rewritten: its signature then. */
+  generation: string | null;
   versions: Map<number, HistoryEntry[]>;
   bytes: number;
   fallbackTime: number;
@@ -332,6 +337,66 @@ function signature(file: SessionFile) {
     file.agentVersion,
   ]);
 }
+/**
+ * The cursor of a transcript as it stands (shared/agentHistory.ts): a pure
+ * function of the file, so every process answers a browser's cursor the
+ * same. A format rewritten in place takes its signature into its epoch.
+ */
+function historyCursor(
+  agent: string,
+  file: SessionFile,
+  generation: string | null,
+) {
+  return {
+    epoch: historyEpoch(
+      agent,
+      file.path,
+      file.identity,
+      appendOnlyHistory(agent) ? generation : signature(file),
+    ),
+    revision: (file.size ?? 0) + 1,
+  };
+}
+
+/** The versions kept under a cursor: those of the same epoch, and its own. */
+function nextVersions(
+  old: Cached | null | undefined,
+  epoch: string,
+  revision: number,
+  entries: HistoryEntry[],
+) {
+  const versions =
+    old && old.epoch === epoch
+      ? new Map(old.versions)
+      : new Map<number, HistoryEntry[]>();
+  versions.delete(revision);
+  versions.set(revision, entries);
+  while (versions.size > 4) versions.delete(versions.keys().next().value!);
+  return versions;
+}
+
+/** A file access that sees a file's first `size` bytes only. */
+function prefixAccess(
+  files: AgentSessionFileAccess,
+  size: number,
+): AgentSessionFileAccess {
+  return {
+    ...files,
+    readText: async (path) =>
+      size > 0
+        ? Buffer.from(
+            (await files.readPrefix(path, size)).subarray(0, size),
+          ).toString("utf8")
+        : "",
+    readRange: files.readRange
+      ? async (path, start, end) =>
+          Math.min(end, size) > start
+            ? files.readRange!(path, start, Math.min(end, size))
+            : new Uint8Array(0)
+      : undefined,
+  };
+}
+
 function sessionKey(resolved: AgentSessionResolved) {
   return JSON.stringify([
     resolved.agent,
@@ -393,12 +458,21 @@ export function createSessionProjectionCache(
   /** A large Claude transcript: its end read, then what is appended. */
   async function loadLarge(
     key: string,
+    agent: string,
     current: SessionFile,
     isCurrent: () => boolean,
   ): Promise<Cached> {
     let state = larges.get(key);
     const size = current.size ?? 0;
-    if (state && (state.identity !== current.identity || size < state.end)) {
+    // Cut, or changed without growing: the same file rewritten.
+    const cut =
+      !!state &&
+      state.identity === current.identity &&
+      (size < state.end ||
+        (size === state.end &&
+          !!state.cached &&
+          state.cached.signature !== signature(current)));
+    if (state && (state.identity !== current.identity || cut)) {
       // Replaced or cut: read again, as a new epoch.
       state = undefined;
       larges.delete(key);
@@ -407,7 +481,6 @@ export function createSessionProjectionCache(
     if (old?.signature === signature(current)) return old;
     const fallbackTime =
       old?.fallbackTime ?? current.createdAtMs ?? current.mtimeMs;
-    const reset = !state;
     if (!state) {
       const tail = await readLargeTail(current, fallbackTime);
       state = {
@@ -441,11 +514,9 @@ export function createSessionProjectionCache(
       state.end += lines.used;
     }
     const tail = projectTail(current, state.records, fallbackTime);
-    const revision = reset || !old ? 1 : old.revision + 1;
-    const versions =
-      reset || !old ? new Map<number, HistoryEntry[]>() : new Map(old.versions);
-    versions.set(revision, tail.entries);
-    while (versions.size > 4) versions.delete(versions.keys().next().value!);
+    const generation = cut ? signature(current) : (old?.generation ?? null);
+    const { epoch, revision } = historyCursor(agent, current, generation);
+    const versions = nextVersions(old, epoch, revision, tail.entries);
     const value: Cached = {
       projection: {
         file: current,
@@ -459,8 +530,9 @@ export function createSessionProjectionCache(
         stats: { turns: 0, records: 0, token_usage: null },
       },
       signature: signature(current),
-      epoch: reset || !old ? randomUUID() : old.epoch,
+      epoch,
       revision,
+      generation,
       versions,
       bytes: 0,
       fallbackTime,
@@ -640,7 +712,7 @@ export function createSessionProjectionCache(
       let current = { ...file, ...before };
       if (readsByTail(resolved.agent, current, files)) {
         remove(key);
-        return loadLarge(key, current, isCurrent);
+        return loadLarge(key, resolved.agent, current, isCurrent);
       }
       larges.delete(key);
       if (old?.signature === signature(current)) {
@@ -684,18 +756,28 @@ export function createSessionProjectionCache(
         throw new Error(
           "Session file changed while reading; retry on the next refresh",
         );
-      const reset = isReset();
-      const revision = reset ? 1 : old!.revision + 1;
-      const versions = reset
-        ? new Map<number, HistoryEntry[]>()
-        : new Map(old!.versions);
-      versions.set(revision, projection.entries);
-      while (versions.size > 4) versions.delete(versions.keys().next().value!);
+      // The same file cut, or changed without growing: rewritten.
+      const sameFile =
+        !!old && old.projection.file.identity === current.identity;
+      const cut =
+        sameFile && (current.size ?? 0) <= (old!.projection.file.size ?? 0);
+      const generation = !sameFile
+        ? null
+        : cut
+          ? signature(current)
+          : old!.generation;
+      const { epoch, revision } = historyCursor(
+        resolved.agent,
+        current,
+        generation,
+      );
+      const versions = nextVersions(old, epoch, revision, projection.entries);
       const value: Cached = {
         projection,
         signature: signature(current),
-        epoch: reset ? randomUUID() : old!.epoch,
+        epoch,
         revision,
+        generation,
         versions,
         bytes: 0,
         fallbackTime,
@@ -724,6 +806,18 @@ export function createSessionProjectionCache(
       if (pending.get(key) === task) pending.delete(key);
     }
   }
+  /** The entries a transcript's first `size` bytes showed. */
+  async function entriesAt(agent: string, cached: Cached, size: number) {
+    const file = { ...cached.projection.file, size };
+    const limited = prefixAccess(files, size);
+    if (readsByTail(agent, file, limited))
+      return (await readTailProjection(file, limited, cached.fallbackTime))
+        .entries;
+    return (
+      await readSessionProjection(agent, file, limited, cached.fallbackTime)
+    ).entries;
+  }
+
   const api = {
     invalidate,
     /**
@@ -896,15 +990,60 @@ export function createSessionProjectionCache(
       );
       return projection.trajectory;
     },
+    /**
+     * The history as it stands, as a delta from the browser's `cursor`
+     * when that cursor is this file's: its revision, if not kept, is
+     * projected again from the transcript's prefix, so any process
+     * answers it the same.
+     */
     async history(resolved: AgentSessionResolved, cursor: unknown) {
       const cached = await load(resolved);
+      const agent = resolved.agent;
+      const base = isRecord(cursor)
+        ? (cursor as { epoch?: unknown; revision?: unknown })
+        : null;
+      const revision =
+        base?.epoch === cached.epoch &&
+        typeof base.revision === "number" &&
+        Number.isSafeInteger(base.revision)
+          ? base.revision
+          : null;
+      if (
+        appendOnlyHistory(agent) &&
+        revision !== null &&
+        revision > cached.revision
+      ) {
+        // Its cursor is past the file's end: rewritten, unseen here.
+        const file = cached.projection.file;
+        cached.generation = signature(file);
+        const next = historyCursor(agent, file, cached.generation);
+        cached.epoch = next.epoch;
+        cached.versions = nextVersions(
+          null,
+          next.epoch,
+          next.revision,
+          cached.projection.entries,
+        );
+      }
+      let versions = cached.versions;
+      if (
+        appendOnlyHistory(agent) &&
+        base?.epoch === cached.epoch &&
+        revision !== null &&
+        revision >= 1 &&
+        revision < cached.revision &&
+        !versions.has(revision)
+      ) {
+        versions = new Map(versions);
+        versions.set(revision, await entriesAt(agent, cached, revision - 1));
+      }
       return {
         projection: cached.projection,
         update: historyUpdate(
           { epoch: cached.epoch, revision: cached.revision },
           cached.projection.entries,
           cursor,
-          cached.versions,
+          versions,
         ),
       };
     },

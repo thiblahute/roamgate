@@ -23749,6 +23749,264 @@
           }
         }
       ]
+    },
+    {
+      "name": "a transcript's history epoch is a hash of its agent, path and identity, and of its signature once rewritten",
+      "calls": [
+        {
+          "fn": "session-history.historyEpoch",
+          "args": [
+            "claude",
+            "/home/user/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl",
+            "2049:131",
+            null
+          ],
+          "result": "7d56704c-f277-d3da-77ae-3d0c4dbce3da"
+        },
+        {
+          "fn": "session-history.historyEpoch",
+          "args": [
+            "claude",
+            "/home/user/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl",
+            "2049:132",
+            null
+          ],
+          "result": "f4bec981-ca62-51b5-562d-b74320498b1f"
+        },
+        {
+          "fn": "session-history.historyEpoch",
+          "args": [
+            "codex",
+            "/home/user/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl",
+            "2049:131",
+            null
+          ],
+          "result": "eecf7aaf-213e-e46b-00e0-c6ab3da3d3cd"
+        },
+        {
+          "fn": "session-history.historyEpoch",
+          "args": [
+            "claude",
+            "/home/user/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl",
+            {
+              "$undefined": true
+            },
+            null
+          ],
+          "result": "02da3597-6b52-bd58-fccc-08f437d3e4de"
+        },
+        {
+          "fn": "session-history.historyEpoch",
+          "args": [
+            "claude",
+            "/home/user/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl",
+            "2049:131",
+            "[\"/home/user/.claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl\",1767225600000,4242,\"2049:131\",\"\",null,null,null,null]"
+          ],
+          "result": "548405aa-afc0-a05d-8adc-43cb592bdb72"
+        },
+        {
+          "fn": "session-history.historyEpoch",
+          "args": [
+            "agy",
+            "",
+            {
+              "$undefined": true
+            },
+            null
+          ],
+          "result": "8a91de31-0ef7-c65f-1302-e0bf1da0ec4c"
+        }
+      ]
+    },
+    {
+      "name": "only Antigravity's store is not append-only",
+      "calls": [
+        {
+          "fn": "session-history.appendOnlyHistory",
+          "args": ["claude"],
+          "result": true
+        },
+        {
+          "fn": "session-history.appendOnlyHistory",
+          "args": ["codex"],
+          "result": true
+        },
+        {
+          "fn": "session-history.appendOnlyHistory",
+          "args": ["pi"],
+          "result": true
+        },
+        {
+          "fn": "session-history.appendOnlyHistory",
+          "args": ["omp"],
+          "result": true
+        },
+        {
+          "fn": "session-history.appendOnlyHistory",
+          "args": ["kimi"],
+          "result": true
+        },
+        {
+          "fn": "session-history.appendOnlyHistory",
+          "args": ["grok"],
+          "result": true
+        },
+        {
+          "fn": "session-history.appendOnlyHistory",
+          "args": ["muse"],
+          "result": true
+        },
+        {
+          "fn": "session-history.appendOnlyHistory",
+          "args": ["agy"],
+          "result": false
+        }
+      ]
+    },
+    {
+      "name": "a cursor at the current revision gets an empty delta, kept or not",
+      "calls": [
+        {
+          "fn": "session-history.historyUpdate",
+          "args": [
+            {
+              "epoch": "7d56704c-f277-d3da-77ae-3d0c4dbce3da",
+              "revision": 4243
+            },
+            [
+              {
+                "id": "a",
+                "role": "assistant",
+                "text": "one",
+                "sent_at": "2026-01-01T00:00:00.000Z"
+              }
+            ],
+            {
+              "epoch": "7d56704c-f277-d3da-77ae-3d0c4dbce3da",
+              "revision": 4243
+            },
+            {
+              "$map": []
+            }
+          ],
+          "result": {
+            "history_version": 2,
+            "mode": "delta",
+            "cursor": {
+              "epoch": "7d56704c-f277-d3da-77ae-3d0c4dbce3da",
+              "revision": 4243
+            },
+            "base_revision": 4243,
+            "window_limit": 200,
+            "upserts": [],
+            "removed": []
+          }
+        },
+        {
+          "fn": "session-history.historyUpdate",
+          "args": [
+            {
+              "epoch": "7d56704c-f277-d3da-77ae-3d0c4dbce3da",
+              "revision": 4243
+            },
+            [
+              {
+                "id": "a",
+                "role": "assistant",
+                "text": "one",
+                "sent_at": "2026-01-01T00:00:00.000Z"
+              }
+            ],
+            {
+              "epoch": "7d56704c-f277-d3da-77ae-3d0c4dbce3da",
+              "revision": 4244
+            },
+            {
+              "$map": []
+            }
+          ],
+          "result": {
+            "history_version": 2,
+            "mode": "snapshot",
+            "cursor": {
+              "epoch": "7d56704c-f277-d3da-77ae-3d0c4dbce3da",
+              "revision": 4243
+            },
+            "window_limit": 200,
+            "entries": [
+              {
+                "id": "a",
+                "role": "assistant",
+                "text": "one",
+                "sent_at": "2026-01-01T00:00:00.000Z"
+              }
+            ]
+          }
+        },
+        {
+          "fn": "session-history.historyUpdate",
+          "args": [
+            {
+              "epoch": "7d56704c-f277-d3da-77ae-3d0c4dbce3da",
+              "revision": 4243
+            },
+            [
+              {
+                "id": "a",
+                "role": "assistant",
+                "text": "one",
+                "sent_at": "2026-01-01T00:00:00.000Z"
+              },
+              {
+                "id": "b",
+                "role": "assistant",
+                "text": "two",
+                "sent_at": "2026-01-01T00:00:00.000Z"
+              }
+            ],
+            {
+              "epoch": "7d56704c-f277-d3da-77ae-3d0c4dbce3da",
+              "revision": 2000
+            },
+            {
+              "$map": [
+                [
+                  2000,
+                  [
+                    {
+                      "id": "a",
+                      "role": "assistant",
+                      "text": "one",
+                      "sent_at": "2026-01-01T00:00:00.000Z"
+                    }
+                  ]
+                ]
+              ]
+            }
+          ],
+          "result": {
+            "history_version": 2,
+            "mode": "delta",
+            "cursor": {
+              "epoch": "7d56704c-f277-d3da-77ae-3d0c4dbce3da",
+              "revision": 4243
+            },
+            "base_revision": 2000,
+            "window_limit": 200,
+            "upserts": [
+              {
+                "id": "b",
+                "role": "assistant",
+                "text": "two",
+                "sent_at": "2026-01-01T00:00:00.000Z"
+              }
+            ],
+            "removed": [],
+            "order": ["a", "b"]
+          }
+        }
+      ]
     }
   ]
 }

@@ -324,7 +324,7 @@ describe("session projection cache and history revisions", () => {
     expect((await exported.json()).steps).toHaveLength(201);
   });
 
-  test("truncation, replacement, missing file, invalid cursors and reconnect reset safely", async () => {
+  test("truncation, replacement, missing file and invalid cursors reset safely; a reconnect goes on", async () => {
     const f = fixture();
     f.set([message("long message"), message("second")]);
     let current: HistoryUpdate = await f.history();
@@ -335,13 +335,8 @@ describe("session projection cache and history revisions", () => {
     f.set([message("short")], { identity: "replacement" });
     next = snapshot(await f.history(current.cursor));
     expect(next.cursor.epoch).not.toBe(current.cursor.epoch);
-    for (const cursor of [
-      { epoch: next.cursor.epoch, revision: -1 },
-      { epoch: next.cursor.epoch, revision: 999 },
-      { epoch: "other", revision: 1 },
-      "bad",
-    ])
-      expect((await f.history(cursor)).mode).toBe("snapshot");
+    // Another process (a restart, the other owner) answers the same cursor
+    // the same: the cursor is the file's.
     const other = createAgentSessionHandlers({
       files: f.files,
       herdrCall: f.herdrCall,
@@ -351,15 +346,28 @@ describe("session projection cache and history revisions", () => {
       history_version: 2,
       cursor: next.cursor,
     });
-    expect(reconnected).toHaveProperty("mode", "snapshot");
+    expect(reconnected).toHaveProperty("mode", "delta");
+    expect(reconnected).toHaveProperty("cursor", next.cursor);
+    for (const cursor of [
+      { epoch: next.cursor.epoch, revision: -1 },
+      { epoch: next.cursor.epoch, revision: 999 },
+      { epoch: "other", revision: 1 },
+      "bad",
+    ])
+      expect((await f.history(cursor)).mode).toBe("snapshot");
+    // A cursor past the end: rewritten, a new epoch from then on.
+    const cut = await f.history();
+    expect(cut.cursor.epoch).not.toBe(next.cursor.epoch);
     f.missing();
     const missing = snapshot(await f.history(next.cursor));
     expect(missing.entries).toEqual([]);
     f.set([message("short")], { identity: "replacement" });
-    expect((await f.history(next.cursor)).mode).toBe("snapshot");
+    // The same file again, read afresh: what the cursor had, nothing new.
+    const again = delta(await f.history(next.cursor));
+    expect(again.upserts).toEqual([]);
   });
 
-  test("expired revision history falls back to snapshot", async () => {
+  test("a revision no longer kept is read again from the transcript's start", async () => {
     const f = fixture();
     f.set([message("0")]);
     const first = await f.history();
@@ -367,7 +375,38 @@ describe("session projection cache and history revisions", () => {
       f.set(Array.from({ length: i + 1 }, (_, j) => message(String(j))));
       await f.history();
     }
-    expect((await f.history(first.cursor)).mode).toBe("snapshot");
+    const update = delta(await f.history(first.cursor));
+    expect(update.base_revision).toBe(first.cursor.revision);
+    expect(update.upserts.map((entry) => entry.text)).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+    ]);
+    expect(update.removed).toEqual([]);
+  });
+
+  test("Antigravity's store, rewritten in place: each change a new epoch, answered whole", async () => {
+    const f = fixture("agy");
+    f.set([message("one")]);
+    const cache = createSessionProjectionCache(f.files);
+    const first = await cache.history(f.resolved, null);
+    // Unchanged: an empty delta, from any process.
+    expect(
+      delta((await cache.history(f.resolved, first.update.cursor)).update)
+        .upserts,
+    ).toEqual([]);
+    const other = createSessionProjectionCache(f.files);
+    expect(
+      delta((await other.history(f.resolved, first.update.cursor)).update)
+        .upserts,
+    ).toEqual([]);
+    // Grown, but not append-only: no delta from its prefix.
+    f.set([message("one"), message("two")]);
+    const grown = snapshot(
+      (await cache.history(f.resolved, first.update.cursor)).update,
+    );
+    expect(grown.cursor.epoch).not.toBe(first.update.cursor.epoch);
   });
 
   test("changed/read races retry; transient errors do not cache partial projections", async () => {
@@ -405,13 +444,14 @@ describe("session projection cache and history revisions", () => {
       // Only the descriptor changes; the transcript and its stat stay identical.
       f.resolved.file = { ...originalFile, createdAtMs };
       const changed = await cache.history(f.resolved, cursor);
-      const update = delta(changed.update);
       const timestamp = new Date(
         createdAtMs ?? originalFile.mtimeMs,
       ).toISOString();
-      expect(update.cursor.epoch).toBe(cursor.epoch);
-      expect(update.cursor.revision).toBe(cursor.revision + 1);
-      expect(update.upserts[0].sent_at).toBe(timestamp);
+      // Changed without growing: a new epoch, answered whole.
+      const update = snapshot(changed.update);
+      expect(update.cursor.epoch).not.toBe(cursor.epoch);
+      expect(update.cursor.revision).toBe(cursor.revision);
+      expect(update.entries[0].sent_at).toBe(timestamp);
       expect(changed.projection.messages[0].sent_at).toBe(timestamp);
       expect(f.reads).toBe(++expectedReads);
       // The trajectory is not kept: it is built again, with the same times.
@@ -442,16 +482,17 @@ describe("session projection cache and history revisions", () => {
     try {
       const first = await cache.history(f.resolved, null);
       expect(first.projection.entries[0].text).toHaveLength(100_000);
+      // Not kept, read again: the same cursor, nothing new.
       const next = await cache.history(f.resolved, first.update.cursor);
-      expect(next.update.mode).toBe("snapshot");
-      expect(next.update.cursor.epoch).not.toBe(first.update.cursor.epoch);
+      expect(next.update.mode).toBe("delta");
+      expect(next.update.cursor).toEqual(first.update.cursor);
       expect(f.reads).toBe(2);
     } finally {
       spy.mockRestore();
     }
   });
 
-  test("entry and retained payload budgets evict with a fresh epoch", async () => {
+  test("entry and retained payload budgets evict; the cursor holds", async () => {
     const f = fixture();
     f.set([message("hello")]);
     const cache = createSessionProjectionCache(f.files, {
@@ -461,7 +502,7 @@ describe("session projection cache and history revisions", () => {
     const first = await cache.history(f.resolved, null);
     await cache.get({ ...f.resolved, agent: "claude" });
     const next = await cache.history(f.resolved, first.update.cursor);
-    expect(next.update.mode).toBe("snapshot");
+    expect(next.update.mode).toBe("delta");
     expect(f.reads).toBe(3);
     const tiny = createSessionProjectionCache(f.files, {
       entries: 10,
@@ -470,7 +511,7 @@ describe("session projection cache and history revisions", () => {
     const oversized = await tiny.history(f.resolved, null);
     expect(
       (await tiny.history(f.resolved, oversized.update.cursor)).update.mode,
-    ).toBe("snapshot");
+    ).toBe("delta");
     expect(f.reads).toBe(5);
   });
 });

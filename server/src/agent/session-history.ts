@@ -403,6 +403,35 @@ export function redactHistoryUpdate(update: HistoryUpdate): HistoryUpdate {
   return { ...update, upserts: update.upserts.map(redactHistoryEntry) };
 }
 
+/**
+ * A transcript's history epoch: the same for every process that reads the
+ * same file, so a browser's cursor holds across a restart or a change of
+ * the family's owner. `generation` is set once the file was rewritten
+ * (cut, or changed without growing): the signature it had then.
+ */
+export function historyEpoch(
+  agent: string,
+  path: string,
+  identity: string | undefined,
+  generation: string | null,
+): string {
+  const hash = createHash("sha256");
+  hash.update(["roamgate-history", agent, path, identity ?? ""].join("\0"));
+  if (generation !== null) hash.update(`\0cut\0${generation}`);
+  const hex = hash.digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+/**
+ * Whether an agent's transcripts only grow: their revision is their size
+ * plus one, and an earlier revision is the projection of their prefix.
+ * Antigravity's SQLite store is rewritten in place: a change is a new
+ * epoch, answered whole.
+ */
+export function appendOnlyHistory(agent: string): boolean {
+  return agent !== "agy";
+}
+
 export function historyUpdate(
   cursor: HistoryCursor,
   entries: HistoryEntry[],
@@ -413,20 +442,9 @@ export function historyUpdate(
     typeof requested === "object" && requested !== null
       ? (requested as Partial<HistoryCursor>)
       : null;
-  const previous =
-    base?.epoch === cursor.epoch && Number.isSafeInteger(base.revision)
-      ? versions.get(base.revision as number)
-      : undefined;
-  if (!previous || (base?.revision ?? Infinity) > cursor.revision) {
-    return {
-      history_version: 2,
-      mode: "snapshot",
-      cursor,
-      window_limit: HISTORY_WINDOW_LIMIT,
-      entries,
-    };
-  }
-  if (base?.revision === cursor.revision) {
+  const known =
+    base?.epoch === cursor.epoch && Number.isSafeInteger(base.revision);
+  if (known && base.revision === cursor.revision) {
     return {
       history_version: 2,
       mode: "delta",
@@ -435,6 +453,16 @@ export function historyUpdate(
       window_limit: HISTORY_WINDOW_LIMIT,
       upserts: [],
       removed: [],
+    };
+  }
+  const previous = known ? versions.get(base.revision as number) : undefined;
+  if (!previous || (base?.revision ?? Infinity) > cursor.revision) {
+    return {
+      history_version: 2,
+      mode: "snapshot",
+      cursor,
+      window_limit: HISTORY_WINDOW_LIMIT,
+      entries,
     };
   }
   const old = new Map(previous.map((entry) => [entry.id, entry]));

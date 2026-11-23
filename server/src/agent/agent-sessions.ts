@@ -13,7 +13,6 @@ import {
 } from "./session-tasks";
 import { heldOpenFiles } from "./task-output-holders";
 import { basename } from "node:path";
-import { randomUUID } from "node:crypto";
 import { enrichAgentActivity } from "./agent-activity";
 import { findLineFromEnd } from "./session-tail";
 import type { HerdrCall, SessionFile } from "./session-types";
@@ -38,6 +37,7 @@ import {
 } from "./session-projection-cache";
 import {
   HISTORY_WINDOW_LIMIT,
+  historyEpoch,
   historyTextHash,
   redactHistoryEntry,
   redactHistoryUpdate,
@@ -443,7 +443,10 @@ export function createAgentSessionHandlers(args: {
           ...resolved,
           history_version: 2 as const,
           mode: "snapshot" as const,
-          cursor: { epoch: randomUUID(), revision: 1 },
+          cursor: {
+            epoch: historyEpoch(resolved.agent, "", undefined, null),
+            revision: 1,
+          },
           window_limit: HISTORY_WINDOW_LIMIT,
           entries: [],
         };
