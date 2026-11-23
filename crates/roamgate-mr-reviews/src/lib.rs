@@ -13,6 +13,7 @@ pub mod curation;
 pub mod efforts;
 pub mod forge_ref;
 pub mod fuzzy;
+pub mod inference;
 pub mod lanes;
 pub mod overrides;
 pub mod queries;

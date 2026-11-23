@@ -31,14 +31,24 @@ pub struct ModelAnswer {
 
 /// `claude -p` as a bare model: no tool, no session, no MCP, no hooks.
 pub trait RunModel: Send + Sync {
-    fn run<'a>(&'a self, model: &'a str, system: &'a str, prompt: &'a str) -> BoxFuture<'a, Result<ModelAnswer, String>>;
+    fn run<'a>(
+        &'a self,
+        model: &'a str,
+        system: &'a str,
+        prompt: &'a str,
+    ) -> BoxFuture<'a, Result<ModelAnswer, String>>;
 }
 
 impl<F> RunModel for F
 where
     F: Fn(&str, &str, &str) -> Result<ModelAnswer, String> + Send + Sync,
 {
-    fn run<'a>(&'a self, model: &'a str, system: &'a str, prompt: &'a str) -> BoxFuture<'a, Result<ModelAnswer, String>> {
+    fn run<'a>(
+        &'a self,
+        model: &'a str,
+        system: &'a str,
+        prompt: &'a str,
+    ) -> BoxFuture<'a, Result<ModelAnswer, String>> {
         let answer = self(model, system, prompt);
         Box::pin(async move { answer })
     }
@@ -130,7 +140,14 @@ pub fn curation_prompt(signals: &Signals, candidates: &[Obj]) -> String {
     let compact: Vec<Value> = candidates
         .iter()
         .map(|item| {
-            let files: Vec<Value> = item.get("files").and_then(Value::as_array).into_iter().flatten().take(25).cloned().collect();
+            let files: Vec<Value> = item
+                .get("files")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .take(25)
+                .cloned()
+                .collect();
             Value::Object(obj! {
                 "key" => item.get("key").cloned(),
                 "project" => item.get("project").cloned(),
@@ -155,12 +172,18 @@ pub fn curation_prompt(signals: &Signals, candidates: &[Obj]) -> String {
 
 /// What a ranking stands on: the head and the title.
 pub fn version_of(item: &Obj) -> String {
-    format!("{}\n{}", js::sv(item.get("headSha")), js::sv(item.get("title")))
+    format!(
+        "{}\n{}",
+        js::sv(item.get("headSha")),
+        js::sv(item.get("title"))
+    )
 }
 
 /// Whether a ranking still holds for `item`.
 pub fn ranked_current(ranked: Option<&Value>, item: &Obj) -> bool {
-    let Some(ranked) = ranked.filter(|r| r.is_object()) else { return false };
+    let Some(ranked) = ranked.filter(|r| r.is_object()) else {
+        return false;
+    };
     if js::sv(ranked.get("by")) == "agent" {
         return true;
     }
@@ -199,7 +222,8 @@ pub fn answer_array(text: &str) -> Result<Vec<Value>, String> {
     }
 }
 
-static SPACES: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"\s+").expect("pattern"));
+static SPACES: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"\s+").expect("pattern"));
 
 /// One-line text, as `.replace(/\s+/g, " ").trim().slice(0, max)`.
 pub fn line(text: &str, max: usize) -> String {
@@ -210,14 +234,38 @@ pub fn line(text: &str, max: usize) -> String {
 pub fn parse_ranking(text: &str, keys: &[String]) -> Result<Vec<Ranking>, String> {
     let mut out: Vec<Ranking> = Vec::new();
     for entry in answer_array(text)? {
-        let Some(key) = entry.get("key").and_then(Value::as_str).filter(|k| keys.iter().any(|x| x == k)) else { continue };
+        let Some(key) = entry
+            .get("key")
+            .and_then(Value::as_str)
+            .filter(|k| keys.iter().any(|x| x == k))
+        else {
+            continue;
+        };
         let score = js::to_number(entry.get("score"));
-        let score = if score.is_nan() { 0.0 } else { score.clamp(0.0, 100.0) };
-        let reason = entry.get("reason").and_then(Value::as_str).map(|r| line(r, 120)).unwrap_or_default();
-        out.push(Ranking { key: key.into(), pick: js::is_true(entry.get("pick")) && !reason.is_empty(), score, reason });
+        let score = if score.is_nan() {
+            0.0
+        } else {
+            score.clamp(0.0, 100.0)
+        };
+        let reason = entry
+            .get("reason")
+            .and_then(Value::as_str)
+            .map(|r| line(r, 120))
+            .unwrap_or_default();
+        out.push(Ranking {
+            key: key.into(),
+            pick: js::is_true(entry.get("pick")) && !reason.is_empty(),
+            score,
+            reason,
+        });
     }
     let mut picks: Vec<usize> = (0..out.len()).filter(|i| out[*i].pick).collect();
-    picks.sort_by(|a, b| out[*b].score.partial_cmp(&out[*a].score).unwrap_or(std::cmp::Ordering::Equal));
+    picks.sort_by(|a, b| {
+        out[*b]
+            .score
+            .partial_cmp(&out[*a].score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     for extra in picks.into_iter().skip(PICKS_PER_BATCH) {
         out[extra].pick = false;
     }
@@ -258,7 +306,11 @@ pub struct Curation {
 }
 
 impl Curation {
-    pub fn new(store: Arc<Mutex<MrStore>>, settings: Settings<CurationSettings>, run: Arc<dyn RunModel>) -> Curation {
+    pub fn new(
+        store: Arc<Mutex<MrStore>>,
+        settings: Settings<CurationSettings>,
+        run: Arc<dyn RunModel>,
+    ) -> Curation {
         Curation {
             store,
             settings,
@@ -277,7 +329,10 @@ impl Curation {
     }
 
     pub fn state(&self) -> Value {
-        self.status.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.status
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn set_status(&self, value: Value) {
@@ -292,12 +347,18 @@ impl Curation {
 
     fn own(&self, item: &Obj) -> bool {
         let users = self.users.as_ref().map(|u| u()).unwrap_or_default();
-        users.get(js::sv(item.get("host"))).is_some_and(|u| *u == js::sv(item.get("author")).to_lowercase())
+        users
+            .get(js::sv(item.get("host")))
+            .is_some_and(|u| *u == js::sv(item.get("author")).to_lowercase())
     }
 
     async fn read_history(&self) -> (Vec<String>, Vec<String>) {
         let now = (self.now)();
-        if let Some((at, committed, branches)) = self.history.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        if let Some((at, committed, branches)) = self
+            .history
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
             && now - at < HISTORY_TTL_MS
         {
             return (committed, branches);
@@ -305,8 +366,18 @@ impl Curation {
         let mut clones: Vec<(String, String)> = Vec::new();
         {
             let store = self.store.lock().unwrap_or_else(|e| e.into_inner());
-            for project in store.get().get("projects").and_then(Value::as_object).into_iter().flatten().map(|(_, p)| p) {
-                let clone = (js::sv(project.get("connectionId")).to_owned(), js::sv(project.get("clone")).to_owned());
+            for project in store
+                .get()
+                .get("projects")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+                .map(|(_, p)| p)
+            {
+                let clone = (
+                    js::sv(project.get("connectionId")).to_owned(),
+                    js::sv(project.get("clone")).to_owned(),
+                );
                 if !clones.contains(&clone) {
                     clones.push(clone);
                 }
@@ -322,12 +393,16 @@ impl Curation {
         let (mut committed, mut branches) = (Vec::new(), Vec::new());
         let connections = (self.connections)();
         for (connection_id, path) in clones {
-            let Some(connection) = connections.iter().find(|c| c.id() == connection_id) else { continue };
-            let (c, b) = parse_history(&connection.run(&history_script(&path), 60_000).await.stdout);
+            let Some(connection) = connections.iter().find(|c| c.id() == connection_id) else {
+                continue;
+            };
+            let (c, b) =
+                parse_history(&connection.run(&history_script(&path), 60_000).await.stdout);
             committed.extend(c);
             branches.extend(b);
         }
-        *self.history.lock().unwrap_or_else(|e| e.into_inner()) = Some((now, committed.clone(), branches.clone()));
+        *self.history.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((now, committed.clone(), branches.clone()));
         (committed, branches)
     }
 
@@ -338,13 +413,28 @@ impl Curation {
             let store = self.store.lock().unwrap_or_else(|e| e.into_inner());
             let state = store.get();
             (
-                state.get("reviews").and_then(Value::as_object).map(|r| r.keys().cloned().collect()).unwrap_or_default(),
-                state.get("feedback").and_then(Value::as_array).cloned().unwrap_or_default(),
+                state
+                    .get("reviews")
+                    .and_then(Value::as_object)
+                    .map(|r| r.keys().cloned().collect())
+                    .unwrap_or_default(),
+                state
+                    .get("feedback")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default(),
             )
         };
         let by_key: HashMap<&str, &Obj> = items.iter().map(|i| (js::sv(i.get("key")), i)).collect();
-        let reviewed: Vec<&Obj> = reviews.iter().filter_map(|k| by_key.get(k.as_str()).copied()).collect();
-        let mine = items.iter().filter(|i| i.get("reasons").and_then(Value::as_array).is_some_and(|r| !r.is_empty()));
+        let reviewed: Vec<&Obj> = reviews
+            .iter()
+            .filter_map(|k| by_key.get(k.as_str()).copied())
+            .collect();
+        let mine = items.iter().filter(|i| {
+            i.get("reasons")
+                .and_then(Value::as_array)
+                .is_some_and(|r| !r.is_empty())
+        });
         let mut collaborators: Vec<String> = Vec::new();
         for item in reviewed.iter().copied().chain(mine) {
             let author = js::sv(item.get("author"));
@@ -397,7 +487,10 @@ impl Curation {
             .iter()
             .filter(|item| {
                 js::sv(item.get("state")) == "open"
-                    && item.get("reasons").and_then(Value::as_array).is_none_or(Vec::is_empty)
+                    && item
+                        .get("reasons")
+                        .and_then(Value::as_array)
+                        .is_none_or(Vec::is_empty)
                     && !self.own(item)
                     && !dismissed.contains(&js::sv(item.get("key")))
                     && js::date_parse(js::sv(item.get("updatedAt"))) >= since
@@ -405,7 +498,9 @@ impl Curation {
             })
             .cloned()
             .collect();
-        out.sort_by(|a, b| js::locale_compare(js::sv(b.get("updatedAt")), js::sv(a.get("updatedAt"))));
+        out.sort_by(|a, b| {
+            js::locale_compare(js::sv(b.get("updatedAt")), js::sv(a.get("updatedAt")))
+        });
         out.truncate(BATCH_SIZE);
         out
     }
@@ -423,8 +518,18 @@ impl Curation {
         self.set_status(status("running", Some(js::iso((self.now)())), None));
         self.changed();
         let signals = self.signals(items, &settings.hints).await;
-        let answer = self.run.run(&self.model, &curation_system_prompt(), &curation_prompt(&signals, &batch)).await?;
-        let keys: Vec<String> = batch.iter().map(|i| js::sv(i.get("key")).to_owned()).collect();
+        let answer = self
+            .run
+            .run(
+                &self.model,
+                &curation_system_prompt(),
+                &curation_prompt(&signals, &batch),
+            )
+            .await?;
+        let keys: Vec<String> = batch
+            .iter()
+            .map(|i| js::sv(i.get("key")).to_owned())
+            .collect();
         let ranking = parse_ranking(&answer.text, &keys)?;
         let at = js::iso((self.now)());
         {
@@ -505,7 +610,12 @@ mod tests {
     fn settings(curation: bool, hints: &str) -> Settings<CurationSettings> {
         let hints = hints.to_owned();
         Arc::new(move || {
-            let value = CurationSettings { curation, hints: hints.clone(), followed: 1, suggest_days: None };
+            let value = CurationSettings {
+                curation,
+                hints: hints.clone(),
+                followed: 1,
+                suggest_days: None,
+            };
             Box::pin(async move { value })
         })
     }
@@ -516,14 +626,25 @@ mod tests {
         let asked: Asked = Arc::default();
         let log = asked.clone();
         let run = move |model: &str, _: &str, prompt: &str| {
-            log.lock().unwrap().push((model.to_owned(), serde_json::from_str(prompt).unwrap()));
-            Ok(ModelAnswer { text: answer.into(), cost_usd: None, ms: 1.0 })
+            log.lock()
+                .unwrap()
+                .push((model.to_owned(), serde_json::from_str(prompt).unwrap()));
+            Ok(ModelAnswer {
+                text: answer.into(),
+                cost_usd: None,
+                ms: 1.0,
+            })
         };
         (asked, Arc::new(run))
     }
 
     fn keys(prompt: &Value) -> Vec<String> {
-        prompt["candidates"].as_array().unwrap().iter().map(|c| js::sv(c.get("key")).to_owned()).collect()
+        prompt["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| js::sv(c.get("key")).to_owned())
+            .collect()
     }
 
     #[test]
@@ -531,7 +652,11 @@ mod tests {
         let keys: Vec<String> = ["k1", "k2", "k3"].map(String::from).to_vec();
         let text = r#"Here: [{"key":"k1","pick":true,"score":90,"reason":"touches src/f1.c you changed"},{"key":"k2","pick":true,"score":50,"reason":""},{"key":"zz","pick":true,"score":99,"reason":"not a candidate"},{"key":"k3","pick":false,"score":10,"reason":""}]"#;
         assert_eq!(
-            parse_ranking(text, &keys).unwrap().iter().map(Ranking::to_json).collect::<Vec<_>>(),
+            parse_ranking(text, &keys)
+                .unwrap()
+                .iter()
+                .map(Ranking::to_json)
+                .collect::<Vec<_>>(),
             vec![
                 json!({"key": "k1", "pick": true, "score": 90, "reason": "touches src/f1.c you changed"}),
                 json!({"key": "k2", "pick": false, "score": 50, "reason": ""}),
@@ -544,7 +669,10 @@ mod tests {
     #[test]
     fn top_paths_count_files_and_their_directories() {
         let files: Vec<String> = ["a/b.c", "a/b.c", "a/d.c"].map(String::from).to_vec();
-        assert_eq!(top_paths(&files, 60), [("a/".into(), 3), ("a/b.c".into(), 2), ("a/d.c".into(), 1)]);
+        assert_eq!(
+            top_paths(&files, 60),
+            [("a/".into(), 3), ("a/b.c".into(), 2), ("a/d.c".into(), 1)]
+        );
     }
 
     #[tokio::test]
@@ -554,14 +682,25 @@ mod tests {
             .lock()
             .unwrap()
             .update(|state| {
-                state["feedback"].as_array_mut().unwrap().push(json!({"key": "k3", "verdict": "not_interested", "at": "t",
+                state["feedback"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"key": "k3", "verdict": "not_interested", "at": "t",
                     "title": "MR 3", "project": "g/p", "author": "alice", "files": []}));
             })
             .unwrap();
-        let (asked, run) = recorder(r#"[{"key":"k1","pick":true,"score":80,"reason":"touches src/f1.c"}]"#);
+        let (asked, run) =
+            recorder(r#"[{"key":"k1","pick":true,"score":80,"reason":"touches src/f1.c"}]"#);
         let mut curation = Curation::new(store.clone(), settings(true, "I maintain GES"), run);
-        curation.users = Some(Arc::new(|| HashMap::from([("h".to_owned(), "me".to_owned())])));
-        let items = vec![item(1, json!({})), item(2, json!({"author": "Me"})), item(3, json!({})), item(4, json!({"reasons": ["assigned"]}))];
+        curation.users = Some(Arc::new(|| {
+            HashMap::from([("h".to_owned(), "me".to_owned())])
+        }));
+        let items = vec![
+            item(1, json!({})),
+            item(2, json!({"author": "Me"})),
+            item(3, json!({})),
+            item(4, json!({"reasons": ["assigned"]})),
+        ];
         curation.maybe_run(&items, true).await;
         {
             let asked = asked.lock().unwrap();
@@ -569,10 +708,16 @@ mod tests {
             assert_eq!(asked[0].0, CURATION_MODEL);
             assert_eq!(keys(&asked[0].1), ["k1"]);
             assert_eq!(asked[0].1["reviewer"]["hints"], json!("I maintain GES"));
-            assert_eq!(asked[0].1["reviewer"]["feedback"][0]["verdict"], json!("not_interested"));
+            assert_eq!(
+                asked[0].1["reviewer"]["feedback"][0]["verdict"],
+                json!("not_interested")
+            );
         }
         let ranked = store.lock().unwrap().get()["ranked"]["k1"].clone();
-        assert_eq!((ranked["pick"].clone(), ranked["reason"].clone()), (json!(true), json!("touches src/f1.c")));
+        assert_eq!(
+            (ranked["pick"].clone(), ranked["reason"].clone()),
+            (json!(true), json!("touches src/f1.c"))
+        );
         let commented: Vec<Obj> = items
             .iter()
             .map(|i| {
@@ -602,7 +747,10 @@ mod tests {
         more.push(item(5, json!({})));
         curation.maybe_run(&more, false).await;
         assert_eq!(asked.lock().unwrap().len(), 2);
-        let old = item(6, json!({"updatedAt": js::iso(js::now_ms() - 90.0 * 86_400_000.0)}));
+        let old = item(
+            6,
+            json!({"updatedAt": js::iso(js::now_ms() - 90.0 * 86_400_000.0)}),
+        );
         curation.maybe_run(&[old, item(7, json!({}))], true).await;
         assert_eq!(keys(&asked.lock().unwrap().last().unwrap().1), ["k7"]);
     }
@@ -641,9 +789,23 @@ mod tests {
         let (asked, run) = recorder("[]");
         let curation = Curation::new(store.clone(), settings(true, ""), run);
         curation.maybe_run(&items, true).await;
-        assert_eq!(asked.lock().unwrap().iter().map(|(_, p)| keys(p)).collect::<Vec<_>>(), [vec!["k3".to_owned()]]);
-        assert_eq!(store.lock().unwrap().get()["ranked"]["k1"]["reason"], json!("old pick"));
-        assert_eq!(store.lock().unwrap().get()["ranked"]["k2"]["by"], json!("agent"));
+        assert_eq!(
+            asked
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(_, p)| keys(p))
+                .collect::<Vec<_>>(),
+            [vec!["k3".to_owned()]]
+        );
+        assert_eq!(
+            store.lock().unwrap().get()["ranked"]["k1"]["reason"],
+            json!("old pick")
+        );
+        assert_eq!(
+            store.lock().unwrap().get()["ranked"]["k2"]["by"],
+            json!("agent")
+        );
     }
 
     #[tokio::test]
