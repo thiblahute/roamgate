@@ -999,7 +999,7 @@ impl CoreFamily for ReviewFamily {
             // Bun closes its own service before this one reads the file:
             // one writer, nothing lost across the flip.
             if let Err(error) = cx.reverse("review.release", json!({})).await {
-                tracing::debug!(scope = "review", error = %error.message, "release not answered");
+                tracing::warn!(scope = "review", error = %error.message, "release not answered");
             }
             if this.slot.lock().unwrap().epoch != epoch {
                 return;
@@ -1014,6 +1014,10 @@ impl CoreFamily for ReviewFamily {
                     // Bun let go of.
                     this.sockets.lock().unwrap().start(&cx, service.clone());
                     let _ = ready.send(Some(service));
+                    // What reached Bun's listeners meanwhile comes here.
+                    if let Err(error) = cx.reverse("review.socketsTaken", json!({})).await {
+                        tracing::warn!(scope = "review", error = %error.message, "sockets not handed over");
+                    }
                 }
                 Err(error) => {
                     tracing::warn!(scope = "review", error = %error, "reviews.sqlite not opened");

@@ -3748,8 +3748,6 @@ function reviewReverseTargets() {
     // The core takes the reviews: Bun's service stops and lets go of
     // reviews.sqlite before the core opens it.
     "review.release": async () => {
-      // The core listens on the agent sockets from now on.
-      reviewAgent?.stop();
       const service = reviewService;
       reviewService = null;
       reviewStorageForHistory = null;
@@ -3758,6 +3756,16 @@ function reviewReverseTargets() {
     },
     // A push of the core's service: what Bun does with it besides the
     // browsers (which the core's push reaches itself).
+    // The core's sockets took the paths over: what reached Bun's
+    // listeners before goes on to them. Bun's listeners stay, unreached
+    // (stopping one would remove the path), until the family comes back.
+    "review.socketsTaken": async () => {
+      reviewSocketsTaken.resolve(true);
+      logger.child("review").info("agent sockets handed to the Rust core", {
+        sockets: [...reviewAgentSockets].join(" "),
+      });
+      return {};
+    },
     "review.published": async (args: unknown) => {
       const push = (args ?? {}) as ReverseArgs;
       const sessionId = argText(push.sessionId);
@@ -4122,6 +4130,30 @@ function sendReviewAgents(): void {
     .catch(() => (reviewAgentsSent = ""));
 }
 
+/** Settles once the core listens on the agent sockets (true), or not. */
+let reviewSocketsTaken = Promise.withResolvers<boolean>();
+
+/**
+ * Where a request to Bun's agent socket goes while the core takes the
+ * family: the core's socket once it listens, after at most 15 s.
+ */
+async function reviewSocketElsewhere(
+  socketKey: string,
+): Promise<string | null> {
+  if (!reviewsOnCore()) return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const taken = await Promise.race([
+    reviewSocketsTaken.promise,
+    new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), 15_000);
+    }),
+  ]);
+  clearTimeout(timer);
+  return taken && reviewsOnCore()
+    ? getReviewAgent().socketPathFor(socketKey)
+    : null;
+}
+
 let reviewsWereOnCore = false;
 onOwnershipChanged(() => {
   const onCore = reviewsOnCore();
@@ -4138,12 +4170,16 @@ onOwnershipChanged(() => {
   }
   if (reviewAgentsTimer) clearInterval(reviewAgentsTimer);
   reviewAgentsTimer = null;
+  reviewSocketsTaken.resolve(false);
+  reviewSocketsTaken = Promise.withResolvers<boolean>();
   // The core's service and sockets stop before Bun opens reviews.sqlite
   // and listens again.
   void (coreFront?.callInternal("review", "close", {}) ?? Promise.resolve())
     .catch(() => {})
     .then(() => {
       if (reviewsOnCore()) return;
+      // Its listeners, unreached since the handover, go first.
+      reviewAgent?.stop();
       listenReviewAgentSockets();
       log.info("served by Bun again");
     });
@@ -4943,6 +4979,7 @@ function getReviewAgent(): ReviewAgentServer {
     claudeMod: claudeModHub,
     directory: reviewDirectory(),
     logger: logger.child("review"),
+    elsewhere: reviewSocketElsewhere,
     ...reviewAgentHost(),
   });
   return reviewAgent;

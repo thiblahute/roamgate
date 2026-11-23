@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 use roamgate_base::env::{Env, ProcessEnv};
 use roamgate_claude::plugin::{ClaudeModAction, claude_mod_host_script, claude_mod_integration};
 use roamgate_review::agent_socket::{
-    AgentConnection, AgentSocket, AgentSocketHost, AgentSocketOptions, ClaudeMods, Form, HostAsk,
-    HostError, HostFeatures, LOCAL_SOCKET_KEY,
+    AgentConnection, AgentExchange, AgentSocket, AgentSocketHost, AgentSocketOptions, ClaudeMods,
+    Form, HostAsk, HostError, HostFeatures, LOCAL_SOCKET_KEY,
 };
 use roamgate_review::error::{ReviewError, ReviewResult};
 use roamgate_review::service::{BoxFut, ReviewService};
@@ -227,13 +227,39 @@ impl Sockets {
             home: home.into(),
             host: Arc::new(ReverseSocketHost { cx: cx.clone() }),
             claude_mod: Some(Arc::new(ReverseMods { cx: cx.clone() })),
-            on_exchange: None,
+            // The parity suite's proof that the core served the socket.
+            on_exchange: Some(Arc::new(|exchange: &AgentExchange| {
+                roamgate_sidecar::core::note_served(
+                    &ProcessEnv,
+                    "review",
+                    &format!("agent {}", exchange.command),
+                );
+            })),
         }));
-        self.sync();
+        // Beside Bun's, then moved over its paths in one step: a client
+        // reaches Bun's listener or this one, never neither.
+        self.sync_at(true);
+        self.commit();
+    }
+
+    /// Moves the staged sockets over the paths Bun's listen on.
+    fn commit(&mut self) {
+        let Some(socket) = &self.socket else {
+            return;
+        };
+        for key in &self.listening {
+            if let Err(error) = socket.commit(key) {
+                tracing::warn!(scope = "review", key = %key, error = %error, "agent socket not taken over");
+            }
+        }
     }
 
     /// Listens on the keys wanted, stops the others.
     pub fn sync(&mut self) {
+        self.sync_at(false);
+    }
+
+    fn sync_at(&mut self, staged: bool) {
         let Some(socket) = &self.socket else {
             return;
         };
@@ -252,13 +278,15 @@ impl Sockets {
             .cloned()
             .collect::<Vec<_>>()
         {
-            let listened = if key == LOCAL_SOCKET_KEY {
-                socket.install_local().map(|_| ())
-            } else {
-                socket.listen(&key).map(|_| ())
+            let listened = match (key == LOCAL_SOCKET_KEY, staged) {
+                (true, false) => socket.install_local(),
+                (true, true) => socket.install_local_staged(),
+                (false, false) => socket.listen(&key).map(|_| ()),
+                (false, true) => socket.listen_staged(&key).map(|_| ()),
             };
             match listened {
                 Ok(()) => {
+                    tracing::info!(scope = "review", key = %key, "agent socket listening");
                     self.listening.insert(key);
                 }
                 Err(error) => {

@@ -225,12 +225,47 @@ impl AgentSocket {
     /// Listens for a connection's agents (`@local`: this host's, else an SSH
     /// connection's, forwarded there). Needs a tokio runtime.
     pub fn listen(&self, socket_key: &str) -> std::io::Result<PathBuf> {
+        self.listen_at(socket_key, false)
+    }
+
+    /// Listens beside a key's socket, at a path [`AgentSocket::commit`]
+    /// later moves over it: the server serving it until then keeps it.
+    pub fn listen_staged(&self, socket_key: &str) -> std::io::Result<PathBuf> {
+        self.listen_at(socket_key, true)
+    }
+
+    fn staged_path(&self, socket_key: &str) -> PathBuf {
+        let mut path = self.socket_path_for(socket_key).into_os_string();
+        path.push(".next");
+        PathBuf::from(path)
+    }
+
+    /// Moves a staged listener's socket over the key's own path, in one
+    /// step: a client finds the old server's or this one, never neither.
+    pub fn commit(&self, socket_key: &str) -> std::io::Result<PathBuf> {
+        let path = self.socket_path_for(socket_key);
+        let mut servers = self.0.servers.lock().unwrap();
+        let Some(entry) = servers.get_mut(socket_key) else {
+            return Err(std::io::Error::other("not listening"));
+        };
+        if entry.path != path {
+            std::fs::rename(&entry.path, &path)?;
+            entry.path = path.clone();
+        }
+        Ok(path)
+    }
+
+    fn listen_at(&self, socket_key: &str, staged: bool) -> std::io::Result<PathBuf> {
         if let Some(path) = self.socket_path(socket_key) {
             return Ok(path);
         }
         create_dir_mode(&self.0.socket_directory, 0o700)?;
         set_mode(&self.0.socket_directory, 0o700)?;
-        let path = self.socket_path_for(socket_key);
+        let path = if staged {
+            self.staged_path(socket_key)
+        } else {
+            self.socket_path_for(socket_key)
+        };
         let _ = std::fs::remove_file(&path);
         let listener = UnixListener::bind(&path)?;
         set_mode(&path, 0o600)?;
@@ -1496,7 +1531,18 @@ impl AgentSocket {
 
     /// Installs the client and points the well-known socket path here.
     pub fn install_local(&self) -> std::io::Result<()> {
-        let path = self.listen(LOCAL_SOCKET_KEY)?;
+        self.install_local_at(false)
+    }
+
+    /// [`AgentSocket::install_local`] with its socket staged: the link
+    /// points at the key's own path, which [`AgentSocket::commit`] takes.
+    pub fn install_local_staged(&self) -> std::io::Result<()> {
+        self.install_local_at(true)
+    }
+
+    fn install_local_at(&self, staged: bool) -> std::io::Result<()> {
+        self.listen_at(LOCAL_SOCKET_KEY, staged)?;
+        let path = self.socket_path_for(LOCAL_SOCKET_KEY);
         let home = &self.0.home;
         let base = home.join(REVIEW_HOME_DIR);
         let bin = base.join("bin");

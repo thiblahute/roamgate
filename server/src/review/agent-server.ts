@@ -326,6 +326,12 @@ export function createReviewAgentServer(args: {
   service: ReviewService;
   /** The bridge's private directory for sockets. */
   directory: string;
+  /**
+   * Where a request goes instead while the Rust core serves the agent
+   * sockets: its socket's path once it took the path over (a request
+   * that reached this listener before), or null to answer it here.
+   */
+  elsewhere?: (socketKey: string) => Promise<string | null>;
   connections: () => ReviewAgentConnection[];
   /**
    * What a request waits for first, if anything: the connections on their
@@ -1461,6 +1467,17 @@ export function createReviewAgentServer(args: {
         const command = url.pathname.replace(/^\/v1\//, "");
         if (request.method !== "POST" || command === url.pathname)
           return json({ error: "not found" }, 404);
+        // Handed over: a request that came on this listener goes on to the
+        // core's, as it was sent.
+        const forward = await args.elsewhere?.(socketKey);
+        if (forward)
+          return fetch(`http://localhost${url.pathname}${url.search}`, {
+            unix: forward,
+            method: request.method,
+            headers: request.headers,
+            body: await request.arrayBuffer(),
+            signal: request.signal,
+          });
         // Only a holder's log is larger than an agent's request.
         const limit =
           command === "hold_output"
