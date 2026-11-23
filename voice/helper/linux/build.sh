@@ -85,9 +85,6 @@ esac
 
 here=$(cd "$(dirname "$0")" && pwd)
 helper=$(dirname "$here")
-# The cases some tests read (contract/vectors), where /src/../../ finds
-# them in the container.
-vectors=$(dirname "$(dirname "$helper")")/contract/vectors
 image=${ROAMGATE_VOICE_BUILD_IMAGE:-roamgate-voice-build}
 cache=${ROAMGATE_VOICE_BUILD_CACHE:-roamgate-voice-build-cache}
 test=
@@ -100,6 +97,9 @@ cap=${CUDA_COMPUTE_CAP:-$(nvidia-smi --query-gpu=compute_cap --format=csv,nohead
 
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
+# The cases some tests read (contract/vectors), where /src/../../ finds
+# them in the container.
+vectors=$(cd "$helper/../../contract/vectors" && pwd)
 $yield podman build -t "$image" "$here"
 podman volume exists "$cache" || podman volume create "$cache" >/dev/null
 
@@ -107,10 +107,10 @@ podman volume exists "$cache" || podman volume create "$cache" >/dev/null
 # directory is not under the project: system-deps is told where its
 # manifest (the bundle, the plugins) is.
 $yield podman run --rm --security-opt label=disable \
+    -v "$vectors:/contract/vectors:ro" \
     ${test:+--device nvidia.com/gpu=all} \
     ${jobs:+-e CARGO_BUILD_JOBS=$jobs -e RUST_TEST_THREADS=$jobs} \
     -v "$helper:/src:ro" -v "$cache:/cache" -v "$out:/out" \
-    -v "$vectors:/contract/vectors:ro" \
     -e CUDA_COMPUTE_CAP="$cap" -e CMAKE_CUDA_ARCHITECTURES="$cap" \
     -e SYSTEM_DEPS_BUILD_MANIFEST=/src/Cargo.toml -e TEST="$test" \
     "$image" sh -euc '
