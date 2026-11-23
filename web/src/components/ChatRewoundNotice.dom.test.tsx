@@ -32,7 +32,7 @@ if (
   const { createRoot } = await import("react-dom/client");
 
   // As the history has it after the rewind recorded in
-  // server/src/agent/session-rewind.fixture.ts.
+  // contract/vectors/session-rewind-fixture.json.
   const entry = {
     id: "n1",
     role: "user" as const,
