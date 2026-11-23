@@ -104,6 +104,29 @@ roamgate-mr-reviews	server/src/mr-reviews/worktree.test.ts	S20
 roamgate-workspace	server/src/workspace/	S17
 roamgate-workspace	server/src/worktree/	S17
 roamgate-workspace	server/src/config/workspace-tree	S17
-roamgate-voice-server	server/src/voice/	S22
+
+# roamgate-voice-server holds voice.json, profiles, speakers, Kokoro's
+# languages, the helper supervisor, hardware, models, downloads, setup,
+# low-GPU, stock voices and the library (S22, landed Bun-owned); these wait.
+# voice-helper.test.ts: its voice socket and routes cases, and two launch
+# cases that spawn a process.
+roamgate-voice-server	server/src/voice/call-audio	S22
+roamgate-voice-server	server/src/voice/turn-causes	S22
+roamgate-voice-server	server/src/voice/voice-answers	S22
+roamgate-voice-server	server/src/voice/voice-cleaner	S22
+roamgate-voice-server	server/src/voice/voice-dictation	S22
+roamgate-voice-server	server/src/voice/voice-errands	S22
+roamgate-voice-server	server/src/voice/voice-front	S22
+roamgate-voice-server	server/src/voice/voice-helper	S22
+roamgate-voice-server	server/src/voice/voice-images	S22
+roamgate-voice-server	server/src/voice/voice-memory	S22
+roamgate-voice-server	server/src/voice/voice-research	S22
+roamgate-voice-server	server/src/voice/voice-router	S22
+roamgate-voice-server	server/src/voice/voice-surprise	S22
+roamgate-voice-server	server/src/voice/voice-taste	S22
+roamgate-voice-server	server/src/voice/voice-test-env	S22
+roamgate-voice-server	server/src/voice/voice-tools	S22
+roamgate-voice-server	server/src/voice/voice-waiting	S22
+roamgate-voice-server	server/src/voice/voice-youtube	S22
 roamgate-voice-server	server/src/http/voice	S22
 roamgate-voice-server	server/src/http/call-handoff	S22
