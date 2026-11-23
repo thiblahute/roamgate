@@ -49,6 +49,13 @@ export type { CallContext, PushMessage } from "./channel";
 export const CORE_BIN_ENV = "ROAMGATE_CORE_BIN";
 export const CORE_TEST_ENV = "ROAMGATE_CORE_TEST";
 
+/** Whether a Rust core is configured (`ROAMGATE_CORE_BIN`). */
+export function coreConfigured(
+  env: Record<string, string | undefined>,
+): boolean {
+  return !!env[CORE_BIN_ENV];
+}
+
 export type ReverseTarget = (
   args: unknown,
   ctx: CallContext,
@@ -87,6 +94,11 @@ export type CoreFront = {
   ) => Promise<unknown>;
   /** Whether the core answers `method` now. */
   routesRpc: (method: string) => boolean;
+  /**
+   * The side the owners table gives `family`, whether or not the core is
+   * connected (bunOwns says who serves it now).
+   */
+  tableOwner: (family: string) => "rust" | "bun";
   /** Forwards a browser RPC to the core: its result, or a ChannelError. */
   callRpc: (
     method: string,
@@ -262,6 +274,7 @@ export function startCoreFront(deps: CoreFrontDeps): CoreFront | null {
     supervisor,
     routesRpc: (method) =>
       routeRpc(method, families, ownersOf(), coreState(), test) === "rust",
+    tableOwner: (family) => (ownersOf()[family] === "rust" ? "rust" : "bun"),
     callRpc: async (method, params, ctx, signal) =>
       channelOrThrow().call(method, params, ctx, signal ? { signal } : {}),
     callInternal: async (family, op, params, signal) =>

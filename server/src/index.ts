@@ -206,6 +206,8 @@ import {
   claudeStartHookInstallCommand,
 } from "./conversation/claude-start-hook";
 import { createActivityRecorder } from "./activity/recorder";
+import { createActivityFront } from "./activity/front";
+import { activeTestClock, realTimers } from "./utils/test-clock";
 import { readActivityTimeline } from "./activity/timeline-rpc";
 import { subjectsFromSettings } from "./activity/subject-settings";
 import { openActivityReader } from "./activity/reader";
@@ -271,6 +273,7 @@ import { isStandaloneBinary } from "./config/standalone";
 import {
   bunOwns,
   type CallContext,
+  coreConfigured,
   type CoreFront,
   onOwnershipChanged,
   type PushMessage,
@@ -279,6 +282,7 @@ import {
   startCoreFront,
 } from "./core-channel";
 import { FAMILIES, httpFamilyOf } from "./core-channel/protocol";
+import { readOwners } from "./core-channel/owners";
 import { rpcLogLevel } from "./utils/rpc-logging";
 import { handleReviewRpc, isReviewMethod } from "./review/rpc";
 import { createMrReviews, type MrReviews } from "./mr-reviews/module";
@@ -459,39 +463,81 @@ watchLoopStalls({
 const agentSeen = createAgentSeenStore();
 // Seen marks hold for one Herdr server process: its boot id, per connection.
 const herdrBoots = createHerdrBootCache();
+/**
+ * Git on a connection's host for the activity log's branches and remotes:
+ * read-only, behind interactive SSH work (Bun's recorder, and the core's
+ * through the `activity.hostScript` reverse call).
+ */
+async function activityHostScript(
+  connectionId: string,
+  script: string,
+): Promise<{ code: number; stdout: string }> {
+  const runtime = connectionManager.readyRuntime(connectionId);
+  if (!runtime) throw new Error(`connection not ready: ${connectionId}`);
+  const host = runtime.sshHost();
+  // No POSIX shell to read with: the log keeps what Herdr says.
+  if (
+    runtime.remotePlatform === "windows" ||
+    (!host && process.platform === "win32")
+  )
+    return { code: 0, stdout: "" };
+  const argv = host
+    ? sshReadCommandArgv(host, script, [], "activity.repo")
+    : ["/bin/sh", "-c", script];
+  return runInSshLane("background", () =>
+    runProcessWithCodeTimeout(argv, 20_000),
+  );
+}
 // The activity log (activity/recorder.ts): opt-in, `activity` in settings.json.
-const activity = createActivityRecorder({
-  settings: async () => activitySettings(await readGuiSettings()),
-  directory: () => dataRoot(),
-  herdrCall: async (connectionId, method, params) => {
-    const lease = connectionManager.readyRuntimeLease(connectionId);
-    if (!lease) throw new Error(`connection not ready: ${connectionId}`);
-    return lease.runtime.herdr.call(method, params, 5000);
+// With a Rust core, the activity family's owner records (activity/front.ts).
+const createBunActivityRecorder = () =>
+  createActivityRecorder({
+    settings: async () => activitySettings(await readGuiSettings()),
+    directory: () => dataRoot(),
+    herdrCall: async (connectionId, method, params) => {
+      const lease = connectionManager.readyRuntimeLease(connectionId);
+      if (!lease) throw new Error(`connection not ready: ${connectionId}`);
+      return lease.runtime.herdr.call(method, params, 5000);
+    },
+    // Conversation mode's claude: Herdr's state for its pane is not its own.
+    ownedAgents: (connectionId) =>
+      connectionManager.readyRuntime(connectionId)?.conversation.ownedPanes() ??
+      [],
+    // Branches and remotes: read-only git, behind interactive SSH work.
+    runHostScript: activityHostScript,
+    logger: logger.child("activity"),
+  });
+const activity = createActivityFront({
+  createRecorder: createBunActivityRecorder,
+  // Without ROAMGATE_CORE_BIN: Bun's recorder, exactly as before.
+  core: coreConfigured(process.env)
+    ? () =>
+        coreFront && {
+          owned: () => !bunOwns("activity"),
+          expected: () => coreFront?.tableOwner("activity") === "rust",
+          call: (op, params) => coreFront!.callInternal("activity", op, params),
+          presence: (params, ctx) =>
+            coreFront!.callRpc("activity.presence", params, ctx),
+        }
+    : null,
+  heldAtStart:
+    coreConfigured(process.env) &&
+    readOwners(join(dataRoot(), "runtime")).owners.activity === "rust",
+  socketId: socketIdOf,
+  // Its own waits are real time: a test clock waits for them (settle).
+  setTimeout: (run, ms) => {
+    const timer = realTimers.setTimeout(run, ms);
+    (timer as { unref?: () => void }).unref?.();
+    return timer;
   },
-  // Conversation mode's claude: Herdr's state for its pane is not its own.
-  ownedAgents: (connectionId) =>
-    connectionManager.readyRuntime(connectionId)?.conversation.ownedPanes() ??
-    [],
-  // Branches and remotes: read-only git, behind interactive SSH work.
-  runHostScript: async (connectionId, script) => {
-    const runtime = connectionManager.readyRuntime(connectionId);
-    if (!runtime) throw new Error(`connection not ready: ${connectionId}`);
-    const host = runtime.sshHost();
-    // No POSIX shell to read with: the log keeps what Herdr says.
-    if (
-      runtime.remotePlatform === "windows" ||
-      (!host && process.platform === "win32")
-    )
-      return { code: 0, stdout: "" };
-    const argv = host
-      ? sshReadCommandArgv(host, script, [], "activity.repo")
-      : ["/bin/sh", "-c", script];
-    return runInSshLane("background", () =>
-      runProcessWithCodeTimeout(argv, 20_000),
-    );
-  },
+  clearTimeout: (timer) =>
+    realTimers.clearTimeout(timer as ReturnType<typeof setTimeout>),
   logger: logger.child("activity"),
 });
+onOwnershipChanged(() => activity.ownershipChanged());
+// A test clock moves only once the core recorded what it was sent.
+if (coreConfigured(process.env))
+  activeTestClock()?.settleBefore(() => activity.settle());
 const timeReportDeps = {
   settings: async () => {
     const settings = await readGuiSettings();
@@ -1062,6 +1108,16 @@ const coreReverseTargets = {
       throw new Error("activity.dayInput needs a date, YYYY-MM-DD");
     const { activity } = await timeReportDeps.settings();
     return dayInput(timeReportDeps, activity, date);
+  },
+  // The activity family in Rust: git on a connection's host.
+  "activity.hostScript": async (args: unknown) => {
+    const { connection_id, script } = (args ?? {}) as {
+      connection_id?: unknown;
+      script?: unknown;
+    };
+    if (typeof connection_id !== "string" || typeof script !== "string")
+      throw new Error("activity.hostScript needs a connection_id and a script");
+    return activityHostScript(connection_id, script);
   },
   // The herdr_setup family: the default connection is still Bun's.
   "herdr.setupGuard": async () => herdrSetupGuard(),
@@ -4259,6 +4315,7 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
         ws,
         connection.identity.id,
         params,
+        coreContext,
       );
       sendReply({ id, result }, method);
     } catch (e) {
@@ -5806,11 +5863,12 @@ function stopManagerOnce(): Promise<void> {
   stopNetworkWatch();
   connectionProfiles.stopSupervision();
   managerStopTask ??= (async () => {
-    // The core first: what it owns stops writing before Bun's own goes.
-    await coreFront?.stop();
     // End the attention spans before the connections go: a shutdown is not
-    // a disconnect.
+    // a disconnect. The activity log first: where the core records it, the
+    // core's recorder stops before the channel goes.
     await activity.stop();
+    // The core: what it owns stops writing before Bun's own goes.
+    await coreFront?.stop();
     // Pause the harness before taking away the runtimes its reads depend on.
     await assistantServiceTask
       ?.then((assistant) => assistant.dispose())

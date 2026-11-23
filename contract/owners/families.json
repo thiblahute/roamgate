@@ -44,7 +44,8 @@
       "rpc": ["bridge.activity.", "activity."],
       "http": [],
       "files": ["file:activity.sqlite"],
-      "shadow": ["bridge.activity.timeline"]
+      "shadow": ["bridge.activity.timeline"],
+      "cli": ["activity"]
     },
     "settings": {
       "phase": 3,

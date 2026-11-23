@@ -40,19 +40,25 @@ import { type ActivityStore, type NewEvent, openActivityStore } from "./store";
 export type ActivityRecorder = {
   /** True once recording, false when off or the log could not be opened. */
   ready(): Promise<boolean>;
-  connectionStatus(connectionId: string, state: string): void;
-  herdrEvent(connectionId: string, event: unknown): void;
+  /** `ts`: when the signal arrived, when it is applied later (held). */
+  connectionStatus(connectionId: string, state: string, ts?: number): void;
+  herdrEvent(connectionId: string, event: unknown, ts?: number): void;
   /** A `pane.list` result, and when that listing was started. */
-  paneList(connectionId: string, result: unknown, startedAt: number): void;
+  paneList(
+    connectionId: string,
+    result: unknown,
+    startedAt: number,
+    ts?: number,
+  ): void;
   /** An agent Roamgate runs itself (`ownedAgents`) changed state. */
-  ownedAgentChanged(connectionId: string, paneId: string): void;
+  ownedAgentChanged(connectionId: string, paneId: string, ts?: number): void;
   /** A browser's presence report; `socket` identifies the browser page. */
   presence(
     socket: object,
     connectionId: string,
     params: unknown,
   ): Promise<PresenceReply>;
-  socketClosed(socket: object): void;
+  socketClosed(socket: object, ts?: number): void;
   /** Resolves once every signal received so far is applied. */
   flush(): Promise<void>;
   /** Applies pending signals (bounded), then ends every span and the session. */
@@ -1172,26 +1178,26 @@ export function createActivityRecorder(options: {
 
   return {
     ready: () => init,
-    connectionStatus(connectionId, state) {
+    connectionStatus(connectionId, state, at) {
       if (stopped) return;
-      const ts = now();
+      const ts = at ?? now();
       enqueue(() => handleStatus(connection(connectionId), ts, state));
     },
-    herdrEvent(connectionId, event) {
+    herdrEvent(connectionId, event, at) {
       if (stopped) return;
-      const ts = now();
+      const ts = at ?? now();
       enqueue(() => handleHerdrEvent(connection(connectionId), ts, event));
     },
-    paneList(connectionId, result, startedAt) {
+    paneList(connectionId, result, startedAt, at) {
       if (stopped) return;
-      const ts = now();
+      const ts = at ?? now();
       enqueue(() =>
         handlePaneList(connection(connectionId), ts, result, startedAt),
       );
     },
-    ownedAgentChanged(connectionId, paneId) {
+    ownedAgentChanged(connectionId, paneId, at) {
       if (stopped) return;
-      const ts = now();
+      const ts = at ?? now();
       enqueue(() => handleOwnedAgent(connection(connectionId), ts, paneId));
     },
     async presence(socket, connectionId, params) {
@@ -1208,9 +1214,9 @@ export function createActivityRecorder(options: {
         attention: !!clients.get(socket)?.span,
       };
     },
-    socketClosed(socket) {
+    socketClosed(socket, at) {
       if (stopped) return;
-      const ts = now();
+      const ts = at ?? now();
       enqueue(() => handleSocketClosed(socket, ts));
     },
     async flush() {

@@ -118,6 +118,7 @@ export class TestClock {
   #refListener: ((hasRef: boolean) => void) | null = null;
   #hadRef = false;
   #followers = new Set<(now: number) => Promise<unknown>>();
+  #settlers = new Set<() => Promise<unknown>>();
 
   constructor(
     epoch: number,
@@ -219,6 +220,15 @@ export class TestClock {
       );
     }
     return this.#serialised(async () => {
+      // What is in flight across the processes lands first, at the time it
+      // was sent (the Rust core's recorder answering a held signal).
+      for (const settle of this.#settlers) {
+        try {
+          await settle();
+        } catch {
+          // The clock keeps going.
+        }
+      }
       const now = await this.#fireUntil(this.#now + ms);
       // What follows this clock (the Rust core's families) catches up
       // before the advance is answered.
@@ -240,6 +250,15 @@ export class TestClock {
   follow(follower: (now: number) => Promise<unknown>): () => void {
     this.#followers.add(follower);
     return () => this.#followers.delete(follower);
+  }
+
+  /**
+   * Awaits `settle` before each `advance` moves the time. Returns the
+   * unsubscribe.
+   */
+  settleBefore(settle: () => Promise<unknown>): () => void {
+    this.#settlers.add(settle);
+    return () => this.#settlers.delete(settle);
   }
 
   #serialised(step: () => Promise<number>): Promise<number> {
