@@ -17,9 +17,16 @@
 //! (`"$session"` likewise). `hello` lists events sent at start. Every JSON
 //! request is appended to `roamgate-voice.frames.jsonl` in the fakes
 //! directory, and audio frames as `{"audio": <session>, "bytes": n}`.
+//!
+//! With the script's `timestamps: true` (the performance bench), every line
+//! of that log also has `at_us` (microseconds since the Unix epoch, taken
+//! as the frame was read) and `pid`, each frame the fake sends is logged
+//! once written as `{"sent": <frame>}`, and the end of its input as
+//! `{"eof": true}`.
 
 use std::io::{self, Write};
 use std::net::TcpListener;
+use std::sync::OnceLock;
 
 use serde_json::{Map, Value, json};
 
@@ -27,9 +34,19 @@ use super::script::Script;
 
 pub use roamgate_protocol::frames::{AUDIO, JSON, MAX_FRAME, encode, read};
 
+/// Whether the log carries times (the script's `timestamps`).
+static TIMESTAMPS: OnceLock<bool> = OnceLock::new();
+
+fn timestamps() -> bool {
+    TIMESTAMPS.get().copied().unwrap_or(false)
+}
+
 fn send(out: &mut impl Write, value: &Value) {
     let _ = out.write_all(&encode(JSON, value.to_string().as_bytes()));
     let _ = out.flush();
+    if timestamps() {
+        log_frame(&json!({"sent": value}));
+    }
 }
 
 /// A signalling server that greets each peer.
@@ -101,6 +118,21 @@ fn log_frame(value: &Value) {
     let Some(dir) = super::script::fakes_dir() else {
         return;
     };
+    let stamped;
+    let value = match value {
+        Value::Object(map) if timestamps() => {
+            let at_us = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_micros() as u64)
+                .unwrap_or(0);
+            let mut map = map.clone();
+            map.insert("at_us".into(), json!(at_us));
+            map.insert("pid".into(), json!(std::process::id()));
+            stamped = Value::Object(map);
+            &stamped
+        }
+        other => other,
+    };
     if let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -126,6 +158,13 @@ fn list(script: &Script, key: &str) -> Vec<String> {
 }
 
 pub fn run(script: &Script) -> i32 {
+    let _ = TIMESTAMPS.set(
+        script
+            .extra
+            .get("timestamps")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    );
     let replies = script
         .extra
         .get("replies")
@@ -161,7 +200,12 @@ pub fn run(script: &Script) -> i32 {
     loop {
         let (kind, payload) = match read(&mut input) {
             Ok(Some(frame)) => frame,
-            Ok(None) => return 0,
+            Ok(None) => {
+                if timestamps() {
+                    log_frame(&json!({"eof": true}));
+                }
+                return 0;
+            }
             Err(error) => {
                 eprintln!("fake voice helper: {error}");
                 return 2;

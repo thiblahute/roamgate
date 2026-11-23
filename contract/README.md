@@ -72,9 +72,12 @@ of the user's review and work stores, fake ssh, glab, gh and headless
 Claude that count what they are asked): start time, RSS idle and with 3
 connections and 20 warm terminals, RPC latency per family, terminal
 throughput, echo latency and bytes on the wire, git status over ssh, inbox
-forge calls (on the test clock), archive ingest and search, and conversation
-streaming. It waits while GameMode reports a game and deletes the world
-after.
+forge calls (on the test clock), archive ingest and search, conversation
+streaming, and voice latency: the final transcript to the first audio of
+the reply, and the helper ping round trip, both against the parity suite's
+fake voice helper (`parity-fake`, built by the run unless
+`BENCH_PARITY_FAKE` names it), which logs when it reads and writes each
+frame. It waits while GameMode reports a game and deletes the world after.
 
 ```sh
 # The Bun baseline of this machine, stored with its gates:
@@ -82,6 +85,8 @@ bun scripts/bench/run.ts --baseline contract/perf/baseline.json --machine deskto
 # Another server in the same world, then its gates against the baseline:
 BENCH_SERVER_CMD="path/to/roamgate" bun scripts/bench/run.ts --out run.json
 bun scripts/bench/run.ts compare contract/perf/baseline.json run.json --machine desktop
+# Some metrics again (--only), replacing only those of the machine's baseline:
+bun scripts/bench/run.ts --only voice --baseline contract/perf/baseline.json --machine desktop
 ```
 
 Compare only runs of the same machine, under the same conditions (each

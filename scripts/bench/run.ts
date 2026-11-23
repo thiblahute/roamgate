@@ -30,6 +30,7 @@ import {
   measureTerminal,
   type Options,
 } from "./metrics";
+import { measureVoice } from "./voice";
 
 /** What the Rust server must meet, per metric (plan section 5.9). */
 export const GATES: Record<string, { gate: string; rule: string }> = {
@@ -68,7 +69,7 @@ export const GATES: Record<string, { gate: string; rule: string }> = {
   },
   voice: {
     gate: "not_later",
-    rule: "not measured yet: needs a fake voice helper speaking its frame protocol (voice-helper.ts) and a voice socket client; final transcript to first audio and helper ping round trip",
+    rule: "final_to_first_audio.ms.p50 and helper_ping.ms.p50 not later than Bun's",
   },
 };
 
@@ -81,6 +82,7 @@ const ALL = [
   "forge",
   "archive",
   "conversation",
+  "voice",
 ] as const;
 
 function sh(argv: string[]) {
@@ -177,6 +179,7 @@ async function main() {
         forge: measureForge,
         archive: measureArchive,
         conversation: measureConversation,
+        voice: measureVoice,
       }[name as (typeof ALL)[number]];
       try {
         metrics[name] = await run(env, options);
@@ -211,13 +214,37 @@ async function main() {
   if (!values.out && !values.baseline) process.stdout.write(text);
 }
 
-/** Stores a run as a machine's baseline, with the gates. */
-function storeBaseline(path: string, machine: string, result: unknown) {
+/**
+ * Stores a run as a machine's baseline, with the gates. A run of some
+ * metrics only (--only) replaces those in the machine's baseline and keeps
+ * the others; `added` says when and on what each was measured.
+ */
+function storeBaseline(
+  path: string,
+  machine: string,
+  result: Record<string, any>,
+) {
   const baseline = existsSync(path)
     ? JSON.parse(readFileSync(path, "utf8"))
     : { version: 1, gates: GATES, machines: {} };
   baseline.gates = GATES;
-  baseline.machines[machine] = result;
+  const kept = baseline.machines[machine];
+  const names = Object.keys(result.metrics ?? {});
+  if (kept && names.length < ALL.length) {
+    for (const name of names) {
+      kept.metrics[name] = result.metrics[name];
+      kept.conditions[name] = result.conditions?.[name];
+      kept.added = {
+        ...kept.added,
+        [name]: {
+          started: result.started,
+          finished: result.finished,
+          quick: result.quick,
+          machine: result.machine,
+        },
+      };
+    }
+  } else baseline.machines[machine] = result;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(baseline, null, 2)}\n`);
 }
@@ -377,6 +404,22 @@ function compare(
       now.conversation.result_ms?.p50,
     );
   }
+  if (base.voice && now.voice) {
+    notAbove(
+      "voice.final_to_first_audio.p50",
+      base.voice.final_to_first_audio?.ms?.p50,
+      now.voice.final_to_first_audio?.ms?.p50,
+    );
+    notAbove(
+      "voice.helper_ping.p50",
+      base.voice.helper_ping?.ms?.p50,
+      now.voice.helper_ping?.ms?.p50,
+    );
+  }
+  // A metric the baseline has that failed in the run is no pass.
+  for (const metric of Object.keys(base))
+    if (now[metric]?.error)
+      check(metric, false, `failed in the run: ${now[metric].error}`);
   console.log(checks.join("\n"));
   if (failures.length) process.exit(1);
 }

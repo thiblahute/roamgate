@@ -226,6 +226,34 @@ fn the_voice_helper_answers_frames_and_starts_signalling() {
     assert_eq!(replies[3], json!({"id": 3, "ok": true, "done": true}));
 }
 
+#[test]
+fn the_voice_helper_times_its_frames_when_asked() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("roamgate-voice.json"),
+        json!({"timestamps": true}).to_string(),
+    )
+    .unwrap();
+    let input = voice::encode(voice::JSON, br#"{"op":"ping","id":1}"#);
+    let output = fake(dir.path(), "roamgate-voice", &[], &input);
+    assert!(output.status.success());
+    let log = std::fs::read_to_string(dir.path().join("roamgate-voice.frames.jsonl")).unwrap();
+    let lines: Vec<Value> = log
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 3);
+    assert_eq!(lines[0]["op"], "ping");
+    assert_eq!(lines[1]["sent"], json!({"id": 1, "ok": true}));
+    assert_eq!(lines[2]["eof"], true);
+    let times: Vec<u64> = lines
+        .iter()
+        .map(|line| line["at_us"].as_u64().unwrap())
+        .collect();
+    assert!(times[0] > 0 && times.windows(2).all(|pair| pair[0] <= pair[1]));
+    assert!(lines.iter().all(|line| line["pid"] == lines[0]["pid"]));
+}
+
 #[tokio::test]
 async fn herdr_answers_on_its_own_types_and_refuses_the_rest() {
     let dir = tempfile::tempdir().unwrap();
