@@ -1547,44 +1547,8 @@ pub fn merge_request_source(checkout: &ReviewCheckout) -> Option<MergeRequestSou
     })
 }
 
-/// A remote's host and project path.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RemoteProject {
-    pub host: String,
-    pub project: String,
-}
-
-/// The host and project path of a remote URL: ssh://, scp-like
-/// (user@host:path) and http(s); none for local paths. An SSH port is not
-/// part of the host.
-pub fn remote_project(url: &str) -> Option<RemoteProject> {
-    static FULL: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)^(?:ssh|git\+ssh|https?)://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+)$").unwrap()
-    });
-    static SCP: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"^(?:[^@/:]+@)?([^/:]+):(.+)$").unwrap());
-    static WINDOWS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^[a-z]:[\\/]").unwrap());
-    let found = FULL.captures(url).or_else(|| {
-        // C:\path is a Windows path, not host C.
-        SCP.captures(url)
-            .filter(|found| !found[2].starts_with("//") && !WINDOWS.is_match(url))
-    })?;
-    let project = found[2].trim_start_matches('/').trim_end_matches('/');
-    let project = project.strip_suffix(".git").unwrap_or(project);
-    if !project.contains('/') || project.starts_with('~') {
-        return None;
-    }
-    Some(RemoteProject {
-        host: found[1].to_lowercase(),
-        project: project.to_owned(),
-    })
-}
-
-/// Whether a remote is on glab's host; GitLab often serves SSH on
-/// ssh.<host>.
-pub fn on_gitlab_host(remote_host: &str, gitlab_host: &str) -> bool {
-    remote_host == gitlab_host || remote_host == format!("ssh.{gitlab_host}")
-}
+// The remote URL parsing is crate::remote's, shared with the MR reviews.
+pub use crate::remote::{RemoteProject, on_gitlab_host, remote_project};
 
 /// The GitLab host to ask about a remote's host: glab's default host, or
 /// another one glab is logged in to; none when glab knows none.
