@@ -64,6 +64,107 @@ pub fn write(output: &mut impl Write, kind: u8, payload: &[u8]) -> io::Result<()
     output.flush()
 }
 
+/// What came is not a frame: something else wrote on the stream (a library
+/// printing on the voice helper's stdout). `bytes` are the first of what
+/// came there, escaped (server/src/utils/frames.ts FrameError).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameError {
+    pub bytes: String,
+}
+
+impl std::fmt::Display for FrameError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "not a frame: {}", self.bytes)
+    }
+}
+
+impl std::error::Error for FrameError {}
+
+/// The first `count` of `bytes` as text: other bytes as \xNN.
+pub fn escape_bytes(bytes: &[u8], count: usize) -> String {
+    let mut text = String::new();
+    for &byte in bytes.iter().take(count) {
+        if (0x20..0x7f).contains(&byte) && byte != 0x5c {
+            text.push(byte as char);
+        } else {
+            text.push_str(&format!("\\x{byte:02x}"));
+        }
+    }
+    if bytes.len() > count {
+        text.push_str("...");
+    }
+    text
+}
+
+/// Splits a byte stream into frames, however it arrives (FrameReader of
+/// server/src/utils/frames.ts). What cannot be a frame (a length of 0 or
+/// past the maximum, a kind not among `kinds`) breaks the stream for good:
+/// `error` says what came, and nothing after it is read.
+#[derive(Debug)]
+pub struct FrameReader {
+    buffer: Vec<u8>,
+    kinds: Vec<u8>,
+    max_frame: usize,
+    pub error: Option<FrameError>,
+}
+
+impl Default for FrameReader {
+    fn default() -> Self {
+        Self::new(&[JSON, AUDIO], MAX_FRAME)
+    }
+}
+
+impl FrameReader {
+    pub fn new(kinds: &[u8], max_frame: usize) -> Self {
+        Self {
+            buffer: Vec::new(),
+            kinds: kinds.to_vec(),
+            max_frame,
+            error: None,
+        }
+    }
+
+    /// The frames `chunk` completes (kind, payload), up to what is not a
+    /// frame, if any.
+    pub fn push(&mut self, chunk: &[u8]) -> Vec<(u8, Vec<u8>)> {
+        if self.error.is_some() {
+            return Vec::new();
+        }
+        self.buffer.extend_from_slice(chunk);
+        let mut frames = Vec::new();
+        let mut at = 0;
+        while self.buffer.len() - at >= 4 {
+            let header = [
+                self.buffer[at],
+                self.buffer[at + 1],
+                self.buffer[at + 2],
+                self.buffer[at + 3],
+            ];
+            let length = u32::from_le_bytes(header) as usize;
+            if length == 0
+                || length > self.max_frame
+                || (self.buffer.len() - at > 4 && !self.kinds.contains(&self.buffer[at + 4]))
+            {
+                self.error = Some(FrameError {
+                    bytes: escape_bytes(&self.buffer[at..], 200),
+                });
+                self.buffer = Vec::new();
+                return frames;
+            }
+            if self.buffer.len() - at - 4 < length {
+                break;
+            }
+            frames.push((
+                self.buffer[at + 4],
+                self.buffer[at + 5..at + 4 + length].to_vec(),
+            ));
+            at += 4 + length;
+        }
+        self.buffer.drain(..at);
+        frames
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

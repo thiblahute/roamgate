@@ -7226,6 +7226,8 @@ dependencies = [
 name = "roamgate-voice-server"
 version = "0.0.0"
 dependencies = [
+ "base64 0.22.1",
+ "futures-util",
  "hex",
  "indexmap",
  "rand 0.9.5",
@@ -7233,6 +7235,7 @@ dependencies = [
  "roamgate-agents",
  "roamgate-base",
  "roamgate-protocol",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",

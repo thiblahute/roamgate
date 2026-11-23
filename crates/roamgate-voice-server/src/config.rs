@@ -423,7 +423,8 @@ pub fn read_voice_config(path: &Path) -> Result<VoiceConfig, String> {
 fn check(path: &str, config: Map<String, Value>) -> Result<VoiceConfig, String> {
     let get = |key: &str| config.get(key);
     let bad = |message: String| Err(format!("{path}: {message}"));
-    for key in ["helper"] {
+    {
+        let key = "helper";
         let Some(value) = get(key)
             .and_then(Value::as_str)
             .filter(|value| !value.is_empty())
@@ -690,4 +691,4 @@ pub fn write_front_mode(mode: FrontMode, path: &Path) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

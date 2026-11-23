@@ -10,6 +10,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+base64 = "0.22"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 indexmap = { version = "2", features = ["serde"] }
 rand = "0.9"
@@ -20,6 +22,9 @@ roamgate-protocol = { path = "../roamgate-protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["rt", "sync", "macros", "process", "io-util", "time", "fs"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process"] }
 
 [dev-dependencies]
 roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
