@@ -19,6 +19,7 @@ pub mod router;
 pub mod seam;
 pub mod taste;
 pub mod test_env;
+pub mod tools;
 pub mod turn_causes;
 pub mod waiting;
 pub mod youtube;
