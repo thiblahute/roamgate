@@ -9,6 +9,7 @@ mod call_helper;
 mod dictation;
 mod handoff;
 mod listen;
+mod stuck;
 mod with_helper;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
