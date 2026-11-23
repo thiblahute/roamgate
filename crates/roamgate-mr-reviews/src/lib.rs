@@ -28,6 +28,7 @@
 //! | [`home`] | A request's home: its own worktree workspace, review and agent | mr-reviews/home.ts |
 //! | [`effort_service`] | The efforts' service: derived when due, cards, overlaps; their RPCs and parts | mr-reviews/effort-service.ts |
 //! | [`history`] | What the Reviews authored: export, import preview, apply | history/mr-reviews.ts (export and import), history/format.ts stableJson |
+//! | [`module`] | The reviews module: every service wired together, settings.json, pushes, and the module's own methods | mr-reviews/module.ts |
 //! | [`workspace_tree`] | The Workspaces tree's paths, ancestors and live resolution | shared/workspaceTree.ts (in part) |
 
 pub mod agent;
@@ -50,6 +51,7 @@ pub mod inbox;
 pub mod inference;
 pub mod lanes;
 pub mod links;
+pub mod module;
 pub mod open;
 pub mod order;
 pub mod overrides;
