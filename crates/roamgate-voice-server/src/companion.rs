@@ -7,9 +7,11 @@
 pub mod answers;
 pub mod claude;
 pub mod cleaner;
+pub mod errands;
 pub mod images;
 pub mod keyed;
 pub mod memory_files;
+pub mod router;
 pub mod taste;
 pub mod test_env;
 pub mod turn_causes;

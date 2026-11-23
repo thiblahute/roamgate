@@ -228,6 +228,7 @@ fn fake_claude(
             kept.clone(),
             Arc::new(move |content| vec![fake::result(&answer(content.as_str().unwrap()))]),
         )
+        .0
     });
     (spawn, written, spawned)
 }

@@ -502,7 +502,7 @@ impl Worker {
         prompt: &str,
         on_text: Option<OnText>,
         images: &[PromptImage],
-    ) -> impl Future<Output = Result<String, String>> + Send + 'static {
+    ) -> impl Future<Output = Result<String, String>> + Send + use<> {
         let (tx, rx) = oneshot::channel();
         {
             let mut state = self.state.lock().unwrap();
@@ -564,10 +564,12 @@ impl Drop for AskGuard {
     }
 }
 
-/// For tests: a fake session answering each message's content with
+/// For tests: fake sessions answering each message's content with
 /// `answer`, keeping what was written.
 #[cfg(test)]
 pub(crate) mod fake {
+    use tokio_util::sync::CancellationToken;
+
     use super::*;
 
     #[derive(Clone, Default)]
@@ -577,15 +579,31 @@ pub(crate) mod fake {
         pub fn all(&self) -> Vec<String> {
             self.0.lock().unwrap().clone()
         }
+
+        /// The messages' contents (their text when it is one).
+        pub fn contents(&self) -> Vec<String> {
+            self.all()
+                .iter()
+                .map(|line| {
+                    let message: Value = serde_json::from_str(line).unwrap();
+                    match &message["message"]["content"] {
+                        Value::String(text) => text.clone(),
+                        other => other.to_string(),
+                    }
+                })
+                .collect()
+        }
     }
 
     pub type Answer = Arc<dyn Fn(&Value) -> Vec<String> + Send + Sync>;
 
-    /// Each line written gets the lines `answer` gives for its message.
-    pub fn process(written: Written, answer: Answer) -> ClaudeProcess {
+    /// Each line written gets the lines `answer` gives for its message;
+    /// the token ends it (as its exit).
+    pub fn process(written: Written, answer: Answer) -> (ClaudeProcess, CancellationToken) {
         let (input, mut to_read) = mpsc::unbounded_channel::<String>();
         let (lines_tx, lines) = mpsc::unbounded_channel::<String>();
-        let (kill_tx, mut kill_rx) = oneshot::channel::<()>();
+        let exit = CancellationToken::new();
+        let ended = exit.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -597,18 +615,73 @@ pub(crate) mod fake {
                             let _ = lines_tx.send(out);
                         }
                     }
-                    _ = &mut kill_rx => break,
+                    () = ended.cancelled() => break,
                 }
             }
         });
-        ClaudeProcess::from_parts(input, lines, move || {
-            let _ = kill_tx.send(());
-        })
+        let kill = exit.clone();
+        (
+            ClaudeProcess::from_parts(input, lines, move || kill.cancel()),
+            exit,
+        )
     }
 
     /// A result line answering `text`.
     pub fn result(text: &str) -> String {
         js::stringify(&json!({"type": "result", "result": text}))
+    }
+
+    /// Sessions answering each message (its text) with `answer`, each
+    /// started kept with what it was written and its exit.
+    #[derive(Clone)]
+    pub struct Claude {
+        pub started: Arc<Mutex<Vec<(Written, CancellationToken)>>>,
+        answer: Answer,
+    }
+
+    impl Claude {
+        pub fn new(answer: impl Fn(&str) -> String + Send + Sync + 'static) -> Self {
+            Self::lines(move |content| vec![result(&answer(content.as_str().unwrap_or_default()))])
+        }
+
+        /// Answering with whole stdout lines.
+        pub fn lines(answer: impl Fn(&Value) -> Vec<String> + Send + Sync + 'static) -> Self {
+            Self {
+                started: Arc::default(),
+                answer: Arc::new(answer),
+            }
+        }
+
+        pub fn spawn(&self) -> SpawnProcess {
+            let this = self.clone();
+            Arc::new(move || {
+                let written = Written::default();
+                let (process, exit) = process(written.clone(), this.answer.clone());
+                this.started.lock().unwrap().push((written, exit));
+                process
+            })
+        }
+
+        /// What session `n` was written: the messages' contents.
+        pub fn written(&self, n: usize) -> Vec<String> {
+            self.started.lock().unwrap()[n].0.contents()
+        }
+
+        /// Session `n` ends.
+        pub fn exit(&self, n: usize) {
+            self.started.lock().unwrap()[n].1.cancel();
+        }
+    }
+
+    /// A session that never answers.
+    pub fn silent() -> SpawnProcess {
+        Arc::new(|| {
+            let (input, _keep) = mpsc::unbounded_channel::<String>();
+            let (lines_tx, lines) = mpsc::unbounded_channel::<String>();
+            std::mem::forget(lines_tx);
+            std::mem::forget(_keep);
+            ClaudeProcess::from_parts(input, lines, || {})
+        })
     }
 }
 

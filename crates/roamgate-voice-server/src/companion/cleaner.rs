@@ -447,7 +447,7 @@ impl VoiceCleaner {
         &self,
         prompt: String,
         cancel: Option<CancellationToken>,
-    ) -> impl std::future::Future<Output = Result<CleanerReply, String>> + Send + 'static {
+    ) -> impl std::future::Future<Output = Result<CleanerReply, String>> + Send + use<> {
         let (tx, rx) = oneshot::channel();
         self.0.queue.lock().unwrap().push_back(Job {
             prompt,
