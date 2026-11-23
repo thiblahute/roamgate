@@ -4118,15 +4118,16 @@ function sendReviewAgents(): void {
   const channels: Record<string, boolean> = {};
   for (const status of connectionManager.list())
     channels[status.id] = host.agentChannel(status.id);
-  const state = JSON.stringify({
+  const agents = {
     channels,
     tools: claudeModHub.toolsState(),
     socket_keys: [...reviewAgentSockets],
-  });
+  };
+  const state = JSON.stringify(agents);
   if (state === reviewAgentsSent) return;
   reviewAgentsSent = state;
   front
-    .callInternal("review", "agents", JSON.parse(state))
+    .callInternal("review", "agents", agents)
     .catch(() => (reviewAgentsSent = ""));
 }
 
