@@ -28,10 +28,11 @@ use super::{
     Answer, AnswerBody, Body, FormPart, Request, decode_uri_component, needs_header, parse_form,
 };
 use crate::config::{FrontMode, LONGEST_PAUSE_MS, MIN_PAUSE_MS, TtsModel, max_pause_ms};
-use crate::helper::{CallHandle, ErrorSink, MusicChange, QueuedSpeech, Speech, VoiceHelper};
+use crate::helper::{ErrorSink, MusicChange, QueuedSpeech, Speech, VoiceHelper};
 use crate::js;
 use crate::library::{CreateInput, KOKORO, VoiceError, VoiceLibrary};
 use crate::reading::{SAMPLE_SENTENCES, is_voice_language};
+use crate::socket::CallLine;
 use crate::speech_rate::is_speech_rate;
 use crate::surprise::SurprisePicker;
 
@@ -196,41 +197,6 @@ impl Voices for VoiceLibrary {
     }
 }
 
-/// A call the helper runs, as the routes see it ([`CallHandle`]; tests
-/// give a fake).
-pub trait VoiceCall: Send + Sync + 'static {
-    fn id(&self) -> u64;
-    /// Whether the call has a background, on or off.
-    fn music(&self) -> bool;
-    fn music_on(&self) -> bool;
-    fn music_waiting(&self) -> bool;
-    /// The music's level and whether it is off, after `change`.
-    fn music_level(&self, change: MusicChange) -> BoxFuture<Result<(f64, bool), String>>;
-}
-
-impl VoiceCall for CallHandle {
-    fn id(&self) -> u64 {
-        self.id
-    }
-
-    fn music(&self) -> bool {
-        self.music
-    }
-
-    fn music_on(&self) -> bool {
-        CallHandle::music_on(self)
-    }
-
-    fn music_waiting(&self) -> bool {
-        CallHandle::music_waiting(self)
-    }
-
-    fn music_level(&self, change: MusicChange) -> BoxFuture<Result<(f64, bool), String>> {
-        let call = self.clone();
-        Box::pin(async move { CallHandle::music_level(&call, change).await })
-    }
-}
-
 /// What the companion layer adds to GET /api/voice (it warms its front or
 /// router up when asked).
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -244,7 +210,7 @@ pub struct CompanionStatus {
 }
 
 pub type CompanionStatusSource = Arc<dyn Fn() -> CompanionStatus + Send + Sync>;
-pub type CurrentCall = Arc<dyn Fn() -> Option<Arc<dyn VoiceCall>> + Send + Sync>;
+pub type CurrentCall = Arc<dyn Fn() -> Option<Arc<dyn CallLine>> + Send + Sync>;
 
 /// What the routes work with; unset parts are Bun's defaults.
 pub struct RoutesOptions {
@@ -823,7 +789,7 @@ fn speech_answer(speech: Speech, name: Option<&str>) -> Answer {
 
 /// The call's music for the front's state: on, off, waiting (on, silent
 /// until the user's voice is learnt), or none at all (callMusic).
-pub fn call_music(call: Option<&dyn VoiceCall>) -> Option<&'static str> {
+pub fn call_music(call: Option<&dyn CallLine>) -> Option<&'static str> {
     let call = call.filter(|call| call.music())?;
     if !call.music_on() {
         return Some("off");
@@ -842,7 +808,7 @@ const MUSIC_FLOOR: f64 = 0.05;
 /// A front's "music" route (`{to: "music", music, reply?}`), applied to
 /// the call's background: what the front said of it goes to the page as
 /// its own answer. With no music playing, it is said instead (musicRoute).
-pub async fn music_route(route: &Value, call: Option<&dyn VoiceCall>, errors: &ErrorSink) -> Value {
+pub async fn music_route(route: &Value, call: Option<&dyn CallLine>, errors: &ErrorSink) -> Value {
     let Some(call) = call.filter(|call| call.music()) else {
         return json!({ "to": "self", "reply": "No music is playing on this call." });
     };

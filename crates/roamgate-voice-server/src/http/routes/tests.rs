@@ -397,7 +397,7 @@ impl FakeCall {
     }
 }
 
-impl VoiceCall for FakeCall {
+impl CallLine for FakeCall {
     fn id(&self) -> u64 {
         1
     }
@@ -423,6 +423,18 @@ impl VoiceCall for FakeCall {
         let now = (*volume, change.muted == Some(true));
         Box::pin(async move { Ok(now) })
     }
+
+    fn signalling_port(&self) -> u64 {
+        0
+    }
+
+    fn microphone(&self, _peer: &str, _echo_here: bool) -> BoxFuture<Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn hush(&self) {}
+
+    fn stop(&self) {}
 }
 
 #[test]
