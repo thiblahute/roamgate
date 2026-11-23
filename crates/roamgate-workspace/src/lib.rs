@@ -7,6 +7,8 @@
 //! [`GitContext`]: roamgate_git::GitContext
 
 pub mod atomic_move;
+pub mod auto_sync;
+pub mod auto_sync_settings;
 pub mod connection;
 pub mod file_download;
 pub mod file_manager;
@@ -15,12 +17,16 @@ pub mod file_types;
 pub mod files;
 pub mod html_preview;
 pub mod html_preview_files;
+pub mod last_step_turns;
 pub mod local_files;
 pub mod path;
 pub mod preview;
 pub mod process;
 pub mod remote_files;
 pub mod search;
+pub mod status;
+pub mod worktree;
+#[cfg(test)]
+mod status_test_support;
 #[cfg(test)]
 mod test_support;
-pub mod worktree;
