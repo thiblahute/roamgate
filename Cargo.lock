@@ -6447,12 +6447,15 @@ dependencies = [
  "jiff",
  "regex",
  "roamgate-base",
+ "roamgate-exec",
  "roamgate-protocol",
+ "rusqlite",
  "ryu-js",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
+ "tokio",
  "url",
 ]
 

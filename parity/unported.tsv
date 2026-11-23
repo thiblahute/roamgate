@@ -35,16 +35,11 @@ roamgate-forge	server/src/review/forge	S19
 roamgate-forge	server/src/review/github	S19
 roamgate-forge	server/src/review/gitlab	S19
 roamgate-forge	server/src/workspace/pull-request	S17
-roamgate-agents	server/src/agent/session-projection-cache	S21
-roamgate-agents	server/src/agent/session-resolver	S21
-roamgate-agents	server/src/agent/session-file-access	S21
-roamgate-agents	server/src/agent/session-tail	S21
 roamgate-agents	server/src/agent/session-rewind-history	S21
 roamgate-agents	server/src/agent/agent-sessions	S21
 roamgate-agents	server/src/agent/agent-messenger	S21
 roamgate-agents	server/src/agent/agent-activity	S21
 roamgate-agents	server/src/agent/history-watch	S21
-roamgate-agents	server/src/agent/antigravity-session	S21
 roamgate-agents	server/src/agent/muse-session	S21
 roamgate-agents	server/src/agent/grok-session	S21
 roamgate-agents	server/src/agent/task-watcher	S21

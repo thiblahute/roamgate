@@ -150,6 +150,76 @@ pub fn kept_records(records: Vec<Obj>, rewound: Option<&HashSet<String>>) -> Vec
     kept
 }
 
+/// What a transcript says of the code a rewind to before `uuid` would
+/// restore (`scanRewind`, the Claude driver's): whether the message is
+/// there, the files Claude's file tools edited after it, and whether Claude
+/// Code took a checkpoint of the code for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RewindScan {
+    pub found: bool,
+    pub edited: Vec<String>,
+    pub checkpoint: bool,
+}
+
+/// The transcript as its text, or its records (a large one's from its slim
+/// index, which keeps what this reads).
+pub enum Transcript<'a> {
+    Text(&'a str),
+    Records(Vec<Obj>),
+}
+
+const EDIT_TOOLS: [&str; 4] = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+
+pub fn scan_rewind(transcript: Transcript<'_>, uuid: &str) -> RewindScan {
+    let records: Vec<Obj> = match transcript {
+        Transcript::Records(records) => records,
+        Transcript::Text(text) => text
+            .split('\n')
+            .filter(|line| !js::trim(line).is_empty())
+            .filter_map(|line| match js::parse(line) {
+                Some(Value::Object(record)) => Some(record),
+                _ => None,
+            })
+            .collect(),
+    };
+    let checkpoint = records
+        .iter()
+        .any(|r| js::str_of(r.get("type")) == Some("file-history-snapshot") && js::str_of(r.get("messageId")) == Some(uuid));
+    let kept = without_rewound_turns(records);
+    let Some(at) = kept.iter().position(|r| js::str_of(r.get("uuid")) == Some(uuid)) else {
+        return RewindScan { found: false, edited: Vec::new(), checkpoint };
+    };
+    let mut edited: Vec<String> = Vec::new();
+    for record in &kept[at + 1..] {
+        if js::str_of(record.get("type")) != Some("assistant") {
+            continue;
+        }
+        let Some(content) = js::rec(record.get("message")).and_then(|m| m.get("content")).and_then(Value::as_array) else {
+            continue;
+        };
+        for block in content {
+            let Some(block) = block.as_object() else { continue };
+            let Some(name) = js::str_of(block.get("name")) else { continue };
+            if js::str_of(block.get("type")) != Some("tool_use") || !EDIT_TOOLS.contains(&name) {
+                continue;
+            }
+            let Some(input) = js::rec(block.get("input")) else { continue };
+            // `file_path ?? notebook_path`: a null file_path falls through.
+            let path = match input.get("file_path") {
+                None | Some(Value::Null) => input.get("notebook_path"),
+                other => other,
+            };
+            if let Some(Value::String(path)) = path
+                && !path.is_empty()
+                && !edited.contains(path)
+            {
+                edited.push(path.clone());
+            }
+        }
+    }
+    RewindScan { found: true, edited, checkpoint }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

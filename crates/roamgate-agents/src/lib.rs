@@ -9,22 +9,29 @@
 #[macro_use]
 pub mod js;
 
+pub mod antigravity;
 pub mod artifacts;
 pub mod codex_injected;
 pub mod commands;
 pub mod compaction;
 pub mod extract;
+pub mod files;
 pub mod grok;
+pub mod handlers;
 pub mod history;
 pub mod holders;
 pub mod images;
+pub mod index_store;
 pub mod messages;
 pub mod paths;
+pub mod projection;
 pub mod registry;
+pub mod resolver;
 pub mod rewind;
 pub mod seen;
 pub mod session;
 pub mod shared;
+pub mod tail;
 pub mod tasks;
 pub mod title;
 pub mod token_usage;
@@ -33,5 +40,7 @@ pub mod utils;
 
 pub use registry::*;
 
+#[cfg(test)]
+mod tail_tests;
 #[cfg(test)]
 mod vectors_tests;
