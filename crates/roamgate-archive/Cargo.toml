@@ -1,0 +1,32 @@
+[package]
+name = "roamgate-archive"
+version = "0.0.0"
+description = "Roamgate's session archive (Rust migration plan, section 6.2): rsync and ssh mirroring, zstd frames, the archive.sqlite bookkeeping, the conversation text repo and its git grep search, restore, cat and health"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fancy-regex = "0.17"
+hex = "0.4"
+indexmap = "2"
+jiff = "0.2"
+regex = "1"
+roamgate-agents = { path = "../roamgate-agents" }
+roamgate-base = { path = "../roamgate-base" }
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+tempfile = "3"
+uuid = { version = "1", features = ["v4"] }
+zstd = "0.13"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs", "process"] }
+
+[dev-dependencies]
+tempfile = "3"

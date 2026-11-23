@@ -796,3 +796,194 @@ mod tests {
         assert_eq!(locale_compare("b", "A"), Ordering::Greater);
     }
 }
+
+// ------------------------------------------------- the archive's readings
+
+/// `text.length` (the archive's name for [`len16`]).
+pub fn utf16_len(text: &str) -> usize {
+    len16(text)
+}
+
+/// `text.slice(0, units)` borrowed: a cut inside a surrogate pair keeps
+/// the pair out.
+pub fn utf16_prefix(text: &str, units: usize) -> &str {
+    let mut taken = 0;
+    for (index, c) in text.char_indices() {
+        taken += c.len_utf16();
+        if taken > units {
+            return &text[..index];
+        }
+    }
+    text
+}
+
+/// `text.trim()` (the archive's name for [`trim`]).
+pub fn js_trim(text: &str) -> &str {
+    trim(text)
+}
+
+/// `toLowerCase()`.
+pub fn js_lower(text: &str) -> String {
+    text.to_lowercase()
+}
+
+/// `JSON.stringify` of a string (the archive's name for [`quote`]).
+pub fn json_string(text: &str) -> String {
+    quote(text)
+}
+
+/// Runs of 200 or more non-space UTF-16 units (`/\S{200,}/g`, no `u`
+/// flag) replaced by one space each.
+pub fn strip_long(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut run: Option<(usize, usize)> = None;
+    let flush = |out: &mut String, start: usize, end: usize, units: usize| {
+        if units >= 200 {
+            out.push(' ');
+        } else {
+            out.push_str(&text[start..end]);
+        }
+    };
+    for (index, c) in text.char_indices() {
+        if is_js_space(c) {
+            if let Some((start, units)) = run.take() {
+                flush(&mut out, start, index, units);
+            }
+            out.push(c);
+        } else {
+            let (start, units) = run.unwrap_or((index, 0));
+            run = Some((start, units + c.len_utf16()));
+        }
+    }
+    if let Some((start, units)) = run {
+        flush(&mut out, start, text.len(), units);
+    }
+    out
+}
+
+/// The first `count` characters (code points) of `text`.
+pub fn take_chars(text: &str, count: usize) -> &str {
+    match text.char_indices().nth(count) {
+        Some((index, _)) => &text[..index],
+        None => text,
+    }
+}
+
+/// `/\s+/g` replaced by `with`.
+pub fn collapse_space(text: &str, with: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_space = false;
+    for c in text.chars() {
+        if is_js_space(c) {
+            if !in_space {
+                out.push_str(with);
+            }
+            in_space = true;
+        } else {
+            in_space = false;
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// A number as a JavaScript double: integral ones below 1e21 as integers.
+pub fn js_number(value: &Number) -> Number {
+    match number(value.as_f64().unwrap_or(0.0)) {
+        Value::Number(number) => number,
+        _ => value.clone(),
+    }
+}
+
+/// Lone `\uD800`-`\uDFFF` escapes replaced by `\uFFFD`: `JSON.parse` keeps
+/// a lone surrogate (written out as UTF-8 it is U+FFFD), serde refuses the
+/// whole document.
+fn replace_lone_surrogates(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let hex = |at: usize| -> Option<u16> { u16::from_str_radix(text.get(at..at + 4)?, 16).ok() };
+    let mut out = String::with_capacity(text.len());
+    let (mut index, mut last) = (0, 0);
+    while index + 1 < bytes.len() {
+        if bytes[index] != b'\\' {
+            index += 1;
+            continue;
+        }
+        let Some(unit) = (bytes[index + 1] == b'u').then(|| hex(index + 2)).flatten() else {
+            index += 2;
+            continue;
+        };
+        let paired = (0xd800..0xdc00).contains(&unit)
+            && bytes.get(index + 6) == Some(&b'\\')
+            && bytes.get(index + 7) == Some(&b'u')
+            && hex(index + 8).is_some_and(|low| (0xdc00..0xe000).contains(&low));
+        if paired {
+            index += 12;
+        } else if (0xd800..0xe000).contains(&unit) {
+            out.push_str(&text[last..index]);
+            out.push_str("\\ufffd");
+            index += 6;
+            last = index;
+        } else {
+            index += 6;
+        }
+    }
+    out.push_str(&text[last..]);
+    out
+}
+
+/// `JSON.parse(line.toString("utf8"))` of a JSONL line: invalid UTF-8 read
+/// as U+FFFD, a lone surrogate escape as U+FFFD; None when it is not JSON.
+pub fn parse_line(raw: &[u8]) -> Option<Value> {
+    let text = String::from_utf8_lossy(raw);
+    parse(&text).or_else(|| {
+        text.contains("\\u")
+            .then(|| parse(&replace_lone_surrogates(&text)))
+            .flatten()
+    })
+}
+
+#[cfg(test)]
+mod archive_tests {
+    use super::*;
+
+    #[test]
+    fn long_runs_are_measured_in_utf16_units() {
+        let ascii = "a".repeat(200);
+        assert_eq!(strip_long(&format!("x {ascii} y")), "x   y");
+        assert_eq!(strip_long(&"a".repeat(199)), "a".repeat(199));
+        // 100 emoji are 200 UTF-16 units.
+        let emoji = "\u{1f600}".repeat(100);
+        assert_eq!(strip_long(&emoji), " ");
+        assert_eq!(strip_long("a\u{a0}b"), "a\u{a0}b");
+    }
+
+    #[test]
+    fn prefixes_and_lengths_follow_javascript() {
+        assert_eq!(utf16_len("a\u{1f600}"), 3);
+        assert_eq!(utf16_prefix("a\u{1f600}b", 2), "a");
+        assert_eq!(utf16_prefix("a\u{1f600}b", 3), "a\u{1f600}");
+        assert_eq!(take_chars("a\u{1f600}b", 2), "a\u{1f600}");
+        assert_eq!(collapse_space("a \n\t b", " "), "a b");
+    }
+
+    #[test]
+    fn lines_parse_as_json_parse_does() {
+        assert_eq!(
+            parse_line(b"{\"a\":1.0}"),
+            Some(serde_json::json!({"a": 1}))
+        );
+        assert_eq!(
+            parse_line(b"{\"t\":\"x\\ud83d\"}"),
+            Some(serde_json::json!({"t": "x\u{fffd}"}))
+        );
+        assert_eq!(
+            parse_line(b"{\"t\":\"\\ud83d\\ude00\"}"),
+            Some(serde_json::json!({"t": "\u{1f600}"}))
+        );
+        assert_eq!(parse_line(b"not json"), None);
+        assert_eq!(
+            stringify(&serde_json::json!({"b": 2.0, "a": [0.5]})),
+            "{\"b\":2,\"a\":[0.5]}"
+        );
+    }
+}

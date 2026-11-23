@@ -345,59 +345,59 @@ server/src/agent/token-usage.test.ts	normalizes Pi-style token usage	vector:cont
 server/src/agent/token-usage.test.ts	prefers cumulative token count records over summed usage	vector:contract/vectors/token-usage.json	S5 vectors, read by bun test and the Rust crate
 server/src/agent/token-usage.test.ts	preserves reported zeros while distinguishing absent counters	vector:contract/vectors/token-usage.json	S5 vectors, read by bun test and the Rust crate
 server/src/agent/token-usage.test.ts	maps token usage into ATIF metrics	vector:contract/vectors/token-usage.json	S5 vectors, read by bun test and the Rust crate
-server/src/archive/archive.test.ts	archives, indexes, grows, handles partial lines and shrinks	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	appended frames are one valid zstd stream with a checksum	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	a crash after compressing is repaired on the next run	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	index rules, hide and exclude	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	the none level archives a session but keeps it out of search	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	rebuild-db restores the bookkeeping; the text repo carries on	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	history prompts are searched	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	codex and pi sessions are archived, indexed and round-trip	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	restores only what is missing, maps the project and appends a note	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	codex sessions are not restored	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	a pull from an unreachable host is recorded, not fatal	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	an ingested mirror is archived under its host, duplicates stay separate	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	host locks are exclusive	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	health is stale without a sync and fresh after one	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	snippets mark matches	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	project mapping across homes	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/archive.test.ts	catLines is bounded	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	archives, indexes, grows, handles partial lines and shrinks	rust-unit:roamgate-archive:archive::archives_indexes_grows_handles_partial_lines_and_shrinks	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	appended frames are one valid zstd stream with a checksum	rust-unit:roamgate-archive:archive::appended_frames_are_one_valid_zstd_stream_with_a_checksum	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	a crash after compressing is repaired on the next run	rust-unit:roamgate-archive:archive::a_crash_after_compressing_is_repaired_on_the_next_run	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	index rules, hide and exclude	rust-unit:roamgate-archive:archive::index_rules_hide_and_exclude	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	the none level archives a session but keeps it out of search	rust-unit:roamgate-archive:archive::the_none_level_archives_a_session_but_keeps_it_out_of_search	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	rebuild-db restores the bookkeeping; the text repo carries on	rust-unit:roamgate-archive:archive::rebuild_db_restores_the_bookkeeping_the_text_repo_carries_on	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	history prompts are searched	rust-unit:roamgate-archive:archive::history_prompts_are_searched	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	codex and pi sessions are archived, indexed and round-trip	rust-unit:roamgate-archive:archive::codex_and_pi_sessions_are_archived_indexed_and_round_trip	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	restores only what is missing, maps the project and appends a note	rust-unit:roamgate-archive:archive::restores_only_what_is_missing_maps_the_project_and_appends_a_note	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	codex sessions are not restored	rust-unit:roamgate-archive:archive::codex_sessions_are_not_restored	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	a pull from an unreachable host is recorded, not fatal	rust-unit:roamgate-archive:archive::a_pull_from_an_unreachable_host_is_recorded_not_fatal	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	an ingested mirror is archived under its host, duplicates stay separate	rust-unit:roamgate-archive:archive::an_ingested_mirror_is_archived_under_its_host_duplicates_stay_separate	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	host locks are exclusive	rust-unit:roamgate-archive:lock::tests::host_locks_are_exclusive	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	health is stale without a sync and fresh after one	rust-unit:roamgate-archive:archive::health_is_stale_without_a_sync_and_fresh_after_one	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	snippets mark matches	rust-unit:roamgate-archive:search::tests::snippets_mark_matches	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	project mapping across homes	rust-unit:roamgate-archive:archive::project_mapping_across_homes	mirroring, zstd frames, index and search internals
+server/src/archive/archive.test.ts	catLines is bounded	rust-unit:roamgate-archive:archive::cat_lines_is_bounded	mirroring, zstd frames, index and search internals
 server/src/archive/dir.test.ts	an explicit directory wins and nothing is moved	scenario:parity/scenarios/env/archive.yaml	
-server/src/archive/dir.test.ts	the default is archive under the data root	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/dir.test.ts	the legacy directory is renamed once, keeping its files	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/dir.test.ts	with both present the new one is used and health warns	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/file-access.test.ts	a transcript the agent deleted is read from the archive	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/hosts.test.ts	a pull compresses every rsync transfer	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/hosts.test.ts	a push compresses every rsync transfer	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/open.test.ts	a text repo line opens its record, with context, from raw/	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/open.test.ts	a raw/ hit opens by record line; hidden and bad keys open nothing	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/open.test.ts	search parameters are checked	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/store.test.ts	an old index.sqlite is read as is, then migrated by a writer and deleted	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/store.test.ts	a fresh archive gets a database of the current version	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-render.test.ts	one line per message, tool calls cut, tool output left out	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-render.test.ts	resumes from a saved state: titles and timestamps carry over	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-render.test.ts	the day is fixed at the first line: undated when no time came first	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-render.test.ts	prompt history lines carry the project as a token	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-render.test.ts	secrets are redacted and counted	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-render.test.ts	host/agent/project/day/session.md, dated by the first message	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-render.test.ts	the collision suffix is the raw path's sha256	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-render.test.ts	lines parse back, colons in the text included	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-repo.test.ts	renders raw/ incrementally, one commit per pass	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-repo.test.ts	a shrunk transcript is rendered again from its new copy	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-repo.test.ts	name collisions: the first raw path keeps the name, in any order	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-repo.test.ts	a transcript with no text yet is kept, then named by its first line	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-repo.test.ts	a pass is deferred while busy	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-repo.test.ts	ranks sessions by matching messages, then recency	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-repo.test.ts	filters: words, phrases, operators, role, kind, time, project, hide	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-repo.test.ts	prompt history is searched on request	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-repo.test.ts	sessions grown since the last commit are found	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-repo.test.ts	tool output is searched in raw/ on request	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-repo.test.ts	the state lists every rendered file	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-search.test.ts	words and phrases must all appear; operators as the index read them	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-search.test.ts	the same query tests a text for the raw/ search	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-search.test.ts	host, agent and project are pathspecs; state and history excluded	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-search.test.ts	role, kind and the time range are checked on each line	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
-server/src/archive/text-search.test.ts	ranked by matches, then recency; or recency first	rust-unit:roamgate-archive	mirroring, zstd frames, index and search internals
+server/src/archive/dir.test.ts	the default is archive under the data root	rust-unit:roamgate-archive:dir::tests::the_default_is_archive_under_the_data_root	mirroring, zstd frames, index and search internals
+server/src/archive/dir.test.ts	the legacy directory is renamed once, keeping its files	rust-unit:roamgate-archive:dir::tests::the_legacy_directory_is_renamed_once_keeping_its_files	mirroring, zstd frames, index and search internals
+server/src/archive/dir.test.ts	with both present the new one is used and health warns	rust-unit:roamgate-archive:dir::tests::with_both_present_the_new_one_is_used_and_health_warns	mirroring, zstd frames, index and search internals
+server/src/archive/file-access.test.ts	a transcript the agent deleted is read from the archive	rust-unit:roamgate-archive:open::a_transcript_the_agent_deleted_is_read_from_the_archive	mirroring, zstd frames, index and search internals
+server/src/archive/hosts.test.ts	a pull compresses every rsync transfer	rust-unit:roamgate-archive:hosts::tests::a_pull_compresses_every_rsync_transfer	mirroring, zstd frames, index and search internals
+server/src/archive/hosts.test.ts	a push compresses every rsync transfer	rust-unit:roamgate-archive:hosts::tests::a_push_compresses_every_rsync_transfer	mirroring, zstd frames, index and search internals
+server/src/archive/open.test.ts	a text repo line opens its record, with context, from raw/	rust-unit:roamgate-archive:open::a_text_repo_line_opens_its_record_with_context_from_raw	mirroring, zstd frames, index and search internals
+server/src/archive/open.test.ts	a raw/ hit opens by record line; hidden and bad keys open nothing	rust-unit:roamgate-archive:open::a_raw_hit_opens_by_record_line_hidden_and_bad_keys_open_nothing	mirroring, zstd frames, index and search internals
+server/src/archive/open.test.ts	search parameters are checked	rust-unit:roamgate-archive:rpc::tests::search_parameters_are_checked	mirroring, zstd frames, index and search internals
+server/src/archive/store.test.ts	an old index.sqlite is read as is, then migrated by a writer and deleted	rust-unit:roamgate-archive:store::tests::an_old_index_sqlite_is_read_as_is_then_migrated_by_a_writer_and_deleted	mirroring, zstd frames, index and search internals
+server/src/archive/store.test.ts	a fresh archive gets a database of the current version	rust-unit:roamgate-archive:store::tests::a_fresh_archive_gets_a_database_of_the_current_version	mirroring, zstd frames, index and search internals
+server/src/archive/text-render.test.ts	one line per message, tool calls cut, tool output left out	rust-unit:roamgate-archive:text_render::tests::one_line_per_message_tool_calls_cut_tool_output_left_out	mirroring, zstd frames, index and search internals
+server/src/archive/text-render.test.ts	resumes from a saved state: titles and timestamps carry over	rust-unit:roamgate-archive:text_render::tests::resumes_from_a_saved_state_titles_and_timestamps_carry_over	mirroring, zstd frames, index and search internals
+server/src/archive/text-render.test.ts	the day is fixed at the first line: undated when no time came first	rust-unit:roamgate-archive:text_render::tests::the_day_is_fixed_at_the_first_line_undated_when_no_time_came_first	mirroring, zstd frames, index and search internals
+server/src/archive/text-render.test.ts	prompt history lines carry the project as a token	rust-unit:roamgate-archive:text_render::tests::prompt_history_lines_carry_the_project_as_a_token	mirroring, zstd frames, index and search internals
+server/src/archive/text-render.test.ts	secrets are redacted and counted	rust-unit:roamgate-archive:text_render::tests::secrets_are_redacted_and_counted	mirroring, zstd frames, index and search internals
+server/src/archive/text-render.test.ts	host/agent/project/day/session.md, dated by the first message	rust-unit:roamgate-archive:text_render::tests::host_agent_project_day_session_md_dated_by_the_first_message	mirroring, zstd frames, index and search internals
+server/src/archive/text-render.test.ts	the collision suffix is the raw path's sha256	rust-unit:roamgate-archive:text_render::tests::the_collision_suffix_is_the_raw_path_s_sha256	mirroring, zstd frames, index and search internals
+server/src/archive/text-render.test.ts	lines parse back, colons in the text included	rust-unit:roamgate-archive:text_render::tests::lines_parse_back_colons_in_the_text_included	mirroring, zstd frames, index and search internals
+server/src/archive/text-repo.test.ts	renders raw/ incrementally, one commit per pass	rust-unit:roamgate-archive:text_repo::renders_raw_incrementally_one_commit_per_pass	mirroring, zstd frames, index and search internals
+server/src/archive/text-repo.test.ts	a shrunk transcript is rendered again from its new copy	rust-unit:roamgate-archive:text_repo::a_shrunk_transcript_is_rendered_again_from_its_new_copy	mirroring, zstd frames, index and search internals
+server/src/archive/text-repo.test.ts	name collisions: the first raw path keeps the name, in any order	rust-unit:roamgate-archive:text_repo::name_collisions_the_first_raw_path_keeps_the_name_in_any_order	mirroring, zstd frames, index and search internals
+server/src/archive/text-repo.test.ts	a transcript with no text yet is kept, then named by its first line	rust-unit:roamgate-archive:text_repo::a_transcript_with_no_text_yet_is_kept_then_named_by_its_first_line	mirroring, zstd frames, index and search internals
+server/src/archive/text-repo.test.ts	a pass is deferred while busy	rust-unit:roamgate-archive:text_repo::a_pass_is_deferred_while_busy	mirroring, zstd frames, index and search internals
+server/src/archive/text-repo.test.ts	ranks sessions by matching messages, then recency	rust-unit:roamgate-archive:text_repo::ranks_sessions_by_matching_messages_then_recency	mirroring, zstd frames, index and search internals
+server/src/archive/text-repo.test.ts	filters: words, phrases, operators, role, kind, time, project, hide	rust-unit:roamgate-archive:text_repo::filters_words_phrases_operators_role_kind_time_project_hide	mirroring, zstd frames, index and search internals
+server/src/archive/text-repo.test.ts	prompt history is searched on request	rust-unit:roamgate-archive:text_repo::prompt_history_is_searched_on_request	mirroring, zstd frames, index and search internals
+server/src/archive/text-repo.test.ts	sessions grown since the last commit are found	rust-unit:roamgate-archive:text_repo::sessions_grown_since_the_last_commit_are_found	mirroring, zstd frames, index and search internals
+server/src/archive/text-repo.test.ts	tool output is searched in raw/ on request	rust-unit:roamgate-archive:text_repo::tool_output_is_searched_in_raw_on_request	mirroring, zstd frames, index and search internals
+server/src/archive/text-repo.test.ts	the state lists every rendered file	rust-unit:roamgate-archive:text_repo::the_state_lists_every_rendered_file	mirroring, zstd frames, index and search internals
+server/src/archive/text-search.test.ts	words and phrases must all appear; operators as the index read them	rust-unit:roamgate-archive:text_search::tests::words_and_phrases_must_all_appear_operators_as_the_index_read_them	mirroring, zstd frames, index and search internals
+server/src/archive/text-search.test.ts	the same query tests a text for the raw/ search	rust-unit:roamgate-archive:text_search::tests::the_same_query_tests_a_text_for_the_raw_search	mirroring, zstd frames, index and search internals
+server/src/archive/text-search.test.ts	host, agent and project are pathspecs; state and history excluded	rust-unit:roamgate-archive:text_search::tests::host_agent_and_project_are_pathspecs_state_and_history_excluded	mirroring, zstd frames, index and search internals
+server/src/archive/text-search.test.ts	role, kind and the time range are checked on each line	rust-unit:roamgate-archive:text_search::tests::role_kind_and_the_time_range_are_checked_on_each_line	mirroring, zstd frames, index and search internals
+server/src/archive/text-search.test.ts	ranked by matches, then recency; or recency first	rust-unit:roamgate-archive:text_search::tests::ranked_by_matches_then_recency_or_recency_first	mirroring, zstd frames, index and search internals
 server/src/assets/assets.test.ts	fills values and keeps everything else byte for byte	rust-unit:roamgate-base:assets::tests::fills_values_and_keeps_everything_else	the template filler and the embedded contract/assets files; the files themselves are the contract
 server/src/assets/assets.test.ts	keeps a section when its flag is true, its inverse when false	rust-unit:roamgate-base:assets::tests::sections_keep_on_true_and_inverses_on_false	the template filler and the embedded contract/assets files; the files themselves are the contract
 server/src/assets/assets.test.ts	nests sections	rust-unit:roamgate-base:assets::tests::sections_nest	the template filler and the embedded contract/assets files; the files themselves are the contract
@@ -1282,7 +1282,7 @@ server/src/cli/activity.test.ts	events page in id order and resume after an id	s
 server/src/cli/activity.test.ts	status reports the recorder and the connections	scenario:parity/scenarios/activity/record-and-read.yaml	
 server/src/cli/activity.test.ts	errors: usage, a missing log, JSON errors for JSON readers	scenario:parity/scenarios/activity/not-recording.yaml	
 server/src/cli/archive.test.ts	sync writes the text repo; search, status and rebuild-text use it	scenario:parity/scenarios/archive/sync-search.yaml	
-server/src/cli/archive.test.ts	another machine fetches the home's text repo and searches it	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
+server/src/cli/archive.test.ts	another machine fetches the home's text repo and searches it	rust-unit:roamgate-cli:archive::tests::another_machine_fetches_the_home_s_text_repo_and_searches_it	CLI internals beyond its help and outputs
 server/src/cli/auth.test.ts	show masks the token unless revealed	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/auth.test.ts	rotate writes a fresh valid token and prints new URLs	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/auth.test.ts	rotate refuses services that use a fixed password	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
@@ -2246,6 +2246,7 @@ server/src/core-channel/channel.test.ts	a slow reader holds the sender to the wi
 server/src/core-channel/channel.test.ts	cancelling the response stops the core's body	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/cli.test.ts	a Bun family, no table or no family runs in Bun	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/cli.test.ts	a Rust family runs in the table's core with the CLI's facts	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
+server/src/core-channel/cli.test.ts	a raw standard output gets the core's bytes untouched	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/cli.test.ts	ROAMGATE_CORE_BIN wins, and a missing core leaves it to Bun	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/hybrid.test.ts	answers the test family through the channel	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together
 server/src/core-channel/index.test.ts	there is no core front at all	internal:core channel	the Bun side of the temporary channel (plan 8.2), deleted at cut-over; roamgate-sidecar has its own tests and parity/tests/hybrid.rs runs both sides together

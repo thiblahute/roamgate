@@ -13,6 +13,7 @@ workspace = true
 fancy-regex = "0.17"
 hex = "0.4"
 icu_collator = "2"
+indexmap = "2"
 jiff = "0.2"
 regex = "1"
 roamgate-base = { path = "../roamgate-base" }

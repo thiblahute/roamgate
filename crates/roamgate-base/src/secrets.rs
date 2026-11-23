@@ -142,6 +142,14 @@ static SECRET_PAIR: LazyLock<FancyRegex> = LazyLock::new(|| {
     .unwrap()
 });
 
+/// A key of [`SECRET_PAIR`]: no pair without one.
+static SECRET_PAIR_KEY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)password|passwd|passphrase|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?token",
+    )
+    .unwrap()
+});
+
 /// A text with its secrets replaced, and how many.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Redacted {
@@ -163,6 +171,14 @@ pub fn redact_secrets(text: &str) -> Redacted {
         format!("{}@", mark(&found[1]))
     });
     let out = AUTH_HEADER.replace_all(&out, |found: &regex::Captures<'_>| mark(&found[1]));
+    // The pair's lookahead needs the backtracking engine, slow on every
+    // line of a transcript: only run it where one of its keys appears.
+    if !SECRET_PAIR_KEY.is_match(&out) {
+        return Redacted {
+            text: out.into_owned(),
+            count: count.get(),
+        };
+    }
     let out = SECRET_PAIR.replace_all(&out, |found: &fancy_regex::Captures<'_>| {
         let whole = found.get(0).map(|m| m.as_str()).unwrap_or("");
         let prefix = found.get(1).map(|m| m.as_str()).unwrap_or("");

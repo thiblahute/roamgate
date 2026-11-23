@@ -42,6 +42,7 @@ async fn main() -> ExitCode {
             "herdr" => roamgate::families::herdr::cli(&args).await,
             "push" => roamgate::families::notifications::cli(&args).await,
             "activity" => roamgate::families::activity::cli(&args),
+            "archive" => roamgate::families::archive::cli(&args).await,
             _ => roamgate::families::update::cli(&command, &args).await,
         }),
         Options::Help => {

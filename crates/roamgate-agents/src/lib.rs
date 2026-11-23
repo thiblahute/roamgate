@@ -13,12 +13,14 @@ pub mod artifacts;
 pub mod codex_injected;
 pub mod commands;
 pub mod compaction;
+pub mod extract;
 pub mod grok;
 pub mod history;
 pub mod holders;
 pub mod images;
 pub mod messages;
 pub mod paths;
+pub mod registry;
 pub mod rewind;
 pub mod seen;
 pub mod session;
@@ -28,6 +30,8 @@ pub mod title;
 pub mod token_usage;
 pub mod trajectory;
 pub mod utils;
+
+pub use registry::*;
 
 #[cfg(test)]
 mod vectors_tests;

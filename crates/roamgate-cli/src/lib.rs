@@ -3,6 +3,7 @@
 //!
 //! | Module | What | TS it replaces |
 //! |---|---|---|
+//! | [`archive`] | `roamgate archive` | cli/archive |
 //! | [`update`] | release targets, manifests, versions, mirrors, the supervisor check, the installer | http/update helpers |
 //! | [`update_http`] | `/api/update/check` and `/api/update/install` | http/update createUpdateHandlers |
 //! | [`commands`] | `roamgate update` and `roamgate rollback` | cli/update |
@@ -17,6 +18,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 pub mod activity;
+pub mod archive;
 pub mod auth_token;
 pub mod commands;
 pub mod herdr;

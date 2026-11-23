@@ -241,6 +241,7 @@ The front's internal calls by family:
 | `internal.host.herdr_call` | `connection_id`, `generation`, `method`, `params`, `timeout_ms`, `fresh` | A Herdr call of the front's part of a generation, through the core's control client for it (its shared and reused reads); error `connection runtime is disposed` once that generation is gone. |
 | `internal.host.run` | `destination`, `command`, `trusted_args`, `tag`, `read_only`, `connection_id`, `timeout_ms`, `lane` (`interactive` or `background`), `stdin_b64` (optional) | A command the front built with sshCommandArgv (or its read form), run whole inside the destination's session slots and over its master as bridge/ssh-sessions.ts `runSshCommand` does: `{code, stdout_b64, stderr}`; error code `ssh_background_shed` for a shed background command, `invalid` for a destination sshCommandArgv refuses. |
 | `internal.host.ssh_hold` | the same, `long_lived` instead of `stdin_b64` | A slot held for a command the front spawns itself (`holdSshSession`): `{lease, argv, remaining_ms}`, `argv` to spawn (over the master, or a connection of its own); held until `internal.host.ssh_release {lease}` or the channel closes. |
+| `internal.archive.search` | a `SearchQuery` (`terms`, `limit`, the filters, `recent`, `history`, `regex`, `toolOutput`) | Ranger's archive search while Rust owns the archive family (a search writes the scratch overlay `text-live/`). Answers the `SearchResult`; a missing text repo is the error code `no_text_repo`. |
 
 Bun's own copy of a family stops its background work and writes while the
 core owns the family and starts again (reading its files afresh) when it
@@ -326,7 +327,9 @@ the Bun CLI runs one of them and the owners table gives that family to
 table's `core` (the path of the binary that last wrote it with `roamgate
 owners`). The child gets the CLI's environment plus `ROAMGATE_CLI_EXEC`,
 `ROAMGATE_CLI_VERSION` and `ROAMGATE_CLI_STANDALONE`, its standard input,
-and its output lines go to the CLI's own output; the CLI exits with the
+and its output lines go to the CLI's own output (its standard output as
+bytes, untouched, when the CLI writes to a real standard output: `archive
+cat` prints a transcript byte for byte); the CLI exits with the
 child's exit code. Without a core binary to run, the Bun CLI runs the
 command itself and says so on stderr. The table is read once per command:
 a CLI run needs no server.

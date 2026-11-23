@@ -59,7 +59,8 @@ pub enum Options {
 }
 
 /// The CLI commands this binary answers itself, by family.
-pub const FAMILY_COMMANDS: &[&str] = &["update", "rollback", "herdr", "push", "activity"];
+pub const FAMILY_COMMANDS: &[&str] =
+    &["update", "rollback", "herdr", "push", "activity", "archive"];
 
 /// Reads the command line; `env` gives the environment's HOST and PORT.
 pub fn parse_args(

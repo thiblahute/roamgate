@@ -6398,6 +6398,7 @@ version = "0.8.15"
 dependencies = [
  "axum",
  "roamgate-activity",
+ "roamgate-archive",
  "roamgate-base",
  "roamgate-cli",
  "roamgate-connections",
@@ -6442,6 +6443,7 @@ dependencies = [
  "fancy-regex 0.17.0",
  "hex",
  "icu_collator",
+ "indexmap",
  "jiff",
  "regex",
  "roamgate-base",
@@ -6452,6 +6454,27 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "url",
+]
+
+[[package]]
+name = "roamgate-archive"
+version = "0.0.0"
+dependencies = [
+ "fancy-regex 0.17.0",
+ "hex",
+ "indexmap",
+ "jiff",
+ "regex",
+ "roamgate-agents",
+ "roamgate-base",
+ "rusqlite",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "uuid",
+ "zstd",
 ]
 
 [[package]]
@@ -6511,11 +6534,15 @@ dependencies = [
  "rand 0.9.5",
  "regex",
  "roamgate-activity",
+ "roamgate-agents",
+ "roamgate-archive",
  "roamgate-base",
  "roamgate-exec",
  "roamgate-herdr",
  "roamgate-notify",
+ "rustix",
  "rustls 0.23.46",
+ "serde",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
