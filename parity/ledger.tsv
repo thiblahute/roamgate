@@ -2813,12 +2813,12 @@ server/src/mr-cache/cache.test.ts	a chip, a card and a session are pushed; nothi
 server/src/mr-cache/shared.test.ts	a read asks the core, which asks the reader back for the forge read and its pause	internal:core channel	the front's side of the core's MR cache (plan 8.2), deleted at cut-over
 server/src/mr-cache/shared.test.ts	a failed read reaches the caller; a core that does not answer leaves the read uncached	internal:core channel	the front's side of the core's MR cache (plan 8.2), deleted at cut-over
 server/src/mr-cache/shared.test.ts	Bun's own answers go when the core takes the family, and come from the file after the core wrote it	internal:core channel	the front's side of the core's MR cache (plan 8.2), deleted at cut-over
-server/src/mr-reviews/agent-search.test.ts	GitLab: one read-only query, the model's words quoted	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/agent-search.test.ts	GitHub: the followed repositories and filters as search qualifiers	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/agent-search.test.ts	dates: ISO dates and days back, nothing else	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/agent-search.test.ts	answers: requests with their files and labels; projects not seen	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/agent-search.test.ts	one request: its changes and description	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/agent-search.test.ts	a request named as the agent names it	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/agent-search.test.ts	GitLab: one read-only query, the model's words quoted	rust-unit:roamgate-mr-reviews:agent_search::tests::gitlab_one_read_only_query_the_models_words_quoted	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/agent-search.test.ts	GitHub: the followed repositories and filters as search qualifiers	rust-unit:roamgate-mr-reviews:agent_search::tests::github_the_followed_repositories_and_filters_as_search_qualifiers	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/agent-search.test.ts	dates: ISO dates and days back, nothing else	rust-unit:roamgate-mr-reviews:agent_search::tests::dates_iso_dates_and_days_back_nothing_else	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/agent-search.test.ts	answers: requests with their files and labels; projects not seen	rust-unit:roamgate-mr-reviews:agent_search::tests::answers_requests_with_their_files_and_labels_projects_not_seen	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/agent-search.test.ts	one request: its changes and description	rust-unit:roamgate-mr-reviews:agent_search::tests::one_request_its_changes_and_description	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/agent-search.test.ts	a request named as the agent names it	rust-unit:roamgate-mr-reviews:agent_search::tests::a_request_named_as_the_agent_names_it	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/agent.test.ts	answers from Roamgate's state and a forge search, read only	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/agent.test.ts	suggest, feedback, hints and open change only the user's own lists	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/agent.test.ts	a question's forge calls are budgeted	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
@@ -2840,9 +2840,9 @@ server/src/mr-reviews/claude.test.ts	conversation mode: its own switch, never /e
 server/src/mr-reviews/claude.test.ts	the claude start setting decides the mode Claude starts in	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/claude.test.ts	a Claude that is no request's is left alone	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/claude.test.ts	a request without a session: nothing started by a switch	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/complexity.test.ts	the details and the followed projects arrive in more queries, without an error	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
-server/src/mr-reviews/complexity.test.ts	the light list is split too when its lists are too much together	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
-server/src/mr-reviews/complexity.test.ts	a field refusal still falls back to fewer fields	rust-unit:roamgate-mr-reviews	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
+server/src/mr-reviews/complexity.test.ts	the details and the followed projects arrive in more queries, without an error	rust-unit:roamgate-mr-reviews:inbox::tests::the_details_and_the_followed_projects_arrive_in_more_queries_without_an_error	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
+server/src/mr-reviews/complexity.test.ts	the light list is split too when its lists are too much together	rust-unit:roamgate-mr-reviews:inbox::tests::the_light_list_is_split_too_when_its_lists_are_too_much_together	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
+server/src/mr-reviews/complexity.test.ts	a field refusal still falls back to fewer fields	rust-unit:roamgate-mr-reviews:inbox::tests::a_field_refusal_still_falls_back_to_fewer_fields	the inbox refreshing against a fake forge and a store on disk; the estimates and batching are vectors
 server/src/mr-reviews/complexity.test.ts	the estimate counts fields, resolvers and the items they load	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
 server/src/mr-reviews/complexity.test.ts	the to-review query with three followed projects goes over GitLab's default	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
 server/src/mr-reviews/complexity.test.ts	a refusal is read from an error or an answer	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
@@ -2903,48 +2903,48 @@ server/src/mr-reviews/inbox.lanes.test.ts	others' requests get no lane	rust-unit
 server/src/mr-reviews/inbox.lanes.test.ts	an override's whose-move wins, unless outdated; its next step shows	rust-unit:roamgate-mr-reviews:lanes::tests::an_overrides_whose_move_wins_unless_outdated_its_next_step_shows	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.lanes.test.ts	a request waiting for another is drawn under it and Blocked	rust-unit:roamgate-mr-reviews:lanes::tests::a_request_waiting_for_another_is_drawn_under_it_and_blocked	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.lanes.test.ts	cycles are drawn flat	rust-unit:roamgate-mr-reviews:lanes::tests::cycles_are_drawn_flat	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.merge.test.ts	rows, lanes and next steps	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.merge.test.ts	label times are read once per label change, never on a steady refresh	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.merge.test.ts	a scope turning the bots off there, and a project's own label	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.merge.test.ts	an override still wins over the merge facts	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.merge.test.ts	the time passing moves the row, wakes the board and is a meaningful event	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.merge.test.ts	auto-merge, the merge queue, a removal and a label time from the timeline	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.merge.test.ts	checked, kept as stored, and back	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.merge.test.ts	rows, lanes and next steps	rust-unit:roamgate-mr-reviews:inbox::merge_tests::rows_lanes_and_next_steps	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.merge.test.ts	label times are read once per label change, never on a steady refresh	rust-unit:roamgate-mr-reviews:inbox::merge_tests::label_times_are_read_once_per_label_change_never_on_a_steady_refresh	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.merge.test.ts	a scope turning the bots off there, and a project's own label	rust-unit:roamgate-mr-reviews:inbox::merge_tests::a_scope_turning_the_bots_off_there_and_a_projects_own_label	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.merge.test.ts	an override still wins over the merge facts	rust-unit:roamgate-mr-reviews:inbox::merge_tests::an_override_still_wins_over_the_merge_facts	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.merge.test.ts	the time passing moves the row, wakes the board and is a meaningful event	rust-unit:roamgate-mr-reviews:inbox::merge_tests::the_time_passing_moves_the_row_wakes_the_board_and_is_a_meaningful_event	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.merge.test.ts	auto-merge, the merge queue, a removal and a label time from the timeline	rust-unit:roamgate-mr-reviews:inbox::merge_tests::auto_merge_the_merge_queue_a_removal_and_a_label_time_from_the_timeline	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.merge.test.ts	checked, kept as stored, and back	rust-unit:roamgate-mr-reviews:inbox::merge_tests::checked_kept_as_stored_and_back	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.merge.test.ts	the tools' rows carry the merge state	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.own.test.ts	GitLab lists the open ones paged, the first page with the latest settled	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	GitLab lists the open ones paged, the first page with the latest settled	rust-unit:roamgate-mr-reviews:inbox::own_tests::gitlab_lists_the_open_ones_paged_the_first_page_with_the_latest_settled	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.own.test.ts	GitHub searches the open ones paged, the first page with the latest closed	scenario:parity/scenarios/mr_reviews/github-inbox.yaml	
-server/src/mr-reviews/inbox.own.test.ts	details are asked by project, full or basic	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	details are asked by project, full or basic	rust-unit:roamgate-mr-reviews:inbox::own_tests::details_are_asked_by_project_full_or_basic	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.own.test.ts	GitLab: the list, then status from the details	scenario:parity/scenarios/mr_reviews/gitlab-inbox.yaml	
 server/src/mr-reviews/inbox.own.test.ts	GitHub: reviews, open threads and conflicts	scenario:parity/scenarios/mr_reviews/github-inbox.yaml	
-server/src/mr-reviews/inbox.own.test.ts	an answer refusing a field is told apart from others	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.own.test.ts	pipeline, approvals, conflicts, threads and state are said	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.own.test.ts	a record from before these were kept says no such change	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.own.test.ts	listed as Mine, never new, and what changes after shows	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.own.test.ts	a host refusing the full fields is asked fewer, then the basic ones from then on	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.own.test.ts	own requests not read keep what was known	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.own.test.ts	details not read keep those known, the list stands	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.own.test.ts	26 open requests older than 40 merged ones all show	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.own.test.ts	a second refresh reads the details of the one that changed only	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	an answer refusing a field is told apart from others	rust-unit:roamgate-mr-reviews:inbox::own_tests::an_answer_refusing_a_field_is_told_apart_from_others	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	pipeline, approvals, conflicts, threads and state are said	rust-unit:roamgate-mr-reviews:inbox::own_tests::pipeline_approvals_conflicts_threads_and_state_are_said	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	a record from before these were kept says no such change	rust-unit:roamgate-mr-reviews:inbox::own_tests::a_record_from_before_these_were_kept_says_no_such_change	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	listed as Mine, never new, and what changes after shows	rust-unit:roamgate-mr-reviews:inbox::own_tests::listed_as_mine_never_new_and_what_changes_after_shows	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	a host refusing the full fields is asked fewer, then the basic ones from then on	rust-unit:roamgate-mr-reviews:inbox::own_tests::a_host_refusing_the_full_fields_is_asked_fewer_then_the_basic_ones_from_then_on	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	own requests not read keep what was known	rust-unit:roamgate-mr-reviews:inbox::own_tests::own_requests_not_read_keep_what_was_known	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	details not read keep those known, the list stands	rust-unit:roamgate-mr-reviews:inbox::own_tests::details_not_read_keep_those_known_the_list_stands	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	26 open requests older than 40 merged ones all show	rust-unit:roamgate-mr-reviews:inbox::own_tests::twenty_six_open_requests_older_than_forty_merged_ones_all_show	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	a second refresh reads the details of the one that changed only	rust-unit:roamgate-mr-reviews:inbox::own_tests::a_second_refresh_reads_the_details_of_the_one_that_changed_only	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.own.test.ts	a running pipeline is read again until it ends	scenario:parity/scenarios/mr_reviews/gitlab-inbox.yaml	
-server/src/mr-reviews/inbox.own.test.ts	unchanged details are read again a few at a time once old	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.own.test.ts	pages to the end, and stops at the cap with a log line	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.pins.test.ts	settings keep them checked and capped	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.pins.test.ts	pinning a listed request reads nothing; unpinning puts it back	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	unchanged details are read again a few at a time once old	rust-unit:roamgate-mr-reviews:inbox::own_tests::unchanged_details_are_read_again_a_few_at_a_time_once_old	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.own.test.ts	pages to the end, and stops at the cap with a log line	rust-unit:roamgate-mr-reviews:inbox::own_tests::pages_to_the_end_and_stops_at_the_cap_with_a_log_line	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.pins.test.ts	settings keep them checked and capped	rust-unit:roamgate-mr-reviews:rpc::tests::settings_keep_them_checked_and_capped	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.pins.test.ts	pinning a listed request reads nothing; unpinning puts it back	rust-unit:roamgate-mr-reviews:rpc::tests::pinning_a_listed_request_reads_nothing_unpinning_puts_it_back	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.pins.test.ts	pin by URL: read from the forge, listed as Pinned, kept in the settings	scenario:parity/scenarios/mr_reviews/marks.yaml	
 server/src/mr-reviews/inbox.pins.test.ts	pin refuses other hosts, other text, and says when a request is not found	scenario:parity/scenarios/mr_reviews/marks.yaml	
-server/src/mr-reviews/inbox.pins.test.ts	a pin is capped	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.pins.test.ts	a pin is capped	rust-unit:roamgate-mr-reviews:rpc::tests::a_pin_is_capped	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.pins.test.ts	hide: out of the view until something happens on it, restorable	scenario:parity/scenarios/mr_reviews/marks.yaml	
-server/src/mr-reviews/inbox.pins.test.ts	pinning a hidden request shows it again; settings saves keep both	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.pins.test.ts	pinning a hidden request shows it again; settings saves keep both	rust-unit:roamgate-mr-reviews:rpc::tests::pinning_a_hidden_request_shows_it_again_settings_saves_keep_both	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.test.ts	lists the user's requests per host, says which hosts failed	scenario:parity/scenarios/mr_reviews/gitlab-inbox.yaml	
-server/src/mr-reviews/inbox.test.ts	a request that comes after the baseline is new	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.test.ts	unread follows what the user saw	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.test.ts	a request that comes after the baseline is new	rust-unit:roamgate-mr-reviews:inbox::tests::a_request_that_comes_after_the_baseline_is_new	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.test.ts	unread follows what the user saw	rust-unit:roamgate-mr-reviews:inbox::tests::unread_follows_what_the_user_saw	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.test.ts	a host that fails keeps its requests	scenario:parity/scenarios/mr_reviews/rate-limit.yaml	
-server/src/mr-reviews/inbox.test.ts	suggestions: picked ones show, not interested ones go	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.test.ts	a closed request's review starts aging	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.test.ts	suggestions: picked ones show, not interested ones go	rust-unit:roamgate-mr-reviews:inbox::tests::suggestions_picked_ones_show_not_interested_ones_go	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.test.ts	a closed request's review starts aging	rust-unit:roamgate-mr-reviews:inbox::tests::a_closed_requests_review_starts_aging	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.test.ts	defaults are empty: nothing user-specific	rust-unit:roamgate-mr-reviews:settings::tests::defaults_are_empty_nothing_user_specific	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.test.ts	normalizes what settings.json holds	rust-unit:roamgate-mr-reviews:settings::tests::normalizes_what_settings_json_holds	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.test.ts	the RPC saves through the stored form	scenario:parity/scenarios/mr_reviews/hosts.yaml	
-server/src/mr-reviews/inbox.test.ts	the user's order: kept, checked, saved alone without a refresh	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.test.ts	the user's order: kept, checked, saved alone without a refresh	rust-unit:roamgate-mr-reviews:rpc::tests::the_users_order_kept_checked_saved_alone_without_a_refresh	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inference.test.ts	versions, facts and what counts as a meaningful change	rust-unit:roamgate-mr-reviews:inference::tests::versions_facts_and_what_counts_as_a_meaningful_change	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inference.test.ts	dependencies found without a model: references and contained commits	rust-unit:roamgate-mr-reviews:inference::tests::dependencies_found_without_a_model_references_and_contained_commits	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inference.test.ts	the answer is checked; the prompt marks people's text as data	rust-unit:roamgate-mr-reviews:inference::tests::the_answer_is_checked_the_prompt_marks_peoples_text_as_data	inbox, order, efforts and the reviews agent
@@ -2963,14 +2963,14 @@ server/src/mr-reviews/module.test.ts	forgetting a review worktree keeps the revi
 server/src/mr-reviews/module.test.ts	the review pane's agent review, with no agent pane: the request's Claude starts and reviews	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/module.test.ts	the sidebar learns each review workspace and the request it is on	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/order.test.ts	an operation is applied, saved with a version and pushed	scenario:parity/scenarios/mr_reviews/marks.yaml	
-server/src/mr-reviews/order.test.ts	the manual order wins over the inbox's sort, in Suggested and every section	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/order.test.ts	concurrent changes from the user and the agent both apply	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/order.test.ts	a stale whole list is rebased, not written over the latest order	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/order.test.ts	the manual order wins over the inbox's sort, in Suggested and every section	rust-unit:roamgate-mr-reviews:order::tests::the_manual_order_wins_over_the_inboxs_sort_in_suggested_and_every_section	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/order.test.ts	concurrent changes from the user and the agent both apply	rust-unit:roamgate-mr-reviews:order::tests::concurrent_changes_from_the_user_and_the_agent_both_apply	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/order.test.ts	a stale whole list is rebased, not written over the latest order	rust-unit:roamgate-mr-reviews:order::tests::a_stale_whole_list_is_rebased_not_written_over_the_latest_order	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/order.test.ts	undo takes the change back, on the latest order	scenario:parity/scenarios/mr_reviews/marks.yaml	
-server/src/mr-reviews/order.test.ts	unknown keys and other sections are reported	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/order.test.ts	pins and removals take a version and are pushed too	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/order.test.ts	Undo takes back an agent's override, unless changed since	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/order.test.ts	the order and its version survive a restart	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/order.test.ts	unknown keys and other sections are reported	rust-unit:roamgate-mr-reviews:order::tests::unknown_keys_and_other_sections_are_reported	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/order.test.ts	pins and removals take a version and are pushed too	rust-unit:roamgate-mr-reviews:order::tests::pins_and_removals_take_a_version_and_are_pushed_too	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/order.test.ts	Undo takes back an agent's override, unless changed since	rust-unit:roamgate-mr-reviews:order::tests::undo_takes_back_an_agents_override_unless_changed_since	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/order.test.ts	the order and its version survive a restart	rust-unit:roamgate-mr-reviews:order::tests::the_order_and_its_version_survive_a_restart	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/order.test.ts	two clients follow the same order, by push or by the next poll	scenario:parity/scenarios/mr_reviews/marks.yaml	
 server/src/mr-reviews/overrides.test.ts	fields are set, capped and cleared; an empty override goes	scenario:parity/scenarios/mr_reviews/marks.yaml	
 server/src/mr-reviews/overrides.test.ts	whose-move and next step age with the request, labels never	rust-unit:roamgate-mr-reviews:overrides::tests::whose_move_and_next_step_age_with_the_request_labels_never	inbox, order, efforts and the reviews agent
