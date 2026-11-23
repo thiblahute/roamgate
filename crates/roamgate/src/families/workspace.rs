@@ -674,8 +674,19 @@ async fn browser_call(
     let method = call.method.as_str();
     let params = &call.params;
     if method.starts_with("bridge.workspace_tree.") {
-        let tree = inner.tree()?;
-        return tree_store::rpc(&tree.store, method, params)
+        let store = match inner.tree() {
+            Ok(tree) => tree.store.clone(),
+            // A shadow read while the front owns the family: the
+            // arrangement as settings.json holds it, nothing written.
+            Err(_) if call.shadow && method == "bridge.workspace_tree.get" => {
+                WorkspaceTreeStore::new(Arc::new(CoreSettings {
+                    cx: cx.clone(),
+                    connection_id: String::new(),
+                }))
+            }
+            Err(error) => return Err(error),
+        };
+        return tree_store::rpc(&store, method, params)
             .await
             .unwrap_or_else(|| Err(WorkspaceError::new(format!("unknown method {method}"))))
             .map_err(rpc_error);
