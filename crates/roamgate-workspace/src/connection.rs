@@ -20,6 +20,63 @@ use serde_json::Value;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// A handler's failure as the browser sees it: the TS `Error`'s message,
+/// with a code when the TS gave one (`markRpcError`'s), and the HTTP
+/// status of an HTTP route's answer.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
+pub struct WorkspaceError {
+    pub message: String,
+    pub code: Option<String>,
+    pub status: Option<u16>,
+}
+
+impl WorkspaceError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            code: None,
+            status: None,
+        }
+    }
+
+    pub fn with_code(mut self, code: impl Into<String>) -> Self {
+        self.code = Some(code.into());
+        self
+    }
+
+    pub fn with_status(mut self, status: u16) -> Self {
+        self.status = Some(status);
+        self
+    }
+}
+
+impl From<roamgate_git::GitError> for WorkspaceError {
+    fn from(error: roamgate_git::GitError) -> Self {
+        let status = error.status();
+        Self {
+            message: error.to_string(),
+            code: None,
+            status,
+        }
+    }
+}
+
+impl From<String> for WorkspaceError {
+    fn from(message: String) -> Self {
+        Self::new(message)
+    }
+}
+
+impl From<&str> for WorkspaceError {
+    fn from(message: &str) -> Self {
+        Self::new(message)
+    }
+}
+
+/// A browser RPC's answer.
+pub type RpcResult = Result<Value, WorkspaceError>;
+
 /// How a Herdr call is made (herdr-client.ts `call`'s timeout and
 /// `{fresh}`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
