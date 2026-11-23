@@ -477,9 +477,14 @@ import {
   parseLimitPauses,
 } from "../../shared/limitResume";
 import {
+  type ClaudeModChange,
   type ClaudeModTypeResult,
   createClaudeModHub,
 } from "./agent/claude-mod";
+import {
+  type ClaudeModMirror,
+  createClaudeModFront,
+} from "./agent/claude-mod-front";
 import {
   type ClaudeModInstallState,
   claudeModHostScript,
@@ -1036,32 +1041,104 @@ let limitResumer: LimitResumer | null = null;
  * Roamgate's Claude mods (agent/claude-mod.ts): the inbox of each pane whose
  * Claude runs one, and what each says of its session.
  */
-const claudeModHub = createClaudeModHub({
-  file: join(dataRoot(), "claude-mod-inbox.json"),
-  log: (message, fields) => logger.child("claude-mod").info(message, fields),
-  debug: (message, fields) => logger.child("claude-mod").debug(message, fields),
-  type: typeForClaudeMod,
-  onChange: (connectionId, paneId, change) => {
-    // The browsers read the panes again, with the mod's state laid over.
-    let generation: number | undefined;
-    try {
-      generation =
-        connectionManager.readyRuntimeLease(connectionId)?.generation;
-    } catch {
-      generation = undefined;
-    }
-    try {
-      const line = serializeHerdrEventEnvelope(
-        connectionId,
-        { event: "roamgate.claude_mod", data: { pane_id: paneId, change } },
-        generation,
+const claudeModHub = createClaudeModFront({
+  make: () =>
+    createClaudeModHub({
+      file: join(dataRoot(), "claude-mod-inbox.json"),
+      log: (message, fields) =>
+        logger.child("claude-mod").info(message, fields),
+      debug: (message, fields) =>
+        logger.child("claude-mod").debug(message, fields),
+      type: typeForClaudeMod,
+      onChange: claudeModChanged,
+    }),
+  // The core's hub takes it; the channel keeps the order of deliveries.
+  deliverOnCore: (connectionId, paneId, text, kind) => {
+    void coreFront
+      ?.callInternal("review", "mod_deliver", {
+        connection_id: connectionId,
+        pane_id: paneId,
+        text,
+        kind,
+      })
+      .catch((error: unknown) =>
+        logger.child("claude-mod").warn("message not delivered to the core", {
+          connection: connectionId,
+          pane: paneId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
       );
-      for (const ws of clients) safeSend(ws, line, "claude-mod");
-    } catch {}
-    // A turn ended (on a usage limit, maybe).
-    if (change !== "usage") pokeLimit(connectionId, paneId);
   },
 });
+
+/** A pane's Claude mod came, went, or said something new (either hub). */
+function claudeModChanged(
+  connectionId: string,
+  paneId: string,
+  change: ClaudeModChange,
+): void {
+  // The browsers read the panes again, with the mod's state laid over.
+  let generation: number | undefined;
+  try {
+    generation = connectionManager.readyRuntimeLease(connectionId)?.generation;
+  } catch {
+    generation = undefined;
+  }
+  try {
+    const line = serializeHerdrEventEnvelope(
+      connectionId,
+      { event: "roamgate.claude_mod", data: { pane_id: paneId, change } },
+      generation,
+    );
+    for (const ws of clients) safeSend(ws, line, "claude-mod");
+  } catch {}
+  // A turn ended (on a usage limit, maybe).
+  if (change !== "usage") pokeLimit(connectionId, paneId);
+}
+
+/**
+ * The core runs the Claude mod hub while it owns both review (its agent
+ * socket takes the mods' requests) and conversation; the inbox changes
+ * hands through its file (contract/wire/core-channel.md).
+ */
+function modHubOnCore(): boolean {
+  return !!coreFront && !bunOwns("review") && !bunOwns("conversation");
+}
+let modHubSwitch: Promise<void> = Promise.resolve();
+function switchModHub(): void {
+  modHubSwitch = modHubSwitch.then(async () => {
+    const toCore = modHubOnCore();
+    if (toCore === claudeModHub.onCore()) return;
+    const log = logger.child("claude-mod");
+    if (!toCore) {
+      // The core writes its inbox before Bun's hub reads it.
+      await coreFront
+        ?.callInternal("review", "mod_release", {})
+        .catch(() => undefined);
+      claudeModHub.toBun();
+      log.info("the Claude mod hub runs in Bun");
+      return;
+    }
+    claudeModHub.toCore();
+    // The core may hear of its families a moment after this front.
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        await coreFront!.callInternal("review", "mod_take", {});
+        log.info("the Claude mod hub runs in the Rust core");
+        return;
+      } catch (error) {
+        if (!modHubOnCore()) break;
+        if (attempt === 19)
+          log.warn("the core did not take the Claude mod hub", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        await Bun.sleep(250);
+      }
+    }
+    claudeModHub.toBun();
+  });
+}
+onOwnershipChanged(switchModHub);
 
 /**
  * A message a pane's Claude mod left when it went away: typed as for a
@@ -1747,6 +1824,30 @@ const coreReverseTargets = {
     _ctx: unknown,
     signal: AbortSignal,
   ) => conversationHost((args ?? {}) as Record<string, unknown>, signal),
+  // The Claude mod hub in the core (contract/wire/core-channel.md).
+  "claude_mod.mirror": async (args: unknown) => {
+    claudeModHub.mirror(args as ClaudeModMirror);
+    return { ok: true };
+  },
+  "claude_mod.changed": async (args: unknown) => {
+    const { connection_id, pane_id, change } = (args ?? {}) as {
+      connection_id?: unknown;
+      pane_id?: unknown;
+      change?: unknown;
+    };
+    if (
+      typeof connection_id === "string" &&
+      typeof pane_id === "string" &&
+      typeof change === "string"
+    )
+      claudeModChanged(connection_id, pane_id, change as ClaudeModChange);
+    return { ok: true };
+  },
+  "claude_mod.released": async () => {
+    // The core gave up review or conversation: its inbox is on disk.
+    switchModHub();
+    return { ok: true };
+  },
   "agent_sessions.seen_written": async () => {
     // The core wrote its last marks: Bun reads them, owning them again.
     if (!agentSessionsOnCore()) agentSeen = createAgentSeenStore();
@@ -8756,6 +8857,11 @@ function stopManagerOnce(): Promise<void> {
     await stopHostOnCore();
     // The core's seen marks are on disk before the channel goes.
     await seenWritten;
+    // So is the core's Claude mod inbox.
+    if (claudeModHub.onCore())
+      await coreFront
+        ?.callInternal("review", "mod_flush", {})
+        .catch(() => undefined);
     // The core's conversations saved on their leases, on disk.
     if (conversationOnCore())
       await coreFront!

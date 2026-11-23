@@ -127,6 +127,14 @@ export class ClaudeModError extends Error {
 /** What typing an orphaned message did: typed, not yet (busy), or never. */
 export type ClaudeModTypeResult = "typed" | "wait" | "gone";
 
+/** What changed of a pane's mod (`onChange`). */
+export type ClaudeModChange =
+  | "attach"
+  | "detach"
+  | "status"
+  | "usage"
+  | "turn_complete";
+
 const STORE_VERSION = 1;
 
 function key(connectionId: string, paneId: string): string {
@@ -202,7 +210,7 @@ export function createClaudeModHub(args: {
   onChange?: (
     connectionId: string,
     paneId: string,
-    change: "attach" | "detach" | "status" | "usage" | "turn_complete",
+    change: ClaudeModChange,
   ) => void;
   /** Longest hold of a poll (the mod's fetch gives up at 30 s). */
   maxHoldMs?: number;

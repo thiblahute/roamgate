@@ -4,6 +4,7 @@ server/src/activity/	rust-unit:roamgate-activity	recorder, reader and timeline i
 server/src/activity/front.test.ts	internal:core channel	the Bun side of the activity family's handover (plan 8.2), deleted at cut-over; the core's family and the activity data tests (crates/roamgate-activity/tests/data_compat.rs) run both sides
 server/src/workspace/front.test.ts	internal:core channel	the Bun side of the workspace family's handover (plan 8.2), deleted at cut-over; the core's side is crates/roamgate/src/families/workspace.rs and the hybrid runs (PARITY_RUST_OWNERS=settings,workspace)
 server/src/connections/host-facade.test.ts	internal:core channel	the Bun side of the host family's handover (plan 8.2), deleted at cut-over; the core's side is crates/roamgate-connections (host_runtime, host_ops) and the hybrid runs (PARITY_RUST_OWNERS=host, ROAMGATE_TEST_RUST_FAMILIES=host)
+server/src/agent/claude-mod-front.test.ts	internal:core channel	the Bun side of the Claude mod hub's handover (plan 8.2), deleted at cut-over; the core's side is crates/roamgate/src/families/claude_mod.rs with roamgate-claude's mod_hub mirror test and the hybrid runs (PARITY_RUST_OWNERS=conversation,review)
 server/src/time-report/	rust-unit:roamgate-activity	the time-report provider bridge
 server/src/agent/	rust-unit:roamgate-agents	agent registry, transcript readers and session resolution
 server/src/agent/claude-mod	rust-unit:roamgate-claude	the claude-mod hub and plugin install

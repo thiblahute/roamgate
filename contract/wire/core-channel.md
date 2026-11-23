@@ -262,6 +262,9 @@ own reviews module uses (`mrReviewsHost`).
 | `review.connection`           | `op`: `id` (the default connection's id), else `connection_id` and `resolveRoot` (`workspace_id`), `readDefaultBase` (`root`), `readRoot` (`path`), `scanRepos` (`paths`, `agent_paths`), `renderedPage` (`root`, `target`, `page`, `scripts`), `renderedSvg` (`svg`, `color`, `scripts`), `renderedStorage` (`token`, `write`), `clearRenderedStorage` (`site`)                                                                                                                                                                                                                                                     | what the browser connection's `ReviewRpcConnection` answers (review/rpc.ts); a full site's storage is an error with code `quota`                                                                                                                                                                                                   |
 | `review.socket`               | `op` and its `input`: `connections`; `readRoot` (`connectionId`, `path`), `readDefaultBase` (`connectionId`, `root`), `readLastStep` (`connectionId`, `root`, `workspaceId`); `hasViewers`; `notify`, `workspaces`, `reviews`, `work`, `messagesSend`, `claudeStart`, `launch`, `holdOutput` (the agent socket's argument objects); `messagesList`; `hold` (`connectionId`, `paneId`, `sessionId`, `form`), `fg` (`connectionId`, `paneId`, `form`), `handback` (`connectionId`, `paneId`, `sessionId`); `mod` (`connectionId`, `command`, `form`: a Claude mod's `mod_poll`, `mod_ack`, `mod_event` or `mod_tools`) | what review/agent-server.ts's argument of that name answers (`connections`: `[{id, herdrSocketPath, sshHost, lastSteps}]`); `mod`: what Bun's Claude mod hub answers. A failure carries the status the socket answers in `data.status`. The review family's agent socket while the core serves it, until the families it asks move |
 | `conversation.host` | `op`, `connection_id` (optional: the default connection) and the op's arguments: `connection` (`{connection_id, generation, ssh, local_holder}`), `ssh_argv {command, tag}` (the front's SSH argv for the host), `ask {pane_id, tool, input, can_always, questions?, timeout_ms}` (the prompt card; cancelled with the call), `idle_stop_minutes`, `keep_awake {pane_id}`, `models_offered {session_id}`, `choose_model {session_id, model, resolved}`, `register_launch {pane_id, token, spec}` (a profile's launch the core types), `mirror {mirror}`, `tell {what: lease_changed \| owned_status, pane_id}`, `released` (no `connection_id`: the core gave the family back, its leases on disk) | the op's answer: `ask` the browser's `AgentPromptAnswer` or null, `idle_stop_minutes` a number, `keep_awake` a reason or null, `models_offered` `{models, error?}`, `ssh_argv` a list, else `{ok: true}` |
+| `claude_mod.mirror` | `mods` (each attached pane: `gone`, `live_until` (epoch ms, null while a poll is in flight), `pane` (the hub's `ClaudeModPane`)), `tools` (the hub's `toolsState`) | `{ok: true}`; what the core's Claude mod hub says now, sent after each change and every 5 s while it changed: the front's synchronous readers (live, pane, panes, hasTools, a delivery's refusal) read it |
+| `claude_mod.changed` | `connection_id`, `pane_id`, `change` (`attach`, `detach`, `status`, `usage`, `turn_complete`) | `{ok: true}`; a pane's mod changed in the core's hub: the front sends `roamgate.claude_mod` to the browsers and pokes the usage-limit resumer, as for its own hub |
+| `claude_mod.released` | none | `{ok: true}`; the core stopped its Claude mod hub (it gave up review or conversation), its inbox written: the front's hub reads it again |
 
 An unknown target is an error reply with code `unknown_target`.
 
@@ -372,6 +375,10 @@ The front's internal calls by family:
 | `internal.conversation.holder_hold`, `.holder_fg`, `.holder_output`, `.holder_handback` | `connection_id`, `pane_id`, and roamgate-hold's request as the agent socket parsed it (`session_id`, `status`, `shell`, `spec`, `holder_id`, `offset`, `end`, `data`) | The holder's reply (`HolderReply`, or `{offset?}` for output); `holder_hold` is cancelled when the holder's request closes. |
 | `internal.conversation.prompt`, `.send`, `.switch_session`, `.restart_process`, `.restart_terminal`, `.auto_start` | `connection_id`, `pane_id`, and `text` (`peer`), `session_id` | What Bun's service answered for the same call. |
 | `internal.conversation.pane_closed`, `.sweep`, `.socket_closed`, `.stop` | `connection_id`, `pane_id`; `socket_id`; none | `{ok: true}`; `stop`: the services saved on their leases and the lease file written (the front's shutdown). |
+| `internal.review.mod_take` | none | The front wrote its Claude mod inbox and stopped its hub: the core's hub starts, reading claude-mod-inbox.json. Refused unless the core owns review and conversation. Answers `{ok: true}`. |
+| `internal.review.mod_release` | none | The core's hub writes its inbox and stops (the front's reads it next). Answers `{ok: true}`. |
+| `internal.review.mod_flush` | none | The front stops: the core's hub writes its inbox now. Answers `{ok: true}`. |
+| `internal.review.mod_deliver` | `connection_id`, `pane_id`, `text`, `kind` | A delivery of the front's (the companion, the agent messenger) for a pane whose mod the mirror says is live: the message's id, null when the mod is no longer live, or the error `claude_mod_refused` (its inbox full). |
 
 Bun's own copy of a family stops its background work and writes while the
 core owns the family and starts again (reading its files afresh) when it
@@ -623,6 +630,25 @@ mirror the core sends after each change and before each answer
 the side giving it up saves what each holder's log was read to on the
 leases and writes them (the core then calls `conversation.host`
 `released`), and the other reads them afresh.
+
+### The Claude mod hub
+
+The Claude mod hub (the inbox of each pane whose Claude runs Roamgate's mod,
+and what each mod says of its session) runs in the core while the core owns
+both review, whose agent socket takes the mods' requests and whose file
+claude-mod-inbox.json is, and conversation; otherwise the front runs it, and
+the core's agent socket hands the mods' requests to it (`review.socket`
+`mod`). The front drives the change of hands through the file: it writes its
+inbox and stops its hub, then calls `internal.review.mod_take`; before
+taking the hub back it calls `internal.review.mod_release`, and the core
+also stops its hub and calls `claude_mod.released` when it gives up either
+family. While the core runs the hub, its own readers (the agent socket, the
+usage-limit resumer's `claude_mod.panes` and `claude_mod.deliver`, the
+review service's tools check, the Integrations page's session count) use it
+directly; the front's synchronous readers read `claude_mod.mirror`, its
+deliveries go to `internal.review.mod_deliver` (in the channel's order),
+and at its shutdown the front calls `internal.review.mod_flush` before the
+channel goes.
 
 ## CLI pass-through
 
