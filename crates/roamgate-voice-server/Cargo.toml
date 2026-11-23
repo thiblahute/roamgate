@@ -11,7 +11,7 @@ workspace = true
 
 [dependencies]
 base64 = "0.22"
-futures-util = { version = "0.3", default-features = false, features = ["std"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 hex = "0.4"
 indexmap = { version = "2", features = ["serde"] }
 rand = "0.9"
@@ -25,6 +25,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 unicode-normalization = "0.1"
 tokio = { version = "1", features = ["rt", "sync", "macros", "process", "io-util", "time", "fs"] }
+tokio-tungstenite = "0.28"
 tempfile = { version = "3", optional = true }
 
 [features]

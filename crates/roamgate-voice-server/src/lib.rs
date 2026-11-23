@@ -17,6 +17,7 @@ pub mod process;
 pub mod profiles;
 pub mod reading;
 pub mod setup;
+pub mod socket;
 pub mod speakers;
 pub mod speech_rate;
 pub mod stock;
