@@ -1,11 +1,8 @@
 //! The tools of the Reviews board and of the reviews agent as the tool
 //! catalog (`contract/tools/catalog.json`, tables `board` and
 //! `reviews-agent`) has them: names, descriptions and JSON Schemas, so what
-//! a model or an agent session reads is Bun's text byte for byte.
-//!
-//! TODO(S23): `roamgate-claude::catalog` (on `rust/s23-adapters`, not yet
-//! on `rust/main`) reads every table of the catalog; once it lands, this
-//! reader goes and [`table`] reads through it.
+//! a model or an agent session reads is Bun's text byte for byte. Read
+//! through `roamgate-claude`'s catalog, with the fields these tables add.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -28,29 +25,29 @@ pub struct CatalogTool {
 }
 
 static TABLES: LazyLock<HashMap<String, Vec<CatalogTool>>> = LazyLock::new(|| {
-    let catalog: Value = serde_json::from_str(include_str!("../../../contract/tools/catalog.json"))
-        .expect("the tool catalog is JSON");
-    let tables = catalog["tables"].as_object().expect("catalog tables");
-    tables
-        .iter()
-        .map(|(name, table)| {
-            let tools = table["tools"]
-                .as_array()
+    let catalog = roamgate_claude::catalog::catalog();
+    catalog
+        .table_names()
+        .map(|name| {
+            let tools = catalog
+                .table(name)
+                .map(|table| table.tools)
+                .unwrap_or_default()
                 .into_iter()
-                .flatten()
                 .map(|tool| CatalogTool {
-                    name: tool["name"].as_str().unwrap_or_default().to_owned(),
-                    description: tool["description"].as_str().unwrap_or_default().to_owned(),
-                    input_schema: tool["input_schema"].clone(),
-                    writes: tool.get("writes").and_then(Value::as_bool),
+                    writes: tool.extra.get("writes").and_then(Value::as_bool),
                     replay: tool
+                        .extra
                         .get("replay")
                         .and_then(Value::as_str)
                         .map(str::to_owned),
-                    sequential: tool.get("sequential").and_then(Value::as_bool),
+                    sequential: tool.extra.get("sequential").and_then(Value::as_bool),
+                    name: tool.name,
+                    description: tool.description,
+                    input_schema: tool.input_schema,
                 })
                 .collect();
-            (name.clone(), tools)
+            (name.to_owned(), tools)
         })
         .collect()
 });

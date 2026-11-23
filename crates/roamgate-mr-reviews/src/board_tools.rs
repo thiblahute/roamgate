@@ -1580,11 +1580,6 @@ impl BoardTools {
     }
 }
 
-/// Checks a tool's parameters as typebox's `Value.Errors` reads them: the
-/// first error, said `/path message`. The production one is
-/// `roamgate-claude::schema::first_error(..).describe()` (S23).
-pub type FirstError = Arc<dyn Fn(&Value, &Value) -> Option<String> + Send + Sync>;
-
 /// `help`: each tool with its description, whether it writes, and its
 /// parameters.
 pub fn board_help() -> Value {
@@ -1611,7 +1606,6 @@ pub async fn board_tool(
     tool: &str,
     params: &Value,
     caller: &str,
-    first_error: Option<&FirstError>,
 ) -> RpcResult<String> {
     // What a generic caller (one MCP tool for all) needs to call them.
     if tool == "help" {
@@ -1631,11 +1625,11 @@ pub async fn board_tool(
             "not_found",
         ));
     };
-    if schema::first_error(&entry.input_schema, params).is_some() {
-        let first = first_error.and_then(|first| first(&entry.input_schema, params));
+    // The first error as typebox's `Value.Errors` reads it.
+    if let Some(first) = schema::first_error(&entry.input_schema, params) {
         return Err(RpcError::invalid(format!(
-            "invalid {tool} parameters{}",
-            first.map_or_else(String::new, |first| format!(": {first}"))
+            "invalid {tool} parameters: {}",
+            first.describe()
         )));
     }
     let params = params.as_object().cloned().unwrap_or_default();

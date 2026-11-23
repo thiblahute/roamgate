@@ -59,7 +59,7 @@ struct Board {
 
 impl Board {
     async fn tool(&self, name: &str, params: Value, caller: &str) -> RpcResult<String> {
-        board_tool(&self.deps, name, &params, caller, None).await
+        board_tool(&self.deps, name, &params, caller).await
     }
 }
 
@@ -230,25 +230,15 @@ async fn reviews_override_sets_and_clears_said_with_undo_never_on_others_names()
         )
         .await
         .unwrap_err();
-    assert_eq!(
-        invalid,
-        RpcError::invalid("invalid reviews_override parameters")
+    // The detail is typebox's first error, as roamgate-claude's checker says it.
+    assert!(
+        invalid
+            .message()
+            .starts_with("invalid reviews_override parameters: /"),
+        "{}",
+        invalid.message()
     );
-    // The detail typebox gives, when the checker is given.
-    let first: FirstError = Arc::new(|_, _| Some("/nope schema is false".to_owned()));
-    let detailed = board_tool(
-        &b.deps,
-        "reviews_override",
-        &json!({"request": "!2", "nope": 1}),
-        "Claude",
-        Some(&first),
-    )
-    .await
-    .unwrap_err();
-    assert_eq!(
-        detailed.message(),
-        "invalid reviews_override parameters: /nope schema is false"
-    );
+    assert_eq!(invalid.code(), Some("invalid"));
     let unknown = b
         .tool("reviews_eat", json!({}), "Claude")
         .await

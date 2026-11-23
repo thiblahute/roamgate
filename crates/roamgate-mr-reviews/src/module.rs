@@ -29,7 +29,7 @@ use crate::agent::{
     AgentTurn, MrAgent, MrAgentDeps, REVIEWS_AGENT_MODEL, ReviewsAgentDriver, mr_agent_path,
 };
 use crate::agent_tools::{MrAgentToolDeps, SaveHintsFn, SignalsFn};
-use crate::board_tools::{BoardToolDeps, FirstError, RpcFn, WorkspacesFn, board_tool};
+use crate::board_tools::{BoardToolDeps, RpcFn, WorkspacesFn, board_tool};
 use crate::claude::{
     AgentCommandFn, ConnectionsFn, MrClaude, MrClaudeDeps, RequestReviewFn, StartMode, StartModeFn,
 };
@@ -169,8 +169,6 @@ pub struct MrReviewsOptions {
     pub effort_review: Option<EffortReviewFn>,
     /// A session's profile command (`commandForSession`).
     pub agent_command: Option<AgentCommandFn>,
-    /// The board tools' parameter check, said as typebox says it.
-    pub first_error: Option<FirstError>,
     /// The clock the inbox's timers follow (a test clock); None: tokio's.
     pub clock: Option<SharedClock>,
     pub logger: Logger,
@@ -206,7 +204,6 @@ impl MrReviewsOptions {
             open_range: None,
             effort_review: None,
             agent_command: None,
-            first_error: None,
             clock: None,
             logger: Logger::silent(),
         }
@@ -902,14 +899,7 @@ impl MrReviews {
             tree: self.rpc_tree(),
             workspaces: Some(workspaces),
         };
-        board_tool(
-            &deps,
-            tool,
-            params,
-            caller,
-            self.options().first_error.as_ref(),
-        )
-        .await
+        board_tool(&deps, tool, params, caller).await
     }
 
     /// A request named by `key`, or by its review session (`session_id`).
