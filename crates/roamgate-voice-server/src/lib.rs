@@ -9,6 +9,7 @@ pub mod hardware;
 pub mod helper;
 pub mod js;
 pub mod kokoro_language;
+pub mod library;
 pub mod low_gpu;
 pub mod models;
 pub mod process;
