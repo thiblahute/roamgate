@@ -1,0 +1,26 @@
+[package]
+name = "roamgate-git"
+version = "0.0.0"
+description = "Roamgate's Git over a workspace's host (Rust migration plan, section 6.2): the git shell, porcelain, numstat and diff parsers, the review's patch and scan scripts, step snapshots, diff bases and compare refs"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+regex = "1"
+roamgate-base = { path = "../roamgate-base" }
+roamgate-exec = { path = "../roamgate-exec" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
+tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }

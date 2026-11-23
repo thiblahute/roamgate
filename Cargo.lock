@@ -6692,6 +6692,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "roamgate-git"
+version = "0.0.0"
+dependencies = [
+ "futures-util",
+ "regex",
+ "roamgate-base",
+ "roamgate-exec",
+ "roamgate-protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "roamgate-herdr"
 version = "0.0.0"
 dependencies = [
