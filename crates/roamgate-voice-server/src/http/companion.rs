@@ -203,7 +203,7 @@ pub struct CompanionOptions {
     /// Its long-term memory files, shown and deleted in its panel.
     pub memory_files: Option<CompanionMemoryFiles>,
     /// The jobs' answers nobody heard yet.
-    pub waiting: Option<WaitingAnswers>,
+    pub waiting: Option<Arc<WaitingAnswers>>,
     pub speakers: Option<Arc<dyn Speakers>>,
     /// The light voice the call has ([`super::routes::light_voice`]).
     pub light_voice: Arc<dyn Fn() -> Option<String> + Send + Sync>,
@@ -849,7 +849,7 @@ impl CompanionRoutes {
             .0
             .waiting
             .as_ref()
-            .map(WaitingAnswers::context)
+            .map(|waiting| waiting.context())
             .unwrap_or_default();
         [context, waiting]
             .into_iter()

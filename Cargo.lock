@@ -6990,6 +6990,7 @@ dependencies = [
  "roamgate-mr-reviews",
  "roamgate-notify",
  "roamgate-sidecar",
+ "roamgate-voice-server",
  "roamgate-work",
  "rust-embed",
  "rustls 0.23.46",

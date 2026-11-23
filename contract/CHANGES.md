@@ -6,6 +6,24 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.18
+
+inventory: 31a27c547dd692d57fa719181b21e2cd034d673e75b9c8e7341e7b44be734694
+
+The voice family's adapter in the Rust core (Phase 10, S22;
+wire/core-channel.md, Families in the core), landed Bun-owned: the voice
+socket stays the front's until Rust is the front, so the family flips with
+Phase 10. The browser surface (`/api/voice` and under it) is unchanged; the
+inventory too.
+
+- owners: `owners/families.json` gives `voice` the CLI command `voice`
+  (`roamgate voice`), passed through while Rust owns the family.
+- wire, reverse targets: `voice.errand_read`, `voice.errand_prompt` and
+  `voice.errand_status` (the sessions the companion's errands go to,
+  through Bun's own code for them), `voice.work_tool` and
+  `voice.work_states` (the Work board the companion uses) and
+  `voice.session_cookie` (a login for a call handed to another device).
+
 ## 1.17
 
 inventory: 31a27c547dd692d57fa719181b21e2cd034d673e75b9c8e7341e7b44be734694

@@ -83,6 +83,7 @@ pub const FAMILY_COMMANDS: &[&str] = &[
     "plugin",
     "completion",
     "reviews",
+    "voice",
 ];
 
 /// Reads the command line; `env` gives the environment's HOST and PORT.

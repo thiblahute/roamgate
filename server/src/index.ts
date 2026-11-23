@@ -686,11 +686,13 @@ voiceHelper.speakers.useLibrary(new VoiceProfiles(voiceProfilesDir()));
 // A job's answer nobody heard (the page reloaded, the call ended): kept
 // for the next voice chat to mention (voice-waiting.ts).
 const waitingAnswers = new WaitingAnswers();
-// Work said by voice on sessions (errands): their processes stay up
-// while it runs (idle stop).
-const voiceErrands = new VoiceErrands({
-  keep: (answer) => waitingAnswers.keep(answer),
-  read: async (connectionId, paneId) => {
+/**
+ * How the companion's errands reach a session: its history, a prompt, and
+ * what it does now. Bun's own errands use them, and the Rust core's voice
+ * family through the `voice.errand_*` reverse targets.
+ */
+const voiceErrandDeps = {
+  read: async (connectionId: string, paneId: string) => {
     const runtime = connectionManager.readyRuntime(connectionId);
     if (!runtime) throw new Error(`${connectionId} is not connected`);
     const history = (await runtime.agentSessions.readHistory({
@@ -700,7 +702,7 @@ const voiceErrands = new VoiceErrands({
     })) as { entries?: ErrandEntry[] };
     return history.entries ?? [];
   },
-  prompt: async (connectionId, paneId, text) => {
+  prompt: async (connectionId: string, paneId: string, text: string) => {
     const runtime = connectionManager.readyRuntime(connectionId);
     if (!runtime) throw new Error(`${connectionId} is not connected`);
     // Windows hosts: the messenger does not reach them.
@@ -716,7 +718,7 @@ const voiceErrands = new VoiceErrands({
   },
   // What it does now: what it asks the user (a permission or question
   // card), its status, and the messages queued for it.
-  status: async (connectionId, paneId) => {
+  status: async (connectionId: string, paneId: string) => {
     const runtime = connectionManager.readyRuntime(connectionId);
     if (!runtime) return null;
     const asked = getReviewService()
@@ -745,6 +747,12 @@ const voiceErrands = new VoiceErrands({
         getAgentMessenger().waitingFor(agentAddress(connectionId, paneId)),
     };
   },
+};
+// Work said by voice on sessions (errands): their processes stay up
+// while it runs (idle stop).
+const voiceErrands = new VoiceErrands({
+  keep: (answer) => waitingAnswers.keep(answer),
+  ...voiceErrandDeps,
 });
 // Voice sockets open, and when one was last used: a call keeps the
 // sessions' processes up (idle stop), its pauses included.
@@ -1081,6 +1089,20 @@ function corePaneText(args: unknown): { pane_id: string; text: string } {
   return { pane_id, text };
 }
 
+/** The session a `voice.errand_*` reverse call names. */
+function voicePaneOf(args: unknown): {
+  connection_id: string;
+  pane_id: string;
+} {
+  const { connection_id, pane_id } = (args ?? {}) as {
+    connection_id?: unknown;
+    pane_id?: unknown;
+  };
+  if (typeof connection_id !== "string" || typeof pane_id !== "string")
+    throw new Error("a voice errand needs a connection_id and a pane_id");
+  return { connection_id, pane_id };
+}
+
 /** What the core may call in Bun (contract/wire/core-channel.md). */
 const coreReverseTargets = {
   // The assistant family's (Ranger, while the core runs it): Bun stops its
@@ -1355,6 +1377,40 @@ const coreReverseTargets = {
     );
   },
   "work.checkout": async () => ownCheckout(),
+  // The voice family (while the core serves /api/voice): the companion's
+  // errands reach the sessions through Bun's own code for them, its Work
+  // tools the board Bun's companion uses, and a call handed to another
+  // device gets a login from Bun's auth.
+  "voice.errand_read": async (args: unknown) => {
+    const { connection_id, pane_id } = voicePaneOf(args);
+    return voiceErrandDeps.read(connection_id, pane_id);
+  },
+  "voice.errand_prompt": async (args: unknown) => {
+    const { connection_id, pane_id } = voicePaneOf(args);
+    const { text } = (args ?? {}) as { text?: unknown };
+    if (typeof text !== "string")
+      throw new Error("voice.errand_prompt needs a text");
+    await voiceErrandDeps.prompt(connection_id, pane_id, text);
+    return { ok: true };
+  },
+  "voice.errand_status": async (args: unknown) => {
+    const { connection_id, pane_id } = voicePaneOf(args);
+    return voiceErrandDeps.status(connection_id, pane_id);
+  },
+  "voice.work_tool": async (args: unknown) => {
+    const { tool, params } = (args ?? {}) as {
+      tool?: unknown;
+      params?: unknown;
+    };
+    if (typeof tool !== "string")
+      throw new Error("voice.work_tool needs a tool");
+    return { text: await voiceWork().tool(tool as WorkUserToolName, params) };
+  },
+  "voice.work_states": async () =>
+    voiceWork()
+      .items()
+      .map((item) => item.state),
+  "voice.session_cookie": async () => ({ cookie: newSessionCookie() }),
   "work.panes": async (args: unknown) =>
     workServiceDeps().panes!(workConnectionOf(args)),
   "work.workspaces": async (args: unknown) =>

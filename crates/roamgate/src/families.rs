@@ -19,6 +19,7 @@ pub mod notifications;
 pub mod settings;
 pub mod time_report;
 pub mod update;
+pub mod voice;
 pub mod work;
 
 /// Every family this build implements.
@@ -37,6 +38,7 @@ pub fn core_families() -> Families {
         work::family(),
         host::family(),
         mr_reviews::family(),
+        voice::family(),
     ]
     .into_iter()
     .flatten()

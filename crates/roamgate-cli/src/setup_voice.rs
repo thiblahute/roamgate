@@ -142,16 +142,23 @@ impl From<crate::args::Failure> for Failure {
     }
 }
 
-fn setup_deps(runtime: &CliRuntime, deps: &SetupCommandDeps) -> SetupDeps {
+/// The setup's places on this machine (the runtime's), its hardware
+/// detected here: the CLI's and the server's setup alike.
+pub fn runtime_setup_deps(runtime: &CliRuntime) -> SetupDeps {
     let app_data = runtime.app_data.as_deref();
-    let mut setup = deps.setup.clone().unwrap_or_else(|| {
-        SetupDeps::new(
-            default_models_dir(&runtime.home, &runtime.platform, app_data),
-            voice_config_path(&runtime.service().data().data_root()),
-            default_helper_path(&runtime.home, &runtime.platform, app_data),
-            Arc::new(|| detect_hardware(&system_probe())),
-        )
-    });
+    SetupDeps::new(
+        default_models_dir(&runtime.home, &runtime.platform, app_data),
+        voice_config_path(&runtime.service().data().data_root()),
+        default_helper_path(&runtime.home, &runtime.platform, app_data),
+        Arc::new(|| detect_hardware(&system_probe())),
+    )
+}
+
+fn setup_deps(runtime: &CliRuntime, deps: &SetupCommandDeps) -> SetupDeps {
+    let mut setup = deps
+        .setup
+        .clone()
+        .unwrap_or_else(|| runtime_setup_deps(runtime));
     if let Some(hardware) = &deps.hardware {
         setup.hardware = hardware.clone();
     }

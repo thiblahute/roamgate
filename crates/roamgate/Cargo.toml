@@ -31,6 +31,7 @@ roamgate-mr-reviews = { path = "../roamgate-mr-reviews" }
 roamgate-http = { path = "../roamgate-http" }
 roamgate-notify = { path = "../roamgate-notify" }
 roamgate-sidecar = { path = "../roamgate-sidecar" }
+roamgate-voice-server = { path = "../roamgate-voice-server" }
 roamgate-work = { path = "../roamgate-work" }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde = "1"

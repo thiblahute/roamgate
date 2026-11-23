@@ -223,7 +223,8 @@
         "data:voices",
         "data:voice-gst-registry.bin"
       ],
-      "shadow": []
+      "shadow": [],
+      "cli": ["voice"]
     },
     "assistant": {
       "phase": 11,
