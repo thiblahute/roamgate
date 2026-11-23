@@ -1379,7 +1379,8 @@ pub fn normalize_effort(raw: &Value) -> Option<Value> {
     Some(Value::Object(out))
 }
 
-fn view_name(value: Option<&Value>) -> Option<String> {
+/// mr-reviews/settings.ts viewName: a saved view's name, tidied, or None.
+pub fn view_name(value: Option<&Value>) -> Option<String> {
     let name = tidy(value?.as_str()?, VIEW_NAME_MAX);
     (!name.is_empty() && !name.contains([':', '"'])).then_some(name)
 }

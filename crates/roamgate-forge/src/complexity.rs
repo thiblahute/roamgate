@@ -331,7 +331,7 @@ impl ComplexityGuard {
         host: &str,
         provider: Provider,
         units: &[U],
-        build: &dyn Fn(&[U]) -> String,
+        build: &(dyn Fn(&[U]) -> String + Sync),
         most: usize,
     ) -> Vec<Vec<U>> {
         let limit = self.budget(host, provider);
@@ -361,7 +361,7 @@ impl ComplexityGuard {
         host: &str,
         provider: Provider,
         units: &[U],
-        build: &dyn Fn(&[U]) -> String,
+        build: &(dyn Fn(&[U]) -> String + Sync),
         ask: F,
         most: usize,
     ) -> Result<Vec<Value>, AskError>
