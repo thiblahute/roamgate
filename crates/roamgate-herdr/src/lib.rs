@@ -15,6 +15,7 @@ use std::pin::Pin;
 
 pub mod bootstrap;
 pub mod client;
+pub mod control;
 pub mod http;
 pub mod protocol;
 pub mod release;

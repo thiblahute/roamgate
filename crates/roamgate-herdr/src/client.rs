@@ -25,7 +25,7 @@ pub fn native_socket_path(path: &str, platform: &str) -> String {
     format!("\\\\.\\pipe\\{path}")
 }
 
-fn request_id(clock: &dyn Clock) -> String {
+pub(crate) fn request_id(clock: &dyn Clock) -> String {
     let now = clock.now().max(0) as u64;
     let mut rng = rand::rng();
     let suffix: String = (0..4)
@@ -46,8 +46,14 @@ fn radix36(mut value: u64) -> String {
     digits.iter().rev().collect()
 }
 
+/// The base-36 time an id starts with now (tests size request lines).
+#[cfg(test)]
+pub(crate) fn radix36_now_for_tests() -> String {
+    radix36(roamgate_base::clock::Clock::now(&roamgate_base::clock::SystemClock) as u64)
+}
+
 /// The result of an answer line, or why it is not one.
-fn read_answer(line: &str, id: &str) -> Result<Value, String> {
+pub(crate) fn read_answer(line: &str, id: &str) -> Result<Value, String> {
     let line = line.trim();
     let message: Value =
         serde_json::from_str(line).map_err(|_| "bad JSON from Herdr".to_owned())?;
