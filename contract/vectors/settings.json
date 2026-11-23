@@ -1,0 +1,2108 @@
+{
+  "description": "settings.json as both servers normalise it (normalizeGuiSettings in server/src/config/gui-settings.ts, SettingsStore in roamgate-base): every section, valid and invalid values, older shapes. The result's key order is the file's. Read by `bun test` in server/src/config/gui-settings.vectors.test.ts.",
+  "modules": {
+    "guiSettings": "server/src/config/gui-settings.ts"
+  },
+  "cases": [
+    {
+      "name": "null gives the defaults",
+      "group": ["normalizeGuiSettings", "whole"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [null],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "an array gives the defaults",
+      "group": ["normalizeGuiSettings", "whole"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [[]],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a string gives the defaults",
+      "group": ["normalizeGuiSettings", "whole"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": ["settings"],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "an empty object gives the defaults",
+      "group": ["normalizeGuiSettings", "whole"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [{}],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a sanitised real-shaped file",
+      "group": ["normalizeGuiSettings", "whole"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "version": 1,
+              "title_suffix": "desk",
+              "auto_rename_agent_tabs": true,
+              "worktree_command": "git worktree add {path} -b {branch}",
+              "worktree_remove_command": "git worktree remove {path}",
+              "repositories": {
+                "connection:local:ssh:mac:/srv/notes/.git": {
+                  "worktree_directory": "/srv/notes.worktrees"
+                },
+                "connection:desktop:local:/home/user/src/app.git": {
+                  "worktree_directory": "/home/user/src/app.worktrees/"
+                },
+                "local:/home/user/src/tool": {
+                  "worktree_hooks_enabled": false,
+                  "worktree_command": "  make wt  ",
+                  "custom": {
+                    "color": "blue"
+                  }
+                }
+              },
+              "workspace_auto_sync": {},
+              "terminal_transport": {}
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "desk",
+            "auto_rename_agent_tabs": true,
+            "worktree_command": "git worktree add {path} -b {branch}",
+            "worktree_remove_command": "git worktree remove {path}",
+            "repositories": {
+              "connection:local:ssh:mac:/srv/notes/.git": {
+                "worktree_directory": "/srv/notes.worktrees"
+              },
+              "connection:desktop:local:/home/user/src/app.git": {
+                "worktree_directory": "/home/user/src/app.worktrees"
+              },
+              "local:/home/user/src/tool": {
+                "worktree_hooks_enabled": false,
+                "worktree_command": "make wt",
+                "custom": {
+                  "color": "blue"
+                }
+              }
+            },
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "keys the type does not have are dropped, nulls ignored",
+      "group": ["normalizeGuiSettings", "whole"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "unknown_key": 1,
+              "title_suffix": null,
+              "worktree_command": null,
+              "repositories": null,
+              "custom": null,
+              "ui": null,
+              "archive": null,
+              "profiles": null
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "archive": {
+              "agents": ["claude", "codex", "pi"],
+              "hosts": {},
+              "stale_hours": 48,
+              "thinking": false,
+              "index": {
+                "default": "full",
+                "rules": []
+              },
+              "exclude": [],
+              "hide": [],
+              "min_free_gb": 20
+            },
+            "profiles": {
+              "list": [],
+              "default": "Claude",
+              "return_after_reset": false
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "an older shape without version and with legacy fields",
+      "group": ["normalizeGuiSettings", "whole"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "auto_rename_agent_tabs": "yes",
+              "title_suffix": 12,
+              "repositories": [
+                {
+                  "worktree_directory": "/a"
+                }
+              ],
+              "workspace_auto_sync": [
+                {
+                  "enabled": "true",
+                  "interval_minutes": 0.4
+                },
+                {
+                  "enabled": true,
+                  "interval_minutes": 2.5,
+                  "last_status": "odd"
+                }
+              ],
+              "terminal_transport": {
+                "a": {
+                  "surface_codecs": "no"
+                },
+                "b": {
+                  "surface_codecs": false
+                },
+                "c": null
+              },
+              "custom": [1, 2],
+              "ui": [1]
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {
+              "0": {
+                "worktree_directory": "/a"
+              }
+            },
+            "workspace_auto_sync": {
+              "0": {
+                "enabled": false,
+                "interval_minutes": 10
+              },
+              "1": {
+                "enabled": true,
+                "interval_minutes": 3
+              }
+            },
+            "terminal_transport": {
+              "b": {
+                "surface_codecs": false
+              }
+            },
+            "custom": [1, 2],
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "title suffix with spaces and too long",
+      "group": ["normalizeGuiSettings", "basic"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "title_suffix": "  a   b\tc  "
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "a b c",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "title suffix over 32 characters is dropped",
+      "group": ["normalizeGuiSettings", "basic"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "title_suffix": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "worktree commands: NUL, long, blank",
+      "group": ["normalizeGuiSettings", "basic"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "worktree_command": "a\u0000b",
+              "worktree_remove_command": "   ",
+              "repositories": {
+                "r": {
+                  "worktree_command": {
+                    "$text": [["x", 4097]]
+                  },
+                  "worktree_directory": "relative/path",
+                  "worktree_remove_command": " rm {path} ",
+                  "worktree_hooks_enabled": "no",
+                  "custom": "x"
+                },
+                "s": "not an object",
+                "t": {
+                  "worktree_directory": "/"
+                }
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {
+              "r": {
+                "worktree_remove_command": "rm {path}"
+              },
+              "t": {
+                "worktree_directory": "/"
+              }
+            },
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "workspace auto sync entries",
+      "group": ["normalizeGuiSettings", "basic"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "workspace_auto_sync": {
+                "local:/a": {
+                  "enabled": true,
+                  "interval_minutes": 7.6,
+                  "checkout_path": "/a",
+                  "host": "h",
+                  "last_run_at": "2026-11-23T01:02:03.000Z",
+                  "last_status": "up_to_date",
+                  "last_message": "ok",
+                  "last_branch": "main",
+                  "extra": 1
+                },
+                "local:/b": {
+                  "interval_minutes": "5"
+                },
+                "local:/c": null
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {
+              "local:/a": {
+                "enabled": true,
+                "interval_minutes": 8,
+                "checkout_path": "/a",
+                "host": "h",
+                "last_run_at": "2026-11-23T01:02:03.000Z",
+                "last_status": "up_to_date",
+                "last_message": "ok",
+                "last_branch": "main"
+              },
+              "local:/b": {
+                "enabled": false,
+                "interval_minutes": 10
+              }
+            },
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "ui preferences: invalid keys and large values dropped",
+      "group": ["normalizeGuiSettings", "basic"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "ui": {
+                "theme": "black",
+                "9bad": 1,
+                "ok.key-name_1": {
+                  "nested": [1, 2]
+                },
+                "big": {
+                  "$text": [["x", 70000]]
+                },
+                "overlayTabs": {
+                  "version": 1,
+                  "connections": {
+                    "a": {
+                      "t1": "tab"
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {
+              "theme": "black",
+              "ok.key-name_1": {
+                "nested": [1, 2]
+              },
+              "overlayTabs": {
+                "version": 1,
+                "connections": {
+                  "a": {
+                    "t1": "tab"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "activity, time report, conversation, claude start, mr cache, history",
+      "group": ["normalizeGuiSettings", "basic"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "activity": {
+                "enabled": true,
+                "retention_days": 0,
+                "idle_seconds": 60,
+                "day_start": "04:30",
+                "subject_roots": ["/a", " ", 3],
+                "exclude": {
+                  "connections": ["x"],
+                  "subjects": []
+                }
+              },
+              "time_report": {
+                "command": ["olmo", "report"],
+                "timeout_seconds": 1000
+              },
+              "claude_start_mode": "conversation",
+              "conversation": {
+                "idle_stop_minutes": 45
+              },
+              "mr_cache": {
+                "running_seconds": 60,
+                "open_seconds": 2,
+                "budget_per_minute": 20,
+                "max_entries": 1000000000
+              },
+              "history": {
+                "enabled": false,
+                "location": "  /backup  "
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "activity": {
+              "enabled": true,
+              "retention_days": 90,
+              "idle_seconds": 60,
+              "day_start": "04:30",
+              "subject_roots": ["/a"],
+              "record_agent_titles": false,
+              "exclude": {
+                "connections": ["x"],
+                "subjects": []
+              }
+            },
+            "time_report": {
+              "command": ["olmo", "report"],
+              "timeout_seconds": 60
+            },
+            "claude_start_mode": "conversation",
+            "conversation": {
+              "idle_stop_minutes": 45
+            },
+            "mr_cache": {
+              "running_seconds": 60,
+              "budget_per_minute": 20
+            },
+            "custom": {},
+            "ui": {},
+            "history": {
+              "enabled": false,
+              "location": "/backup"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "invalid claude start and conversation",
+      "group": ["normalizeGuiSettings", "basic"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "claude_start_mode": "sideways",
+              "conversation": {
+                "idle_stop_minutes": 1441
+              },
+              "time_report": {
+                "command": []
+              },
+              "history": {
+                "enabled": "yes"
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "conversation": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "an empty archive section gets the defaults",
+      "group": ["normalizeGuiSettings", "archive"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "archive": {}
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "archive": {
+              "agents": ["claude", "codex", "pi"],
+              "hosts": {},
+              "stale_hours": 48,
+              "thinking": false,
+              "index": {
+                "default": "full",
+                "rules": []
+              },
+              "exclude": [],
+              "hide": [],
+              "min_free_gb": 20
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a non-object archive section gets the defaults",
+      "group": ["normalizeGuiSettings", "archive"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "archive": "x"
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "archive": {
+              "agents": ["claude", "codex", "pi"],
+              "hosts": {},
+              "stale_hours": 48,
+              "thinking": false,
+              "index": {
+                "default": "full",
+                "rules": []
+              },
+              "exclude": [],
+              "hide": [],
+              "min_free_gb": 20
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "every archive field",
+      "group": ["normalizeGuiSettings", "archive"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "archive": {
+                "dir": "  /srv/archive ",
+                "host": "desk",
+                "agents": ["claude", " ", 3, "pi"],
+                "hosts": {
+                  "mac": {
+                    "ssh": " mac ",
+                    "home": "/Users/u",
+                    "path_style": "posix",
+                    "roots": {
+                      "claude": "/Users/u/.claude",
+                      "codex": " ",
+                      "pi": 3
+                    },
+                    "enabled": false
+                  },
+                  "win": {
+                    "path_style": "windows",
+                    "enabled": true,
+                    "roots": {}
+                  },
+                  "odd": "x"
+                },
+                "stale_hours": 0,
+                "thinking": true,
+                "index": {
+                  "default": "words",
+                  "rules": [
+                    {
+                      "host": "mac",
+                      "level": "none"
+                    },
+                    {
+                      "agent": "codex",
+                      "project": "p",
+                      "level": "full"
+                    },
+                    {
+                      "level": "bad"
+                    },
+                    "x"
+                  ]
+                },
+                "exclude": [
+                  {
+                    "host": "mac",
+                    "agent": " "
+                  },
+                  null,
+                  {
+                    "project": "secret"
+                  }
+                ],
+                "hide": "nope",
+                "min_free_gb": 0,
+                "push": {
+                  "target": " home ",
+                  "archive_dir": "/a",
+                  "binary": " "
+                },
+                "remote": "server",
+                "remote_dir": " ",
+                "text_tool_chars": 79
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "archive": {
+              "dir": "/srv/archive",
+              "host": "desk",
+              "agents": ["claude", "pi"],
+              "hosts": {
+                "mac": {
+                  "ssh": "mac",
+                  "home": "/Users/u",
+                  "path_style": "posix",
+                  "roots": {
+                    "claude": "/Users/u/.claude"
+                  },
+                  "enabled": false
+                },
+                "win": {
+                  "path_style": "windows"
+                },
+                "odd": {}
+              },
+              "stale_hours": 48,
+              "thinking": true,
+              "index": {
+                "default": "words",
+                "rules": [
+                  {
+                    "host": "mac",
+                    "level": "none"
+                  },
+                  {
+                    "agent": "codex",
+                    "project": "p",
+                    "level": "full"
+                  }
+                ]
+              },
+              "exclude": [
+                {
+                  "host": "mac"
+                },
+                {
+                  "project": "secret"
+                }
+              ],
+              "hide": [],
+              "min_free_gb": 0,
+              "push": {
+                "target": "home",
+                "archive_dir": "/a"
+              },
+              "remote": "server"
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "archive push without a target and text chars in range",
+      "group": ["normalizeGuiSettings", "archive"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "archive": {
+                "push": {
+                  "archive_dir": "/a"
+                },
+                "text_tool_chars": 500,
+                "stale_hours": 12.5,
+                "min_free_gb": -1,
+                "index": "full"
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "archive": {
+              "agents": ["claude", "codex", "pi"],
+              "hosts": {},
+              "stale_hours": 12.5,
+              "thinking": false,
+              "index": {
+                "default": "full",
+                "rules": []
+              },
+              "exclude": [],
+              "hide": [],
+              "min_free_gb": 20,
+              "text_tool_chars": 500
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "valid limit resume settings, message trimmed",
+      "group": ["normalizeGuiSettings", "limit_resume"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "limit_resume": {
+                "enabled": false,
+                "message": "  go on  ",
+                "margin_seconds": 30
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "limit_resume": {
+              "enabled": false,
+              "message": "go on",
+              "margin_seconds": 30
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "invalid limit resume fields dropped",
+      "group": ["normalizeGuiSettings", "limit_resume"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "limit_resume": {
+                "enabled": "no",
+                "message": " ",
+                "margin_seconds": 3601,
+                "extra": 1
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "limit_resume": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a non-object limit resume section is dropped",
+      "group": ["normalizeGuiSettings", "limit_resume"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "limit_resume": [1]
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "profiles normalised",
+      "group": ["normalizeGuiSettings", "profiles"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "profiles": {
+                "list": [
+                  {
+                    "name": " Work ",
+                    "agent": "claude",
+                    "command": " claude-work ",
+                    "env": {
+                      "ANTHROPIC_BASE_URL": "https://example.test",
+                      "TOKEN": {
+                        "file": " ~/.config/roamgate/secrets/t "
+                      }
+                    },
+                    "unset": ["A", "A", "B"]
+                  },
+                  {
+                    "name": "work",
+                    "agent": "claude"
+                  },
+                  {
+                    "name": "Bad",
+                    "agent": "codex"
+                  },
+                  {
+                    "name": "",
+                    "agent": "claude"
+                  },
+                  {
+                    "name": "Env",
+                    "agent": "claude",
+                    "env": {
+                      "1BAD": "x"
+                    }
+                  },
+                  {
+                    "name": "Plain",
+                    "agent": "claude",
+                    "env": {},
+                    "unset": []
+                  }
+                ],
+                "default": " plain ",
+                "return_after_reset": true
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "profiles": {
+              "list": [
+                {
+                  "name": "Work",
+                  "agent": "claude",
+                  "command": "claude-work",
+                  "env": {
+                    "ANTHROPIC_BASE_URL": "https://example.test",
+                    "TOKEN": {
+                      "file": "~/.config/roamgate/secrets/t"
+                    }
+                  },
+                  "unset": ["A", "B"]
+                },
+                {
+                  "name": "Plain",
+                  "agent": "claude"
+                }
+              ],
+              "default": "Plain",
+              "return_after_reset": true
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "an unknown default resets to the built-in",
+      "group": ["normalizeGuiSettings", "profiles"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "profiles": {
+                "list": [],
+                "default": "nobody",
+                "return_after_reset": "yes"
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "profiles": {
+              "list": [],
+              "default": "Claude",
+              "return_after_reset": false
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a non-object profiles section gives the defaults",
+      "group": ["normalizeGuiSettings", "profiles"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "profiles": "x"
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "profiles": {
+              "list": [],
+              "default": "Claude",
+              "return_after_reset": false
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a profile name in UTF-16 units",
+      "group": ["normalizeGuiSettings", "profiles"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "profiles": {
+                "list": [
+                  {
+                    "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+                    "agent": "claude"
+                  },
+                  {
+                    "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+                    "agent": "claude"
+                  },
+                  {
+                    "name": "a\u0007b",
+                    "agent": "claude"
+                  }
+                ]
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "profiles": {
+              "list": [
+                {
+                  "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+                  "agent": "claude"
+                }
+              ],
+              "default": "Claude",
+              "return_after_reset": false
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a non-object mr_reviews section is dropped",
+      "group": ["normalizeGuiSettings", "mr_reviews"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "mr_reviews": [1]
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "an empty mr_reviews section is kept",
+      "group": ["normalizeGuiSettings", "mr_reviews"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "mr_reviews": {}
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "mr_reviews": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "every mr_reviews field",
+      "group": ["normalizeGuiSettings", "mr_reviews"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "mr_reviews": {
+                "hosts": [
+                  {
+                    "host": "GitLab.example.com",
+                    "provider": "gitlab"
+                  },
+                  {
+                    "host": "gitlab.example.com",
+                    "provider": "gitlab"
+                  },
+                  {
+                    "host": "bad host",
+                    "provider": "gitlab"
+                  },
+                  {
+                    "host": "github.com",
+                    "provider": "bitbucket"
+                  },
+                  "x"
+                ],
+                "followed": [
+                  {
+                    "host": "gitlab.example.com",
+                    "provider": "gitlab",
+                    "project": "/group/proj/"
+                  },
+                  {
+                    "host": "GITLAB.example.com",
+                    "provider": "gitlab",
+                    "project": "Group/Proj"
+                  },
+                  {
+                    "host": "github.com",
+                    "provider": "github",
+                    "project": "solo"
+                  },
+                  {
+                    "host": "github.com",
+                    "provider": "github",
+                    "project": "a/../b"
+                  }
+                ],
+                "checkout": "on_demand",
+                "retention_days": 30,
+                "curation": false,
+                "inference": true,
+                "inference_hours": 0,
+                "inference_model": " claude-opus ",
+                "suggest_days": "7",
+                "hints": {
+                  "$text": [["h", 2100]]
+                },
+                "home_prompt": "go",
+                "panel": {
+                  "search": "s",
+                  "filter": "view:mine",
+                  "at": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                },
+                "tree_groups": {
+                  "Gitlab.example.com/group": [
+                    " A ",
+                    3,
+                    "",
+                    "B",
+                    "C",
+                    "D",
+                    "E",
+                    "F",
+                    "G"
+                  ],
+                  "nogroup": ["x"],
+                  "a/b": "x",
+                  "c/d": [" "]
+                },
+                "clones": {
+                  "Host/Proj": {
+                    "connection_id": "desktop",
+                    "path": "/src/proj"
+                  },
+                  "h/rel": {
+                    "connection_id": "desktop",
+                    "path": "rel"
+                  },
+                  "noslash": {
+                    "connection_id": "d",
+                    "path": "/x"
+                  },
+                  "h/x": null
+                },
+                "order": [
+                  "a",
+                  "a",
+                  "",
+                  3,
+                  "b",
+                  {
+                    "$text": [["x", 601]]
+                  }
+                ],
+                "order_version": 4,
+                "pinned": [
+                  {
+                    "provider": "gitlab",
+                    "host": "gitlab.example.com",
+                    "project": "g/p",
+                    "number": 12
+                  },
+                  {
+                    "provider": "gitlab",
+                    "host": "GITLAB.example.com",
+                    "project": "G/P",
+                    "number": "12"
+                  },
+                  {
+                    "provider": "github",
+                    "host": "github.com",
+                    "project": "o/r",
+                    "number": 0
+                  },
+                  {
+                    "provider": "github",
+                    "host": "github.com",
+                    "project": "o/r",
+                    "number": 1.5
+                  }
+                ],
+                "hidden": [
+                  {
+                    "key": "k1",
+                    "marker": "m"
+                  },
+                  {
+                    "key": "k1",
+                    "marker": "m2"
+                  },
+                  {
+                    "key": "",
+                    "marker": "m"
+                  },
+                  {
+                    "key": "k2",
+                    "marker": 3
+                  },
+                  {
+                    "key": "k3",
+                    "marker": ""
+                  }
+                ],
+                "overrides": {
+                  "b": {
+                    "whose": {
+                      "person": "@alice"
+                    },
+                    "next": "  ping   them ",
+                    "depends_on": ["x", "x", "", 3],
+                    "labels": ["L", "l", " M ", ""],
+                    "link": "https://example.test",
+                    "stale": true,
+                    "at": "2026-01-02T00:00:00.000Z",
+                    "by": "agent",
+                    "marker": "mk"
+                  },
+                  "a": {
+                    "whose": "me",
+                    "at": "2026-01-01T00:00:00.000Z"
+                  },
+                  "c": {
+                    "at": "2025-01-01T00:00:00.000Z",
+                    "by": "user"
+                  },
+                  "d": {
+                    "whose": "nobody",
+                    "next": "  ",
+                    "at": "x"
+                  },
+                  "e": {
+                    "stale": false
+                  },
+                  "": {
+                    "whose": "me"
+                  }
+                },
+                "views": [
+                  {
+                    "name": "  Mine   now ",
+                    "query": " is:mine "
+                  },
+                  {
+                    "name": "mine now",
+                    "query": "x"
+                  },
+                  {
+                    "name": "a:b",
+                    "query": "x"
+                  },
+                  {
+                    "name": "empty",
+                    "query": " "
+                  }
+                ],
+                "upstream_groups": ["g1", "g1", "bad id", 3, "g2"],
+                "upstream_skip": [
+                  {
+                    "connection_id": "c",
+                    "path": "/p"
+                  },
+                  {
+                    "connection_id": "c",
+                    "path": "/p",
+                    "label": "other"
+                  },
+                  {
+                    "connection_id": "c"
+                  },
+                  {
+                    "connection_id": "c",
+                    "label": "L",
+                    "workspace_id": "w1"
+                  }
+                ],
+                "upstream_workspaces": [
+                  {
+                    "connection_id": "c",
+                    "workspace_id": "w2"
+                  },
+                  "x"
+                ],
+                "unsent": [
+                  {
+                    "key": "branch:feature",
+                    "title": "  A   title ",
+                    "target": " main ",
+                    "at": "2026"
+                  },
+                  {
+                    "key": "branch:feature",
+                    "title": "dup"
+                  },
+                  {
+                    "key": "nobranch",
+                    "title": "x"
+                  },
+                  {
+                    "key": "branch:other",
+                    "title": " ",
+                    "target": " "
+                  }
+                ],
+                "efforts": [
+                  {
+                    "id": "e1",
+                    "group": "grp",
+                    "name": "  An   effort ",
+                    "clone": {
+                      "connection_id": "desktop",
+                      "path": "/src/clone"
+                    },
+                    "source": "refs/heads/feature",
+                    "target": {
+                      "remote": "origin",
+                      "branch": "main"
+                    },
+                    "feeders": [
+                      "refs/heads/a",
+                      "refs/heads/a",
+                      "refs/heads/feature",
+                      "bad"
+                    ],
+                    "head": {
+                      "connection_id": "desktop",
+                      "path": "/src/head",
+                      "workspace_id": "w"
+                    }
+                  },
+                  {
+                    "id": "e1",
+                    "group": "grp",
+                    "name": "dup",
+                    "clone": {
+                      "connection_id": "d",
+                      "path": "/x"
+                    },
+                    "source": "refs/heads/x",
+                    "target": {
+                      "remote": "o",
+                      "branch": "m"
+                    }
+                  },
+                  {
+                    "id": "e2",
+                    "group": "bad group",
+                    "name": "x"
+                  },
+                  {
+                    "id": "e3",
+                    "group": "g",
+                    "name": "n",
+                    "clone": {
+                      "connection_id": "d",
+                      "path": "/x"
+                    },
+                    "source": "refs/remotes/origin/x",
+                    "target": {
+                      "remote": "o",
+                      "branch": "m"
+                    },
+                    "feeders": [],
+                    "head": {
+                      "connection_id": "d",
+                      "path": "rel"
+                    }
+                  }
+                ],
+                "stale_days": 3651,
+                "merge": {
+                  "after_labels": [
+                    "^merge after (?<delay>.+)$",
+                    "(",
+                    "",
+                    "^merge after (?<delay>.+)$"
+                  ],
+                  "bots": ["@Marge-Bot[bot]", "marge-bot", "bad name!", 3],
+                  "bot_failures": [
+                    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  ],
+                  "queue_labels": "nope",
+                  "scopes": {
+                    "HTTPS://GitLab.example.com/group/*/": {
+                      "bots": ["bors"]
+                    },
+                    "bad scope!": {
+                      "bots": ["x"]
+                    },
+                    "github.com/o/r": {
+                      "after_labels": ["("]
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "mr_reviews": {
+              "hosts": [
+                {
+                  "host": "gitlab.example.com",
+                  "provider": "gitlab"
+                }
+              ],
+              "followed": [
+                {
+                  "host": "gitlab.example.com",
+                  "provider": "gitlab",
+                  "project": "group/proj"
+                }
+              ],
+              "checkout": "on_demand",
+              "retention_days": 30,
+              "curation": false,
+              "inference": true,
+              "inference_model": "claude-opus",
+              "suggest_days": 7,
+              "hints": {
+                "$text": [["h", 2000]]
+              },
+              "home_prompt": "go",
+              "panel": {
+                "search": "s",
+                "filter": "view:mine",
+                "at": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              "tree_groups": {
+                "gitlab.example.com/group": ["A", "B", "C", "D", "E", "F"]
+              },
+              "clones": {
+                "host/proj": {
+                  "connection_id": "desktop",
+                  "path": "/src/proj"
+                }
+              },
+              "order": ["a", "b"],
+              "order_version": 4,
+              "pinned": [
+                {
+                  "provider": "gitlab",
+                  "host": "gitlab.example.com",
+                  "project": "g/p",
+                  "number": 12
+                }
+              ],
+              "hidden": [
+                {
+                  "key": "k1",
+                  "marker": "m"
+                },
+                {
+                  "key": "k3",
+                  "marker": ""
+                }
+              ],
+              "overrides": {
+                "e": {
+                  "stale": false,
+                  "at": "1970-01-01T00:00:00.000Z",
+                  "by": "user",
+                  "marker": ""
+                },
+                "a": {
+                  "whose": "me",
+                  "at": "2026-01-01T00:00:00.000Z",
+                  "by": "user",
+                  "marker": ""
+                },
+                "b": {
+                  "whose": {
+                    "person": "alice"
+                  },
+                  "next": "ping them",
+                  "depends_on": ["x"],
+                  "labels": ["L", "M"],
+                  "link": "https://example.test",
+                  "stale": true,
+                  "at": "2026-01-02T00:00:00.000Z",
+                  "by": "agent",
+                  "marker": "mk"
+                }
+              },
+              "views": [
+                {
+                  "name": "Mine now",
+                  "query": "is:mine"
+                }
+              ],
+              "upstream_groups": ["g1", "g2"],
+              "upstream_skip": [
+                {
+                  "connection_id": "c",
+                  "path": "/p"
+                },
+                {
+                  "connection_id": "c",
+                  "label": "L",
+                  "workspace_id": "w1"
+                }
+              ],
+              "upstream_workspaces": [
+                {
+                  "connection_id": "c",
+                  "workspace_id": "w2"
+                }
+              ],
+              "unsent": [
+                {
+                  "key": "branch:feature",
+                  "title": "A title",
+                  "target": "main",
+                  "at": "2026"
+                },
+                {
+                  "key": "branch:other",
+                  "at": ""
+                }
+              ],
+              "efforts": [
+                {
+                  "id": "e1",
+                  "group": "grp",
+                  "name": "An effort",
+                  "clone": {
+                    "connection_id": "desktop",
+                    "path": "/src/clone"
+                  },
+                  "source": "refs/heads/feature",
+                  "target": {
+                    "remote": "origin",
+                    "branch": "main"
+                  },
+                  "feeders": ["refs/heads/a"],
+                  "head": {
+                    "connection_id": "desktop",
+                    "path": "/src/head",
+                    "workspace_id": "w"
+                  }
+                },
+                {
+                  "id": "e3",
+                  "group": "g",
+                  "name": "n",
+                  "clone": {
+                    "connection_id": "d",
+                    "path": "/x"
+                  },
+                  "source": "refs/remotes/origin/x",
+                  "target": {
+                    "remote": "o",
+                    "branch": "m"
+                  }
+                }
+              ],
+              "merge": {
+                "after_labels": ["^merge after (?<delay>.+)$"],
+                "bots": ["marge-bot"],
+                "bot_failures": [],
+                "scopes": {
+                  "gitlab.example.com/group/*": {
+                    "bots": ["bors"]
+                  },
+                  "github.com/o/r": {
+                    "after_labels": []
+                  }
+                }
+              }
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "mr_reviews numbers and odd values",
+      "group": ["normalizeGuiSettings", "mr_reviews"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "mr_reviews": {
+                "checkout": "later",
+                "retention_days": 366,
+                "inference_hours": 168,
+                "inference_model": "two words",
+                "suggest_days": 365,
+                "hints": 3,
+                "panel": {
+                  "filter": "nonsense"
+                },
+                "tree_groups": [],
+                "order_version": -1,
+                "stale_days": 1,
+                "merge": {}
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "mr_reviews": {
+              "inference_hours": 168,
+              "suggest_days": 365,
+              "panel": {
+                "search": "",
+                "filter": "all",
+                "at": ""
+              },
+              "stale_days": 1
+            },
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a workspace tree normalised",
+      "group": ["normalizeGuiSettings", "workspace_tree"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "workspace_tree": {
+                "version": 1,
+                "nodes": [
+                  {
+                    "id": "g1",
+                    "kind": "group",
+                    "parent": null,
+                    "label": " Work\u0001stuff ",
+                    "collapsed": true,
+                    "root": "bottom"
+                  },
+                  {
+                    "id": "g2",
+                    "kind": "group",
+                    "parent": "g1",
+                    "label": "Inner",
+                    "root": "bottom"
+                  },
+                  {
+                    "id": "g3",
+                    "kind": "group",
+                    "parent": "missing",
+                    "label": "Lost"
+                  },
+                  {
+                    "id": "g4",
+                    "kind": "group",
+                    "parent": "g5",
+                    "label": "Loop a"
+                  },
+                  {
+                    "id": "g5",
+                    "kind": "group",
+                    "parent": "g4",
+                    "label": "Loop b"
+                  },
+                  {
+                    "id": "g1",
+                    "kind": "group",
+                    "parent": null,
+                    "label": "dup id"
+                  },
+                  {
+                    "id": "bad id!",
+                    "kind": "group",
+                    "parent": null,
+                    "label": "x"
+                  },
+                  {
+                    "id": "g6",
+                    "kind": "group",
+                    "parent": null,
+                    "label": "  "
+                  },
+                  {
+                    "id": "w1",
+                    "kind": "workspace",
+                    "parent": "g1",
+                    "ref": {
+                      "connection_id": "c",
+                      "path": "/p",
+                      "label": "L",
+                      "workspace_id": "wid"
+                    }
+                  },
+                  {
+                    "id": "w2",
+                    "kind": "workspace",
+                    "parent": null,
+                    "ref": {
+                      "connection_id": "c",
+                      "path": "/p"
+                    }
+                  },
+                  {
+                    "id": "w3",
+                    "kind": "workspace",
+                    "parent": null,
+                    "ref": {
+                      "connection_id": "c",
+                      "path": "/q"
+                    },
+                    "root": "list"
+                  },
+                  {
+                    "id": "w4",
+                    "kind": "workspace",
+                    "parent": null,
+                    "ref": {
+                      "connection_id": "c",
+                      "label": "free"
+                    }
+                  },
+                  {
+                    "id": "w5",
+                    "kind": "workspace",
+                    "parent": null,
+                    "ref": {
+                      "connection_id": "",
+                      "path": "/z"
+                    }
+                  },
+                  {
+                    "id": "w6",
+                    "kind": "other",
+                    "parent": null
+                  },
+                  {
+                    "id": "w7",
+                    "kind": "workspace",
+                    "parent": "g2",
+                    "ref": {
+                      "connection_id": "c",
+                      "workspace_id": "w"
+                    },
+                    "root": "top"
+                  },
+                  "x"
+                ]
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {},
+            "workspace_tree": {
+              "version": 1,
+              "nodes": [
+                {
+                  "id": "g1",
+                  "kind": "group",
+                  "parent": null,
+                  "label": "Work stuff",
+                  "collapsed": true,
+                  "root": "bottom"
+                },
+                {
+                  "id": "g2",
+                  "kind": "group",
+                  "parent": "g1",
+                  "label": "Inner"
+                },
+                {
+                  "id": "g3",
+                  "kind": "group",
+                  "parent": null,
+                  "label": "Lost"
+                },
+                {
+                  "id": "g4",
+                  "kind": "group",
+                  "parent": null,
+                  "label": "Loop a"
+                },
+                {
+                  "id": "g5",
+                  "kind": "group",
+                  "parent": "g4",
+                  "label": "Loop b"
+                },
+                {
+                  "id": "w1",
+                  "kind": "workspace",
+                  "parent": "g1",
+                  "ref": {
+                    "connection_id": "c",
+                    "path": "/p",
+                    "label": "L",
+                    "workspace_id": "wid"
+                  }
+                },
+                {
+                  "id": "w3",
+                  "kind": "workspace",
+                  "parent": null,
+                  "ref": {
+                    "connection_id": "c",
+                    "path": "/q"
+                  },
+                  "root": "list"
+                },
+                {
+                  "id": "w7",
+                  "kind": "workspace",
+                  "parent": "g2",
+                  "ref": {
+                    "connection_id": "c",
+                    "workspace_id": "w"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "an empty workspace tree is dropped",
+      "group": ["normalizeGuiSettings", "workspace_tree"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "workspace_tree": {
+                "version": 1,
+                "nodes": []
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "a tree of unplaced workspaces only is dropped",
+      "group": ["normalizeGuiSettings", "workspace_tree"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "workspace_tree": {
+                "nodes": [
+                  {
+                    "id": "w1",
+                    "kind": "workspace",
+                    "parent": null,
+                    "ref": {
+                      "connection_id": "c",
+                      "path": "/p"
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    },
+    {
+      "name": "sites and their roots",
+      "group": ["normalizeGuiSettings", "rendered_sites"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "rendered_sites": [
+                "https://Docs.Example.test/guide/index.html",
+                "https://docs.example.test/guide/",
+                "http://user:pw@example.test/",
+                "ftp://example.test/",
+                "  /srv/site  ",
+                "/srv/../etc",
+                "https://example.test:443/a/b?x=1#y",
+                "not a url",
+                3
+              ],
+              "rendered_site_roots": {
+                "https://docs.example.test/guide/": "https://docs.example.test/",
+                "/srv/site/": "/srv/",
+                "https://example.test/a/": "https://other.test/",
+                "https://unlisted.test/": "https://unlisted.test/"
+              }
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {},
+            "rendered_sites": [
+              "https://docs.example.test/guide/",
+              "/srv/site/",
+              "https://example.test/a/"
+            ],
+            "rendered_site_roots": {
+              "https://docs.example.test/guide/": "https://docs.example.test/",
+              "/srv/site/": "/srv/"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "roots without listed sites are dropped",
+      "group": ["normalizeGuiSettings", "rendered_sites"],
+      "calls": [
+        {
+          "fn": "guiSettings.normalizeGuiSettings",
+          "args": [
+            {
+              "rendered_site_roots": {
+                "https://a.test/": "https://a.test/"
+              },
+              "rendered_sites": "x"
+            }
+          ],
+          "result": {
+            "version": 1,
+            "title_suffix": "",
+            "auto_rename_agent_tabs": true,
+            "repositories": {},
+            "workspace_auto_sync": {},
+            "terminal_transport": {},
+            "custom": {},
+            "ui": {}
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -77,6 +77,7 @@ import { createForwardRpcHandler } from "../bridge/forward-rpc";
 import type { SshForwards } from "../bridge/ssh-forward";
 import {
   conversationIdleStopMinutes,
+  onGuiSettingsChanged,
   readGuiSettings,
   terminalSurfaceCodecsEnabled,
 } from "../config/gui-settings";
@@ -721,19 +722,38 @@ export function createLegacyConnectionRuntime(args: {
     onAgentAutoRenameSettingsChanged: () => tabAutoRenamer.settingsChanged(),
     onClaudeStartSettingsChanged: () => args.onClaudeStartSettingsChanged?.(),
     onLimitResumeSettingsChanged: () => args.onLimitResumeSettingsChanged?.(),
-    onTerminalTransportSettingsChanged: (enabled) => {
-      if (disposed) return;
-      terminalBridge.refreshSurfaceCodecs();
-      args.onEvent(
-        {
-          event: "settings.terminal_transport.updated",
-          data: { surface_codecs: enabled },
-        },
-        identity,
-      );
-    },
+    onTerminalTransportSettingsChanged: (enabled) =>
+      terminalTransportChanged(enabled),
     safeSend: args.safeSend,
     markRpcError: args.markRpcError,
+  });
+  function terminalTransportChanged(enabled: boolean) {
+    if (disposed) return;
+    terminalBridge.refreshSurfaceCodecs();
+    args.onEvent(
+      {
+        event: "settings.terminal_transport.updated",
+        data: { surface_codecs: enabled },
+      },
+      identity,
+    );
+  }
+  // What the settings' other writer (the Rust core, while it owns the
+  // settings family) changed itself: this connection follows as its own
+  // handler would have.
+  const stopSettingsListener = onGuiSettingsChanged((previous, next) => {
+    if (disposed) return;
+    if (
+      previous?.auto_rename_agent_tabs !== next.auto_rename_agent_tabs &&
+      previous !== null
+    )
+      tabAutoRenamer.settingsChanged();
+    const enabled = terminalSurfaceCodecsEnabled(next, identity.id);
+    if (
+      previous !== null &&
+      terminalSurfaceCodecsEnabled(previous, identity.id) !== enabled
+    )
+      terminalTransportChanged(enabled);
   });
   const handleForwardRpc = args.forwards
     ? createForwardRpcHandler({
@@ -1201,6 +1221,7 @@ export function createLegacyConnectionRuntime(args: {
     if (disposed) return Promise.resolve();
     disposed = true;
     backgroundStarted = false;
+    stopSettingsListener();
     handleTerminalUpload.stopCleanup();
     tabAutoRenamer.dispose();
     herdr.off("event", onHerdrEvent);

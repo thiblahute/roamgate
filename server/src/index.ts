@@ -191,9 +191,13 @@ import { downloadLocalFile } from "./workspace/local-files";
 import { downloadRemoteFile } from "./workspace/remote-files";
 import {
   activitySettings,
+  applyRemoteGuiSettings,
   claudeStartMode,
+  type GuiSettingsRemote,
   limitResumeSettings,
+  onGuiSettingsChanged,
   readGuiSettings,
+  setGuiSettingsRemote,
   updateGuiSettings,
   worktreeRemoveCommandFor,
 } from "./config/gui-settings";
@@ -1032,7 +1036,80 @@ const coreReverseTargets = {
     scheduleManagedShutdown();
     return { scheduled: true };
   },
+  // The settings family: the core wrote settings.json (contract/wire/
+  // core-channel.md, The settings family).
+  "settings.changed": async (args: unknown) => {
+    const { revision, settings, origin } = (args ?? {}) as {
+      revision?: unknown;
+      settings?: unknown;
+      origin?: unknown;
+    };
+    if (
+      typeof revision !== "number" ||
+      !settings ||
+      typeof settings !== "object"
+    )
+      throw new Error("settings.changed needs a revision and the settings");
+    return {
+      applied: applyRemoteGuiSettings(
+        revision,
+        settings,
+        origin === "core" ? "core" : "front",
+      ),
+    };
+  },
 };
+
+/**
+ * settings.json's writer: this process, or the Rust core while it owns
+ * the settings family (Bun then reads and writes through the channel).
+ */
+function coreSettingsRemote(): GuiSettingsRemote {
+  const asked = (value: unknown) =>
+    value as { revision: number; settings: unknown };
+  return {
+    get: async () =>
+      asked(await coreFront!.callInternal("settings", "get", {})),
+    update: async (baseRevision, settings) =>
+      asked(
+        await coreFront!.callInternal("settings", "update", {
+          base_revision: baseRevision,
+          settings,
+        }),
+      ),
+  };
+}
+let settingsRemote: GuiSettingsRemote | null = null;
+onOwnershipChanged(() => {
+  const rust = !!coreFront && !bunOwns("settings");
+  if (rust === !!settingsRemote) return;
+  settingsRemote = rust ? coreSettingsRemote() : null;
+  setGuiSettingsRemote(settingsRemote);
+  logger
+    .child("settings")
+    .info(
+      rust
+        ? "settings.json handed to the Rust core"
+        : "settings.json written by Bun again",
+    );
+  // Read at once, so the first change the core makes is told against
+  // what was there.
+  void readGuiSettings().catch(() => undefined);
+});
+// What the core's own settings handlers changed, which the front's
+// handlers would have followed up (each connection follows its own in
+// connections/runtime.ts).
+onGuiSettingsChanged((previous, next) => {
+  if (previous === null) return;
+  if (claudeStartMode(previous) !== claudeStartMode(next))
+    for (const status of connectionManager.list())
+      void ensureClaudeStartHook(status.id);
+  if (
+    JSON.stringify(limitResumeSettings(previous)) !==
+    JSON.stringify(limitResumeSettings(next))
+  )
+    for (const status of connectionManager.list()) pokeLimit(status.id);
+});
 
 /**
  * Families whose paths keep Bun's own route checks (the method, the idle
@@ -3583,6 +3660,12 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
   if (coreFront?.routesRpc(method)) {
     try {
       const result = await coreFront.callRpc(method, params, coreContext());
+      // The other browsers hear of a preference, as Bun's handler tells them.
+      if (method === "bridge.ui_settings.update") {
+        const line = JSON.stringify({ ui_settings: result });
+        for (const client of clients)
+          if (client !== ws) safeSend(client, line, "ui-settings");
+      }
       sendReply({ id, result }, "core");
     } catch (error) {
       const message = (error as Error).message;

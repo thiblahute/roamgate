@@ -48,8 +48,22 @@
     },
     "settings": {
       "phase": 3,
-      "note": "settings.json moves to Rust in phase 3; Bun then reads and writes it through the channel",
-      "rpc": ["settings.", "bridge.ui_settings."],
+      "note": "settings.json moves to Rust in phase 3; Bun then reads and writes it through the channel (internal.settings.get and .update, settings.changed). The settings methods that also need Herdr, git, worktree hooks, secret files or a provider (settings.profiles.*, settings.worktree_*, settings.update_repo, settings.workspace_auto_sync.*) stay with their families' phases and write through the same writer",
+      "rpc": [
+        "settings.get",
+        "settings.agent_auto_rename.get",
+        "settings.agent_auto_rename.update",
+        "settings.claude_start.get",
+        "settings.claude_start.update",
+        "settings.conversation.get",
+        "settings.conversation.update",
+        "settings.limit_resume.get",
+        "settings.limit_resume.update",
+        "settings.terminal_transport.get",
+        "settings.terminal_transport.update",
+        "bridge.ui_settings.get",
+        "bridge.ui_settings.update"
+      ],
       "http": ["/api/instance-settings"],
       "files": ["data:settings.json"],
       "shadow": ["bridge.ui_settings.get"]

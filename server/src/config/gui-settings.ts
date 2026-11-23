@@ -601,6 +601,101 @@ function workspaceTreeField(value: unknown): {
 }
 
 /**
+ * The one writer of settings.json when it is not this process: the Rust
+ * core while it owns the settings family (contract/wire/core-channel.md,
+ * The settings family). `update` replaces the settings unless they moved
+ * on since `baseRevision`, refusing with a ChannelError of code `stale`.
+ */
+export type GuiSettingsRemote = {
+  get: () => Promise<{ revision: number; settings: unknown }>;
+  update: (
+    baseRevision: number,
+    settings: GuiSettings,
+  ) => Promise<{ revision: number; settings: unknown }>;
+};
+
+/** A change the remote writer made (not one this process asked for). */
+export type GuiSettingsChangeListener = (
+  previous: GuiSettings | null,
+  next: GuiSettings,
+) => void;
+
+let settingsRemote: GuiSettingsRemote | null = null;
+let cachedRevision: number | null = null;
+/** Moves on with each change of writer: older reads then fill no cache. */
+let settingsEpoch = 0;
+const changeListeners = new Set<GuiSettingsChangeListener>();
+
+/** Attempts of one update against a remote writer that keeps moving on. */
+const REMOTE_UPDATE_ATTEMPTS = 5;
+
+/**
+ * Makes `remote` the writer of settings.json (null: this process again).
+ * The cache is dropped either way: the other writer may have written.
+ */
+export function setGuiSettingsRemote(remote: GuiSettingsRemote | null): void {
+  if (remote === settingsRemote) return;
+  settingsRemote = remote;
+  settingsEpoch += 1;
+  cachedGuiSettings = null;
+  cachedRevision = null;
+}
+
+/** Whether another process writes settings.json now. */
+export function guiSettingsRemoteActive(): boolean {
+  return settingsRemote !== null;
+}
+
+/**
+ * Hears the changes the remote writer made itself (its own handlers), not
+ * those this process asked for: what this process changes, its own code
+ * follows up.
+ */
+export function onGuiSettingsChanged(
+  listener: GuiSettingsChangeListener,
+): () => void {
+  changeListeners.add(listener);
+  return () => changeListeners.delete(listener);
+}
+
+/**
+ * The remote writer's settings at `revision` (its answer to a write, or
+ * its `settings.changed`): kept when newer than the cache. `origin` is
+ * "core" for a change the remote writer made itself: the listeners hear
+ * it. `written` false for a read: the history is not told. False when
+ * ignored (older, or no remote writer).
+ */
+export function applyRemoteGuiSettings(
+  revision: number,
+  raw: unknown,
+  origin: "core" | "front" = "front",
+  written = true,
+): boolean {
+  if (!settingsRemote) return false;
+  if (cachedRevision !== null && revision <= cachedRevision) return false;
+  const previous = cachedGuiSettings;
+  const next = normalizeGuiSettings(raw);
+  cachedGuiSettings = next;
+  cachedRevision = revision;
+  // A read changes nothing the history keeps; a write does.
+  if (written) {
+    historyChanged("settings");
+    historyChanged("mr-reviews");
+  }
+  if (origin === "core")
+    for (const listener of changeListeners) {
+      try {
+        listener(previous, next);
+      } catch (error) {
+        serverLogger
+          .child("settings")
+          .warn("a settings change listener failed", { error });
+      }
+    }
+  return true;
+}
+
+/**
  * The settings read last, for code that cannot wait (a process spawned
  * from a synchronous path); null before the first read.
  */
@@ -608,23 +703,51 @@ export function peekGuiSettings(): GuiSettings | null {
   return cachedGuiSettings;
 }
 
-export async function readGuiSettings(): Promise<GuiSettings> {
-  if (cachedGuiSettings) return cachedGuiSettings;
+async function readGuiSettingsFile(): Promise<GuiSettings> {
   const path = guiSettingsPath();
   const file = Bun.file(path);
-  if (!(await file.exists())) {
-    cachedGuiSettings = defaultGuiSettings();
-    return cachedGuiSettings;
-  }
+  if (!(await file.exists())) return defaultGuiSettings();
   try {
-    cachedGuiSettings = normalizeGuiSettings(JSON.parse(await file.text()));
+    return normalizeGuiSettings(JSON.parse(await file.text()));
   } catch (e) {
     serverLogger.child("settings").warn("ignoring invalid settings", {
       path,
       error: e,
     });
-    cachedGuiSettings = defaultGuiSettings();
+    return defaultGuiSettings();
   }
+}
+
+/** The remote writer's settings, cached; the file when it does not answer. */
+async function readRemoteGuiSettings(
+  remote: GuiSettingsRemote,
+): Promise<GuiSettings> {
+  const epoch = settingsEpoch;
+  try {
+    const { revision, settings } = await remote.get();
+    if (epoch === settingsEpoch)
+      applyRemoteGuiSettings(revision, settings, "front", false);
+    if (epoch === settingsEpoch && cachedGuiSettings) return cachedGuiSettings;
+    return normalizeGuiSettings(settings);
+  } catch (error) {
+    // The writer replaces the file whole: reading it is always safe.
+    serverLogger
+      .child("settings")
+      .debug("reading settings from the file: the core did not answer", {
+        error,
+      });
+    return readGuiSettingsFile();
+  }
+}
+
+export async function readGuiSettings(): Promise<GuiSettings> {
+  if (cachedGuiSettings) return cachedGuiSettings;
+  const remote = settingsRemote;
+  if (remote) return readRemoteGuiSettings(remote);
+  const epoch = settingsEpoch;
+  const settings = await readGuiSettingsFile();
+  if (epoch !== settingsEpoch) return settings;
+  if (!cachedGuiSettings) cachedGuiSettings = settings;
   return cachedGuiSettings;
 }
 
@@ -654,6 +777,44 @@ async function persistGuiSettings(
   return normalized;
 }
 
+/**
+ * One update through the remote writer: the change is made on the
+ * settings of the revision last seen and sent against that revision; when
+ * the writer moved on meanwhile, read again and redo the change.
+ */
+async function updateRemoteGuiSettings(
+  remote: GuiSettingsRemote,
+  update: (current: GuiSettings) => GuiSettings | Promise<GuiSettings>,
+  shouldCommit: () => boolean,
+): Promise<GuiSettings> {
+  for (let attempt = 1; ; attempt += 1) {
+    const current = await readGuiSettings();
+    const base = cachedRevision;
+    if (base === null || remote !== settingsRemote)
+      throw new Error("settings are being handed over; try again");
+    if (!shouldCommit()) throw new Error("settings update cancelled");
+    const next = normalizeGuiSettings(await update(current));
+    if (!shouldCommit()) throw new Error("settings update cancelled");
+    try {
+      const written = await remote.update(base, next);
+      applyRemoteGuiSettings(written.revision, written.settings);
+      return cachedRevision === written.revision && cachedGuiSettings
+        ? cachedGuiSettings
+        : normalizeGuiSettings(written.settings);
+    } catch (error) {
+      if (
+        (error as { code?: unknown }).code !== "stale" ||
+        attempt >= REMOTE_UPDATE_ATTEMPTS
+      )
+        throw error;
+      if (remote === settingsRemote) {
+        cachedGuiSettings = null;
+        cachedRevision = null;
+      }
+    }
+  }
+}
+
 function enqueueSettingsMutation<T>(operation: () => Promise<T>): Promise<T> {
   const result = settingsMutationQueue.then(operation);
   settingsMutationQueue = result.then(
@@ -665,11 +826,15 @@ function enqueueSettingsMutation<T>(operation: () => Promise<T>): Promise<T> {
 
 // Read and persist under one queue slot so background status updates cannot
 // overwrite a toggle changed by an RPC that completed at the same time.
+// While another process writes the file (the Rust core owns the settings
+// family), the change goes to it against the revision it was made on.
 export function updateGuiSettings(
   update: (current: GuiSettings) => GuiSettings | Promise<GuiSettings>,
   shouldCommit: () => boolean = () => true,
 ): Promise<GuiSettings> {
   return enqueueSettingsMutation(async () => {
+    const remote = settingsRemote;
+    if (remote) return updateRemoteGuiSettings(remote, update, shouldCommit);
     const current = await readGuiSettings();
     if (!shouldCommit()) throw new Error("settings update cancelled");
     const next = await update(current);
