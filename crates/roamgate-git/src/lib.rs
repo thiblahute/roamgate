@@ -15,6 +15,7 @@ pub mod diff;
 pub mod diff_base;
 pub mod exec;
 pub mod history;
+pub mod ignore;
 pub mod patch;
 pub mod review;
 pub mod review_files;
@@ -126,4 +127,17 @@ pub fn trim_incomplete_utf8_tail(buffer: &[u8]) -> &[u8] {
 /// A fresh `ROAMGATE-...-<uuid>` marker.
 pub fn marker(prefix: &str) -> String {
     format!("{prefix}-{}", uuid::Uuid::new_v4())
+}
+
+/// A workspace-relative path as Files and Changes send it (file-paths.ts
+/// `sanitizeExplorerPath`): slashes forward, no leading slash, no `..`.
+pub fn sanitize_explorer_path(value: Option<&serde_json::Value>) -> Result<String> {
+    let raw = value.and_then(serde_json::Value::as_str).unwrap_or("");
+    let normalized = raw.replace('\\', "/");
+    let normalized = normalized.trim_start_matches('/');
+    let parts: Vec<&str> = normalized.split('/').filter(|p| !p.is_empty()).collect();
+    if parts.iter().any(|p| *p == ".." || p.contains('\0')) {
+        return Err(GitError::message("invalid file explorer path"));
+    }
+    Ok(parts.join("/"))
 }
