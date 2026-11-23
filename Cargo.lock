@@ -7242,6 +7242,7 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+ "unicode-normalization",
  "windows-sys 0.61.2",
 ]
 

@@ -13,9 +13,11 @@ pub mod low_gpu;
 pub mod models;
 pub mod process;
 pub mod profiles;
+pub mod reading;
 pub mod setup;
 pub mod speakers;
 pub mod speech_rate;
+pub mod stock;
 
 #[cfg(test)]
 mod testdata;
