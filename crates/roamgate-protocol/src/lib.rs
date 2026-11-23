@@ -12,7 +12,6 @@
 //! - `vectors` (feature `vectors`, for tests): the reader of
 //!   `contract/vectors/*.json`, the T0 cases `bun test` reads too.
 
-pub mod file_edits;
 pub mod forward;
 pub mod frames;
 pub mod notify;

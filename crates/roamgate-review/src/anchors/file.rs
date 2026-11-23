@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use serde_json::{Value, json};
 
 use super::{note_of, note_text};
-use crate::js::{len16, slice16};
+use crate::js::{head16, len16};
 use crate::model::ReviewAnchor;
 
 /// How many of a quote's first units say where it is (kept, or by text).
@@ -190,7 +190,7 @@ pub fn place_in_file(anchor: &ReviewAnchor, lines: &[String]) -> Option<FilePlac
     let (line, end_line, text) = (anchor.line, anchor.end_line, anchor.text.as_deref());
     let quote = anchor_quote(anchor);
     let all = quote.as_deref().map(quote_words).unwrap_or_default();
-    let head = slice16(&all, 0, QUOTE_HEAD_UNITS).to_owned();
+    let head = head16(&all, QUOTE_HEAD_UNITS);
     let span = match (line, end_line) {
         (Some(line), Some(end)) => end - line,
         _ => 0,
@@ -307,7 +307,7 @@ pub fn place_in_file(anchor: &ReviewAnchor, lines: &[String]) -> Option<FilePlac
     let mut end = found;
     while (end as usize) < lines.len() {
         let next = &words[end as usize];
-        if next.is_empty() || !all.contains(slice16(next, 0, CONTINUES_UNITS)) {
+        if next.is_empty() || !all.contains(&head16(next, CONTINUES_UNITS)) {
             break;
         }
         end += 1;

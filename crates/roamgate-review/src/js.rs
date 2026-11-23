@@ -1,58 +1,13 @@
-//! What the TS service gets from JavaScript itself and the port has to
-//! say: string lengths and slices in UTF-16 units (the limits of
-//! `REVIEW_LIMITS` count them), `String.prototype.trim`, `Date`'s ISO form,
-//! `Date.parse` and the local hours and minutes of a time.
+//! What the TS service gets from JavaScript itself: string lengths,
+//! slices and `trim` (roamgate-agents' helpers, the one copy), and here
+//! `Date`'s ISO form, `Date.parse` and the local hours and minutes of a
+//! time.
 
 use jiff::Timestamp;
 use jiff::civil::DateTime;
 use jiff::tz::TimeZone;
 
-/// `value.length`: UTF-16 code units.
-pub fn len16(value: &str) -> usize {
-    value.chars().map(char::len_utf16).sum()
-}
-
-/// `value.slice(start, end)` in UTF-16 units; a cut inside a surrogate pair
-/// keeps the whole character out (JS would keep half of it).
-pub fn slice16(value: &str, start: usize, end: usize) -> &str {
-    let mut units = 0;
-    let mut from = value.len();
-    let mut to = value.len();
-    let mut started = false;
-    for (index, ch) in value.char_indices() {
-        if !started && units >= start {
-            from = index;
-            started = true;
-        }
-        if units >= end {
-            to = index;
-            break;
-        }
-        units += ch.len_utf16();
-    }
-    if !started {
-        return "";
-    }
-    if to < from {
-        return "";
-    }
-    &value[from..to]
-}
-
-/// The first `max` UTF-16 units of `value`.
-pub fn head16(value: &str, max: usize) -> &str {
-    slice16(value, 0, max)
-}
-
-/// Whether `ch` is what JavaScript's `trim` and `\s` take as white space.
-pub fn js_space(ch: char) -> bool {
-    ch.is_whitespace() || ch == '\u{feff}'
-}
-
-/// `value.trim()`.
-pub fn trim(value: &str) -> &str {
-    value.trim_matches(js_space)
-}
+pub use roamgate_agents::js::{head16, is_js_space as js_space, len16, slice16, trim};
 
 /// `new Date(ms).toISOString()`.
 pub fn iso(ms: i64) -> String {
@@ -135,16 +90,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lengths_and_slices_count_utf16_units() {
-        assert_eq!(len16("a\u{1F600}b"), 4);
-        assert_eq!(slice16("a\u{1F600}b", 0, 1), "a");
-        assert_eq!(slice16("a\u{1F600}b", 1, 3), "\u{1F600}");
-        assert_eq!(slice16("abc", 1, 10), "bc");
-        assert_eq!(slice16("abc", 5, 10), "");
-        assert_eq!(head16("abcdef", 3), "abc");
-    }
-
-    #[test]
     fn iso_times_have_milliseconds() {
         assert_eq!(iso(0), "1970-01-01T00:00:00.000Z");
         assert_eq!(iso(1_767_182_400_123), "2025-12-31T12:00:00.123Z");
@@ -160,10 +105,5 @@ mod tests {
         assert_eq!(date_parse("2025-12-31"), Some(1_767_139_200_000));
         assert_eq!(date_parse("yesterday"), None);
         assert_eq!(date_parse(""), None);
-    }
-
-    #[test]
-    fn trims_javascript_space() {
-        assert_eq!(trim("\u{feff} a b \n"), "a b");
     }
 }

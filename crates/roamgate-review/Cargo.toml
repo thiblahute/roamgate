@@ -16,7 +16,7 @@ indexmap = { version = "2", features = ["serde"] }
 jiff = "0.2"
 rand = "0.9"
 regex = "1"
-roamgate-protocol = { path = "../roamgate-protocol" }
+roamgate-agents = { path = "../roamgate-agents" }
 roamgate-base = { path = "../roamgate-base" }
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

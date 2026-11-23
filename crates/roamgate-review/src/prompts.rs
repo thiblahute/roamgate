@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use indexmap::IndexMap;
+use roamgate_agents::shared::file_edits::file_edit_from_arguments;
 use roamgate_base::clock::SharedClock;
-use roamgate_protocol::file_edits::file_edit_from_arguments;
 use serde_json::{Map, Value, json};
 use tokio::sync::oneshot;
 
@@ -143,11 +143,8 @@ impl AgentPrompts {
         if let Some(detail) = detail {
             prompt.insert("detail".into(), json!(detail));
         }
-        if let Some(edit) = file_edit_from_arguments(Some(&params.tool), &params.input) {
-            prompt.insert(
-                "file_edit".into(),
-                serde_json::to_value(edit).unwrap_or(Value::Null),
-            );
+        if let Some(edit) = file_edit_from_arguments(Some(&params.tool), Some(&params.input)) {
+            prompt.insert("file_edit".into(), edit);
         }
         prompt.insert("canAlways".into(), json!(params.can_always));
         prompt.insert("createdAt".into(), json!(crate::js::iso(created)));

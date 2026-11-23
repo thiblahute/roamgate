@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use roamgate_base::clock::SystemClock;
+use roamgate_base::clock::TokioClock;
 use roamgate_base::paths::{DataContext, Platform};
 use serde_json::{Value, json};
 
@@ -141,7 +141,7 @@ pub(crate) fn service_in(
         storage,
         publish: Arc::new(move |push| sink.lock().unwrap().push(push)),
         host,
-        clock: Arc::new(SystemClock),
+        clock: Arc::new(TokioClock::starting_at(1_767_182_400_000)),
         session_limit: None,
         retry_delay_ms: Some(10),
         delivery_delay_ms: Some(delay),
@@ -827,7 +827,7 @@ async fn too_many_reviews_are_refused_but_a_work_item_is_not() {
         storage,
         publish: Arc::new(|_| {}),
         host: Arc::new(FakeHost::default()),
-        clock: Arc::new(SystemClock),
+        clock: Arc::new(TokioClock::starting_at(1_767_182_400_000)),
         session_limit: Some(1),
         retry_delay_ms: None,
         delivery_delay_ms: None,

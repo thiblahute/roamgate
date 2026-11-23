@@ -6646,6 +6646,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "roamgate-review"
+version = "0.0.0"
+dependencies = [
+ "fancy-regex 0.17.0",
+ "futures-util",
+ "indexmap",
+ "jiff",
+ "rand 0.9.5",
+ "regex",
+ "roamgate-agents",
+ "roamgate-base",
+ "roamgate-protocol",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "roamgate-sidecar"
 version = "0.0.0"
 dependencies = [
