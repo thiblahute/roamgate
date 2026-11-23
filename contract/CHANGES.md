@@ -6,6 +6,35 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.21
+
+inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075
+
+The workspace family served by the Rust core (Phase 6, S17;
+wire/core-channel.md, The workspace family), while the owners table gives
+it to Rust. The browser surface (`file.*`, `git.*`, `worktree.*`,
+`bridge.workspace_tree.*`, the file routes, the `workspace.git_status`,
+`workspace.last_step_completed` and `workspace_tree` pushes) is unchanged;
+the inventory too.
+
+- owners: the workspace family now also answers the settings that need git
+  or worktree hooks (`settings.workspace_auto_sync.*`,
+  `settings.worktree_directory.get`, `settings.worktree_hooks.get`,
+  `settings.worktree_command.update`, `settings.update_repo`); `/api/history`
+  and `/api/history/commit` left it (they stay with the local history
+  runtime, the front's). Its writes of settings.json go through the
+  settings family's writer, so the core must own settings too.
+- wire: the front's own calls `internal.workspace.runtime_start`,
+  `.runtime_stop`, `.events` (its runtimes and what their subscriptions
+  saw), `.enrich`, `.last_step`, `.invalidate` and `.tree` (`get`, `apply`,
+  `place`).
+- wire, reverse targets: `workspace.ssh_run` (a command on a connection's
+  SSH host, through whoever owns the host family's slots),
+  `workspace.kept_steps` (the review service's steps with threads);
+  `herdr.call` takes `fresh`; `connections.ready` names each connection's
+  `ssh_host`; a browser call's ctx carries `client_ip` (file.reveal's
+  loopback check).
+
 ## 1.20
 
 inventory: 82630773da82f87c93e300a6bc0036fa849854059c54a53850415913eaebb075
