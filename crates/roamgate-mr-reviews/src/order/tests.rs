@@ -54,13 +54,13 @@ fn ranked(n: u64, score: u64) -> Value {
 }
 
 /// settings.json's `mr_reviews`, as written.
-type Persisted = Arc<Mutex<Value>>;
+pub(crate) type Persisted = Arc<Mutex<Value>>;
 
-struct Reviews {
-    store: SharedStore,
-    order: Arc<MrOrder>,
-    deps: MrReviewsRpcDeps,
-    pushes: Arc<Mutex<Vec<Value>>>,
+pub(crate) struct Reviews {
+    pub(crate) store: SharedStore,
+    pub(crate) order: Arc<MrOrder>,
+    pub(crate) deps: MrReviewsRpcDeps,
+    pub(crate) pushes: Arc<Mutex<Vec<Value>>>,
 }
 
 impl Reviews {
@@ -74,7 +74,7 @@ impl Reviews {
             .collect()
     }
 
-    async fn call(&self, method: &str, params: Value) -> RpcResult<Value> {
+    pub(crate) async fn call(&self, method: &str, params: Value) -> RpcResult<Value> {
         handle_mr_reviews_rpc(
             &self.deps,
             &format!("bridge.mr_reviews.{method}"),
@@ -83,27 +83,27 @@ impl Reviews {
         .await
     }
 
-    async fn settings(&self) -> Obj {
+    pub(crate) async fn settings(&self) -> Obj {
         (self.deps.settings)().await
     }
 
-    fn pushes(&self) -> Vec<Value> {
+    pub(crate) fn pushes(&self) -> Vec<Value> {
         self.pushes.lock().unwrap().clone()
     }
 
-    fn last_undo(&self) -> i64 {
+    pub(crate) fn last_undo(&self) -> i64 {
         self.pushes().last().unwrap()["undo"].as_i64().unwrap()
     }
 }
 
 /// The settings in effect: settings.json's, normalized as read.
-fn read(persisted: &Persisted) -> Obj {
+pub(crate) fn read(persisted: &Persisted) -> Obj {
     let normalized = normalize_stored_mr_reviews(Some(&persisted.lock().unwrap()));
     mr_reviews_settings(normalized.as_ref().and_then(Value::as_object))
 }
 
 /// The reviews module over `persisted` and `store` (`createMrReviews`).
-fn reviews(persisted: &Persisted, store: &SharedStore) -> Reviews {
+pub(crate) fn reviews(persisted: &Persisted, store: &SharedStore) -> Reviews {
     let pushes = Arc::new(Mutex::new(Vec::<Value>::new()));
     let settings: SettingsFn = {
         let persisted = persisted.clone();

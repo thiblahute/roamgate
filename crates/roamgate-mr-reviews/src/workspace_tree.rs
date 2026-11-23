@@ -88,6 +88,56 @@ pub fn node_name(node: &Obj) -> String {
     js::trim(&name).to_owned()
 }
 
+/// A group of the tree (or a workspace with nodes under it) and the names
+/// leading to it (`workspaceTreeGroupPaths`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GroupPath {
+    pub node: String,
+    /// `group` or `workspace`.
+    pub kind: String,
+    pub names: Vec<String>,
+    /// A workspace's connection.
+    pub connection_id: Option<String>,
+}
+
+/// `workspaceTreeGroupPaths`: every group, and every workspace that has
+/// nodes under it, with its path of names, in tree order (cycles cut).
+pub fn group_paths(tree: &Value) -> Vec<GroupPath> {
+    let parents: HashSet<&str> = nodes(tree).into_iter().filter_map(node_parent).collect();
+    let mut out = Vec::new();
+    fn walk(
+        tree: &Value,
+        parents: &HashSet<&str>,
+        parent: Option<&str>,
+        names: &[String],
+        seen: &HashSet<String>,
+        out: &mut Vec<GroupPath>,
+    ) {
+        for node in children(tree, parent) {
+            let id = node_id(node);
+            if seen.contains(id) {
+                continue;
+            }
+            let mut here = names.to_vec();
+            here.push(node_name(node));
+            if is_group(node) || parents.contains(id) {
+                out.push(GroupPath {
+                    node: id.to_owned(),
+                    kind: js::sv(node.get("kind")).to_owned(),
+                    names: here.clone(),
+                    connection_id: is_workspace(node)
+                        .then(|| js::sv(node_ref(node).get("connection_id")).to_owned()),
+                });
+                let mut seen = seen.clone();
+                seen.insert(id.to_owned());
+                walk(tree, parents, Some(id), &here, &seen, out);
+            }
+        }
+    }
+    walk(tree, &parents, None, &[], &HashSet::new(), &mut out);
+    out
+}
+
 fn same_tree_name(a: &str, b: &str) -> bool {
     js::js_lower(js::trim(a)) == js::js_lower(js::trim(b))
 }

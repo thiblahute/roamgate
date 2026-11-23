@@ -75,6 +75,9 @@ pub type RpcResult<T> = Result<T, RpcError>;
 /// The rest of the methods (open, checkout, Claude), when set up.
 pub type MoreFn = Arc<dyn Fn(String, Obj) -> BoxFuture<'static, RpcResult<Value>> + Send + Sync>;
 
+/// The Workspaces tree (`{version, nodes}`), when there is one.
+pub type TreeFn = Arc<dyn Fn() -> BoxFuture<'static, Option<Value>> + Send + Sync>;
+
 /// What the methods need (`MrReviewsRpcDeps`).
 #[derive(Clone)]
 pub struct MrReviewsRpcDeps {
@@ -90,7 +93,7 @@ pub struct MrReviewsRpcDeps {
     /// The Workspaces tree (`{nodes: [...]}`): whether a workspace is in a
     /// group headed upstream. Without it, a workspace marked by itself is
     /// unmarked and any other is taken to be in such a group.
-    pub tree: Option<Arc<dyn Fn() -> BoxFuture<'static, Option<Value>> + Send + Sync>>,
+    pub tree: Option<TreeFn>,
     pub more: Option<MoreFn>,
 }
 

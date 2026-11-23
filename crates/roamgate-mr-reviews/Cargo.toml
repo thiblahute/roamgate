@@ -15,11 +15,14 @@ futures-util = "0.3"
 rand = "0.9"
 regex = "1"
 roamgate-agents = { path = "../roamgate-agents" }
+roamgate-assistant = { path = "../roamgate-assistant" }
 roamgate-base = { path = "../roamgate-base" }
+roamgate-claude = { path = "../roamgate-claude" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-forge = { path = "../roamgate-forge" }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["rt", "sync", "time"] }
+tokio-util = "0.7"
 tracing = "0.1"
 url = "2"
 
