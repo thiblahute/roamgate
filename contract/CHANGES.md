@@ -6,6 +6,19 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.11
+
+inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b
+
+Disk writes off the server's event loop (`up/loop-stall`):
+
+- storage: reviews.sqlite and tasks.sqlite run with `PRAGMA synchronous =
+  NORMAL` in WAL mode (FULL before), as activity.sqlite does: a crash never
+  corrupts them, a power loss can take the last commits. roamgate-assistant
+  opens tasks.sqlite the same way.
+- The JSON stores, the contract recorder and the Work history write behind
+  their changes, off the event loop; their files and formats are unchanged.
+
 ## 1.10
 
 inventory: d1974dc1f1c8441606395df22b7df0530f55309e459f6b7aaa742d9c09dfc00b

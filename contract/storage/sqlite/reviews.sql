@@ -10,5 +10,5 @@ PRAGMA busy_timeout = 5000;
 CREATE TABLE sessions ( id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, updated_at TEXT NOT NULL, data TEXT NOT NULL ) STRICT; CREATE TABLE threads ( id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, created_at TEXT NOT NULL, data TEXT NOT NULL ) STRICT; CREATE INDEX threads_session ON threads(session_id, created_at);
 PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;
 PRAGMA journal_mode = WAL;
-PRAGMA synchronous = FULL;
+PRAGMA synchronous = NORMAL;
 PRAGMA user_version = ${SCHEMA_VERSION};

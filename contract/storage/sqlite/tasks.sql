@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS run_notices ( run_id TEXT PRIMARY KEY, notice TEXT NO
 CREATE TABLE tasks ( id TEXT PRIMARY KEY, position INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, next_run_at TEXT, due_at TEXT, title TEXT NOT NULL, prompt TEXT NOT NULL, scope TEXT NOT NULL, schedule TEXT NOT NULL, config TEXT NOT NULL, targets TEXT NOT NULL, workspaces TEXT NOT NULL, notification_mode TEXT, notifications TEXT NOT NULL DEFAULT '[]', mentions TEXT, all_workspaces INTEGER ) STRICT; CREATE TABLE runs ( id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), position INTEGER NOT NULL, status TEXT NOT NULL, scheduled_at TEXT NOT NULL, started_at TEXT, finished_at TEXT, error TEXT, manual INTEGER NOT NULL, admission TEXT ) STRICT; CREATE INDEX runs_task ON runs(task_id, position); CREATE TABLE proposals ( id TEXT PRIMARY KEY, position INTEGER NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, task_id TEXT, input TEXT NOT NULL, prepared TEXT NOT NULL ) STRICT; CREATE TABLE requests ( id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id), position INTEGER NOT NULL ) STRICT; ${runNotices};
 PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;
 PRAGMA journal_mode = WAL;
-PRAGMA synchronous = FULL;
+PRAGMA synchronous = NORMAL;
 ALTER TABLE tasks ADD COLUMN all_workspaces INTEGER;
 PRAGMA user_version = 3;
 ALTER TABLE tasks ADD COLUMN notification_mode TEXT; ALTER TABLE tasks ADD COLUMN notifications TEXT NOT NULL DEFAULT '[]';

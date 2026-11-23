@@ -582,7 +582,7 @@ impl TaskStorage {
         if mode != "wal" {
             return Err(message("Ranger task database requires WAL"));
         }
-        conn.execute_batch("PRAGMA synchronous = FULL")?;
+        conn.execute_batch("PRAGMA synchronous = NORMAL")?;
         storage.protect()?;
         if !existing {
             transaction(&conn, true, |conn| {
