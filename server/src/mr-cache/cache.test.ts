@@ -278,7 +278,7 @@ describe("the MR cache", () => {
       const first = setup({ path });
       const forge = fakeForge();
       await first.cache.get("k", { ...keep(60_000), load: forge.load });
-      first.cache.flush();
+      await first.cache.flush();
       const second = createMrCache({
         path,
         now: () => first.clock.now + 1000,

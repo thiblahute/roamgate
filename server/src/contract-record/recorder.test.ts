@@ -65,7 +65,7 @@ describe("contract record mode", () => {
     ).toBe("/data/roamgate/contract-record");
   });
 
-  it("writes redacted JSONL in private files, in batches", () => {
+  it("writes redacted JSONL in private files, in batches, written off the event loop", async () => {
     const directory = join(scratch(), "rec");
     const recorder = new ContractRecorder({ directory, role: "server" });
     recorder.record({
@@ -87,7 +87,10 @@ describe("contract record mode", () => {
     recorder.record({ ch: "ws", ev: "out", sock: "ws-1", raw: "not json" });
     // Nothing written before the batch.
     expect(readdirSync(directory)).toEqual([]);
+    // The batch is written behind, off the event loop.
     recorder.flush();
+    expect(readdirSync(directory)).toEqual([]);
+    await recorder.drain();
     const [start, request, exchange, text] = lines(directory);
     expect(start).toMatchObject({
       ch: "recorder",
@@ -138,7 +141,7 @@ describe("contract record mode", () => {
         ev: "in",
         raw: JSON.stringify({ index, pad: "y".repeat(200) }),
       });
-      recorder.flush();
+      recorder.flushSync();
     }
     recorder.close();
     const names = readdirSync(directory).sort();

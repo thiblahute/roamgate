@@ -304,7 +304,12 @@ import {
   type WorkService,
   type WorkServiceDeps,
 } from "./work/service";
-import { openWorkStore, workDirectory, WorkError } from "./work/store";
+import {
+  openWorkStore,
+  workDirectory,
+  WorkError,
+  type WorkStore,
+} from "./work/store";
 import { type WorkUserToolName, workTool } from "./work/tools";
 import type { WorkItem } from "../../shared/work";
 import { ownCheckout, readDeployed, readHead } from "./work/deployed";
@@ -2079,6 +2084,7 @@ const handleHistory = createHistoryRoute({
 });
 
 let workService: WorkService | null = null;
+let workStore: WorkStore | null = null;
 let workDeps: Omit<WorkServiceDeps, "store"> | null = null;
 
 /**
@@ -2279,8 +2285,9 @@ function workServiceDeps(): Omit<WorkServiceDeps, "store"> {
 /** The Work board (bridge.work.*), started on first use. */
 function getWorkService(): WorkService {
   if (workService) return workService;
+  workStore = openWorkStore(workDirectory());
   workService = createWorkService({
-    store: openWorkStore(workDirectory()),
+    store: workStore,
     ...workServiceDeps(),
   });
   workService.start();
@@ -2299,6 +2306,9 @@ onOwnershipChanged(() => {
   if (!bunOwns("work") && workService) {
     workService.stop();
     workService = null;
+    // Bun's last change reaches the file the core reads (written behind).
+    void workStore?.flush();
+    workStore = null;
     logger.child("work").info("handed to the Rust core");
   }
 });
@@ -6130,7 +6140,7 @@ function main() {
 let managerStopTask: Promise<void> | null = null;
 function stopManagerOnce(): Promise<void> {
   // Seen marks are written in batches: keep the last ones.
-  agentSeen.flush();
+  const seenWritten = agentSeen.flush();
   webPush.stop();
   notifications.stop();
   stopNetworkWatch();
@@ -6151,6 +6161,9 @@ function stopManagerOnce(): Promise<void> {
     await historyRuntime.stop();
     reviewAgent?.stop();
     reviewService?.close();
+    // The stores write behind their changes: theirs are on disk before
+    // the exit (which writes what is still pending at once).
+    await Promise.all([seenWritten, notifications.flush()]);
   })();
   return managerStopTask;
 }

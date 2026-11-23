@@ -1,14 +1,19 @@
 import {
+  close,
   closeSync,
   constants,
   mkdirSync,
+  open,
   openSync,
   readdirSync,
   rmSync,
   statSync,
+  write,
   writeSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { dataRoot } from "../config/data-paths";
 import { roamgateEnv } from "../config/environment";
 import { DEFAULT_MAX_STRING, Redactor } from "./redact";
@@ -28,14 +33,38 @@ import { DEFAULT_MAX_STRING, Redactor } from "./redact";
  * in a 0700 directory), rotated at `ROAMGATE_CONTRACT_RECORD_SEGMENT_MB`
  * (32) and pruned oldest first beyond `ROAMGATE_CONTRACT_RECORD_KEEP_MB`
  * (1024) for the whole directory. The hot path only queues the raw message;
- * parsing, redaction and the write happen in a batch every 250 ms (and at
- * exit). Past 20000 queued events new ones are dropped and counted.
+ * parsing and redaction happen in a batch every 250 ms, written behind it
+ * off the event loop (and at exit, at once). Past 20000 queued events, or
+ * 64 MB of lines the disk has not taken yet, new ones are dropped and
+ * counted.
  */
 
 export const RECORD_FORMAT_VERSION = 1;
 const FLUSH_MS = 250;
 const MAX_QUEUE = 20_000;
+/** Lines flushed and not yet written past which batches are dropped. */
+const MAX_UNWRITTEN = 64 * 1024 * 1024;
 const MB = 1024 * 1024;
+const SEGMENT_FLAGS =
+  constants.O_WRONLY |
+  constants.O_CREAT |
+  constants.O_EXCL |
+  constants.O_APPEND |
+  (constants.O_NOFOLLOW ?? 0);
+const openAsync = promisify(open);
+const closeAsync = promisify(close);
+/** Writes all of `bytes` to `fd`, off the event loop. */
+async function writeAsync(fd: number, bytes: Buffer): Promise<void> {
+  let at = 0;
+  while (at < bytes.length) {
+    const written = await new Promise<number>((resolve, reject) =>
+      write(fd, bytes, at, bytes.length - at, null, (error, n) =>
+        error ? reject(error) : resolve(n),
+      ),
+    );
+    at += written;
+  }
+}
 
 export type RecordChannel =
   | "ws"
@@ -145,6 +174,13 @@ export class ContractRecorder {
   private seq = 0;
   private droppedSinceFlush = 0;
   private closed = false;
+  /** Lines flushed and not yet written, and their size. */
+  private unwritten: Buffer[] = [];
+  private unwrittenBytes = 0;
+  /** The writes under way, when they are. */
+  private writing: Promise<void> | null = null;
+  /** The next segment's first line, when made ahead of its events. */
+  private header: Buffer | null = null;
   private readonly started: number;
   readonly counters: RecorderStats = {
     events: 0,
@@ -186,7 +222,11 @@ export class ContractRecorder {
     this.counters.enqueueMs += performance.now() - before;
   }
 
-  /** Writes every queued event now. */
+  /**
+   * Turns every queued event into lines now and writes them behind, off
+   * the event loop: a synchronous write to a busy disk stalled every call
+   * for seconds (5 s on 2026-11-23).
+   */
   flush(): void {
     if (this.timer) {
       clearTimeout(this.timer);
@@ -205,10 +245,14 @@ export class ContractRecorder {
       });
       this.droppedSinceFlush = 0;
     }
-    try {
-      // The file's first line comes before the events it holds.
-      if (this.fd === null) this.rotate();
-    } catch {}
+    // The file's first line comes before the events it holds.
+    if (this.segment === 0 && !this.header) this.header = this.nextSegment();
+    if (this.unwrittenBytes > MAX_UNWRITTEN) {
+      // The disk is that far behind: these are dropped and counted.
+      this.droppedSinceFlush += batch.length;
+      this.counters.dropped += batch.length;
+      return;
+    }
     let text = "";
     for (const item of batch) {
       try {
@@ -226,18 +270,28 @@ export class ContractRecorder {
         })}\n`;
       }
     }
-    try {
-      this.write(text);
-    } catch {
-      // A full disk or a removed directory: recording is best effort.
-    }
+    this.unwritten.push(Buffer.from(text));
+    this.unwrittenBytes += text.length;
     this.counters.flushes += 1;
     this.counters.flushMs += performance.now() - before;
+    // Started after this run of code: flushSync() takes the lines first.
+    this.writing ??= Promise.resolve().then(() => this.writeBehind());
   }
 
-  /** Flushes and closes the file; later events are ignored. */
-  close(): void {
+  /** flush(), its lines written before it returns (tests, exit). */
+  flushSync(): void {
     this.flush();
+    this.writeNow();
+  }
+
+  /** Resolves once every line flushed so far is written. */
+  async drain(): Promise<void> {
+    while (this.writing) await this.writing;
+  }
+
+  /** Writes what is queued and closes the file; later events are ignored. */
+  close(): void {
+    this.flushSync();
     this.closed = true;
     if (this.fd !== null) closeSync(this.fd);
     this.fd = null;
@@ -301,33 +355,62 @@ export class ContractRecorder {
     return { text: this.redactor.string(raw) };
   }
 
-  private write(text: string): void {
-    const bytes = Buffer.from(text);
-    if (this.fd === null || this.fileBytes + bytes.length > this.segmentBytes)
-      this.rotate();
-    if (this.fd === null) return;
-    writeSync(this.fd, bytes);
-    this.fileBytes += bytes.length;
-    this.counters.bytes += bytes.length;
+  /** The unwritten batches, as one buffer (taken from the queue). */
+  private takeUnwritten(): Buffer | null {
+    if (!this.unwritten.length) return null;
+    const bytes = Buffer.concat(this.unwritten);
+    this.unwritten = [];
+    this.unwrittenBytes = 0;
+    return bytes;
   }
 
-  private rotate(): void {
-    if (this.fd !== null) closeSync(this.fd);
-    this.fd = null;
+  /** Writes the batches one after the other, off the event loop. */
+  private async writeBehind(): Promise<void> {
+    try {
+      for (;;) {
+        const bytes = this.takeUnwritten();
+        if (!bytes) break;
+        try {
+          if (
+            this.fd === null ||
+            this.fileBytes + bytes.length > this.segmentBytes
+          )
+            await this.rotate();
+          if (this.fd === null) continue;
+          await writeAsync(this.fd, bytes);
+          this.fileBytes += bytes.length;
+          this.counters.bytes += bytes.length;
+        } catch {
+          // A full disk or a removed directory: recording is best effort.
+        }
+      }
+    } finally {
+      this.writing = null;
+    }
+  }
+
+  /** Writes the batches now, on the event loop (tests, exit). */
+  private writeNow(): void {
+    const bytes = this.takeUnwritten();
+    if (!bytes || this.closed) return;
+    try {
+      if (this.fd === null || this.fileBytes + bytes.length > this.segmentBytes)
+        this.rotateSync();
+      if (this.fd === null) return;
+      writeSync(this.fd, bytes);
+      this.fileBytes += bytes.length;
+      this.counters.bytes += bytes.length;
+    } catch {
+      // See writeBehind().
+    }
+  }
+
+  /** The next segment's path, and its first line. */
+  private nextSegment(): Buffer {
     this.segment += 1;
     const name = `rec-${stamp(this.started)}-${process.pid}-${String(this.segment).padStart(4, "0")}.jsonl`;
     this.file = join(this.directory, name);
-    mkdirSync(this.directory, { recursive: true, mode: 0o700 });
-    this.fd = openSync(
-      this.file,
-      constants.O_WRONLY |
-        constants.O_CREAT |
-        constants.O_EXCL |
-        constants.O_APPEND |
-        (constants.O_NOFOLLOW ?? 0),
-      0o600,
-    );
-    const header = Buffer.from(
+    return Buffer.from(
       `${JSON.stringify({
         v: RECORD_FORMAT_VERSION,
         seq: ++this.seq,
@@ -340,37 +423,97 @@ export class ContractRecorder {
         platform: process.platform,
       })}\n`,
     );
-    writeSync(this.fd, header);
-    this.fileBytes = header.length;
-    this.counters.bytes += header.length;
-    this.prune();
   }
 
-  /** Removes the oldest recordings while the directory is over its budget. */
-  private prune(): void {
-    let files: { name: string; size: number }[];
+  private opened(header: Buffer, fd: number) {
+    this.fd = fd;
+    this.fileBytes = header.length;
+    this.counters.bytes += header.length;
+  }
+
+  /** Starts the next segment, off the event loop. */
+  private async rotate(): Promise<void> {
+    const old = this.fd;
+    this.fd = null;
+    if (old !== null) await closeAsync(old);
+    const header = this.header ?? this.nextSegment();
+    this.header = null;
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    const fd = await openAsync(this.file, SEGMENT_FLAGS, 0o600);
+    await writeAsync(fd, header);
+    this.opened(header, fd);
+    await this.prune();
+  }
+
+  /** rotate(), on the event loop (tests, exit). */
+  private rotateSync(): void {
+    if (this.fd !== null) closeSync(this.fd);
+    this.fd = null;
+    const header = this.header ?? this.nextSegment();
+    this.header = null;
+    mkdirSync(this.directory, { recursive: true, mode: 0o700 });
+    const fd = openSync(this.file, SEGMENT_FLAGS, 0o600);
+    writeSync(fd, header);
+    this.opened(header, fd);
+    let names: string[];
     try {
-      files = readdirSync(this.directory)
-        .filter((name) => /^rec-.*\.jsonl$/.test(name))
-        .sort()
-        .map((name) => {
-          try {
-            return { name, size: statSync(join(this.directory, name)).size };
-          } catch {
-            return { name, size: 0 };
-          }
-        });
+      names = readdirSync(this.directory);
     } catch {
       return;
     }
+    const files = this.recordings(names, (path) => statSync(path).size);
+    for (const path of this.pruned(files)) rmSync(path, { force: true });
+  }
+
+  /** The recordings in the directory, oldest first, with their sizes. */
+  private recordings(
+    names: string[],
+    size: (path: string) => number,
+  ): { path: string; size: number }[] {
+    return names
+      .filter((name) => /^rec-.*\.jsonl$/.test(name))
+      .sort()
+      .map((name) => {
+        const path = join(this.directory, name);
+        try {
+          return { path, size: size(path) };
+        } catch {
+          return { path, size: 0 };
+        }
+      });
+  }
+
+  /** The oldest recordings to remove for the directory to fit its budget. */
+  private pruned(files: { path: string; size: number }[]): string[] {
     let total = files.reduce((sum, file) => sum + file.size, 0);
+    const out: string[] = [];
     for (const file of files) {
       if (total <= this.keepBytes) break;
-      const path = join(this.directory, file.name);
-      if (path === this.file) continue;
-      rmSync(path, { force: true });
+      if (file.path === this.file) continue;
+      out.push(file.path);
       total -= file.size;
     }
+    return out;
+  }
+
+  /** Removes the oldest recordings while the directory is over its budget. */
+  private async prune(): Promise<void> {
+    let files: { path: string; size: number }[];
+    try {
+      const names = await readdir(this.directory);
+      const sizes = new Map<string, number>();
+      await Promise.all(
+        names.map(async (name) => {
+          try {
+            sizes.set(name, (await stat(join(this.directory, name))).size);
+          } catch {}
+        }),
+      );
+      files = this.recordings(names, (path) => sizes.get(basename(path)) ?? 0);
+    } catch {
+      return;
+    }
+    for (const path of this.pruned(files)) await rm(path, { force: true });
   }
 }
 

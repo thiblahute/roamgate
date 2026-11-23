@@ -180,11 +180,12 @@ test("nothing is sent before hello", () => {
   f.stop();
 });
 
-test("the feed and its ids live through a restart", () => {
+test("the feed and its ids live through a restart", async () => {
   const first = feed();
   first.publish(blocked);
   first.publish(completed);
   first.stop();
+  await first.flush();
   expect(
     JSON.parse(readFileSync(join(root, "notifications.json"), "utf8")).last,
   ).toBe(2);
@@ -530,6 +531,7 @@ test("connections, hellos, sends and closes are logged", () => {
 test("while the Rust core owns the feed, Bun only relays: it asks the core, sends what the core gives back and reads the file again when it returns", async () => {
   const saved = feed();
   saved.publish(blocked);
+  await saved.flush();
   const calls: [string, Record<string, unknown>][] = [];
   const state = JSON.parse(
     readFileSync(join(root, "notifications.json"), "utf8"),

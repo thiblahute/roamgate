@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  dataFileWriter,
   dataRoot,
   defaultDataFile,
   legacyDataRoot,
@@ -191,6 +192,52 @@ test("a failed write or rename leaves no temporary file", async () => {
   }
   expect(readFileSync(target, "utf8")).toBe("first");
   expect(readdirSync(dirname(target))).toEqual(["state.json"]);
+});
+
+test("a store's file is written behind its changes, never synced on the event loop", async () => {
+  const root = home();
+  const target = join(root, "roamgate", "store.json");
+  const syncs = spyOn(fs, "fsyncSync");
+  const renames = spyOn(fsPromises, "rename");
+  const errors: unknown[] = [];
+  try {
+    const writer = dataFileWriter(target, {
+      onError: (error) => errors.push(error),
+    });
+    let made = 0;
+    // A burst of changes in one turn: one write, of the last.
+    for (const value of ["a", "b", "c"])
+      writer.write(() => {
+        made += 1;
+        return value;
+      });
+    // The caller goes on at once: nothing written yet.
+    expect(existsSync(target)).toBe(false);
+    await writer.flush();
+    expect(readFileSync(target, "utf8")).toBe("c");
+    expect(made).toBe(1);
+    expect(renames).toHaveBeenCalledTimes(1);
+    // A failed write leaves the file as it was; the next change writes.
+    renames.mockImplementationOnce(() =>
+      Promise.reject(new Error("disk full")),
+    );
+    writer.write(() => "d");
+    await writer.flush();
+    expect(errors.map((error) => (error as Error).message)).toEqual([
+      "disk full",
+    ]);
+    expect(readFileSync(target, "utf8")).toBe("c");
+    writer.write(() => "e");
+    await writer.flush();
+    expect(readFileSync(target, "utf8")).toBe("e");
+    expect(syncs).not.toHaveBeenCalled();
+    if (process.platform !== "win32")
+      expect(statSync(target).mode & 0o777).toBe(0o600);
+    expect(readdirSync(dirname(target))).toEqual(["store.json"]);
+  } finally {
+    syncs.mockRestore();
+    renames.mockRestore();
+  }
 });
 
 test("startup removes only the temporary files left before it started", async () => {

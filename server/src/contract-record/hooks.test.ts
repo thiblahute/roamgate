@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 function lines(rec: ContractRecorder): RecordLine[] {
-  rec.flush();
+  rec.flushSync();
   return readdirSync(rec.directory)
     .sort()
     .flatMap((name) =>

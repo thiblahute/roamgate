@@ -2,8 +2,8 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   assertSafeDataPath,
+  dataFileWriter,
   dataRoot,
-  replaceDataFile,
 } from "../config/data-paths";
 import { roamgateEnv } from "../config/environment";
 import { type Logger, silentLogger } from "../utils/logger";
@@ -254,16 +254,16 @@ export function createNotificationFeed(options: {
     if (events.length > MAX_EVENTS) events = events.slice(-MAX_EVENTS);
   }
 
+  // Written behind the changes, off the event loop (dataFileWriter).
+  const writer = dataFileWriter(path, {
+    onError: () =>
+      warn("Unable to save the notification feed; events stay in memory."),
+  });
   function save() {
     prune();
-    try {
-      replaceDataFile(
-        path,
-        JSON.stringify({ version: 1, last, events } satisfies Saved) + "\n",
-      );
-    } catch {
-      warn("Unable to save the notification feed; events stay in memory.");
-    }
+    writer.write(
+      () => JSON.stringify({ version: 1, last, events } satisfies Saved) + "\n",
+    );
   }
 
   function send(socket: FeedSocket, text: string) {
@@ -634,6 +634,8 @@ export function createNotificationFeed(options: {
     async useCore(next: CoreFeed | null) {
       core = next;
       currentChecks.clear();
+      // What Bun changed last is on disk before the core reads it.
+      await writer.flush();
       if (!next) {
         const saved = load(path);
         last = saved.last;
@@ -670,6 +672,8 @@ export function createNotificationFeed(options: {
     },
     /** The sockets open now, without the events (the core's status). */
     clients: clientsStatus,
+    /** Resolves once the file holds every change (tests, handover). */
+    flush: () => writer.flush(),
     stop() {
       stopHeartbeat();
       for (const socket of clients.keys())

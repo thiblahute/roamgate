@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   isAbsoluteWorkPath,
@@ -16,7 +17,11 @@ import {
   type WorkState,
 } from "../../../shared/work";
 import { parseAgentAddress } from "../../../shared/agentMessage";
-import { dataRoot, replaceDataFile } from "../config/data-paths";
+import {
+  type DataFileWriter,
+  dataFileWriter,
+  dataRoot,
+} from "../config/data-paths";
 import { roamgateEnv } from "../config/environment";
 import {
   historyChanged,
@@ -524,21 +529,41 @@ export function openWorkStore(directory: string) {
     items = [];
   }
 
+  // Written behind the changes, off the event loop (dataFileWriter): a
+  // sync of the board on a busy disk stalled every call for seconds. Made
+  // at the first change: a store opened only to read never writes.
+  let writer: DataFileWriter | null = null;
   function save() {
-    mkdirSync(directory, { recursive: true, mode: 0o700 });
-    const file: StoreFile = { version: 1, projects, items };
-    replaceDataFile(path, `${JSON.stringify(file, null, 1)}\n`);
+    writer ??= dataFileWriter(path);
+    writer.write(() => {
+      const file: StoreFile = { version: 1, projects, items };
+      return `${JSON.stringify(file, null, 1)}\n`;
+    });
   }
 
-  function history(line: WorkHistoryLine) {
-    try {
-      mkdirSync(directory, { recursive: true, mode: 0o700 });
-      appendFileSync(historyPath, `${JSON.stringify(line)}\n`, {
-        mode: 0o600,
-      });
-    } catch {
-      // The store is the truth; the history is a convenience.
+  /**
+   * The history's lines not yet appended: written in order, off the event
+   * loop (a small append waited seconds on a busy disk), and read with the
+   * file meanwhile.
+   */
+  let historyPending = "";
+  let historyWriting: Promise<void> | null = null;
+  async function appendHistory() {
+    while (historyPending) {
+      const text = historyPending;
+      try {
+        await mkdir(directory, { recursive: true, mode: 0o700 });
+        await appendFile(historyPath, text, { mode: 0o600 });
+      } catch {
+        // The store is the truth; the history is a convenience.
+      }
+      historyPending = historyPending.slice(text.length);
     }
+    historyWriting = null;
+  }
+  function history(line: WorkHistoryLine) {
+    historyPending += `${JSON.stringify(line)}\n`;
+    historyWriting ??= appendHistory();
   }
 
   return {
@@ -620,12 +645,11 @@ export function openWorkStore(directory: string) {
      * for one item's versions, on demand).
      */
     historyOf(id: string): WorkHistoryLine[] {
-      let text: string;
+      let text = "";
       try {
         text = readFileSync(historyPath, "utf8");
-      } catch {
-        return [];
-      }
+      } catch {}
+      text += historyPending;
       const out: WorkHistoryLine[] = [];
       for (const line of text.split("\n")) {
         if (!line.includes(id)) continue;
@@ -646,6 +670,11 @@ export function openWorkStore(directory: string) {
         actor: actor ?? { by: "user" },
         at: new Date().toISOString(),
       });
+    },
+    /** Resolves once the file holds every change (tests, handover). */
+    flush: async () => {
+      await writer?.flush();
+      while (historyWriting) await historyWriting;
     },
     /** For tests and exports: the file as it is. */
     snapshot(): StoreFile {

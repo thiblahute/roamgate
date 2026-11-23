@@ -64,7 +64,7 @@ describe("work description thread", () => {
 });
 
 describe("work store", () => {
-  test("keeps items and projects across reopen, with a history line per change", () => {
+  test("keeps items and projects across reopen, with a history line per change", async () => {
     const where = dir();
     const store = openWorkStore(where);
     store.saveProject({
@@ -88,6 +88,9 @@ describe("work store", () => {
       },
       { state: "open" },
     );
+    // Written behind the change, off the event loop.
+    expect(existsSync(join(where, "work.json"))).toBe(false);
+    await store.flush();
     const again = openWorkStore(where);
     expect(again.projects().map((p) => p.id)).toEqual(["roamgate"]);
     expect(again.project("roamgate")?.coordinator).toEqual({
@@ -101,7 +104,7 @@ describe("work store", () => {
     expect(existsSync(join(where, "work.json"))).toBe(true);
   });
 
-  test("keeps an item's ask and answers, answers only with an ask", () => {
+  test("keeps an item's ask and answers, answers only with an ask", async () => {
     const where = dir();
     const store = openWorkStore(where);
     const base = {
@@ -127,6 +130,7 @@ describe("work store", () => {
       { ...base, id: "fedcba9876543210", answers: ["stray"] } as never,
       {},
     );
+    await store.flush();
     const again = openWorkStore(where);
     expect(again.item("0123456789abcdef")).toMatchObject({
       ask: "Choose: A or B",

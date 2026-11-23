@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { dataRoot, replaceDataFile } from "../config/data-paths";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { dataFileWriter, dataRoot } from "../config/data-paths";
 
 /**
  * One server-side cache of what the UI shows of merge and pull requests,
@@ -179,21 +179,19 @@ export function createMrCache(
     }
   }
 
+  // Written off the event loop (dataFileWriter); a failed write is let
+  // go: the cache is only a speed up.
+  const writer = path ? dataFileWriter(path) : null;
+  function write() {
+    timer = null;
+    if (!writer || !mayWrite()) return;
+    writer.write(
+      () => `${JSON.stringify({ version: 1, entries: [...entries] })}\n`,
+    );
+  }
+
   function save() {
     if (!path) return;
-    const write = () => {
-      timer = null;
-      if (!mayWrite()) return;
-      try {
-        mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-        replaceDataFile(
-          path,
-          `${JSON.stringify({ version: 1, entries: [...entries] })}\n`,
-        );
-      } catch {
-        // The cache is only a speed up.
-      }
-    };
     if (saveDelayMs <= 0) write();
     else timer ??= setTimeout(write, saveDelayMs);
   }
@@ -355,20 +353,11 @@ export function createMrCache(
     },
     settings,
     size: () => entries.size,
-    /** Writes now (shutdown, tests). */
-    flush() {
+    /** Writes now; resolves once written (shutdown, handover, tests). */
+    async flush(): Promise<void> {
       if (timer) clearTimeout(timer);
-      timer = null;
-      if (!path || !mayWrite()) return;
-      try {
-        mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-        replaceDataFile(
-          path,
-          `${JSON.stringify({ version: 1, entries: [...entries] })}\n`,
-        );
-      } catch {
-        // See save().
-      }
+      write();
+      await writer?.flush();
     },
   };
 }

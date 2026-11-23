@@ -17,8 +17,8 @@ const createAgentSeenStore = (...args: Parameters<typeof openStore>) => {
   stores.push(store);
   return store;
 };
-afterEach(() => {
-  for (const store of stores.splice(0)) store.flush();
+afterEach(async () => {
+  for (const store of stores.splice(0)) await store.flush();
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
 });
@@ -59,7 +59,7 @@ test("an agent is Done when it changed state since it was seen", () => {
   expect(store.annotate("desktop", list)).toEqual(list);
 });
 
-test("marks only move forward on one Herdr boot, and survive a restart", () => {
+test("marks only move forward on one Herdr boot, and survive a restart", async () => {
   const file = path();
   const store = createAgentSeenStore(file);
   const boot = "1072-1792889171298769000";
@@ -74,7 +74,7 @@ test("marks only move forward on one Herdr boot, and survive a restart", () => {
   expect(store.mark("local", "w1:p1", "t1", -1)).toBe(false);
   // A new agent in the same pane is another terminal: not seen yet.
   expect(store.seen("local", "w1:p1", "t2")).toBeNull();
-  store.flush();
+  await store.flush();
   expect(createAgentSeenStore(file).seen("local", "w1:p1", "t1")).toBe(7);
 });
 
@@ -99,7 +99,7 @@ test("an agent looked at while working is Done once it finishes", () => {
   expect(annotated.agents[1]!.seen_at).toBeUndefined();
 });
 
-test("a Herdr restart forgets the marks of the server before", () => {
+test("a Herdr restart forgets the marks of the server before", async () => {
   const file = path();
   const store = createAgentSeenStore(file);
   const before = "1072-1792889171298769000";
@@ -128,7 +128,7 @@ test("a Herdr restart forgets the marks of the server before", () => {
     ).agents[0],
   ).toMatchObject({ seen_done: true });
   // The boot is kept across a Roamgate restart.
-  store.flush();
+  await store.flush();
   const reloaded = createAgentSeenStore(file);
   expect(reloaded.seen("local", "w1:p1", "term-w1:p1")).toBe(12);
   expect(
@@ -169,7 +169,7 @@ test("the boot id is read once a minute, or again when invalidated", async () =>
   expect(await cache.get("local", async () => "")).toBeNull();
 });
 
-test("marks are written once per burst, and at once on flush", () => {
+test("marks are written once per burst, and at once on flush", async () => {
   jest.useFakeTimers();
   try {
     const file = path();
@@ -180,14 +180,15 @@ test("marks are written once per burst, and at once on flush", () => {
     jest.advanceTimersByTime(999);
     expect(existsSync(file)).toBe(false);
     jest.advanceTimersByTime(1);
+    await store.flush();
     expect(createAgentSeenStore(file).seen("local", "w1:p2", "t2")).toBe(2);
     store.mark("local", "w1:p3", "t3", 3);
     // Shutdown does not wait for the timer.
-    store.flush();
+    await store.flush();
     expect(createAgentSeenStore(file).seen("local", "w1:p3", "t3")).toBe(3);
     // Nothing pending: nothing written, and the timer is gone.
     rmSync(file);
-    store.flush();
+    await store.flush();
     jest.advanceTimersByTime(5_000);
     expect(existsSync(file)).toBe(false);
   } finally {
@@ -195,7 +196,7 @@ test("marks are written once per burst, and at once on flush", () => {
   }
 });
 
-test("connections looked at longest ago are forgotten beyond 64", () => {
+test("connections looked at longest ago are forgotten beyond 64", async () => {
   let clock = 0;
   const store = createAgentSeenStore(path(), () => clock);
   for (let index = 0; index < 64; index++) {
@@ -211,7 +212,7 @@ test("connections looked at longest ago are forgotten beyond 64", () => {
   expect(store.seen("c0", "w1:p1", "t1")).toBe(2);
   expect(store.seen("c1", "w1:p1", "t1")).toBeNull();
   expect(store.seen("c2", "w1:p1", "t1")).toBe(1);
-  store.flush();
+  await store.flush();
 });
 
 test("agent_seen.mark checks its parameters and marks on the current boot", async () => {
@@ -267,7 +268,7 @@ test("agent_seen.mark checks its parameters and marks on the current boot", asyn
   expect(store.seen("local", "w1:p1", "t1")).toBe(3);
 });
 
-test("what an agent says the user must do shows until they look at it", () => {
+test("what an agent says the user must do shows until they look at it", async () => {
   let clock = 1000;
   const file = path();
   const store = createAgentSeenStore(file, () => clock);
@@ -278,7 +279,7 @@ test("what an agent says the user must do shows until they look at it", () => {
       .agents[0]!.attention_note;
   expect(noted()).toBe("MR !12: A test is asked");
   // Kept across a restart.
-  store.flush();
+  await store.flush();
   expect(noted(createAgentSeenStore(file, () => clock))).toBe(
     "MR !12: A test is asked",
   );

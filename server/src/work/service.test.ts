@@ -878,6 +878,7 @@ describe("work service", () => {
       },
       { by: "agent" },
     );
+    await before.store.flush();
     const git: WorkGit = async (root, args) => ({
       code: root === "/home/me/roamgate" && args[0] !== "merge-base" ? 0 : 1,
       stdout: "",
@@ -1941,6 +1942,7 @@ test("free text from the board: a provisional title from its first line, the coo
   );
   expect(short.title).toBe("Fix the header");
   // Kept across a restart of the store; listed by the tools.
+  await service.store.flush();
   expect(
     openWorkStore(service.store.path.replace(/[/\\]work\.json$/, "")).item(
       item.id,

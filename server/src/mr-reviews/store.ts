@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { dataRoot, replaceDataFile } from "../config/data-paths";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { dataFileWriter, dataRoot } from "../config/data-paths";
 import type {
   MrFeedback,
   MrInferred,
@@ -201,12 +201,15 @@ export function openMrStore(path = mrStatePath()) {
   } catch {
     // A broken file starts over; the forge has the rest.
   }
-  const save = () => {
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    replaceDataFile(path, `${JSON.stringify(state)}\n`);
-  };
+  // Written behind the changes, off the event loop (dataFileWriter): the
+  // state is rewritten on most inbox refreshes, and a sync on a busy disk
+  // stalled every call for seconds.
+  const writer = dataFileWriter(path);
+  const save = () => writer.write(() => `${JSON.stringify(state)}\n`);
   return {
     get: (): Readonly<MrState> => state,
+    /** Resolves once the file holds every change (tests, shutdown). */
+    flush: () => writer.flush(),
     /** Changes the state and writes it. */
     update(change: (state: MrState) => void) {
       change(state);

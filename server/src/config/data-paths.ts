@@ -244,6 +244,92 @@ export async function replaceDataFileAsync(
   }
 }
 
+/**
+ * A private file a server store rewrites whole on each change, written
+ * behind the changes off the event loop: write() says what the file holds
+ * now, and the contents are made and written soon by replaceDataFileAsync,
+ * one write at a time, the changes made meanwhile in the next one, so a
+ * burst of changes is a write or two. A synchronous write and sync on the
+ * event loop stalls every call (the call's microphone too) for as long as
+ * a busy disk takes to sync, tens of seconds on a full one.
+ */
+export type DataFileWriter = {
+  /** The file is to hold what `contents` makes when it is written. */
+  write(contents: () => string | Buffer): void;
+  /** Resolves once every write asked so far is done (or failed). */
+  flush(): Promise<void>;
+};
+
+type BehindFile = {
+  path: string;
+  mode: number;
+  /** Asked for, its write not yet over: the exit writes it. */
+  unwritten: (() => string | Buffer) | null;
+};
+
+const behindFiles = new Set<BehindFile>();
+let behindExitHooked = false;
+
+function hookBehindExit() {
+  if (behindExitHooked) return;
+  behindExitHooked = true;
+  // A process that ends with changes not yet written writes them now; a
+  // write under way never gets to its rename.
+  process.on("exit", () => {
+    for (const file of behindFiles) {
+      if (!file.unwritten) continue;
+      try {
+        replaceDataFile(file.path, file.unwritten(), file.mode);
+      } catch {
+        // Nothing more can be done on the way out.
+      }
+    }
+  });
+}
+
+/** See DataFileWriter. After a failed write, the next change writes again. */
+export function dataFileWriter(
+  path: string,
+  options: { mode?: number; onError?: (error: unknown) => void } = {},
+): DataFileWriter {
+  const file: BehindFile = {
+    path,
+    mode: options.mode ?? 0o600,
+    unwritten: null,
+  };
+  behindFiles.add(file);
+  hookBehindExit();
+  /** Asked for and not yet started. */
+  let next: (() => string | Buffer) | null = null;
+  let writing: Promise<void> | null = null;
+  async function drain() {
+    // Changes made in this same run of code go in the first write (a
+    // microtask, not a timer: fake timers in tests leave it alone).
+    await Promise.resolve();
+    while (next) {
+      const make = next;
+      next = null;
+      try {
+        await replaceDataFileAsync(file.path, make(), file.mode);
+      } catch (error) {
+        options.onError?.(error);
+      }
+      if (!next) file.unwritten = null;
+    }
+    writing = null;
+  }
+  return {
+    write(contents) {
+      next = contents;
+      file.unwritten = contents;
+      writing ??= drain();
+    },
+    async flush() {
+      while (writing) await writing;
+    },
+  };
+}
+
 /** The temporary file name writeDataFile and replaceDataFileAsync use. */
 const DATA_TEMPORARY_NAME = /^\.roamgate-[0-9a-f-]{36}\.tmp$/;
 

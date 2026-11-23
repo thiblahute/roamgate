@@ -59,11 +59,15 @@ function localCache(): MrCache {
   return local;
 }
 
-/** Writes and forgets Bun's own answers: the core reads the file next. */
-export function releaseLocalMrCache(): void {
+/**
+ * Forgets Bun's own answers and writes them: the core reads the file once
+ * this resolves.
+ */
+export async function releaseLocalMrCache(): Promise<void> {
   if (!local) return;
-  local.flush();
+  const released = local;
   local = null;
+  await released.flush();
 }
 
 function message(error: unknown): string {
@@ -129,8 +133,8 @@ export async function mrCacheLoad(args: unknown): Promise<unknown> {
 }
 
 /** The `mr_cache.release` reverse target: the core takes the family. */
-export function mrCacheRelease(): unknown {
-  releaseLocalMrCache();
+export async function mrCacheRelease(): Promise<unknown> {
+  await releaseLocalMrCache();
   return {};
 }
 
@@ -142,7 +146,7 @@ export function setMrCacheCore(front: MrCacheCore | null): void {
 onOwnershipChanged(() => {
   const coreHasIt = coreOwns();
   if (coreHasIt) {
-    releaseLocalMrCache();
+    void releaseLocalMrCache();
   } else if (coreHadIt) {
     // Back to Bun: read the file once the core wrote what it knew.
     local = null;
@@ -175,7 +179,9 @@ const facade: MrCache = {
   },
   settings: () => mrCacheSettings(peekGuiSettings()),
   size: () => (coreOwns() ? 0 : localCache().size()),
-  flush: () => local?.flush(),
+  flush: async () => {
+    await local?.flush();
+  },
 };
 
 export function sharedMrCache(): MrCache {

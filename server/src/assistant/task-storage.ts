@@ -166,7 +166,11 @@ export function openTaskStorage(
         ?.journal_mode !== "wal"
     )
       throw new Error("Ranger task database requires WAL");
-    db.exec("PRAGMA synchronous = FULL");
+    // NORMAL, as the activity log: in WAL mode a crash never corrupts the
+    // database, and only a power loss can take the last commits. FULL
+    // synced the WAL on each commit on the event loop, up to 40 s on a
+    // busy disk, every call waiting.
+    db.exec("PRAGMA synchronous = NORMAL");
     protect();
 
     function write(state: SavedTaskState) {

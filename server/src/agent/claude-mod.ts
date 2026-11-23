@@ -7,6 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { dataFileWriter } from "../config/data-paths";
 
 /**
  * Roamgate's side of its Claude Code mod (server/claude-mod): the inbox of
@@ -308,18 +309,43 @@ export function createClaudeModHub(args: {
   }
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  // The batched writes go off the event loop (dataFileWriter): a file
+  // created on a busy disk waited 40 s on 2026-11-23, every call with it.
+  const writer = args.file
+    ? dataFileWriter(args.file, {
+        onError: (error) =>
+          log("claude mod inbox not saved", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+      })
+    : null;
   function save() {
     if (!args.file || saveTimer || disposed) return;
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      writeNow();
+      writer?.write(inboxBody);
     }, 100);
     (saveTimer as { unref?: () => void }).unref?.();
   }
 
+  /** Writes the inbox at once, on the event loop (shutdown, tests). */
   function writeNow() {
     if (!args.file) return;
-    const body = JSON.stringify({
+    const body = inboxBody();
+    try {
+      mkdirSync(dirname(args.file), { recursive: true, mode: 0o700 });
+      const temp = `${args.file}.${process.pid}.tmp`;
+      writeFileSync(temp, body, { mode: 0o600 });
+      renameSync(temp, args.file);
+    } catch (error) {
+      log("claude mod inbox not saved", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  function inboxBody(): string {
+    return JSON.stringify({
       version: STORE_VERSION,
       epoch,
       next_id: nextId,
@@ -347,16 +373,6 @@ export function createClaudeModHub(args: {
           };
         }),
     });
-    try {
-      mkdirSync(dirname(args.file), { recursive: true, mode: 0o700 });
-      const temp = `${args.file}.${process.pid}.tmp`;
-      writeFileSync(temp, body, { mode: 0o600 });
-      renameSync(temp, args.file);
-    } catch (error) {
-      log("claude mod inbox not saved", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
   }
 
   function paneItems(at: string): Item[] {

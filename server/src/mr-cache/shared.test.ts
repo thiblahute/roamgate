@@ -114,7 +114,7 @@ describe("the MR cache while the core owns it", () => {
     expect((await ask()).value).toBe(1);
     give(true);
     expect(sharedMrCache().peek("k")).toBeUndefined();
-    expect(mrCacheRelease()).toEqual({});
+    expect(await mrCacheRelease()).toEqual({});
     give(false);
     // Back to Bun: the core was asked to write its file first.
     expect(core.calls.at(-1)?.op).toBe("flush");

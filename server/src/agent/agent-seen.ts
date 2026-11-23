@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  assertSafeDataPath,
+  type DataFileWriter,
+  dataFileWriter,
   dataRoot,
-  replaceDataFile,
 } from "../config/data-paths";
 import { roamgateEnv } from "../config/environment";
 import { isRecord } from "./session-utils";
@@ -74,8 +74,11 @@ export type AgentSeenStore = {
     result: unknown,
     boot?: string | null,
   ): unknown;
-  /** Writes pending marks now (they are otherwise batched for a moment). */
-  flush(): void;
+  /**
+   * Writes pending marks now (they are otherwise batched for a moment);
+   * resolves once they are written.
+   */
+  flush(): Promise<void>;
 };
 
 type Entry = {
@@ -179,16 +182,18 @@ export function createAgentSeenStore(
 ): AgentSeenStore {
   const saved = load(path);
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const flush = () => {
-    if (!timer) return;
-    clearTimeout(timer);
-    timer = undefined;
-    try {
-      assertSafeDataPath(path);
-      replaceDataFile(path, `${JSON.stringify(saved)}\n`);
-    } catch {
-      // Kept in memory: lost only with a restart.
+  // Written off the event loop (dataFileWriter): a sync on a busy disk
+  // stalled every call for seconds. A failed write keeps the marks in
+  // memory, lost only with a restart.
+  let writer: DataFileWriter | null = null;
+  const flush = async () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+      writer ??= dataFileWriter(path);
+      writer.write(() => `${JSON.stringify(saved)}\n`);
     }
+    await writer?.flush();
   };
   const save = () => {
     if (timer) return;

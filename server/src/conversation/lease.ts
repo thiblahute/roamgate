@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentChatLease } from "../../../shared/agentChat";
 import {
+  type DataFileWriter,
+  dataFileWriter,
   dataRoot,
-  replaceDataFile,
-  replaceDataFileAsync,
 } from "../config/data-paths";
 
 export function defaultLeaseFile(): string {
@@ -40,17 +40,14 @@ function readLeaseFile(file: string): AgentChatLease[] {
 
 /**
  * A lease file as this process knows it: read once, then every
- * connection's store changes it here and it is written behind them.
- * Holders save their read offsets every second or so, many panes at once:
- * each change rewriting (and syncing) the file on the event loop stalled
- * every call for as long as the disk took.
+ * connection's store changes it here and it is written behind them
+ * (dataFileWriter). Holders save their read offsets every second or so,
+ * many panes at once: each change rewriting (and syncing) the file on the
+ * event loop stalled every call for as long as the disk took.
  */
 type LeaseFile = {
-  path: string;
   byConnection: Map<string, Map<string, AgentChatLease>>;
-  dirty: boolean;
-  /** The write under way, when one is. */
-  writing: Promise<void> | null;
+  writer: DataFileWriter;
 };
 const leaseFiles = new Map<string, LeaseFile>();
 
@@ -66,7 +63,8 @@ function leaseFile(path: string): LeaseFile {
       }
       leases.set(lease.pane_id, lease);
     }
-    known = { path, byConnection, dirty: false, writing: null };
+    // The next change tries again; the leases stay in memory.
+    known = { byConnection, writer: dataFileWriter(path) };
     leaseFiles.set(path, known);
   }
   return known;
@@ -79,49 +77,15 @@ function leaseContents(file: LeaseFile): string {
   return `${JSON.stringify({ version: 1, leases })}\n`;
 }
 
-/**
- * Writes the file soon, off the event loop: changes made meanwhile go in
- * the next write, one at a time, so a burst of saves is a write or two.
- */
-function scheduleWrite(file: LeaseFile) {
-  file.dirty = true;
-  if (file.writing) return;
-  file.writing = (async () => {
-    // Saves made in this same turn go in the first write.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    while (file.dirty) {
-      file.dirty = false;
-      try {
-        await replaceDataFileAsync(file.path, leaseContents(file));
-      } catch {
-        // The next change tries again; the leases stay in memory.
-      }
-    }
-    file.writing = null;
-  })();
-}
-
 /** Every lease file written as it is now (tests, shutdown). */
 export async function flushLeaseFiles(): Promise<void> {
-  for (const file of leaseFiles.values()) await file.writing;
+  for (const file of leaseFiles.values()) await file.writer.flush();
 }
 
 /** Forget what this process knows of lease files: the next store reads them. */
 export function forgetLeaseFiles(): void {
   leaseFiles.clear();
 }
-
-// A process that ends with changes not yet written writes them now.
-process.on("exit", () => {
-  for (const file of leaseFiles.values()) {
-    if (!file.dirty && !file.writing) continue;
-    try {
-      replaceDataFile(file.path, leaseContents(file));
-    } catch {
-      // Nothing more can be done on the way out.
-    }
-  }
-});
 
 /**
  * Who owns each conversation-mode session, kept on disk so a Roamgate
@@ -152,7 +116,9 @@ export function createLeaseStore(options: {
   }
 
   function save() {
-    if (file) scheduleWrite(leaseFile(file));
+    if (!file) return;
+    const shared = leaseFile(file);
+    shared.writer.write(() => leaseContents(shared));
   }
 
   return {
