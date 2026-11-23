@@ -9,8 +9,12 @@
 //! | [`shared`] | Order, search filter, merge bots and scheduled merges, keys and unread marks | shared/mrReviews*.ts |
 
 pub mod forge_ref;
+pub mod fuzzy;
+pub mod lanes;
+pub mod overrides;
 pub mod queries;
 pub mod shared;
+pub mod store;
 
 #[cfg(test)]
 mod vectors_tests;
