@@ -53,6 +53,8 @@ impl TlsListener {
                         continue;
                     }
                 };
+                // No Nagle: small frames (a keystroke's echo) go at once.
+                let _ = stream.set_nodelay(true);
                 let acceptor = acceptor.clone();
                 let send = send.clone();
                 tokio::spawn(async move {

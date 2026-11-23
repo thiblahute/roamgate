@@ -364,9 +364,17 @@ pub async fn run(args: &[String]) -> u8 {
             Err(error) => Err(error),
         },
         None => {
-            axum::serve(listener, service)
-                .with_graceful_shutdown(shutdown())
-                .await
+            use axum::serve::ListenerExt;
+            // No Nagle: a keystroke's echo is one small frame, which would
+            // otherwise wait for the browser's delayed ACK (40 ms).
+            axum::serve(
+                listener.tap_io(|tcp| {
+                    let _ = tcp.set_nodelay(true);
+                }),
+                service,
+            )
+            .with_graceful_shutdown(shutdown())
+            .await
         }
     };
     let _ = stop_core.send(true);
