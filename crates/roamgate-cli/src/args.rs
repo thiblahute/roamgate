@@ -40,6 +40,16 @@ pub(crate) const fn many(name: &'static str) -> Spec {
     }
 }
 
+impl Spec {
+    /// With a one-letter alias (`-y`).
+    pub(crate) const fn short(self, letter: char) -> Spec {
+        Spec {
+            short: Some(letter),
+            ..self
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Parsed {
     flags: HashMap<&'static str, bool>,

@@ -12,6 +12,8 @@
 //! | [`service`] | Roamgate's own service: paths, the published legacy one, the environment file, status and restart | the parts of config/service-definitions, service-manager and launchd-environment these use |
 //! | [`server_config`] | the server's flags and environment as management commands read them, with their validation | config/server-config loadServerConfig |
 //! | [`auth_token`] | the generated login token | config/auth-token |
+//! | [`voice`] | `roamgate voice` | cli/voice |
+//! | [`setup_voice`] | `roamgate setup voice` | cli/setup |
 //! | [`output`] | what a command prints | console.log and console.error |
 
 use std::future::Future;
@@ -27,7 +29,9 @@ pub mod output;
 pub mod push;
 pub mod server_config;
 pub mod service;
+pub mod setup_voice;
 pub mod update;
 pub mod update_http;
+pub mod voice;
 
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;

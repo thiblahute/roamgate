@@ -15,7 +15,7 @@ use crate::output::Printed;
 use crate::service::read_service_environment;
 
 /// `displayPath`: home-relative outside Windows.
-fn display_path(path: &std::path::Path, runtime: &CliRuntime) -> String {
+pub(crate) fn display_path(path: &std::path::Path, runtime: &CliRuntime) -> String {
     let text = path.display().to_string();
     if runtime.platform == "win32" {
         return text;

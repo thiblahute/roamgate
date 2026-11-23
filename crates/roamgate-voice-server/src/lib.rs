@@ -25,5 +25,8 @@ pub mod surprise;
 #[cfg(test)]
 mod testdata;
 
-#[cfg(test)]
-mod testing;
+/// The setup's test kit (voice-setup-testing.ts): the catalog's packages
+/// served locally, a temporary home; for this crate's tests and, with the
+/// `testing` feature, the CLI's.
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;

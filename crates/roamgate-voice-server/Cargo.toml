@@ -25,6 +25,11 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 unicode-normalization = "0.1"
 tokio = { version = "1", features = ["rt", "sync", "macros", "process", "io-util", "time", "fs"] }
+tempfile = { version = "3", optional = true }
+
+[features]
+# The setup's test kit (`testing`), for other crates' tests.
+testing = ["dep:tempfile", "tokio/net"]
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "1", features = ["fs", "process"] }

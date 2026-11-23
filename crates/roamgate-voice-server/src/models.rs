@@ -278,6 +278,24 @@ pub fn settle_choices(rules: &[ChoiceRule], choices: &VoiceChoices) -> VoiceChoi
     settled
 }
 
+/// The choices to start from (startingChoices): `tier`'s when given,
+/// else what voice.json uses (`current`), the proposed tier's for the
+/// rest.
+pub fn starting_choices(
+    recommended: &BTreeMap<&'static str, VoiceChoices>,
+    proposed: &str,
+    current: &VoiceChoices,
+    tier: Option<&str>,
+) -> VoiceChoices {
+    let rules = catalog_rules();
+    if let Some(tier) = tier {
+        return settle_choices(&rules, &recommended.get(tier).cloned().unwrap_or_default());
+    }
+    let mut choices = recommended.get(proposed).cloned().unwrap_or_default();
+    choices.extend(current.iter().map(|(part, id)| (part.clone(), id.clone())));
+    settle_choices(&rules, &choices)
+}
+
 /// Whether a part applies, given the others.
 pub fn applies(component: &str, choices: &VoiceChoices) -> bool {
     let spec = components().iter().find(|entry| entry.id == component);
