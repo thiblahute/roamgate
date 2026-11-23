@@ -4,20 +4,20 @@
     {
       "schema": "shared/work.schema.json",
       "pointer": "/$defs/WorkItem/properties/title",
-      "set": { "minLength": 1, "maxLength": 302 },
-      "why": "server/src/work/store.ts: oneLine(title, WORK_LIMITS.titleChars = 300) cuts to 299 characters plus \"...\", so a cut title is 302 characters long (its comment says at most 300)."
+      "set": { "minLength": 1, "maxLength": 300 },
+      "why": "server/src/work/store.ts: oneLine(title, WORK_LIMITS.titleChars = 300) cuts to 297 characters plus \"...\": at most 300."
     },
     {
       "schema": "shared/work.schema.json",
       "pointer": "/$defs/WorkItem/properties/source",
-      "set": { "maxLength": 302 },
+      "set": { "maxLength": 300 },
       "why": "server/src/work/store.ts: oneLine(source, 300), the same cut as the title."
     },
     {
       "schema": "shared/work.schema.json",
       "pointer": "/$defs/WorkItem/properties/ask",
-      "set": { "maxLength": 402 },
-      "why": "server/src/work/store.ts: an ask over WORK_LIMITS.askChars (400) is refused; a stored one is read back through oneLine(ask, 400), which makes an older, longer one 402 characters."
+      "set": { "maxLength": 400 },
+      "why": "server/src/work/store.ts: an ask over WORK_LIMITS.askChars (400) is refused; a stored one is read back through oneLine(ask, 400), which cuts an older, longer one to 400 characters, the ellipsis included."
     },
     {
       "schema": "shared/work.schema.json",

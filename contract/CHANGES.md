@@ -6,6 +6,21 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.9
+
+inventory: 858ef95c89ead36eee2dfeab1288e69afcb4fe9363a8f263bd97d5706ba06107
+
+Fixed in the server and the contract together (Work items d2560b86 and
+adbda23a):
+
+- schemas, work: a work item's `title` and `source` are at most 300
+  characters and a stored `ask` read back at most 400, the "..." of a cut
+  included (`oneLine` kept `max - 1` characters plus "...": 302 and 402).
+- push, agent_chat: a conversation's process started for a message, or
+  warmed up with messages queued, stays `starting` until the message is
+  written, then `working`; it no longer reports `idle` in between, which
+  told the browsers and Herdr a turn had ended.
+
 ## 1.8
 
 inventory: 858ef95c89ead36eee2dfeab1288e69afcb4fe9363a8f263bd97d5706ba06107

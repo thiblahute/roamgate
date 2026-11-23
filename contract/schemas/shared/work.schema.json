@@ -76,7 +76,7 @@
         "title": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 302
+          "maxLength": 300
         },
         "state": {
           "$ref": "#/$defs/WorkState"
@@ -97,7 +97,7 @@
         "source": {
           "type": "string",
           "description": "Where it came from, in a few words: a review thread id, \"imported from STATUS.md line 12\", a voice job. One item per source: adding the same source again changes the item instead.",
-          "maxLength": 302
+          "maxLength": 300
         },
         "links": {
           "type": "array",
@@ -133,7 +133,7 @@
         "ask": {
           "type": "string",
           "description": "For you and Verify: what the user has to do, in one or two sentences (\"Choose: media to the car with the phone mic, or no music on car links\", \"Dictate once after 10 idle minutes; text should appear\"). Cleared when the item leaves those states.",
-          "maxLength": 402
+          "maxLength": 400
         },
         "answers": {
           "type": "array",
