@@ -10,6 +10,7 @@ use axum::routing::get;
 use rust_embed::RustEmbed;
 
 pub mod families;
+pub mod front;
 pub mod owners_cmd;
 
 pub use families::core_families;
@@ -49,6 +50,10 @@ pub enum Options {
     /// (contract/wire/core-channel.md). Not in the usage: only the server
     /// runs it.
     Core,
+    /// `roamgate front [server flags]`: the Rust front with the Bun server
+    /// as its core (contract/wire/core-channel.md, Stage 2). Hidden until
+    /// the switch.
+    Front(Vec<String>),
     /// `roamgate owners ...`: the owners table (hidden, temporary).
     Owners(Vec<String>),
     /// A CLI command a family answers (`update`, `rollback`, `herdr`):
@@ -77,6 +82,7 @@ pub fn parse_args(
             };
         }
         Some("owners") => return Ok(Options::Owners(args[1..].to_vec())),
+        Some("front") => return Ok(Options::Front(args[1..].to_vec())),
         Some(command) if FAMILY_COMMANDS.contains(&command) => {
             return Ok(Options::Command(command.to_owned(), args[1..].to_vec()));
         }

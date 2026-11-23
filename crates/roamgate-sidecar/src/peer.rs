@@ -111,6 +111,31 @@ pub trait Handler: Send + Sync + 'static {
     fn push(&self, _push: Push) {}
 
     fn owner(&self, _owners: BTreeMap<String, Side>, _shadow: ShadowSettings) {}
+
+    /// Stage 2, the core's side: a browser asks to upgrade a socket
+    /// (`ws_open`); the answer is the `reply`'s result.
+    fn ws_open(&self, _peer: &Peer, _open: WsOpen) -> BoxFuture<Result<Value, RpcError>> {
+        Box::pin(async {
+            Err(RpcError::with_code(
+                "this side serves no browser socket",
+                "unknown_method",
+            ))
+        })
+    }
+
+    /// Stage 2: `ws_message` and `ws_close` (the core's side), `ws_send`,
+    /// `ws_drop` and `ws_end` (the front's side).
+    fn socket(&self, _peer: &Peer, _message: Message) {}
+}
+
+/// A `ws_open` (contract/wire/core-channel.md, Stage 2).
+#[derive(Debug, Clone, PartialEq)]
+pub struct WsOpen {
+    pub socket_id: u64,
+    pub method: String,
+    pub url: String,
+    pub headers: Headers,
+    pub ctx: Ctx,
 }
 
 /// How a peer runs.
@@ -547,6 +572,20 @@ impl Peer {
         self.request(id, message).await
     }
 
+    /// Stage 2, the front's side: asks the core to take a browser socket.
+    pub async fn ws_open(&self, open: WsOpen) -> Result<Value, RpcError> {
+        let id = self.next_id();
+        let message = Message::WsOpen {
+            id,
+            socket_id: open.socket_id,
+            method: open.method,
+            url: open.url,
+            headers: open.headers,
+            ctx: open.ctx,
+        };
+        self.request(id, message).await
+    }
+
     /// An HTTP request to the other side; its body, when it has one, from
     /// `body`.
     pub async fn http(
@@ -948,6 +987,32 @@ impl Peer {
                 self.close("the other side said bye");
                 return false;
             }
+            Message::WsOpen {
+                id,
+                socket_id,
+                method,
+                url,
+                headers,
+                ctx,
+            } => {
+                let peer = self.clone();
+                self.spawn_answer(id, async move {
+                    let open = WsOpen {
+                        socket_id,
+                        method,
+                        url,
+                        headers,
+                        ctx,
+                    };
+                    let answer = handler.ws_open(&peer, open).await;
+                    peer.reply(id, answer);
+                });
+            }
+            socket @ (Message::WsMessage { .. }
+            | Message::WsClose { .. }
+            | Message::WsSend { .. }
+            | Message::WsDrop { .. }
+            | Message::WsEnd { .. }) => handler.socket(self, socket),
             Message::Hello { .. } | Message::Welcome { .. } | Message::Refused { .. } => {
                 self.log_unknown(&format!("{kind} after the handshake"));
             }

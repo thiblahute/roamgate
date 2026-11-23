@@ -239,6 +239,57 @@ pub enum Message {
         n: u64,
     },
     Bye,
+    /// Stage 2: a browser asks to upgrade a socket the core serves.
+    WsOpen {
+        id: u64,
+        socket_id: u64,
+        method: String,
+        url: String,
+        #[serde(default)]
+        headers: Headers,
+        #[serde(default, skip_serializing_if = "Ctx::is_empty")]
+        ctx: Ctx,
+    },
+    // Stage 2: a virtual socket's life (contract/wire/core-channel.md).
+    /// Front to core: a browser message.
+    WsMessage {
+        socket_id: u64,
+        data: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        binary: bool,
+    },
+    /// Front to core: the browser socket closed.
+    WsClose {
+        socket_id: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<u16>,
+        #[serde(default)]
+        reason: String,
+    },
+    /// Core to front: a message to the browser.
+    WsSend {
+        socket_id: u64,
+        data: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        binary: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
+    },
+    /// Core to front: forget a held message of that key.
+    WsDrop {
+        socket_id: u64,
+        key: String,
+    },
+    /// Core to front: close the browser socket.
+    WsEnd {
+        socket_id: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<u16>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     /// A type this side does not know: ignored.
     #[serde(other)]
     Unknown,

@@ -31,6 +31,7 @@ async fn main() -> ExitCode {
             )
             .await,
         ),
+        Options::Front(args) => ExitCode::from(roamgate::front::run(&args).await),
         Options::Owners(args) => {
             let (code, out, err) =
                 roamgate::owners_cmd::run(&roamgate_base::env::ProcessEnv, &args);

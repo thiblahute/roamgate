@@ -10,6 +10,7 @@
 //! | [`login_page`] | the login page from its contract asset | http/login-page |
 //! | [`public_origin`] | the origin a client reached Roamgate on | http/public-origin |
 //! | [`static_paths`], [`static_files`] | the web app, its manifest and the instance name | http/static-paths, http/static-files |
+//! | [`front`] | the Rust front: listener, gate, web app, `/ws`, the Bun core spawned and reached over the core channel | index.ts's `Bun.serve` |
 //! | [`frame_to_ansi`] | a Herdr cell grid re-encoded as ANSI for xterm.js | bridge/frame-to-ansi |
 //! | [`terminal_upload`] | dropped files and pasted images staged privately, copied over SSH | http/terminal-upload, http/image-upload |
 //! | [`list_delta`] | topology lists answered as changes | bridge/list-delta |
@@ -18,6 +19,7 @@
 pub mod auth;
 pub mod body;
 pub mod frame_to_ansi;
+pub mod front;
 pub mod list_delta;
 pub mod login_page;
 pub mod public_origin;
