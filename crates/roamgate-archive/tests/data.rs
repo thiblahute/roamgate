@@ -595,13 +595,14 @@ fn coexistence_the_host_lock_excludes_the_other_side() {
 }
 
 /// Section 5.9: the archive's ingest and search on a fixed corpus are not
-/// slower than Bun's. Timed on a quiet machine only (`ARCHIVE_PERF=1`):
-/// load from other work makes timings meaningless.
+/// slower than Bun's. Run with `ARCHIVE_PERF=1`: the two sides alternate
+/// round by round under whatever load the machine has, and their medians
+/// are compared.
 #[test]
 fn cost_sync_and_search_of_a_fixed_corpus_are_not_slower() {
     let Some(bun) = bun() else { return };
     if std::env::var("ARCHIVE_PERF").as_deref() != Ok("1") {
-        eprintln!("skipped: set ARCHIVE_PERF=1 on a quiet machine to time the archive");
+        eprintln!("skipped: set ARCHIVE_PERF=1 to time the archive against Bun");
         return;
     }
     let corpus = |home: &Path| {
@@ -622,29 +623,84 @@ fn cost_sync_and_search_of_a_fixed_corpus_are_not_slower() {
             .unwrap();
         }
     };
-    let rust_side = machine();
-    let bun_side = machine();
-    corpus(&rust_side.home);
-    corpus(&bun_side.home);
-    let started = Instant::now();
-    bun_sync(&bun, &bun_side);
-    let bun_sync_time = started.elapsed();
-    let started = Instant::now();
-    rust_sync(&rust_side);
-    let rust_sync_time = started.elapsed();
-    let started = Instant::now();
-    bun_read(&bun, &bun_side);
-    let bun_read_time = started.elapsed();
-    let started = Instant::now();
-    rust_read(&rust_side);
-    let rust_read_time = started.elapsed();
+    // Both sides alternate under the same load, each first every other
+    // round, and are judged on their medians (ARCHIVE_PERF_ROUNDS, 11 by
+    // default): a busy machine slows both alike. A sync round starts from
+    // fresh archives of the same corpus.
+    let rounds: usize = std::env::var("ARCHIVE_PERF_ROUNDS")
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(11)
+        .max(1);
+    let (mut bun_syncs, mut rust_syncs) = (Vec::new(), Vec::new());
+    let mut last = None;
+    for round in 0..rounds {
+        let rust_side = machine();
+        let bun_side = machine();
+        corpus(&rust_side.home);
+        corpus(&bun_side.home);
+        let mut time_bun = || {
+            let started = Instant::now();
+            bun_sync(&bun, &bun_side);
+            bun_syncs.push(started.elapsed().as_secs_f64());
+        };
+        let mut time_rust = || {
+            let started = Instant::now();
+            rust_sync(&rust_side);
+            rust_syncs.push(started.elapsed().as_secs_f64());
+        };
+        if round % 2 == 0 {
+            time_bun();
+            time_rust();
+        } else {
+            time_rust();
+            time_bun();
+        }
+        last = Some((rust_side, bun_side));
+    }
+    let (rust_side, bun_side) = last.unwrap();
+    let (mut bun_reads, mut rust_reads) = (Vec::new(), Vec::new());
+    for round in 0..rounds {
+        let mut time_bun = || {
+            let started = Instant::now();
+            bun_read(&bun, &bun_side);
+            bun_reads.push(started.elapsed().as_secs_f64());
+        };
+        let mut time_rust = || {
+            let started = Instant::now();
+            rust_read(&rust_side);
+            rust_reads.push(started.elapsed().as_secs_f64());
+        };
+        if round % 2 == 0 {
+            time_bun();
+            time_rust();
+        } else {
+            time_rust();
+            time_bun();
+        }
+    }
+    let quantile = |times: &mut Vec<f64>, q: f64| {
+        times.sort_by(f64::total_cmp);
+        times[((times.len() - 1) as f64 * q).round() as usize]
+    };
+    let (bun_median, bun_p90) = (quantile(&mut bun_reads, 0.5), quantile(&mut bun_reads, 0.9));
+    let (rust_median, rust_p90) = (
+        quantile(&mut rust_reads, 0.5),
+        quantile(&mut rust_reads, 0.9),
+    );
+    let (bun_sync_median, bun_sync_p90) =
+        (quantile(&mut bun_syncs, 0.5), quantile(&mut bun_syncs, 0.9));
+    let (rust_sync_median, rust_sync_p90) = (
+        quantile(&mut rust_syncs, 0.5),
+        quantile(&mut rust_syncs, 0.9),
+    );
     eprintln!(
-        "archive cost: sync bun {bun_sync_time:?} rust {rust_sync_time:?}; reads bun {bun_read_time:?} rust {rust_read_time:?}"
+        "archive cost over {rounds} rounds: sync bun median {bun_sync_median:.3} s p90 {bun_sync_p90:.3} s, rust median {rust_sync_median:.3} s p90 {rust_sync_p90:.3} s; reads bun median {bun_median:.3} s p90 {bun_p90:.3} s, rust median {rust_median:.3} s p90 {rust_p90:.3} s"
     );
-    assert!(rust_sync_time <= bun_sync_time, "sync slower than Bun's");
-    // Bun's reads include its start: within 10% is the gate of 5.9.
     assert!(
-        rust_read_time.as_secs_f64() <= bun_read_time.as_secs_f64() * 1.1,
-        "search slower than Bun's"
+        rust_sync_median <= bun_sync_median,
+        "sync slower than Bun's"
     );
+    // Bun's reads include its start: within 10% is the gate of 5.9.
+    assert!(rust_median <= bun_median * 1.1, "search slower than Bun's");
 }
