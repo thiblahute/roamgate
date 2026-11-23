@@ -708,7 +708,7 @@ async fn keeps_a_batch_s_counts_when_one_of_its_files_cannot_be_read() {
     write(&repo.root, "b.txt", "one\ntwo\n");
     write(&repo.root, "zz-locked.txt", "one\n");
     let locked = repo.root.join("zz-locked.txt");
-    fs::set_permissions(&locked, fs::Permissions::from_mode(0)).unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o0)).unwrap();
     let result = summary(
         &local(),
         repo.path(),

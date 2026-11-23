@@ -99,7 +99,7 @@ pub fn js_number(text: &str) -> Option<f64> {
 /// `Number.isSafeInteger(Number(text)) && >= 0`, as a count of bytes.
 pub fn safe_size(text: &str) -> Option<u64> {
     let value = js_number(text)?;
-    (value.fract() == 0.0 && value >= 0.0 && value <= 9_007_199_254_740_991.0)
+    (value.fract() == 0.0 && (0.0..=9_007_199_254_740_991.0).contains(&value))
         .then_some(value as u64)
 }
 

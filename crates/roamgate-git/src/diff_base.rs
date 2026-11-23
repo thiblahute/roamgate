@@ -127,9 +127,7 @@ pub fn choose_default_base(candidates: &Candidates, facts: Option<&Facts>) -> Op
         local
     } else if facts.local_fork_in_remote_fork {
         remote
-    } else if facts.remote_fork_in_local_fork {
-        local
-    } else if facts.local_fork_time > facts.remote_fork_time {
+    } else if facts.remote_fork_in_local_fork || facts.local_fork_time > facts.remote_fork_time {
         local
     } else {
         remote

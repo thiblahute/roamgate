@@ -265,8 +265,7 @@ fn normalize_numstat_path(raw: &str) -> String {
     let trimmed = raw.trim();
     let path = trimmed
         .split('\t')
-        .filter(|p| !p.is_empty())
-        .next_back()
+        .rfind(|p| !p.is_empty())
         .unwrap_or(trimmed);
     if BRACE_RENAME.is_match(path) {
         return BRACE_RENAME.replacen(path, 1, "$1").into_owned();

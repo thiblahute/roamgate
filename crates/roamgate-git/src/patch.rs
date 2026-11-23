@@ -41,8 +41,34 @@ pub struct DiffFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binary: Option<bool>,
     pub hunks: Vec<DiffHunk>,
+    /// In a summary: what git says of the file (`added`, `deleted`,
+    /// `renamed`, `modified`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub additions: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deletions: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub truncated: Option<bool>,
+}
+
+impl DiffFile {
+    pub fn new(path: &str, old_path: &str) -> Self {
+        Self {
+            path: path.to_owned(),
+            old_path: old_path.to_owned(),
+            binary: None,
+            hunks: Vec::new(),
+            status: None,
+            additions: None,
+            deletions: None,
+            generated: None,
+            truncated: None,
+        }
+    }
 }
 
 pub(crate) static HUNK_HEADER: LazyLock<Regex> =
@@ -183,13 +209,7 @@ pub fn parse_unified_diff(text: &str) -> Vec<DiffFile> {
     let mut new_left: i64 = 0;
 
     let start_file = |files: &mut Vec<DiffFile>, old_path: String, path: String| {
-        files.push(DiffFile {
-            path,
-            old_path,
-            binary: None,
-            hunks: Vec::new(),
-            truncated: None,
-        });
+        files.push(DiffFile::new(&path, &old_path));
     };
 
     for line in text.split('\n') {

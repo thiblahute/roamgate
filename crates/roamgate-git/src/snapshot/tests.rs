@@ -138,7 +138,7 @@ fn assert_fails(result: Result<String>, needle: &str) {
     assert!(error.contains(needle), "{error:?} lacks {needle:?}");
 }
 
-fn commit_args<'a>(message: &'a str) -> Vec<&'a str> {
+fn commit_args(message: &str) -> Vec<&str> {
     vec![
         "-c",
         "user.name=Test",
@@ -287,7 +287,7 @@ async fn repeated_unreadable_captures_leave_no_objects_or_packs_and_preserve_sta
     )
     .unwrap();
     fs::write(root.join("2-unreadable"), "unreadable\n").unwrap();
-    fs::set_permissions(root.join("2-unreadable"), fs::Permissions::from_mode(0)).unwrap();
+    fs::set_permissions(root.join("2-unreadable"), fs::Permissions::from_mode(0o0)).unwrap();
     for _ in 0..3 {
         let error = capture(repo.path()).await.unwrap_err().to_string();
         assert!(

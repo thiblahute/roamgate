@@ -581,7 +581,7 @@ async fn an_agent_s_session_record_brings_in_the_repositories_it_edits() {
     let repos = scan_review_repos(
         &cx,
         std::slice::from_ref(&notes_path),
-        &[notes_path.clone()],
+        std::slice::from_ref(&notes_path),
     )
     .await
     .unwrap();
