@@ -95,6 +95,13 @@ asked (`-p roamgate-voice`, or from `voice/helper`). Check it with
 `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D warnings`
 and `cargo nextest run --locked` (the Rust workflow runs them).
 
+With a `CARGO_TARGET_DIR` outside the checkout (one shared by several
+worktrees, say), the build script of `system-deps-meta` (pulled by the
+voice helper's GStreamer crates) cannot find the workspace from its own
+directory: set `SYSTEM_DEPS_BUILD_MANIFEST` to this checkout's `Cargo.toml`.
+The parity suite finds its checkout at run time, so its binaries may be
+shared, but run them from the checkout they should read and write.
+
 `targets.toml` lists the seven release targets; `scripts/targets.test.ts` keeps
 the Bun build's platform lists in line with it. `cargo xtask` reads it:
 
