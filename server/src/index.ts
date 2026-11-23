@@ -391,7 +391,10 @@ import {
 } from "./review/agent-server";
 import { setupRemoteReviewAgent as setupRemoteReviewClient } from "./review/agent-remote";
 import { sshMasterControlPath } from "./bridge/ssh-sessions";
-import { createWorkspaceWorktree } from "./worktree/create";
+import {
+  createWorkspaceWorktree,
+  resolveRepoSettingsKey,
+} from "./worktree/create";
 import {
   createLimitResumer,
   type LimitResumer,
@@ -1059,6 +1062,10 @@ const coreReverseTargets = {
     await releaseBunAssistant();
     return {};
   },
+  "assistant.connections": async () => assistantConnections(),
+  "assistant.host": assistantReverse(async (args: unknown) =>
+    assistantHost((args ?? {}) as Record<string, unknown>),
+  ),
   "assistant.workspace_tree": assistantReverse(
     async (args: unknown, _ctx: unknown, signal: AbortSignal) => {
       const { kind, params } = (args ?? {}) as {
@@ -1809,6 +1816,7 @@ const claudeStartHooked = new Set<string>();
 
 /** A connection's status changed (Bun's manager's, or the core's). */
 function onConnectionStatus(status: ConnectionStatus) {
+  if (assistantOnCore()) sendAssistantConnections();
   for (const listener of connectionStatusListeners)
     try {
       listener();
@@ -1861,7 +1869,7 @@ const connectionManager = new SwitchingConnectionManager(
   logger.child("connections"),
 );
 
-const assistantContext = createAssistantContext({
+const assistantContextArgs: Parameters<typeof createAssistantContext>[0] = {
   limitPauses: (connectionId) =>
     limitResumer?.list(connectionId) ?? rustLimitPauses.get(connectionId) ?? [],
   catalog: () => connectionProfiles.list(),
@@ -1916,7 +1924,8 @@ const assistantContext = createAssistantContext({
       sourceWorkspaceId,
     );
   },
-});
+};
+const assistantContext = createAssistantContext(assistantContextArgs);
 // Ranger arranges the Workspaces list through the same store and push as
 // the sidebar's bridge.workspace_tree.apply.
 const assistantWorkspaceTree = createWorkspaceTreeToolHandler({
@@ -2094,6 +2103,244 @@ async function assistantChatThreadReply(
     author: RANGER_THREAD_AUTHOR,
   });
   return { text: `Answered in thread [${thread.id.slice(0, 8)}].` };
+}
+
+/**
+ * The connections as the core's Ranger reads them: each one's ready
+ * runtime generation (null while not ready) and state.
+ */
+function assistantConnections() {
+  return connectionManager.list().map((status) => {
+    let generation: number | null;
+    try {
+      generation =
+        connectionManager.readyRuntimeLease(status.id)?.generation ?? null;
+    } catch {
+      generation = null;
+    }
+    return {
+      id: status.id,
+      generation,
+      status: {
+        label: status.label,
+        state: status.state,
+        ...(status.error ? { error: status.error.message } : {}),
+      },
+    };
+  });
+}
+
+/** Tells the core's Ranger the connections changed. */
+function sendAssistantConnections() {
+  void coreFront
+    ?.callInternal("assistant", "connections", {
+      connections: assistantConnections(),
+    })
+    .catch(() => undefined);
+}
+
+/**
+ * The dispatch gates of the core's Ranger in flight (by token): Bun's copy
+ * refuses once the core said the gate no longer holds.
+ */
+const assistantGates = new Map<
+  number,
+  { message: string; user: boolean } | null
+>();
+
+function assistantGate(token: unknown): (() => void) | undefined {
+  if (typeof token !== "number") return undefined;
+  if (!assistantGates.has(token)) assistantGates.set(token, null);
+  return () => {
+    const revoked = assistantGates.get(token);
+    if (revoked)
+      throw revoked.user
+        ? new AssistantUserError(revoked.message)
+        : new Error(revoked.message);
+  };
+}
+
+/** The runtime a lease of the core's Ranger names, while it is current. */
+function assistantLeased(args: Record<string, unknown>) {
+  const lease = (args.lease ?? {}) as {
+    connection_id?: unknown;
+    generation?: unknown;
+  };
+  if (typeof lease.connection_id !== "string")
+    throw new Error("assistant.host needs a lease");
+  const held = connectionManager.readyRuntimeLease(lease.connection_id);
+  if (!held || held.generation !== lease.generation)
+    throw new Error("Connection changed during Ranger read; start a new turn");
+  return held;
+}
+
+/**
+ * What the core's Ranger reads of the runtimes Bun owns (the live
+ * context's host, contract/wire/core-channel.md), by `op`.
+ */
+async function assistantHost(args: Record<string, unknown>) {
+  const text = (key: string) =>
+    typeof args[key] === "string" ? (args[key] as string) : "";
+  const query = (args.query ?? {}) as Record<string, unknown>;
+  switch (args.op) {
+    case "catalog":
+      return assistantContextArgs
+        .catalog()
+        .map(({ id, label }) => ({ id, label }));
+    case "lease": {
+      const held = connectionManager.readyRuntimeLease(text("connection_id"));
+      return held
+        ? {
+            connection_id: text("connection_id"),
+            generation: held.generation,
+            remote_platform: held.runtime.remotePlatform ?? null,
+            ssh_host: held.runtime.sshHost() ?? null,
+          }
+        : null;
+    }
+    case "recovery_fingerprint":
+      return (
+        assistantContextArgs.recoveryFingerprint?.(text("connection_id")) ??
+        null
+      );
+    case "limit_pauses":
+      return assistantContextArgs.limitPauses?.(text("connection_id")) ?? [];
+    case "create_worktree": {
+      const held = assistantLeased(args);
+      const gate = assistantGate(args.gate);
+      try {
+        return await assistantContextArgs.createWorktree!(
+          held.runtime,
+          (args.params ?? {}) as Record<string, unknown>,
+          () => held.isCurrent(),
+          () => gate?.(),
+        );
+      } finally {
+        if (typeof args.gate === "number") assistantGates.delete(args.gate);
+      }
+    }
+    case "agent_prompted":
+      assistantContextArgs.onAgentPrompted?.(
+        args.input as Parameters<
+          NonNullable<typeof assistantContextArgs.onAgentPrompted>
+        >[0],
+      );
+      return null;
+    case "workspace_created":
+      await assistantContextArgs.onWorkspaceCreated?.(
+        args.input as Parameters<
+          NonNullable<typeof assistantContextArgs.onWorkspaceCreated>
+        >[0],
+      );
+      return null;
+    case "herdr_call": {
+      const held = assistantLeased(args);
+      const gate = assistantGate(args.gate);
+      try {
+        return await held.runtime.herdr.call(
+          text("method"),
+          (args.params ?? {}) as Record<string, unknown>,
+          typeof args.timeout_ms === "number" ? args.timeout_ms : undefined,
+          gate,
+        );
+      } finally {
+        if (typeof args.gate === "number") assistantGates.delete(args.gate);
+      }
+    }
+    case "read_git_diff_file":
+      return assistantLeased(args).runtime.files.readGitDiffFile(
+        query as Parameters<
+          LegacyConnectionRuntime["files"]["readGitDiffFile"]
+        >[0],
+      );
+    case "read_git_diff_summary":
+      return assistantLeased(args).runtime.files.readGitDiffSummary(
+        query as Parameters<
+          LegacyConnectionRuntime["files"]["readGitDiffSummary"]
+        >[0],
+      );
+    case "resolve_workspace_git_root":
+      return assistantLeased(args).runtime.files.resolveWorkspaceGitRoot(
+        query as Parameters<
+          LegacyConnectionRuntime["files"]["resolveWorkspaceGitRoot"]
+        >[0],
+      );
+    case "read_history":
+      return assistantLeased(args).runtime.agentSessions.readHistory(
+        query as Parameters<
+          LegacyConnectionRuntime["agentSessions"]["readHistory"]
+        >[0],
+      );
+    case "read_summary": {
+      const read = assistantLeased(args).runtime.agentSessions?.readSummary;
+      return read ? read(query as Parameters<typeof read>[0]) : null;
+    }
+    case "owned_session":
+      return (
+        assistantLeased(args).runtime.conversation?.ownedSession(
+          text("pane_id"),
+        ) ?? null
+      );
+    case "conversation_prompt": {
+      const held = assistantLeased(args);
+      const gate = assistantGate(args.gate);
+      try {
+        return await held.runtime.conversation.prompt(
+          text("pane_id"),
+          text("prompt"),
+          gate,
+        );
+      } finally {
+        if (typeof args.gate === "number") assistantGates.delete(args.gate);
+      }
+    }
+    case "read_worktree_hooks":
+      return assistantLeased(args).runtime.worktreeHooks.readWorktreeHooks(
+        text("cwd"),
+      );
+    case "recovery_identity": {
+      const { runtime } = assistantLeased(args);
+      return runtime.recoveryIdentity ? await runtime.recoveryIdentity() : null;
+    }
+    case "read_gui_settings":
+      return readGuiSettings();
+    case "resolve_repo_settings_key": {
+      const held = assistantLeased(args);
+      const input = (args.input ?? {}) as Record<string, unknown>;
+      return resolveRepoSettingsKey({
+        ...(input as Omit<
+          Parameters<typeof resolveRepoSettingsKey>[0],
+          "host" | "connectionId"
+        >),
+        host: held.runtime.sshHost(),
+        connectionId: (args.lease as { connection_id: string }).connection_id,
+      });
+    }
+    case "inspect_workspace_path": {
+      const { runtime } = assistantLeased(args);
+      return inspectWorkspacePath(
+        text("cwd"),
+        { host: runtime.sshHost(), remotePlatform: runtime.remotePlatform },
+        false,
+      );
+    }
+    case "note_turn_cause":
+      turnCauses.note(
+        text("connection_id"),
+        text("pane_id"),
+        args.cause as Parameters<typeof turnCauses.note>[2],
+      );
+      return null;
+    case "gate_revoke":
+      if (typeof args.token === "number" && assistantGates.has(args.token))
+        assistantGates.set(args.token, {
+          message: text("message"),
+          user: args.user === true,
+        });
+      return null;
+    default:
+      throw new Error(`unknown assistant.host op ${String(args.op)}`);
+  }
 }
 
 /** Whether Bun gave Ranger to the core (its service disposed). */
