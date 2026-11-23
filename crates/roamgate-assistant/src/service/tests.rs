@@ -28,6 +28,7 @@ use crate::tools::{BoxFuture, ToolResult};
 mod a1;
 mod a2;
 mod b;
+mod c;
 mod chats;
 
 // ------------------------------------------------------------ values
