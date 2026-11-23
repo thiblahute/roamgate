@@ -118,7 +118,10 @@ impl AgentPrompts {
 
     /// Opens a prompt (listed and published at once) and waits for its
     /// answer; `None` when it went back to the terminal.
-    pub fn request(&self, mut params: PermissionRequest) -> impl Future<Output = Option<Value>> + Send + 'static {
+    pub fn request(
+        &self,
+        mut params: PermissionRequest,
+    ) -> impl Future<Output = Option<Value>> + Send + 'static {
         let id = roamgate_base::paths::random_uuid();
         let created = self.clock.now();
         let detail = serde_json::to_string_pretty(&params.input)
@@ -132,13 +135,19 @@ impl AgentPrompts {
         prompt.insert("tool".into(), json!(params.tool));
         prompt.insert(
             "summary".into(),
-            json!(crate::js::head16(&permission_summary(&params.tool, &params.input), 500)),
+            json!(crate::js::head16(
+                &permission_summary(&params.tool, &params.input),
+                500
+            )),
         );
         if let Some(detail) = detail {
             prompt.insert("detail".into(), json!(detail));
         }
         if let Some(edit) = file_edit_from_arguments(Some(&params.tool), &params.input) {
-            prompt.insert("file_edit".into(), serde_json::to_value(edit).unwrap_or(Value::Null));
+            prompt.insert(
+                "file_edit".into(),
+                serde_json::to_value(edit).unwrap_or(Value::Null),
+            );
         }
         prompt.insert("canAlways".into(), json!(params.can_always));
         prompt.insert("createdAt".into(), json!(crate::js::iso(created)));
@@ -230,7 +239,10 @@ mod tests {
         (pushes, prompts)
     }
 
-    fn ask(prompts: &AgentPrompts, change: impl FnOnce(&mut PermissionRequest)) -> impl Future<Output = Option<Value>> {
+    fn ask(
+        prompts: &AgentPrompts,
+        change: impl FnOnce(&mut PermissionRequest),
+    ) -> impl Future<Output = Option<Value>> {
         let mut request = PermissionRequest {
             connection_id: "local".into(),
             pane_id: "w1:p2".into(),
@@ -296,9 +308,18 @@ mod tests {
 
     #[test]
     fn the_summary_is_what_the_tool_would_do() {
-        assert_eq!(permission_summary("Edit", &json!({"file_path": "/a.ts", "old_string": "x"})), "/a.ts");
-        assert_eq!(permission_summary("WebFetch", &json!({"url": "https://x.y"})), "https://x.y");
-        assert_eq!(permission_summary("Mystery", &json!({"other": 1})), "Mystery");
+        assert_eq!(
+            permission_summary("Edit", &json!({"file_path": "/a.ts", "old_string": "x"})),
+            "/a.ts"
+        );
+        assert_eq!(
+            permission_summary("WebFetch", &json!({"url": "https://x.y"})),
+            "https://x.y"
+        );
+        assert_eq!(
+            permission_summary("Mystery", &json!({"other": 1})),
+            "Mystery"
+        );
     }
 
     #[tokio::test]
@@ -307,10 +328,15 @@ mod tests {
         let waiting = ask(&prompts, |r| {
             r.tool = "AskUserQuestion".into();
             r.can_always = false;
-            r.questions = Some(json!([{"question": "Which colors?", "options": [{"label": "Red"}, {"label": "Blue"}], "multiSelect": true}]));
+            r.questions = Some(
+                json!([{"question": "Which colors?", "options": [{"label": "Red"}, {"label": "Blue"}], "multiSelect": true}]),
+            );
         });
         let id = first_id(&prompts);
-        assert_eq!(prompts.list("local")[0]["questions"][0]["question"], "Which colors?");
+        assert_eq!(
+            prompts.list("local")[0]["questions"][0]["question"],
+            "Which colors?"
+        );
         assert!(!prompts.answer("local", &id, json!("allow")));
         let answers = json!({"answers": {"Which colors?": "Red, Blue"}});
         assert!(prompts.answer("local", &id, answers.clone()));
@@ -329,7 +355,12 @@ mod tests {
 
     #[tokio::test]
     async fn a_question_or_a_permission_may_be_dismissed_unanswered() {
-        for questions in [Some(json!([{"question": "Which?", "options": [{"label": "A"}], "multiSelect": false}])), None] {
+        for questions in [
+            Some(
+                json!([{"question": "Which?", "options": [{"label": "A"}], "multiSelect": false}]),
+            ),
+            None,
+        ] {
             let (_, prompts) = setup();
             let has = questions.is_some();
             let waiting = ask(&prompts, |r| {

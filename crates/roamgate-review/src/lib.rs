@@ -12,4 +12,5 @@ pub mod model;
 pub mod parse;
 pub mod prompts;
 pub mod rendered_target;
+pub mod service;
 pub mod storage;

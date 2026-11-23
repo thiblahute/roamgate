@@ -44,11 +44,18 @@ pub fn posix_normalize(path: &str) -> String {
 pub fn posix_dirname(path: &str) -> String {
     let trimmed = path.trim_end_matches('/');
     if trimmed.is_empty() {
-        return if path.starts_with('/') { "/".into() } else { ".".into() };
+        return if path.starts_with('/') {
+            "/".into()
+        } else {
+            ".".into()
+        };
     }
     match trimmed.rfind('/') {
         Some(0) => "/".into(),
-        Some(at) => trimmed[..at].trim_end_matches('/').to_owned().max_if_empty(),
+        Some(at) => trimmed[..at]
+            .trim_end_matches('/')
+            .to_owned()
+            .max_if_empty(),
         None => ".".into(),
     }
 }
@@ -149,17 +156,29 @@ mod tests {
                 .unwrap();
         assert_eq!(root, "/repo");
         assert_eq!(target.to_value()["path"], "docs/a.md");
-        let (root, _) = rendered_file_target(|_| async { Err("no git".to_owned()) }, "/tmp/x/a.md", "")
-            .await
-            .unwrap();
+        let (root, _) =
+            rendered_file_target(|_| async { Err("no git".to_owned()) }, "/tmp/x/a.md", "")
+                .await
+                .unwrap();
         assert_eq!(root, "/tmp/x");
         // A root that does not prefix the path (links resolved).
         let (root, target) =
             rendered_file_target(|_| async { Ok("/real/repo".to_owned()) }, "/link/a.md", "")
                 .await
                 .unwrap();
-        assert_eq!((root.as_str(), target.to_value()["path"].as_str()), ("/link", Some("a.md")));
-        assert!(rendered_file_target(|_| async { Ok("/".to_owned()) }, "rel.md", "").await.is_err());
-        assert!(rendered_file_target(|_| async { Ok("/repo".to_owned()) }, "/repo/", "").await.is_err());
+        assert_eq!(
+            (root.as_str(), target.to_value()["path"].as_str()),
+            ("/link", Some("a.md"))
+        );
+        assert!(
+            rendered_file_target(|_| async { Ok("/".to_owned()) }, "rel.md", "")
+                .await
+                .is_err()
+        );
+        assert!(
+            rendered_file_target(|_| async { Ok("/repo".to_owned()) }, "/repo/", "")
+                .await
+                .is_err()
+        );
     }
 }

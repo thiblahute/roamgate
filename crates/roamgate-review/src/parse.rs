@@ -11,9 +11,9 @@ use serde_json::{Map, Value};
 use crate::error::ReviewError;
 use crate::js::{head16, integer, len16, trim};
 use crate::model::{
-    REVIEW_EFFORT_ITEMS, REVIEW_EFFORT_TABS, REVIEW_USER, ReviewAnchor, ReviewChatPart,
+    JsNum, REVIEW_EFFORT_ITEMS, REVIEW_EFFORT_TABS, REVIEW_USER, ReviewAnchor, ReviewChatPart,
     ReviewEffortItem, ReviewEffortPart, ReviewMessagePart, ReviewRegion, ReviewRenderPart,
-    ReviewSession, ReviewTarget, ReviewTerminalPart, ReviewWorkFrom, ReviewWorkPart, JsNum,
+    ReviewSession, ReviewTarget, ReviewTerminalPart, ReviewWorkFrom, ReviewWorkPart,
     describe_step_target, limits,
 };
 
@@ -37,10 +37,22 @@ re!(MARKS, r"\*\*|__|[*`]");
 re!(CONTROL, r"[\x00-\x08\x0b-\x1f\x7f-\u{9f}]");
 re!(SPACES, r"[\s\u{feff}]+");
 re!(TABS_SPACES, r"[ \t]+");
-re!(MR_URL, r"/-/merge_requests/\d+|^https://[^/]+/[\w.-]+/[\w.-]+/pull/\d+");
-re!(GITLAB_MR, r"^https://([^/\s]+)/(.+?)/-/merge_requests/(\d+)(?:[/?#].*)?$");
-re!(GITHUB_PR, r"^https://([^/\s]+)/([\w.-]+/[\w.-]+)/pull/(\d+)(?:[/?#].*)?$");
-re!(SNAPSHOT_PATH, r"/images/[0-9a-f]{16}/[0-9a-f]{16}\.(png|jpg|gif|webp)$");
+re!(
+    MR_URL,
+    r"/-/merge_requests/\d+|^https://[^/]+/[\w.-]+/[\w.-]+/pull/\d+"
+);
+re!(
+    GITLAB_MR,
+    r"^https://([^/\s]+)/(.+?)/-/merge_requests/(\d+)(?:[/?#].*)?$"
+);
+re!(
+    GITHUB_PR,
+    r"^https://([^/\s]+)/([\w.-]+/[\w.-]+)/pull/(\d+)(?:[/?#].*)?$"
+);
+re!(
+    SNAPSHOT_PATH,
+    r"/images/[0-9a-f]{16}/[0-9a-f]{16}\.(png|jpg|gif|webp)$"
+);
 re!(WINDOWS_PATH, r"^[A-Za-z]:[\\/]");
 
 /// The ids this service makes for reviews, threads and comments.
@@ -368,7 +380,9 @@ pub fn parse_review_target(value: Option<&Value>) -> Result<ReviewTarget, Review
             if target.contains_key("path") {
                 let path = text(target.get("path"), "path", 4096)?;
                 if !valid_review_path(&path) {
-                    return Err(ReviewError::new("the path must be relative to the checkout"));
+                    return Err(ReviewError::new(
+                        "the path must be relative to the checkout",
+                    ));
                 }
                 return Ok(ReviewTarget::Rendered {
                     path: Some(path),
@@ -399,13 +413,15 @@ pub fn parse_review_target(value: Option<&Value>) -> Result<ReviewTarget, Review
         "mr" => {
             let raw = text(target.get("url"), "url", 2048)?;
             let url = trim(&raw).to_owned();
-            let parsed = url::Url::parse(&url)
-                .map_err(|_| ReviewError::new("invalid merge request URL"))?;
+            let parsed =
+                url::Url::parse(&url).map_err(|_| ReviewError::new("invalid merge request URL"))?;
             if parsed.scheme() != "https" || !MR_URL.is_match(&url) {
                 return Err(ReviewError::new("invalid merge request URL"));
             }
             let cut = url.find(['#', '?']).map_or(url.as_str(), |at| &url[..at]);
-            Ok(ReviewTarget::Mr { url: cut.to_owned() })
+            Ok(ReviewTarget::Mr {
+                url: cut.to_owned(),
+            })
         }
         _ => Err(ReviewError::new("unknown target kind")),
     }
@@ -421,7 +437,9 @@ pub struct MergeRequestRef {
 
 /// parseMergeRequestUrl (review/gitlab.ts, GitHub's pull requests too).
 pub fn parse_merge_request_url(url: &str) -> Option<MergeRequestRef> {
-    let found = GITHUB_PR.captures(url).or_else(|| GITLAB_MR.captures(url))?;
+    let found = GITHUB_PR
+        .captures(url)
+        .or_else(|| GITLAB_MR.captures(url))?;
     Some(MergeRequestRef {
         host: found[1].to_owned(),
         project: found[2].to_owned(),
@@ -434,7 +452,9 @@ pub fn parse_merge_request_url(url: &str) -> Option<MergeRequestRef> {
 pub fn merge_request_security(url: &str, mr: Option<&Value>) -> &'static str {
     let reference = parse_merge_request_url(url);
     let field = |name: &str| mr.and_then(|mr| mr.get(name)).and_then(Value::as_str);
-    let from_url = field("url").and_then(parse_merge_request_url).map(|r| r.project);
+    let from_url = field("url")
+        .and_then(parse_merge_request_url)
+        .map(|r| r.project);
     let names = [
         reference.as_ref().map(|r| r.project.clone()),
         field("project").map(str::to_owned),
@@ -487,7 +507,10 @@ pub fn same_target(a: &ReviewTarget, b: &ReviewTarget) -> bool {
             },
         ) => base == other_base && head == other_head && compare == other_compare,
         (T::Mr { url: left }, T::Mr { url: right }) => {
-            match (parse_merge_request_url(left), parse_merge_request_url(right)) {
+            match (
+                parse_merge_request_url(left),
+                parse_merge_request_url(right),
+            ) {
                 (Some(left), Some(right)) => same_merge_request(&left, &right),
                 _ => left == right,
             }
@@ -540,7 +563,9 @@ pub fn describe_target(target: &ReviewTarget) -> String {
         }
         ReviewTarget::Mr { url } => url.strip_prefix("https://").unwrap_or(url).to_owned(),
         ReviewTarget::Chat { .. } => "chat".into(),
-        ReviewTarget::Rendered { path, url } => path.clone().or_else(|| url.clone()).unwrap_or_default(),
+        ReviewTarget::Rendered { path, url } => {
+            path.clone().or_else(|| url.clone()).unwrap_or_default()
+        }
         ReviewTarget::Effort { .. } => "effort".into(),
         ReviewTarget::Work { item } => format!("work item {}", head16(item, 8)),
         ReviewTarget::Step {
@@ -556,7 +581,10 @@ pub fn delivery_header(session: &ReviewSession, triage: bool) -> String {
     match &session.target {
         ReviewTarget::Chat { .. } => "[Roamgate chat comment]".into(),
         ReviewTarget::Work { item } => {
-            let title = session.title.strip_prefix("Work: ").unwrap_or(&session.title);
+            let title = session
+                .title
+                .strip_prefix("Work: ")
+                .unwrap_or(&session.title);
             format!(
                 "[Roamgate work item {} \"{}\" (yours{})]",
                 head16(item, 8),
@@ -585,7 +613,8 @@ pub fn file_change_place(anchor: &ReviewAnchor, at: Option<&str>) -> String {
     let path = one_line(anchor.path.as_deref().unwrap_or(""), 300);
     let change = format!(
         "your change{}",
-        at.map(|at| format!(" of {}", chat_time(at))).unwrap_or_default()
+        at.map(|at| format!(" of {}", chat_time(at)))
+            .unwrap_or_default()
     );
     let Some(line) = anchor.line.filter(|line| *line != 0) else {
         return format!("on the file {path}, as {change} left it");
@@ -595,7 +624,11 @@ pub fn file_change_place(anchor: &ReviewAnchor, at: Option<&str>) -> String {
         Some(end) => format!("lines {line}-{end}"),
         None => format!("line {line}"),
     };
-    let these = if end.is_some() { "these lines" } else { "this line" };
+    let these = if end.is_some() {
+        "these lines"
+    } else {
+        "this line"
+    };
     let range = end.map(|end| format!("-{end}")).unwrap_or_default();
     if anchor.side.as_deref() == Some("old") {
         format!(
@@ -890,9 +923,15 @@ mod tests {
         assert!(target(json!({"kind": "range", "base": "--upload-pack=x"})).is_err());
         assert!(target(json!({"kind": "range", "base": "main two"})).is_err());
         assert!(target(json!({"kind": "mr", "url": "https://example.com/x"})).is_err());
-        assert!(target(json!({"kind": "mr", "url": "http://gitlab.com/g/p/-/merge_requests/1"})).is_err());
+        assert!(
+            target(json!({"kind": "mr", "url": "http://gitlab.com/g/p/-/merge_requests/1"}))
+                .is_err()
+        );
         assert_eq!(
-            target(json!({"kind": "mr", "url": "https://gitlab.com/g/p/-/merge_requests/1/diffs?x#y"})).unwrap(),
+            target(
+                json!({"kind": "mr", "url": "https://gitlab.com/g/p/-/merge_requests/1/diffs?x#y"})
+            )
+            .unwrap(),
             ReviewTarget::Mr {
                 url: "https://gitlab.com/g/p/-/merge_requests/1/diffs".into()
             }
@@ -907,7 +946,9 @@ mod tests {
         );
         assert!(target(json!({"kind": "rendered", "path": "../x"})).is_err());
         assert_eq!(
-            target(json!({"kind": "rendered", "url": "https://u:p@x.y/a#b"})).unwrap_err().message,
+            target(json!({"kind": "rendered", "url": "https://u:p@x.y/a#b"}))
+                .unwrap_err()
+                .message,
             "the URL must be an http(s) URL"
         );
         assert_eq!(
@@ -947,12 +988,18 @@ mod tests {
         assert!(reviews_branch(&range("refs/heads/topic"), "topic"));
         assert!(!reviews_branch(&range("other"), "topic"));
         assert!(reviews_branch(&ReviewTarget::Worktree, "x"));
-        assert!(!reviews_branch(&ReviewTarget::Chat { chat: "c".into() }, "x"));
+        assert!(!reviews_branch(
+            &ReviewTarget::Chat { chat: "c".into() },
+            "x"
+        ));
     }
 
     #[test]
     fn anchors_are_checked_field_by_field() {
-        let anchor = parse_anchor(Some(&json!({"path": "a.c", "line": 3, "end_line": 5, "text": "x", "junk": 1}))).unwrap();
+        let anchor = parse_anchor(Some(
+            &json!({"path": "a.c", "line": 3, "end_line": 5, "text": "x", "junk": 1}),
+        ))
+        .unwrap();
         assert_eq!(
             serde_json::to_value(&anchor).unwrap(),
             json!({"path": "a.c", "line": 3, "endLine": 5, "side": "new", "text": "x"})
@@ -960,7 +1007,10 @@ mod tests {
         assert!(parse_anchor(Some(&json!({"line": 3}))).is_err());
         assert!(parse_anchor(Some(&json!({"path": "a", "line": 3, "endLine": 2}))).is_err());
         assert!(parse_anchor(Some(&json!({"path": "a", "commit": "XYZ"}))).is_err());
-        let region = parse_anchor(Some(&json!({"render": {"region": {"x": 0.123456, "y": 0.5}}}))).unwrap();
+        let region = parse_anchor(Some(
+            &json!({"render": {"region": {"x": 0.123456, "y": 0.5}}}),
+        ))
+        .unwrap();
         assert_eq!(
             serde_json::to_value(region.render.unwrap()).unwrap(),
             json!({"region": {"x": 0.1235, "y": 0.5, "w": 0, "h": 0}})
@@ -970,7 +1020,10 @@ mod tests {
 
     #[test]
     fn quotes_of_a_comment_read_as_rendered() {
-        assert_eq!(message_quote("## The **plan**\n\nSome `code` here", "the plan").unwrap(), "the plan");
+        assert_eq!(
+            message_quote("## The **plan**\n\nSome `code` here", "the plan").unwrap(),
+            "the plan"
+        );
         assert!(message_quote("Some text", "other words").is_err());
         assert_eq!(read_words("- [x] a [link](u) | b"), "a link   b");
     }
@@ -988,12 +1041,18 @@ mod tests {
     fn security_merge_requests_are_told_by_their_url_or_gitlab() {
         let url = "https://gitlab.com/g/p/-/merge_requests/1";
         assert_eq!(merge_request_security(url, None), "unknown");
-        assert_eq!(merge_request_security(url, Some(&json!({"project": "g/p"}))), "open");
+        assert_eq!(
+            merge_request_security(url, Some(&json!({"project": "g/p"}))),
+            "open"
+        );
         assert_eq!(
             merge_request_security("https://gitlab.com/g/security/-/merge_requests/1", None),
             "security"
         );
-        assert_eq!(merge_request_security(url, Some(&json!({"project": "123"}))), "unknown");
+        assert_eq!(
+            merge_request_security(url, Some(&json!({"project": "123"}))),
+            "unknown"
+        );
         assert_eq!(
             parse_merge_request_url("https://github.com/o/r/pull/7/files"),
             Some(MergeRequestRef {

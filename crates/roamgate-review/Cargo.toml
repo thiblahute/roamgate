@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 fancy-regex = "0.17"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 indexmap = { version = "2", features = ["serde"] }
 jiff = "0.2"
 rand = "0.9"

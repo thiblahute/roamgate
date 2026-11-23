@@ -489,6 +489,10 @@ pub struct ReviewThread {
     pub handed_at: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+    /// Which object this is in the service (never stored): TS compares
+    /// threads by identity to tell one replaced meanwhile.
+    #[serde(skip)]
+    pub inst: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -562,6 +566,9 @@ pub struct ReviewSession {
     pub reviewed: Option<IndexMap<String, String>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+    /// Which object this is in the service (never stored).
+    #[serde(skip)]
+    pub inst: u64,
 }
 
 impl ReviewSession {
@@ -858,6 +865,7 @@ mod tests {
             pending_for: None,
             handed_at: None,
             extra: Map::new(),
+            inst: 0,
         }
     }
 

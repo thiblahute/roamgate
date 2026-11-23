@@ -6,6 +6,8 @@
 pub struct ReviewError {
     pub message: String,
     pub status: u16,
+    /// A gone checkout or commit (`checkout-gone`, `base-gone`, `head-gone`).
+    pub code: Option<String>,
 }
 
 impl ReviewError {
@@ -13,6 +15,7 @@ impl ReviewError {
         Self {
             message: message.into(),
             status: 400,
+            code: None,
         }
     }
 
@@ -20,6 +23,7 @@ impl ReviewError {
         Self {
             message: message.into(),
             status,
+            code: None,
         }
     }
 

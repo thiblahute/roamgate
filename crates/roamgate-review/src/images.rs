@@ -94,7 +94,10 @@ fn write_0600(path: &Path, data: &[u8]) -> std::io::Result<()> {
 
 /// Removes the images of reviews that no longer exist (folders named as
 /// review ids only); the names removed.
-pub fn prune_review_images(directory: &Path, live: &std::collections::HashSet<String>) -> Vec<String> {
+pub fn prune_review_images(
+    directory: &Path,
+    live: &std::collections::HashSet<String>,
+) -> Vec<String> {
     let folder = directory.join("images");
     let Ok(entries) = std::fs::read_dir(&folder) else {
         return Vec::new();
@@ -115,7 +118,11 @@ pub fn prune_review_images(directory: &Path, live: &std::collections::HashSet<St
 }
 
 /// A stored image by its session and name (its path and content type).
-pub fn review_image_file(directory: &Path, session: &str, name: &str) -> Option<(PathBuf, &'static str)> {
+pub fn review_image_file(
+    directory: &Path,
+    session: &str,
+    name: &str,
+) -> Option<(PathBuf, &'static str)> {
     if !session_id(session) {
         return None;
     }
@@ -124,7 +131,10 @@ pub fn review_image_file(directory: &Path, session: &str, name: &str) -> Option<
         return None;
     }
     let (content_type, _, _) = TYPES.iter().find(|(_, ext, _)| *ext == extension)?;
-    Some((directory.join("images").join(session).join(name), content_type))
+    Some((
+        directory.join("images").join(session).join(name),
+        content_type,
+    ))
 }
 
 /// An image file of this host named by its absolute path in a comment (an
@@ -174,11 +184,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = save_review_image(dir.path(), "0123456789abcdef", "image/png", &PNG).unwrap();
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        assert_eq!(path.parent().unwrap(), dir.path().join("images/0123456789abcdef"));
+        assert_eq!(
+            path.parent().unwrap(),
+            dir.path().join("images/0123456789abcdef")
+        );
         assert!(name.ends_with(".png") && name.len() == 20);
         assert_eq!(std::fs::read(&path).unwrap(), PNG);
         use std::os::unix::fs::PermissionsExt;
-        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         assert_eq!(
             save_review_image(dir.path(), "0123456789abcdef", "image/png", &PNG).unwrap(),
             path
@@ -193,11 +209,41 @@ mod tests {
     fn only_real_images_and_no_way_out_of_the_reviews_folder() {
         let dir = tempfile::tempdir().unwrap();
         let error = |result: Result<PathBuf, ReviewError>| result.unwrap_err().message;
-        assert!(error(save_review_image(dir.path(), "0123456789abcdef", "image/svg+xml", &PNG)).contains("only PNG"));
-        assert!(error(save_review_image(dir.path(), "0123456789abcdef", "image/jpeg", &[1, 2, 3, 4])).contains("not a JPG"));
-        assert!(error(save_review_image(dir.path(), "../../etc", "image/png", &PNG)).contains("no such review"));
-        assert_eq!(review_image_file(dir.path(), "0123456789abcdef", "../x.png"), None);
-        assert_eq!(review_image_file(dir.path(), "..", "0123456789abcdef.png"), None);
+        assert!(
+            error(save_review_image(
+                dir.path(),
+                "0123456789abcdef",
+                "image/svg+xml",
+                &PNG
+            ))
+            .contains("only PNG")
+        );
+        assert!(
+            error(save_review_image(
+                dir.path(),
+                "0123456789abcdef",
+                "image/jpeg",
+                &[1, 2, 3, 4]
+            ))
+            .contains("not a JPG")
+        );
+        assert!(
+            error(save_review_image(
+                dir.path(),
+                "../../etc",
+                "image/png",
+                &PNG
+            ))
+            .contains("no such review")
+        );
+        assert_eq!(
+            review_image_file(dir.path(), "0123456789abcdef", "../x.png"),
+            None
+        );
+        assert_eq!(
+            review_image_file(dir.path(), "..", "0123456789abcdef.png"),
+            None
+        );
     }
 
     #[test]
@@ -211,10 +257,16 @@ mod tests {
         std::fs::create_dir(&notes).unwrap();
         std::fs::write(notes.join("keep.txt"), "mine\n").unwrap();
         let alive: HashSet<String> = [live.to_owned()].into();
-        assert_eq!(prune_review_images(dir.path(), &alive), vec![gone.to_owned()]);
+        assert_eq!(
+            prune_review_images(dir.path(), &alive),
+            vec![gone.to_owned()]
+        );
         assert!(kept.exists());
         assert!(!removed.exists());
-        assert_eq!(std::fs::read_to_string(notes.join("keep.txt")).unwrap(), "mine\n");
+        assert_eq!(
+            std::fs::read_to_string(notes.join("keep.txt")).unwrap(),
+            "mine\n"
+        );
         assert!(prune_review_images(dir.path(), &alive).is_empty());
         assert!(prune_review_images(&dir.path().join("none"), &HashSet::new()).is_empty());
     }
