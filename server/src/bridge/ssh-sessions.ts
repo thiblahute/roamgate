@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { copySshAnnotation } from "./ssh-metrics";
+import { copySshAnnotation, sshAnnotationOf } from "./ssh-metrics";
 
 /**
  * Bounds concurrent SSH sessions per destination. OpenSSH's sshd defaults to
@@ -143,7 +143,79 @@ type SshCommandRoute = {
   muxOnly?: string[];
   /** Only read-only commands may run twice when their master dies. */
   retrySafe: boolean;
+  /** What sshCommandArgv was given, for the Rust core while it owns the host family. */
+  command?: string;
+  trustedArgs?: readonly string[];
+  tag?: string;
 };
+
+/** A host command as the Rust core runs it (sshCommandArgv's arguments). */
+export type SshCommandRequest = {
+  destination: string;
+  command: string;
+  trustedArgs: readonly string[];
+  tag?: string;
+  /** Built by sshReadCommandArgv. */
+  readOnly: boolean;
+  connection?: string;
+  timeoutMs?: number;
+  lane: SshLane;
+  input?: string | Uint8Array;
+};
+
+/**
+ * Where host commands go while the Rust core owns the `host` family
+ * (connections/host-facade.ts): it holds the session slots and the masters,
+ * so every command built by sshCommandArgv runs there or holds its slot
+ * there. Null (always, without a core): they run here.
+ */
+export type SshCommandFacade = {
+  run(
+    request: SshCommandRequest,
+    signal?: AbortSignal,
+  ): Promise<{ code: number; stdout: Buffer; stderr: string }>;
+  hold(
+    request: SshCommandRequest,
+    longLived: boolean,
+    signal?: AbortSignal,
+  ): Promise<{ lease: number; argv: string[]; remainingMs?: number }>;
+  release(lease: number): void;
+};
+
+let commandFacade: SshCommandFacade | null = null;
+
+/** Sends host commands to the Rust core (null: they run here again). */
+export function setSshCommandFacade(facade: SshCommandFacade | null): void {
+  commandFacade = facade;
+}
+
+function facadeRequest(
+  argv: readonly string[],
+  route: SshCommandRoute,
+  wait: SshSessionWait,
+): SshCommandRequest | null {
+  if (route.command === undefined) return null;
+  const annotation = sshAnnotationOf(argv);
+  return {
+    destination: route.destination,
+    command: route.command,
+    trustedArgs: route.trustedArgs ?? [],
+    ...(route.tag || annotation?.tag
+      ? { tag: route.tag ?? annotation?.tag }
+      : {}),
+    readOnly: route.retrySafe,
+    ...(annotation?.connection ? { connection: annotation.connection } : {}),
+    ...(wait.timeoutMs === undefined ? {} : { timeoutMs: wait.timeoutMs }),
+    lane: currentSshLane(),
+  };
+}
+
+/** The core's refusal of a background command, as the one made here. */
+function facadeError(error: unknown, destination: string): unknown {
+  return (error as { code?: unknown } | null)?.code === "ssh_background_shed"
+    ? new SshBackgroundShedError(destination)
+    : error;
+}
 
 // Keyed by the owning runtime, not the destination: two profiles that reach
 // the same host each own and dispose their own master.
@@ -527,6 +599,28 @@ export async function holdSshSession(
     wait.signal?.throwIfAborted();
     return { release: noop, remainingMs: wait.timeoutMs, argv };
   }
+  const facade = commandFacade;
+  const request = facade ? facadeRequest(argv, route, wait) : null;
+  if (facade && request) {
+    wait.signal?.throwIfAborted();
+    let held: Awaited<ReturnType<SshCommandFacade["hold"]>>;
+    try {
+      held = await facade.hold(request, !!options.longLived, wait.signal);
+    } catch (error) {
+      throw facadeError(error, route.destination);
+    }
+    copySshAnnotation(argv, held.argv);
+    let released = false;
+    return {
+      release: () => {
+        if (released) return;
+        released = true;
+        facade.release(held.lease);
+      },
+      remainingMs: held.remainingMs,
+      argv: held.argv,
+    };
+  }
   if (options.longLived) {
     wait.signal?.throwIfAborted();
     const releaseSlot = route.controlPath
@@ -638,10 +732,34 @@ export async function runSshCommand<T extends { code: number; stderr: string }>(
   argv: string[],
   run: (argv: string[], remainingMs: number | undefined) => Promise<T>,
   wait: SshSessionWait = {},
+  /**
+   * What `run` gives the command and makes of its output, for the Rust
+   * core while it owns the host family: its input, and whether stdout is
+   * kept as bytes (a Buffer) rather than text.
+   */
+  io: { input?: string | Uint8Array; binary?: boolean } = {},
 ): Promise<T> {
   wait.signal?.throwIfAborted();
   const route = routes.get(argv);
   if (!route) return run(argv, wait.timeoutMs);
+  const facade = commandFacade;
+  const request = facade ? facadeRequest(argv, route, wait) : null;
+  if (facade && request) {
+    let result: Awaited<ReturnType<SshCommandFacade["run"]>>;
+    try {
+      result = await facade.run(
+        io.input === undefined ? request : { ...request, input: io.input },
+        wait.signal,
+      );
+    } catch (error) {
+      throw facadeError(error, route.destination);
+    }
+    return {
+      code: result.code,
+      stdout: io.binary ? result.stdout : result.stdout.toString("utf8"),
+      stderr: result.stderr,
+    } as unknown as T;
+  }
   const startedAt = Date.now();
   const remaining = () => {
     if (wait.timeoutMs === undefined) return undefined;

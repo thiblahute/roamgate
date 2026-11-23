@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { seedTestRustOwners } from "../core-channel/test-owners";
 import {
   chmodSync,
   existsSync,
@@ -377,6 +378,8 @@ process.on("SIGINT", () => void stop());
     { mode: 0o600 },
   );
   const repositoryRoot = join(import.meta.dir, "../../..");
+  seedTestRustOwners(root);
+
   const child = Bun.spawn(["bun", "server/src/index.ts"], {
     cwd: repositoryRoot,
     env: {
@@ -393,6 +396,8 @@ process.on("SIGINT", () => void stop());
       HERDR_GUI_FAKE_SSH_HOME: fakeHome,
       // The stand-in ssh forwards sockets but runs no remote command.
       ROAMGATE_DISABLE_HERDR_RELAY: "1",
+      // Its own HOME, its own fake ssh: the hosts it reaches are fakes.
+      ROAMGATE_ALLOW_SSH: "1",
       HERDR_SOCKET_PATH: undefined,
       HERDR_CLIENT_SOCKET_PATH: undefined,
       HERDR_SSH_HOST: "legacy-host",

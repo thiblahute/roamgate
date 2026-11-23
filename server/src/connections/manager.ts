@@ -160,6 +160,16 @@ export class ConnectionManager<
     }
   }
 
+  /**
+   * Makes a connection's generations continue from `floor`: after a
+   * handover of the connections from the Rust core, browsers never see a
+   * generation go back.
+   */
+  raiseGeneration(connectionId: ConnectionId, floor: number): void {
+    const entry = this.entries.get(connectionId);
+    if (entry && entry.generation < floor) entry.generation = floor;
+  }
+
   has(connectionId: ConnectionId): boolean {
     return this.entries.has(connectionId);
   }

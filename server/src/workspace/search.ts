@@ -81,7 +81,7 @@ export async function searchWorkspaceFiles({
     });
     let proc: ReturnType<typeof Bun.spawn<"ignore", "pipe", "pipe">>;
     try {
-      proc = Bun.spawn(argv, {
+      proc = Bun.spawn(session.argv, {
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
@@ -91,7 +91,7 @@ export async function searchWorkspaceFiles({
       throw error;
     }
     const stderrText = new Response(proc.stderr).text();
-    trackSshProcess(argv, proc.exited, stderrText);
+    trackSshProcess(session.argv, proc.exited, stderrText);
     const decoder = new TextDecoder();
     let pending = "";
     let path = "";

@@ -327,6 +327,11 @@ export function createReviewAgentServer(args: {
   /** The bridge's private directory for sockets. */
   directory: string;
   connections: () => ReviewAgentConnection[];
+  /**
+   * What a request waits for first, if anything: the connections on their
+   * way to the Rust core (index.ts), so a request finds them up.
+   */
+  ready?: () => Promise<void> | null;
   logger?: Logger;
   home?: string;
   /** Whether any browser could answer a permission prompt now. */
@@ -1450,6 +1455,8 @@ export function createReviewAgentServer(args: {
       fetch: async (request, server) => {
         // Watches are long polls; the client sets its own deadline.
         server.timeout(request, 0);
+        const ready = args.ready?.();
+        if (ready) await ready;
         const url = new URL(request.url);
         const command = url.pathname.replace(/^\/v1\//, "");
         if (request.method !== "POST" || command === url.pathname)

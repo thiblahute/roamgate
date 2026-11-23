@@ -22,7 +22,12 @@ export async function runProcessWithCode(
   argv: string[],
   input?: string,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  return runSshCommand(argv, (argv) => spawnWithCode(argv, input));
+  return runSshCommand(
+    argv,
+    (argv) => spawnWithCode(argv, input),
+    {},
+    input === undefined ? {} : { input },
+  );
 }
 
 async function spawnWithCode(

@@ -97,14 +97,19 @@
     },
     "host": {
       "phase": 5,
-      "note": "one switch for SSH masters, slots and connections.json together",
-      "rpc": ["connections.", "agent_profile."],
-      "http": [],
-      "files": [
-        "data:connections.json",
-        "data:profiles",
-        "data:session-profiles.json"
+      "note": "one switch for connections.json, the manager's generations, the profile service, every SSH master and session slot, and the Herdr control client with its subscriptions; the front keeps each generation's composition root (conversation mode, the workspace, the terminal bridge...), built and disposed by the core's reverse calls, and reaches Herdr and the host through the core. connections.agent_sessions and connections.agent_tasks read agent sessions and stay with agent_sessions; /api/herdr-info is the front's, through its runtime",
+      "rpc": [
+        "connections.list",
+        "connections.create",
+        "connections.update",
+        "connections.remove",
+        "connections.set_default",
+        "connections.connect",
+        "connections.disconnect",
+        "connections.test"
       ],
+      "http": [],
+      "files": ["data:connections.json"],
       "shadow": []
     },
     "workspace": {
@@ -144,7 +149,8 @@
         "data:auth-token",
         "data:session-secret.json",
         "data:session-secret-*.json",
-        "data:rendered-storage.json"
+        "data:rendered-storage.json",
+        "data:profiles"
       ],
       "shadow": []
     },
@@ -186,6 +192,14 @@
       "rpc": ["agent_chat."],
       "http": [],
       "files": ["data:conversation-leases.json"],
+      "shadow": []
+    },
+    "agent_profiles": {
+      "phase": 9,
+      "note": "the session profiles, the launch registry and agent_profile.*: moved with conversation mode (S21), whose stores conversation, voice and MR reviews read synchronously",
+      "rpc": ["agent_profile."],
+      "http": [],
+      "files": ["data:session-profiles.json"],
       "shadow": []
     },
     "voice": {

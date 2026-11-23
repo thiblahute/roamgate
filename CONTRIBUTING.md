@@ -91,6 +91,11 @@ on the host it would take the Roamgate socket from the running bridge, whose
 conversation-mode holders poll there. Use local connections, or set
 `ROAMGATE_ALLOW_SSH=1` against a host no other Roamgate serves.
 
+The tests that start a server process (`server/src/connections/*process.test.ts`)
+rehearse families on the Rust core with `ROAMGATE_CORE_BIN` naming the core and
+`ROAMGATE_TEST_RUST_FAMILIES` the families (comma separated) their test
+server's owners table gives it, such as `host`.
+
 ### Windows SSH end-to-end test
 
 This opt-in test needs a disposable bridge (allowing unauthenticated loopback

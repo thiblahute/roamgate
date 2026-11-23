@@ -102,6 +102,17 @@ import {
 } from "./connections/manager";
 import { watchNetworkChanges } from "./connections/network-watch";
 import {
+  type HostEvent,
+  type HostStatusPush,
+  RemoteConnections,
+  RemoteHerdrClient,
+  SwitchingConnectionManager,
+  sshCommandFacade,
+} from "./connections/host-facade";
+import { setSshCommandFacade } from "./bridge/ssh-sessions";
+import type { ConnectionIdentity, ConnectionStatus } from "./connections/types";
+import {
+  type ConnectionProfileBootstrap,
   ConnectionProbeError,
   ConnectionProfileService,
   connectionIdentityForProfile,
@@ -1658,29 +1669,32 @@ const explicitLegacyOverride = Boolean(
     config.sshHost ||
     config.session,
 );
-let connectionBootstrap;
-try {
-  connectionBootstrap = loadConnectionProfileBootstrap({
-    store: connectionProfileStore,
-    legacyProfile: syntheticLegacyProfile,
-    explicitLegacyOverride,
-  });
-} catch (error) {
-  const registryLoadError = sanitizeConnectionError(error);
-  logger.error("invalid connection registry preserved", {
-    error: registryLoadError,
-    profile_mutations: "disabled",
-  });
-  connectionBootstrap = {
-    defaultConnectionId: LEGACY_DEFAULT_CONNECTION_ID,
-    explicitLegacyOverride,
-    persistedRegistry: null,
-    registryLoadError,
-    registrations: [
-      { profile: syntheticLegacyProfile, readOnly: true as const },
-    ],
-  };
+/** connections.json as Bun serves it (read again when Bun takes it back). */
+function loadConnectionBootstrap(): ConnectionProfileBootstrap {
+  try {
+    return loadConnectionProfileBootstrap({
+      store: connectionProfileStore,
+      legacyProfile: syntheticLegacyProfile,
+      explicitLegacyOverride,
+    });
+  } catch (error) {
+    const registryLoadError = sanitizeConnectionError(error);
+    logger.error("invalid connection registry preserved", {
+      error: registryLoadError,
+      profile_mutations: "disabled",
+    });
+    return {
+      defaultConnectionId: LEGACY_DEFAULT_CONNECTION_ID,
+      explicitLegacyOverride,
+      persistedRegistry: null,
+      registryLoadError,
+      registrations: [
+        { profile: syntheticLegacyProfile, readOnly: true as const },
+      ],
+    };
+  }
 }
+const connectionBootstrap = loadConnectionBootstrap();
 
 // A workspace closed or removed leaves the Workspaces arrangement, and a
 // ready connection's vanished workspaces too; a down one keeps its own.
@@ -1719,48 +1733,57 @@ const connectionStatusListeners = new Set<() => void>();
  */
 const claudeStartHooked = new Set<string>();
 
-const connectionManager = new ConnectionManager<LegacyConnectionRuntime>(
-  connectionBootstrap.defaultConnectionId,
-  (status) => {
-    for (const listener of connectionStatusListeners)
-      try {
-        listener();
-      } catch (error) {
-        logger.warn("connection status listener failed", {
-          error: sanitizeConnectionError(error),
-        });
-      }
-    activity.connectionStatus(status.id, status.state);
-    const fields = {
-      connection: status.id,
-      state: status.state,
-      generation: status.generation,
-    };
-    logger.debug("connection status", {
-      ...fields,
-      error: status.error?.message,
-    });
-    const reporter = connectionFailureReporter(status.id);
-    if (
-      (status.state === "error" || status.state === "reconnecting") &&
-      status.error
-    ) {
-      reporter.failure(status.error.message, fields);
-      return;
+/** A connection's status changed (Bun's manager's, or the core's). */
+function onConnectionStatus(status: ConnectionStatus) {
+  for (const listener of connectionStatusListeners)
+    try {
+      listener();
+    } catch (error) {
+      logger.warn("connection status listener failed", {
+        error: sanitizeConnectionError(error),
+      });
     }
-    if (status.state !== "ready") return;
-    void ensureClaudeStartHook(status.id);
-    resumeAssistantIfLoaded();
-    workspaceTreePruner.ready(status.id);
-    if (reporter.recovered(fields)) {
-      readyConnectionGenerations.set(status.id, status.generation);
-    } else if (
-      readyConnectionGenerations.get(status.id) !== status.generation
-    ) {
-      readyConnectionGenerations.set(status.id, status.generation);
-      logger.info("connection ready", fields);
-    }
-  },
+  activity.connectionStatus(status.id, status.state);
+  const fields = {
+    connection: status.id,
+    state: status.state,
+    generation: status.generation,
+  };
+  logger.debug("connection status", {
+    ...fields,
+    error: status.error?.message,
+  });
+  const reporter = connectionFailureReporter(status.id);
+  if (
+    (status.state === "error" || status.state === "reconnecting") &&
+    status.error
+  ) {
+    reporter.failure(status.error.message, fields);
+    return;
+  }
+  if (status.state !== "ready") return;
+  void ensureClaudeStartHook(status.id);
+  resumeAssistantIfLoaded();
+  workspaceTreePruner.ready(status.id);
+  if (reporter.recovered(fields)) {
+    readyConnectionGenerations.set(status.id, status.generation);
+  } else if (readyConnectionGenerations.get(status.id) !== status.generation) {
+    readyConnectionGenerations.set(status.id, status.generation);
+    logger.info("connection ready", fields);
+  }
+}
+
+/** Bun's connection manager (a new one each time Bun takes the host family back). */
+const createBunConnectionManager = (defaultConnectionId: string) =>
+  new ConnectionManager<LegacyConnectionRuntime>(
+    defaultConnectionId,
+    onConnectionStatus,
+    logger.child("connections"),
+  );
+// The one the server uses: Bun's own, or while the Rust core owns the host
+// family the connections it says (connections/host-facade.ts).
+const connectionManager = new SwitchingConnectionManager(
+  createBunConnectionManager(connectionBootstrap.defaultConnectionId),
   logger.child("connections"),
 );
 
@@ -2978,6 +3001,7 @@ const reviewAgentHosts = new Set<string>();
 function getReviewAgent(): ReviewAgentServer {
   reviewAgent ??= createReviewAgentServer({
     service: getReviewService(),
+    ready: () => hostSettling,
     hasViewers: () => clients.size > 0,
     notify: notifyFromAgent,
     workspaces: workspaceFromAgent,
@@ -3439,10 +3463,15 @@ async function ensureClaudeStartHook(connectionId: string) {
 }
 
 /** Lets agents on an SSH host reach reviews over the master. */
-function setupRemoteReviewAgent(connectionId: string, host: string) {
+function setupRemoteReviewAgent(
+  connectionId: string,
+  host: string,
+  /** The master's, when the Rust core holds it (host.master_ready). */
+  masterControlPath?: string,
+) {
   // Until it is set up again, comments are not typed for a missing client.
   reviewAgentHosts.delete(connectionId);
-  const controlPath = sshMasterControlPath(host);
+  const controlPath = masterControlPath ?? sshMasterControlPath(host);
   if (!controlPath) return;
   let localSocket: string;
   try {
@@ -3504,6 +3533,128 @@ const { handleHerdrStatus, handleHerdrSetup } = createHerdrSetupHandlers({
   guard: herdrSetupGuard,
 });
 
+/**
+ * A generation's composition: Bun's whole runtime, or while the Rust core
+ * owns the host family the part Bun keeps (`host`: Herdr through the core,
+ * no transport or subscriptions of its own).
+ */
+function composeConnectionRuntime(
+  identity: ConnectionIdentity,
+  profileConfig: SshTunnelConfig,
+  context: ConnectionRuntimeContext,
+  options: { profileId?: string; host?: { herdr: HerdrClient } },
+): LegacyConnectionRuntime {
+  return createLegacyConnectionRuntime({
+    identity,
+    connectionGeneration: context.generation,
+    config: profileConfig,
+    logger: logger.child("connection"),
+    safeSend,
+    broadcast: (payload, context) => {
+      for (const ws of clients) safeSend(ws, payload, context);
+    },
+    clientLabel,
+    markRpcError,
+    taskNotificationSource: config.taskNotificationSource,
+    conversationLeaseFile: defaultLeaseFile(),
+    conversationKeepAwake,
+    claudeMod: claudeModHub,
+    sessionIndexDir: defaultSessionIndexDir(),
+    // No terminal to fall back on: the prompt waits for a browser, and
+    // its timeout denies.
+    reviewRoots: (connectionId) => getReviewService().roots(connectionId),
+    askAgentPrompt: ({ connectionId, paneId, signal, ...prompt }) =>
+      getReviewService().prompts.request({
+        ...prompt,
+        connectionId,
+        paneId,
+        agent: "Claude",
+        // A headless claude: there is no terminal to ask instead.
+        noTerminal: true,
+        signal,
+      }),
+    onTaskEvent: (event) => {
+      const connections = connectionProfiles.list();
+      notifications.publish(
+        {
+          ...event,
+          connectionId: identity.id,
+          connectionLabel:
+            connections.length > 1
+              ? (connections.find((connection) => connection.id === identity.id)
+                  ?.label ?? identity.label)
+              : undefined,
+          runtimeGeneration: context.generation,
+        },
+        { isCurrent: context.isCurrent },
+      );
+    },
+    onPaneList: (result, startedAt) => {
+      if (context.isCurrent())
+        activity.paneList(identity.id, result, startedAt);
+    },
+    onOwnedAgentStatus: (paneId) => {
+      if (!context.isCurrent()) return;
+      activity.ownedAgentChanged(identity.id, paneId);
+      // A conversation's turn ended (on a usage limit, maybe).
+      pokeLimit(identity.id, paneId);
+    },
+    onEvent: (event, eventIdentity) => {
+      if (!context.isCurrent()) return;
+      withdrawPaneNotifications(eventIdentity.id, event);
+      pokeLimitResumer(eventIdentity.id, event);
+      activity.herdrEvent(eventIdentity.id, event);
+      logger.debug("Herdr event", {
+        connection: eventIdentity.id,
+        detail: summarizeHerdrEvent(event),
+      });
+      try {
+        const line = serializeHerdrEventEnvelope(
+          eventIdentity.id,
+          event,
+          context.generation,
+        );
+        for (const ws of clients) safeSend(ws, line, "event");
+      } catch (error) {
+        logger.warn("dropped invalid Herdr event", {
+          connection: eventIdentity.id,
+          error: sanitizeConnectionError(error),
+        });
+      }
+      void workspaceTreePruner.event(eventIdentity.id, event);
+    },
+    forwards: sshForwards,
+    onClaudeStartSettingsChanged: () => {
+      for (const status of connectionManager.list())
+        void ensureClaudeStartHook(status.id);
+    },
+    onLimitResumeSettingsChanged: () => {
+      for (const status of connectionManager.list()) pokeLimit(status.id);
+    },
+    onSshMasterReady:
+      profileConfig.sshHost && !options.host
+        ? () => {
+            if (context.isCurrent() && profileConfig.sshHost)
+              setupRemoteReviewAgent(identity.id, profileConfig.sshHost);
+          }
+        : undefined,
+    onTransportExit:
+      profileConfig.sshHost && options.profileId !== undefined
+        ? (error) => {
+            if (!context.isCurrent()) return;
+            const profileId = options.profileId!;
+            const reconnecting = bunConnectionProfiles.willRetry(
+              profileId,
+              error,
+            );
+            context.reportError(error, { reconnecting });
+            bunConnectionProfiles.runtimeFailed(profileId, error);
+          }
+        : undefined,
+    ...(options.host ? { host: options.host } : {}),
+  });
+}
+
 function runtimeFactoryForProfile(
   profile: ConnectionProfile | SyntheticLocalProfile,
 ) {
@@ -3528,111 +3679,8 @@ function runtimeFactoryForProfile(
     if (refusal) throw new ConnectionProbeError(refusal, false);
     let runtime: LegacyConnectionRuntime;
     try {
-      runtime = createLegacyConnectionRuntime({
-        identity,
-        connectionGeneration: context.generation,
-        config: profileConfig,
-        logger: logger.child("connection"),
-        safeSend,
-        broadcast: (payload, context) => {
-          for (const ws of clients) safeSend(ws, payload, context);
-        },
-        clientLabel,
-        markRpcError,
-        taskNotificationSource: config.taskNotificationSource,
-        conversationLeaseFile: defaultLeaseFile(),
-        conversationKeepAwake,
-        claudeMod: claudeModHub,
-        sessionIndexDir: defaultSessionIndexDir(),
-        // No terminal to fall back on: the prompt waits for a browser, and
-        // its timeout denies.
-        reviewRoots: (connectionId) => getReviewService().roots(connectionId),
-        askAgentPrompt: ({ connectionId, paneId, signal, ...prompt }) =>
-          getReviewService().prompts.request({
-            ...prompt,
-            connectionId,
-            paneId,
-            agent: "Claude",
-            // A headless claude: there is no terminal to ask instead.
-            noTerminal: true,
-            signal,
-          }),
-        onTaskEvent: (event) => {
-          const connections = connectionProfiles.list();
-          notifications.publish(
-            {
-              ...event,
-              connectionId: identity.id,
-              connectionLabel:
-                connections.length > 1
-                  ? (connections.find(
-                      (connection) => connection.id === identity.id,
-                    )?.label ?? identity.label)
-                  : undefined,
-              runtimeGeneration: context.generation,
-            },
-            { isCurrent: context.isCurrent },
-          );
-        },
-        onPaneList: (result, startedAt) => {
-          if (context.isCurrent())
-            activity.paneList(identity.id, result, startedAt);
-        },
-        onOwnedAgentStatus: (paneId) => {
-          if (!context.isCurrent()) return;
-          activity.ownedAgentChanged(identity.id, paneId);
-          // A conversation's turn ended (on a usage limit, maybe).
-          pokeLimit(identity.id, paneId);
-        },
-        onEvent: (event, eventIdentity) => {
-          if (!context.isCurrent()) return;
-          withdrawPaneNotifications(eventIdentity.id, event);
-          pokeLimitResumer(eventIdentity.id, event);
-          activity.herdrEvent(eventIdentity.id, event);
-          logger.debug("Herdr event", {
-            connection: eventIdentity.id,
-            detail: summarizeHerdrEvent(event),
-          });
-          try {
-            const line = serializeHerdrEventEnvelope(
-              eventIdentity.id,
-              event,
-              context.generation,
-            );
-            for (const ws of clients) safeSend(ws, line, "event");
-          } catch (error) {
-            logger.warn("dropped invalid Herdr event", {
-              connection: eventIdentity.id,
-              error: sanitizeConnectionError(error),
-            });
-          }
-          void workspaceTreePruner.event(eventIdentity.id, event);
-        },
-        forwards: sshForwards,
-        onClaudeStartSettingsChanged: () => {
-          for (const status of connectionManager.list())
-            void ensureClaudeStartHook(status.id);
-        },
-        onLimitResumeSettingsChanged: () => {
-          for (const status of connectionManager.list()) pokeLimit(status.id);
-        },
-        onSshMasterReady: profileConfig.sshHost
-          ? () => {
-              if (context.isCurrent() && profileConfig.sshHost)
-                setupRemoteReviewAgent(identity.id, profileConfig.sshHost);
-            }
-          : undefined,
-        onTransportExit: profileConfig.sshHost
-          ? (error) => {
-              if (!context.isCurrent()) return;
-              const reconnecting = connectionProfiles.willRetry(
-                profile.id,
-                error,
-              );
-              context.reportError(error, { reconnecting });
-              connectionProfiles.runtimeFailed(profile.id, error);
-            }
-          : undefined,
+      runtime = composeConnectionRuntime(identity, profileConfig, context, {
+        profileId: profile.id,
       });
     } catch (error) {
       if (profileConfig.ownedRuntimeDirectory) {
@@ -3656,12 +3704,312 @@ function runtimeFactoryForProfile(
   };
 }
 
-const connectionProfiles = new ConnectionProfileService({
-  manager: connectionManager,
-  store: connectionProfileStore,
-  bootstrap: connectionBootstrap,
-  createRuntime: runtimeFactoryForProfile,
+const createBunConnectionProfiles = (bootstrap: ConnectionProfileBootstrap) =>
+  new ConnectionProfileService({
+    manager: connectionManager.bunManager(),
+    store: connectionProfileStore,
+    bootstrap,
+    createRuntime: runtimeFactoryForProfile,
+  });
+let bunConnectionProfiles = createBunConnectionProfiles(connectionBootstrap);
+/**
+ * The profile service of whoever owns the host family: Bun's, or while the
+ * Rust core owns it the list it says (its RPCs go to the core).
+ */
+const connectionProfiles = {
+  list: () =>
+    connectionManager.remoteConnections()?.profiles() ??
+    bunConnectionProfiles.list(),
+  bun: () => {
+    if (connectionManager.remoteConnections())
+      throw new Error("connections are the Rust core's now");
+    return bunConnectionProfiles;
+  },
+  create: (value: unknown) => connectionProfiles.bun().create(value),
+  update: (id: unknown, value: unknown) =>
+    connectionProfiles.bun().update(id, value),
+  remove: (id: unknown) => connectionProfiles.bun().remove(id),
+  setDefault: (id: unknown) => connectionProfiles.bun().setDefault(id),
+  connect: (id: unknown) => connectionProfiles.bun().connect(id),
+  disconnect: (id: unknown) => connectionProfiles.bun().disconnect(id),
+  test: (value: unknown) => connectionProfiles.bun().test(value),
+};
+// The host family on the Rust core (contract/wire/core-channel.md, The
+// host family; connections/host-facade.ts). One switch for connections.json,
+// the manager, the SSH masters and slots, and the Herdr subscriptions: Bun
+// stops all its connections before the core starts its own, and the core
+// stops all of its before Bun starts again, so a host never sees two
+// masters or two sets of slots.
+let hostRemote: RemoteConnections<LegacyConnectionRuntime> | null = null;
+let hostSwitch: Promise<void> = Promise.resolve();
+/** The server is stopping: nothing is handed over any more. */
+let hostStopping = false;
+/** Settles once the core took the connections (startup waits on it). */
+let hostTaken = Promise.withResolvers<void>();
+/**
+ * Set while the connections are on their way to the core (at startup, or
+ * a handover): browser calls wait for it, at most 10 s.
+ */
+let hostSettling: Promise<void> | null = null;
+function settleHostWhile(work: Promise<unknown>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const settling = Promise.race([
+    work.then(
+      () => undefined,
+      () => undefined,
+    ),
+    new Promise<void>((resolve) => {
+      timer = realTimers.setTimeout(resolve, 10_000);
+    }),
+  ]).finally(() => {
+    realTimers.clearTimeout(timer);
+    if (hostSettling === settling) hostSettling = null;
+  });
+  hostSettling = settling;
+}
+/** startConnection ran: Bun starts its connections when it takes them back. */
+let hostConnectionsStarted = false;
+const HOST_HANDOVER_TIMEOUT_MS = 30_000;
+const hostLog = logger.child("connections");
+
+function hostCall(op: string, params: unknown, signal?: AbortSignal) {
+  if (!coreFront) return Promise.reject(new Error("no Rust core"));
+  return coreFront.callInternal("host", op, params, signal);
+}
+
+/**
+ * The legacy connection as the core makes it, and the generations so far:
+ * the next owner's continue from them, so a browser never sees one go back.
+ */
+function hostStartParams() {
+  return {
+    generations: Object.fromEntries(
+      connectionManager.list().map((status) => [status.id, status.generation]),
+    ),
+    legacy: {
+      socket_path: downstreamConnectionConfig.socketPath,
+      client_socket_path: downstreamConnectionConfig.clientSocketPath,
+      ssh_host: downstreamConnectionConfig.sshHost ?? null,
+      session: downstreamConnectionConfig.session ?? null,
+      has_explicit_socket_path:
+        downstreamConnectionConfig.hasExplicitSocketPath,
+      has_explicit_client_socket_path:
+        downstreamConnectionConfig.hasExplicitClientSocketPath,
+    },
+    explicit_legacy_override: explicitLegacyOverride,
+  };
+}
+
+async function handHostToCore() {
+  hostLog.info("handing the connections to the Rust core");
+  bunConnectionProfiles.stopSupervision();
+  await connectionManager
+    .bunManager()
+    .stopAll()
+    .catch(() => undefined);
+  const remote = new RemoteConnections<LegacyConnectionRuntime>(
+    connectionManager.defaultId(),
+    hostLog,
+  );
+  // Until the core's first list: the connections Bun had, down.
+  remote.update({
+    default_connection_id: connectionManager.defaultId(),
+    connections: bunConnectionProfiles.list(),
+  });
+  hostRemote = remote;
+  connectionManager.useRemote(remote);
+  setSshCommandFacade(sshCommandFacade(hostCall));
+  try {
+    const answer = (await hostCall(
+      "start",
+      hostStartParams(),
+      AbortSignal.timeout(HOST_HANDOVER_TIMEOUT_MS),
+    )) as HostStatusPush;
+    if (hostRemote === remote) remote.update(answer);
+    hostTaken.resolve();
+  } catch (error) {
+    hostLog.warn(
+      "the Rust core did not take the connections; Bun serves them",
+      {
+        error: sanitizeConnectionError(error),
+      },
+    );
+    if (hostRemote === remote) await takeHostBack();
+  }
+}
+
+async function takeHostBack() {
+  const remote = hostRemote;
+  if (!remote) return;
+  hostLog.info("taking the connections back from the Rust core");
+  const generations = remote.list();
+  hostRemote = null;
+  hostTaken = Promise.withResolvers<void>();
+  setSshCommandFacade(null);
+  // The core stops its runtimes (the front's parts with them) and its SSH
+  // processes; a core that is gone stopped them as it went.
+  await hostCall(
+    "stop",
+    {},
+    AbortSignal.timeout(HOST_HANDOVER_TIMEOUT_MS),
+  ).catch(() => undefined);
+  await Promise.all(
+    remote.detachAll().map((runtime) => runtime.stop().catch(() => undefined)),
+  );
+  // Masters of a core that died with them still up.
+  await sweepOrphanedSshMasters({ logger: logger.child("ssh") }).catch(
+    () => undefined,
+  );
+  const bootstrap = loadConnectionBootstrap();
+  connectionManager.useBun(
+    createBunConnectionManager(bootstrap.defaultConnectionId),
+  );
+  bunConnectionProfiles = createBunConnectionProfiles(bootstrap);
+  for (const status of generations)
+    connectionManager
+      .bunManager()
+      .raiseGeneration(status.id, status.generation);
+  if (hostConnectionsStarted)
+    await bunConnectionProfiles.startConfigured().catch(() => undefined);
+}
+
+// A test clock moves no time while the connections go to the core: a
+// deadline due meanwhile (a resumer's first look) finds them up, as it
+// does when Bun starts its own.
+activeTestClock()?.settleBefore(async () => {
+  if (hostSettling) await hostSettling;
 });
+
+/** Who serves the connections follows the owners table and the core. */
+function syncHostOwner(): Promise<void> {
+  hostSwitch = hostSwitch.then(async () => {
+    if (hostStopping) return;
+    const wanted = !!coreFront && !bunOwns("host");
+    if (wanted && !hostRemote) {
+      const handover = handHostToCore();
+      settleHostWhile(handover);
+      await handover;
+    } else if (!wanted && hostRemote) await takeHostBack();
+  });
+  return hostSwitch;
+}
+onOwnershipChanged(() => void syncHostOwner());
+
+/**
+ * The configured connections start: Bun's, unless the owners table gives
+ * them to the core, which then gets a moment to connect and take them
+ * (no SSH master is opened only to be closed again).
+ */
+async function startHostConnections() {
+  hostConnectionsStarted = true;
+  if (
+    coreConfigured(process.env) &&
+    readOwners(join(dataRoot(), "runtime")).owners.host === "rust"
+  ) {
+    // Real time: a test clock moves only when its harness says.
+    settleHostWhile(hostTaken.promise);
+    await hostSettling;
+    await hostSwitch;
+    if (hostRemote) return;
+  }
+  await bunConnectionProfiles.startConfigured();
+}
+
+/** At shutdown: the core's connections end while the channel is up. */
+async function stopHostOnCore() {
+  hostStopping = true;
+  await hostSwitch;
+  if (!hostRemote) return;
+  await hostCall("stop", {}, AbortSignal.timeout(10_000)).catch(
+    () => undefined,
+  );
+}
+
+/** A reverse call's connection and generation. */
+function hostTarget(args: unknown): { id: string; generation: number } {
+  const { connection_id, generation } = (args ?? {}) as {
+    connection_id?: unknown;
+    generation?: unknown;
+  };
+  if (typeof connection_id !== "string" || typeof generation !== "number")
+    throw new Error("needs a connection_id and a generation");
+  return { id: connection_id, generation };
+}
+
+/** What the core's host family calls in Bun. */
+const hostReverseTargets = {
+  // Builds and starts the part of a generation Bun keeps.
+  "host.runtime_start": async (args: unknown) => {
+    const { id, generation } = hostTarget(args);
+    const { identity, config } = (args ?? {}) as {
+      identity?: ConnectionIdentity;
+      config?: SshTunnelConfig;
+    };
+    const remote = hostRemote;
+    if (!remote) throw new Error("the connections are Bun's");
+    if (!identity || identity.id !== id || !config)
+      throw new Error("host.runtime_start needs an identity and a config");
+    const herdr = new RemoteHerdrClient(hostCall, id, generation);
+    let runtime: LegacyConnectionRuntime | null = null;
+    const context: ConnectionRuntimeContext = {
+      generation,
+      isCurrent: () =>
+        hostRemote === remote &&
+        runtime !== null &&
+        remote.runtimeOf(id, generation) === runtime,
+      // The core reports its transport's failures itself.
+      reportError: () => undefined,
+    };
+    const built = composeConnectionRuntime(identity, config, context, {
+      host: { herdr: herdr.asHerdrClient() },
+    });
+    runtime = built;
+    remote.attach(id, generation, built);
+    try {
+      await built.startTransport();
+      await built.startBackground();
+    } catch (error) {
+      remote.detach(id, generation);
+      await built.stop().catch(() => undefined);
+      throw error;
+    }
+    return { ok: true };
+  },
+  "host.runtime_stop": async (args: unknown) => {
+    const { id, generation } = hostTarget(args);
+    await hostRemote?.detach(id, generation)?.stop();
+    return { ok: true };
+  },
+  "host.events": async (args: unknown) => {
+    const { id, generation } = hostTarget(args);
+    const { events } = (args ?? {}) as { events?: unknown };
+    if (!Array.isArray(events)) throw new Error("host.events needs events");
+    hostRemote?.runtimeOf(id, generation)?.hostEvents(events as HostEvent[]);
+    return { ok: true };
+  },
+  "host.status": async (args: unknown) => {
+    const push = (args ?? {}) as HostStatusPush;
+    if (!Array.isArray(push.connections))
+      throw new Error("host.status needs connections");
+    if (!hostRemote) return { ok: false };
+    hostRemote.update(push);
+    if (push.status) onConnectionStatus(push.status);
+    return { ok: true };
+  },
+  "host.master_ready": async (args: unknown) => {
+    const { id, generation } = hostTarget(args);
+    const { host, control_path } = (args ?? {}) as {
+      host?: unknown;
+      control_path?: unknown;
+    };
+    if (typeof host !== "string" || typeof control_path !== "string")
+      throw new Error("host.master_ready needs a host and a control_path");
+    if (hostRemote?.runtimeOf(id, generation))
+      setupRemoteReviewAgent(id, host, control_path);
+    return { ok: true };
+  },
+};
+
 /** A terminal agent's status changed: it may have stopped on a limit. */
 function pokeLimitResumer(connectionId: string, event: unknown) {
   if (!event || typeof event !== "object") return;
@@ -3787,8 +4135,10 @@ onOwnershipChanged(() => {
 // A pending SSH retry may wait up to its capped backoff. When the host's
 // network changes, a peer that was unreachable may be back: try now.
 const stopNetworkWatch = watchNetworkChanges(() => {
+  // The core watches the network itself while it owns the connections.
+  if (connectionManager.remoteConnections()) return;
   logger.debug("network changed; retrying waiting connections");
-  connectionProfiles.retryNow();
+  bunConnectionProfiles.retryNow();
 });
 
 /**
@@ -3975,6 +4325,9 @@ async function handleRpc(ws: ServerWebSocket<unknown>, raw: string) {
     safeSend(ws, payload, "invalid-request");
     return;
   }
+  // While the connections go to the Rust core, a call waits for them
+  // (at most 10 s) rather than find them down for a moment.
+  if (hostSettling) await hostSettling;
   let route: ReturnType<typeof resolveRpcRoute<LegacyConnectionRuntime>>;
   try {
     route = resolveRpcRoute({
@@ -5575,6 +5928,17 @@ function main() {
             });
           }
 
+          // While the connections go to the Rust core, an API request waits
+          // for them (at most 10 s) rather than find them down for a
+          // moment. Logins and sockets go at once: a socket's calls wait the
+          // same way.
+          if (
+            hostSettling &&
+            url.pathname.startsWith("/api/") &&
+            !/^\/api\/(?:login|logout)(?:\/|$)/.test(url.pathname)
+          )
+            await hostSettling;
+
           // A call handed to the Android app: its single-use token is the
           // credential, exchanged for the call's and a login.
           if (url.pathname === CALL_HANDOFF_PATH)
@@ -5992,7 +6356,7 @@ function main() {
         },
       }),
     startConnection: async () => {
-      await connectionProfiles.startConfigured();
+      await startHostConnections();
       // Resume saved work even when no browser has opened Ranger yet.
       await getAssistantService();
       resumeAssistantIfLoaded();
@@ -6078,7 +6442,7 @@ function main() {
     dataDir: dataRoot(),
     fromSource: !isStandaloneBinary(process),
     deliverPush: deliverCorePush,
-    reverseTargets: coreReverseTargets,
+    reverseTargets: { ...coreReverseTargets, ...hostReverseTargets },
   });
   setMrCacheCore(coreFront);
   if (config.authRequired) {
@@ -6144,12 +6508,14 @@ function stopManagerOnce(): Promise<void> {
   webPush.stop();
   notifications.stop();
   stopNetworkWatch();
-  connectionProfiles.stopSupervision();
+  bunConnectionProfiles.stopSupervision();
   managerStopTask ??= (async () => {
     // End the attention spans before the connections go: a shutdown is not
     // a disconnect. The activity log first: where the core records it, the
     // core's recorder stops before the channel goes.
     await activity.stop();
+    // The core's connections and SSH processes end before the channel does.
+    await stopHostOnCore();
     // The core: what it owns stops writing before Bun's own goes.
     await coreFront?.stop();
     // Pause the harness before taking away the runtimes its reads depend on.

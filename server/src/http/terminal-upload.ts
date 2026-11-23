@@ -137,14 +137,14 @@ export function createTerminalUploadHandler(args: {
       let code: number;
       let stderr: string;
       try {
-        const proc = Bun.spawn(argv, {
+        const proc = Bun.spawn(session.argv, {
           stdin: "ignore",
           stdout: "ignore",
           stderr: "pipe",
           timeout: session.remainingMs ?? CLEANUP_TIMEOUT_MS,
         });
         const stderrText = new Response(proc.stderr).text();
-        trackSshProcess(argv, proc.exited, stderrText);
+        trackSshProcess(session.argv, proc.exited, stderrText);
         [code, stderr] = await Promise.all([proc.exited, stderrText]);
       } finally {
         session.release();
@@ -215,7 +215,7 @@ export function createTerminalUploadHandler(args: {
         let stderr: string;
         try {
           req.signal.throwIfAborted();
-          const proc = Bun.spawn(argv, {
+          const proc = Bun.spawn(session.argv, {
             stdin: Bun.file(localPath),
             stdout: "pipe",
             stderr: "pipe",
@@ -224,7 +224,7 @@ export function createTerminalUploadHandler(args: {
             killSignal: "SIGKILL",
           });
           const stderrText = new Response(proc.stderr).text();
-          trackSshProcess(argv, proc.exited, stderrText);
+          trackSshProcess(session.argv, proc.exited, stderrText);
           [code, path, stderr] = await Promise.all([
             proc.exited,
             new Response(proc.stdout).text(),

@@ -128,6 +128,7 @@ import { createTabAutoRenamer } from "./tab-auto-rename";
 import { createAgentTabTitleReader } from "./agent-tab-title";
 import { sanitizeConnectionError } from "./manager";
 import { createEventSubscriptionLoop } from "./subscription-loop";
+import type { HostEvent } from "./host-facade";
 import { type ConnectionIdentity, LEGACY_DEFAULT_CONNECTION } from "./types";
 import { unixOnlyHandlers } from "./unix-only";
 
@@ -274,6 +275,13 @@ export function createLegacyConnectionRuntime(args: {
   ) => string | null;
   /** Roamgate's Claude mods, across connections (agent/claude-mod.ts). */
   claudeMod?: ClaudeModHub | null;
+  /**
+   * Set while the Rust core owns the host family (host-facade.ts): its
+   * Herdr client, whose calls go to the core's; the transport and the
+   * Herdr subscriptions are the core's then, their events given to
+   * `hostEvents`.
+   */
+  host?: { herdr: HerdrClient };
 }) {
   const { config } = args;
   const remotePlatform = config.remotePlatform;
@@ -297,10 +305,12 @@ export function createLegacyConnectionRuntime(args: {
     argv,
     ...rest
   ) => runBinaryProcessWithTimeoutBase(forConnection(argv), ...rest);
-  const herdr = new HerdrClient(socketPath, {
-    logger: logger.child("herdr"),
-    connectionId: identity.id,
-  });
+  const herdr =
+    args.host?.herdr ??
+    new HerdrClient(socketPath, {
+      logger: logger.child("herdr"),
+      connectionId: identity.id,
+    });
   /** This connection's Claude mods: delivery, and what they say. */
   const claudeMod = {
     deliver: (paneId: string, text: string, kind?: string) =>
@@ -698,17 +708,20 @@ export function createLegacyConnectionRuntime(args: {
     sshHost,
     onCleanupError: onUploadCleanupError,
   });
-  const sshTunnel = createSshTunnelManager({
-    connectionId: identity.id,
-    logger: logger.child("ssh"),
-    formatError: sanitizeConnectionError,
-    config,
-    runProcess,
-    onUnexpectedExit: args.onTransportExit,
-    onMasterReady: () => {
-      if (!disposed) args.onSshMasterReady?.();
-    },
-  });
+  // The core's own while it owns the host family.
+  const sshTunnel = args.host
+    ? null
+    : createSshTunnelManager({
+        connectionId: identity.id,
+        logger: logger.child("ssh"),
+        formatError: sanitizeConnectionError,
+        config,
+        runProcess,
+        onUnexpectedExit: args.onTransportExit,
+        onMasterReady: () => {
+          if (!disposed) args.onSshMasterReady?.();
+        },
+      });
   const handleSettingsRpc = createSettingsRpcHandler({
     connectionId: identity.id,
     connectionGeneration: args.connectionGeneration,
@@ -1124,15 +1137,19 @@ export function createLegacyConnectionRuntime(args: {
     failureMessage: "event subscription failed",
     recoveryMessage: "event subscription recovered",
   });
+  /** The event subscription was acknowledged (again). */
+  const subscriptionReady = () => {
+    // Browser snapshots may start before the subscription ACK. Reconcile
+    // after every ACK (including reconnect) to close that missed-event gap.
+    // The browser's generic refresh path queues another snapshot if busy.
+    args.onEvent({ event: "session.resync_required", data: {} }, identity);
+    // Panes closed while no event could come.
+    void conversation?.sweep();
+  };
   const subscriptionLoop = createEventSubscriptionLoop({
     subscribe: () => herdr.subscribe(DEFAULT_EVENTS),
     onReady: () => {
-      // Browser snapshots may start before the subscription ACK. Reconcile
-      // after every ACK (including reconnect) to close that missed-event gap.
-      // The browser's generic refresh path queues another snapshot if busy.
-      args.onEvent({ event: "session.resync_required", data: {} }, identity);
-      // Panes closed while no event could come.
-      void conversation?.sweep();
+      subscriptionReady();
       if (!eventSubscriptionRecovery.recovered({ connection: identity.id })) {
         logger.info("subscribed to Herdr events", { connection: identity.id });
       }
@@ -1191,8 +1208,7 @@ export function createLegacyConnectionRuntime(args: {
     if (disposed) throw new Error("connection runtime is disposed");
     if (transportStarted) return;
     if (transportStart) return transportStart;
-    transportStart = sshTunnel
-      .startAutoSshTunnel()
+    transportStart = (sshTunnel?.startAutoSshTunnel() ?? Promise.resolve())
       .then(() => {
         if (!disposed) transportStarted = true;
       })
@@ -1210,8 +1226,11 @@ export function createLegacyConnectionRuntime(args: {
       void handleTerminalUpload.startCleanup().catch(onUploadCleanupError);
       workspaceAutoSync.start();
     }
-    subscriptionLoop.start();
-    agentStatusSubscriptions.start();
+    // The core subscribes while it owns the host family (hostEvents).
+    if (!args.host) {
+      subscriptionLoop.start();
+      agentStatusSubscriptions.start();
+    }
     tabAutoRenamer.start();
     herdrNotifications?.start();
   }
@@ -1245,7 +1264,8 @@ export function createLegacyConnectionRuntime(args: {
     const lastStepStop = lastStepTurns
       .stop()
       .then(() => lastStepBaselines.dispose());
-    const transportCleanup = sshTunnel.cleanupAutoSshTunnel();
+    const transportCleanup =
+      sshTunnel?.cleanupAutoSshTunnel() ?? Promise.resolve();
     const transportStop =
       transportStart?.catch(() => undefined) ?? Promise.resolve();
     stopTask = Promise.all([
@@ -1257,6 +1277,49 @@ export function createLegacyConnectionRuntime(args: {
       transportStop,
     ]).then(() => undefined);
     return stopTask;
+  }
+
+  /**
+   * What the core's subscriptions saw while it owns the host family, in
+   * order (host-facade.ts `HostEvent`): Herdr's events reach the same
+   * listeners as a subscription's here, and its agent status listings the
+   * same trackers.
+   */
+  const paneListStarts = new Map<
+    number,
+    { startedAt: number; taskRevision: number; stepRevision: number }
+  >();
+  function hostEvents(events: HostEvent[]) {
+    if (disposed) return;
+    for (const each of events) {
+      if (disposed) return;
+      try {
+        if (each.kind === "herdr") herdr.emit("event", each.event);
+        else if (each.kind === "ready") subscriptionReady();
+        else if (each.kind === "pane_list_start") {
+          // A listing that never ends (its runtime went) leaves no trace.
+          if (paneListStarts.size > 32) paneListStarts.clear();
+          paneListStarts.set(each.list, {
+            startedAt: each.started_at,
+            taskRevision: taskEvents.beginPaneList(),
+            stepRevision: lastStepTurns.beginPaneList(),
+          });
+        } else if (each.kind === "pane_list") {
+          const started = paneListStarts.get(each.list);
+          paneListStarts.delete(each.list);
+          if (!started) continue;
+          taskEvents.reconcilePaneList(each.result, started.taskRevision);
+          lastStepTurns.reconcilePaneList(each.result, started.stepRevision);
+          args.onPaneList?.(each.result, started.startedAt);
+        }
+      } catch (error) {
+        logger.warn("a host event failed", {
+          connection: identity.id,
+          kind: each.kind,
+          error: sanitizeConnectionError(error),
+        });
+      }
+    }
   }
 
   return {
@@ -1301,6 +1364,7 @@ export function createLegacyConnectionRuntime(args: {
     startTransport,
     startBackground,
     stop,
+    hostEvents,
   };
 }
 

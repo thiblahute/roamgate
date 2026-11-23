@@ -166,6 +166,11 @@ own code for the board.
 | `connections.list`          | none                                                                                                                                                                                                                                                                                                                                                                                                                               | `[{id, generation, is_default}]`: every connection                                                                                                                                                                                                                                                    |
 | `history.changed`           | `area`, `id` (optional)                                                                                                                                                                                                                                                                                                                                                                                                            | `{ok: true}`: the local history told a store of the area changed                                                                                                                                                                                                                                      |
 | `history.work_changed`      | `item` (null when removed), `id`, `change`, `actor` (`{by, address?, caller?}`), `at`                                                                                                                                                                                                                                                                                                                                              | `{ok: true}`: the local history told of a Work change, committed by its author                                                                                                                                                                                                                        |
+| `host.runtime_start` | `connection_id`, `generation`, `identity` (`{id, label, source}`), `config` (the generation's tunnel configuration as runtime.ts takes it: `socketPath`, `clientSocketPath`, `sshHost`, `session`, `hasExplicitSocketPath`, `hasExplicitClientSocketPath`, `remoteSocketPath`, `remoteClientSocketPath`, `ownedRuntimeDirectory`, `remotePlatform`, `remoteHerdrPath`, `masterControlPath`) | `{ok: true}` once the front built and started the part of the generation it keeps; an error fails the generation's start. The host family's |
+| `host.runtime_stop` | `connection_id`, `generation` | `{ok: true}` once the front disposed that generation's part (nothing for a generation it did not build) |
+| `host.events` | `connection_id`, `generation`, `events`: `[{kind: "herdr", event} \| {kind: "ready"} \| {kind: "pane_list_start", list, started_at} \| {kind: "pane_list", list, result}]` | `{ok: true}`; what the generation's event and agent status subscriptions saw, in order: Herdr's events, each acknowledgement of the event subscription (browsers reconcile), and each `pane.list` of the agent status subscription with its start. The next batch waits for the answer |
+| `host.status` | `default_connection_id`, `connections` (the `connections.list` items), `status` (the status that changed; absent after a profile change) | `{ok}`, false while the front does not mirror the core's connections; sent in order after each status change |
+| `host.master_ready` | `connection_id`, `generation`, `host`, `control_path` | `{ok: true}`; the connection's SSH command master listens (again): the front forwards the review socket over it |
 
 An unknown target is an error reply with code `unknown_target`.
 
@@ -231,6 +236,11 @@ The front's internal calls by family:
 | `internal.work.user_tool`                   | `tool`, `params`, `source` (optional)                                                                                                        | One of the user's own tools (the voice companion's): answers `{text}`.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `internal.work.questions_seen`              | `item`, `threads`                                                                                                                            | An item's review changed: its open questions are counted on its card. Answers `{ok: true}`.                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `internal.work.owner_pane`                  | `item`, `connection_id`                                                                                                                      | Where the item's comments go on that connection: `{pane}` (null: they wait).                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `internal.host.start` | `legacy` (`socket_path`, `client_socket_path`, `ssh_host`, `session`, `has_explicit_socket_path`, `has_explicit_client_socket_path`: the connection the front was started with), `explicit_legacy_override` | The front stopped all its connections and SSH masters: the core loads connections.json (an invalid one preserved, its mutations refused, as the front does), starts the default and auto-connect connections and answers the list (`{default_connection_id, connections}`). Error `not_owner` while the core does not own the host family. Nothing of the family runs before it. |
+| `internal.host.stop` | none | Before the front takes the family back, and at its shutdown: the core stops every connection (the front's parts by `host.runtime_stop`), its SSH masters and tunnels, its supervision and network watch, and gives back every held slot; answers `{ok: true}` once done. |
+| `internal.host.herdr_call` | `connection_id`, `generation`, `method`, `params`, `timeout_ms`, `fresh` | A Herdr call of the front's part of a generation, through the core's control client for it (its shared and reused reads); error `connection runtime is disposed` once that generation is gone. |
+| `internal.host.run` | `destination`, `command`, `trusted_args`, `tag`, `read_only`, `connection_id`, `timeout_ms`, `lane` (`interactive` or `background`), `stdin_b64` (optional) | A command the front built with sshCommandArgv (or its read form), run whole inside the destination's session slots and over its master as bridge/ssh-sessions.ts `runSshCommand` does: `{code, stdout_b64, stderr}`; error code `ssh_background_shed` for a shed background command, `invalid` for a destination sshCommandArgv refuses. |
+| `internal.host.ssh_hold` | the same, `long_lived` instead of `stdin_b64` | A slot held for a command the front spawns itself (`holdSshSession`): `{lease, argv, remaining_ms}`, `argv` to spawn (over the master, or a connection of its own); held until `internal.host.ssh_release {lease}` or the channel closes. |
 
 Bun's own copy of a family stops its background work and writes while the
 core owns the family and starts again (reading its files afresh) when it
@@ -277,6 +287,35 @@ each `advance` the front calls `internal.clock.advance {to}` (the test
 clock's new time) and waits for its reply, which comes once the families'
 timers due by then ran. A release core ignores `welcome.clock` and answers
 `internal.clock.advance` with the error code `no_test_clock`.
+
+### The host family
+
+While the core owns the host family it is the one process with SSH
+sessions and masters to the hosts, and connections.json's one writer: its
+connection manager makes the generations browsers see, its profile service
+answers `connections.list` and the profile changes, and each of its
+runtimes owns the generation's tunnel and command master, the probe of the
+Herdr sockets, and the Herdr control client with the event and agent status
+subscriptions. The front keeps each generation's composition root
+(conversation mode, the workspace, the terminal bridge, history watch, tab
+titles): the core's runtime asks it to build it (`host.runtime_start`)
+once the transport is up and before its subscriptions start, so a
+connection is ready only once the front's part is, and disposes it
+(`host.runtime_stop`). The front's part reaches Herdr through
+`internal.host.herdr_call` and the host through `internal.host.run` and
+`internal.host.ssh_hold`; the forwards of ports (`forward.*`, their own
+connections, no slot) stay the front's until Phase 7.
+
+The switch is one handover in each direction: when the table gives the
+family to Rust and the core is connected, the front stops all its
+connections (their masters and tunnels with them), then calls
+`internal.host.start`; when it goes back (the table, or the core going),
+the front calls `internal.host.stop`, disposes what is left of its parts,
+ends the masters of a core that died with them up, reads connections.json
+again and starts its own. A front whose table names Rust waits up to 10 s
+at startup for the core to take the connections before starting its own.
+At its shutdown the front calls `internal.host.stop` before the channel
+goes.
 
 ## CLI pass-through
 

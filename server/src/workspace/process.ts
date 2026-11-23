@@ -10,6 +10,7 @@ export async function runBinaryProcessWithTimeout(
     (argv, remainingMs) =>
       spawnBinaryWithTimeout(argv, remainingMs ?? timeoutMs),
     { timeoutMs },
+    { binary: true },
   );
 }
 
@@ -62,6 +63,7 @@ export async function runProcessWithInputTimeout(
     (argv, remainingMs) =>
       spawnWithInputTimeout(argv, input, remainingMs ?? timeoutMs),
     { timeoutMs },
+    { input },
   );
 }
 

@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { seedTestRustOwners } from "../core-channel/test-owners";
 import {
   chmodSync,
   mkdirSync,
@@ -390,6 +391,8 @@ test("production dispatcher isolates two local profiles and profile CRUD", async
   delete env.HERDR_SSH_HOST;
   delete env.HERDR_SESSION;
   const repositoryRoot = join(import.meta.dir, "../../..");
+  seedTestRustOwners(root);
+
   const child = Bun.spawn(["bun", "server/src/index.ts"], {
     cwd: repositoryRoot,
     env,
@@ -786,6 +789,8 @@ for (const { protocol, welcomeProtocol, accepted } of [
     };
     delete env.HERDR_SSH_HOST;
     delete env.HERDR_SESSION;
+    seedTestRustOwners(root);
+
     const child = Bun.spawn(["bun", "server/src/index.ts"], {
       cwd: join(import.meta.dir, "../../.."),
       env,
@@ -904,6 +909,7 @@ test("production routing bootstraps only a verified empty session and serializes
     "HERDR_SESSION",
   ])
     delete env[key];
+  seedTestRustOwners(root);
   const child = Bun.spawn([process.execPath, "server/src/index.ts"], {
     cwd: join(import.meta.dir, "../../.."),
     env,

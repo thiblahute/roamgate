@@ -28,6 +28,13 @@ export function annotateSshArgv<T extends readonly string[]>(
   return argv;
 }
 
+/** The annotation of an argv, if it has one. */
+export function sshAnnotationOf(
+  argv: readonly string[],
+): SshProcessAnnotation | undefined {
+  return annotations.get(argv);
+}
+
 /** Gives `to` (a variant of `from`, such as its retry argv) `from`'s annotation. */
 export function copySshAnnotation(
   from: readonly string[],

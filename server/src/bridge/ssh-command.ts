@@ -155,6 +155,9 @@ function buildSshCommandArgv(
         }
       : {}),
     retrySafe,
+    command,
+    trustedArgs,
+    ...(tag ? { tag } : {}),
   });
   if (tag) {
     // A cold retry is its own process in the log, under the same tag.
