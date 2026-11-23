@@ -66,3 +66,13 @@ roamgate-http	server/src/bridge/settings-rpc.test.ts	S18
 roamgate-notify	server/src/notifications/notification-feed	S18
 roamgate-notify	server/src/notifications/herdr-notification-listener	S16
 roamgate-connections	server/src/notifications/web-push.test.ts	S16
+
+roamgate-assistant	server/src/assistant/actions	S23
+roamgate-assistant	server/src/assistant/archive-tools	S23
+roamgate-assistant	server/src/assistant/context	S23
+roamgate-assistant	server/src/assistant/ranger-driver	S23
+roamgate-assistant	server/src/assistant/service	S23
+roamgate-assistant	server/src/assistant/tasks.test	S23
+roamgate-assistant	server/src/assistant/tools	S23
+roamgate-assistant	server/src/assistant/workspace-tree-tools	S23
+roamgate-assistant	server/src/assistant/durable-storage	S24

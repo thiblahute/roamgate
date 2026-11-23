@@ -1,0 +1,27 @@
+[package]
+name = "roamgate-assistant"
+version = "0.0.0"
+description = "Ranger, Roamgate's assistant (Rust migration plan, section 6.2): the service, tasks (tasks.sqlite user_version 3), schedules, context, actions and receipts, tools, the auth RPC and a driver trait with Claude and Pi implementations"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+hex = "0.4"
+jiff = "0.2"
+regex = "1"
+roamgate-agents = { path = "../roamgate-agents" }
+roamgate-base = { path = "../roamgate-base" }
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+thiserror = "2"
+url = "2"
+
+[dev-dependencies]
+roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
+tempfile = "3"
