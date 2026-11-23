@@ -19,6 +19,7 @@ pub mod files;
 pub mod grok;
 pub mod handlers;
 pub mod history;
+pub mod history_watch;
 pub mod holders;
 pub mod images;
 pub mod index_store;

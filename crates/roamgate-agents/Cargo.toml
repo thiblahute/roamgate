@@ -16,6 +16,7 @@ hex = "0.4"
 icu_collator = "2"
 indexmap = "2"
 jiff = "0.2"
+notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 regex = "1"
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
@@ -26,6 +27,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "macros", "process", "rt", "sync", "time"] }
+tracing = "0.1"
 url = "2"
 
 [dev-dependencies]
