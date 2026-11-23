@@ -1,0 +1,31 @@
+[package]
+name = "roamgate-workspace"
+version = "0.0.0"
+description = "Roamgate's workspaces and worktrees (Rust migration plan, section 6.2): the file explorer and previews with the HTML preview, uploads and downloads, auto-sync, last steps, worktrees and their hooks"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = "0.22"
+lightningcss = { version = "1.0.0-alpha.72", default-features = false, features = ["visitor"] }
+lol_html = "2.9"
+percent-encoding = "2"
+regex = "1"
+roamgate-base = { path = "../roamgate-base" }
+roamgate-exec = { path = "../roamgate-exec" }
+roamgate-git = { path = "../roamgate-git" }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+url = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }
