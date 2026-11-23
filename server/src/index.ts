@@ -245,7 +245,11 @@ import {
 } from "./voice/voice-memory";
 import { CompanionMemoryFiles } from "./voice/voice-memory-files";
 import { configuredResearch } from "./voice/voice-research";
-import { configuredTools } from "./voice/voice-tools";
+import {
+  configuredTools,
+  type VoiceWorkBoard,
+  voiceWorkBoard,
+} from "./voice/voice-tools";
 import { configuredRouter } from "./voice/voice-router";
 import { type ErrandEntry, VoiceErrands } from "./voice/voice-errands";
 import { WaitingAnswers } from "./voice/voice-waiting";
@@ -295,9 +299,14 @@ import { handleReviewRpc, isReviewMethod } from "./review/rpc";
 import { createMrReviews, type MrReviews } from "./mr-reviews/module";
 import { isMrReviewsMethod } from "./mr-reviews/rpc";
 import { handleWorkRpc, isWorkMethod } from "./work/rpc";
-import { createWorkService, type WorkService } from "./work/service";
+import {
+  createWorkService,
+  type WorkService,
+  type WorkServiceDeps,
+} from "./work/service";
 import { openWorkStore, workDirectory, WorkError } from "./work/store";
-import { workTool } from "./work/tools";
+import { type WorkUserToolName, workTool } from "./work/tools";
+import type { WorkItem } from "../../shared/work";
 import { ownCheckout, readDeployed, readHead } from "./work/deployed";
 import { type MrConnection, orderConnections } from "./mr-reviews/clones";
 import { gitShellCommandArgv } from "./workspace/git-shell";
@@ -327,7 +336,11 @@ import {
 } from "./review/images";
 import { openReviewStorage, reviewDirectory } from "./review/storage";
 import { historyPaths, type ReviewSource } from "./history/area";
-import { historyChanged } from "./history/hooks";
+import {
+  historyChanged,
+  historyWorkChanged,
+  type WorkChange,
+} from "./history/hooks";
 import { expandLocation, historyAreas, historyPlace } from "./history/place";
 import { withHistoryHooks } from "./history/reviews";
 import { HistoryRuntime } from "./history/runtime";
@@ -708,8 +721,9 @@ const voiceTools = configuredTools(
   undefined,
   voiceHelper,
   new VoiceTaste(tastePath(), companionMemoryFiles.dir),
-  // Read when a job starts: the board is made on first use.
-  () => getWorkService(),
+  // Read when a job starts: the board is made on first use (Bun's), or the
+  // Rust core's while it owns the work family.
+  () => voiceWork(),
 );
 const companionMemory = new CompanionMemory({
   path: companionMemoryPath(),
@@ -1168,7 +1182,156 @@ const coreReverseTargets = {
   // cache; Bun's own cache is written and dropped when the core takes it.
   "mr_cache.load": mrCacheLoad,
   "mr_cache.release": async () => mrCacheRelease(),
+  // The work family: what the board asks of what Bun still owns, through
+  // Bun's own deps of the board (workServiceDeps).
+  "work.review": async (args: unknown) => workReviewOp(args),
+  "work.notify": async (args: unknown) => {
+    const { op, item } = (args ?? {}) as { op?: unknown; item?: unknown };
+    if (!item || typeof item !== "object")
+      throw new Error("work.notify needs an item");
+    const notifications = workServiceDeps().notifications!;
+    if (op === "publish") notifications.publish(item as WorkItem);
+    else notifications.clear(item as WorkItem);
+    return { ok: true };
+  },
+  "work.git": async (args: unknown) => {
+    const {
+      root,
+      args: argv,
+      connection_id,
+    } = (args ?? {}) as {
+      root?: unknown;
+      args?: unknown;
+      connection_id?: unknown;
+    };
+    if (
+      typeof root !== "string" ||
+      !Array.isArray(argv) ||
+      !argv.every((part) => typeof part === "string")
+    )
+      throw new Error("work.git needs a root and args");
+    return workServiceDeps().git!(
+      root,
+      argv as string[],
+      typeof connection_id === "string" ? connection_id : undefined,
+    );
+  },
+  "work.read_file": async (args: unknown) => {
+    const { root, path, connection_id } = (args ?? {}) as {
+      root?: unknown;
+      path?: unknown;
+      connection_id?: unknown;
+    };
+    if (typeof root !== "string" || typeof path !== "string")
+      throw new Error("work.read_file needs a root and a path");
+    return workServiceDeps().readFile!(
+      root,
+      path,
+      typeof connection_id === "string" ? connection_id : undefined,
+    );
+  },
+  "work.checkout": async () => ownCheckout(),
+  "work.panes": async (args: unknown) =>
+    workServiceDeps().panes!(workConnectionOf(args)),
+  "work.workspaces": async (args: unknown) =>
+    workServiceDeps().workspaces!(workConnectionOf(args)),
+  "agents.addresses": async () => workServiceDeps().sessions!(),
+  "connections.list": async () =>
+    connectionManager.list().map((status) => ({
+      id: status.id,
+      generation: status.generation,
+      is_default: !!status.is_default,
+    })),
+  // The local history Bun keeps (history/hooks.ts): the core's writes.
+  "history.changed": async (args: unknown) => {
+    const { area, id } = (args ?? {}) as { area?: unknown; id?: unknown };
+    if (typeof area !== "string")
+      throw new Error("history.changed needs an area");
+    historyChanged(area, typeof id === "string" ? id : undefined);
+    return { ok: true };
+  },
+  "history.work_changed": async (args: unknown) => {
+    historyWorkChanged(args as WorkChange);
+    return { ok: true };
+  },
 };
+
+/** A reverse call's connection, for the work family. */
+function workConnectionOf(args: unknown): string {
+  const { connection_id } = (args ?? {}) as { connection_id?: unknown };
+  if (typeof connection_id !== "string")
+    throw new Error("needs a connection_id");
+  return connection_id;
+}
+
+/** `work.review {op, ...}`: the review service as the board asks it. */
+async function workReviewOp(args: unknown): Promise<unknown> {
+  const reviews = workServiceDeps().reviews!;
+  const given = (args ?? {}) as Record<string, unknown>;
+  const text = (key: string) => {
+    const value = given[key];
+    if (typeof value !== "string") throw new Error(`work.review needs ${key}`);
+    return value;
+  };
+  const anchor = () => (given.anchor ?? {}) as Record<string, unknown>;
+  switch (given.op) {
+    case "find":
+      return reviews.find(text("item"));
+    case "open":
+      return reviews.open({
+        item: text("item"),
+        connectionId: text("connection_id"),
+        root: text("root"),
+        title: text("title"),
+      });
+    case "get":
+      return reviews.get(text("review"));
+    case "session_of_comment":
+      return reviews.sessionOfComment(text("id"));
+    case "add_thread":
+      return reviews.addThread({
+        sessionId: text("session_id"),
+        author: text("author"),
+        text: text("text"),
+        anchor: anchor(),
+      });
+    case "move_thread":
+      return reviews.moveThread({
+        sessionId: text("session_id"),
+        threadId: text("thread_id"),
+        anchor: anchor(),
+      });
+    case "set_anchor":
+      return reviews.setAnchor!({
+        sessionId: text("session_id"),
+        threadId: text("thread_id"),
+        anchor: anchor(),
+      });
+    case "add_image":
+      return reviews.addImage!(
+        text("session_id"),
+        text("type"),
+        new Uint8Array(Buffer.from(text("data"), "base64")),
+      );
+    case "edit_comment":
+      return reviews.editComment!({
+        sessionId: text("session_id"),
+        commentId: text("comment_id"),
+        author: text("author"),
+        text: text("text"),
+      });
+    case "delete_comment":
+      return reviews.deleteComment!({
+        sessionId: text("session_id"),
+        commentId: text("comment_id"),
+        author: text("author"),
+      });
+    default:
+      throw new Error(
+        `work.review: unknown op ${String(given.op).slice(0, 40)}`,
+      );
+  }
+}
 
 /**
  * settings.json's writer: this process, or the Rust core while it owns
@@ -1916,13 +2079,18 @@ const handleHistory = createHistoryRoute({
 });
 
 let workService: WorkService | null = null;
-/** The Work board (bridge.work.*), started on first use. */
-function getWorkService(): WorkService {
-  if (workService) return workService;
+let workDeps: Omit<WorkServiceDeps, "store"> | null = null;
+
+/**
+ * What the Work board asks of the server: Bun's service's deps, and what
+ * the Rust core reaches through the work family's reverse targets while
+ * it owns the board (contract/wire/core-channel.md).
+ */
+function workServiceDeps(): Omit<WorkServiceDeps, "store"> {
+  if (workDeps) return workDeps;
   const review = getReviewService();
   const checkout = ownCheckout();
-  workService = createWorkService({
-    store: openWorkStore(workDirectory()),
+  workDeps = {
     publish: (push) => {
       const line = JSON.stringify({ work: push });
       for (const ws of clients) safeSend(ws, line, "work");
@@ -2104,9 +2272,55 @@ function getWorkService(): WorkService {
       connectionManager.list().find((each) => each.id === connectionId)
         ?.generation ?? null,
     log: (message, fields) => logger.warn(message, fields),
+  };
+  return workDeps;
+}
+
+/** The Work board (bridge.work.*), started on first use. */
+function getWorkService(): WorkService {
+  if (workService) return workService;
+  workService = createWorkService({
+    store: openWorkStore(workDirectory()),
+    ...workServiceDeps(),
   });
   workService.start();
   return workService;
+}
+
+/** Whether the Rust core serves the Work board now. */
+function coreServesWork(): boolean {
+  return !!coreFront && !bunOwns("work");
+}
+
+// Bun's board runs (its checks, its writes) only while Bun owns the work
+// family: stopped when the core takes it, made again (the store read
+// again: the core wrote it meanwhile) at its next use when it comes back.
+onOwnershipChanged(() => {
+  if (!bunOwns("work") && workService) {
+    workService.stop();
+    workService = null;
+    logger.child("work").info("handed to the Rust core");
+  }
+});
+
+/** A Work board call the core answers: its text, or its error. */
+async function coreWorkCall(op: string, params: unknown): Promise<unknown> {
+  return coreFront!.callInternal("work", op, params);
+}
+
+/** The Work board the voice companion uses: Bun's, or the core's. */
+function voiceWork(): VoiceWorkBoard {
+  if (!coreServesWork()) return voiceWorkBoard(getWorkService());
+  return {
+    tool: async (name: WorkUserToolName, params: unknown) =>
+      (
+        (await coreWorkCall("user_tool", { tool: name, params })) as {
+          text: string;
+        }
+      ).text,
+    // The file as the core last wrote it (read, never written here).
+    items: () => openWorkStore(workDirectory()).items(),
+  };
 }
 
 let mrReviews: MrReviews | null = null;
@@ -2428,13 +2642,19 @@ function getReviewService(): ReviewService {
       // description, counted on its card.
       if (
         push.type === "session" &&
-        push.snapshot.session.target.kind === "work" &&
-        workService
-      )
-        workService.questionsSeen(
-          push.snapshot.session.target.item,
-          push.snapshot.threads,
-        );
+        push.snapshot.session.target.kind === "work"
+      ) {
+        if (coreServesWork())
+          void coreWorkCall("questions_seen", {
+            item: push.snapshot.session.target.item,
+            threads: push.snapshot.threads,
+          }).catch(() => undefined);
+        else
+          workService?.questionsSeen(
+            push.snapshot.session.target.item,
+            push.snapshot.threads,
+          );
+      }
     },
     loadCommits: async (session) => {
       const runtime = runtimeOf(session.connectionId);
@@ -2579,11 +2799,17 @@ function getReviewService(): ReviewService {
           sessionId.slice(EFFORT_SESSION_PREFIX.length),
         );
       // A work item's go to its owner's pane, on the owner's connection.
-      if (sessionId.startsWith(WORK_SESSION_PREFIX))
-        return getWorkService().ownerPane(
-          sessionId.slice(WORK_SESSION_PREFIX.length),
-          connectionId,
-        );
+      if (sessionId.startsWith(WORK_SESSION_PREFIX)) {
+        const item = sessionId.slice(WORK_SESSION_PREFIX.length);
+        if (coreServesWork())
+          return (
+            (await coreWorkCall("owner_pane", {
+              item,
+              connection_id: connectionId,
+            })) as { pane: string | null }
+          ).pane;
+        return getWorkService().ownerPane(item, connectionId);
+      }
       const runtime = runtimeOf(connectionId);
       return runtime.agentSessions.sessionPane(sessionId);
     },
@@ -2764,13 +2990,18 @@ function getReviewAgent(): ReviewAgentServer {
       params,
     }) => {
       try {
-        return await workTool(
-          getWorkService(),
-          tool,
-          params,
-          `${agent || "Claude"} in ${await agentWorkspaceLabel(connectionId, workspaceId)}`,
-          paneId ? `${connectionId}/${paneId}` : undefined,
-        );
+        const caller = `${agent || "Claude"} in ${await agentWorkspaceLabel(connectionId, workspaceId)}`;
+        const address = paneId ? `${connectionId}/${paneId}` : undefined;
+        if (coreServesWork())
+          return (
+            (await coreWorkCall("tool", {
+              tool,
+              params,
+              caller,
+              ...(address ? { address } : {}),
+            })) as { text: string }
+          ).text;
+        return await workTool(getWorkService(), tool, params, caller, address);
       } catch (error) {
         if (error instanceof WorkError)
           throw Object.assign(new Error(error.message), { code: error.code });

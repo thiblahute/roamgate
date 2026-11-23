@@ -529,6 +529,21 @@ function addedLine(
 }
 
 /**
+ * How a tool's parameters are refused: typebox's first error (its instance
+ * path, `/` for the value itself, and its message), "" when it gives none,
+ * null when they pass. contract/vectors/tool-params.json holds the Rust
+ * registry to the same words.
+ */
+export function firstParamError(
+  schema: unknown,
+  params: unknown,
+): string | null {
+  if (Value.Check(schema as never, params)) return null;
+  const first = [...Value.Errors(schema as never, params)][0];
+  return first ? `${first.instancePath || "/"} ${first.message}` : "";
+}
+
+/**
  * One of the board's tools for an agent session: `caller` names it in what
  * the user is told ("Claude in roamgate"). Answers JSON after the line
  * saying what in it other people wrote.
@@ -557,13 +572,11 @@ export async function workTool(
       "not_found",
     );
   const name = tool as WorkToolName;
-  const schema = workToolSchemas[name];
-  if (!Value.Check(schema, params)) {
-    const first = [...Value.Errors(schema, params)][0];
+  const refused = firstParamError(workToolSchemas[name], params);
+  if (refused !== null)
     throw new WorkError(
-      `invalid ${name} parameters${first ? `: ${first.instancePath || "/"} ${first.message}` : ""}`,
+      `invalid ${name} parameters${refused ? `: ${refused}` : ""}`,
     );
-  }
   // The call's description is for the user's chat, not the board.
   const input = { ...(params as Record<string, unknown>) };
   delete input.description;
@@ -750,12 +763,11 @@ export async function workUserTool(
   if (!Object.hasOwn(workUserToolSchemas, name))
     return workTool(service, name, params, "", undefined, "user");
   const schema = workUserToolSchemas[name as keyof typeof workUserToolSchemas];
-  if (!Value.Check(schema, params)) {
-    const first = [...Value.Errors(schema, params)][0];
+  const refused = firstParamError(schema, params);
+  if (refused !== null)
     throw new WorkError(
-      `invalid ${name} parameters${first ? `: ${first.instancePath || "/"} ${first.message}` : ""}`,
+      `invalid ${name} parameters${refused ? `: ${refused}` : ""}`,
     );
-  }
   if (name === "work_add") {
     const input = params as Record<string, unknown>;
     const added = await service.addOrUpdate(

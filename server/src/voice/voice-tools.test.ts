@@ -27,6 +27,7 @@ import {
   VoiceTools,
   mergeMcpConfigs,
   WORK_PROMPT,
+  voiceWorkBoard,
   workStateLine,
   writesByName,
   YOUTUBE_PROMPT,
@@ -1473,7 +1474,7 @@ describe("the Work board", () => {
       undefined,
       undefined,
       null,
-      () => service,
+      () => voiceWorkBoard(service),
     )()!;
     return { using, spawned };
   }
@@ -1557,7 +1558,7 @@ describe("the Work board", () => {
       );
 
       // The front's state says what waits on the user, in one line.
-      expect(using.workLine()).toBe(workStateLine(service));
+      expect(using.workLine()).toBe(workStateLine(voiceWorkBoard(service)));
       expect(using.workLine()).toContain("1 For you");
       expect(withSearches("", null, using)).toContain("Work board: 1 For you");
 
@@ -1573,7 +1574,7 @@ describe("the Work board", () => {
   test("nothing waiting, no line; each lease's servers in one config", () => {
     const { service, done } = board();
     try {
-      expect(workStateLine(service)).toBe("");
+      expect(workStateLine(voiceWorkBoard(service))).toBe("");
     } finally {
       done();
     }

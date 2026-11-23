@@ -9,10 +9,12 @@ import { Type } from "typebox";
 import { createRangerMcp } from "../assistant/claude-mcp";
 import { AssistantUserError } from "../assistant/errors";
 import type { RangerTool } from "../assistant/ranger-tools";
+import type { WorkItem } from "../../../shared/work";
 import type { WorkService } from "../work/service";
 import {
   WORK_USER_TOOLS,
   WORK_USER_WRITING,
+  type WorkUserToolName,
   workUserDescription,
   workUserSchema,
   workUserTool,
@@ -531,7 +533,25 @@ Say titles short and asks in plain words, never ids, and at most five items, the
  * own (work/tools.ts WORK_USER_TOOLS), every write made in their name.
  * Titles and comments are written by others: data, as any tool's result.
  */
-export function workVoiceTools(service: () => WorkService): RangerTool[] {
+/**
+ * The Work board as the companion uses it: the user's tools, and the items
+ * for the front's state line. Bun's service (voiceWorkBoard), or the Rust
+ * core's board while it owns the work family.
+ */
+export type VoiceWorkBoard = {
+  tool(name: WorkUserToolName, params: unknown): Promise<string>;
+  items(): readonly Pick<WorkItem, "state">[];
+};
+
+/** Bun's own board, as the companion uses it. */
+export function voiceWorkBoard(service: WorkService): VoiceWorkBoard {
+  return {
+    tool: (name, params) => workUserTool(service, name, params),
+    items: () => service.board().items,
+  };
+}
+
+export function workVoiceTools(board: () => VoiceWorkBoard): RangerTool[] {
   return WORK_USER_TOOLS.map((name) => ({
     name,
     description: workUserDescription(name),
@@ -540,7 +560,7 @@ export function workVoiceTools(service: () => WorkService): RangerTool[] {
     sequential: name !== "work_list",
     async call(params) {
       try {
-        return { text: await workUserTool(service(), name, params) };
+        return { text: await board().tool(name, params) };
       } catch (error) {
         throw new AssistantUserError(
           `The Work board: ${(error as Error).message}`,
@@ -555,9 +575,10 @@ export function workVoiceTools(service: () => WorkService): RangerTool[] {
  * you) and what is built and waits to be confirmed (Verify); "" when
  * neither has any.
  */
-export function workStateLine(service: WorkService): string {
+export function workStateLine(board: VoiceWorkBoard): string {
+  const items = board.items();
   const count = (state: "you" | "verify") =>
-    service.board().items.filter((item) => item.state === state).length;
+    items.filter((item) => item.state === state).length;
   const you = count("you");
   const verify = count("verify");
   if (!you && !verify) return "";
@@ -1312,8 +1333,8 @@ export function configuredTools(
   helper?: YoutubeHelper,
   /** The user's music taste, kept for open music requests. */
   taste: VoiceTaste | null = null,
-  /** The Work board (work/service.ts), when Roamgate keeps one. */
-  work: (() => WorkService) | null = null,
+  /** The Work board, when Roamgate keeps one. */
+  work: (() => VoiceWorkBoard) | null = null,
 ): () => VoiceTools | null {
   const youtubeOn = () => {
     if (!player && !helper) return null;
