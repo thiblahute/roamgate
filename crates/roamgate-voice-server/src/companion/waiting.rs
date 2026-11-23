@@ -253,7 +253,7 @@ fn ago(at: f64, now: f64) -> String {
 }
 
 /// `text.replace(/\s+/g, " ").trim()`.
-pub(crate) fn collapse(text: &str) -> String {
+pub fn collapse(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut space = false;
     for c in text.chars() {

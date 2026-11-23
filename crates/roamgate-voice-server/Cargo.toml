@@ -13,6 +13,7 @@ workspace = true
 base64 = "0.22"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 hex = "0.4"
+jiff = "0.2"
 indexmap = { version = "2", features = ["serde"] }
 rand = "0.9"
 regex = "1"

@@ -117,9 +117,7 @@ roamgate-voice-server	server/src/voice/voice-front	S22
 roamgate-voice-server	server/src/voice/voice-memory	S22
 roamgate-voice-server	server/src/voice/voice-research	S22
 roamgate-voice-server	server/src/voice/voice-router	S22
-roamgate-voice-server	server/src/voice/voice-taste	S22
 roamgate-voice-server	server/src/voice/voice-tools	S22
-roamgate-voice-server	server/src/voice/voice-youtube	S22
 roamgate-voice-server	server/src/http/voice.test	S22
 
 # roamgate-claude was made by S15 for the tool registry; the Claude driver,
