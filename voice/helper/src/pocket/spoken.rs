@@ -187,7 +187,10 @@ fn number_at(chars: &[char], at: usize, lang: Lang) -> Option<(String, usize)> {
             Lang::Fr => "pour cent",
             Lang::En => "percent",
         };
-        return Some((format!("{} {percent}", number.words(lang, false)), spaced + 1));
+        return Some((
+            format!("{} {percent}", number.words(lang, false)),
+            spaced + 1,
+        ));
     }
     if number.fraction.is_none() {
         // An ordinal: "1er", "21e", "2nd", "3rd".
@@ -429,7 +432,10 @@ fn dotted(chars: &[char], at: usize, lang: Lang) -> Option<(String, usize)> {
         // An English decimal: plain_number reads it with its unit.
         return None;
     }
-    let words: Vec<String> = parts.iter().map(|part| integer(part, lang, false)).collect();
+    let words: Vec<String> = parts
+        .iter()
+        .map(|part| integer(part, lang, false))
+        .collect();
     Some((words.join(" point "), end))
 }
 
@@ -544,7 +550,12 @@ fn time(chars: &[char], at: usize, lang: Lang) -> Option<(String, usize)> {
             return None;
         }
         return Some((
-            clock(value(&hours), value(&minutes), seconds.map(|s| value(&s)), lang),
+            clock(
+                value(&hours),
+                value(&minutes),
+                seconds.map(|s| value(&s)),
+                lang,
+            ),
             after,
         ));
     }
@@ -560,12 +571,12 @@ fn time(chars: &[char], at: usize, lang: Lang) -> Option<(String, usize)> {
         return None;
     }
     let after_h = h + 1;
-    let minutes_start = if chars.get(after_h).is_some_and(|c| is_space(*c)) && is_digit(chars, after_h + 1)
-    {
-        after_h + 1
-    } else {
-        after_h
-    };
+    let minutes_start =
+        if chars.get(after_h).is_some_and(|c| is_space(*c)) && is_digit(chars, after_h + 1) {
+            after_h + 1
+        } else {
+            after_h
+        };
     if let Some((minutes, after)) = minutes_at(minutes_start)
         && !is_letter(chars, after)
     {
@@ -744,7 +755,13 @@ const UNITS_FR: [&str; 17] = [
     "douze", "treize", "quatorze", "quinze", "seize",
 ];
 const TENS_FR: [&str; 7] = [
-    "", "dix", "vingt", "trente", "quarante", "cinquante", "soixante",
+    "",
+    "dix",
+    "vingt",
+    "trente",
+    "quarante",
+    "cinquante",
+    "soixante",
 ];
 const UNITS_EN: [&str; 20] = [
     "zero",
@@ -805,7 +822,12 @@ fn below_100_fr(n: u64, last: bool) -> String {
             71 => "soixante et onze".to_string(),
             _ => format!("soixante-{}", below_100_fr(n - 60, true)),
         },
-        80 => if last { "quatre-vingts" } else { "quatre-vingt" }.to_string(),
+        80 => if last {
+            "quatre-vingts"
+        } else {
+            "quatre-vingt"
+        }
+        .to_string(),
         _ => format!("quatre-vingt-{}", below_100_fr(n - 80, true)),
     }
 }
@@ -860,7 +882,10 @@ fn cardinal_fr(n: u64) -> String {
             } else {
                 below_1000_fr(count, true)
             };
-            words.push(format!("{count_words} {}", if count == 1 { one } else { many }));
+            words.push(format!(
+                "{count_words} {}",
+                if count == 1 { one } else { many }
+            ));
         }
     }
     if rest > 0 {
@@ -952,51 +977,211 @@ fn currency_sign(c: char) -> Option<Currency> {
 /// English's.
 #[allow(clippy::type_complexity)]
 const UNITS: &[(&str, (&str, &str, bool), (&str, &str))] = &[
-    ("km/h", ("kilomètre par heure", "kilomètres par heure", false), ("kilometer per hour", "kilometers per hour")),
-    ("Mo/s", ("mégaoctet par seconde", "mégaoctets par seconde", false), ("megabyte per second", "megabytes per second")),
-    ("Go/s", ("gigaoctet par seconde", "gigaoctets par seconde", false), ("gigabyte per second", "gigabytes per second")),
-    ("MB/s", ("mégaoctet par seconde", "mégaoctets par seconde", false), ("megabyte per second", "megabytes per second")),
-    ("GB/s", ("gigaoctet par seconde", "gigaoctets par seconde", false), ("gigabyte per second", "gigabytes per second")),
-    ("Mb/s", ("mégabit par seconde", "mégabits par seconde", false), ("megabit per second", "megabits per second")),
-    ("Gb/s", ("gigabit par seconde", "gigabits par seconde", false), ("gigabit per second", "gigabits per second")),
-    ("Mbps", ("mégabit par seconde", "mégabits par seconde", false), ("megabit per second", "megabits per second")),
-    ("Gbps", ("gigabit par seconde", "gigabits par seconde", false), ("gigabit per second", "gigabits per second")),
-    ("°C", ("degré Celsius", "degrés Celsius", false), ("degree Celsius", "degrees Celsius")),
-    ("°F", ("degré Fahrenheit", "degrés Fahrenheit", false), ("degree Fahrenheit", "degrees Fahrenheit")),
+    (
+        "km/h",
+        ("kilomètre par heure", "kilomètres par heure", false),
+        ("kilometer per hour", "kilometers per hour"),
+    ),
+    (
+        "Mo/s",
+        ("mégaoctet par seconde", "mégaoctets par seconde", false),
+        ("megabyte per second", "megabytes per second"),
+    ),
+    (
+        "Go/s",
+        ("gigaoctet par seconde", "gigaoctets par seconde", false),
+        ("gigabyte per second", "gigabytes per second"),
+    ),
+    (
+        "MB/s",
+        ("mégaoctet par seconde", "mégaoctets par seconde", false),
+        ("megabyte per second", "megabytes per second"),
+    ),
+    (
+        "GB/s",
+        ("gigaoctet par seconde", "gigaoctets par seconde", false),
+        ("gigabyte per second", "gigabytes per second"),
+    ),
+    (
+        "Mb/s",
+        ("mégabit par seconde", "mégabits par seconde", false),
+        ("megabit per second", "megabits per second"),
+    ),
+    (
+        "Gb/s",
+        ("gigabit par seconde", "gigabits par seconde", false),
+        ("gigabit per second", "gigabits per second"),
+    ),
+    (
+        "Mbps",
+        ("mégabit par seconde", "mégabits par seconde", false),
+        ("megabit per second", "megabits per second"),
+    ),
+    (
+        "Gbps",
+        ("gigabit par seconde", "gigabits par seconde", false),
+        ("gigabit per second", "gigabits per second"),
+    ),
+    (
+        "°C",
+        ("degré Celsius", "degrés Celsius", false),
+        ("degree Celsius", "degrees Celsius"),
+    ),
+    (
+        "°F",
+        ("degré Fahrenheit", "degrés Fahrenheit", false),
+        ("degree Fahrenheit", "degrees Fahrenheit"),
+    ),
     ("°", ("degré", "degrés", false), ("degree", "degrees")),
-    ("kWh", ("kilowattheure", "kilowattheures", false), ("kilowatt-hour", "kilowatt-hours")),
-    ("mAh", ("milliampère-heure", "milliampères-heures", false), ("milliamp-hour", "milliamp-hours")),
-    ("GiB", ("gibioctet", "gibioctets", false), ("gibibyte", "gibibytes")),
-    ("MiB", ("mébioctet", "mébioctets", false), ("mebibyte", "mebibytes")),
-    ("KiB", ("kibioctet", "kibioctets", false), ("kibibyte", "kibibytes")),
-    ("TiB", ("tébioctet", "tébioctets", false), ("tebibyte", "tebibytes")),
-    ("Go", ("gigaoctet", "gigaoctets", false), ("gigabyte", "gigabytes")),
-    ("Mo", ("mégaoctet", "mégaoctets", false), ("megabyte", "megabytes")),
-    ("Ko", ("kilooctet", "kilooctets", false), ("kilobyte", "kilobytes")),
-    ("ko", ("kilooctet", "kilooctets", false), ("kilobyte", "kilobytes")),
-    ("To", ("téraoctet", "téraoctets", false), ("terabyte", "terabytes")),
-    ("GB", ("gigaoctet", "gigaoctets", false), ("gigabyte", "gigabytes")),
-    ("MB", ("mégaoctet", "mégaoctets", false), ("megabyte", "megabytes")),
-    ("KB", ("kilooctet", "kilooctets", false), ("kilobyte", "kilobytes")),
-    ("kB", ("kilooctet", "kilooctets", false), ("kilobyte", "kilobytes")),
-    ("TB", ("téraoctet", "téraoctets", false), ("terabyte", "terabytes")),
-    ("GHz", ("gigahertz", "gigahertz", false), ("gigahertz", "gigahertz")),
-    ("MHz", ("mégahertz", "mégahertz", false), ("megahertz", "megahertz")),
-    ("kHz", ("kilohertz", "kilohertz", false), ("kilohertz", "kilohertz")),
+    (
+        "kWh",
+        ("kilowattheure", "kilowattheures", false),
+        ("kilowatt-hour", "kilowatt-hours"),
+    ),
+    (
+        "mAh",
+        ("milliampère-heure", "milliampères-heures", false),
+        ("milliamp-hour", "milliamp-hours"),
+    ),
+    (
+        "GiB",
+        ("gibioctet", "gibioctets", false),
+        ("gibibyte", "gibibytes"),
+    ),
+    (
+        "MiB",
+        ("mébioctet", "mébioctets", false),
+        ("mebibyte", "mebibytes"),
+    ),
+    (
+        "KiB",
+        ("kibioctet", "kibioctets", false),
+        ("kibibyte", "kibibytes"),
+    ),
+    (
+        "TiB",
+        ("tébioctet", "tébioctets", false),
+        ("tebibyte", "tebibytes"),
+    ),
+    (
+        "Go",
+        ("gigaoctet", "gigaoctets", false),
+        ("gigabyte", "gigabytes"),
+    ),
+    (
+        "Mo",
+        ("mégaoctet", "mégaoctets", false),
+        ("megabyte", "megabytes"),
+    ),
+    (
+        "Ko",
+        ("kilooctet", "kilooctets", false),
+        ("kilobyte", "kilobytes"),
+    ),
+    (
+        "ko",
+        ("kilooctet", "kilooctets", false),
+        ("kilobyte", "kilobytes"),
+    ),
+    (
+        "To",
+        ("téraoctet", "téraoctets", false),
+        ("terabyte", "terabytes"),
+    ),
+    (
+        "GB",
+        ("gigaoctet", "gigaoctets", false),
+        ("gigabyte", "gigabytes"),
+    ),
+    (
+        "MB",
+        ("mégaoctet", "mégaoctets", false),
+        ("megabyte", "megabytes"),
+    ),
+    (
+        "KB",
+        ("kilooctet", "kilooctets", false),
+        ("kilobyte", "kilobytes"),
+    ),
+    (
+        "kB",
+        ("kilooctet", "kilooctets", false),
+        ("kilobyte", "kilobytes"),
+    ),
+    (
+        "TB",
+        ("téraoctet", "téraoctets", false),
+        ("terabyte", "terabytes"),
+    ),
+    (
+        "GHz",
+        ("gigahertz", "gigahertz", false),
+        ("gigahertz", "gigahertz"),
+    ),
+    (
+        "MHz",
+        ("mégahertz", "mégahertz", false),
+        ("megahertz", "megahertz"),
+    ),
+    (
+        "kHz",
+        ("kilohertz", "kilohertz", false),
+        ("kilohertz", "kilohertz"),
+    ),
     ("Hz", ("hertz", "hertz", false), ("hertz", "hertz")),
-    ("kW", ("kilowatt", "kilowatts", false), ("kilowatt", "kilowatts")),
-    ("km", ("kilomètre", "kilomètres", false), ("kilometer", "kilometers")),
-    ("cm", ("centimètre", "centimètres", false), ("centimeter", "centimeters")),
-    ("mm", ("millimètre", "millimètres", false), ("millimeter", "millimeters")),
+    (
+        "kW",
+        ("kilowatt", "kilowatts", false),
+        ("kilowatt", "kilowatts"),
+    ),
+    (
+        "km",
+        ("kilomètre", "kilomètres", false),
+        ("kilometer", "kilometers"),
+    ),
+    (
+        "cm",
+        ("centimètre", "centimètres", false),
+        ("centimeter", "centimeters"),
+    ),
+    (
+        "mm",
+        ("millimètre", "millimètres", false),
+        ("millimeter", "millimeters"),
+    ),
     ("kg", ("kilo", "kilos", false), ("kilogram", "kilograms")),
-    ("mg", ("milligramme", "milligrammes", false), ("milligram", "milligrams")),
-    ("ml", ("millilitre", "millilitres", false), ("milliliter", "milliliters")),
-    ("ms", ("milliseconde", "millisecondes", true), ("millisecond", "milliseconds")),
-    ("µs", ("microseconde", "microsecondes", true), ("microsecond", "microseconds")),
-    ("ns", ("nanoseconde", "nanosecondes", true), ("nanosecond", "nanoseconds")),
+    (
+        "mg",
+        ("milligramme", "milligrammes", false),
+        ("milligram", "milligrams"),
+    ),
+    (
+        "ml",
+        ("millilitre", "millilitres", false),
+        ("milliliter", "milliliters"),
+    ),
+    (
+        "ms",
+        ("milliseconde", "millisecondes", true),
+        ("millisecond", "milliseconds"),
+    ),
+    (
+        "µs",
+        ("microseconde", "microsecondes", true),
+        ("microsecond", "microseconds"),
+    ),
+    (
+        "ns",
+        ("nanoseconde", "nanosecondes", true),
+        ("nanosecond", "nanoseconds"),
+    ),
     ("min", ("minute", "minutes", true), ("minute", "minutes")),
     ("px", ("pixel", "pixels", false), ("pixel", "pixels")),
-    ("fps", ("image par seconde", "images par seconde", true), ("frame per second", "frames per second")),
+    (
+        "fps",
+        ("image par seconde", "images par seconde", true),
+        ("frame per second", "frames per second"),
+    ),
     ("s", ("seconde", "secondes", true), ("second", "seconds")),
     ("h", ("heure", "heures", true), ("hour", "hours")),
     ("m", ("mètre", "mètres", false), ("meter", "meters")),

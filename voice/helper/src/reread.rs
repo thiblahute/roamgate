@@ -62,7 +62,12 @@ const WHISPER_GPU_MIB: u64 = 1300;
 /// tell.
 fn gpu_free_mib() -> Option<u64> {
     let output = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=memory.free", "--format=csv,noheader,nounits", "-i", "0"])
+        .args([
+            "--query-gpu=memory.free",
+            "--format=csv,noheader,nounits",
+            "-i",
+            "0",
+        ])
         .output()
         .ok()?;
     if !output.status.success() {
