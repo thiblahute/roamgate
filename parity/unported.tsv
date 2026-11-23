@@ -27,3 +27,16 @@ roamgate-cli	server/src/utils/cpu-profile	S18
 roamgate-connections	server/src/connections/	S16
 roamgate-connections	server/src/profiles/	S16
 roamgate-herdr	server/src/bridge/	S16
+roamgate-agents	server/src/agent/session-projection-cache	S21
+roamgate-agents	server/src/agent/session-resolver	S21
+roamgate-agents	server/src/agent/session-file-access	S21
+roamgate-agents	server/src/agent/session-tail	S21
+roamgate-agents	server/src/agent/session-rewind-history	S21
+roamgate-agents	server/src/agent/agent-sessions	S21
+roamgate-agents	server/src/agent/agent-messenger	S21
+roamgate-agents	server/src/agent/agent-activity	S21
+roamgate-agents	server/src/agent/history-watch	S21
+roamgate-agents	server/src/agent/antigravity-session	S21
+roamgate-agents	server/src/agent/muse-session	S21
+roamgate-agents	server/src/agent/grok-session	S21
+roamgate-agents	server/src/agent/task-watcher	S21

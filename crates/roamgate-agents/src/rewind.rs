@@ -149,3 +149,104 @@ pub fn kept_records(records: Vec<Obj>, rewound: Option<&HashSet<String>>) -> Vec
     }
     kept
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    fn rec(value: Value) -> Obj {
+        value.as_object().unwrap().clone()
+    }
+    fn prompt(uuid: &str, parent: Option<&str>, text: &str) -> Obj {
+        rec(json!({ "type": "user", "uuid": uuid, "parentUuid": parent, "message": { "role": "user", "content": text } }))
+    }
+    fn reply(uuid: &str, parent: &str, text: &str) -> Obj {
+        rec(json!({ "type": "assistant", "uuid": uuid, "parentUuid": parent, "message": { "role": "assistant", "content": [{ "type": "text", "text": text }] } }))
+    }
+    fn tool_use(uuid: &str, parent: &str, id: &str) -> Obj {
+        rec(json!({ "type": "assistant", "uuid": uuid, "parentUuid": parent, "message": { "role": "assistant", "content": [{ "type": "tool_use", "id": id, "name": "Bash", "input": {} }] } }))
+    }
+    fn tool_result(uuid: &str, parent: &str, id: &str) -> Obj {
+        rec(json!({ "type": "user", "uuid": uuid, "parentUuid": parent, "message": { "role": "user", "content": [{ "type": "tool_result", "tool_use_id": id, "content": "ok" }] } }))
+    }
+    fn ids(records: &[Obj]) -> Vec<Option<String>> {
+        records.iter().map(|r| r.get("uuid").and_then(Value::as_str).map(str::to_owned)).collect()
+    }
+    fn some(ids: &[Option<&str>]) -> Vec<Option<String>> {
+        ids.iter().map(|i| i.map(str::to_owned)).collect()
+    }
+
+    #[test]
+    fn drops_the_turns_a_rewind_went_back_before() {
+        let records = vec![
+            prompt("u1", None, "write a.txt"),
+            reply("a1", "u1", "done"),
+            prompt("u2", Some("a1"), "write b.txt"),
+            tool_use("t2", "u2", "call-2"),
+            tool_result("r2", "t2", "call-2"),
+            reply("a2", "r2", "done"),
+            prompt("u3", Some("a2"), "third"),
+            reply("a3", "u3", "third"),
+            rec(json!({ "type": "last-prompt", "leafUuid": "a3" })),
+            prompt("u4", Some("a1"), "gamma"),
+            reply("a4", "u4", "gamma"),
+        ];
+        assert_eq!(ids(&without_rewound_turns(records)), some(&[Some("u1"), Some("a1"), None, Some("u4"), Some("a4")]));
+    }
+
+    #[test]
+    fn keeps_the_results_of_tool_calls_run_side_by_side() {
+        let records = vec![
+            prompt("u1", None, "look"),
+            tool_use("t1", "u1", "call-1"),
+            tool_use("t2", "t1", "call-2"),
+            tool_result("r1", "t1", "call-1"),
+            tool_result("r2", "t2", "call-2"),
+            reply("a1", "r2", "seen"),
+            prompt("u2", Some("a1"), "next"),
+        ];
+        assert_eq!(without_rewound_turns(records.clone()), records);
+    }
+
+    #[test]
+    fn leaves_what_came_before_a_compaction() {
+        let records = vec![
+            prompt("u1", None, "first"),
+            reply("a1", "u1", "one"),
+            rec(json!({ "type": "system", "subtype": "compact_boundary", "uuid": "c1", "parentUuid": null, "logicalParentUuid": "a1" })),
+            prompt("u2", Some("c1"), "after"),
+        ];
+        assert_eq!(without_rewound_turns(records.clone()), records);
+    }
+
+    #[test]
+    fn drops_what_a_rewind_recorded_as_cut_before_anything_is_sent() {
+        let records = vec![
+            prompt("u1", None, "first"),
+            reply("a1", "u1", "one"),
+            prompt("u2", Some("a1"), "second"),
+            tool_use("t2", "u2", "call-2"),
+            tool_result("r2", "t2", "call-2"),
+            reply("a2", "r2", "two"),
+            prompt("u3", Some("a2"), "third"),
+            reply("a3", "u3", "three"),
+            rec(json!({ "type": "last-prompt", "leafUuid": "a1", "explicit": true, "rewound": true, "cutUuid": "u2" })),
+        ];
+        assert_eq!(ids(&without_rewound_turns(records.clone())), some(&[Some("u1"), Some("a1"), None]));
+        let mut more = records;
+        more.push(prompt("u4", Some("a1"), "again"));
+        more.push(reply("a4", "u4", "four"));
+        assert_eq!(ids(&without_rewound_turns(more)), some(&[Some("u1"), Some("a1"), None, Some("u4"), Some("a4")]));
+    }
+
+    #[test]
+    fn a_recorded_cut_naming_nothing_known_changes_nothing() {
+        let records = vec![
+            prompt("u1", None, "first"),
+            reply("a1", "u1", "one"),
+            rec(json!({ "type": "last-prompt", "rewound": true, "cutUuid": "gone" })),
+        ];
+        assert_eq!(without_rewound_turns(records.clone()), records);
+    }
+}
