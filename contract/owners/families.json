@@ -207,7 +207,10 @@
       "phase": 9,
       "rpc": ["agent_chat."],
       "http": [],
-      "files": ["data:conversation-leases.json"],
+      "files": [
+        "data:conversation-leases.json",
+        "file:conversation-suspended.json"
+      ],
       "shadow": []
     },
     "agent_profiles": {

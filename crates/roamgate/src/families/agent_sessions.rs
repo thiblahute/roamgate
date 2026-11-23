@@ -309,13 +309,9 @@ fn not_owner() -> RpcError {
     RpcError::with_code("the agent_sessions family is not served here", "not_owner")
 }
 
-fn build_connection(cx: &FamilyContext, id: &str, info: &Value, owned: bool) -> Connection {
-    let herdr: Arc<dyn HerdrCall> = Arc::new(ReverseHerdr {
-        cx: cx.clone(),
-        connection_id: id.to_owned(),
-    });
-    let ssh = info["ssh"].as_bool().unwrap_or(false);
-    let files: Arc<dyn SessionFiles> = if ssh {
+/// A connection's transcript files: local, or on its SSH host.
+pub(crate) fn session_files(cx: &FamilyContext, id: &str, ssh: bool) -> Arc<dyn SessionFiles> {
+    if ssh {
         RemoteSessionFiles::new(Arc::new(ReverseHost {
             cx: cx.clone(),
             connection_id: id.to_owned(),
@@ -324,7 +320,37 @@ fn build_connection(cx: &FamilyContext, id: &str, info: &Value, owned: bool) -> 
         Arc::new(LocalSessionFiles {
             env: AgentEnv::from_process(),
         })
-    };
+    }
+}
+
+/// Session readers that keep nothing (no index store, no watcher): for
+/// another family's reads of a pane's transcript (conversation mode's).
+pub(crate) fn session_readers(
+    cx: &FamilyContext,
+    id: &str,
+    files: Arc<dyn SessionFiles>,
+) -> Arc<AgentSessionHandlers> {
+    let herdr: Arc<dyn HerdrCall> = Arc::new(ReverseHerdr {
+        cx: cx.clone(),
+        connection_id: id.to_owned(),
+    });
+    let clock = cx.clock.clone();
+    Arc::new(AgentSessionHandlers::new(
+        herdr,
+        files,
+        Arc::new(ResolverContext::new(AgentEnv::from_process())),
+        None,
+        Arc::new(move || clock.now() as f64),
+    ))
+}
+
+fn build_connection(cx: &FamilyContext, id: &str, info: &Value, owned: bool) -> Connection {
+    let herdr: Arc<dyn HerdrCall> = Arc::new(ReverseHerdr {
+        cx: cx.clone(),
+        connection_id: id.to_owned(),
+    });
+    let ssh = info["ssh"].as_bool().unwrap_or(false);
+    let files = session_files(cx, id, ssh);
     // The indexes of large sessions, kept across restarts (only by the
     // family's owner: a shadow read writes nothing).
     let store = owned.then(|| {

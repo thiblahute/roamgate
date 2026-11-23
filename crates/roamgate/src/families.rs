@@ -12,6 +12,7 @@ pub mod agent_profiles;
 pub mod agent_sessions;
 pub mod archive;
 pub mod assistant;
+pub mod conversation;
 pub mod herdr;
 pub mod host;
 pub mod limit_resume;
@@ -46,6 +47,7 @@ pub fn core_families() -> Families {
         voice::family(),
         agent_sessions::family(),
         agent_profiles::family(),
+        conversation::family(),
         workspace::family(),
         review::family(),
     ]

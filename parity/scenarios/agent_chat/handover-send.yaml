@@ -120,14 +120,10 @@ server:
 steps:
   - login: {}
   - connect: {}
-  # The connection's runtime asks fresh browsers to read the session.
-  - expect_push: "event:session.resync_required"
-    message:
-      {
-        event: session.resync_required,
-        data: {},
-        connection_id: legacy-default,
-      }
+  # The connection's Herdr events come through (its runtime then asks the
+  # browsers to read the session again, before or after this one connected:
+  # with the Rust core owning the family, the run waits for the core first).
+  - expect_log: { contains: subscribed to Herdr events, within_ms: 10000 }
   - call: agent_chat.state
     params: { pane_id: p1 }
     golden: state-terminal

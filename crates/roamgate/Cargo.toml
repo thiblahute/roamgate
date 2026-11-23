@@ -22,9 +22,11 @@ roamgate-activity = { path = "../roamgate-activity" }
 roamgate-agents = { path = "../roamgate-agents" }
 roamgate-archive = { path = "../roamgate-archive" }
 roamgate-base = { path = "../roamgate-base" }
+roamgate-claude = { path = "../roamgate-claude" }
 roamgate-cli = { path = "../roamgate-cli" }
 roamgate-assistant = { path = "../roamgate-assistant" }
 roamgate-connections = { path = "../roamgate-connections" }
+roamgate-conversation = { path = "../roamgate-conversation" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-forge = { path = "../roamgate-forge" }
 roamgate-git = { path = "../roamgate-git" }
@@ -32,7 +34,6 @@ roamgate-herdr = { path = "../roamgate-herdr" }
 roamgate-mr-reviews = { path = "../roamgate-mr-reviews" }
 roamgate-http = { path = "../roamgate-http" }
 roamgate-notify = { path = "../roamgate-notify" }
-roamgate-claude = { path = "../roamgate-claude" }
 roamgate-review = { path = "../roamgate-review" }
 roamgate-sidecar = { path = "../roamgate-sidecar" }
 roamgate-voice-server = { path = "../roamgate-voice-server" }
@@ -43,7 +44,7 @@ serde = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 rust-embed = { version = "8", features = ["interpolate-folder-path", "mime-guess"] }
-tokio = { version = "1", features = ["fs", "macros", "net", "rt-multi-thread", "signal", "sync"] }
+tokio = { version = "1", features = ["fs", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"] }
 url = "2"
