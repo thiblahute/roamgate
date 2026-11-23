@@ -6,6 +6,32 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.19
+
+inventory: 31a27c547dd692d57fa719181b21e2cd034d673e75b9c8e7341e7b44be734694
+
+The agent sessions and the agent profiles served by the Rust core (Phase 9,
+S21; wire/core-channel.md, The agent_sessions family and The agent_profiles
+family), while the owners table gives those families to Rust. The browser
+surface (`agent_history.*`, `agent_session.*`, `agent_seen.*`,
+`agent_profile.*`, the agent session downloads, `agent_history.changed`) is
+unchanged; the inventory too.
+
+- wire, reverse targets: `agent_sessions.connection`, `.herdr_call` (Herdr
+  as the readers see it, conversation mode's and the Claude mods' panes
+  included), `.host_read` (a transcript read on the connection's host,
+  stdout in base64), `.herdr_boot`, `.watch_remote` (the remote history
+  watch helper), `.seen_written`, `notifications.clear_pane`;
+  `profiles.host` (what the profile calls need of a connection, by `op`)
+  and `profiles.sessions_changed` (each write of session-profiles.json).
+- wire: the front's own calls `internal.agent_sessions.annotate`,
+  `.quiet_turn`, `.note`, `.seen_reload`, `.flush`, `.socket_closed`,
+  `.refresh`, `.remote_stat`, `.remote_exit`, and
+  `internal.agent_profiles.store`.
+- storage: agent-seen.json and session-profiles.json have one writer, the
+  family's owner; the seen marks are flushed and read again on each change
+  of hands, Bun's profile store follows the core's writes in memory.
+
 ## 1.18
 
 inventory: 31a27c547dd692d57fa719181b21e2cd034d673e75b9c8e7341e7b44be734694
