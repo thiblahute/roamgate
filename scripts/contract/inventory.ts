@@ -407,6 +407,9 @@ const HTTP_PREFIX_DELEGATES: Record<string, () => ts.Node[]> = {
     source(`${SERVER}/http/voice-setup.ts`),
     source(`${SERVER}/http/voice-low-gpu.ts`),
   ],
+  // Not a route: while the host family moves to the Rust core, an API
+  // request waits for the connections to settle first.
+  "/api/": () => [],
 };
 
 /**
