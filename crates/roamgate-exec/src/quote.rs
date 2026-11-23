@@ -172,6 +172,35 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn posix_shell_receives_each_supported_path_as_one_unchanged_argument() {
+        for (path, platform) in [
+            ("/tmp/John,Doe/img.png", "linux"),
+            ("/tmp/John Doe/img.png", "linux"),
+            ("/tmp/O'B$n/img.png", "linux"),
+            ("C:\\Users\\John,Doe\\img.png", "win32"),
+            ("C:\\Users\\John Doe\\img.png", "win32"),
+            ("C:\\Users\\O'Brien\\img.png", "win32"),
+        ] {
+            let text = terminal_path_text(path, PathStyle::from_node_platform(platform));
+            let out = std::process::Command::new("sh")
+                .args(["-c", &format!("printf '%s\\n' {text}")])
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(0), "{path}");
+            let expected = if platform == "win32" {
+                path.replace('\\', "/")
+            } else {
+                path.to_owned()
+            };
+            assert_eq!(
+                String::from_utf8_lossy(&out.stdout),
+                format!("{expected}\n")
+            );
+        }
+    }
+
     #[test]
     fn powershell_and_git_bash_words() {
         assert_eq!(powershell_quote("O'Brien"), "'O''Brien'");
