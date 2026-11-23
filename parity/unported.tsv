@@ -47,11 +47,9 @@ roamgate-review	server/src/review/rewritten-anchors	S19
 roamgate-review	server/src/review/rpc	S19
 roamgate-review	server/src/review/service	S19
 roamgate-review	server/src/review/step-review	S19
-roamgate-mr-reviews	server/src/mr-reviews/agent.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/board-tools.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/effort-board.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/effort-service.test.ts	S20
-roamgate-mr-reviews	server/src/mr-reviews/inbox.merge.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/module.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/panel.test.ts	S20
 roamgate-mr-reviews	server/src/mr-reviews/upstream.test.ts	S20
