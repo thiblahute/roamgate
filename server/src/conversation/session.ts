@@ -167,6 +167,10 @@ export function createConversationSession(options: ConversationSessionOptions) {
   let compacting = false;
   // Messages on their way to stdin (reading images, starting the process).
   let delivering = 0;
+  // The process came up with messages queued while it started: whoever
+  // started it drains the queue next, so until then it is still starting,
+  // not idle (an idle between the two would tell Herdr the turn is over).
+  let queuedOnStart = false;
   // An interrupt was asked: what it abandons is the partial reply it keeps.
   let interrupting = false;
   let activity: string | null = null;
@@ -259,7 +263,8 @@ export function createConversationSession(options: ConversationSessionOptions) {
       return turn || delivering > 0 || queue.length ? "starting" : "idle";
     }
     if (prompts.size) return "blocked";
-    return turn || compacting ? "working" : "idle";
+    if (turn || compacting || delivering > 0) return "working";
+    return queuedOnStart && queue.length ? "starting" : "idle";
   }
 
   /** What the chat says it does: a tool, thinking, or waking up. */
@@ -349,6 +354,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
     uuid: string = randomUUID(),
   ) {
     delivering += 1;
+    let written = false;
     try {
       // The `!` lines run since the last message: Claude reads them first,
       // as in the terminal.
@@ -358,8 +364,11 @@ export function createConversationSession(options: ConversationSessionOptions) {
       write(message);
       prelude?.commit();
       remember(uuid, text, images);
+      written = true;
     } finally {
       delivering -= 1;
+      // Not written: it no longer works on it.
+      if (!written) pushStatus();
     }
     turnUuid = uuid;
     turn = true;
@@ -638,22 +647,28 @@ export function createConversationSession(options: ConversationSessionOptions) {
    * is lost.
    */
   async function drainQueue(uuid?: string): Promise<boolean> {
+    if (queuedOnStart) {
+      queuedOnStart = false;
+      if (!queue.length || !ready()) pushStatus();
+    }
     if (!queue.length || !ready()) return false;
     const items = queue.splice(0);
-    pushQueue();
     const text = items
       .map((item) => item.text)
       .filter(Boolean)
       .join("\n\n");
     const images = items.flatMap((item) => item.images);
+    // A single message keeps its id, so its replay carries the sender's
+    // uuid; several go as one turn under a new one. Under way before the
+    // queue is told empty, so the status it pushes is working, not idle.
+    const delivered = deliver(
+      text,
+      images,
+      uuid ?? (items.length === 1 ? items[0]!.id : randomUUID()),
+    );
+    pushQueue();
     try {
-      // A single message keeps its id, so its replay carries the sender's
-      // uuid; several go as one turn under a new one.
-      await deliver(
-        text,
-        images,
-        uuid ?? (items.length === 1 ? items[0]!.id : randomUUID()),
-      );
+      await delivered;
       return true;
     } catch (error) {
       log("queued messages not delivered", {
@@ -734,6 +749,7 @@ export function createConversationSession(options: ConversationSessionOptions) {
     try {
       return await starting;
     } finally {
+      queuedOnStart = !!proc && queue.length > 0;
       pushStatus();
     }
   }

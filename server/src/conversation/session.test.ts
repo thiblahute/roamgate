@@ -700,10 +700,10 @@ describe("stream events", () => {
       status: "idle",
       activity: null,
     });
-    // Compacting changes the activity, not the status.
+    // Compacting changes the activity, not the status; the process started
+    // for the message is not idle before it is written.
     expect(context.statuses()).toEqual([
       "starting",
-      "idle",
       "working",
       "working",
       "idle",
@@ -792,6 +792,12 @@ describe("the process", () => {
     );
     expect(statuses[0]).toBe("idle");
     expect(statuses).not.toContain("stopped");
+    // Up, the process takes the queued message: it never looks idle (to
+    // the browsers or Herdr) between the start and the message written.
+    expect(statuses.slice(statuses.indexOf("starting"))).toEqual([
+      "starting",
+      "working",
+    ]);
   });
 
   test("a message on its way to stdin counts as busy for a hand-back", async () => {
