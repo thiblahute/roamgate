@@ -418,3 +418,29 @@ async fn closes_a_socket_whose_buffer_stops_draining_for_30_seconds() {
         "{closed:?} {stats:?}"
     );
 }
+
+#[tokio::test]
+async fn passes_binary_messages_both_ways_as_they_are() {
+    let (address, mut sockets) = server().await;
+    let mut client = Client::connect(&address, None).await;
+    let (socket, mut events) = sockets.recv().await.unwrap();
+    client
+        .send(frame::BINARY, &[0, 0, 0xff, 0x7f, 0, 0x80], false)
+        .await;
+    assert_eq!(
+        events.recv().await.unwrap(),
+        Event::Binary {
+            data: vec![0, 0, 0xff, 0x7f, 0, 0x80]
+        }
+    );
+    socket.send_binary(vec![1, 2, 3]);
+    let received = client.next().await.unwrap();
+    assert_eq!(
+        received,
+        Received {
+            opcode: frame::BINARY,
+            compressed: false,
+            payload: vec![1, 2, 3]
+        }
+    );
+}

@@ -69,7 +69,14 @@ impl Sockets {
                 ..
             } => {
                 if *binary {
-                    tracing::warn!(target: "bridge.front", "binary browser message dropped");
+                    use base64::Engine;
+                    match base64::engine::general_purpose::STANDARD.decode(data) {
+                        Ok(bytes) => handle.send_binary(bytes),
+                        Err(_) => tracing::warn!(
+                            target: "bridge.front",
+                            "a binary message of the core that is not base64, dropped"
+                        ),
+                    }
                     return;
                 }
                 if flow {
@@ -451,6 +458,14 @@ impl Front {
                         data: text,
                         binary: false,
                     }),
+                    Event::Binary { data } => {
+                        use base64::Engine;
+                        peer.send(&Message::WsMessage {
+                            socket_id,
+                            data: base64::engine::general_purpose::STANDARD.encode(data),
+                            binary: true,
+                        })
+                    }
                     Event::Closed { code, reason } => {
                         front.socket_closed(&peer, socket_id, code, reason);
                         return;

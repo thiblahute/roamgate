@@ -246,6 +246,7 @@ async fn serve(
     while let Some(event) = events.recv().await {
         let (text, compressed) = match event {
             Event::Text { text, compressed } => (text, compressed),
+            Event::Binary { .. } => continue,
             Event::Closed { code, reason } => {
                 eprintln!("[{backend}] closed {code:?} {reason}");
                 break;

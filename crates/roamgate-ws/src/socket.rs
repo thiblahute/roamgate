@@ -48,6 +48,8 @@ pub(crate) enum Command {
         coalesce_key: Option<String>,
     },
     DropCoalesced(String),
+    /// A binary message, sent as it is: outside the flow, uncompressed.
+    SendBinary(Vec<u8>),
     Close(Option<(u16, String)>),
     Stats(oneshot::Sender<SocketStats>),
 }
@@ -81,6 +83,9 @@ pub struct SocketStats {
 pub enum Event {
     /// A text message that is not a flow-control acknowledgement.
     Text { text: String, compressed: bool },
+    /// A binary message (a voice page's audio): Bun hands it to the same
+    /// handler as text.
+    Binary { data: Vec<u8> },
     /// The connection is gone; the close code the peer or this side gave.
     Closed { code: Option<u16>, reason: String },
 }
@@ -106,6 +111,11 @@ impl SocketHandle {
             context: context.to_owned(),
             coalesce_key: coalesce_key.map(str::to_owned),
         });
+    }
+
+    /// Sends a binary message as it is (a raw socket's audio).
+    pub fn send_binary(&self, data: Vec<u8>) {
+        let _ = self.tx.send(Command::SendBinary(data));
     }
 
     pub fn drop_coalesced(&self, key: &str) {
@@ -312,6 +322,11 @@ async fn run<IO>(
                     flow.send(&mut wire, payload, &context, coalesce_key.as_deref());
                 }
                 Some(Command::DropCoalesced(key)) => flow.drop_coalesced(&key),
+                Some(Command::SendBinary(data)) => {
+                    frame::encode(&mut wire.out, frame::BINARY, &data, false);
+                    wire.stats.frames += 1;
+                    wire.note_buffered();
+                }
                 Some(Command::Close(close)) => {
                     let _ = wire.close(close.as_ref().map(|(code, reason)| (*code, reason.as_str())));
                 }
@@ -337,9 +352,14 @@ async fn run<IO>(
                                 let _ = events.send(Event::Text { text, compressed });
                             }
                         }
-                        // Browsers send text only; Bun hands binary to the
-                        // same handler, which ignores what is not JSON.
-                        Ok(Some(Incoming::Binary { .. })) => wire.stats.messages_in += 1,
+                        // Bun hands binary to the same handler as text.
+                        Ok(Some(Incoming::Binary { data, compressed })) => {
+                            wire.stats.messages_in += 1;
+                            wire.stats.compressed_messages_in += u64::from(compressed);
+                            if wire.close_sent.is_none() {
+                                let _ = events.send(Event::Binary { data });
+                            }
+                        }
                         Ok(Some(Incoming::Ping(payload))) => {
                             if wire.close_sent.is_none() {
                                 wire.queue_control(frame::PONG, &payload);
