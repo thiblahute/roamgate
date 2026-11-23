@@ -1070,8 +1070,8 @@ server/src/bridge/herdr-relay.test.ts	listens in the host's Roamgate cache under
 server/src/bridge/herdr-relay.test.ts	leaves hosts whose socket path would be too long to the direct forward	rust-unit:roamgate-exec:ssh::herdr_relay::tests::leaves_hosts_whose_socket_path_would_be_too_long_to_the_direct_forward	the Herdr relay an SSH tunnel runs in front of the control socket
 server/src/bridge/herdr-relay.test.ts	connects to Herdr only once the request is there	rust-unit:roamgate-exec:ssh::herdr_relay::tests::script::connects_to_herdr_only_once_the_request_is_there	the Herdr relay an SSH tunnel runs in front of the control socket
 server/src/bridge/herdr-relay.test.ts	removes its socket when the session ends, and stale ones	rust-unit:roamgate-exec:ssh::herdr_relay::tests::script::removes_its_socket_when_the_session_ends_and_stale_ones	the Herdr relay an SSH tunnel runs in front of the control socket
-server/src/bridge/list-delta.test.ts	a list read with the stamp the socket was given answers the changes	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/list-delta.test.ts	an unknown stamp, another socket or another list gets the whole list	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/list-delta.test.ts	a list read with the stamp the socket was given answers the changes	rust-unit:roamgate-http:list_delta::tests::a_list_read_with_the_stamp_the_socket_was_given_answers_the_changes	transport and RPC plumbing
+server/src/bridge/list-delta.test.ts	an unknown stamp, another socket or another list gets the whole list	rust-unit:roamgate-http:list_delta::tests::an_unknown_stamp_another_socket_or_another_list_gets_the_whole_list	transport and RPC plumbing
 server/src/bridge/settings-rpc.conversation.test.ts	idle stop: 30 minutes by default, a whole number from 0 (off) to a day	rust-unit:roamgate-http:settings::tests::idle_stop_is_30_minutes_by_default_and_a_whole_number_up_to_a_day	the settings family (S13)
 server/src/bridge/settings-rpc.limit-resume.test.ts	usage limit resume: on, a minute after the reset, the message; each key checked	rust-unit:roamgate-http:settings::tests::limit_resume_is_on_a_minute_after_the_reset_and_each_key_is_checked	the settings family (S13)
 server/src/bridge/settings-rpc.test.ts	terminal transport settings validate input, persist by connection, and reconnect only on change	scenario:parity/scenarios/settings/connection-settings.yaml	
@@ -1283,37 +1283,37 @@ server/src/bridge/vt-input-classifier.test.ts	rejects malformed fields, unsuppor
 server/src/bridge/vt-input-classifier.test.ts	encodes the frozen generation-1 mouse fields including absent geometry	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
 server/src/bridge/vt-input-classifier.test.ts	encodes Ctrl+/ as a semantic slash press, not Ctrl+_	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
 server/src/bridge/vt-input-classifier.test.ts	encodes the ClientShellPaneInput frame	vector:contract/vectors/vt-input-classifier.json	S5 vectors, read by bun test and the Rust crate
-server/src/bridge/websocket-send.test.ts	negotiated compression reduces wire bytes and preserves uncompressed-client compatibility	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	negotiated compression reduces wire bytes and preserves uncompressed-client compatibility	rust-unit:roamgate-ws:socket::negotiates_like_bun_and_compresses_only_terminal_frames	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	preserves the first cleanup snapshot until close handling completes	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	compresses only terminal frames at or above the byte threshold	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	keeps the connection open when Bun queues a message under backpressure	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	closes a slow connection when a queued send crosses the hard limit	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	cleans up when Bun drops a message because of a connection issue	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	compresses only terminal frames at or above the byte threshold	rust-unit:roamgate-ws:flow::compresses_only_terminal_frames_at_or_above_the_byte_threshold	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	keeps the connection open when Bun queues a message under backpressure	rust-unit:roamgate-ws:flow::keeps_the_connection_open_when_a_message_is_queued_under_backpressure	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	closes a slow connection when a queued send crosses the hard limit	rust-unit:roamgate-ws:flow::closes_a_slow_connection_when_a_queued_send_crosses_the_hard_limit	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	cleans up when Bun drops a message because of a connection issue	rust-unit:roamgate-ws:flow::cleans_up_when_a_message_is_dropped_because_of_a_connection_issue	transport and RPC plumbing
 server/src/bridge/websocket-send.test.ts	a reply made after the browser left is skipped quietly	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	uses Bun's buffered amount API to close a client past the hard limit	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	logs and cleans up when sending throws	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	holds a frame back instead of queueing it once the socket is behind	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	keeps only the newest held frame per key	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	compresses the newest held repaint when the socket drains	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	keeps held frames for different terminals apart	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	sends immediately while the socket keeps up	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	leaves messages without a coalesce key alone	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	a dropped payload is never sent on drain	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	dropping one terminal leaves another terminal's held frame alone	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	keeps the socket while one large reply drains	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	closes a socket whose buffer stops draining	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	a drain counts as progress	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	stays off until the browser acknowledges, for older pages	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	tells which contexts a socket was sent the most for	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	treats only acknowledgements as acknowledgements	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	keeps about a window in flight and sends a large message in chunks	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	never splits a surrogate pair across chunks	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	keeps a context's messages in order behind a queued one	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	interleaves a queued reply of another context with a large one	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	holds terminal repaints while the window is full and sends the newest on ack	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	replaces a queued large snapshot with a newer one that has the same key	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	a large snapshot sent while the window has room still leaves in chunks	rust-unit:roamgate-http	transport and RPC plumbing
-server/src/bridge/websocket-send.test.ts	closes a browser that stops reading past the queue limit	rust-unit:roamgate-http	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	uses Bun's buffered amount API to close a client past the hard limit	rust-unit:roamgate-ws:flow::uses_the_buffered_amount_to_close_a_client_past_the_hard_limit	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	logs and cleans up when sending throws	rust-unit:roamgate-ws:flow::logs_and_cleans_up_when_sending_fails	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	holds a frame back instead of queueing it once the socket is behind	rust-unit:roamgate-ws:flow::holds_a_frame_back_instead_of_queueing_it_once_the_socket_is_behind	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	keeps only the newest held frame per key	rust-unit:roamgate-ws:flow::keeps_only_the_newest_held_frame_per_key	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	compresses the newest held repaint when the socket drains	rust-unit:roamgate-ws:flow::compresses_the_newest_held_repaint_when_the_socket_drains	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	keeps held frames for different terminals apart	rust-unit:roamgate-ws:flow::keeps_held_frames_for_different_terminals_apart	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	sends immediately while the socket keeps up	rust-unit:roamgate-ws:flow::sends_immediately_while_the_socket_keeps_up	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	leaves messages without a coalesce key alone	rust-unit:roamgate-ws:flow::leaves_messages_without_a_coalesce_key_alone	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	a dropped payload is never sent on drain	rust-unit:roamgate-ws:flow::a_dropped_payload_is_never_sent_on_drain	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	dropping one terminal leaves another terminal's held frame alone	rust-unit:roamgate-ws:flow::dropping_one_terminal_leaves_another_terminals_held_frame_alone	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	keeps the socket while one large reply drains	rust-unit:roamgate-ws:flow::keeps_the_socket_while_one_large_reply_drains	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	closes a socket whose buffer stops draining	rust-unit:roamgate-ws:flow::closes_a_socket_whose_buffer_stops_draining	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	a drain counts as progress	rust-unit:roamgate-ws:flow::a_drain_counts_as_progress	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	stays off until the browser acknowledges, for older pages	rust-unit:roamgate-ws:flow::stays_off_until_the_browser_acknowledges_for_older_pages	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	tells which contexts a socket was sent the most for	rust-unit:roamgate-ws:flow::tells_which_contexts_a_socket_was_sent_the_most_for	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	treats only acknowledgements as acknowledgements	rust-unit:roamgate-ws:flow::treats_only_acknowledgements_as_acknowledgements	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	keeps about a window in flight and sends a large message in chunks	rust-unit:roamgate-ws:flow::keeps_about_a_window_in_flight_and_sends_a_large_message_in_chunks	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	never splits a surrogate pair across chunks	rust-unit:roamgate-ws:flow::never_splits_a_surrogate_pair_across_chunks	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	keeps a context's messages in order behind a queued one	rust-unit:roamgate-ws:flow::keeps_a_contexts_messages_in_order_behind_a_queued_one	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	interleaves a queued reply of another context with a large one	rust-unit:roamgate-ws:flow::interleaves_a_queued_reply_of_another_context_with_a_large_one	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	holds terminal repaints while the window is full and sends the newest on ack	rust-unit:roamgate-ws:flow::holds_terminal_repaints_while_the_window_is_full_and_sends_the_newest_on_ack	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	replaces a queued large snapshot with a newer one that has the same key	rust-unit:roamgate-ws:flow::replaces_a_queued_large_snapshot_with_a_newer_one_that_has_the_same_key	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	a large snapshot sent while the window has room still leaves in chunks	rust-unit:roamgate-ws:flow::a_large_snapshot_sent_while_the_window_has_room_still_leaves_in_chunks	transport and RPC plumbing
+server/src/bridge/websocket-send.test.ts	closes a browser that stops reading past the queue limit	rust-unit:roamgate-ws:flow::closes_a_browser_that_stops_reading_past_the_queue_limit	transport and RPC plumbing
 server/src/cli/activity.test.ts	durations read as hours and minutes	rust-unit:roamgate-cli:activity::tests::durations_read_as_hours_and_minutes	CLI internals beyond its help and outputs
 server/src/cli/activity.test.ts	today prints attended and agent time per workspace	rust-unit:roamgate-cli:activity::tests::today_prints_attended_and_agent_time_per_workspace	CLI internals beyond its help and outputs
 server/src/cli/activity.test.ts	excluded connections are left out; --json gives the timeline	scenario:parity/scenarios/activity/excluded-connection.yaml	
@@ -2413,29 +2413,29 @@ server/src/history/runtime.test.ts	each Work change is its own commit, by who ma
 server/src/history/work.test.ts	an item's file is its header, then its description, and reads back	rust-unit:roamgate-history	the local git history of what is authored in Roamgate (settings, Work, reviews, MR reviews): its own crate, on roamgate-git, ported once the stores it renders are in Rust (plan 6.2, decided 2026-11-23)
 server/src/history/work.test.ts	the Work area writes items with their description, projects and history	rust-unit:roamgate-history	the local git history of what is authored in Roamgate (settings, Work, reviews, MR reviews): its own crate, on roamgate-git, ported once the stores it renders are in Rust (plan 6.2, decided 2026-11-23)
 server/src/history/work.test.ts	a change is committed as its author at its time	rust-unit:roamgate-history	the local git history of what is authored in Roamgate (settings, Work, reviews, MR reviews): its own crate, on roamgate-git, ported once the stores it renders are in Rust (plan 6.2, decided 2026-11-23)
-server/src/http/auth-pin.test.ts	PIN is disabled by default and does not consume the recovery budget	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	accepts an explicitly configured PIN with valid digits: %s	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	rejects invalid configured PIN %j	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	requires an exact string PIN, rejecting $pin	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	password, URL token, and PIN cannot substitute for each other	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	PIN issues a verified session with correct cookie attributes (TLS %s)	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	changing either credential preserves sessions; changing signing secret invalidates them	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	PIN reauthentication preserves an existing session and original expiry	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	five failures block only that PIN client and cannot consume password or token recovery	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	password cooldowns do not block PIN and PIN success cannot clear strong recovery cooldowns	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	%s recovery works during PIN lockout without clearing PIN failures or cooldown	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	successful PIN authentication resets consecutive global and per-IP failures	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	global cooldown expires after an hour, is not extended by blocked requests, and resets failures	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	successful PIN attempts have a separate 20-per-minute IP budget	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	global consecutive failures survive per-IP window and record expiry	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	parallel failures from %s cannot overrun the failure threshold	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	bounded PIN IP state fails closed, preserves cooldowns, and recovers expired capacity	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	accepts JSON exactly at the byte limit and rejects the next byte	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	$name consumes global and per-IP PIN failure budgets	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	oversized streams are cancelled without trusting Content-Length	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	a slow %s cannot bypass or extend global cooldown after its body resolves	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	an in-flight correct PIN cannot bypass a new per-IP cooldown	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth-pin.test.ts	a slow PIN cannot authenticate with an expired IP record (replaced: %s)	rust-unit:roamgate-http	HTTP front internals
+server/src/http/auth-pin.test.ts	PIN is disabled by default and does not consume the recovery budget	rust-unit:roamgate-http:auth::pin_tests::pin_is_disabled_by_default_and_does_not_consume_the_recovery_budget	HTTP front internals
+server/src/http/auth-pin.test.ts	accepts an explicitly configured PIN with valid digits: %s	rust-unit:roamgate-http:auth::pin_tests::accepts_an_explicitly_configured_pin_with_valid_digits	HTTP front internals
+server/src/http/auth-pin.test.ts	rejects invalid configured PIN %j	rust-unit:roamgate-http:auth::pin_tests::rejects_invalid_configured_pins	HTTP front internals
+server/src/http/auth-pin.test.ts	requires an exact string PIN, rejecting $pin	rust-unit:roamgate-http:auth::pin_tests::requires_an_exact_string_pin	HTTP front internals
+server/src/http/auth-pin.test.ts	password, URL token, and PIN cannot substitute for each other	rust-unit:roamgate-http:auth::pin_tests::password_url_token_and_pin_cannot_substitute_for_each_other	HTTP front internals
+server/src/http/auth-pin.test.ts	PIN issues a verified session with correct cookie attributes (TLS %s)	rust-unit:roamgate-http:auth::pin_tests::pin_issues_a_verified_session_with_correct_cookie_attributes	HTTP front internals
+server/src/http/auth-pin.test.ts	changing either credential preserves sessions; changing signing secret invalidates them	rust-unit:roamgate-http:auth::pin_tests::changing_either_credential_preserves_sessions_changing_signing_secret_invalidates_them	HTTP front internals
+server/src/http/auth-pin.test.ts	PIN reauthentication preserves an existing session and original expiry	rust-unit:roamgate-http:auth::pin_tests::pin_reauthentication_preserves_an_existing_session_and_original_expiry	HTTP front internals
+server/src/http/auth-pin.test.ts	five failures block only that PIN client and cannot consume password or token recovery	rust-unit:roamgate-http:auth::pin_tests::five_failures_block_only_that_pin_client_and_cannot_consume_password_or_token_recovery	HTTP front internals
+server/src/http/auth-pin.test.ts	password cooldowns do not block PIN and PIN success cannot clear strong recovery cooldowns	rust-unit:roamgate-http:auth::pin_tests::password_cooldowns_do_not_block_pin_and_pin_success_cannot_clear_strong_recovery_cooldowns	HTTP front internals
+server/src/http/auth-pin.test.ts	%s recovery works during PIN lockout without clearing PIN failures or cooldown	rust-unit:roamgate-http:auth::pin_tests::recovery_works_during_pin_lockout_without_clearing_pin_failures_or_cooldown	HTTP front internals
+server/src/http/auth-pin.test.ts	successful PIN authentication resets consecutive global and per-IP failures	rust-unit:roamgate-http:auth::pin_tests::successful_pin_authentication_resets_consecutive_global_and_per_ip_failures	HTTP front internals
+server/src/http/auth-pin.test.ts	global cooldown expires after an hour, is not extended by blocked requests, and resets failures	rust-unit:roamgate-http:auth::pin_tests::global_cooldown_expires_after_an_hour_is_not_extended_and_resets_failures	HTTP front internals
+server/src/http/auth-pin.test.ts	successful PIN attempts have a separate 20-per-minute IP budget	rust-unit:roamgate-http:auth::pin_tests::successful_pin_attempts_have_a_separate_20_per_minute_ip_budget	HTTP front internals
+server/src/http/auth-pin.test.ts	global consecutive failures survive per-IP window and record expiry	rust-unit:roamgate-http:auth::pin_tests::global_consecutive_failures_survive_per_ip_window_and_record_expiry	HTTP front internals
+server/src/http/auth-pin.test.ts	parallel failures from %s cannot overrun the failure threshold	rust-unit:roamgate-http:auth::pin_tests::parallel_failures_cannot_overrun_the_failure_threshold	HTTP front internals
+server/src/http/auth-pin.test.ts	bounded PIN IP state fails closed, preserves cooldowns, and recovers expired capacity	rust-unit:roamgate-http:auth::pin_tests::bounded_pin_ip_state_fails_closed_preserves_cooldowns_and_recovers_expired_capacity	HTTP front internals
+server/src/http/auth-pin.test.ts	accepts JSON exactly at the byte limit and rejects the next byte	rust-unit:roamgate-http:auth::pin_tests::accepts_json_exactly_at_the_byte_limit_and_rejects_the_next_byte	HTTP front internals
+server/src/http/auth-pin.test.ts	$name consumes global and per-IP PIN failure budgets	rust-unit:roamgate-http:auth::pin_tests::invalid_bodies_consume_global_and_per_ip_pin_failure_budgets	HTTP front internals
+server/src/http/auth-pin.test.ts	oversized streams are cancelled without trusting Content-Length	rust-unit:roamgate-http:auth::pin_tests::oversized_streams_are_cancelled_without_trusting_content_length	HTTP front internals
+server/src/http/auth-pin.test.ts	a slow %s cannot bypass or extend global cooldown after its body resolves	rust-unit:roamgate-http:auth::pin_tests::a_slow_request_cannot_bypass_or_extend_global_cooldown_after_its_body_resolves	HTTP front internals
+server/src/http/auth-pin.test.ts	an in-flight correct PIN cannot bypass a new per-IP cooldown	rust-unit:roamgate-http:auth::pin_tests::an_in_flight_correct_pin_cannot_bypass_a_new_per_ip_cooldown	HTTP front internals
+server/src/http/auth-pin.test.ts	a slow PIN cannot authenticate with an expired IP record (replaced: %s)	rust-unit:roamgate-http:auth::pin_tests::a_slow_pin_cannot_authenticate_with_an_expired_ip_record	HTTP front internals
 server/src/http/auth-process.test.ts	logout after reauthentication closes earlier and later tabs, not other browsers	scenario:parity/scenarios/auth/logout.yaml	
 server/src/http/auth-process.test.ts	loopback requires login and forged forwarding headers cannot evade login cooldown	scenario:parity/scenarios/auth/login-cooldown.yaml	
 server/src/http/auth-process.test.ts	development loopback serves HTTP and WebSocket without credentials	scenario:parity/scenarios/auth/development-loopback.yaml	
@@ -2453,36 +2453,36 @@ server/src/http/auth-process.test.ts	a call handoff is redeemed without login, i
 server/src/http/auth-process.test.ts	the notification socket needs the login cookie, then replays and logs out	scenario:parity/scenarios/notifications/socket-login.yaml	
 server/src/http/auth-process.test.ts	the notification socket's links use the origin tailscale serve forwards	scenario:parity/scenarios/notifications/forwarded-origin.yaml	
 server/src/http/auth-process.test.ts	the test clock drives the server's time: a login cooldown ends when the harness advances	scenario:parity/scenarios/auth/test-clock-cooldown.yaml	
-server/src/http/auth.test.ts	login script extraction is inert and respects HTML structure	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	requires authentication by default	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	explicitly disabled development authentication needs no password or cookie	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	brands the login page as Roamgate	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	login preserves same-origin notification launch fragments	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	login page clears drafts only for missing or expired authentication (PIN=%s)	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	storage denial on the unauthenticated login page does not block login	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	login recovers from %s failures and prevents duplicate submissions	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	does not derive authorization from reverse-proxy authorities	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	sets Secure for both login paths only with native TLS (%s)	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	redirects unauthenticated HTML requests with a relative location	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	%s shares IP rate limits, clears failures on success and expires cooldowns	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	reserves concurrent attempts before reading JSON and counts malformed failures	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	bounds IP state without evicting cooldowns and reclaims expired entries	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	rejects oversized streamed JSON and cancels reading without Content-Length	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	slow login bodies cannot bypass a replaced IP record's cooldown	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	a slow %s finishing after cooldown starts a fresh failure count	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	%s reauthentication preserves the current cookie and its expiry	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	expires the cookie with matching attributes (TLS %s)	rust-unit:roamgate-http	HTTP front internals
+server/src/http/auth.test.ts	login script extraction is inert and respects HTML structure	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/auth.test.ts	requires authentication by default	rust-unit:roamgate-http:auth::tests::requires_authentication_by_default	HTTP front internals
+server/src/http/auth.test.ts	explicitly disabled development authentication needs no password or cookie	rust-unit:roamgate-http:auth::tests::disabled_development_authentication_needs_no_password_or_cookie	HTTP front internals
+server/src/http/auth.test.ts	brands the login page as Roamgate	rust-unit:roamgate-http:auth::tests::brands_the_login_page_as_roamgate	HTTP front internals
+server/src/http/auth.test.ts	login preserves same-origin notification launch fragments	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/auth.test.ts	login page clears drafts only for missing or expired authentication (PIN=%s)	rust-unit:roamgate-http:auth::tests::login_page_clears_drafts_only_for_missing_or_expired_authentication	HTTP front internals
+server/src/http/auth.test.ts	storage denial on the unauthenticated login page does not block login	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/auth.test.ts	login recovers from %s failures and prevents duplicate submissions	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/auth.test.ts	does not derive authorization from reverse-proxy authorities	rust-unit:roamgate-http:auth::tests::does_not_derive_authorization_from_reverse_proxy_authorities	HTTP front internals
+server/src/http/auth.test.ts	sets Secure for both login paths only with native TLS (%s)	rust-unit:roamgate-http:auth::tests::sets_secure_for_both_login_paths_only_with_native_tls	HTTP front internals
+server/src/http/auth.test.ts	redirects unauthenticated HTML requests with a relative location	rust-unit:roamgate-http:auth::tests::redirects_unauthenticated_html_requests_with_a_relative_location	HTTP front internals
+server/src/http/auth.test.ts	%s shares IP rate limits, clears failures on success and expires cooldowns	rust-unit:roamgate-http:auth::tests::password_and_url_token_share_ip_rate_limits_clear_failures_and_expire_cooldowns	HTTP front internals
+server/src/http/auth.test.ts	reserves concurrent attempts before reading JSON and counts malformed failures	rust-unit:roamgate-http:auth::tests::reserves_concurrent_attempts_before_reading_json_and_counts_malformed_failures	HTTP front internals
+server/src/http/auth.test.ts	bounds IP state without evicting cooldowns and reclaims expired entries	rust-unit:roamgate-http:auth::tests::bounds_ip_state_without_evicting_cooldowns_and_reclaims_expired_entries	HTTP front internals
+server/src/http/auth.test.ts	rejects oversized streamed JSON and cancels reading without Content-Length	rust-unit:roamgate-http:auth::tests::rejects_oversized_streamed_json_and_cancels_reading_without_content_length	HTTP front internals
+server/src/http/auth.test.ts	slow login bodies cannot bypass a replaced IP record's cooldown	rust-unit:roamgate-http:auth::tests::slow_login_bodies_cannot_bypass_a_replaced_ip_record_s_cooldown	HTTP front internals
+server/src/http/auth.test.ts	a slow %s finishing after cooldown starts a fresh failure count	rust-unit:roamgate-http:auth::tests::a_slow_failure_finishing_after_cooldown_starts_a_fresh_failure_count	HTTP front internals
+server/src/http/auth.test.ts	%s reauthentication preserves the current cookie and its expiry	rust-unit:roamgate-http:auth::tests::reauthentication_preserves_the_current_cookie_and_its_expiry	HTTP front internals
+server/src/http/auth.test.ts	expires the cookie with matching attributes (TLS %s)	rust-unit:roamgate-http:auth::tests::expires_the_cookie_with_matching_attributes	HTTP front internals
 server/src/http/auth.test.ts	ends the cookie on the server too, across a restart	scenario:parity/scenarios/auth/logout.yaml	
-server/src/http/auth.test.ts	rejects GET and cross-site logout, but allows retry without a cookie	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	exchanges a URL token for a signed cookie and strips it	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	removes an invalid token without creating a session	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	token login ignores WebSocket upgrades and /api/ requests, and they never count as failed logins	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	ignores token parameters when URL login is not enabled	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	preserves fixed-test-password login behavior	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	builds an encoded token URL for browser launch	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	rejects an empty authentication secret	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	password and URL token cannot forge a session cookie	rust-unit:roamgate-http	HTTP front internals
-server/src/http/auth.test.ts	rejects missing or malformed signing secrets instead of falling back to password	rust-unit:roamgate-http	HTTP front internals
+server/src/http/auth.test.ts	rejects GET and cross-site logout, but allows retry without a cookie	rust-unit:roamgate-http:auth::tests::rejects_get_and_cross_site_logout_but_allows_retry_without_a_cookie	HTTP front internals
+server/src/http/auth.test.ts	exchanges a URL token for a signed cookie and strips it	rust-unit:roamgate-http:auth::tests::exchanges_a_url_token_for_a_signed_cookie_and_strips_it	HTTP front internals
+server/src/http/auth.test.ts	removes an invalid token without creating a session	rust-unit:roamgate-http:auth::tests::removes_an_invalid_token_without_creating_a_session	HTTP front internals
+server/src/http/auth.test.ts	token login ignores WebSocket upgrades and /api/ requests, and they never count as failed logins	rust-unit:roamgate-http:auth::tests::token_login_ignores_websocket_upgrades_and_api_requests	HTTP front internals
+server/src/http/auth.test.ts	ignores token parameters when URL login is not enabled	rust-unit:roamgate-http:auth::tests::ignores_token_parameters_when_url_login_is_not_enabled	HTTP front internals
+server/src/http/auth.test.ts	preserves fixed-test-password login behavior	rust-unit:roamgate-http:auth::tests::preserves_fixed_test_password_login_behavior	HTTP front internals
+server/src/http/auth.test.ts	builds an encoded token URL for browser launch	rust-unit:roamgate-http:auth::tests::builds_an_encoded_token_url_for_browser_launch	HTTP front internals
+server/src/http/auth.test.ts	rejects an empty authentication secret	rust-unit:roamgate-http:auth::tests::rejects_an_empty_authentication_secret	HTTP front internals
+server/src/http/auth.test.ts	password and URL token cannot forge a session cookie	rust-unit:roamgate-http:auth::tests::password_and_url_token_cannot_forge_a_session_cookie	HTTP front internals
+server/src/http/auth.test.ts	rejects missing or malformed signing secrets instead of falling back to password	rust-unit:roamgate-http:auth::tests::rejects_missing_or_malformed_signing_secrets_instead_of_falling_back_to_password	HTTP front internals
 server/src/http/call-handoff.test.ts	only the owning page gets a handoff token, single use	scenario:parity/scenarios/voice/call-handoff.yaml	
 server/src/http/call-handoff.test.ts	a handoff expires, and a newer one replaces it	rust-unit:roamgate-voice-server:socket::tests::handoff::a_handoff_expires_and_a_newer_one_replaces_it	call handoff
 server/src/http/call-handoff.test.ts	a call's end voids its handoff	rust-unit:roamgate-voice-server:socket::tests::handoff::a_calls_end_voids_its_handoff	call handoff
@@ -2512,35 +2512,35 @@ server/src/http/herdr-setup.test.ts	setup UI metadata uses the pinned release an
 server/src/http/history.test.ts	GET is the status; other paths are not the route's	rust-unit:roamgate-http	HTTP front internals
 server/src/http/history.test.ts	PUT sets the location and the switch; POST commit runs a pass	rust-unit:roamgate-http	HTTP front internals
 server/src/http/history.test.ts	a write without the settings header, or cross-site, is refused	rust-unit:roamgate-http	HTTP front internals
-server/src/http/image-upload.test.ts	local pastes are written to a private folder under the temp root	rust-unit:roamgate-http	HTTP front internals
-server/src/http/image-upload.test.ts	the folder and files are readable only by the current user	rust-unit:roamgate-http	HTTP front internals
-server/src/http/image-upload.test.ts	each image gets a separate upload folder	rust-unit:roamgate-http	HTTP front internals
-server/src/http/image-upload.test.ts	a deleted folder is replaced with a new private folder	rust-unit:roamgate-http	HTTP front internals
-server/src/http/image-upload.test.ts	a folder swapped for a link is not followed	rust-unit:roamgate-http	HTTP front internals
-server/src/http/image-upload.test.ts	a staging root whose permissions were loosened is refused	rust-unit:roamgate-http	HTTP front internals
-server/src/http/image-upload.test.ts	unsafe extension characters are dropped from the file name	rust-unit:roamgate-http	HTTP front internals
-server/src/http/image-upload.test.ts	empty image uploads are rejected without retaining a folder	rust-unit:roamgate-http	HTTP front internals
+server/src/http/image-upload.test.ts	local pastes are written to a private folder under the temp root	rust-unit:roamgate-http:terminal_upload::tests::local_pastes_are_written_to_a_private_folder_under_the_temp_root	HTTP front internals
+server/src/http/image-upload.test.ts	the folder and files are readable only by the current user	rust-unit:roamgate-http:terminal_upload::tests::the_folder_and_files_are_readable_only_by_the_current_user	HTTP front internals
+server/src/http/image-upload.test.ts	each image gets a separate upload folder	rust-unit:roamgate-http:terminal_upload::tests::each_image_gets_a_separate_upload_folder	HTTP front internals
+server/src/http/image-upload.test.ts	a deleted folder is replaced with a new private folder	rust-unit:roamgate-http:terminal_upload::tests::a_deleted_folder_is_replaced_with_a_new_private_folder	HTTP front internals
+server/src/http/image-upload.test.ts	a folder swapped for a link is not followed	rust-unit:roamgate-http:terminal_upload::tests::a_folder_swapped_for_a_link_is_not_followed	HTTP front internals
+server/src/http/image-upload.test.ts	a staging root whose permissions were loosened is refused	rust-unit:roamgate-http:terminal_upload::tests::a_staging_root_whose_permissions_were_loosened_is_refused	HTTP front internals
+server/src/http/image-upload.test.ts	unsafe extension characters are dropped from the file name	rust-unit:roamgate-http:terminal_upload::tests::unsafe_extension_characters_are_dropped_from_the_file_name	HTTP front internals
+server/src/http/image-upload.test.ts	empty image uploads are rejected without retaining a folder	rust-unit:roamgate-http:terminal_upload::tests::empty_image_uploads_are_rejected_without_retaining_a_folder	HTTP front internals
 server/src/http/instance-settings.test.ts	instance settings reject cross-site and simple browser writes	rust-unit:roamgate-http:settings::tests::instance_settings_refuse_cross_site_and_simple_browser_writes_and_keep_roots_of_listed_sites	the settings family (S13)
 server/src/http/instance-settings.test.ts	invalid or oversized settings never reach persistence	rust-unit:roamgate-http:settings::tests::invalid_or_oversized_instance_settings_never_reach_the_file	the settings family (S13)
 server/src/http/instance-settings.test.ts	the sites we work on are kept apart from the title, normalized	rust-unit:roamgate-http:settings::tests::instance_settings_refuse_cross_site_and_simple_browser_writes_and_keep_roots_of_listed_sites	the settings family (S13)
-server/src/http/login-page-pin.test.ts	disabled PIN preserves password-only markup, validation and endpoint	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	enabled PIN starts masked with numeric keyboard and accessible constraints	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	rejects invalid PIN %j before fetch	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	posts PIN %s exactly and preserves launch fragments	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	switching repeatedly clears secrets, errors and reveal state and restores each mode	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	recovers from %s failures, blocks duplicate submissions and offers a clean recovery switch	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	recovery mode still requires a nonempty password or token	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	a %s failure permits a same-mode retry with no stale error	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	uses a safe Retry-After fallback for %j	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	wrong PIN retry clears the error and can succeed without switching modes	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	only token logins explain where to find the token	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	phone help distinguishes the user service from foreground instances (PIN: %s)	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	escapes the command	rust-unit:roamgate-http	HTTP front internals
-server/src/http/login-page-pin.test.ts	copies the command only in a secure context	rust-unit:roamgate-http	HTTP front internals
-server/src/http/public-origin.test.ts	tailscale serve's forwarded scheme and host count from loopback	rust-unit:roamgate-http	HTTP front internals
-server/src/http/public-origin.test.ts	forwarded headers from another peer are ignored	rust-unit:roamgate-http	HTTP front internals
-server/src/http/public-origin.test.ts	a *.ts.net name on the default port is https	rust-unit:roamgate-http	HTTP front internals
-server/src/http/public-origin.test.ts	malformed forwarded values fall back to the request	rust-unit:roamgate-http	HTTP front internals
+server/src/http/login-page-pin.test.ts	disabled PIN preserves password-only markup, validation and endpoint	rust-unit:roamgate-http:login_page::tests::disabled_pin_preserves_password_only_markup_validation_and_endpoint	HTTP front internals
+server/src/http/login-page-pin.test.ts	enabled PIN starts masked with numeric keyboard and accessible constraints	rust-unit:roamgate-http:login_page::tests::enabled_pin_starts_masked_with_numeric_keyboard_and_accessible_constraints	HTTP front internals
+server/src/http/login-page-pin.test.ts	rejects invalid PIN %j before fetch	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/login-page-pin.test.ts	posts PIN %s exactly and preserves launch fragments	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/login-page-pin.test.ts	switching repeatedly clears secrets, errors and reveal state and restores each mode	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/login-page-pin.test.ts	recovers from %s failures, blocks duplicate submissions and offers a clean recovery switch	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/login-page-pin.test.ts	recovery mode still requires a nonempty password or token	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/login-page-pin.test.ts	a %s failure permits a same-mode retry with no stale error	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/login-page-pin.test.ts	uses a safe Retry-After fallback for %j	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/login-page-pin.test.ts	wrong PIN retry clears the error and can succeed without switching modes	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/login-page-pin.test.ts	only token logins explain where to find the token	rust-unit:roamgate-http:login_page::tests::only_token_logins_explain_where_to_find_the_token	HTTP front internals
+server/src/http/login-page-pin.test.ts	phone help distinguishes the user service from foreground instances (PIN: %s)	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/login-page-pin.test.ts	escapes the command	rust-unit:roamgate-http:login_page::tests::escapes_the_command	HTTP front internals
+server/src/http/login-page-pin.test.ts	copies the command only in a secure context	rust-unit:roamgate-http:login_page::tests::renders_the_bun_server_s_bytes_in_every_mode	HTTP front internals
+server/src/http/public-origin.test.ts	tailscale serve's forwarded scheme and host count from loopback	rust-unit:roamgate-http:public_origin::tests::tailscale_serve_s_forwarded_scheme_and_host_count_from_loopback	HTTP front internals
+server/src/http/public-origin.test.ts	forwarded headers from another peer are ignored	rust-unit:roamgate-http:public_origin::tests::forwarded_headers_from_another_peer_are_ignored	HTTP front internals
+server/src/http/public-origin.test.ts	a *.ts.net name on the default port is https	rust-unit:roamgate-http:public_origin::tests::a_ts_net_name_on_the_default_port_is_https	HTTP front internals
+server/src/http/public-origin.test.ts	malformed forwarded values fall back to the request	rust-unit:roamgate-http:public_origin::tests::malformed_forwarded_values_fall_back_to_the_request	HTTP front internals
 server/src/http/rendered-pages.test.ts	are 128-bit hex, reused for the same pages, and expire	rust-unit:roamgate-http	HTTP front internals
 server/src/http/rendered-pages.test.ts	are bounded, oldest out first	rust-unit:roamgate-http	HTTP front internals
 server/src/http/rendered-pages.test.ts	refuse relative roots and non-http sites	rust-unit:roamgate-http	HTTP front internals
@@ -2617,18 +2617,18 @@ server/src/http/rendered-pages.test.ts	values are strings, and properties act as
 server/src/http/rendered-pages.test.ts	a write over the quota is refused	rust-unit:roamgate-http	HTTP front internals
 server/src/http/rendered-pages.test.ts	sessionStorage lives in the page and posts nothing	rust-unit:roamgate-http	HTTP front internals
 server/src/http/rendered-pages.test.ts	a page without storage keeps what the browser gives	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-files.test.ts	the app links a credentialed standalone manifest with existing install icons	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-files.test.ts	source runs fall back to the built public directory	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-files.test.ts	instance names update both manifest labels without changing installation identity	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-files.test.ts	entry HTML escapes the name in title and metadata, including SPA routes	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-files.test.ts	HEAD returns naming response headers without a body	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-files.test.ts	a fresh source build serves instance metadata without generated web assets	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-files.test.ts	module files (.mjs) are served as JavaScript, so browsers run them	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-paths.test.ts	normalizes the entry document and decodes asset paths	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-paths.test.ts	rejects malformed encoding and NUL bytes	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-paths.test.ts	keeps resolved files inside the public directory	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-paths.test.ts	uses the SPA entry only for browser page navigations	rust-unit:roamgate-http	HTTP front internals
-server/src/http/static-paths.test.ts	only serves static content for read-only HTTP methods	rust-unit:roamgate-http	HTTP front internals
+server/src/http/static-files.test.ts	the app links a credentialed standalone manifest with existing install icons	rust-unit:roamgate-http:static_files::tests::the_app_links_a_credentialed_standalone_manifest_with_existing_install_icons	HTTP front internals
+server/src/http/static-files.test.ts	source runs fall back to the built public directory	rust-unit:roamgate-http:static_files::tests::source_runs_fall_back_to_the_built_public_directory	HTTP front internals
+server/src/http/static-files.test.ts	instance names update both manifest labels without changing installation identity	rust-unit:roamgate-http:static_files::tests::instance_names_update_both_manifest_labels_without_changing_installation_identity	HTTP front internals
+server/src/http/static-files.test.ts	entry HTML escapes the name in title and metadata, including SPA routes	rust-unit:roamgate-http:static_files::tests::entry_html_escapes_the_name_in_title_and_metadata_including_spa_routes	HTTP front internals
+server/src/http/static-files.test.ts	HEAD returns naming response headers without a body	rust-unit:roamgate-http:static_files::tests::head_returns_naming_response_headers_without_a_body	HTTP front internals
+server/src/http/static-files.test.ts	a fresh source build serves instance metadata without generated web assets	rust-unit:roamgate-http:static_files::tests::a_fresh_source_build_serves_instance_metadata_without_generated_web_assets	HTTP front internals
+server/src/http/static-files.test.ts	module files (.mjs) are served as JavaScript, so browsers run them	rust-unit:roamgate-http:static_files::tests::module_files_are_served_as_javascript_so_browsers_run_them	HTTP front internals
+server/src/http/static-paths.test.ts	normalizes the entry document and decodes asset paths	rust-unit:roamgate-http:static_paths::tests::normalizes_the_entry_document_and_decodes_asset_paths	HTTP front internals
+server/src/http/static-paths.test.ts	rejects malformed encoding and NUL bytes	rust-unit:roamgate-http:static_paths::tests::rejects_malformed_encoding_and_nul_bytes	HTTP front internals
+server/src/http/static-paths.test.ts	keeps resolved files inside the public directory	rust-unit:roamgate-http:static_paths::tests::keeps_resolved_files_inside_the_public_directory	HTTP front internals
+server/src/http/static-paths.test.ts	uses the SPA entry only for browser page navigations	rust-unit:roamgate-http:static_paths::tests::uses_the_spa_entry_only_for_browser_page_navigations	HTTP front internals
+server/src/http/static-paths.test.ts	only serves static content for read-only HTTP methods	rust-unit:roamgate-http:static_paths::tests::only_serves_static_content_for_read_only_http_methods	HTTP front internals
 server/src/http/terminal-path-text.test.ts	POSIX shell receives each supported path as one unchanged argument	rust-unit:roamgate-http	runs the quoted path through a real sh; the quoting itself is vectors
 server/src/http/terminal-path-text.test.ts	PowerShell receives comma and quoted paths as one unchanged argument	pending:windows-runner	runs the quoted path through a real PowerShell, on Windows only (plan 5.10)
 server/src/http/terminal-path-text.test.ts	keeps plain POSIX paths bare	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
@@ -2638,17 +2638,17 @@ server/src/http/terminal-path-text.test.ts	quotes commas instead of treating the
 server/src/http/terminal-path-text.test.ts	single-quotes Windows paths with spaces	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
 server/src/http/terminal-path-text.test.ts	double-quotes Windows paths with apostrophes	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
 server/src/http/terminal-path-text.test.ts	falls back to PowerShell quoting when both quote styles expand	vector:contract/vectors/terminal-path-text.json	S5 vectors, read by bun test and the Rust crate
-server/src/http/terminal-upload.test.ts	sanitizes terminal filename %s	rust-unit:roamgate-http	HTTP front internals
-server/src/http/terminal-upload.test.ts	keeps Windows upload name %s usable	rust-unit:roamgate-http	HTTP front internals
-server/src/http/terminal-upload.test.ts	streams a file to a private directory and retains an empty file	rust-unit:roamgate-http	HTTP front internals
-server/src/http/terminal-upload.test.ts	size cap removes the partial file	rust-unit:roamgate-http	HTTP front internals
-server/src/http/terminal-upload.test.ts	refuses a symlinked root and sweeps expired uploads	rust-unit:roamgate-http	HTTP front internals
+server/src/http/terminal-upload.test.ts	sanitizes terminal filename %s	rust-unit:roamgate-http:terminal_upload::tests::sanitizes_terminal_filenames	HTTP front internals
+server/src/http/terminal-upload.test.ts	keeps Windows upload name %s usable	rust-unit:roamgate-http:terminal_upload::tests::keeps_windows_upload_names_usable	HTTP front internals
+server/src/http/terminal-upload.test.ts	streams a file to a private directory and retains an empty file	rust-unit:roamgate-http:terminal_upload::tests::streams_a_file_to_a_private_directory_and_retains_an_empty_file	HTTP front internals
+server/src/http/terminal-upload.test.ts	size cap removes the partial file	rust-unit:roamgate-http:terminal_upload::tests::size_cap_removes_the_partial_file	HTTP front internals
+server/src/http/terminal-upload.test.ts	refuses a symlinked root and sweeps expired uploads	rust-unit:roamgate-http:terminal_upload::tests::refuses_a_symlinked_root_and_sweeps_expired_uploads	HTTP front internals
 server/src/http/terminal-upload.test.ts	sweeps expired uploads at startup and without a later upload	scenario:parity/scenarios/env/upload-limits-legacy.yaml	
-server/src/http/terminal-upload.test.ts	remote scripts create a private staged file and sweep it later	rust-unit:roamgate-http	HTTP front internals
-server/src/http/terminal-upload.test.ts	the remote script's path has no doubled slash when TMPDIR ends with one	rust-unit:roamgate-http	HTTP front internals
-server/src/http/terminal-upload.test.ts	a failed request stream removes the partial upload	rust-unit:roamgate-http	HTTP front internals
-server/src/http/terminal-upload.test.ts	HTTP uploads honor a configured cap above Bun's default body limit	rust-unit:roamgate-http	HTTP front internals
-server/src/http/terminal-upload.test.ts	SSH upload %s terminates the process and removes local staging	rust-unit:roamgate-http	HTTP front internals
+server/src/http/terminal-upload.test.ts	remote scripts create a private staged file and sweep it later	rust-unit:roamgate-http:terminal_upload::tests::remote_scripts_create_a_private_staged_file_and_sweep_it_later	HTTP front internals
+server/src/http/terminal-upload.test.ts	the remote script's path has no doubled slash when TMPDIR ends with one	rust-unit:roamgate-http:terminal_upload::tests::the_remote_script_s_path_has_no_doubled_slash_when_tmpdir_ends_with_one	HTTP front internals
+server/src/http/terminal-upload.test.ts	a failed request stream removes the partial upload	rust-unit:roamgate-http:terminal_upload::tests::a_failed_request_stream_removes_the_partial_upload	HTTP front internals
+server/src/http/terminal-upload.test.ts	HTTP uploads honor a configured cap above Bun's default body limit	rust-unit:roamgate-http:terminal_upload::tests::uploads_honor_a_configured_cap_above_the_default_body_limit	HTTP front internals
+server/src/http/terminal-upload.test.ts	SSH upload %s terminates the process and removes local staging	rust-unit:roamgate-http:terminal_upload::tests::ssh_upload_abort_or_timeout_ends_the_copy_and_removes_local_staging	HTTP front internals
 server/src/http/update-install.test.ts	verifies, narrows, and atomically replaces the running executable	rust-unit:roamgate-cli:update_http::tests::verifies_narrows_and_atomically_replaces_the_running_executable	update and rollback
 server/src/http/update-install.test.ts	keeps the old executable when the archive digest does not match	rust-unit:roamgate-cli:update_http::tests::keeps_the_old_executable_when_the_archive_digest_does_not_match	update and rollback
 server/src/http/update.test.ts	keeps HTTP requests alive for the full update budget	rust-unit:roamgate-cli:update::tests::keeps_http_requests_alive_for_the_full_update_budget	update and rollback
