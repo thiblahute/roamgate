@@ -7,7 +7,7 @@ import {
 } from "./diff-base";
 import { LARGE_DIFF_PATCH_BYTES } from "../../../shared/gitDiffLimits";
 import { worktreeSnapshotCommand } from "./git-snapshot";
-import { gitShellCommandArgv } from "./git-shell";
+import { GIT_ONLY, gitShellCommandArgv } from "./git-shell";
 import { combinedDiffScript, parseCombinedDiffOutput } from "./git-combined";
 import { collectWorktreeFingerprints } from "./git-actions";
 import {
@@ -160,6 +160,7 @@ export async function readLastStepRefs({
     gitShellCommandArgv(
       `cd ${shQuote(root)} && git for-each-ref --format='%(refname) %(objectname)' ${shQuote(`${prefix}/`)}`,
       host,
+      GIT_ONLY,
     ),
     GIT_DIFF_TIMEOUT_MS,
   );
@@ -184,6 +185,7 @@ export async function readLastStepRefs({
       gitShellCommandArgv(
         `cd ${shQuote(root)} && git cat-file blob ${shQuote(ends.skipped)}`,
         host,
+        GIT_ONLY,
       ),
       GIT_DIFF_TIMEOUT_MS,
     );
@@ -544,7 +546,7 @@ function runGitShellCommand({
 }) {
   const fullCommand = `git -C ${shQuote(root)} -c core.quotepath=false ${command}`;
   return runProcessWithCodeTimeout(
-    gitShellCommandArgv(fullCommand, host),
+    gitShellCommandArgv(fullCommand, host, GIT_ONLY),
     timeoutMs,
   );
 }
@@ -612,6 +614,7 @@ export async function readGitPatch({
     gitShellCommandArgv(
       gitPatchScript(root, command, shQuote, automatic),
       host,
+      GIT_ONLY,
     ),
     GIT_DIFF_TIMEOUT_MS,
   );
@@ -638,7 +641,7 @@ export async function runScriptBatch({
   if (scripts.length === 1)
     return [
       await runProcessWithCodeTimeout(
-        gitShellCommandArgv(scripts[0]!, host),
+        gitShellCommandArgv(scripts[0]!, host, GIT_ONLY),
         timeoutMs,
       ),
     ];
@@ -648,7 +651,7 @@ export async function runScriptBatch({
   );
   const command = fillTemplate(BATCH_SH, { marker, blocks: blocks.join("\n") });
   const result = await runProcessWithCodeTimeout(
-    gitShellCommandArgv(command, host),
+    gitShellCommandArgv(command, host, GIT_ONLY),
     timeoutMs,
   );
   const outputs = scripts.map(() => ({ code: -1, stdout: "", stderr: "" }));
@@ -1112,6 +1115,19 @@ async function collectDiffFileSizes({
   return sizes;
 }
 
+/**
+ * Untracked files per line-count command. Over SSH a command is a login, so
+ * a batch is as big as allowed; on this machine a command is a process, and
+ * the files are spread over the commands that run at once.
+ */
+export function untrackedBatchSize(count: number, host?: string) {
+  if (host) return GIT_UNTRACKED_NUMSTAT_BATCH_SIZE;
+  return Math.min(
+    GIT_UNTRACKED_NUMSTAT_BATCH_SIZE,
+    Math.max(1, Math.ceil(count / GIT_UNTRACKED_NUMSTAT_CONCURRENCY)),
+  );
+}
+
 async function collectStats({
   root,
   mode,
@@ -1160,26 +1176,22 @@ async function collectStats({
     return stats;
   }
 
-  const staged = await runGitShellCommand({
+  // The staged, unstaged and untracked counts are independent commands: run
+  // them at once, then merge in that order.
+  const stagedTask = runGitShellCommand({
     root,
     command: "diff --cached --numstat --find-renames",
     host,
     shQuote,
     runProcessWithCodeTimeout,
   });
-  if (staged.code === 0 || staged.code === 1)
-    mergeStats("staged", staged.stdout);
-
-  const unstaged = await runGitShellCommand({
+  const unstagedTask = runGitShellCommand({
     root,
     command: "diff --numstat --find-renames",
     host,
     shQuote,
     runProcessWithCodeTimeout,
   });
-  if (unstaged.code === 0 || unstaged.code === 1) {
-    mergeStats("unstaged", unstaged.stdout, "conflicted");
-  }
 
   const untrackedEntries = entries.filter(
     (entry) => entry.kind === "untracked",
@@ -1194,15 +1206,14 @@ async function collectStats({
       ? []
       : untrackedEntries;
   const batches: GitDiffEntry[][] = [];
-  for (
-    let index = 0;
-    index < countedEntries.length;
-    index += GIT_UNTRACKED_NUMSTAT_BATCH_SIZE
-  ) {
-    batches.push(
-      countedEntries.slice(index, index + GIT_UNTRACKED_NUMSTAT_BATCH_SIZE),
-    );
+  const batchSize = untrackedBatchSize(countedEntries.length, host);
+  for (let index = 0; index < countedEntries.length; index += batchSize) {
+    batches.push(countedEntries.slice(index, index + batchSize));
   }
+  const untrackedStats = new Map<
+    string,
+    { additions: number; deletions: number }
+  >();
   let cursor = 0;
   const worker = async () => {
     while (cursor < batches.length) {
@@ -1214,23 +1225,31 @@ async function collectStats({
         root: shQuote(root),
       });
       const result = await runProcessWithCodeTimeout(
-        gitShellCommandArgv(command, host),
+        gitShellCommandArgv(command, host, GIT_ONLY),
         GIT_DIFF_TIMEOUT_MS,
       );
       if (result.code !== 0 && result.code !== 1) continue;
       const values = parseNumstat(result.stdout);
       for (const entry of batch) {
         const value = values.get(entry.path);
-        if (value) stats.set(entryKeyForStats(entry), value);
+        if (value) untrackedStats.set(entryKeyForStats(entry), value);
       }
     }
   };
-  await Promise.all(
-    Array.from(
+  const [staged, unstaged] = await Promise.all([
+    stagedTask,
+    unstagedTask,
+    ...Array.from(
       { length: Math.min(GIT_UNTRACKED_NUMSTAT_CONCURRENCY, batches.length) },
       () => worker(),
     ),
-  );
+  ]);
+  if (staged.code === 0 || staged.code === 1)
+    mergeStats("staged", staged.stdout);
+  if (unstaged.code === 0 || unstaged.code === 1) {
+    mergeStats("unstaged", unstaged.stdout, "conflicted");
+  }
+  for (const [key, value] of untrackedStats) stats.set(key, value);
 
   return stats;
 }
@@ -1246,7 +1265,7 @@ async function resolveComparisonBase({
   requested?: unknown;
 } & GitCommandContext) {
   const result = await runProcessWithCodeTimeout(
-    gitShellCommandArgv(refsScript(shQuote, root), host),
+    gitShellCommandArgv(refsScript(shQuote, root), host, GIT_ONLY),
     GIT_DIFF_TIMEOUT_MS,
   );
   if (result.code !== 0) {

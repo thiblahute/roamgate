@@ -22,6 +22,7 @@ import {
   type GitActionContext,
 } from "./git-actions";
 import { clearNotARepoCache, collectIgnoredNames } from "./git-ignore";
+import { UNTRACKED_STATS_SH, fillTemplate } from "../assets";
 import { createFileHandlers } from "./files";
 
 const runProcessWithCodeTimeout: RunProcessWithCodeTimeout = async (argv) => {
@@ -239,6 +240,56 @@ describe("runGitFileAction", () => {
       await writeFile(join(root, "tracked.txt"), "resolved\n");
       await fileAction(context, { action: "stage", path: "tracked.txt" });
       expect(await status(root)).toContain("M  tracked.txt");
+    });
+  });
+
+  test("reads local fingerprints in process as the stat script does", async () => {
+    await withRepo(true, async (root, context) => {
+      await writeFile(join(root, "-odd name ü.txt"), "temp\n");
+      await mkdir(join(root, "dir"));
+      await writeFile(join(root, "dir", "inner.txt"), "inner file\n");
+      await symlink("dir/inner.txt", join(root, "file-link"));
+      await symlink("dir", join(root, "dir-link"));
+      await symlink("missing", join(root, "dangling"));
+      const paths = [
+        "tracked.txt",
+        "-odd name ü.txt",
+        "dir/inner.txt",
+        "file-link",
+        "dir-link",
+        "dangling",
+        "dir",
+        "absent.txt",
+      ];
+      let spawned = 0;
+      const local = await collectWorktreeFingerprints(
+        {
+          ...context,
+          runProcessWithCodeTimeout: async (argv, timeout) => {
+            spawned += 1;
+            return runProcessWithCodeTimeout(argv, timeout);
+          },
+        },
+        paths,
+      );
+      expect(spawned).toBe(0);
+      const script = await runProcessWithCodeTimeout(
+        [
+          "sh",
+          "-c",
+          fillTemplate(UNTRACKED_STATS_SH, {
+            paths: paths.map(shQuote).join(" "),
+            root: shQuote(root),
+          }),
+        ],
+        5000,
+      );
+      expect(script.code).toBe(0);
+      const scripted = parseFingerprintListing(script.stdout);
+      expect([...scripted.keys()].sort()).toEqual(
+        ["-odd name ü.txt", "dir/inner.txt", "file-link", "tracked.txt"].sort(),
+      );
+      expect(new Map([...local].sort())).toEqual(new Map([...scripted].sort()));
     });
   });
 

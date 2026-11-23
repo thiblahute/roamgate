@@ -1,4 +1,6 @@
-import { gitShellCommandArgv } from "./git-shell";
+import { lstat, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { GIT_ONLY, gitShellCommandArgv } from "./git-shell";
 import { GIT_DIFF_TIMEOUT_MS } from "./file-constants";
 import { sanitizeExplorerPath } from "./file-paths";
 import type { RunProcessWithCodeTimeout } from "./file-types";
@@ -143,15 +145,48 @@ export function parseFingerprintListing(output: string) {
   return fingerprints;
 }
 
+/**
+ * A checkout's file as UNTRACKED_STATS_SH reads it, without the shell: a
+ * regular file (or a link to one), its own size and whole-second mtime.
+ */
+async function localFingerprint(
+  root: string,
+  path: string,
+): Promise<WorktreeFingerprint | undefined> {
+  const full = join(root, path);
+  try {
+    if (!(await stat(full)).isFile()) return undefined;
+    const own = await lstat(full);
+    return {
+      size: own.size,
+      mtime_ms: Math.floor(own.mtimeMs / 1000) * 1000,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 // Stats worktree files in batches with a single shell round trip per batch so
 // SSH-backed workspaces stay cheap. Missing files are simply absent from the
 // result. Paths are prefixed with ./ so leading dashes cannot be misparsed.
+// On this machine the files are read in process: the script forks a few
+// processes per file, a second or more for a few dozen files on a busy host.
 export async function collectWorktreeFingerprints(
   context: GitActionContext,
   paths: string[],
 ): Promise<Map<string, WorktreeFingerprint>> {
   const fingerprints = new Map<string, WorktreeFingerprint>();
   const unique = Array.from(new Set(paths)).filter(Boolean);
+  if (!context.host) {
+    const read = await Promise.all(
+      unique.map((path) => localFingerprint(context.root, path)),
+    );
+    unique.forEach((path, index) => {
+      const fingerprint = read[index];
+      if (fingerprint) fingerprints.set(path, fingerprint);
+    });
+    return fingerprints;
+  }
   for (let index = 0; index < unique.length; index += FINGERPRINT_BATCH_SIZE) {
     const batch = unique.slice(index, index + FINGERPRINT_BATCH_SIZE);
     const command = fillTemplate(UNTRACKED_STATS_SH, {
@@ -159,7 +194,7 @@ export async function collectWorktreeFingerprints(
       root: context.shQuote(context.root),
     });
     const result = await context.runProcessWithCodeTimeout(
-      gitShellCommandArgv(command, context.host),
+      gitShellCommandArgv(command, context.host, GIT_ONLY),
       GIT_DIFF_TIMEOUT_MS,
     );
     if (result.code !== 0) continue;

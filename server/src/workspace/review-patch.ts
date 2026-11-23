@@ -7,11 +7,11 @@ import type {
 } from "../../../shared/review";
 import { parseUnifiedDiff } from "../review/patch";
 import { resolveDefaultBase, shortRefName } from "./diff-base";
-import { gitShellCommandArgv } from "./git-shell";
+import { GIT_ONLY, gitShellCommandArgv } from "./git-shell";
 import type { RunProcessWithCodeTimeout } from "./file-types";
 
 /** The review's scripts run Git and POSIX tools only: no login shell. */
-export const GIT_ONLY = { login: false } as const;
+export { GIT_ONLY };
 
 export const REVIEW_PATCH_MAX_BYTES = 4 * 1024 * 1024;
 const REVIEW_PATCH_TIMEOUT_MS = 30_000;

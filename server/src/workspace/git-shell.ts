@@ -16,6 +16,13 @@ type ShellOptions = {
   login?: boolean;
 };
 
+/**
+ * For scripts of Git and POSIX tools only: no login shell off Windows. A
+ * login profile costs 50 ms to most of a second a run (toolbox and
+ * distribution profile.d scripts), and a Changes refresh runs about ten.
+ */
+export const GIT_ONLY = { login: false } as const;
+
 function isFile(path: string): boolean {
   try {
     return statSync(path).isFile();

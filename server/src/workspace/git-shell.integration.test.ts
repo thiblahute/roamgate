@@ -12,7 +12,7 @@ import {
   readCommitFile,
   readCommitPreview,
 } from "./git-history";
-import { gitShellCommandArgv } from "./git-shell";
+import { GIT_ONLY, gitShellCommandArgv } from "./git-shell";
 import type { RunProcessWithCodeTimeout } from "./file-types";
 
 test.each(["local", "SSH"])(
@@ -25,7 +25,11 @@ test.each(["local", "SSH"])(
     let shellCalls = 0;
     const runner: RunProcessWithCodeTimeout = async (argv, timeout) => {
       const script = argv.at(-1)!;
-      expect(argv).toEqual(gitShellCommandArgv(script, host));
+      // A login shell, or a plain one for a script of Git only.
+      expect([
+        gitShellCommandArgv(script, host),
+        gitShellCommandArgv(script, host, GIT_ONLY),
+      ]).toContainEqual(argv);
       shellCalls += 1;
       // Assert SSH argv without needing an SSH server, then execute the exact
       // remote script locally. Local runs use the platform's real shell choice.

@@ -27,6 +27,7 @@ import {
   readDiffSummary,
   snapshotWorktreeTree,
   statusLabel,
+  untrackedBatchSize,
   type LastStepBaselineStore,
 } from "./git-diff";
 
@@ -592,7 +593,7 @@ describe("git diff summary parsing", () => {
     }
   });
 
-  test("counts untracked files with one command per batch", async () => {
+  test("counts untracked files with one command per batch over SSH", async () => {
     const commands: string[] = [];
     const paths = ["a.txt", "b.txt", "c.txt"];
     const summary = await readDiffSummary({
@@ -600,6 +601,7 @@ describe("git diff summary parsing", () => {
       workspace: { label: "Repo" },
       root: "/repo",
       params: { mode: "working" },
+      host: "remote.example",
       shQuote,
       runProcessWithCodeTimeout: async (argv) => {
         const command = argv.join(" ");
@@ -634,6 +636,69 @@ describe("git diff summary parsing", () => {
       ["b.txt", 2],
       ["c.txt", 3],
     ]);
+  });
+
+  test("spreads a few local untracked files over the commands that run at once", () => {
+    expect(untrackedBatchSize(8)).toBe(2);
+    expect(untrackedBatchSize(3)).toBe(1);
+    expect(untrackedBatchSize(0)).toBe(1);
+    expect(untrackedBatchSize(GIT_UNTRACKED_NUMSTAT_MAX_FILES)).toBe(
+      GIT_UNTRACKED_NUMSTAT_BATCH_SIZE,
+    );
+    expect(untrackedBatchSize(8, "remote.example")).toBe(
+      GIT_UNTRACKED_NUMSTAT_BATCH_SIZE,
+    );
+  });
+
+  test("a local summary runs no login shell and no per-file stat script", async () => {
+    const root = await initRepository();
+    try {
+      await writeFile(join(root, "tracked.txt"), "one\n");
+      await git(root, "add", "tracked.txt");
+      await git(root, "commit", "-m", "base");
+      await writeFile(join(root, "tracked.txt"), "one\ntwo\n");
+      for (let index = 0; index < 8; index++)
+        await writeFile(join(root, `new-${index}.txt`), "a\nb\n");
+      const argvs: string[][] = [];
+      const summary = await readDiffSummary({
+        workspaceId: "local-shells",
+        workspace: {},
+        root,
+        params: { mode: "working" },
+        shQuote,
+        runProcessWithCodeTimeout: (argv, timeout) => {
+          argvs.push(argv);
+          return runProcessWithCodeTimeout(argv, timeout);
+        },
+      });
+      expect(argvs.length).toBeGreaterThan(0);
+      if (process.platform !== "win32")
+        expect(argvs.filter((argv) => argv[1] === "-lc")).toEqual([]);
+      expect(
+        argvs.filter((argv) => argv.join(" ").includes("stat -c")),
+      ).toEqual([]);
+      const byPath = new Map(
+        summary.entries.map((entry) => [entry.path, entry]),
+      );
+      expect(byPath.get("tracked.txt")).toMatchObject({
+        kind: "unstaged",
+        additions: 1,
+        deletions: 0,
+        size: 8,
+      });
+      for (let index = 0; index < 8; index++)
+        expect(byPath.get(`new-${index}.txt`)).toMatchObject({
+          kind: "untracked",
+          additions: 2,
+          deletions: 0,
+          size: 4,
+        });
+      expect(
+        argvs.filter((argv) => argv.join(" ").includes("--no-index")),
+      ).toHaveLength(GIT_UNTRACKED_NUMSTAT_CONCURRENCY);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("keeps a batch's counts when one of its files cannot be read", async () => {
