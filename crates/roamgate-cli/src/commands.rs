@@ -71,6 +71,11 @@ pub struct CliRuntime {
 }
 
 impl CliRuntime {
+    /// The private data directory of this user.
+    pub fn data_root(&self) -> PathBuf {
+        self.service().data().data_root()
+    }
+
     pub(crate) fn service(&self) -> ServiceRuntime {
         ServiceRuntime {
             platform: self.platform.clone(),

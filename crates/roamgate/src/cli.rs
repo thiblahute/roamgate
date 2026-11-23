@@ -41,8 +41,12 @@ pub async fn run(command: &str, args: &[String]) -> Done {
     let argv: Vec<String> = std::iter::once(command.to_owned())
         .chain(args.iter().cloned())
         .collect();
+    let begun = std::time::Instant::now();
     match run_cli(&argv, &context, &cli_commands(rust_runner)).await {
-        Some(Outcome::Code(code)) => Done::Exit(u8::try_from(code).unwrap_or(1)),
+        Some(Outcome::Code(code)) => {
+            record(&context, &argv, code, begun);
+            Done::Exit(u8::try_from(code).unwrap_or(1))
+        }
         Some(Outcome::ContinueToServer) => {
             let path = args.get(1).cloned().unwrap_or_default();
             match roamgate_cli::service_manager::service_run_environment(&path, &ProcessEnv) {
@@ -61,6 +65,35 @@ pub async fn run(command: &str, args: &[String]) -> Done {
             }
         }
         None => Done::Exit(2),
+    }
+}
+
+/// Record mode (contract-record): a run the Bun CLI passed through is its
+/// to record (`ROAMGATE_CLI_EXEC` set), so only a run of this binary alone
+/// is recorded here.
+fn record(context: &CliContext, argv: &[String], code: i32, begun: std::time::Instant) {
+    if ProcessEnv.var("ROAMGATE_CLI_EXEC").is_some() {
+        return;
+    }
+    let root = || context.runtime.data_root();
+    let now: roamgate_base::log::NowFn = Arc::new(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_millis() as i64)
+    });
+    let Some(options) =
+        roamgate_base::record::RecorderOptions::from_env(&ProcessEnv, root, "cli", now)
+    else {
+        return;
+    };
+    match roamgate_base::record::ContractRecorder::new(options) {
+        Ok(recorder) => roamgate_cli::record::record_cli_run(
+            &recorder,
+            argv,
+            &context.console.printed(code),
+            begun.elapsed().as_secs_f64() * 1000.0,
+        ),
+        Err(error) => eprintln!("[bridge] contract record mode off: {error}"),
     }
 }
 

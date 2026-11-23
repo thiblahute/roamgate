@@ -60,7 +60,7 @@ fn data_context(runtime: &CliRuntime) -> DataContext {
 
 /// The private data directory of the runtime's user.
 pub fn runtime_data_root(runtime: &CliRuntime) -> PathBuf {
-    data_context(runtime).data_root()
+    runtime.data_root()
 }
 
 /// connections.json: `ROAMGATE_CONNECTIONS_PATH` of `env`, else the data

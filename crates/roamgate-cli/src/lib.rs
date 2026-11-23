@@ -37,6 +37,7 @@ pub mod output;
 pub mod plugin;
 pub mod push;
 pub mod qr;
+pub mod record;
 pub mod server_config;
 pub mod service;
 pub mod service_context;
