@@ -48,6 +48,24 @@ use crate::ws::{Connect, Incoming, Socket, push_name};
 /// How long a step waits for what it expects (real time: a fake or the
 /// server doing real I/O; the server's own timers wait for `advance`).
 pub const WAIT: Duration = Duration::from_secs(10);
+/// How long `expect_log` waits for its lines when the step gives no
+/// `within_ms`.
+pub const LOG_GRACE: Duration = Duration::from_secs(5);
+
+/// Why the server log does not pass an `expect_log`: a line not there yet
+/// (it may still come) or one that is, or a wrong step.
+enum LogMismatch {
+    Missing(anyhow::Error),
+    Wrong(anyhow::Error),
+}
+
+impl LogMismatch {
+    fn into_error(self) -> anyhow::Error {
+        match self {
+            Self::Missing(error) | Self::Wrong(error) => error,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -684,10 +702,21 @@ impl Runner {
             }
             "write" => self.write(&step),
             "assert_file" => self.assert_file(&step),
+            // With `within_ms`, waits for the path to go: a removal the
+            // server makes after the step that triggers it (a sweep on the
+            // test clock) is done when the server says nothing.
             "assert_absent" => {
                 let path = self.path(&step["assert_absent"])?;
-                if path.exists() {
-                    bail!("{} exists", path.display());
+                let deadline = step
+                    .contains_key("within_ms")
+                    .then(|| tokio::time::Instant::now() + duration(&step));
+                while path.exists() {
+                    match deadline {
+                        Some(deadline) if tokio::time::Instant::now() <= deadline => {
+                            tokio::time::sleep(Duration::from_millis(20)).await;
+                        }
+                        _ => bail!("{} exists", path.display()),
+                    }
                 }
                 Ok(())
             }
@@ -738,16 +767,21 @@ impl Runner {
             }
             "start" => self.start().await,
             "expect_log" => {
-                // `within_ms` in the spec: wait for the line to come.
-                let wait = step["expect_log"].get("within_ms").and_then(Value::as_u64);
-                let deadline =
-                    tokio::time::Instant::now() + Duration::from_millis(wait.unwrap_or(0));
+                // Waits for the lines to come, `within_ms` in the spec or
+                // LOG_GRACE: the server goes on logging after the line the
+                // run waits for (the authentication mode follows `listening`)
+                // and the harness reads its output as it comes.
+                let wait = step["expect_log"]
+                    .get("within_ms")
+                    .and_then(Value::as_u64)
+                    .map_or(LOG_GRACE, Duration::from_millis);
+                let deadline = tokio::time::Instant::now() + wait;
                 loop {
                     match self.expect_log(&step) {
-                        Err(_) if tokio::time::Instant::now() < deadline => {
+                        Err(LogMismatch::Missing(_)) if tokio::time::Instant::now() < deadline => {
                             tokio::time::sleep(Duration::from_millis(50)).await;
                         }
-                        other => break other,
+                        other => break other.map_err(LogMismatch::into_error),
                     }
                 }
             }
@@ -2073,25 +2107,32 @@ impl Runner {
         self.save(&spec, &refs)
     }
 
-    fn expect_log(&mut self, step: &Map<String, Value>) -> Result<()> {
+    fn expect_log(&mut self, step: &Map<String, Value>) -> Result<(), LogMismatch> {
         let log = self.run.log_text();
         let spec = step["expect_log"]
             .as_object()
-            .context("expect_log: a map")?;
+            .context("expect_log: a map")
+            .map_err(LogMismatch::Wrong)?;
         for needle in names(spec.get("contains")) {
             if !log.contains(&needle) {
-                bail!("the server log lacks {needle:?}:\n{log}");
-            }
-        }
-        for needle in names(spec.get("lacks")) {
-            if log.contains(&needle) {
-                bail!("the server log has {needle:?}");
+                return Err(LogMismatch::Missing(anyhow!(
+                    "the server log lacks {needle:?}:\n{log}"
+                )));
             }
         }
         if let Some(pattern) = spec.get("matches").and_then(Value::as_str)
-            && !Regex::new(pattern)?.is_match(&log)
+            && !Regex::new(pattern)
+                .map_err(|error| LogMismatch::Wrong(error.into()))?
+                .is_match(&log)
         {
-            bail!("the server log does not match /{pattern}/:\n{log}");
+            return Err(LogMismatch::Missing(anyhow!(
+                "the server log does not match /{pattern}/:\n{log}"
+            )));
+        }
+        for needle in names(spec.get("lacks")) {
+            if log.contains(&needle) {
+                return Err(LogMismatch::Wrong(anyhow!("the server log has {needle:?}")));
+            }
         }
         Ok(())
     }
@@ -2305,7 +2346,6 @@ pub fn coverage(scenario: &Scenario) -> Vec<String> {
 pub fn owner_family(scenario_family: &str) -> &str {
     match scenario_family {
         "herdr" => "herdr_setup",
-        "forge" => "mr_cache",
         other => other,
     }
 }

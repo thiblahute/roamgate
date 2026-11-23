@@ -148,10 +148,12 @@ steps:
     id: send
     no_wait: true
     params: { pane_id: p1, text: hello again }
+  # Sent, or queued when the process the hand-over warms up is not up yet
+  # (a loaded machine): it goes once it is, the same turn either way.
   - await: send
     advance_every: 200
     within_ms: 30000
-    reply: { status: sent, id: "{{uuid}}" }
+    reply: { status: "{{re:^(sent|queued)$}}", id: "{{uuid}}" }
   - expect_push: "event:agent_chat.result"
     within_ms: 20000
   - herdr_calls:

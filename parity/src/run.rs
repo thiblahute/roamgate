@@ -548,6 +548,13 @@ impl Run {
             let mut ready = Some(ready);
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = lines.next_line().await {
+                // In the log before the run is told: a step after the start
+                // finds the line it waited for.
+                {
+                    let mut log = log.lock().expect("log");
+                    log.push_str(&line);
+                    log.push('\n');
+                }
                 if let Some(port) = pattern
                     .captures(&line)
                     .and_then(|found| found[1].parse().ok())
@@ -556,9 +563,6 @@ impl Run {
                     let _ = ready.send(port);
                 }
                 seen(&line);
-                let mut log = log.lock().expect("log");
-                log.push_str(&line);
-                log.push('\n');
             }
         });
         let log = self.log.clone();
@@ -566,11 +570,13 @@ impl Run {
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
+                {
+                    let mut log = log.lock().expect("log");
+                    log.push_str("[stderr] ");
+                    log.push_str(&line);
+                    log.push('\n');
+                }
                 seen(&line);
-                let mut log = log.lock().expect("log");
-                log.push_str("[stderr] ");
-                log.push_str(&line);
-                log.push('\n');
             }
         });
         let port = tokio::select! {

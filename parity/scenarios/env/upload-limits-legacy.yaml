@@ -6,7 +6,11 @@ description: >
   An upload past the limit is refused with 413. A staged upload stays for
   the retention hours: the cleanup runs on the server's clock (every hour at
   most), comparing it with the upload's real modification time, so the clock
-  starts at the real time here.
+  starts at the real time here. The upload is made a moment after the
+  server's hourly sweeps were set, so at the sweep two hours in it is just
+  under two hours old: whether that sweep removes it depends on when the
+  sweep reads the clock while the advance goes on. The one at three hours
+  removes it, and runs on after the advance returns.
 server:
   epoch: now
   env:
@@ -24,4 +28,6 @@ steps:
   - advance: 3660000
   - assert_file: { path: "${upload}", text: "8 bytes." }
   - advance: 3660000
+  - advance: 3600000
   - assert_absent: "${upload}"
+    within_ms: 10000
