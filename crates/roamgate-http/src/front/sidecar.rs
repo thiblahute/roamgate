@@ -59,6 +59,9 @@ pub struct SidecarConfig {
     /// The channel's socket (`<data>/runtime/core-<pid>.sock`).
     pub channel: String,
     pub clock: SharedClock,
+    /// Variables set on each start of the core, worked out then (a test
+    /// clock's start time is the front's time at that start).
+    pub env: Arc<dyn Fn() -> Vec<(String, String)> + Send + Sync>,
 }
 
 fn token() -> String {
@@ -105,6 +108,7 @@ async fn run_once(
         .env("ROAMGATE_CORE_TOKEN", &token)
         // Never a core of its own: it is the core.
         .env_remove("ROAMGATE_CORE_BIN")
+        .envs((config.env)())
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
     let mut child = command

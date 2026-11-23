@@ -50,6 +50,74 @@ fn public_dir(args: &[String], env: &dyn Env) -> PathBuf {
     }
 }
 
+/// The front's test clock (contract/wire/test-clock.md): served on the
+/// harness's socket, and relayed to the core, which runs its own test clock
+/// on a private socket started at the front's time. Each `advance` moves
+/// the front's clock, then the core's, and replies once both ran their
+/// due timers.
+#[cfg(unix)]
+fn serve_front_clock(
+    clock: roamgate_base::clock::TestClock,
+    path: &std::path::Path,
+    core: PathBuf,
+) -> std::io::Result<tokio::task::JoinHandle<()>> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let _ = std::fs::remove_file(path);
+    let listener = tokio::net::UnixListener::bind(path)?;
+    Ok(tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            let clock = clock.clone();
+            let core = core.clone();
+            tokio::spawn(async move {
+                let (read, mut write) = stream.into_split();
+                let mut lines = BufReader::new(read).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    let reply = roamgate_base::clock::answer(&clock, &line).await;
+                    if line.trim().starts_with("advance") && !reply.starts_with("error") {
+                        relay_to_core(&core, line.trim()).await;
+                    }
+                    if write
+                        .write_all(format!("{reply}\n").as_bytes())
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            });
+        }
+    }))
+}
+
+/// Sends one request to the core's test clock and waits for its reply;
+/// a core that is not up (starting, restarting) is skipped.
+#[cfg(unix)]
+async fn relay_to_core(core: &std::path::Path, request: &str) {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let Ok(mut stream) = tokio::net::UnixStream::connect(core).await else {
+        return;
+    };
+    if stream
+        .write_all(format!("{request}\n").as_bytes())
+        .await
+        .is_err()
+    {
+        return;
+    }
+    let mut reply = String::new();
+    let _ = BufReader::new(stream).read_line(&mut reply).await;
+}
+
+/// The web build the Bun server serves after the public directory: run
+/// from source (`server/src/index.ts`), its `server/public`.
+fn built_public_dir(sidecar_bin: Option<&str>) -> Option<PathBuf> {
+    let entry = PathBuf::from(sidecar_bin.filter(|bin| bin.ends_with(".ts"))?);
+    Some(entry.parent()?.parent()?.join("public"))
+}
+
 async fn shutdown() {
     #[cfg(unix)]
     {
@@ -84,8 +152,29 @@ pub async fn run(args: &[String]) -> u8 {
     }
     let data = runtime.data();
     let root = data.data_root();
-    let clock = Arc::new(SystemClock);
-    let clock_for_log: Arc<dyn roamgate_base::clock::Clock> = clock.clone();
+    let mut own_env: std::collections::HashMap<String, String> = std::env::vars().collect();
+    let test_clock = match roamgate_base::clock::test_clock_from_env(
+        &mut own_env,
+        roamgate_base::clock::TEST_CLOCK_HONOURED,
+    ) {
+        Ok(found) => found,
+        Err(error) => {
+            eprintln!("roamgate: {error}");
+            return 1;
+        }
+    };
+    let virtual_clock = test_clock.as_ref().map(|found| {
+        let real = SystemClock;
+        found.clock(
+            roamgate_base::clock::Clock::now(&real),
+            roamgate_base::clock::Clock::monotonic(&real),
+        )
+    });
+    let clock: roamgate_base::clock::SharedClock = match &virtual_clock {
+        Some(test) => Arc::new(test.clone()),
+        None => Arc::new(SystemClock),
+    };
+    let clock_for_log = clock.clone();
     let mut session_secret = String::new();
     if config.auth_required {
         let mut credentials = vec![config.password.as_str()];
@@ -134,7 +223,8 @@ pub async fn run(args: &[String]) -> u8 {
         );
         auth = auth.with_revoked(RevokedSessions::open(Some(data.clone()), Some(&path)));
     }
-    let settings_path = data.data_root().join(DataFile::Settings.name());
+    let settings_path = roamgate_base::settings::settings_path(env.as_ref(), &data)
+        .unwrap_or_else(|_| data.data_root().join(DataFile::Settings.name()));
     let title_suffix = Box::new(move || {
         let raw = std::fs::read_to_string(&settings_path)
             .ok()
@@ -159,20 +249,57 @@ pub async fn run(args: &[String]) -> u8 {
     let own_exe = std::env::current_exe().unwrap_or_default();
     let command =
         SidecarCommand::resolve(env.var("ROAMGATE_SIDECAR_BIN").as_deref(), &own_exe, args);
+    let mut clock_server = None;
+    let mut core_env: Vec<(String, String)> = Vec::new();
+    let core_clock_path = runtime_dir.join(format!("core-clock-{}.sock", std::process::id()));
+    if let (Some(found), Some(test)) = (&test_clock, &virtual_clock) {
+        #[cfg(unix)]
+        match serve_front_clock(test.clone(), &found.socket, core_clock_path.clone()) {
+            Ok(task) => clock_server = Some(task),
+            Err(error) => {
+                eprintln!(
+                    "roamgate: cannot serve the test clock at {}: {error}",
+                    found.socket.display()
+                );
+                return 1;
+            }
+        }
+        core_env.push((
+            roamgate_base::clock::TEST_CLOCK_ENV.into(),
+            core_clock_path.to_string_lossy().into_owned(),
+        ));
+    }
+    let start_clock = clock.clone();
+    let has_test_clock = virtual_clock.is_some();
+    let core_env = Arc::new(move || {
+        let mut env = core_env.clone();
+        if has_test_clock {
+            env.push((
+                roamgate_base::clock::TEST_CLOCK_EPOCH_ENV.into(),
+                start_clock.now().to_string(),
+            ));
+        }
+        env
+    });
     let sockets = Sockets::default();
     let (link, core) = watch::channel(None);
+    let mut core_up = core.clone();
     let sidecar = tokio::spawn(run_sidecar(
         SidecarConfig {
             command,
             channel: channel.to_string_lossy().into_owned(),
-            clock,
+            clock: clock.clone(),
+            env: core_env,
         },
         sockets.clone(),
         link,
     ));
     let front = Arc::new(Front::new(
         auth,
-        static_dirs(public_dir(args, env.as_ref()), None),
+        static_dirs(
+            public_dir(args, env.as_ref()),
+            built_public_dir(env.var("ROAMGATE_SIDECAR_BIN").as_deref()),
+        ),
         title_suffix,
         core,
         sockets,
@@ -187,6 +314,12 @@ pub async fn run(args: &[String]) -> u8 {
         }
     };
     let bound: SocketAddr = listener.local_addr().expect("listener address");
+    // Listening once the core is up, as the Bun server is once it serves.
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        core_up.wait_for(|peer| peer.is_some()),
+    )
+    .await;
     let logger = roamgate_base::log::Logger::new(config.log_level, clock_for_log);
     let mut fields = roamgate_base::log::LogFields::new();
     fields.insert(
@@ -203,7 +336,11 @@ pub async fn run(args: &[String]) -> u8 {
     .with_graceful_shutdown(shutdown())
     .await;
     sidecar.abort();
+    if let Some(task) = clock_server {
+        task.abort();
+    }
     let _ = std::fs::remove_file(&channel);
+    let _ = std::fs::remove_file(&core_clock_path);
     match served {
         Ok(()) => 0,
         Err(error) => {
