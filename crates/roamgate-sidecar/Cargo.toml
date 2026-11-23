@@ -1,0 +1,29 @@
+[package]
+name = "roamgate-sidecar"
+version = "0.0.0"
+description = "The internal channel between the Bun server and the Rust core while families move (contract/wire/core-channel.md): frames, calls, pushes, streamed HTTP, reverse calls, the owners table and shadow reads. Deleted at the cut-over."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+indexmap = { version = "2", features = ["serde"] }
+rand = "0.9"
+regex = "1"
+roamgate-base = { path = "../roamgate-base" }
+roamgate-exec = { path = "../roamgate-exec" }
+roamgate-protocol = { path = "../roamgate-protocol" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "std"] }
+
+[dev-dependencies]
+roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
+tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }

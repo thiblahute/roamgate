@@ -23,6 +23,10 @@ async fn main() -> ExitCode {
             println!("{}", version_line());
             ExitCode::SUCCESS
         }
+        Options::Core => ExitCode::from(
+            roamgate_sidecar::core::run_core(&roamgate_base::env::ProcessEnv, roamgate::VERSION)
+                .await,
+        ),
         Options::Help => {
             print!("{USAGE}");
             ExitCode::SUCCESS

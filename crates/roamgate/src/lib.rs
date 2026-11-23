@@ -36,7 +36,14 @@ Options:
 pub enum Options {
     Version,
     Help,
-    Serve { host: String, port: u16 },
+    Serve {
+        host: String,
+        port: u16,
+    },
+    /// `roamgate core`: the portless core the Bun server spawns
+    /// (contract/wire/core-channel.md). Not in the usage: only the server
+    /// runs it.
+    Core,
 }
 
 /// Reads the command line; `env` gives the environment's HOST and PORT.
@@ -46,6 +53,12 @@ pub fn parse_args(
 ) -> Result<Options, String> {
     let mut host = env("HOST").unwrap_or_else(|| "127.0.0.1".into());
     let mut port = env("PORT").unwrap_or_else(|| "8787".into());
+    if args.first().map(String::as_str) == Some("core") {
+        return match args.get(1) {
+            None => Ok(Options::Core),
+            Some(extra) => Err(format!("unknown argument {extra}")),
+        };
+    }
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
@@ -180,7 +193,12 @@ mod tests {
     fn version_and_help_win() {
         assert_eq!(
             parse_args(&args(&["--version"]), |_| None),
-            Ok(Options::Version)
+            Ok(Options::Version),
+        );
+        assert_eq!(parse_args(&args(&["core"]), |_| None), Ok(Options::Core));
+        assert_eq!(
+            parse_args(&args(&["core", "x"]), |_| None),
+            Err("unknown argument x".into())
         );
         assert_eq!(
             parse_args(&args(&["--port", "1", "-h"]), |_| None),

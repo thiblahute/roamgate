@@ -2354,6 +2354,10 @@ pub async fn run(fake_bin: &Path, path: &Path) -> Result<()> {
         }
     }
     runner.close_sockets();
+    // The hybrid build: the core was up (run.rs check_core).
+    if outcome.is_ok() {
+        outcome = runner.run.check_core().await;
+    }
     let _ = runner.run.stop().await;
     if let Err(error) = outcome {
         let log = runner.run.log_text();

@@ -99,3 +99,56 @@ pub fn standalone() -> Result<PathBuf> {
         .clone()
         .map_err(|error| anyhow!(error))
 }
+
+/// Builds the Rust `roamgate` (debug) of this checkout for a scenario that
+/// runs the server with its core (`${CORE}`), niced like the standalone
+/// build; cargo makes it a no-op when it is up to date.
+fn build_core() -> Result<PathBuf> {
+    let root = repo_root();
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("target"));
+    let binary = target.join("debug").join(if cfg!(windows) {
+        "roamgate.exe"
+    } else {
+        "roamgate"
+    });
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let mut command = if cfg!(unix) && Path::new("/usr/bin/nice").exists() {
+        let mut command = Command::new("nice");
+        command.args(["-n", "19"]);
+        if Path::new("/usr/bin/ionice").exists() {
+            command.args(["ionice", "-c3"]);
+        }
+        command.arg(&cargo);
+        command
+    } else {
+        Command::new(&cargo)
+    };
+    let output = command
+        .args(["build", "--quiet", "-p", "roamgate", "--bin", "roamgate"])
+        .current_dir(&root)
+        .output()?;
+    if !output.status.success() {
+        bail!(
+            "cargo build -p roamgate failed:\n{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(binary)
+}
+
+/// The Rust core a scenario runs beside the server (`${CORE}`): the
+/// suite's `ROAMGATE_CORE_BIN` when it runs the hybrid build, else this
+/// checkout's debug `roamgate`, built once per test process.
+pub fn core() -> Result<PathBuf> {
+    if let Some(path) = crate::run::hybrid_core() {
+        return Ok(PathBuf::from(path));
+    }
+    static BUILT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+    BUILT
+        .get_or_init(|| build_core().map_err(|error| format!("{error:#}")))
+        .clone()
+        .map_err(|error| anyhow!(error))
+}

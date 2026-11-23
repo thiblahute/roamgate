@@ -28,17 +28,25 @@ pub fn read(input: &mut impl Read) -> io::Result<Option<(u8, Vec<u8>)>> {
         Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(err) => return Err(err),
     }
-    let length = u32::from_le_bytes(length) as usize;
-    if length == 0 || length > MAX_FRAME {
+    let length = frame_length(length, MAX_FRAME)?;
+    let mut frame = vec![0u8; length];
+    input.read_exact(&mut frame)?;
+    let kind = frame.remove(0);
+    Ok(Some((kind, frame)))
+}
+
+/// The length a frame's header announces (kind byte included), checked
+/// against `max`: zero or past `max` is `InvalidData`. For readers of their
+/// own (an async one, or one with another cap, like the core channel's).
+pub fn frame_length(header: [u8; 4], max: usize) -> io::Result<usize> {
+    let length = u32::from_le_bytes(header) as usize;
+    if length == 0 || length > max {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("bad frame length {length}"),
         ));
     }
-    let mut frame = vec![0u8; length];
-    input.read_exact(&mut frame)?;
-    let kind = frame.remove(0);
-    Ok(Some((kind, frame)))
+    Ok(length)
 }
 
 /// A frame's bytes.
@@ -97,6 +105,13 @@ mod tests {
             read(&mut big.as_slice()).unwrap().unwrap().1.len(),
             MAX_FRAME - 1
         );
+    }
+
+    #[test]
+    fn frame_length_takes_its_cap() {
+        assert_eq!(frame_length(5u32.to_le_bytes(), 5).unwrap(), 5);
+        assert!(frame_length(6u32.to_le_bytes(), 5).is_err());
+        assert!(frame_length([0; 4], 5).is_err());
     }
 
     #[test]

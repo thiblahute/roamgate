@@ -15,8 +15,11 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+roamgate-base = { path = "../roamgate-base" }
+roamgate-sidecar = { path = "../roamgate-sidecar" }
 rust-embed = { version = "8", features = ["interpolate-folder-path", "mime-guess"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["io-util"] }
+tempfile = "3"
+tokio = { version = "1", features = ["io-util", "process", "time"] }

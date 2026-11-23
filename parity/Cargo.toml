@@ -29,6 +29,9 @@ name = "fakes"
 [[test]]
 name = "check"
 
+[[test]]
+name = "hybrid"
+
 [dependencies]
 aes-gcm = "0.10"
 anyhow = "1"

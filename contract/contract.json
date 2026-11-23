@@ -1,7 +1,7 @@
 {
   "name": "roamgate-server",
-  "version": "1.3",
-  "inventory_sha256": "7502f4677baf20ae3c3b0888708790b4aad9f3903f373ad9ce31068e3edb5176",
+  "version": "1.4",
+  "inventory_sha256": "d5e5059d19561624ff411e94d84f54be73194cd192816f98f826e21ea0a5e78b",
   "surfaces": {
     "rpc": "rpc/<family>/<method>.json",
     "push": "push/<name>.json",
@@ -35,7 +35,10 @@
     "server/src/review/agent-server.ts#REVIEW_AGENT_MAX_BODY_BYTES": "1024 * 1024",
     "server/src/review/agent-server.ts#HOLD_OUTPUT_MAX_BODY_BYTES": "64 * 1024 * 1024",
     "server/src/agent/claude-mod.ts#CLAUDE_MOD_PROTOCOL": "1",
-    "server/src/voice/voice-helper.ts#MAX_FRAME": "16 * 1024 * 1024",
+    "server/src/utils/frames.ts#MAX_FRAME": "16 * 1024 * 1024",
+    "server/src/core-channel/protocol.ts#PROTOCOL": "1",
+    "server/src/core-channel/protocol.ts#KIND_BODY": "2",
+    "server/src/core-channel/protocol.ts#CHANNEL_MAX_FRAME": "64 * 1024 * 1024",
     "server/src/herdr/release.ts#VERIFIED_HERDR_VERSION": "\"0.9.4\"",
     "server/src/bridge/protocol-compat.ts#MINIMUM_HERDR_PROTOCOL": "14",
     "server/src/bridge/protocol-compat.ts#MAXIMUM_HERDR_PROTOCOL": "22",

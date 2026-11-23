@@ -1,0 +1,13 @@
+# The clock contract (contract/wire/test-clock.md): time is read and timers
+# are made only through roamgate_base::clock::Clock, so the parity
+# harness's test clock controls all of them.
+disallowed-methods = [
+  { path = "std::time::SystemTime::now", reason = "read the time through Clock::now" },
+  { path = "std::time::Instant::now", reason = "read the time through Clock::monotonic" },
+  { path = "tokio::time::Instant::now", reason = "read the time through Clock::monotonic" },
+  { path = "tokio::time::sleep", reason = "use Clock::sleep" },
+  { path = "tokio::time::sleep_until", reason = "use Clock::sleep_until" },
+  { path = "tokio::time::interval", reason = "use Clock::interval" },
+  { path = "tokio::time::interval_at", reason = "use Clock::interval" },
+  { path = "tokio::time::timeout", reason = "use Clock::timeout" },
+]

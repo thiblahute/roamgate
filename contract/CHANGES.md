@@ -6,6 +6,21 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.4
+
+inventory: d5e5059d19561624ff411e94d84f54be73194cd192816f98f826e21ea0a5e78b
+
+The internal channel to a Rust core (wire/core-channel.md), off unless
+`ROAMGATE_CORE_BIN` names one (the channel itself, no family):
+
+- env: `ROAMGATE_CORE_BIN`, `ROAMGATE_CORE_TEST`.
+- exec: `spawn core-channel/supervisor.ts#defaultSpawn`, the core.
+- constants: the voice helper's frame codec moved to
+  `server/src/utils/frames.ts` (`MAX_FRAME` unchanged); the channel's
+  `PROTOCOL` 1, body chunk kind 2 and 64 MiB frame cap are pinned.
+- wire: `core-channel.md`; owners: `owners/families.json`, the families, their
+  methods, paths, files and shadowed reads; vectors: `core-channel.json`.
+
 ## 1.3
 
 inventory: 7502f4677baf20ae3c3b0888708790b4aad9f3903f373ad9ce31068e3edb5176

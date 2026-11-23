@@ -146,6 +146,25 @@ pub struct Run {
     pub password: Option<String>,
     /// The last exit code of a stopped server.
     pub last_exit: Option<i32>,
+    /// With a core, told when the last start's core connected.
+    core_connected: Option<oneshot::Receiver<()>>,
+}
+
+/// The variable naming the Rust core a Bun server runs beside it.
+pub const CORE_BIN_ENV: &str = "ROAMGATE_CORE_BIN";
+
+/// How long a hybrid server's core gets to connect after the server
+/// listens (a niced first start of a debug build).
+pub const CORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// The Rust core every server of the suite runs with: `ROAMGATE_CORE_BIN`
+/// of the suite's own environment, or None for the server alone. With
+/// one, each start also waits for the core to connect, so a whole suite
+/// run proves the hybrid build serves every case with the core up.
+pub fn hybrid_core() -> Option<String> {
+    std::env::var(CORE_BIN_ENV)
+        .ok()
+        .filter(|path| !path.trim().is_empty())
 }
 
 /// The server command: `ROAMGATE_SERVER_CMD`, or the Bun server.
@@ -241,8 +260,15 @@ impl Run {
         // Up first: seeded files may name its address (`${FAKE_HTTP}`).
         let served = root.join("served");
         let http = FakeHttp::start(served.clone(), options.openai.clone()).await?;
+        // The Rust core, built only for a run that names it.
+        let core = if serde_json::to_string(&options.env)?.contains("${CORE}") {
+            crate::build::core()?.to_string_lossy().into_owned()
+        } else {
+            String::new()
+        };
         let expand = |text: &str| {
             let mut text = text
+                .replace("${CORE}", &core)
                 .replace("${ROOT}", &root.to_string_lossy())
                 .replace("${HOME}", &home.to_string_lossy())
                 .replace("${BIN}", &bin.to_string_lossy())
@@ -354,6 +380,11 @@ impl Run {
         if let Some(password) = &options.password {
             set("ROAMGATE_PASSWORD", password.clone());
         }
+        // The hybrid build (contract/wire/core-channel.md): the server with
+        // its Rust core, when the suite is told where the core is.
+        if let Some(core) = hybrid_core() {
+            set(CORE_BIN_ENV, core);
+        }
         for (key, value) in &options.env {
             // `{{unset}}`: a variable the run would set, left out (a
             // legacy name read alone).
@@ -409,6 +440,7 @@ impl Run {
             cookies: BTreeMap::new(),
             password: options.password.clone(),
             last_exit: None,
+            core_connected: None,
         })
     }
 
@@ -443,9 +475,24 @@ impl Run {
             .with_context(|| format!("start {}", self.command.join(" ")))?;
         let (ready, listening) = oneshot::channel::<u16>();
         let pattern = Regex::new(r"bridge listening url=https?://[^\s:]+:(\d+)").expect("regex");
+        // The front's line once the core said hello (core-channel/supervisor.ts).
+        let (core_ready, core_connected) = oneshot::channel::<()>();
+        let core_ready = Arc::new(Mutex::new(Some(core_ready)));
+        let core_pattern = Regex::new(r"\bcore \S+ connected \(pid").expect("regex");
+        let core_seen = {
+            let core_ready = core_ready.clone();
+            move |line: &str| {
+                if core_pattern.is_match(line)
+                    && let Some(ready) = core_ready.lock().expect("core ready").take()
+                {
+                    let _ = ready.send(());
+                }
+            }
+        };
         let stdout = child.stdout.take().context("stdout")?;
         let stderr = child.stderr.take().context("stderr")?;
         let log = self.log.clone();
+        let seen = core_seen.clone();
         tokio::spawn(async move {
             let mut ready = Some(ready);
             let mut lines = BufReader::new(stdout).lines();
@@ -457,15 +504,18 @@ impl Run {
                 {
                     let _ = ready.send(port);
                 }
+                seen(&line);
                 let mut log = log.lock().expect("log");
                 log.push_str(&line);
                 log.push('\n');
             }
         });
         let log = self.log.clone();
+        let seen = core_seen;
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
+                seen(&line);
                 let mut log = log.lock().expect("log");
                 log.push_str("[stderr] ");
                 log.push_str(&line);
@@ -479,8 +529,34 @@ impl Run {
         };
         let port =
             port.map_err(|error| anyhow!("{error}\n--- server output ---\n{}", self.log_text()))?;
+        // Not waited for here: the server serves without its core, and a
+        // scenario connects as soon as the port opens (pushes sent at
+        // startup go to the browsers already there). `check_core` waits.
+        self.core_connected = self
+            .env
+            .contains_key(CORE_BIN_ENV)
+            .then_some(core_connected);
         self.server = Some(Server { child, port });
         Ok(())
+    }
+
+    /// With a core (`ROAMGATE_CORE_BIN`), whether the last start's core
+    /// connected, waiting for it at most CORE_CONNECT_TIMEOUT: a scenario
+    /// of the hybrid build fails when its server ran without the core.
+    pub async fn check_core(&mut self) -> Result<()> {
+        let Some(connected) = self.core_connected.take() else {
+            return Ok(());
+        };
+        let connected = tokio::select! {
+            connected = connected => connected.map_err(|_| anyhow!("the server ended before its core connected")),
+            () = tokio::time::sleep(CORE_CONNECT_TIMEOUT) => Err(anyhow!("the core did not connect within {CORE_CONNECT_TIMEOUT:?}")),
+        };
+        connected.map_err(|error| {
+            anyhow!(
+                "hybrid: {error}\n--- server output ---\n{}",
+                self.log_text()
+            )
+        })
     }
 
     /// Stops the server (SIGTERM, then SIGKILL after 15 s); gives its exit
