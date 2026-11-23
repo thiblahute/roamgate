@@ -71,8 +71,14 @@ async fn says_hello_and_exits_when_the_channel_closes() {
     assert_eq!((protocol, side), (PROTOCOL, Side::Rust));
     assert_eq!(version, roamgate::VERSION);
     assert_eq!(Some(pid), child.id());
-    // No family moves in S11, and the test family needs its variable.
-    assert!(families.is_empty());
+    // The families this build implements, never the test family without
+    // its variable.
+    let implemented: Vec<String> = roamgate::core_families()
+        .iter()
+        .map(|family| family.name().to_owned())
+        .collect();
+    assert_eq!(families, implemented);
+    assert!(families.iter().any(|family| family == "limit_resume"));
     assert!(!test);
     drop(stream);
     assert_eq!(exit_code(child).await, 0);

@@ -1,0 +1,136 @@
+name: Don't resume, Resume now and the setting change what becomes of a paused session, and the store keeps it
+family: limit_resume
+description: >
+  The paused session of resume-after-reset.yaml, driven by the browser:
+  "Don't resume" holds it (kept in limit-resume.json) and undoing it
+  schedules it again, the setting turned off and on is seen at the next
+  look (the settings change asks the resumer to look), refused calls say
+  why, and "Resume now" types the message into the pane at once.
+server:
+  herdr:
+    workspaces: [{ workspace_id: w1, label: work }]
+    panes: [{ pane_id: p1, workspace_id: w1, cwd: /work, agent: claude }]
+    agents:
+      - pane_id: p1
+        agent: claude
+        agent_status: idle
+        agent_session:
+          {
+            source: claude,
+            agent: claude,
+            kind: id,
+            value: 11111111-2222-4333-8444-555555555555,
+          }
+  files:
+    .claude/projects/-work/11111111-2222-4333-8444-555555555555.jsonl:
+      jsonl:
+        - {
+            type: user,
+            uuid: u1,
+            timestamp: "2025-12-31T23:59:00.000Z",
+            sessionId: 11111111-2222-4333-8444-555555555555,
+            cwd: /work,
+            message: { role: user, content: keep going },
+          }
+        - type: assistant
+          uuid: a1
+          timestamp: "2025-12-31T23:59:30.000Z"
+          sessionId: 11111111-2222-4333-8444-555555555555
+          cwd: /work
+          isApiErrorMessage: true
+          apiError: usage_limit_reached
+          apiErrorParams:
+            {
+              rate_limit_info:
+                {
+                  status: rejected,
+                  resetsAt: 1767229200,
+                  rateLimitType: five_hour,
+                },
+            }
+          message:
+            {
+              role: assistant,
+              content: [{ type: text, text: "5-hour limit reached" }],
+            }
+steps:
+  - login: {}
+  - connect: {}
+  - call: settings.limit_resume.get
+    reply: { enabled: true, margin_seconds: 60, message: "{{string}}" }
+    save: { message: /result/message }
+  - advance: 5000
+  - expect_push: "event:roamgate.limit_pauses"
+    message:
+      {
+        event: roamgate.limit_pauses,
+        data: { pauses: [{ pane_id: p1, state: scheduled }] },
+      }
+  - call: limit_resume.skip
+    params: { pane_id: p1 }
+    reply: { ok: true, $exact: true }
+  - expect_push: "event:roamgate.limit_pauses"
+    message:
+      {
+        event: roamgate.limit_pauses,
+        data: { pauses: [{ pane_id: p1, state: skipped, resume_at: null }] },
+      }
+  - assert_file:
+      path: .config/roamgate/limit-resume.json
+      mode: "0600"
+      json:
+        version: 1
+        sessions:
+          11111111-2222-4333-8444-555555555555:
+            { at: "2026-01-01T00:00:05.000Z", seen: 1767229200000, skip: true }
+  - call: limit_resume.skip
+    params: { pane_id: p1, skip: false }
+    reply: { ok: true, $exact: true }
+  - expect_push: "event:roamgate.limit_pauses"
+    message:
+      {
+        event: roamgate.limit_pauses,
+        data:
+          {
+            pauses:
+              [{ pane_id: p1, state: scheduled, resume_at: 1767229260000 }],
+          },
+      }
+  - call: limit_resume.skip
+    params: {}
+    error: { message: limit_resume.skip needs a pane_id }
+  - call: limit_resume.resume_now
+    params: { pane_id: w9 }
+    reply: { ok: false, reason: The session is not paused by a usage limit }
+  - call: settings.limit_resume.update
+    params: { enabled: false }
+    reply: { enabled: false }
+  - advance: 2000
+  - expect_push: "event:roamgate.limit_pauses"
+    message:
+      {
+        event: roamgate.limit_pauses,
+        data: { pauses: [{ pane_id: p1, state: "off", resume_at: null }] },
+      }
+  - call: settings.limit_resume.update
+    params: { enabled: true }
+    reply: { enabled: true }
+  - advance: 2000
+  - expect_push: "event:roamgate.limit_pauses"
+    message:
+      {
+        event: roamgate.limit_pauses,
+        data: { pauses: [{ pane_id: p1, state: scheduled }] },
+      }
+  - herdr_calls: { method: agent.prompt, count: 0 }
+  - call: limit_resume.resume_now
+    params: { pane_id: p1 }
+    reply: { ok: true, $exact: true }
+  - herdr_calls:
+      method: agent.prompt
+      count: 1
+      calls: [{ params: { target: p1, text: "${message}" }, valid: true }]
+contract_exceptions:
+  - surface: rpc.request
+    name: limit_resume.skip
+    reason: a skip without its pane_id is refused the same way by both servers; the call is outside the schema on purpose

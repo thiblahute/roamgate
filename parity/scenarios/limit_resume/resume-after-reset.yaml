@@ -83,6 +83,9 @@ steps:
   - herdr_calls: { method: agent.prompt, count: 0 }
   # The reset (an hour after the stop) plus the 60 s margin.
   - advance: 3655000
+  # The resume asks for a look 2 s later, which sees it resumed (the
+  # minute's looks may have run before the resume went out).
+  - advance: 2000
   - expect_push: "event:roamgate.limit_pauses"
     message:
       {

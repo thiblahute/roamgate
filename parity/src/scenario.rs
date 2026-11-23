@@ -331,7 +331,9 @@ fn duration(step: &Map<String, Value>) -> Duration {
 
 impl Runner {
     pub async fn new(fake_bin: &Path, scenario: &Scenario) -> Result<Runner> {
-        let run = Run::new(fake_bin, options(scenario)?).await?;
+        let mut run = Run::new(fake_bin, options(scenario)?).await?;
+        let family = owner_family(&scenario.family);
+        run.wait_for_core = crate::run::rust_owners().iter().any(|name| name == family);
         let mut runner = Runner {
             run,
             vars: BTreeMap::new(),

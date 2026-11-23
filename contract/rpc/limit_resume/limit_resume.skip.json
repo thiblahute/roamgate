@@ -20,6 +20,9 @@
     "properties": {
       "ok": {
         "type": "boolean"
+      },
+      "reason": {
+        "type": "string"
       }
     },
     "required": ["ok"]

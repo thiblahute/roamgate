@@ -6335,8 +6335,10 @@ version = "0.8.15"
 dependencies = [
  "axum",
  "roamgate-base",
+ "roamgate-connections",
  "roamgate-sidecar",
  "rust-embed",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
@@ -6365,6 +6367,20 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "roamgate-connections"
+version = "0.0.0"
+dependencies = [
+ "futures-util",
+ "indexmap",
+ "roamgate-base",
+ "roamgate-protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

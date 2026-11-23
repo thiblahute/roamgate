@@ -6,7 +6,7 @@
 //! `ROAMGATE_CORE_TEST=1` on a debug build.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use roamgate_base::clock::TestClock;
 use roamgate_base::clock::{SharedClock, SystemClock};
@@ -164,7 +164,10 @@ pub async fn run_core(env: &dyn Env, version: &str, families: Families) -> u8 {
         context: OnceLock::new(),
         owned: Mutex::default(),
         test_clock,
+        ready: tokio::sync::watch::channel(false).0,
+        me: OnceLock::new(),
     });
+    let _ = handler.me.set(Arc::downgrade(&handler));
     let peer = Peer::start(stream, handler.clone(), PeerOptions::core(clock));
     let _ = handler.context.set(FamilyContext {
         peer: peer.clone(),
@@ -172,6 +175,7 @@ pub async fn run_core(env: &dyn Env, version: &str, families: Families) -> u8 {
         clock: family_clock,
     });
     handler.ownership_changed();
+    handler.ready.send_replace(true);
     peer.closed().await;
     handler.stop_all();
     tracing::debug!("core channel closed: exiting");
@@ -191,6 +195,11 @@ struct CoreHandler {
     owned: Mutex<BTreeSet<&'static str>>,
     /// The front's test clock, followed.
     test_clock: Option<TestClock>,
+    /// True once the families heard the welcome's table: what the peer
+    /// reads before waits for it (a call or a clock advance never
+    /// overtakes the families' start).
+    ready: tokio::sync::watch::Sender<bool>,
+    me: OnceLock<Weak<CoreHandler>>,
 }
 
 fn unknown_method(method: &str) -> BoxFuture<Result<Value, RpcError>> {
@@ -270,6 +279,16 @@ impl Handler for CoreHandler {
         if self.test && call.method.starts_with("test.echo.") {
             return test_echo_call(peer.clone(), call);
         }
+        if !*self.ready.borrow()
+            && let Some(me) = self.me.get().and_then(Weak::upgrade)
+        {
+            let mut ready = self.ready.subscribe();
+            let peer = peer.clone();
+            return Box::pin(async move {
+                let _ = ready.wait_for(|ready| *ready).await;
+                me.call(&peer, call).await
+            });
+        }
         if call.method == "internal.clock.advance" {
             return self.advance_clock(call.params);
         }
@@ -293,10 +312,20 @@ impl Handler for CoreHandler {
 
     fn http(
         &self,
-        _peer: &Peer,
+        peer: &Peer,
         request: HttpRequest,
         body: Option<BodyReceiver>,
     ) -> BoxFuture<Result<HttpResponse, RpcError>> {
+        if !*self.ready.borrow()
+            && let Some(me) = self.me.get().and_then(Weak::upgrade)
+        {
+            let mut ready = self.ready.subscribe();
+            let peer = peer.clone();
+            return Box::pin(async move {
+                let _ = ready.wait_for(|ready| *ready).await;
+                me.http(&peer, request, body).await
+            });
+        }
         let path = path_of(&request.url).to_owned();
         if self.test && path == "/api/test-echo/stream" {
             return Box::pin(async move { Ok(test_echo_http(&request, body)) });

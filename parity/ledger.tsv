@@ -2665,21 +2665,21 @@ server/src/http/voice.test.ts	is reported, and turned on and off with the voice 
 server/src/http/voice.test.ts	a reply is read by one voice, the next by another	rust-unit:roamgate-voice-server	voice HTTP and socket
 server/src/http/voice.test.ts	off, replies are read as voice.json says	rust-unit:roamgate-voice-server	voice HTTP and socket
 server/src/http/voice.test.ts	speech is made at the page's rate, else voice.json's	rust-unit:roamgate-voice-server	voice HTTP and socket
-server/src/limit-resume/connection.test.ts	lists terminal and conversation-mode Claude sessions, asleep ones included	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/connection.test.ts	a conversation gets the message in its queue, a terminal has it typed	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/connection.test.ts	a terminal Claude running Roamgate's mod: its status and delivery	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	a 5-hour stop is resumed a minute after its reset, once, as the user would	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	a weekly stop is scheduled and resumed the same way, in conversation mode	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	no resume when the user resumed it already	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	one resume per reset: stopped again on it, it waits for the next reset	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	a server restart resumes what was seen in time, never what was not	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	a pause long overdue is not resumed after a restart	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	Don't resume holds the session; undone, it is resumed at the reset	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	with the setting off, paused sessions are shown but not resumed	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	a busy terminal is waited for, never typed into	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	a failed send is tried again, then given up	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	Resume now before the reset does not use up the reset's resume	rust-unit:roamgate-connections	limit-resume scheduler
-server/src/limit-resume/scheduler.test.ts	every connection is looked at, remote ones included	rust-unit:roamgate-connections	limit-resume scheduler
+server/src/limit-resume/connection.test.ts	lists terminal and conversation-mode Claude sessions, asleep ones included	rust-unit:roamgate-connections:limit_resume::connection::tests::lists_terminal_and_conversation_mode_claude_sessions_asleep_ones_included	limit-resume scheduler
+server/src/limit-resume/connection.test.ts	a conversation gets the message in its queue, a terminal has it typed	rust-unit:roamgate-connections:limit_resume::connection::tests::a_conversation_gets_the_message_in_its_queue_a_terminal_has_it_typed	limit-resume scheduler
+server/src/limit-resume/connection.test.ts	a terminal Claude running Roamgate's mod: its status and delivery	rust-unit:roamgate-connections:limit_resume::connection::tests::a_terminal_claude_running_roamgate_s_mod_its_status_and_delivery	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	a 5-hour stop is resumed a minute after its reset, once, as the user would	rust-unit:roamgate-connections:limit_resume::scheduler::tests::a_5_hour_stop_is_resumed_a_minute_after_its_reset_once_as_the_user_would	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	a weekly stop is scheduled and resumed the same way, in conversation mode	rust-unit:roamgate-connections:limit_resume::scheduler::tests::a_weekly_stop_is_scheduled_and_resumed_the_same_way_in_conversation_mode	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	no resume when the user resumed it already	rust-unit:roamgate-connections:limit_resume::scheduler::tests::no_resume_when_the_user_resumed_it_already	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	one resume per reset: stopped again on it, it waits for the next reset	rust-unit:roamgate-connections:limit_resume::scheduler::tests::one_resume_per_reset_stopped_again_on_it_it_waits_for_the_next_reset	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	a server restart resumes what was seen in time, never what was not	rust-unit:roamgate-connections:limit_resume::scheduler::tests::a_server_restart_resumes_what_was_seen_in_time_never_what_was_not	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	a pause long overdue is not resumed after a restart	rust-unit:roamgate-connections:limit_resume::scheduler::tests::a_pause_long_overdue_is_not_resumed_after_a_restart	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	Don't resume holds the session; undone, it is resumed at the reset	rust-unit:roamgate-connections:limit_resume::scheduler::tests::don_t_resume_holds_the_session_undone_it_is_resumed_at_the_reset	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	with the setting off, paused sessions are shown but not resumed	rust-unit:roamgate-connections:limit_resume::scheduler::tests::with_the_setting_off_paused_sessions_are_shown_but_not_resumed	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	a busy terminal is waited for, never typed into	rust-unit:roamgate-connections:limit_resume::scheduler::tests::a_busy_terminal_is_waited_for_never_typed_into	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	a failed send is tried again, then given up	rust-unit:roamgate-connections:limit_resume::scheduler::tests::a_failed_send_is_tried_again_then_given_up	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	Resume now before the reset does not use up the reset's resume	rust-unit:roamgate-connections:limit_resume::scheduler::tests::resume_now_before_the_reset_does_not_use_up_the_reset_s_resume	limit-resume scheduler
+server/src/limit-resume/scheduler.test.ts	every connection is looked at, remote ones included	rust-unit:roamgate-connections:limit_resume::scheduler::tests::every_connection_is_looked_at_remote_ones_included	limit-resume scheduler
 server/src/mr-cache/cache.test.ts	a known answer is served without a forge call	scenario:parity/scenarios/mr_reviews/forge-status.yaml	
 server/src/mr-cache/cache.test.ts	an old answer is served at once and read again once, in the background	rust-unit:roamgate-forge	the forge cache
 server/src/mr-cache/cache.test.ts	the TTL follows the state: running short, open at rest longer, settled longest	rust-unit:roamgate-forge	the forge cache

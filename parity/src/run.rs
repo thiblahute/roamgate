@@ -148,6 +148,9 @@ pub struct Run {
     pub last_exit: Option<i32>,
     /// With a core, told when the last start's core connected.
     core_connected: Option<oneshot::Receiver<()>>,
+    /// Each start waits for the core to connect (a scenario of a family
+    /// PARITY_RUST_OWNERS gives to Rust).
+    pub wait_for_core: bool,
 }
 
 /// The variable naming the Rust core a Bun server runs beside it.
@@ -483,6 +486,7 @@ impl Run {
             password: options.password.clone(),
             last_exit: None,
             core_connected: None,
+            wait_for_core: false,
         })
     }
 
@@ -584,6 +588,12 @@ impl Run {
             .contains_key(CORE_BIN_ENV)
             .then_some(core_connected);
         self.server = Some(Server { child, port });
+        // A scenario of a family the run gives to Rust starts its steps once
+        // the core is connected: until then Bun serves them, and the
+        // family's background work would start at another time.
+        if self.wait_for_core {
+            self.check_core().await?;
+        }
         Ok(())
     }
 
