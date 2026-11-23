@@ -32,6 +32,7 @@ pub mod context;
 pub mod doctor;
 pub mod herdr;
 pub mod index;
+pub mod launchd_environment;
 pub mod output;
 pub mod plugin;
 pub mod push;

@@ -228,7 +228,8 @@ pub fn register_windows_task(definition_path: &str, run: &dyn RunCommand) -> i32
     )
 }
 
-fn wait_for_windows_task_stop(task_name: &str, run: &dyn RunCommand) -> i32 {
+/// Waits up to 15 s for the task to stop (task-wait-stopped.ps1).
+pub fn wait_for_windows_task_stop(task_name: &str, run: &dyn RunCommand) -> i32 {
     let script = fill_template(
         TASK_WAIT_STOPPED_PS1,
         &[("task", TemplateValue::Text(powershell_literal(task_name)))],
