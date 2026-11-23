@@ -597,6 +597,9 @@ impl ReviewService {
     /// Sends the overall comment to the forge, after the writes already
     /// going (syncSummary).
     pub(crate) async fn sync_summary(&self, id: &str) -> ReviewResult<()> {
+        // TS's serialize runs the write a turn later, never at once: saves
+        // made together are all in the summary the first write sends.
+        tokio::task::yield_now().await;
         let queue = self.0.queue(&format!("summary:{id}"));
         let _turn = queue.lock().await;
         let (written, inst) = {

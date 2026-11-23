@@ -10,6 +10,7 @@
 //! | [`pages`] | The pages of a paginated `glab api` or `gh api` answer | review/forge-cli `parseJsonPages` |
 //! | [`pull_request`] | A checkout's pull or merge request for Changes' card and badges: gh and glab on the checkout's host, GitLab GraphQL batches, shared answers | workspace/pull-request |
 //! | [`remote`] | The forge host and project a git remote URL names | review/gitlab `remoteProject`, `onGitlabHost` |
+//! | [`review`] | Merge and pull requests of reviews and chips: reads, drafts, statuses | review/forge, gitlab, github, forge-cli |
 
 pub mod complexity;
 pub mod gate;
@@ -18,3 +19,4 @@ pub mod mr_cache;
 pub mod pages;
 pub mod pull_request;
 pub mod remote;
+pub mod review;

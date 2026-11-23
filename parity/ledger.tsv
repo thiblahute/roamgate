@@ -3207,60 +3207,60 @@ server/src/review/file-anchors.test.ts	the threads of a rendered file follow its
 server/src/review/file-anchors.test.ts	the agent's update, a thread written and an open look at the file; reads only now and then	rust-unit:roamgate-review:service::suites::anchors::the_agents_update_a_thread_written_and_an_open_look_at_the_file_reads_only_now_and_then	the review service moving stored threads as files change on disk
 server/src/review/file-anchors.test.ts	the checkout's review moves its Files preview threads with their files, its diff's own untouched	rust-unit:roamgate-review:service::suites::anchors::the_checkouts_review_moves_its_files_preview_threads_with_their_files_its_diffs_untouched	the review service moving stored threads as files change on disk
 server/src/review/file-anchors.test.ts	a thread an agent wrote with no line text is given its line's, and follows it	rust-unit:roamgate-review:service::suites::anchors::a_thread_an_agent_wrote_with_no_line_text_is_given_its_lines_and_follows_it	the review service moving stored threads as files change on disk
-server/src/review/forge-writes.test.ts	the only GitLab writes are draft notes, and their images	rust-unit:roamgate-forge	forge layer
-server/src/review/forge-writes.test.ts	the only GitHub mutations are the pending review's drafts	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	reads state, pipeline, failed jobs, approvals and open threads	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	a host glab has no login for is never asked, and gets no token	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	another host glab is logged in to is asked without the environment's tokens	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	security work shows nothing, and the guard fails closed	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	a merge request GitLab does not know is not found	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	reads state, checks, approvals and open threads through gh	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	a host gh is not logged in to is never asked	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	coalesces identical requests and keeps an answer until its state allows another read	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	one GraphQL query reads every request of a host on screen	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	a chip asked later brings the others along, and answers stand	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	GitHub pull requests of a repository share one query	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	references from the browser are checked before anything runs	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	`!N` means the upstream remote's project, else origin's	rust-unit:roamgate-forge	forge layer
-server/src/review/forge.test.ts	a request a command opened is found in its output	rust-unit:roamgate-forge	forge layer
-server/src/review/github.test.ts	a pull request URL is a merge request reference	rust-unit:roamgate-forge	GitHub through gh
-server/src/review/github.test.ts	reads the pull request, its diff and its comment threads	rust-unit:roamgate-forge	GitHub through gh
-server/src/review/github.test.ts	drafts are the user's pending review; replies and submits never	rust-unit:roamgate-forge	GitHub through gh
-server/src/review/github.test.ts	a dead master reruns a read cold, never a write	rust-unit:roamgate-forge	GitHub through gh
-server/src/review/gitlab-service.test.ts	the security guard holds before GitLab answered	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	a numeric project id is judged by the project GitLab names	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	watch and handoff never carry a security merge request's review	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	two pushes at once send each draft once	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	a draft edited or deleted while it is sent stays as the user left it	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	an overall comment GitLab refused is kept, and sent with the drafts	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	overall comments saved at once make one draft	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	a range comment goes to GitLab as a line range from the diff	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	a range comment's diff is its file's alone, read whole (no patch cap)	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	a poll of an unchanged merge request reads only the merge request	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	make it mine: an agent's thread becomes the user's draft, on the user's word only	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	make it mine takes an agent's draft of a local review, shown in the merge request's review	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab-service.test.ts	a rendered file and its merge request's review share their threads; only the user's drafts go to GitLab	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	merge request URLs and the security guard	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	threads: discussions without system notes, and every draft note	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	a draft on an unchanged line carries both line numbers	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	a draft's pasted images are uploaded to the project and linked	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	a pasted image refuses a GitHub draft, said plainly	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	replies refuse odd discussion ids; the API diff is rebuilt	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	remote URLs: ssh, scp-like and https give a host and project	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	the source is the upstream, else the branch on its push remote or origin	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	the checkout script's answer is parsed	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	only an open merge request from the source project is picked	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	a branch's merge request: the open ones of its name, from its project	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	a remote on another host glab is logged in to is asked there	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	the merge request list is read a page at a time, up to a few	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	the checkout script applies insteadOf and never prints a token	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	a branch started from origin/main finds the user's merge request from a fork	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	a merge request's removed checkout reads from GitLab, from home	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	a missing glab is still told as such	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	a removed checkout is told as such when finding its merge request	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	paged answers keep brackets inside code and comments	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	tokens from the environment go only to glab's default host	rust-unit:roamgate-forge	GitLab through glab
-server/src/review/gitlab.test.ts	ranges and old-side lines are placed as GitLab numbers them	rust-unit:roamgate-forge	GitLab through glab
+server/src/review/forge-writes.test.ts	the only GitLab writes are draft notes, and their images	rust-unit:roamgate-forge:review_writes::the_only_gitlab_writes_are_draft_notes_and_their_images	forge layer
+server/src/review/forge-writes.test.ts	the only GitHub mutations are the pending review's drafts	rust-unit:roamgate-forge:review_writes::the_only_github_mutations_are_the_pending_reviews_drafts	forge layer
+server/src/review/forge.test.ts	reads state, pipeline, failed jobs, approvals and open threads	rust-unit:roamgate-forge:review::status::tests::reads_state_pipeline_failed_jobs_approvals_and_open_threads	forge layer
+server/src/review/forge.test.ts	a host glab has no login for is never asked, and gets no token	rust-unit:roamgate-forge:review::status::tests::a_host_glab_has_no_login_for_is_never_asked_and_gets_no_token	forge layer
+server/src/review/forge.test.ts	another host glab is logged in to is asked without the environment's tokens	rust-unit:roamgate-forge:review::status::tests::another_host_glab_is_logged_in_to_is_asked_without_the_environments_tokens	forge layer
+server/src/review/forge.test.ts	security work shows nothing, and the guard fails closed	rust-unit:roamgate-forge:review::status::tests::security_work_shows_nothing_and_the_guard_fails_closed	forge layer
+server/src/review/forge.test.ts	a merge request GitLab does not know is not found	rust-unit:roamgate-forge:review::status::tests::a_merge_request_gitlab_does_not_know_is_not_found	forge layer
+server/src/review/forge.test.ts	reads state, checks, approvals and open threads through gh	rust-unit:roamgate-forge:review::status::tests::reads_state_checks_approvals_and_open_threads_through_gh	forge layer
+server/src/review/forge.test.ts	a host gh is not logged in to is never asked	rust-unit:roamgate-forge:review::status::tests::a_host_gh_is_not_logged_in_to_is_never_asked	forge layer
+server/src/review/forge.test.ts	coalesces identical requests and keeps an answer until its state allows another read	rust-unit:roamgate-forge:review::status::tests::coalesces_identical_requests_and_keeps_an_answer_until_its_state_allows_another_read	forge layer
+server/src/review/forge.test.ts	one GraphQL query reads every request of a host on screen	rust-unit:roamgate-forge:review::status::tests::one_graphql_query_reads_every_request_of_a_host_on_screen	forge layer
+server/src/review/forge.test.ts	a chip asked later brings the others along, and answers stand	rust-unit:roamgate-forge:review::status::tests::a_chip_asked_later_brings_the_others_along_and_answers_stand	forge layer
+server/src/review/forge.test.ts	GitHub pull requests of a repository share one query	rust-unit:roamgate-forge:review::status::tests::github_pull_requests_of_a_repository_share_one_query	forge layer
+server/src/review/forge.test.ts	references from the browser are checked before anything runs	rust-unit:roamgate-forge:review::status::tests::references_from_the_browser_are_checked_before_anything_runs	forge layer
+server/src/review/forge.test.ts	`!N` means the upstream remote's project, else origin's	rust-unit:roamgate-forge:review::status::tests::n_means_the_upstream_remotes_project_else_origins	forge layer
+server/src/review/forge.test.ts	a request a command opened is found in its output	rust-unit:roamgate-forge:review::status::tests::a_request_a_command_opened_is_found_in_its_output	forge layer
+server/src/review/github.test.ts	a pull request URL is a merge request reference	rust-unit:roamgate-forge:review::github::tests::a_pull_request_url_is_a_merge_request_reference	GitHub through gh
+server/src/review/github.test.ts	reads the pull request, its diff and its comment threads	rust-unit:roamgate-forge:review::github::tests::reads_the_pull_request_its_diff_and_its_comment_threads	GitHub through gh
+server/src/review/github.test.ts	drafts are the user's pending review; replies and submits never	rust-unit:roamgate-forge:review::github::tests::drafts_are_the_users_pending_review_replies_and_submits_never	GitHub through gh
+server/src/review/github.test.ts	a dead master reruns a read cold, never a write	rust-unit:roamgate-forge:review::github::tests::a_dead_master_reruns_a_read_cold_never_a_write	GitHub through gh
+server/src/review/gitlab-service.test.ts	the security guard holds before GitLab answered	rust-unit:roamgate-forge:review_gitlab::the_security_guard_holds_before_gitlab_answered	GitLab through glab
+server/src/review/gitlab-service.test.ts	a numeric project id is judged by the project GitLab names	rust-unit:roamgate-forge:review_gitlab::a_numeric_project_id_is_judged_by_the_project_gitlab_names	GitLab through glab
+server/src/review/gitlab-service.test.ts	watch and handoff never carry a security merge request's review	rust-unit:roamgate-forge:review_gitlab::watch_and_handoff_never_carry_a_security_merge_requests_review	GitLab through glab
+server/src/review/gitlab-service.test.ts	two pushes at once send each draft once	rust-unit:roamgate-forge:review_gitlab::two_pushes_at_once_send_each_draft_once	GitLab through glab
+server/src/review/gitlab-service.test.ts	a draft edited or deleted while it is sent stays as the user left it	rust-unit:roamgate-forge:review_gitlab::a_draft_edited_or_deleted_while_it_is_sent_stays_as_the_user_left_it	GitLab through glab
+server/src/review/gitlab-service.test.ts	an overall comment GitLab refused is kept, and sent with the drafts	rust-unit:roamgate-forge:review_gitlab::an_overall_comment_gitlab_refused_is_kept_and_sent_with_the_drafts	GitLab through glab
+server/src/review/gitlab-service.test.ts	overall comments saved at once make one draft	rust-unit:roamgate-forge:review_gitlab::overall_comments_saved_at_once_make_one_draft	GitLab through glab
+server/src/review/gitlab-service.test.ts	a range comment goes to GitLab as a line range from the diff	rust-unit:roamgate-forge:review_gitlab::a_range_comment_goes_to_gitlab_as_a_line_range_from_the_diff	GitLab through glab
+server/src/review/gitlab-service.test.ts	a range comment's diff is its file's alone, read whole (no patch cap)	rust-unit:roamgate-forge:review_gitlab::a_range_comments_diff_is_its_files_alone_read_whole_no_patch_cap	GitLab through glab
+server/src/review/gitlab-service.test.ts	a poll of an unchanged merge request reads only the merge request	rust-unit:roamgate-forge:review_gitlab::a_poll_of_an_unchanged_merge_request_reads_only_the_merge_request	GitLab through glab
+server/src/review/gitlab-service.test.ts	make it mine: an agent's thread becomes the user's draft, on the user's word only	rust-unit:roamgate-forge:review_gitlab::make_it_mine_an_agents_thread_becomes_the_users_draft_on_the_users_word_only	GitLab through glab
+server/src/review/gitlab-service.test.ts	make it mine takes an agent's draft of a local review, shown in the merge request's review	rust-unit:roamgate-forge:review_gitlab::make_it_mine_takes_an_agents_draft_of_a_local_review_shown_in_the_merge_requests_review	GitLab through glab
+server/src/review/gitlab-service.test.ts	a rendered file and its merge request's review share their threads; only the user's drafts go to GitLab	rust-unit:roamgate-forge:review_gitlab::a_rendered_file_and_its_merge_requests_review_share_their_threads_only_the_users_drafts_go_to_gitlab	GitLab through glab
+server/src/review/gitlab.test.ts	merge request URLs and the security guard	rust-unit:roamgate-forge:review::gitlab::tests::merge_request_urls_and_the_security_guard	GitLab through glab
+server/src/review/gitlab.test.ts	threads: discussions without system notes, and every draft note	rust-unit:roamgate-forge:review::gitlab::tests::threads_discussions_without_system_notes_and_every_draft_note	GitLab through glab
+server/src/review/gitlab.test.ts	a draft on an unchanged line carries both line numbers	rust-unit:roamgate-forge:review::gitlab::tests::a_draft_on_an_unchanged_line_carries_both_line_numbers	GitLab through glab
+server/src/review/gitlab.test.ts	a draft's pasted images are uploaded to the project and linked	rust-unit:roamgate-forge:review::gitlab::tests::a_drafts_pasted_images_are_uploaded_to_the_project_and_linked	GitLab through glab
+server/src/review/gitlab.test.ts	a pasted image refuses a GitHub draft, said plainly	rust-unit:roamgate-forge:review::gitlab::tests::a_pasted_image_refuses_a_github_draft_said_plainly	GitLab through glab
+server/src/review/gitlab.test.ts	replies refuse odd discussion ids; the API diff is rebuilt	rust-unit:roamgate-forge:review::gitlab::tests::replies_refuse_odd_discussion_ids_the_api_diff_is_rebuilt	GitLab through glab
+server/src/review/gitlab.test.ts	remote URLs: ssh, scp-like and https give a host and project	rust-unit:roamgate-forge:review::gitlab::tests::remote_urls_ssh_scp_like_and_https_give_a_host_and_project	GitLab through glab
+server/src/review/gitlab.test.ts	the source is the upstream, else the branch on its push remote or origin	rust-unit:roamgate-forge:review::gitlab::tests::the_source_is_the_upstream_else_the_branch_on_its_push_remote_or_origin	GitLab through glab
+server/src/review/gitlab.test.ts	the checkout script's answer is parsed	rust-unit:roamgate-forge:review::gitlab::tests::the_checkout_scripts_answer_is_parsed	GitLab through glab
+server/src/review/gitlab.test.ts	only an open merge request from the source project is picked	rust-unit:roamgate-forge:review::gitlab::tests::only_an_open_merge_request_from_the_source_project_is_picked	GitLab through glab
+server/src/review/gitlab.test.ts	a branch's merge request: the open ones of its name, from its project	rust-unit:roamgate-forge:review::gitlab::tests::a_branchs_merge_request_the_open_ones_of_its_name_from_its_project	GitLab through glab
+server/src/review/gitlab.test.ts	a remote on another host glab is logged in to is asked there	rust-unit:roamgate-forge:review::gitlab::tests::a_remote_on_another_host_glab_is_logged_in_to_is_asked_there	GitLab through glab
+server/src/review/gitlab.test.ts	the merge request list is read a page at a time, up to a few	rust-unit:roamgate-forge:review::gitlab::tests::the_merge_request_list_is_read_a_page_at_a_time_up_to_a_few	GitLab through glab
+server/src/review/gitlab.test.ts	the checkout script applies insteadOf and never prints a token	rust-unit:roamgate-forge:review::gitlab::tests::the_checkout_script_applies_insteadof_and_never_prints_a_token	GitLab through glab
+server/src/review/gitlab.test.ts	a branch started from origin/main finds the user's merge request from a fork	rust-unit:roamgate-forge:review::gitlab::tests::a_branch_started_from_origin_main_finds_the_users_merge_request_from_a_fork	GitLab through glab
+server/src/review/gitlab.test.ts	a merge request's removed checkout reads from GitLab, from home	rust-unit:roamgate-forge:review::gitlab::tests::a_merge_requests_removed_checkout_reads_from_gitlab_from_home	GitLab through glab
+server/src/review/gitlab.test.ts	a missing glab is still told as such	rust-unit:roamgate-forge:review::gitlab::tests::a_missing_glab_is_still_told_as_such	GitLab through glab
+server/src/review/gitlab.test.ts	a removed checkout is told as such when finding its merge request	rust-unit:roamgate-forge:review::gitlab::tests::a_removed_checkout_is_told_as_such_when_finding_its_merge_request	GitLab through glab
+server/src/review/gitlab.test.ts	paged answers keep brackets inside code and comments	rust-unit:roamgate-forge:review::gitlab::tests::paged_answers_keep_brackets_inside_code_and_comments	GitLab through glab
+server/src/review/gitlab.test.ts	tokens from the environment go only to glab's default host	rust-unit:roamgate-forge:review::gitlab::tests::tokens_from_the_environment_go_only_to_glabs_default_host	GitLab through glab
+server/src/review/gitlab.test.ts	ranges and old-side lines are placed as GitLab numbers them	rust-unit:roamgate-forge:review::gitlab::tests::ranges_and_old_side_lines_are_placed_as_gitlab_numbers_them	GitLab through glab
 server/src/review/idempotent.test.ts	a reply sent again with the same id is written once	rust-unit:roamgate-review:service::tests::ids_from_the_browser_make_writes_idempotent	review service, storage, delivery and agent socket
 server/src/review/idempotent.test.ts	a new thread sent again with the same id is made once	rust-unit:roamgate-review:service::tests::ids_from_the_browser_make_writes_idempotent	review service, storage, delivery and agent socket
 server/src/review/idempotent.test.ts	an id taken elsewhere or badly shaped is refused	rust-unit:roamgate-review:service::tests::ids_from_the_browser_make_writes_idempotent	review service, storage, delivery and agent socket

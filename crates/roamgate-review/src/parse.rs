@@ -435,6 +435,12 @@ pub struct MergeRequestRef {
     pub iid: i64,
 }
 
+/// Whether a URL names a GitHub pull request (review/github.ts
+/// isGithubPullUrl).
+pub fn is_github_pull_url(url: &str) -> bool {
+    GITHUB_PR.is_match(url)
+}
+
 /// parseMergeRequestUrl (review/gitlab.ts, GitHub's pull requests too).
 pub fn parse_merge_request_url(url: &str) -> Option<MergeRequestRef> {
     let found = GITHUB_PR

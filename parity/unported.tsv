@@ -8,9 +8,6 @@ roamgate-notify	server/src/connections/runtime	S18
 roamgate-connections	server/src/connections/shutdown	S18
 roamgate-connections	server/src/connections/startup	S18
 roamgate-herdr	server/src/bridge/endpoint-	S18
-roamgate-forge	server/src/review/forge	S19
-roamgate-forge	server/src/review/github	S19
-roamgate-forge	server/src/review/gitlab	S19
 
 # roamgate-http was made by S13 for the settings family; the rest of its rows
 # wait for the front (S18). settings-rpc.test.ts holds the worktree, profile
