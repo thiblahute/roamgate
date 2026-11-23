@@ -144,12 +144,16 @@ pub async fn run(args: &[String]) -> u8 {
             return printed.code.clamp(0, 255) as u8;
         }
     };
-    if config.tls.is_some() {
-        eprintln!(
-            "[bridge] FATAL: the Rust front does not serve TLS yet; run the Bun front for --tls-cert"
-        );
-        return 1;
-    }
+    let tls = match &config.tls {
+        Some(tls) => match crate::front_tls::server_config(&tls.cert, &tls.key) {
+            Ok(tls) => Some(tls),
+            Err(error) => {
+                eprintln!("[bridge] FATAL: {error}");
+                return 1;
+            }
+        },
+        None => None,
+    };
     let data = runtime.data();
     let root = data.data_root();
     let mut own_env: std::collections::HashMap<String, String> = std::env::vars().collect();
@@ -175,6 +179,13 @@ pub async fn run(args: &[String]) -> u8 {
         None => Arc::new(SystemClock),
     };
     let clock_for_log = clock.clone();
+    let logger = roamgate_base::log::Logger::new(config.log_level, clock_for_log);
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        let subscriber =
+            tracing_subscriber::registry().with(roamgate_base::log::LogLayer::new(logger.clone()));
+        let _ = tracing::subscriber::set_global_default(subscriber);
+    }
     let mut session_secret = String::new();
     if config.auth_required {
         let mut credentials = vec![config.password.as_str()];
@@ -288,7 +299,9 @@ pub async fn run(args: &[String]) -> u8 {
         SidecarConfig {
             command,
             channel: channel.to_string_lossy().into_owned(),
-            clock: clock.clone(),
+            // The channel's pings and silence run on real time, as the Bun
+            // front's do: a test clock's advance is no silence.
+            clock: Arc::new(SystemClock),
             env: core_env,
         },
         sockets.clone(),
@@ -320,21 +333,32 @@ pub async fn run(args: &[String]) -> u8 {
         core_up.wait_for(|peer| peer.is_some()),
     )
     .await;
-    let logger = roamgate_base::log::Logger::new(config.log_level, clock_for_log);
     let mut fields = roamgate_base::log::LogFields::new();
     fields.insert(
         "url".into(),
-        roamgate_cli::server_config::browser_url_for(&config.host, bound.port(), false).into(),
+        roamgate_cli::server_config::browser_url_for(&config.host, bound.port(), tls.is_some())
+            .into(),
     );
     fields.insert("websocket".into(), "/ws".into());
     fields.insert("log_level".into(), config.log_level.as_str().into());
     logger.info("listening", Some(&fields));
-    let served = axum::serve(
-        listener,
-        app(front).into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown())
-    .await;
+    let service = app(front).into_make_service_with_connect_info::<SocketAddr>();
+    let served = match tls {
+        Some(tls) => match crate::front_tls::TlsListener::new(listener, tls) {
+            Ok(listener) => {
+                use axum::serve::ListenerExt;
+                axum::serve(listener.tap_io(|_| {}), service)
+                    .with_graceful_shutdown(shutdown())
+                    .await
+            }
+            Err(error) => Err(error),
+        },
+        None => {
+            axum::serve(listener, service)
+                .with_graceful_shutdown(shutdown())
+                .await
+        }
+    };
     sidecar.abort();
     if let Some(task) = clock_server {
         task.abort();

@@ -12,6 +12,7 @@ use rust_embed::RustEmbed;
 pub mod cli;
 pub mod families;
 pub mod front;
+pub mod front_tls;
 pub mod owners_cmd;
 
 pub use families::core_families;
