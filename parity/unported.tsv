@@ -108,10 +108,8 @@ roamgate-workspace	server/src/config/workspace-tree	S17
 # languages, the helper supervisor, hardware, models, downloads, setup,
 # low-GPU, stock voices and the library (S22, landed Bun-owned); these wait.
 # The HTTP routes, call handoff's redeem route, Surprise, the CLI, the voice
-# socket and its signalling relay are ported; voice.test.ts's companion cases,
-# call-audio.test.ts's and the front's music cases wait for the companion layer.
-roamgate-voice-server	server/src/voice/call-audio	S22
-roamgate-voice-server	server/src/voice/voice-front	S22
+# socket, its signalling relay and the companion layer but its tools are
+# ported; the tools and voice.test.ts's companion cases wait.
 roamgate-voice-server	server/src/voice/voice-tools	S22
 roamgate-voice-server	server/src/http/voice.test	S22
 

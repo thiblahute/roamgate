@@ -9,6 +9,7 @@ pub mod claude;
 pub mod cleaner;
 pub mod dictation;
 pub mod errands;
+pub mod front;
 pub mod images;
 pub mod keyed;
 pub mod memory;
