@@ -1,0 +1,27 @@
+[package]
+name = "roamgate-agents"
+version = "0.0.0"
+description = "Roamgate's agent sessions (Rust migration plan, section 6.2): the transcript readers of the eight agents, the history projection, tasks, artifacts, commands, ATIF, token usage, compaction, tail reads, the history watch, seen marks, session resolution and the agent messenger"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fancy-regex = "0.17"
+hex = "0.4"
+icu_collator = "2"
+jiff = "0.2"
+regex = "1"
+roamgate-base = { path = "../roamgate-base" }
+ryu-js = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+url = "2"
+
+[dev-dependencies]
+roamgate-protocol = { path = "../roamgate-protocol", features = ["vectors"] }
+tempfile = "3"
