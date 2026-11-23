@@ -95,3 +95,62 @@ pub fn conversation_messages_from_trajectory(file: &SessionFile, trajectory: &Va
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn file() -> SessionFile {
+        SessionFile {
+            path: "/tmp/session.jsonl".into(),
+            mtime_ms: js::date_parse("2026-07-28T00:00:00.000Z"),
+            ..Default::default()
+        }
+    }
+
+    fn trajectory(steps: Value) -> Value {
+        json!({ "schema_version": "ATIF-v1.7", "agent": { "name": "pi", "version": "1" }, "steps": steps })
+    }
+
+    #[test]
+    fn keeps_user_and_presented_assistant_text_in_chronological_order() {
+        let messages = conversation_messages_from_trajectory(
+            &file(),
+            &trajectory(json!([
+                { "step_id": 1, "timestamp": "2026-07-28T00:00:01.000Z", "source": "user", "message": "Inspect the repository" },
+                { "step_id": 2, "timestamp": "2026-07-28T00:00:02.000Z", "source": "agent", "message": "I will inspect it.",
+                  "tool_calls": [{ "tool_call_id": "call-1", "function_name": "read", "arguments": { "path": "README.md" } }] },
+                { "step_id": 3, "timestamp": "2026-07-28T00:00:03.000Z", "source": "agent", "message": "Done" },
+            ])),
+        );
+        let got: Vec<(String, String)> = messages
+            .iter()
+            .map(|m| (sv(m.get("role")).to_owned(), sv(m.get("text")).to_owned()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("user".into(), "Inspect the repository".into()),
+                ("assistant".into(), "I will inspect it.".into()),
+                ("assistant".into(), "Done".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn omits_reasoning_generated_tool_labels_errors_and_token_records() {
+        let messages = conversation_messages_from_trajectory(
+            &file(),
+            &trajectory(json!([
+                { "step_id": 1, "source": "agent", "message": "Reasoning", "reasoning_content": "Inspect files" },
+                { "step_id": 2, "source": "agent", "message": "Tool call: read",
+                  "tool_calls": [{ "tool_call_id": "call-1", "function_name": "read", "arguments": {} }] },
+                { "step_id": 3, "source": "system", "message": "Tool result" },
+                { "step_id": 4, "source": "system", "message": "Token usage", "metrics": { "prompt_tokens": 10 } },
+                { "step_id": 5, "source": "agent", "message": "Error: rate limited", "extra": { "error_message": "rate limited" } },
+            ])),
+        );
+        assert!(messages.is_empty());
+    }
+}

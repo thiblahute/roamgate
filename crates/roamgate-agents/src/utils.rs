@@ -213,3 +213,77 @@ mod tests {
         assert_eq!(stable_message_id("/x/s.jsonl", 3), "s.jsonl:3");
     }
 }
+
+#[cfg(test)]
+mod ported {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn normalizes_agent_names_and_integration_commands() {
+        assert_eq!(normalize_agent_name("Claude-Code"), "claude");
+        assert_eq!(normalize_agent_name("Kimi Code"), "kimi");
+        assert_eq!(normalize_agent_name("Grok Build"), "grok");
+        assert_eq!(normalize_agent_name("Antigravity"), "agy");
+        assert_eq!(normalize_agent_name("antigravity-cli"), "agy");
+        assert_eq!(
+            integration_install_command("codex"),
+            "herdr integration install codex"
+        );
+        assert_eq!(
+            integration_install_command("agy"),
+            "herdr integration install antigravity-cli"
+        );
+    }
+
+    #[test]
+    fn extracts_text_while_ignoring_tool_and_thinking_payloads() {
+        let content = json!([
+            { "type": "text", "text": "hello" },
+            { "type": "tool_use", "text": "ignored" },
+            { "content": [{ "type": "text", "text": "world" }] },
+        ]);
+        assert_eq!(text_from_content(Some(&content)), "hello\nworld");
+    }
+
+    #[test]
+    fn cleans_command_wrapper_noise_from_user_messages() {
+        assert_eq!(
+            clean_message_text(
+                "<command-name>cmd</command-name>\nhello\n<local-command-stdout>noise</local-command-stdout>"
+            ),
+            "hello"
+        );
+        assert_eq!(clean_message_text("[Request interrupted by user]"), "");
+    }
+
+    #[test]
+    fn parses_common_timestamp_formats_with_deterministic_fallback() {
+        let record = |value: serde_json::Value| value.as_object().unwrap().clone();
+        assert_eq!(
+            timestamp_ms(
+                &record(json!({ "timestamp": "2026-07-07T00:00:00.000Z" })),
+                1000.0,
+                2
+            ),
+            crate::js::date_parse("2026-07-07T00:00:00.000Z")
+        );
+        assert_eq!(
+            timestamp_ms(&record(json!({ "created_at": 1_700_000_000 })), 1000.0, 2),
+            1_700_000_000_000.0
+        );
+        assert_eq!(
+            timestamp_ms(&record(json!({ "time": 1_700_000_000_123_i64 })), 1000.0, 2),
+            1_700_000_000_123.0
+        );
+        assert_eq!(
+            timestamp_ms(
+                &record(json!({ "ts": "2026-07-07T00:00:01.000Z" })),
+                1000.0,
+                2
+            ),
+            crate::js::date_parse("2026-07-07T00:00:01.000Z")
+        );
+        assert_eq!(timestamp_ms(&record(json!({})), 1000.0, 2), 1002.0);
+    }
+}
