@@ -23,6 +23,7 @@ roamgate-exec = { path = "../roamgate-exec" }
 roamgate-forge = { path = "../roamgate-forge" }
 roamgate-herdr = { path = "../roamgate-herdr" }
 roamgate-http = { path = "../roamgate-http" }
+roamgate-notify = { path = "../roamgate-notify" }
 roamgate-sidecar = { path = "../roamgate-sidecar" }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order"] }

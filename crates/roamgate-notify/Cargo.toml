@@ -1,0 +1,27 @@
+[package]
+name = "roamgate-notify"
+version = "0.0.0"
+description = "Roamgate's notifications (Rust migration plan, section 6.2): the notification feed's events and file, Web Push with the existing VAPID keys and registry, the task-event tracker, and `roamgate push`"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+aes-gcm = "0.10"
+base64 = "0.22"
+hkdf = "0.12"
+p256 = { version = "0.13", features = ["ecdh", "ecdsa"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+roamgate-base = { path = "../roamgate-base" }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt", "sync", "macros", "time"] }
+tracing = "0.1"
+url = "2"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["full", "test-util"] }

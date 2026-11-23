@@ -40,6 +40,7 @@ async fn main() -> ExitCode {
         }
         Options::Command(command, args) => ExitCode::from(match command.as_str() {
             "herdr" => roamgate::families::herdr::cli(&args).await,
+            "push" => roamgate::families::notifications::cli(&args).await,
             _ => roamgate::families::update::cli(&command, &args).await,
         }),
         Options::Help => {

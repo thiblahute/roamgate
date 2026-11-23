@@ -232,7 +232,7 @@ pub struct ServiceRuntime {
 }
 
 impl ServiceRuntime {
-    fn data(&self) -> DataContext {
+    pub(crate) fn data(&self) -> DataContext {
         DataContext::new(
             self.home.clone(),
             if self.platform == "win32" {

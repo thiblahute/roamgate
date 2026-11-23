@@ -2,9 +2,44 @@
 //! coercion helpers re-declared across work, notifications, limit-resume,
 //! claude-mod and agent (plan section 7 item 6).
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Number, Value};
 
 use crate::error::UserError;
+use crate::json_store::js_key_order;
+
+/// A parsed value as JavaScript holds it (`JSON.parse`, then written again
+/// by `JSON.stringify`): numbers are doubles (`1.0` is `1`), and object
+/// keys are in JavaScript's order (integer-like keys first).
+pub fn js_value(value: Value) -> Value {
+    fn numbers(value: Value) -> Value {
+        match value {
+            Value::Number(number) => Value::Number(js_number(&number)),
+            Value::Array(items) => Value::Array(items.into_iter().map(numbers).collect()),
+            Value::Object(map) => {
+                Value::Object(map.into_iter().map(|(k, v)| (k, numbers(v))).collect())
+            }
+            other => other,
+        }
+    }
+    js_key_order(numbers(value))
+}
+
+/// A number as a double: integral ones written as integers, as JavaScript
+/// prints them below 1e21.
+pub fn js_number(number: &Number) -> Number {
+    let Some(double) = number.as_f64() else {
+        return number.clone();
+    };
+    if double.fract() == 0.0 && double.abs() < 1e21 {
+        if double.abs() <= i64::MAX as f64 && double >= i64::MIN as f64 {
+            return Number::from(double as i64);
+        }
+        if double >= 0.0 && double <= u64::MAX as f64 {
+            return Number::from(double as u64);
+        }
+    }
+    Number::from_f64(double).unwrap_or_else(|| number.clone())
+}
 
 /// The object, when `value` is a plain object (not an array, not null).
 pub fn as_record(value: &Value) -> Option<&Map<String, Value>> {

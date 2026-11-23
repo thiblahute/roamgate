@@ -3,8 +3,7 @@
 //! value, so numbers are doubles (`1.0` is `1`), and object keys are in
 //! JavaScript's order (integer-like keys first).
 
-use roamgate_base::json_store::js_key_order;
-use serde_json::{Number, Value};
+use serde_json::Value;
 
 /// `text` trimmed and parsed, or None when it is empty or not JSON (or
 /// parses to `null`).
@@ -17,37 +16,7 @@ pub fn parse_json(text: &str) -> Option<Value> {
     (!value.is_null()).then(|| js_value(value))
 }
 
-/// A parsed value as JavaScript holds it.
-pub fn js_value(value: Value) -> Value {
-    fn numbers(value: Value) -> Value {
-        match value {
-            Value::Number(number) => Value::Number(js_number(&number)),
-            Value::Array(items) => Value::Array(items.into_iter().map(numbers).collect()),
-            Value::Object(map) => {
-                Value::Object(map.into_iter().map(|(k, v)| (k, numbers(v))).collect())
-            }
-            other => other,
-        }
-    }
-    js_key_order(numbers(value))
-}
-
-/// A number as a double: integral ones written as integers, as JavaScript
-/// prints them below 1e21.
-fn js_number(number: &Number) -> Number {
-    let Some(double) = number.as_f64() else {
-        return number.clone();
-    };
-    if double.fract() == 0.0 && double.abs() < 1e21 {
-        if double.abs() <= i64::MAX as f64 && double >= i64::MIN as f64 {
-            return Number::from(double as i64);
-        }
-        if double >= 0.0 && double <= u64::MAX as f64 {
-            return Number::from(double as u64);
-        }
-    }
-    Number::from_f64(double).unwrap_or_else(|| number.clone())
-}
+pub use roamgate_base::json::js_value;
 
 #[cfg(test)]
 mod tests {

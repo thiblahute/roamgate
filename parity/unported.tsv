@@ -4,7 +4,6 @@ roamgate-activity	server/src/activity/	S13
 roamgate-activity	server/src/time-report/rpc.test.ts	S13
 roamgate-cli	server/src/cli/activity	S13
 roamgate-cli	server/src/cli/archive	S13
-roamgate-cli	server/src/cli/push	S14
 roamgate-cli	server/src/cli/reviews	S20
 roamgate-cli	server/src/cli/setup	S22
 roamgate-cli	server/src/cli/voice	S22
@@ -66,3 +65,7 @@ roamgate-http	server/src/bridge/terminal-key-roundtrip	S18
 roamgate-http	server/src/bridge/list-delta	S18
 roamgate-http	server/src/http/terminal-path-text	S18
 roamgate-http	server/src/bridge/settings-rpc.test.ts	S18
+
+roamgate-notify	server/src/notifications/notification-feed	S18
+roamgate-notify	server/src/notifications/herdr-notification-listener	S16
+roamgate-connections	server/src/notifications/web-push.test.ts	S16

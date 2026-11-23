@@ -1333,9 +1333,9 @@ server/src/cli/index.test.ts	maps usage errors and failures to distinct exit cod
 server/src/cli/index.test.ts	passes the remaining arguments and continuation through	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/index.test.ts	service logs is routed to the log viewer	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/index.test.ts	unknown flags of new commands are usage errors	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/push.test.ts	sends one test message per device and reports expired ones	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/push.test.ts	explains disabled push and empty registries	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
-server/src/cli/push.test.ts	succeeds when every provider accepts	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
+server/src/cli/push.test.ts	sends one test message per device and reports expired ones	rust-unit:roamgate-notify:cli::tests::sends_one_test_message_per_device_and_reports_expired_ones	roamgate push test (roamgate-notify, run by roamgate-cli)
+server/src/cli/push.test.ts	explains disabled push and empty registries	rust-unit:roamgate-notify:cli::tests::explains_disabled_push_and_empty_registries	roamgate push test (roamgate-notify, run by roamgate-cli)
+server/src/cli/push.test.ts	succeeds when every provider accepts	rust-unit:roamgate-notify:cli::tests::succeeds_when_every_provider_accepts	roamgate push test (roamgate-notify, run by roamgate-cli)
 server/src/cli/reviews.test.ts	export: the authored state only, key-sorted, stable, without secrets	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/reviews.test.ts	secrets are dropped by key and masked by value, at any depth	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
 server/src/cli/reviews.test.ts	import: what it would change, nothing without --apply, then applied	rust-unit:roamgate-cli	CLI internals beyond its help and outputs
@@ -2934,47 +2934,48 @@ server/src/mr-reviews/worktree.test.ts	worktree, workspace, review, checkout; as
 server/src/mr-reviews/worktree.test.ts	a repository directory with linked worktrees (gstreamer.git)	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/worktree.test.ts	the default connection first, then this machine, then the others	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/notifications/herdr-notification-listener.test.ts	maps agent transitions onto completed/blocked preferences	scenario:parity/scenarios/connections/herdr-endpoint.yaml	
-server/src/notifications/herdr-notification-listener.test.ts	uses the sound to classify pane-less custom alerts	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/herdr-notification-listener.test.ts	drops Herdr update notices	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/herdr-notification-listener.test.ts	defaults to herdr and accepts status	rust-unit:roamgate-notify	feed, task events and Web Push
+server/src/notifications/herdr-notification-listener.test.ts	uses the sound to classify pane-less custom alerts	rust-unit:roamgate-notify:task_events::tests::uses_the_sound_to_classify_pane_less_custom_alerts	feed, task events and Web Push
+server/src/notifications/herdr-notification-listener.test.ts	drops Herdr update notices	rust-unit:roamgate-notify:task_events::tests::drops_herdr_update_notices	feed, task events and Web Push
+server/src/notifications/herdr-notification-listener.test.ts	defaults to herdr and accepts status	rust-unit:roamgate-notify:task_events::tests::defaults_to_herdr_and_accepts_status	feed, task events and Web Push
 server/src/notifications/herdr-notification-listener.test.ts	forwards notifications and reconnects with capped backoff	scenario:parity/scenarios/connections/herdr-endpoint.yaml	
 server/src/notifications/herdr-notification-listener.test.ts	stop cancels a pending retry and never reports its own close	rust-unit:roamgate-notify	feed, task events and Web Push
 server/src/notifications/herdr-notification-listener.test.ts	a throwing consumer does not break delivery	rust-unit:roamgate-notify	feed, task events and Web Push
 server/src/notifications/herdr-notification-listener.test.ts	never opens a shell to a legacy server and re-checks availability	rust-unit:roamgate-notify	feed, task events and Web Push
 server/src/notifications/herdr-notification-listener.test.ts	an availability answer after stop never opens a shell	rust-unit:roamgate-notify	feed, task events and Web Push
 server/src/notifications/notification-feed.test.ts	a hello without preferences gets only what needs the user	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/notification-feed.test.ts	a notification is the push payload plus its id, time, kind, group and page	rust-unit:roamgate-notify	feed, task events and Web Push
+server/src/notifications/notification-feed.test.ts	a notification is the push payload plus its id, time, kind, group and page	rust-unit:roamgate-notify:feed::tests::a_notification_is_the_push_payload_plus_its_id_time_kind_group_and_page	feed, task events and Web Push
 server/src/notifications/notification-feed.test.ts	hello replays what came after a numeric `since`, clears included	scenario:parity/scenarios/notifications/task-feed.yaml	
 server/src/notifications/notification-feed.test.ts	nothing is sent before hello	rust-unit:roamgate-notify	feed, task events and Web Push
 server/src/notifications/notification-feed.test.ts	the feed and its ids live through a restart	scenario:parity/scenarios/notifications/task-feed.yaml	
-server/src/notifications/notification-feed.test.ts	old events are dropped after a day, and beyond 200	rust-unit:roamgate-notify	feed, task events and Web Push
+server/src/notifications/notification-feed.test.ts	old events are dropped after a day, and beyond 200	rust-unit:roamgate-notify:feed::tests::old_events_are_dropped_after_a_day_and_beyond_200	feed, task events and Web Push
 server/src/notifications/notification-feed.test.ts	a clear goes out only for a notification still out	scenario:parity/scenarios/notifications/actions-and-clears.yaml	
 server/src/notifications/notification-feed.test.ts	the client's preferences filter notifications, never clears	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/notification-feed.test.ts	an action answers the agent's permission prompt	rust-unit:roamgate-notify	feed, task events and Web Push
+server/src/notifications/notification-feed.test.ts	an action answers the agent's permission prompt	rust-unit:roamgate-notify:feed::tests::an_action_answers_the_agent_s_permission_prompt	feed, task events and Web Push
 server/src/notifications/notification-feed.test.ts	notifications without a prompt take no action	scenario:parity/scenarios/notifications/actions-and-clears.yaml	
 server/src/notifications/notification-feed.test.ts	Web Push gets the same payload, and skips quiet devices while the Android app is there	rust-unit:roamgate-notify	feed, task events and Web Push
 server/src/notifications/notification-feed.test.ts	logging out closes that login's sockets	rust-unit:roamgate-notify	feed, task events and Web Push
 server/src/notifications/notification-feed.test.ts	bad messages are ignored	scenario:parity/scenarios/notifications/actions-and-clears.yaml	
 server/src/notifications/notification-feed.test.ts	status lists the open sockets: kind, address, since and last seen	scenario:parity/scenarios/notifications/task-feed.yaml	
 server/src/notifications/notification-feed.test.ts	connections, hellos, sends and closes are logged	rust-unit:roamgate-notify	feed, task events and Web Push
+server/src/notifications/notification-feed.test.ts	while the Rust core owns the feed, Bun only relays: it asks the core, sends what the core gives back and reads the file again when it returns	rust-unit:roamgate-notify	the feed's sockets stay with the Bun front until the front flips (S18)
 server/src/notifications/task-events.test.ts	initial snapshots seed, transitions notify once, and stale snapshots cannot replay events	scenario:parity/scenarios/notifications/task-feed.yaml	
-server/src/notifications/task-events.test.ts	partial status events retain the tab from the pane snapshot	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/task-events.test.ts	moves, closures, malformed lists and stopped runtimes do not fabricate tasks	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	push subject %s uses the default, override, or disables delivery	rust-unit:roamgate-notify	feed, task events and Web Push
+server/src/notifications/task-events.test.ts	partial status events retain the tab from the pane snapshot	rust-unit:roamgate-notify:task_events::tests::partial_status_events_retain_the_tab_from_the_pane_snapshot	feed, task events and Web Push
+server/src/notifications/task-events.test.ts	moves, closures, malformed lists and stopped runtimes do not fabricate tasks	rust-unit:roamgate-notify:task_events::tests::moves_closures_malformed_lists_and_stopped_runtimes_do_not_fabricate_tasks	feed, task events and Web Push
+server/src/notifications/web-push.test.ts	push subject %s uses the default, override, or disables delivery	rust-unit:roamgate-notify:web_push::tests::push_subject_uses_the_default_override_or_disables_delivery	feed, task events and Web Push
 server/src/notifications/web-push.test.ts	rejects SSRF destinations, credentials, malformed keys and oversized endpoints	scenario:parity/scenarios/notifications/web-push-registration.yaml	
 server/src/notifications/web-push.test.ts	authenticated, non-CSRF device mutations persist privately across restart and revoke independently	scenario:parity/scenarios/notifications/web-push-registration.yaml	
-server/src/notifications/web-push.test.ts	completion and blocked preferences, stale runtimes and expired endpoints are isolated	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	push body uses labels with ID fallbacks: %j	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	native delivery uses encrypted fetch with a hard deadline and no redirects	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	bounded delivery concurrency discards revoked and stale queued tasks	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	corrupt private data is preserved and disables push instead of rotating keys	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	pending label lookups only publish the latest task per pane: %s	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	runtime resolves push labels without browser clients: %s	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	push payload keeps the status wording and target	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	push payload uses Herdr text and tolerates pane-less alerts	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	Ranger push preserves notification text and links to the durable task run	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	Ranger success uses completion preferences; failures and waiting use attention preferences	rust-unit:roamgate-notify	feed, task events and Web Push
-server/src/notifications/web-push.test.ts	a device can stay quiet while the Android app is connected; the feed's payload and skip apply	rust-unit:roamgate-notify	feed, task events and Web Push
+server/src/notifications/web-push.test.ts	completion and blocked preferences, stale runtimes and expired endpoints are isolated	rust-unit:roamgate-notify:web_push::tests::completion_and_blocked_preferences_stale_runtimes_and_expired_endpoints_are_isolated	feed, task events and Web Push
+server/src/notifications/web-push.test.ts	push body uses labels with ID fallbacks: %j	rust-unit:roamgate-notify:payload::tests::push_body_uses_labels_with_id_fallbacks	feed, task events and Web Push
+server/src/notifications/web-push.test.ts	native delivery uses encrypted fetch with a hard deadline and no redirects	rust-unit:roamgate-notify:web_push::tests::native_delivery_uses_encrypted_fetch_with_a_hard_deadline_and_no_redirects	feed, task events and Web Push
+server/src/notifications/web-push.test.ts	bounded delivery concurrency discards revoked and stale queued tasks	rust-unit:roamgate-notify:web_push::tests::bounded_delivery_concurrency_discards_revoked_and_stale_queued_tasks	feed, task events and Web Push
+server/src/notifications/web-push.test.ts	corrupt private data is preserved and disables push instead of rotating keys	rust-unit:roamgate-notify:web_push::tests::corrupt_private_data_is_preserved_and_disables_push_instead_of_rotating_keys	feed, task events and Web Push
+server/src/notifications/web-push.test.ts	pending label lookups only publish the latest task per pane: %s	rust-unit:roamgate-connections	the connection runtime resolves push labels; ported with the host layer (S16)
+server/src/notifications/web-push.test.ts	runtime resolves push labels without browser clients: %s	rust-unit:roamgate-connections	the connection runtime resolves push labels; ported with the host layer (S16)
+server/src/notifications/web-push.test.ts	push payload keeps the status wording and target	rust-unit:roamgate-notify:payload::tests::push_payload_keeps_the_status_wording_and_target	feed, task events and Web Push
+server/src/notifications/web-push.test.ts	push payload uses Herdr text and tolerates pane-less alerts	rust-unit:roamgate-notify:payload::tests::push_payload_uses_herdr_text_and_tolerates_pane_less_alerts	feed, task events and Web Push
+server/src/notifications/web-push.test.ts	Ranger push preserves notification text and links to the durable task run	rust-unit:roamgate-notify:payload::tests::ranger_push_preserves_notification_text_and_links_to_the_durable_task_run	feed, task events and Web Push
+server/src/notifications/web-push.test.ts	Ranger success uses completion preferences; failures and waiting use attention preferences	rust-unit:roamgate-notify:payload::tests::ranger_success_uses_completion_preferences_failures_and_waiting_use_attention_preferences	feed, task events and Web Push
+server/src/notifications/web-push.test.ts	a device can stay quiet while the Android app is connected; the feed's payload and skip apply	rust-unit:roamgate-notify:web_push::tests::a_device_can_stay_quiet_while_the_android_app_is_connected_the_feed_s_payload_and_skip_apply	feed, task events and Web Push
 server/src/profiles/profiles.test.ts	no profiles: plain claude, exactly as before	rust-unit:roamgate-connections	agent profiles
 server/src/profiles/profiles.test.ts	a secret file is read at start, its newline dropped	rust-unit:roamgate-connections	agent profiles
 server/src/profiles/profiles.test.ts	a secret others can read is refused, naming the file only	rust-unit:roamgate-connections	agent profiles

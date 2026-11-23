@@ -16,6 +16,7 @@ regex = "1"
 roamgate-base = { path = "../roamgate-base" }
 roamgate-exec = { path = "../roamgate-exec" }
 roamgate-herdr = { path = "../roamgate-herdr" }
+roamgate-notify = { path = "../roamgate-notify" }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"

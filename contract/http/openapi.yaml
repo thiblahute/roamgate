@@ -330,8 +330,13 @@ paths:
                   properties: { ok: { const: true } },
                   additionalProperties: false,
                 }
+        "403": &pushForbidden
+          description: Without the header, JSON, or from another site
+          content:
+            text/plain:
+              schema: { const: Forbidden }
         "4XX": &pushError
-          description: "403 without the header or from another site (text), 400 invalid, 401 not logged in, 409 too many devices"
+          description: "400 invalid, 401 not logged in, 409 too many devices"
           content:
             application/json:
               schema:
@@ -355,6 +360,7 @@ paths:
                 endpoint: { type: string }
       responses:
         "200": *pushOk
+        "403": *pushForbidden
         "4XX": *pushError
         "5XX": *pushError
   /api/notifications/ws:

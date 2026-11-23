@@ -6395,6 +6395,7 @@ dependencies = [
  "roamgate-forge",
  "roamgate-herdr",
  "roamgate-http",
+ "roamgate-notify",
  "roamgate-sidecar",
  "rust-embed",
  "serde",
@@ -6472,6 +6473,7 @@ dependencies = [
  "roamgate-base",
  "roamgate-exec",
  "roamgate-herdr",
+ "roamgate-notify",
  "rustls 0.23.46",
  "serde_json",
  "sha2 0.10.9",
@@ -6552,6 +6554,24 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "roamgate-notify"
+version = "0.0.0"
+dependencies = [
+ "aes-gcm",
+ "base64 0.22.1",
+ "hkdf",
+ "p256",
+ "reqwest 0.12.28",
+ "roamgate-base",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
 ]
 
 [[package]]

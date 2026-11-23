@@ -30,6 +30,16 @@ wire/core-channel.md), each while the owners table gives it to Rust.
   `internal.mr_cache.flush`, the reverse targets `mr_cache.load` (a reader's
   forge read or pause, by token) and `mr_cache.release` (Bun writes and drops
   its own cache before the core reads the file).
+- notifications (S14): `owners/families.json` gives the family the `push`
+  command; the front's internal calls `internal.notifications.state`,
+  `.publish`, `.clear_tag`, `.clear_pane`, `.clear_blocked_pane` and
+  `.clear_prompt`; reverse targets `notifications.feed` (the feed's events
+  after a change, and those to send to the notification sockets, which the
+  front keeps until Phase 7), `notifications.clients` and
+  `notifications.current`. http: `/api/notifications/push` describes its
+  403 (`Forbidden`, text), which a recording now captures when the core
+  answers. notifications.json, web-push.json and the feed's messages are
+  unchanged.
 
 ## 1.5
 

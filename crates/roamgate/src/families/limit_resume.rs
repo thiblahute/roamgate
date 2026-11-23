@@ -52,13 +52,19 @@ struct LimitResumeFamily {
 type Generations = Arc<Mutex<HashMap<String, u64>>>;
 
 fn logger(cx: &FamilyContext) -> Logger {
+    scoped_logger(cx, "bridge.limit-resume")
+}
+
+/// A logger of the server's (its level from `ROAMGATE_LOG_LEVEL`) on the
+/// families' clock, with a TS scope.
+pub(crate) fn scoped_logger(cx: &FamilyContext, scope: &str) -> Logger {
     let level = roamgate_env(&ProcessEnv, "LOG_LEVEL")
         .and_then(|value| parse_log_level(&value).ok())
         .unwrap_or(LogLevel::Info);
     let clock = cx.clock.clone();
     Logger::with(LoggerOptions {
         level: Some(level),
-        scope: Some("bridge.limit-resume".into()),
+        scope: Some(scope.into()),
         now: Some(Arc::new(move || clock.now())),
         ..LoggerOptions::default()
     })

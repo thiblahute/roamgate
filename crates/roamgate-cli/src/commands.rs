@@ -71,7 +71,7 @@ pub struct CliRuntime {
 }
 
 impl CliRuntime {
-    fn service(&self) -> ServiceRuntime {
+    pub(crate) fn service(&self) -> ServiceRuntime {
         ServiceRuntime {
             platform: self.platform.clone(),
             home: self.home.clone(),
@@ -89,19 +89,19 @@ pub struct Effects {
     pub run: Arc<dyn RunCommand>,
 }
 
-enum Failure {
+pub(crate) enum Failure {
     Failed(String),
     Usage(String),
 }
 
 /// `wantsHelp`.
-fn wants_help(args: &[String]) -> bool {
+pub(crate) fn wants_help(args: &[String]) -> bool {
     args.first().map(String::as_str) == Some("help")
         || args.iter().any(|arg| arg == "--help" || arg == "-h")
 }
 
 /// Strict boolean flags and no positionals (parseCommandArgs).
-fn parse_flags(args: &[String], known: &[&str]) -> Result<Vec<String>, Failure> {
+pub(crate) fn parse_flags(args: &[String], known: &[&str]) -> Result<Vec<String>, Failure> {
     let mut set = Vec::new();
     let mut positionals = Vec::new();
     let mut rest = args.iter();
@@ -137,7 +137,7 @@ fn parse_flags(args: &[String], known: &[&str]) -> Result<Vec<String>, Failure> 
     Ok(set)
 }
 
-fn finish(command: &str, mut printed: Printed, result: Result<i32, Failure>) -> Printed {
+pub(crate) fn finish(command: &str, mut printed: Printed, result: Result<i32, Failure>) -> Printed {
     match result {
         Ok(code) => printed.exit(code),
         Err(Failure::Failed(message)) => {
