@@ -2787,12 +2787,12 @@ server/src/mr-reviews/complexity.test.ts	the to-review query with three followed
 server/src/mr-reviews/complexity.test.ts	a refusal is read from an error or an answer	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
 server/src/mr-reviews/complexity.test.ts	batches stay under the budget; a refusal splits, learns and is not seen	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
 server/src/mr-reviews/complexity.test.ts	answers asked in parts merge into one	vector:contract/vectors/mr-complexity.json	S5 vectors, read by bun test and the Rust crate
-server/src/mr-reviews/curation.test.ts	rankings: only given keys, a reason for each pick, few picks	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/curation.test.ts	top paths count files and their directories	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/curation.test.ts	a batch: the user's own requests and dismissed ones are no candidates	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/curation.test.ts	a ranking saved before the head and title stamp holds at its updatedAt	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/curation.test.ts	unstamped rankings and the agent's picks are not ranked again	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/curation.test.ts	off: nothing is asked	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/curation.test.ts	rankings: only given keys, a reason for each pick, few picks	rust-unit:roamgate-mr-reviews:curation::tests::rankings_only_given_keys_a_reason_for_each_pick_few_picks	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/curation.test.ts	top paths count files and their directories	rust-unit:roamgate-mr-reviews:curation::tests::top_paths_count_files_and_their_directories	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/curation.test.ts	a batch: the user's own requests and dismissed ones are no candidates	rust-unit:roamgate-mr-reviews:curation::tests::a_batch_the_users_own_requests_and_dismissed_ones_are_no_candidates	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/curation.test.ts	a ranking saved before the head and title stamp holds at its updatedAt	rust-unit:roamgate-mr-reviews:curation::tests::a_ranking_saved_before_the_head_and_title_stamp_holds_at_its_updated_at	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/curation.test.ts	unstamped rankings and the agent's picks are not ranked again	rust-unit:roamgate-mr-reviews:curation::tests::unstamped_rankings_and_the_agents_picks_are_not_ranked_again	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/curation.test.ts	off: nothing is asked	rust-unit:roamgate-mr-reviews:curation::tests::off_nothing_is_asked	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/effort-board.test.ts	a part's branch links to its request by name, by patch ids, else is its branch row	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/effort-board.test.ts	effort.get gives each plan its inbox entry, from the entries computed	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/effort-service.test.ts	an effort declared by a tool: its card, ledger tools, the push with Undo, refusals	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
@@ -2811,18 +2811,18 @@ server/src/mr-reviews/effort-service.test.ts	a duplicate effort deleted by a too
 server/src/mr-reviews/effort-service.test.ts	what a part holds is read back from its branch, never taken from the pick	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/effort-service.test.ts	a part never goes into an existing worktree or onto an existing branch	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/effort-service.test.ts	an effort's leader is its head workspace's conversation session, even stopped	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/efforts.test.ts	a ledger: upstream by patch id, authored dispositions kept across a reword and a rebase, history, undo	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/efforts.test.ts	overlaps: same, contains, partial	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/efforts.test.ts	880 commits: derived within the bound, then nothing run while the heads hold	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/efforts.test.ts	fuzzy proposals from upstream, confirmed and rejected; planned requests; what changed	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/efforts.test.ts	a ledger: upstream by patch id, authored dispositions kept across a reword and a rebase, history, undo	rust-unit:roamgate-mr-reviews:efforts::tests::a_ledger_upstream_by_patch_id_authored_dispositions_kept_across_a_reword_and_a_rebase_history_undo	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/efforts.test.ts	overlaps: same, contains, partial	rust-unit:roamgate-mr-reviews:efforts::tests::overlaps_same_contains_partial	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/efforts.test.ts	880 commits: derived within the bound, then nothing run while the heads hold	rust-unit:roamgate-mr-reviews:efforts::tests::commits_880_derived_within_the_bound_then_nothing_run_while_the_heads_hold	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/efforts.test.ts	fuzzy proposals from upstream, confirmed and rejected; planned requests; what changed	rust-unit:roamgate-mr-reviews:efforts::tests::fuzzy_proposals_from_upstream_confirmed_and_rejected_planned_requests_what_changed	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/fetchers.test.ts	GitHub: one graphql read; its data even with errors	scenario:parity/scenarios/mr_reviews/github-inbox.yaml	
 server/src/mr-reviews/fetchers.test.ts	GitHub without a login is said so, nothing asked	scenario:parity/scenarios/mr_reviews/hosts.yaml	
 server/src/mr-reviews/fetchers.test.ts	GitLab: the graphql query and draft notes are reads	scenario:parity/scenarios/mr_reviews/gitlab-inbox.yaml	
-server/src/mr-reviews/fuzzy.test.ts	subject words drop markers, stop words and punctuation	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/fuzzy.test.ts	a reworded commit upstream is proposed first; noise is not	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/fuzzy.test.ts	a rejected candidate is never proposed again	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/fuzzy.test.ts	2000 commits against 3000 candidates stay quick	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/fuzzy.test.ts	upstream candidates parse with their sizes; exact matches are left out	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/fuzzy.test.ts	subject words drop markers, stop words and punctuation	rust-unit:roamgate-mr-reviews:fuzzy::tests::subject_words_drop_markers_stop_words_and_punctuation	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/fuzzy.test.ts	a reworded commit upstream is proposed first; noise is not	rust-unit:roamgate-mr-reviews:fuzzy::tests::a_reworded_commit_upstream_is_proposed_first_noise_is_not	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/fuzzy.test.ts	a rejected candidate is never proposed again	rust-unit:roamgate-mr-reviews:fuzzy::tests::a_rejected_candidate_is_never_proposed_again	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/fuzzy.test.ts	2000 commits against 3000 candidates stay quick	rust-unit:roamgate-mr-reviews:fuzzy::tests::commits_2000_against_3000_candidates_stay_quick	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/fuzzy.test.ts	upstream candidates parse with their sizes; exact matches are left out	rust-unit:roamgate-mr-reviews:fuzzy::tests::upstream_candidates_parse_with_their_sizes_exact_matches_are_left_out	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/home.gitdir.test.ts	a repository directory: what git lists first, with no work tree; its checkout found, and only its own	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/home.gitdir.test.ts	Start a review with a home in a repository directory: the worktree starts from its checkout, never from the git dir	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/home.gitdir.test.ts	a repository directory whose checkout is gone: git makes the home from the review worktree, and says what failed	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
@@ -2835,13 +2835,13 @@ server/src/mr-reviews/home.test.ts	the home's Claude starts with the default pro
 server/src/mr-reviews/home.test.ts	conversation mode's home start takes the profile too; the plain default types claude as before	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/hosts.test.ts	glab: hosts with a token, a keyring token, or the default	scenario:parity/scenarios/mr_reviews/gitlab-inbox.yaml	
 server/src/mr-reviews/hosts.test.ts	gh: every host of hosts.yml	scenario:parity/scenarios/mr_reviews/github-inbox.yaml	
-server/src/mr-reviews/hosts.test.ts	both together, without the files' other content	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/hosts.test.ts	both together, without the files' other content	rust-unit:roamgate-forge:hosts::tests::glab_and_gh_logins_are_found_and_listed_once	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/hosts.test.ts	no configuration: no host	scenario:parity/scenarios/mr_reviews/hosts.yaml	
-server/src/mr-reviews/inbox.lanes.test.ts	rules from the forge's status give lanes and next steps	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.lanes.test.ts	others' requests get no lane	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.lanes.test.ts	an override's whose-move wins, unless outdated; its next step shows	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.lanes.test.ts	a request waiting for another is drawn under it and Blocked	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.lanes.test.ts	cycles are drawn flat	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.lanes.test.ts	rules from the forge's status give lanes and next steps	rust-unit:roamgate-mr-reviews:lanes::tests::rules_from_the_forges_status_give_lanes_and_next_steps	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.lanes.test.ts	others' requests get no lane	rust-unit:roamgate-mr-reviews:lanes::tests::others_requests_get_no_lane	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.lanes.test.ts	an override's whose-move wins, unless outdated; its next step shows	rust-unit:roamgate-mr-reviews:lanes::tests::an_overrides_whose_move_wins_unless_outdated_its_next_step_shows	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.lanes.test.ts	a request waiting for another is drawn under it and Blocked	rust-unit:roamgate-mr-reviews:lanes::tests::a_request_waiting_for_another_is_drawn_under_it_and_blocked	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.lanes.test.ts	cycles are drawn flat	rust-unit:roamgate-mr-reviews:lanes::tests::cycles_are_drawn_flat	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.merge.test.ts	rows, lanes and next steps	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.merge.test.ts	label times are read once per label change, never on a steady refresh	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.merge.test.ts	a scope turning the bots off there, and a project's own label	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
@@ -2880,17 +2880,17 @@ server/src/mr-reviews/inbox.test.ts	unread follows what the user saw	rust-unit:r
 server/src/mr-reviews/inbox.test.ts	a host that fails keeps its requests	scenario:parity/scenarios/mr_reviews/rate-limit.yaml	
 server/src/mr-reviews/inbox.test.ts	suggestions: picked ones show, not interested ones go	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.test.ts	a closed request's review starts aging	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.test.ts	defaults are empty: nothing user-specific	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inbox.test.ts	normalizes what settings.json holds	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.test.ts	defaults are empty: nothing user-specific	rust-unit:roamgate-mr-reviews:settings::tests::defaults_are_empty_nothing_user_specific	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inbox.test.ts	normalizes what settings.json holds	rust-unit:roamgate-mr-reviews:settings::tests::normalizes_what_settings_json_holds	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/inbox.test.ts	the RPC saves through the stored form	scenario:parity/scenarios/mr_reviews/hosts.yaml	
 server/src/mr-reviews/inbox.test.ts	the user's order: kept, checked, saved alone without a refresh	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inference.test.ts	versions, facts and what counts as a meaningful change	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inference.test.ts	dependencies found without a model: references and contained commits	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inference.test.ts	the answer is checked; the prompt marks people's text as data	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inference.test.ts	twice a day in batches, then one row on a meaningful event, debounced; a failure keeps what was found	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inference.test.ts	lanes: an override wins, then the inference while it holds, else the rules	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inference.test.ts	the model: Sonnet when automatic, the automatic one given, the setting first (D27)	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/inference.test.ts	the automatic model from the default profile: Sonnet on Claude, a gateway's own model (D27)	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inference.test.ts	versions, facts and what counts as a meaningful change	rust-unit:roamgate-mr-reviews:inference::tests::versions_facts_and_what_counts_as_a_meaningful_change	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inference.test.ts	dependencies found without a model: references and contained commits	rust-unit:roamgate-mr-reviews:inference::tests::dependencies_found_without_a_model_references_and_contained_commits	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inference.test.ts	the answer is checked; the prompt marks people's text as data	rust-unit:roamgate-mr-reviews:inference::tests::the_answer_is_checked_the_prompt_marks_peoples_text_as_data	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inference.test.ts	twice a day in batches, then one row on a meaningful event, debounced; a failure keeps what was found	rust-unit:roamgate-mr-reviews:inference::tests::twice_a_day_in_batches_then_one_row_on_a_meaningful_event_debounced_a_failure_keeps_what_was_found	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inference.test.ts	lanes: an override wins, then the inference while it holds, else the rules	rust-unit:roamgate-mr-reviews:inference::tests::lanes_an_override_wins_then_the_inference_while_it_holds_else_the_rules	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inference.test.ts	the model: Sonnet when automatic, the automatic one given, the setting first (D27)	rust-unit:roamgate-mr-reviews:inference::tests::the_model_sonnet_when_automatic_the_automatic_one_given_the_setting_first_d27	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/inference.test.ts	the automatic model from the default profile: Sonnet on Claude, a gateway's own model (D27)	rust-unit:roamgate-mr-reviews:inference::tests::the_automatic_model_from_the_default_profile_sonnet_on_claude_a_gateways_own_model_d27	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/links.test.ts	its home first, whatever its name or branch; the shared review workspace last	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/links.test.ts	on its branch in a clone of the project, or tracking it	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/links.test.ts	by its name, its review workspace; the target branch never	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
@@ -2912,10 +2912,10 @@ server/src/mr-reviews/order.test.ts	Undo takes back an agent's override, unless 
 server/src/mr-reviews/order.test.ts	the order and its version survive a restart	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/order.test.ts	two clients follow the same order, by push or by the next poll	scenario:parity/scenarios/mr_reviews/marks.yaml	
 server/src/mr-reviews/overrides.test.ts	fields are set, capped and cleared; an empty override goes	scenario:parity/scenarios/mr_reviews/marks.yaml	
-server/src/mr-reviews/overrides.test.ts	whose-move and next step age with the request, labels never	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/overrides.test.ts	settings.json keeps overrides checked, capped, and round trips	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/overrides.test.ts	the oldest overrides are forgotten past the cap	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
-server/src/mr-reviews/overrides.test.ts	renaming a key follows into other rows' dependencies	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/overrides.test.ts	whose-move and next step age with the request, labels never	rust-unit:roamgate-mr-reviews:overrides::tests::whose_move_and_next_step_age_with_the_request_labels_never	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/overrides.test.ts	settings.json keeps overrides checked, capped, and round trips	rust-unit:roamgate-mr-reviews:settings::tests::settings_json_keeps_overrides_checked_capped_and_round_trips	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/overrides.test.ts	the oldest overrides are forgotten past the cap	rust-unit:roamgate-mr-reviews:settings::tests::the_oldest_overrides_are_forgotten_past_the_cap	inbox, order, efforts and the reviews agent
+server/src/mr-reviews/overrides.test.ts	renaming a key follows into other rows' dependencies	rust-unit:roamgate-mr-reviews:overrides::tests::renaming_a_key_follows_into_other_rows_dependencies	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/panel.test.ts	the panel's search and filter: kept in settings.json, pushed to every page, read back with the inbox, no new version	scenario:parity/scenarios/mr_reviews/rpc-surface.yaml	
 server/src/mr-reviews/panel.test.ts	a request's recorded home is linked as its home; open with a home shows the review there	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
 server/src/mr-reviews/prefetch.test.ts	prefetch: only the user's requests and the picks, once per head	rust-unit:roamgate-mr-reviews	inbox, order, efforts and the reviews agent
