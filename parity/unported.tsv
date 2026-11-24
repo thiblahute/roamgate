@@ -9,15 +9,13 @@ roamgate-connections	server/src/connections/startup	S18
 roamgate-herdr	server/src/bridge/endpoint-	S18
 
 # roamgate-http was made by S13 for the settings family; the rest of its rows
-# wait for the front (S18). settings-rpc.test.ts holds the worktree, profile
-# and connection-namespace handlers that stay in Bun with their families
-# (S16, S17) and the reply plumbing of the front (S18): the latest is named.
+# wait for the front (S18): the terminal bridge and the contract recorder.
 roamgate-http	server/src/bridge/terminal-bridge	S18
 roamgate-http	server/src/contract-record/	S18
 roamgate-http	server/src/bridge/terminal-key-roundtrip	S18
-roamgate-http	server/src/bridge/settings-rpc.test.ts	S18
 
-roamgate-notify	server/src/notifications/notification-feed	S18
+# The Herdr notification listener and the task events' push labels are the
+# per-connection composition root's (S25 WP4).
 roamgate-notify	server/src/notifications/herdr-notification-listener	S18
 roamgate-notify	server/src/notifications/web-push.test.ts	S18
 

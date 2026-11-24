@@ -458,6 +458,7 @@ pub async fn run(args: &[String]) -> u8 {
             "has_explicit_client_socket_path": config.has_explicit_client_socket_path,
             "task_notification_source": config.task_notification_source,
             "auth_required": config.auth_required,
+            "tls": config.tls.is_some(),
             "generations": {},
         }),
         // index.ts `scheduleManagedShutdown`: a second, then the server

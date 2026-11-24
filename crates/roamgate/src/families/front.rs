@@ -6,14 +6,19 @@
 //!   checked and routed to their connection (roamgate-connections routing,
 //!   roamgate-http browser_rpc), then to the family that declares the
 //!   method; `bridge.ping`, `bridge.status` and `bridge.pause_others`; the
-//!   other methods of a connection pass through to its Herdr, topology
-//!   lists as deltas (roamgate-http list_delta). The methods Bun answered
-//!   with its own code and no family declares yet are refused as
+//!   browser RPCs Bun answered with its own code
+//!   ([`super::standalone::browser`]: the other methods of a connection
+//!   pass through to its Herdr with Bun's overlays, topology lists as
+//!   deltas, roamgate-http list_delta). The methods Bun answered with its
+//!   own code that are not served yet are refused as
 //!   `standalone_unported`, named in the served log.
+//! - `/api/notifications/ws`: the notification feed's sockets
+//!   ([`super::standalone::feed`]).
 //! - HTTP: `/api/health`, and the connection-scoped routes
 //!   (`/api/connections/<id>/...` and their legacy paths): `herdr-info`
 //!   from the connection's Herdr, the file and agent-session routes from
-//!   their families at their legacy paths.
+//!   their families at their legacy paths, the uploads
+//!   ([`super::standalone::uploads`]).
 //! - The core's pushes, delivered to the `/ws` sockets.
 //! - Reverse targets in the process: the handovers' (a family taken from
 //!   Bun has it let go of its part first: nothing to let go of here), and
@@ -44,7 +49,7 @@ use roamgate_http::browser_rpc::{
     parse_request, route_request,
 };
 use roamgate_http::list_delta::{ListDeltas, shape_of};
-use roamgate_sidecar::core::{FRONT_FAMILY, note_served};
+use roamgate_sidecar::core::FRONT_FAMILY;
 use roamgate_sidecar::family::{CoreFamily, FamilyContext};
 use roamgate_sidecar::owners::families as declared_families;
 use roamgate_sidecar::peer::{
@@ -279,6 +284,7 @@ impl Inner {
             has_explicit_client_socket_path: flag("has_explicit_client_socket_path"),
             task_notification_source: text("task_notification_source").unwrap_or_default(),
             auth_required: flag("auth_required"),
+            tls: flag("tls"),
         };
         let explicit_legacy_override = flag("has_explicit_socket_path")
             || flag("has_explicit_client_socket_path")
@@ -339,6 +345,7 @@ impl Inner {
             .clone();
         let into = clients.clone();
         standalone.set_push_sink(Arc::new(move |push| into.deliver(&push)));
+        super::standalone::feed::register(cx);
         // A family taken from Bun first has it let go of its part: with no
         // Bun, there is nothing to let go of.
         for target in [
@@ -429,6 +436,47 @@ impl Inner {
             None,
         );
         json!({"accepted": true, "transport": "ws"})
+    }
+
+    /// A notification feed socket opened: never from another site nor a
+    /// sandboxed page; its links on the origin the client reached.
+    fn open_feed(&self, open: &WsOpen) -> Value {
+        if header(&open.headers, "sec-fetch-site") == Some("cross-site")
+            || header(&open.headers, "origin") == Some("null")
+        {
+            return refused(403, "forbidden");
+        }
+        let Some(feed) = super::standalone::feed::current() else {
+            return refused(503, "the server is starting");
+        };
+        let scheme = if self.config().tls { "https" } else { "http" };
+        let host = header(&open.headers, "host").unwrap_or("localhost");
+        let path = if open.url.starts_with('/') {
+            open.url.clone()
+        } else {
+            format!("/{}", open.url)
+        };
+        let origin = match url::Url::parse(&format!("{scheme}://{host}{path}")) {
+            Ok(url) => {
+                let mut headers = http::HeaderMap::new();
+                for (name, value) in &open.headers {
+                    if let (Ok(name), Ok(value)) = (
+                        http::header::HeaderName::from_bytes(name.as_bytes()),
+                        http::HeaderValue::from_str(value),
+                    ) {
+                        headers.append(name, value);
+                    }
+                }
+                roamgate_http::public_origin::public_origin(
+                    &url,
+                    &headers,
+                    open.ctx.client_ip.as_deref(),
+                )
+            }
+            Err(_) => format!("{scheme}://{host}"),
+        };
+        feed.open(open.socket_id, origin, open.ctx.client_ip.clone());
+        json!({"accepted": true, "transport": "raw"})
     }
 
     fn closed_ws(&self, cx: &FamilyContext, socket_id: u64, code: Option<u16>, reason: &str) {
@@ -930,19 +978,34 @@ impl CoreFamily for FrontFamily {
             let path = raw_request_pathname(&open.url).to_owned();
             Ok(match path.as_str() {
                 "/ws" => inner.open_ws(&open).await,
-                "/api/notifications/ws" => {
-                    note_served(&ProcessEnv, "unported", "ws /api/notifications/ws");
-                    refused(
-                        503,
-                        "the notification feed is not served by the standalone core",
-                    )
-                }
+                "/api/notifications/ws" => inner.open_feed(&open),
                 _ => refused(404, "Not Found"),
             })
         })
     }
 
     fn ws_socket(&self, cx: &FamilyContext, _link: &Peer, message: Message) {
+        // The notification feed's sockets.
+        if let Some(feed) = super::standalone::feed::current() {
+            match &message {
+                Message::WsMessage {
+                    socket_id, data, ..
+                } if feed.owns(*socket_id) => {
+                    let (socket_id, data) = (*socket_id, data.clone());
+                    tokio::spawn(async move { feed.message(socket_id, &data).await });
+                    return;
+                }
+                Message::WsClose {
+                    socket_id,
+                    code,
+                    reason,
+                } if feed.owns(*socket_id) => {
+                    feed.closed(*socket_id, *code, reason);
+                    return;
+                }
+                _ => {}
+            }
+        }
         match message {
             Message::WsMessage {
                 socket_id,

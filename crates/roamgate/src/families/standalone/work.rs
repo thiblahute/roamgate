@@ -154,7 +154,7 @@ pub(super) const TARGETS: &[(&str, Target)] = &[
             Ok(cookie)
         })
     }),
-    // The feed's sockets are the front's to hold: none here.
+    // The feed's sockets are the front family's (super::feed).
     ("notifications.feed", |_, _, args| {
         Box::pin(async move {
             if !args.get("last").is_some_and(Value::is_number)
@@ -162,11 +162,19 @@ pub(super) const TARGETS: &[(&str, Target)] = &[
             {
                 return Err(RpcError::new("notifications.feed needs last and events"));
             }
+            if let Some(feed) = super::feed::current() {
+                feed.apply_core(&args);
+            }
             Ok(json!({"ok": true}))
         })
     }),
     ("notifications.clients", |_, _, _| {
-        Box::pin(async move { Ok(json!({"android_connected": false, "clients": []})) })
+        Box::pin(async move {
+            Ok(super::feed::current().map_or_else(
+                || json!({"android_connected": false, "clients": []}),
+                |feed| feed.clients(),
+            ))
+        })
     }),
     ("notifications.current", |_, _, args| {
         Box::pin(async move {
@@ -533,7 +541,8 @@ pub(super) fn publish_notification(
     if let Some(actions) = extra["actions"].as_array().filter(|a| !a.is_empty()) {
         params["actions"] = json!(actions);
     }
-    params["android_connected"] = json!(false);
+    params["android_connected"] =
+        json!(super::feed::current().is_some_and(|feed| feed.android_connected()));
     if let Some(check) = is_current {
         let mut current = CURRENT.lock().unwrap();
         current.0 += 1;

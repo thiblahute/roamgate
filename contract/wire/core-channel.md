@@ -224,7 +224,8 @@ Bun core runs never takes it from the front's environment).
   `internal.front.start` with the server's configuration (`socket_path`,
   `client_socket_path`, `ssh_host`, `session`, `has_explicit_socket_path`,
   `has_explicit_client_socket_path`, `task_notification_source`,
-  `auth_required`, `generations`); the core starts its connections from it
+  `auth_required`, `tls`: whether the front serves HTTPS, the scheme of the
+  URLs it was reached on, `generations`); the core starts its connections from it
   (the host family's `internal.host.start`) and answers at once. At its
   shutdown the front calls `internal.front.stop` (the connections stop,
   at most 10 s) before `bye`.
@@ -237,10 +238,18 @@ Bun core runs never takes it from the front's environment).
   as deltas), `/api/health`, and the connection-scoped routes
   (`/api/connections/<id>/...` and their legacy paths: `herdr-info` from
   the connection's Herdr, the file and agent-session routes from their
-  families at their legacy paths, the connection in `ctx`). A method Bun
-  answered with its own code that no family declares yet fails with code
-  `standalone_unported`; `/api/notifications/ws` is refused with 503 until
-  the notification feed is ported.
+  families at their legacy paths, the connection in `ctx`; the uploads,
+  staged per connection generation and swept while it runs), and the
+  notification feed's socket `/api/notifications/ws` (its links on the
+  origin the client reached, a ping answered at once by the front's link as
+  it was for Bun's feed behind it). The browser RPCs Bun answered with its
+  own code are answered with what Bun added over Herdr (overlays, agent
+  activity and seen marks, worktree parents, git status, integration
+  versions, `connections.agent_sessions` as changes from the version the
+  socket holds, the agent profiles' settings). A method Bun answered with
+  its own code that the core does not serve yet (the terminal bridge's
+  `terminal.*`, creation from a browser terminal) fails with code
+  `standalone_unported`.
   A connection's endpoints that a family declares (`agent_sessions`'
   downloads, `workspace`'s file routes) reach the `front` family first
   when their `ctx` names no connection: it resolves the connection and

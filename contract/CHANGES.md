@@ -6,6 +6,20 @@ version with the inventory digest the check computes (`inventory: <sha256>`,
 also in `contract.json`), what changed, and the family it concerns, so the
 Rust owner of that family can take it over.
 
+## 1.35
+
+inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a
+
+A standalone core answers the browser RPCs and routes Bun answered with
+its own code (S25 cut-over, WP3; wire/core-channel.md, The standalone
+core): Herdr's topology and input methods with Bun's overlays,
+`workspace.path`, `workspace.create`, `agent.list`,
+`connections.agent_sessions`, `connections.agent_tasks`,
+`integration.list`, `settings.profiles.*`, the uploads and the
+notification feed's socket. `internal.front.start` carries `tls`, the
+scheme of the URLs the front was reached on. Hybrid modes and the browser
+surface are unchanged; the inventory too.
+
 ## 1.34
 
 inventory: 55a67ea9b2a338ffd4cc48bb11d525829ca22a8477c59286f87c0b7ef869996a

@@ -25,6 +25,8 @@
 //!   [`reviews_agent`]'s; [`forge`]: the forge CLIs and one gate.
 //! - [`work`]: `work.*`, `voice.errand_*`, `voice.work_*`,
 //!   `voice.session_cookie`, `notifications.*`.
+//! - [`feed`]: the notification feed's sockets (`/api/notifications/ws`),
+//!   with `notifications.feed` and `.clients`.
 //! - [`browser`]: the browser RPCs Bun answered with its own code
 //!   (`agent.list`, `workspace.*`, Herdr's pass-through with its overlays,
 //!   `connections.agent_sessions`, `.agent_tasks`).
@@ -53,6 +55,7 @@ mod assistant;
 pub(crate) mod browser;
 mod connections;
 mod conversation;
+pub(crate) mod feed;
 mod forge;
 mod mr_reviews;
 mod others;
@@ -79,6 +82,8 @@ pub(crate) struct FrontConfig {
     pub has_explicit_client_socket_path: bool,
     pub task_notification_source: String,
     pub auth_required: bool,
+    /// The front serves HTTPS: the scheme of the URLs it was reached on.
+    pub tls: bool,
 }
 
 /// A ready runtime, leased for one request (Bun's `readyRuntimeLease`).
