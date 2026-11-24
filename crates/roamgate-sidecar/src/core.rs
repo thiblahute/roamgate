@@ -183,15 +183,16 @@ pub async fn run_core_with_clock(
         _ => None,
     };
     let owners = Owners::new(Side::Rust, test);
-    let followed = match say_hello(&mut stream, &hello).await {
+    let (followed, raw_data) = match say_hello(&mut stream, &hello).await {
         Ok(Message::Welcome {
             owners: table,
             shadow,
             clock,
+            raw_data,
             ..
         }) => {
             owners.set(table, shadow);
-            clock
+            (clock, raw_data)
         }
         Ok(_) => return exit::FAILED,
         Err(crate::peer::HandshakeError::Refused(reason)) => {
@@ -203,10 +204,11 @@ pub async fn run_core_with_clock(
             return exit::FAILED;
         }
     };
-    // A debug core follows the front's test clock; a release core never
+    // A test build (debug, or the `test-clock` feature the front honours
+    // the clock with) follows the front's test clock; a release core never
     // runs on a virtual one (contract/wire/test-clock.md).
     let test_clock = followed
-        .filter(|_| cfg!(debug_assertions))
+        .filter(|_| roamgate_base::clock::TEST_CLOCK_HONOURED)
         .map(TestClock::new);
     let family_clock: SharedClock = match &test_clock {
         Some(test_clock) => Arc::new(test_clock.clone()),
@@ -245,7 +247,14 @@ pub async fn run_core_with_clock(
             );
         }
     }
-    let peer = Peer::start(stream, handler.clone(), PeerOptions::core(clock.clone()));
+    let peer = Peer::start(
+        stream,
+        handler.clone(),
+        PeerOptions {
+            raw_data,
+            ..PeerOptions::core(clock.clone())
+        },
+    );
     let _ = handler.context.set(FamilyContext {
         peer: peer.clone(),
         owners,
@@ -255,12 +264,19 @@ pub async fn run_core_with_clock(
     handler.ownership_changed();
     handler.ready.send_replace(true);
     // What the front sent on the link meanwhile waits in the stream.
-    let link = link.map(|stream| {
+    let link = link.map(|(stream, raw_data)| {
         let handler = Arc::new(FrontLink {
             core: handler.clone(),
             sockets: Arc::default(),
         });
-        Peer::start(stream, handler, PeerOptions::core(clock))
+        Peer::start(
+            stream,
+            handler,
+            PeerOptions {
+                raw_data,
+                ..PeerOptions::core(clock)
+            },
+        )
     });
     peer.closed().await;
     if let Some(link) = link {
@@ -585,7 +601,8 @@ fn socket_message(core: &CoreHandler, sockets: &SocketMap, peer: &Peer, message:
 
 /// Connects to the Rust front's link and says hello; None when it cannot
 /// (the front then gives every socket to the Bun core).
-async fn link_front(address: &str, hello: &Message) -> Option<transport::BoxStream> {
+/// The link's stream, and whether the front reads raw data frames.
+async fn link_front(address: &str, hello: &Message) -> Option<(transport::BoxStream, bool)> {
     let mut stream = match transport::connect(address).await {
         Ok(stream) => stream,
         Err(error) => {
@@ -593,12 +610,16 @@ async fn link_front(address: &str, hello: &Message) -> Option<transport::BoxStre
             return None;
         }
     };
-    if let Err(error) = say_hello(&mut stream, hello).await {
-        tracing::warn!(%error, "the Rust front's link refused this core");
-        return None;
-    }
+    let raw_data = match say_hello(&mut stream, hello).await {
+        Ok(Message::Welcome { raw_data, .. }) => raw_data,
+        Ok(_) => false,
+        Err(error) => {
+            tracing::warn!(%error, "the Rust front's link refused this core");
+            return None;
+        }
+    };
     tracing::debug!("linked to the Rust front");
-    Some(stream)
+    Some((stream, raw_data))
 }
 
 /// The core's side of the Rust front's link: the browser sockets of the
