@@ -7,6 +7,10 @@ description: >
   its helper before the core starts its own for the next sentence. Given
   back, the core stops its helper (`internal.voice.release`) before Bun
   starts one again. At every point at most one helper runs.
+# A handover between Bun and the Rust core: a Rust-only run has no Bun
+# to hand over to (its Rust side is proven by the family's other
+# scenarios there), so it runs on the hybrid fronts only.
+fronts: [bun, rust]
 server:
   env:
     ROAMGATE_CORE_BIN: "${CORE}"

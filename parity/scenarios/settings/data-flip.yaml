@@ -7,6 +7,10 @@ description: >
   every change lands. The owners table then gives the family back to Bun,
   which reads what Rust wrote and writes on it; given to Rust again, the
   core reads Bun's file. Last, a Bun server without a core opens the file.
+# A handover between Bun and the Rust core: a Rust-only run has no Bun
+# to hand over to (its Rust side is proven by the family's other
+# scenarios there), so it runs on the hybrid fronts only.
+fronts: [bun, rust]
 server:
   env:
     ROAMGATE_CORE_BIN: "${CORE}"
