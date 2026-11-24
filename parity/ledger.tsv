@@ -564,7 +564,7 @@ scripts/security-workflows.test.ts	Dependabot groups coupled React and xterm maj
 scripts/source-map-security.test.ts	build and DOM tooling reject excessive indexed source-map offsets	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/standalone.test.ts	standalone OAuth keeps the SDK undici override aligned with the server	internal:packaging	the build pipeline's own checks (debug archive, overrides); S8 packages and inspects archives
 scripts/standalone.test.ts	standalone Ranger emits Kimi device codes and saves OAuth credentials in either store	internal:Pi runtime	Pi stays a sidecar at cut-over (plan 6.8); its OAuth is tested with it
-scripts/studio-plugin.test.ts	source build uses the root frozen workspace lockfile	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
+scripts/studio-plugin.test.ts	source build uses the root frozen workspace lockfile and places the server	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/studio-plugin.test.ts	source build stops after a dependency installation failure	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/studio-plugin.test.ts	legacy %s entry delegates to the native plugin command	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
 scripts/studio-plugin.test.ts	a missing source binary fails without silently downloading a release	internal:repository tooling	tests the repository's own scripts and workflows, not the server; stays with them
